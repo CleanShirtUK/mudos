@@ -35,6 +35,7 @@ class SettingsStore:
     """Persist only Lulu-owned values; read-only readiness is not user-writable."""
 
     def __init__(self, path: Path) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
         self.connection = sqlite3.connect(path)
         self.connection.execute("CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
         self.connection.commit()
