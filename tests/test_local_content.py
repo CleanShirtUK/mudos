@@ -33,6 +33,20 @@ class LocalContentTests(unittest.TestCase):
         self.assertFalse(games[0].launchable)
         self.assertEqual(games[0].reason, "malformed-cue")
 
+    def test_valid_ps2_content_reports_missing_bios_before_launch(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "ps2").mkdir()
+            (root / "ps2" / "Game.iso").write_bytes(b"disc")
+            runtime = root / "pcsx2"
+            runtime.write_bytes(b"runtime")
+
+            games = LocalContentProvider({"ps2": runtime}).list_installed(root)
+
+        self.assertEqual(games[0].install_state, "installed")
+        self.assertFalse(games[0].launchable)
+        self.assertEqual(games[0].reason, "bios-missing")
+
     def test_stable_ids_do_not_depend_on_file_enumeration_order(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

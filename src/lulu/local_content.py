@@ -28,8 +28,13 @@ class LocalContentProvider:
         "switch": (".nsp",),
     }
 
-    def __init__(self, runtime_paths: dict[str, Path] | None = None) -> None:
+    def __init__(
+        self,
+        runtime_paths: dict[str, Path] | None = None,
+        bios_paths: dict[str, tuple[Path, ...]] | None = None,
+    ) -> None:
         self.runtime_paths = runtime_paths or {}
+        self.bios_paths = bios_paths or {}
 
     def list_installed(self, root: Path) -> list[LocalContentGame]:
         if not root.is_dir():
@@ -42,7 +47,10 @@ class LocalContentProvider:
                     continue
                 valid, reason = self._content_status(platform, content)
                 runtime_ready = self.runtime_paths.get(platform, Path()).is_file()
-                launchable = valid and runtime_ready
+                bios_ready = self._bios_ready(platform)
+                launchable = valid and runtime_ready and bios_ready
+                if valid and not bios_ready:
+                    reason = "bios-missing"
                 if valid and not runtime_ready:
                     reason = "runtime-missing"
                 games.append(
@@ -57,6 +65,11 @@ class LocalContentProvider:
                     )
                 )
         return sorted(games, key=lambda game: game.title.casefold())
+
+    def _bios_ready(self, platform: str) -> bool:
+        if platform != "ps2":
+            return True
+        return any(path.is_file() for path in self.bios_paths.get(platform, ()))
 
     @staticmethod
     def _title(content: Path) -> str:
