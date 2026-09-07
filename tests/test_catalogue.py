@@ -4,6 +4,7 @@ from pathlib import Path
 
 from lulu.catalogue import CatalogueStore
 from lulu.steam_provider import InstalledSteamGame
+from lulu.local_content import LocalContentProvider
 
 
 class FakeSteamProvider:
@@ -56,3 +57,23 @@ class CatalogueTests(unittest.TestCase):
             recent = store.list_recent()
 
         self.assertEqual([record.game_id for record in recent], ["steam:40800"])
+
+    def test_local_reconcile_normalizes_content_and_removes_stale_records(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "roms"
+            (root / "nes").mkdir(parents=True)
+            content = root / "nes" / "Long Unicode - Cafe.nes"
+            content.write_bytes(b"fixture")
+            runtime = Path(directory) / "retroarch"
+            runtime.write_bytes(b"runtime")
+            store = CatalogueStore(Path(directory) / "catalogue.sqlite3")
+            provider = LocalContentProvider({"nes": runtime})
+
+            store.reconcile_local(provider, root)
+            record = store.list_games()[0]
+            content.unlink()
+            store.reconcile_local(provider, root)
+
+        self.assertEqual(record.provider, "local")
+        self.assertEqual(record.platform, "nes")
+        self.assertEqual(store.list_games(), [])

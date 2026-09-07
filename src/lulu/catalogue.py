@@ -6,6 +6,7 @@ from pathlib import Path
 import sqlite3
 
 from .steam_provider import InstalledSteamGame, SteamProvider
+from .local_content import LocalContentGame, LocalContentProvider
 
 
 @dataclass(frozen=True, slots=True)
@@ -34,6 +35,21 @@ class CatalogueGame:
             install_dir=game.install_dir,
             artwork_url=game.artwork_url,
             last_played=game.last_played,
+        )
+
+    @classmethod
+    def from_local(cls, game: LocalContentGame) -> "CatalogueGame":
+        return cls(
+            game_id=game.content_id,
+            provider="local",
+            provider_id=game.content_id,
+            title=game.title,
+            platform=game.platform,
+            install_state=game.install_state,
+            launchable=game.launchable,
+            install_dir=game.content_path,
+            artwork_url="",
+            last_played=0,
         )
 
     def as_dict(self) -> dict[str, object]:
@@ -77,6 +93,27 @@ class CatalogueStore:
                      install_state=excluded.install_state, launchable=excluded.launchable,
                      install_dir=excluded.install_dir, artwork_url=excluded.artwork_url,
                      last_played=MAX(games.last_played, excluded.last_played),
+                     updated_at=excluded.updated_at""",
+                (*game.as_dict().values(),),
+            )
+        self.connection.commit()
+        return games
+
+    def reconcile_local(self, provider: LocalContentProvider, root: Path) -> list[CatalogueGame]:
+        games = [CatalogueGame.from_local(game) for game in provider.list_installed(root)]
+        self.connection.execute(
+            "UPDATE games SET install_state = 'missing', launchable = 0, updated_at = unixepoch() WHERE provider = 'local'"
+        )
+        for game in games:
+            self.connection.execute(
+                """INSERT INTO games
+                   (game_id, provider, provider_id, title, platform, install_state,
+                    launchable, install_dir, artwork_url, last_played, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, unixepoch())
+                   ON CONFLICT(game_id) DO UPDATE SET
+                     title=excluded.title, platform=excluded.platform,
+                     install_state=excluded.install_state, launchable=excluded.launchable,
+                     install_dir=excluded.install_dir, artwork_url=excluded.artwork_url,
                      updated_at=excluded.updated_at""",
                 (*game.as_dict().values(),),
             )
