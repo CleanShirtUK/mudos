@@ -11,6 +11,7 @@ from dbus_next.aio import MessageBus
 from dbus_next.service import ServiceInterface, method, signal
 
 from .console_sessiond import SessionStateModel
+from .gamescope import GamescopePresentation
 from .contracts import InputMode
 from .process_supervisor import ProcessSupervisor
 
@@ -24,7 +25,7 @@ class ConsoleSessionInterface(ServiceInterface):
     def __init__(self, model: SessionStateModel) -> None:
         super().__init__(INTERFACE_NAME)
         self.model = model
-        self.supervisor = ProcessSupervisor(model, self._state_changed)
+        self.supervisor = ProcessSupervisor(model, self._state_changed, presentation=GamescopePresentation())
 
     def _state_json(self) -> str:
         state = asdict(self.model.state)
@@ -57,6 +58,13 @@ class ConsoleSessionInterface(ServiceInterface):
         except ValueError as error:
             raise self._error(error) from error
         return token
+
+    @method()
+    async def RequestShellLaunch(self, command: "as", startup_timeout_ms: "u") -> "s":
+        try:
+            return await self.supervisor.launch_shell(list(command), startup_timeout_ms)
+        except ValueError as error:
+            raise self._error(error) from error
 
     @method()
     async def RequestSteamLaunch(self, app_id: "s", startup_timeout_ms: "u") -> "s":

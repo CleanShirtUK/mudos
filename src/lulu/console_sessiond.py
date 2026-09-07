@@ -55,13 +55,19 @@ class SessionStateModel:
         if token != self.state.launch_token:
             raise ValueError("launch token does not own the active session")
 
-    def primary_started(self, token: str) -> None:
+    def primary_started(
+        self,
+        token: str,
+        *,
+        presentation: Presentation = Presentation.GAME,
+        input_mode: InputMode = InputMode.GAME,
+    ) -> None:
         if self.state.lifecycle is not Lifecycle.LAUNCHING:
             raise ValueError("primary can start only while launching")
         self._check_token(token)
         self.state.lifecycle = Lifecycle.RUNNING
-        self.state.presentation = Presentation.GAME
-        self.state.input_mode = InputMode.GAME
+        self.state.presentation = presentation
+        self.state.input_mode = input_mode
 
     def primary_exited(self, token: str, *, success: bool = True) -> None:
         if self.state.lifecycle is not Lifecycle.RUNNING:

@@ -4,9 +4,13 @@ from dataclasses import asdict, dataclass
 import asyncio
 import os
 import signal
+import subprocess
 from typing import Awaitable, Callable
+from uuid import uuid4
 
 from .console_sessiond import SessionStateModel
+from .contracts import InputMode, Presentation
+from .gamescope import GamescopePresentation
 from .launch_identity import LaunchIdentity
 from .steam_provider import SteamLaunch, SteamProvider
 
@@ -38,6 +42,7 @@ class ProcessSupervisor:
         model: SessionStateModel,
         state_changed: StateChanged | None = None,
         steam_provider: SteamProvider | None = None,
+        presentation: GamescopePresentation | None = None,
     ) -> None:
         self.model = model
         self.state_changed = state_changed
@@ -47,6 +52,10 @@ class ProcessSupervisor:
         self._watch_task: asyncio.Task[None] | None = None
         self._steam_launch: SteamLaunch | None = None
         self._steam_provider = steam_provider
+        self._presentation = presentation
+        self._shell_process: asyncio.subprocess.Process | None = None
+        self._shell_identity: LaunchIdentity | None = None
+        self._shell_watch_task: asyncio.Task[None] | None = None
 
     async def _notify(self) -> None:
         if self.state_changed is not None:
@@ -54,12 +63,21 @@ class ProcessSupervisor:
             if result is not None:
                 await result
 
-    async def launch(self, command: list[str], startup_timeout_ms: int) -> str:
+    async def launch(
+        self,
+        command: list[str],
+        startup_timeout_ms: int,
+        *,
+        presentation: Presentation = Presentation.GAME,
+        input_mode: InputMode = InputMode.GAME,
+        presentation_controller: GamescopePresentation | None = None,
+    ) -> str:
         if not command or not command[0]:
             raise ValueError("launch command is required")
         if startup_timeout_ms < 1:
             raise ValueError("startup timeout must be positive")
 
+        presentation_controller = presentation_controller or self._presentation
         async with self._launch_lock:
             if self.active_identity is not None or self.model.state.lifecycle.value != "shell":
                 raise ValueError("another launch owns the session")
@@ -85,7 +103,9 @@ class ProcessSupervisor:
                 )
                 self._process = process
                 self.active_identity = identity
-                self.model.primary_started(token)
+                if presentation_controller is not None:
+                    presentation_controller.clear_selection()
+                self.model.primary_started(token, presentation=presentation, input_mode=input_mode)
                 await self._notify()
                 self._watch_task = asyncio.create_task(self._watch(identity, process))
                 return token
@@ -109,6 +129,67 @@ class ProcessSupervisor:
                 await self._notify()
                 raise ValueError(reason) from error
 
+    async def launch_shell(self, command: list[str], startup_timeout_ms: int) -> str:
+        if not command or not command[0]:
+            raise ValueError("launch command is required")
+        if startup_timeout_ms < 1:
+            raise ValueError("startup timeout must be positive")
+        async with self._launch_lock:
+            if self._shell_process is not None or self.active_identity is not None:
+                raise ValueError("another presentation owns the session")
+            try:
+                process = await asyncio.wait_for(
+                    asyncio.create_subprocess_exec(
+                        *command,
+                        stdin=asyncio.subprocess.DEVNULL,
+                        stdout=asyncio.subprocess.DEVNULL,
+                        stderr=asyncio.subprocess.DEVNULL,
+                        start_new_session=True,
+                    ),
+                    timeout=startup_timeout_ms / 1000,
+                )
+                identity = LaunchIdentity(
+                    token=uuid4().hex,
+                    pid=process.pid,
+                    pgid=os.getpgid(process.pid),
+                    executable=os.path.realpath(f"/proc/{process.pid}/exe"),
+                    argv=tuple(command),
+                )
+                self._shell_process = process
+                self._shell_identity = identity
+                if self._presentation is not None:
+                    self._presentation.select_shell(process.pid)
+                self._shell_watch_task = asyncio.create_task(self._watch_shell(process))
+                self._watch_task = self._shell_watch_task
+                return identity.token
+            except (OSError, subprocess.SubprocessError, asyncio.TimeoutError, TimeoutError) as error:
+                if "process" in locals():
+                    await self._terminate_group(os.getpgid(process.pid))
+                self._shell_process = None
+                self._shell_identity = None
+                raise ValueError(f"shell launch failed: {error}") from error
+
+    async def _watch_shell(self, process: asyncio.subprocess.Process) -> None:
+        exit_code = await process.wait()
+        if self._shell_identity is not None:
+            identity = self._shell_identity
+            self.model.record_result(
+                ProcessResult(
+                    token=identity.token,
+                    pid=identity.pid,
+                    pgid=identity.pgid,
+                    executable=identity.executable,
+                    argv=identity.argv,
+                    exit_code=exit_code if exit_code >= 0 else None,
+                    signal=-exit_code if exit_code < 0 else None,
+                    outcome="success" if exit_code == 0 else "failed",
+                    error=None if exit_code == 0 else f"process exited with status {exit_code}",
+                )
+            )
+        self._shell_process = None
+        self._shell_identity = None
+        await self._notify()
+
     async def _watch(self, identity: LaunchIdentity, process: asyncio.subprocess.Process) -> None:
         exit_code = await process.wait()
         await self._terminate_group(identity.pgid)
@@ -128,6 +209,8 @@ class ProcessSupervisor:
         self.model.return_complete(identity.token)
         self.active_identity = None
         self._process = None
+        if self._presentation is not None and self._shell_process is not None:
+            self._presentation.select_shell(self._shell_process.pid)
         await self._notify()
 
     async def launch_steam(self, app_id: str, startup_timeout_ms: int) -> str:
@@ -150,7 +233,9 @@ class ProcessSupervisor:
                 raise ValueError(reason) from error
             self._steam_launch = launch
             self.active_identity = launch.title
-            self.model.primary_started(token)
+            if self._presentation is not None:
+                self._presentation.clear_selection()
+            self.model.primary_started(token, presentation=Presentation.GAME, input_mode=InputMode.GAME)
             await self._notify()
             self._watch_task = asyncio.create_task(self._watch_steam(provider, launch))
             return token
@@ -173,6 +258,8 @@ class ProcessSupervisor:
         self.model.return_complete(identity.token)
         self.active_identity = None
         self._steam_launch = None
+        if self._presentation is not None and self._shell_process is not None:
+            self._presentation.select_shell(self._shell_process.pid)
         await self._notify()
 
     async def _terminate_group(self, pgid: int) -> None:
@@ -191,7 +278,11 @@ class ProcessSupervisor:
             await (self._steam_provider or SteamProvider()).stop(self._steam_launch)
             if self._watch_task is not None:
                 await self._watch_task
-            return
+        if self._shell_process is not None:
+            await self._terminate_group(os.getpgid(self._shell_process.pid))
+            if self._shell_watch_task is not None:
+                await self._shell_watch_task
+            self._shell_watch_task = None
         identity = self.active_identity
         if identity is None:
             return
@@ -203,5 +294,6 @@ class ProcessSupervisor:
         identity = self.active_identity
         return {
             "active_identity": asdict(identity) if identity is not None else None,
+            "shell_identity": asdict(self._shell_identity) if self._shell_identity is not None else None,
             "last_result": self.model.last_result.as_dict() if self.model.last_result else None,
         }

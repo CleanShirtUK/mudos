@@ -3,7 +3,7 @@ import asyncio
 from unittest.mock import patch
 
 from lulu.console_sessiond import SessionStateModel
-from lulu.contracts import Lifecycle
+from lulu.contracts import InputMode, Lifecycle, Presentation
 from lulu.process_supervisor import ProcessSupervisor
 
 
@@ -63,6 +63,19 @@ class SessionModelTests(unittest.TestCase):
             self.assertEqual(session.state.lifecycle, Lifecycle.SHELL)
             self.assertIsNone(supervisor.active_identity)
             self.assertEqual(session.last_result.outcome, "timeout")
+
+        asyncio.run(exercise())
+
+    def test_shell_launch_keeps_shell_presentation_and_input_mode(self) -> None:
+        async def exercise() -> None:
+            session = SessionStateModel()
+            supervisor = ProcessSupervisor(session)
+            token = await supervisor.launch_shell(["/usr/bin/true"], 1000)
+            await supervisor._watch_task
+            self.assertEqual(session.state.lifecycle, Lifecycle.SHELL)
+            self.assertEqual(session.state.presentation, Presentation.SHELL)
+            self.assertEqual(session.state.input_mode, InputMode.SHELL)
+            self.assertEqual(session.last_result.token, token)
 
         asyncio.run(exercise())
 
