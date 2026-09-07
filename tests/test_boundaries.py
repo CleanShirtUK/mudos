@@ -63,6 +63,9 @@ class BoundaryTests(unittest.TestCase):
 
     def test_controller_loss_releases_navigation_and_same_identity_reconnects(self) -> None:
         registry = ControllerRegistry()
+        registry.observe_persistent_composite("", ())
+        self.assertEqual(registry.controllers, {})
+        self.assertIsNone(registry.navigation_controller_id)
         registry.observe_persistent_composite("045e_0291", ("/dev/input/event18",))
         self.assertEqual(registry.navigation_controller_id, "045e_0291")
         registry.observe_persistent_composite("", ())
