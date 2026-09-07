@@ -1,0 +1,34 @@
+[Unit]
+Description=Lulu graphical console session on VT %i
+Requires=seatd.service
+Wants=inputplumber.service
+After=seatd.service inputplumber.service systemd-logind.service systemd-user-sessions.service
+Conflicts=getty@tty%i.service
+Before=getty@tty%i.service
+StartLimitIntervalSec=60s
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=lulu
+PAMName=lulu-session
+TTYPath=/dev/tty%i
+StandardInput=tty
+StandardOutput=journal
+StandardError=journal
+TTYReset=yes
+TTYVHangup=yes
+TTYVTDisallocate=yes
+WorkingDirectory=/var/lib/lulu
+Environment=PYTHONPATH=/opt/lulu/lib
+EnvironmentFile=-/etc/lulu/presentation.conf
+ExecStartPre=+/opt/lulu/bin/lulu-vt activate %i
+ExecStart=/usr/bin/python -m lulu.sessiond --bootstrap-shell
+ExecStopPost=+/opt/lulu/bin/lulu-vt restore
+Restart=on-failure
+RestartSec=2s
+TimeoutStopSec=20s
+KillMode=mixed
+
+[Install]
+WantedBy=lulu.target

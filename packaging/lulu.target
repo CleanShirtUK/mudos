@@ -1,0 +1,6 @@
+[Unit]
+Description=Lulu appliance target
+Requires=multi-user.target seatd.service
+Wants=inputplumber.service user@958.service lulu-session@2.service
+After=multi-user.target seatd.service inputplumber.service user@958.service
+AllowIsolate=yes

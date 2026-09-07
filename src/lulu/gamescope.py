@@ -5,39 +5,75 @@ import os
 import re
 import subprocess
 import time
+from pathlib import Path
 
 
 @dataclass(frozen=True, slots=True)
 class GamescopeInvocation:
-    output: str = "HDMI-A-1"
-    output_width: int = 1920
-    output_height: int = 1080
+    output: str | None = None
+    output_width: int | None = None
+    output_height: int | None = None
+    output_refresh: int | None = None
     nested_width: int = 1280
     nested_height: int = 720
+
+    @classmethod
+    def from_environment(cls) -> "GamescopeInvocation":
+        def optional_int(name: str) -> int | None:
+            value = os.environ.get(name)
+            if value is None or value == "":
+                return None
+            parsed = int(value)
+            if parsed < 1:
+                raise ValueError(f"{name} must be positive")
+            return parsed
+
+        return cls(
+            output=os.environ.get("LULU_OUTPUT_CONNECTOR") or None,
+            output_width=optional_int("LULU_OUTPUT_WIDTH"),
+            output_height=optional_int("LULU_OUTPUT_HEIGHT"),
+            output_refresh=optional_int("LULU_OUTPUT_REFRESH"),
+            nested_width=optional_int("LULU_NESTED_WIDTH") or 1280,
+            nested_height=optional_int("LULU_NESTED_HEIGHT") or 720,
+        )
 
     def argv(self, payload: list[str]) -> list[str]:
         if not payload:
             raise ValueError("Gamescope payload is required")
-        if self.output == "DP-1":
-            raise ValueError("DP-1 is reserved as the development/debug display")
-        return [
+        command = [
             "gamescope",
             "--backend",
             "drm",
-            "--prefer-output",
-            self.output,
+        ]
+        if self.output is not None:
+            command += ["--prefer-output", self.output]
+        if self.output_width is not None:
+            command += ["--output-width", str(self.output_width)]
+        if self.output_height is not None:
+            command += ["--output-height", str(self.output_height)]
+        if self.output_refresh is not None:
+            command += ["--output-refresh", str(self.output_refresh)]
+        command += [
             "--expose-wayland",
-            "--output-width",
-            str(self.output_width),
-            "--output-height",
-            str(self.output_height),
             "--nested-width",
             str(self.nested_width),
             "--nested-height",
             str(self.nested_height),
-            "--",
-            *payload,
         ]
+        command += ["--", *payload]
+        return command
+
+
+def discover_presentation_output(drm_path: str = "/sys/class/drm") -> str:
+    """Return a connected DRM connector, leaving mode choice to Gamescope."""
+    connected = sorted(
+        entry.parent.name.split("-", 1)[1]
+        for entry in Path(drm_path).glob("card*-*/status")
+        if entry.read_text().strip() == "connected"
+    )
+    if not connected:
+        raise RuntimeError("no connected DRM presentation output found")
+    return connected[0]
 
 
 class GamescopePresentation:

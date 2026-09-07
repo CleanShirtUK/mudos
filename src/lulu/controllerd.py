@@ -48,7 +48,14 @@ class ControllerRegistry:
     def disconnect(self, controller_id: str) -> None:
         self.controllers[controller_id].connected = False
         if self.navigation_controller_id == controller_id:
-            self.navigation_controller_id = None
+            self.navigation_controller_id = next(
+                (
+                    candidate_id
+                    for candidate_id, candidate in self.controllers.items()
+                    if candidate.connected
+                ),
+                None,
+            )
 
     def assign_player(self, controller_id: str, player: int | None) -> None:
         self.controllers[controller_id].player = player
@@ -75,6 +82,31 @@ class ControllerRegistry:
             controller.connected = True
         if self.navigation_controller_id is None:
             self.navigation_controller_id = persistent_id
+
+    def observe_runtime_composites(
+        self, composites: dict[str, tuple[str, tuple[str, ...]]]
+    ) -> None:
+        """Reconcile runtime-local composite slots and transfer navigation."""
+        connected_ids = [
+            runtime_id for runtime_id, (_, sources) in composites.items() if sources
+        ]
+        for runtime_id, controller in self.controllers.items():
+            if runtime_id not in connected_ids:
+                controller.connected = False
+
+        for runtime_id in composites:
+            persistent_id, source_paths = composites[runtime_id]
+            if not source_paths:
+                continue
+            controller = self.controllers.get(runtime_id)
+            if controller is None:
+                controller = Controller(runtime_id, player=1 if not self.controllers else None)
+                self.connect(controller)
+            else:
+                controller.connected = True
+
+        if self.navigation_controller_id not in connected_ids:
+            self.navigation_controller_id = connected_ids[0] if connected_ids else None
 
     def request_input_mode(self, mode: InputMode, client: InputPlumberClient) -> list[str]:
         """Ask InputPlumber to load a mapping without changing target topology."""

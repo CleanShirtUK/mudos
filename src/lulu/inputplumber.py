@@ -16,18 +16,33 @@ class InputPlumberClient:
     profile_paths: dict[InputMode, Path]
     busctl: str = "busctl"
 
-    def load_mode(self, mode: InputMode, *, execute: bool = True) -> list[str]:
+    def load_mode(
+        self,
+        mode: InputMode,
+        object_path: str | None = None,
+        *,
+        execute: bool = True,
+    ) -> list[str]:
+        object_path = object_path or self.object_path
         command = [
             self.busctl,
             "call",
             "org.shadowblip.InputPlumber",
-            self.object_path,
+            object_path,
             "org.shadowblip.Input.CompositeDevice",
             "LoadProfilePath",
             "s",
             str(self.profile_paths[mode]),
         ]
         if execute:
+            tree = subprocess.run(
+                [self.busctl, "tree", "org.shadowblip.InputPlumber"],
+                check=True,
+                capture_output=True,
+                text=True,
+            ).stdout
+            if object_path not in tree:
+                return command
             subprocess.run(command, check=True)
         return command
 
@@ -48,13 +63,16 @@ class InputPlumberClient:
             subprocess.run(command, check=True)
         return command
 
-    def composite_status(self, *, execute: bool = True) -> tuple[str, tuple[str, ...]]:
-        """Read the physical composite identity and source paths without changing targets."""
+    def composite_status(
+        self, object_path: str | None = None, *, execute: bool = True
+    ) -> tuple[str, tuple[str, ...]]:
+        """Read one runtime composite identity and source paths."""
+        object_path = object_path or self.object_path
         base = [
             self.busctl,
             "get-property",
             "org.shadowblip.InputPlumber",
-            self.object_path,
+            object_path,
             "org.shadowblip.Input.CompositeDevice",
         ]
         if not execute:
@@ -68,3 +86,28 @@ class InputPlumberClient:
         identity_values = re.findall(r'"([^"]*)"', identity)
         source_values = tuple(re.findall(r'"([^"]*)"', sources))
         return (identity_values[0] if identity_values else ""), source_values
+
+    def runtime_composite_statuses(
+        self, *, execute: bool = True
+    ) -> dict[str, tuple[str, tuple[str, ...]]]:
+        """Read the manager's current runtime composite topology."""
+        if not execute:
+            return {}
+        tree = subprocess.run(
+            [
+                self.busctl,
+                "tree",
+                "org.shadowblip.InputPlumber",
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout
+        paths = sorted(
+            set(
+                re.findall(
+                    r"(/org/shadowblip/InputPlumber/CompositeDevice\d+)", tree
+                )
+            )
+        )
+        return {path: self.composite_status(path) for path in paths}

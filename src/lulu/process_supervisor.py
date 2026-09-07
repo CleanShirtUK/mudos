@@ -133,7 +133,13 @@ class ProcessSupervisor:
                 await self._notify()
                 raise ValueError(reason) from error
 
-    async def launch_shell(self, command: list[str], startup_timeout_ms: int) -> str:
+    async def launch_shell(
+        self,
+        command: list[str],
+        startup_timeout_ms: int,
+        *,
+        select_shell: bool = True,
+    ) -> str:
         if not command or not command[0]:
             raise ValueError("launch command is required")
         if startup_timeout_ms < 1:
@@ -161,7 +167,7 @@ class ProcessSupervisor:
                 )
                 self._shell_process = process
                 self._shell_identity = identity
-                if self._presentation is not None:
+                if self._presentation is not None and select_shell:
                     self._presentation.select_shell(process.pid)
                 self._set_input_mode(InputMode.SHELL)
                 self._shell_watch_task = asyncio.create_task(self._watch_shell(process))

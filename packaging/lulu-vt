@@ -1,0 +1,33 @@
+#!/bin/sh
+set -eu
+
+config=/etc/lulu/presentation.conf
+if [ -r "$config" ]; then
+    # This file is root-owned deployment configuration, not user input.
+    . "$config"
+fi
+
+action=${1:?action is required}
+case "$action" in
+    activate)
+        vt=${2:?VT is required}
+        configured_vt=${LULU_VT:-$vt}
+        if [ "$configured_vt" != "$vt" ]; then
+            echo "configured Lulu VT $configured_vt does not match requested VT $vt" >&2
+            exit 1
+        fi
+        logger -t lulu-vt "activating Lulu VT $vt"
+        /usr/bin/chvt "$vt"
+        logger -t lulu-vt "Lulu VT $vt activated"
+        ;;
+    restore)
+        vt=${LULU_MAINTENANCE_VT:-1}
+        logger -t lulu-vt "restoring maintenance VT $vt"
+        /usr/bin/chvt "$vt"
+        logger -t lulu-vt "maintenance VT $vt restored"
+        ;;
+    *)
+        echo "unknown action: $action" >&2
+        exit 2
+        ;;
+esac
