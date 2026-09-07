@@ -1,0 +1,18 @@
+# Lulu's persistent target topology.
+# Mode profiles intentionally omit target_devices: changing mode must not
+# recreate or replace the virtual devices.
+version: 1
+kind: CompositeDevice
+name: Lulu Persistent Controller
+maximum_sources: 1
+matches: []
+source_devices:
+  - group: gamepad
+    unique: true
+options:
+  auto_manage: true
+  persist: true
+target_devices:
+  - gamepad
+  - keyboard
+  - mouse
