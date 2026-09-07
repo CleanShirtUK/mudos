@@ -32,9 +32,11 @@ class EmulatorRuntimeAdapter:
             core = self.core_paths.get(game.platform)
             if core is None or not core.is_file():
                 raise ValueError(f"runtime-core-missing: {game.platform}")
-            arguments = ("-L", str(core), game.content_path)
+            content_path = getattr(game, "content_path", getattr(game, "install_dir", ""))
+            arguments = ("-L", str(core), content_path)
         elif game.platform == "wii":
-            arguments = ("-e", game.content_path)
+            content_path = getattr(game, "content_path", getattr(game, "install_dir", ""))
+            arguments = ("-e", content_path)
         else:
             raise ValueError(f"unsupported-runtime: {game.platform}")
         return EmulatorLaunchIntent(game.platform, str(executable), arguments)

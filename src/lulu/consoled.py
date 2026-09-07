@@ -8,6 +8,7 @@ from dbus_next.service import ServiceInterface, method, signal
 
 from .catalogue import CatalogueStore
 from .contracts import ServiceDescriptor, ServiceName
+from .emulator_runtime import EmulatorRuntimeAdapter
 from .steam_provider import SteamProvider
 
 
@@ -45,9 +46,10 @@ INTERFACE_NAME = "org.lulu.Console"
 
 
 class ConsoleInterface(ServiceInterface):
-    def __init__(self, catalogue: ConsoleCatalog) -> None:
+    def __init__(self, catalogue: ConsoleCatalog, local_runtime: EmulatorRuntimeAdapter | None = None) -> None:
         super().__init__(INTERFACE_NAME)
         self.catalogue = catalogue
+        self.local_runtime = local_runtime
 
     @staticmethod
     def _variants(game: dict[str, object]) -> dict[str, Variant]:
@@ -71,13 +73,19 @@ class ConsoleInterface(ServiceInterface):
     async def LaunchGame(self, game_id: "s", timeout_ms: "u") -> "s":
         games = {game.game_id: game for game in self.catalogue.store.list_games()}
         game = games.get(game_id)
-        if game is None or not game.launchable or game.provider != "steam":
+        if game is None or not game.launchable:
             raise ValueError("game is not installed and launchable")
         bus = await MessageBus(bus_type=BusType.SESSION).connect()
         introspection = await bus.introspect("org.lulu.ConsoleSessiond", "/org/lulu/ConsoleSession")
         proxy = bus.get_proxy_object("org.lulu.ConsoleSessiond", "/org/lulu/ConsoleSession", introspection)
         session = proxy.get_interface("org.lulu.ConsoleSession")
-        token = await session.call_request_steam_launch(game.provider_id, timeout_ms)
+        if game.provider == "steam":
+            token = await session.call_request_steam_launch(game.provider_id, timeout_ms)
+        elif game.provider == "local" and self.local_runtime is not None:
+            intent = self.local_runtime.launch_intent(game)
+            token = await session.call_request_launch([intent.executable, *intent.arguments], timeout_ms)
+        else:
+            raise ValueError(f"provider launch is unavailable: {game.provider}")
         self.catalogue.store.mark_played(game.game_id)
         bus.disconnect()
         self.CatalogueChanged()

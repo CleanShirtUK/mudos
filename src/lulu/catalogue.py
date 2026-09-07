@@ -137,6 +137,13 @@ class CatalogueStore:
             )
         ]
 
+    def get_game(self, game_id: str) -> CatalogueGame | None:
+        row = self.connection.execute(
+            "SELECT game_id, provider, provider_id, title, platform, install_state, launchable, install_dir, artwork_url, last_played FROM games WHERE game_id = ?",
+            (game_id,),
+        ).fetchone()
+        return CatalogueGame(*row) if row is not None else None
+
     def mark_played(self, game_id: str) -> None:
         self.connection.execute("UPDATE games SET last_played = unixepoch(), updated_at = unixepoch() WHERE game_id = ?", (game_id,))
         self.connection.commit()
