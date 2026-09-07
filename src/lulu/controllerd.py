@@ -58,6 +58,24 @@ class ControllerRegistry:
             raise ValueError("navigation controller must be connected")
         self.navigation_controller_id = controller_id
 
+    def observe_persistent_composite(self, persistent_id: str, source_paths: tuple[str, ...]) -> None:
+        """Reconcile physical presence without replacing InputPlumber targets."""
+        if not persistent_id or not source_paths:
+            for controller_id, controller in self.controllers.items():
+                if controller.connected:
+                    controller.connected = False
+                if self.navigation_controller_id == controller_id:
+                    self.navigation_controller_id = None
+            return
+        controller = self.controllers.get(persistent_id)
+        if controller is None:
+            controller = Controller(persistent_id, player=1)
+            self.connect(controller)
+        else:
+            controller.connected = True
+        if self.navigation_controller_id is None:
+            self.navigation_controller_id = persistent_id
+
     def request_input_mode(self, mode: InputMode, client: InputPlumberClient) -> list[str]:
         """Ask InputPlumber to load a mapping without changing target topology."""
         return client.load_mode(mode)

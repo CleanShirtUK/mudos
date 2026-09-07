@@ -61,6 +61,18 @@ class BoundaryTests(unittest.TestCase):
         self.assertEqual(command[-1], "config/inputplumber/profiles/compat.yaml")
         self.assertNotIn("SetTargetDevices", command)
 
+    def test_controller_loss_releases_navigation_and_same_identity_reconnects(self) -> None:
+        registry = ControllerRegistry()
+        registry.observe_persistent_composite("045e_0291", ("/dev/input/event18",))
+        self.assertEqual(registry.navigation_controller_id, "045e_0291")
+        registry.observe_persistent_composite("", ())
+        self.assertIsNone(registry.navigation_controller_id)
+        self.assertFalse(registry.controllers["045e_0291"].connected)
+        registry.observe_persistent_composite("045e_0291", ("/dev/input/event20",))
+        self.assertEqual(registry.navigation_controller_id, "045e_0291")
+        self.assertTrue(registry.controllers["045e_0291"].connected)
+        self.assertEqual(registry.controllers["045e_0291"].player, 1)
+
     def test_intercept_mode_is_bounded_to_inputplumber_api_values(self) -> None:
         client = default_inputplumber_client(Path("config/inputplumber"))
         self.assertEqual(client.set_intercept_mode(2, execute=False)[-1], "2")

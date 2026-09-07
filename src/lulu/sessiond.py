@@ -12,7 +12,7 @@ from dbus_next.aio import MessageBus
 from dbus_next.service import ServiceInterface, method, signal
 
 from .console_sessiond import SessionStateModel
-from .controllerd import default_inputplumber_client
+from .controllerd import ControllerRegistry, default_inputplumber_client
 from .gamescope import GamescopePresentation
 from .contracts import InputMode
 from .process_supervisor import ProcessSupervisor
@@ -30,6 +30,9 @@ class ConsoleSessionInterface(ServiceInterface):
         inputplumber = default_inputplumber_client(
             Path(__file__).resolve().parents[2] / "config" / "inputplumber"
         )
+        self.controller_registry = ControllerRegistry()
+        self._inputplumber = inputplumber
+        self._controller_monitor_task: asyncio.Task[None] | None = None
         self.supervisor = ProcessSupervisor(
             model,
             self._state_changed,
@@ -46,6 +49,16 @@ class ConsoleSessionInterface(ServiceInterface):
                 "overlay": self.model.state.overlay.value,
                 "input_mode": self.model.state.input_mode.value,
                 "last_failure_reason": self.model.last_failure_reason,
+                "controller": {
+                    "navigation_controller_id": self.controller_registry.navigation_controller_id,
+                    "controllers": {
+                        controller_id: {
+                            "connected": controller.connected,
+                            "player": controller.player,
+                        }
+                        for controller_id, controller in self.controller_registry.controllers.items()
+                    },
+                },
                 **self.supervisor.state_details(),
             }
         )
@@ -56,6 +69,29 @@ class ConsoleSessionInterface(ServiceInterface):
 
     async def _state_changed(self) -> None:
         self.StateChanged(self._state_json())
+
+    async def start_controller_monitor(self) -> None:
+        self._controller_monitor_task = asyncio.create_task(self._monitor_controller())
+
+    async def _monitor_controller(self) -> None:
+        while True:
+            persistent_id, source_paths = await asyncio.to_thread(self._inputplumber.composite_status)
+            before = self.controller_registry.navigation_controller_id, tuple(
+                (key, value.connected) for key, value in self.controller_registry.controllers.items()
+            )
+            self.controller_registry.observe_persistent_composite(persistent_id, source_paths)
+            after = self.controller_registry.navigation_controller_id, tuple(
+                (key, value.connected) for key, value in self.controller_registry.controllers.items()
+            )
+            if before != after:
+                await self._state_changed()
+            await asyncio.sleep(0.25)
+
+    async def stop_controller_monitor(self) -> None:
+        if self._controller_monitor_task is not None:
+            self._controller_monitor_task.cancel()
+            await asyncio.gather(self._controller_monitor_task, return_exceptions=True)
+            self._controller_monitor_task = None
 
     @method()
     def GetState(self) -> "s":
@@ -102,11 +138,13 @@ async def serve(bus_type: BusType = BusType.SESSION) -> None:
     interface = ConsoleSessionInterface(model)
     bus.export(OBJECT_PATH, interface)
     await bus.request_name(BUS_NAME)
+    await interface.start_controller_monitor()
     stop_event = asyncio.Event()
     loop = asyncio.get_running_loop()
     for stop_signal in (os_signal.SIGINT, os_signal.SIGTERM):
         loop.add_signal_handler(stop_signal, stop_event.set)
     await stop_event.wait()
+    await interface.stop_controller_monitor()
     await interface.supervisor.stop()
     bus.disconnect()
 

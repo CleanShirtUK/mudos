@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 from pathlib import Path
+import re
 import subprocess
 
 from .contracts import InputMode
@@ -46,3 +47,24 @@ class InputPlumberClient:
         if execute:
             subprocess.run(command, check=True)
         return command
+
+    def composite_status(self, *, execute: bool = True) -> tuple[str, tuple[str, ...]]:
+        """Read the physical composite identity and source paths without changing targets."""
+        base = [
+            self.busctl,
+            "get-property",
+            "org.shadowblip.InputPlumber",
+            self.object_path,
+            "org.shadowblip.Input.CompositeDevice",
+        ]
+        if not execute:
+            return "", ()
+        identity = subprocess.run(
+            [*base, "PersistentId"], check=True, capture_output=True, text=True
+        ).stdout
+        sources = subprocess.run(
+            [*base, "SourceDevicePaths"], check=True, capture_output=True, text=True
+        ).stdout
+        identity_values = re.findall(r'"([^"]*)"', identity)
+        source_values = tuple(re.findall(r'"([^"]*)"', sources))
+        return (identity_values[0] if identity_values else ""), source_values
