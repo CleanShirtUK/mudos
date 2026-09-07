@@ -32,6 +32,7 @@ class ProcessResult:
 
 
 StateChanged = Callable[[], Awaitable[None] | None]
+InputModeChanged = Callable[[InputMode], object]
 
 
 class ProcessSupervisor:
@@ -43,6 +44,7 @@ class ProcessSupervisor:
         state_changed: StateChanged | None = None,
         steam_provider: SteamProvider | None = None,
         presentation: GamescopePresentation | None = None,
+        input_mode_changed: InputModeChanged | None = None,
     ) -> None:
         self.model = model
         self.state_changed = state_changed
@@ -53,6 +55,7 @@ class ProcessSupervisor:
         self._steam_launch: SteamLaunch | None = None
         self._steam_provider = steam_provider
         self._presentation = presentation
+        self._input_mode_changed = input_mode_changed
         self._shell_process: asyncio.subprocess.Process | None = None
         self._shell_identity: LaunchIdentity | None = None
         self._shell_watch_task: asyncio.Task[None] | None = None
@@ -105,6 +108,7 @@ class ProcessSupervisor:
                 self.active_identity = identity
                 if presentation_controller is not None:
                     presentation_controller.clear_selection()
+                self._set_input_mode(input_mode)
                 self.model.primary_started(token, presentation=presentation, input_mode=input_mode)
                 await self._notify()
                 self._watch_task = asyncio.create_task(self._watch(identity, process))
@@ -159,6 +163,7 @@ class ProcessSupervisor:
                 self._shell_identity = identity
                 if self._presentation is not None:
                     self._presentation.select_shell(process.pid)
+                self._set_input_mode(InputMode.SHELL)
                 self._shell_watch_task = asyncio.create_task(self._watch_shell(process))
                 self._watch_task = self._shell_watch_task
                 return identity.token
@@ -190,6 +195,10 @@ class ProcessSupervisor:
         self._shell_identity = None
         await self._notify()
 
+    def _set_input_mode(self, mode: InputMode) -> None:
+        if self._input_mode_changed is not None:
+            self._input_mode_changed(mode)
+
     async def _watch(self, identity: LaunchIdentity, process: asyncio.subprocess.Process) -> None:
         exit_code = await process.wait()
         await self._terminate_group(identity.pgid)
@@ -211,6 +220,7 @@ class ProcessSupervisor:
         self._process = None
         if self._presentation is not None and self._shell_process is not None:
             self._presentation.select_shell(self._shell_process.pid)
+        self._set_input_mode(InputMode.SHELL)
         await self._notify()
 
     async def launch_steam(self, app_id: str, startup_timeout_ms: int) -> str:
@@ -235,6 +245,7 @@ class ProcessSupervisor:
             self.active_identity = launch.title
             if self._presentation is not None:
                 self._presentation.clear_selection()
+            self._set_input_mode(InputMode.GAME)
             self.model.primary_started(token, presentation=Presentation.GAME, input_mode=InputMode.GAME)
             await self._notify()
             self._watch_task = asyncio.create_task(self._watch_steam(provider, launch))
@@ -260,6 +271,7 @@ class ProcessSupervisor:
         self._steam_launch = None
         if self._presentation is not None and self._shell_process is not None:
             self._presentation.select_shell(self._shell_process.pid)
+        self._set_input_mode(InputMode.SHELL)
         await self._notify()
 
     async def _terminate_group(self, pgid: int) -> None:

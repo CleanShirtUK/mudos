@@ -4,6 +4,7 @@ import argparse
 import asyncio
 from dataclasses import asdict
 import json
+from pathlib import Path
 import signal as os_signal
 
 from dbus_next import BusType, DBusError
@@ -11,6 +12,7 @@ from dbus_next.aio import MessageBus
 from dbus_next.service import ServiceInterface, method, signal
 
 from .console_sessiond import SessionStateModel
+from .controllerd import default_inputplumber_client
 from .gamescope import GamescopePresentation
 from .contracts import InputMode
 from .process_supervisor import ProcessSupervisor
@@ -25,7 +27,15 @@ class ConsoleSessionInterface(ServiceInterface):
     def __init__(self, model: SessionStateModel) -> None:
         super().__init__(INTERFACE_NAME)
         self.model = model
-        self.supervisor = ProcessSupervisor(model, self._state_changed, presentation=GamescopePresentation())
+        inputplumber = default_inputplumber_client(
+            Path(__file__).resolve().parents[2] / "config" / "inputplumber"
+        )
+        self.supervisor = ProcessSupervisor(
+            model,
+            self._state_changed,
+            presentation=GamescopePresentation(),
+            input_mode_changed=inputplumber.load_mode,
+        )
 
     def _state_json(self) -> str:
         state = asdict(self.model.state)

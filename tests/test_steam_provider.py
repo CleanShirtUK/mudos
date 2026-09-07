@@ -5,6 +5,7 @@ from unittest.mock import Mock
 from unittest.mock import patch
 
 from lulu.console_sessiond import SessionStateModel
+from lulu.contracts import InputMode, Presentation
 from lulu.launch_identity import LaunchIdentity
 from lulu.process_supervisor import ProcessSupervisor
 from lulu.steam_provider import SteamLaunch, SteamProvider
@@ -73,13 +74,24 @@ class SteamProviderTests(unittest.TestCase):
         async def exercise() -> None:
             session = SessionStateModel()
             provider = FakeSteamProvider()
-            supervisor = ProcessSupervisor(session, steam_provider=provider)
+            modes: list[InputMode] = []
+            supervisor = ProcessSupervisor(
+                session,
+                steam_provider=provider,
+                input_mode_changed=modes.append,
+            )
             token = await supervisor.launch_steam("40800", 1000)
             self.assertEqual(session.state.lifecycle.value, "running")
+            self.assertEqual(session.state.presentation, Presentation.GAME)
+            self.assertEqual(session.state.input_mode, InputMode.GAME)
+            self.assertEqual(modes, [InputMode.GAME])
             self.assertEqual(supervisor.active_identity.executable, "/games/SuperMeatBoy")
             provider.exited.set()
             await supervisor._watch_task
             self.assertEqual(session.state.lifecycle.value, "shell")
+            self.assertEqual(session.state.presentation, Presentation.SHELL)
+            self.assertEqual(session.state.input_mode, InputMode.SHELL)
+            self.assertEqual(modes, [InputMode.GAME, InputMode.SHELL])
             self.assertIsNone(supervisor.active_identity)
             self.assertEqual(session.last_result.token, token)
             self.assertEqual(session.last_result.pid, 42)
