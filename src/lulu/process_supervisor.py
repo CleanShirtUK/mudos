@@ -7,15 +7,8 @@ import signal
 from typing import Awaitable, Callable
 
 from .console_sessiond import SessionStateModel
-
-
-@dataclass(frozen=True, slots=True)
-class LaunchIdentity:
-    token: str
-    pid: int
-    pgid: int
-    executable: str
-    argv: tuple[str, ...]
+from .launch_identity import LaunchIdentity
+from .steam_provider import SteamLaunch, SteamProvider
 
 
 @dataclass(frozen=True, slots=True)
@@ -40,13 +33,20 @@ StateChanged = Callable[[], Awaitable[None] | None]
 class ProcessSupervisor:
     """Owns the primary process and its dedicated process group."""
 
-    def __init__(self, model: SessionStateModel, state_changed: StateChanged | None = None) -> None:
+    def __init__(
+        self,
+        model: SessionStateModel,
+        state_changed: StateChanged | None = None,
+        steam_provider: SteamProvider | None = None,
+    ) -> None:
         self.model = model
         self.state_changed = state_changed
         self.active_identity: LaunchIdentity | None = None
         self._process: asyncio.subprocess.Process | None = None
         self._launch_lock = asyncio.Lock()
         self._watch_task: asyncio.Task[None] | None = None
+        self._steam_launch: SteamLaunch | None = None
+        self._steam_provider = steam_provider
 
     async def _notify(self) -> None:
         if self.state_changed is not None:
@@ -130,6 +130,51 @@ class ProcessSupervisor:
         self._process = None
         await self._notify()
 
+    async def launch_steam(self, app_id: str, startup_timeout_ms: int) -> str:
+        if startup_timeout_ms < 1:
+            raise ValueError("startup timeout must be positive")
+        async with self._launch_lock:
+            if self.active_identity is not None or self.model.state.lifecycle.value != "shell":
+                raise ValueError("another launch owns the session")
+            token = self.model.request_launch(f"steam:{app_id}")
+            await self._notify()
+            provider = self._steam_provider or SteamProvider()
+            try:
+                launch = await provider.launch(app_id, token, startup_timeout_ms)
+            except (OSError, asyncio.TimeoutError, ValueError) as error:
+                reason = f"Steam launch failed: {error}"
+                self.model.fail(token, reason)
+                self.model.record_result(ProcessResult(token, None, None, "steam", (app_id,), None, None, "start-failed", reason))
+                self.model.return_complete(token)
+                await self._notify()
+                raise ValueError(reason) from error
+            self._steam_launch = launch
+            self.active_identity = launch.title
+            self.model.primary_started(token)
+            await self._notify()
+            self._watch_task = asyncio.create_task(self._watch_steam(provider, launch))
+            return token
+
+    async def _watch_steam(self, provider: SteamProvider, launch: SteamLaunch) -> None:
+        await provider.wait_for_exit(launch)
+        identity = launch.title
+        result = ProcessResult(
+            token=identity.token,
+            pid=identity.pid,
+            pgid=identity.pgid,
+            executable=identity.executable,
+            argv=identity.argv,
+            exit_code=None,
+            signal=None,
+            outcome="success",
+        )
+        self.model.primary_exited(identity.token)
+        self.model.record_result(result)
+        self.model.return_complete(identity.token)
+        self.active_identity = None
+        self._steam_launch = None
+        await self._notify()
+
     async def _terminate_group(self, pgid: int) -> None:
         try:
             os.killpg(pgid, signal.SIGTERM)
@@ -142,6 +187,11 @@ class ProcessSupervisor:
             pass
 
     async def stop(self) -> None:
+        if self._steam_launch is not None:
+            await (self._steam_provider or SteamProvider()).stop(self._steam_launch)
+            if self._watch_task is not None:
+                await self._watch_task
+            return
         identity = self.active_identity
         if identity is None:
             return
