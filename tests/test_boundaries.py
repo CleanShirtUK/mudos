@@ -8,6 +8,7 @@ from lulu.consoled import ConsoleCatalog
 from lulu.controllerd import Controller, ControllerRegistry
 from lulu.controllerd import default_inputplumber_client
 from lulu.contracts import InputMode, Lifecycle, Overlay, Role, ServiceName
+from lulu.gamescope import GamescopeInvocation
 
 
 class BoundaryTests(unittest.TestCase):
@@ -65,6 +66,13 @@ class BoundaryTests(unittest.TestCase):
         self.assertEqual(client.set_intercept_mode(2, execute=False)[-1], "2")
         with self.assertRaises(ValueError):
             client.set_intercept_mode(4, execute=False)
+
+    def test_gamescope_invocation_keeps_dp1_reserved(self) -> None:
+        command = GamescopeInvocation().argv(["/usr/bin/true"])
+        self.assertIn("HDMI-A-1", command)
+        self.assertNotIn("DP-1", command)
+        with self.assertRaises(ValueError):
+            GamescopeInvocation(output="DP-1").argv(["/usr/bin/true"])
 
 
 if __name__ == "__main__":
