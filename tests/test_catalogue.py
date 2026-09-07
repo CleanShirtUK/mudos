@@ -1,0 +1,58 @@
+import tempfile
+import unittest
+from pathlib import Path
+
+from lulu.catalogue import CatalogueStore
+from lulu.steam_provider import InstalledSteamGame
+
+
+class FakeSteamProvider:
+    def __init__(self, games: list[InstalledSteamGame]) -> None:
+        self.games = games
+
+    def list_installed(self) -> list[InstalledSteamGame]:
+        return self.games
+
+
+class CatalogueTests(unittest.TestCase):
+    def test_reconcile_persists_launchable_steam_records(self) -> None:
+        game = InstalledSteamGame(
+            "40800",
+            "Super Meat Boy",
+            "/games/Super Meat Boy",
+            "/games",
+            123,
+            0,
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            store = CatalogueStore(Path(directory) / "catalogue.sqlite3")
+            store.reconcile_steam(FakeSteamProvider([game]))
+
+            record = store.list_games()[0]
+
+        self.assertEqual(record.game_id, "steam:40800")
+        self.assertEqual(record.provider_id, "40800")
+        self.assertTrue(record.launchable)
+        self.assertEqual(record.install_state, "installed")
+
+    def test_missing_manifest_removes_game_from_launchable_library(self) -> None:
+        game = InstalledSteamGame("40800", "Super Meat Boy", "/games/Super Meat Boy", "/games", 123, 0)
+        with tempfile.TemporaryDirectory() as directory:
+            store = CatalogueStore(Path(directory) / "catalogue.sqlite3")
+            provider = FakeSteamProvider([game])
+            store.reconcile_steam(provider)
+            provider.games = []
+            store.reconcile_steam(provider)
+
+            self.assertEqual(store.list_games(), [])
+
+    def test_mark_played_populates_recent_without_changing_identity(self) -> None:
+        game = InstalledSteamGame("40800", "Super Meat Boy", "/games/Super Meat Boy", "/games", 123, 0)
+        with tempfile.TemporaryDirectory() as directory:
+            store = CatalogueStore(Path(directory) / "catalogue.sqlite3")
+            store.reconcile_steam(FakeSteamProvider([game]))
+            store.mark_played("steam:40800")
+
+            recent = store.list_recent()
+
+        self.assertEqual([record.game_id for record in recent], ["steam:40800"])

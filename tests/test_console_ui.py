@@ -9,12 +9,14 @@ SHELL_PROFILE = (ROOT / "config" / "inputplumber" / "profiles" / "shell.yaml").r
 
 class ConsoleUiTests(unittest.TestCase):
     def test_qml_preserves_card_to_space_shell_interaction(self) -> None:
-        self.assertIn('title: "Recent"', QML)
-        self.assertIn("property bool expanded: false", QML)
-        self.assertIn("function activateCard(index)", QML)
-        self.assertIn("function goBack()", QML)
-        self.assertIn('text: "Expanded space proof"', QML)
+        self.assertIn('property var domains: ["Recent", "Library", "Store", "System"]', QML)
+        self.assertIn('readonly property string apiUrl:', QML)
+        self.assertIn("function activate()", QML)
+        self.assertIn("function moveDomain(delta)", QML)
+        self.assertIn('text: "Store is unavailable"', QML)
+        self.assertIn('text: "System space is not implemented"', QML)
         self.assertNotIn("/dev/input", QML)
+        self.assertNotIn("Social", QML)
 
     def test_shell_profile_routes_semantic_events_to_qt_keys(self) -> None:
         for button, key in (

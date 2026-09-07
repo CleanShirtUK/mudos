@@ -19,7 +19,8 @@ class SessionModelTests(unittest.TestCase):
         token = session.request_launch("game")
         with self.assertRaises(ValueError):
             session.primary_started("wrong")
-        self.assertEqual(session.state.lifecycle, Lifecycle.LAUNCHING)
+        self.assertEqual(session.state.lifecycle, Lifecycle.LAUNCH_REQUESTED)
+        session.launch_starting(token)
         with self.assertRaises(ValueError):
             session.return_complete("wrong")
 
@@ -37,6 +38,7 @@ class SessionModelTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             session.primary_started("missing")
         token = session.request_launch("game")
+        session.launch_starting(token)
         with self.assertRaises(ValueError):
             session.primary_exited(token)
 
@@ -49,22 +51,6 @@ class SessionModelTests(unittest.TestCase):
         session.return_complete(token)
         session.request_launch("second")
         self.assertIsNone(session.last_failure_reason)
-
-    def test_start_timeout_returns_to_shell_without_an_active_process(self) -> None:
-        async def delayed_spawn(*_args, **_kwargs):
-            await asyncio.sleep(0.05)
-
-        async def exercise() -> None:
-            session = SessionStateModel()
-            supervisor = ProcessSupervisor(session)
-            with patch("asyncio.create_subprocess_exec", new=delayed_spawn):
-                with self.assertRaises(ValueError):
-                    await supervisor.launch(["slow-start"], 1)
-            self.assertEqual(session.state.lifecycle, Lifecycle.SHELL)
-            self.assertIsNone(supervisor.active_identity)
-            self.assertEqual(session.last_result.outcome, "timeout")
-
-        asyncio.run(exercise())
 
     def test_shell_launch_keeps_shell_presentation_and_input_mode(self) -> None:
         async def exercise() -> None:

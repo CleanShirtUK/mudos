@@ -19,8 +19,9 @@ class Role(StrEnum):
 
 class Lifecycle(StrEnum):
     SHELL = "shell"
-    LAUNCHING = "launching"
-    RUNNING = "running"
+    LAUNCH_REQUESTED = "launch_requested"
+    STARTING = "starting"
+    GAME = "game"
     RETURNING = "returning"
 
 

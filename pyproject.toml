@@ -11,6 +11,7 @@ dependencies = ["dbus-next>=0.2.3"]
 
 [project.scripts]
 console-sessiond = "lulu.sessiond:main"
+console-catalogd = "lulu.consoled:main"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

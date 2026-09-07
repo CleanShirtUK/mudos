@@ -105,11 +105,27 @@ class GamescopePresentation:
         deadline = time.monotonic() + timeout
         while True:
             for window, _app_id, window_pid in self._focusable_windows():
-                if window_pid == pid:
+                if window_pid == pid or self._is_descendant(window_pid, pid):
                     return window
             if time.monotonic() >= deadline:
                 raise TimeoutError(f"Gamescope window for PID {pid} was not found")
             time.sleep(self.poll_interval)
+
+    @staticmethod
+    def _is_descendant(pid: int, ancestor_pid: int) -> bool:
+        current = pid
+        while current > 1:
+            try:
+                status = Path(f"/proc/{current}/status").read_text()
+            except (FileNotFoundError, PermissionError):
+                return False
+            parent = re.search(r"^PPid:\s+(\d+)$", status, re.MULTILINE)
+            if parent is None:
+                return False
+            current = int(parent.group(1))
+            if current == ancestor_pid:
+                return True
+        return False
 
     def select_pid(self, pid: int) -> int:
         window = self.window_for_pid(pid)

@@ -1,0 +1,18 @@
+[Unit]
+Description=Lulu game catalogue service
+Requires=user@958.service
+After=user@958.service
+
+[Service]
+Type=simple
+User=lulu
+Environment=PYTHONPATH=/opt/lulu/lib
+Environment=XDG_RUNTIME_DIR=/run/user/958
+Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/958/bus
+Environment=LULU_STEAM_ROOTS=/var/lib/lulu/.local/share/Steam
+ExecStart=/usr/bin/python -m lulu.consoled
+Restart=on-failure
+RestartSec=2s
+
+[Install]
+WantedBy=lulu.target

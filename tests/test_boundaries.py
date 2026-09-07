@@ -72,8 +72,11 @@ class BoundaryTests(unittest.TestCase):
     def test_session_lifecycle_and_orthogonal_state(self) -> None:
         session = SessionStateModel()
         token = session.request_launch("game-1")
-        self.assertEqual(session.state.lifecycle, Lifecycle.LAUNCHING)
+        self.assertEqual(session.state.lifecycle, Lifecycle.LAUNCH_REQUESTED)
+        session.launch_starting(token)
+        self.assertEqual(session.state.lifecycle, Lifecycle.STARTING)
         session.primary_started(token)
+        self.assertEqual(session.state.lifecycle, Lifecycle.GAME)
         self.assertEqual(session.state.input_mode, InputMode.GAME)
         session.set_overlay(Overlay.OPEN)
         session.primary_exited(token)

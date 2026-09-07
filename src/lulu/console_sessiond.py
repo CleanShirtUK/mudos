@@ -45,8 +45,14 @@ class SessionStateModel:
         self.last_failure_reason = None
         self.state.primary_id = primary_id
         self.state.launch_token = token
-        self.state.lifecycle = Lifecycle.LAUNCHING
+        self.state.lifecycle = Lifecycle.LAUNCH_REQUESTED
         return token
+
+    def launch_starting(self, token: str) -> None:
+        if self.state.lifecycle is not Lifecycle.LAUNCH_REQUESTED:
+            raise ValueError("launch can enter starting only after request")
+        self._check_token(token)
+        self.state.lifecycle = Lifecycle.STARTING
 
     def record_result(self, result: "ProcessResult") -> None:
         self.last_result = result
@@ -62,15 +68,15 @@ class SessionStateModel:
         presentation: Presentation = Presentation.GAME,
         input_mode: InputMode = InputMode.GAME,
     ) -> None:
-        if self.state.lifecycle is not Lifecycle.LAUNCHING:
+        if self.state.lifecycle is not Lifecycle.STARTING:
             raise ValueError("primary can start only while launching")
         self._check_token(token)
-        self.state.lifecycle = Lifecycle.RUNNING
+        self.state.lifecycle = Lifecycle.GAME
         self.state.presentation = presentation
         self.state.input_mode = input_mode
 
     def primary_exited(self, token: str, *, success: bool = True) -> None:
-        if self.state.lifecycle is not Lifecycle.RUNNING:
+        if self.state.lifecycle is not Lifecycle.GAME:
             raise ValueError("primary can exit only while running")
         self._check_token(token)
         if not success:
@@ -78,7 +84,11 @@ class SessionStateModel:
         self.state.lifecycle = Lifecycle.RETURNING
 
     def fail(self, token: str, reason: str) -> None:
-        if self.state.lifecycle not in (Lifecycle.LAUNCHING, Lifecycle.RUNNING):
+        if self.state.lifecycle not in (
+            Lifecycle.LAUNCH_REQUESTED,
+            Lifecycle.STARTING,
+            Lifecycle.GAME,
+        ):
             raise ValueError("failure requires an active launch")
         self._check_token(token)
         if not reason:

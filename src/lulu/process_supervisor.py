@@ -12,7 +12,7 @@ from .console_sessiond import SessionStateModel
 from .contracts import InputMode, Presentation
 from .gamescope import GamescopePresentation
 from .launch_identity import LaunchIdentity
-from .steam_provider import SteamLaunch, SteamProvider
+from .steam_provider import SteamLaunch, SteamProvider, SteamLaunchRequest
 
 
 @dataclass(frozen=True, slots=True)
@@ -238,24 +238,35 @@ class ProcessSupervisor:
             token = self.model.request_launch(f"steam:{app_id}")
             await self._notify()
             provider = self._steam_provider or SteamProvider()
+            launch: SteamLaunch | None = None
             try:
-                launch = await provider.launch(app_id, token, startup_timeout_ms)
+                request: SteamLaunchRequest = await provider.request_launch(app_id)
+                self.model.launch_starting(token)
+                self._set_input_mode(InputMode.GAME)
+                if self._presentation is not None:
+                    self._presentation.clear_selection()
+                await self._notify()
+                launch = await provider.observe_launch(request, token)
+                if self._presentation is not None:
+                    self._presentation.select_pid(launch.title.pid)
+                self.model.primary_started(token, presentation=Presentation.GAME, input_mode=InputMode.GAME)
+                self._steam_launch = launch
+                self.active_identity = launch.title
+                await self._notify()
+                self._watch_task = asyncio.create_task(self._watch_steam(provider, launch))
+                return token
             except (OSError, asyncio.TimeoutError, ValueError) as error:
+                if launch is not None:
+                    await provider.stop(launch)
                 reason = f"Steam launch failed: {error}"
                 self.model.fail(token, reason)
                 self.model.record_result(ProcessResult(token, None, None, "steam", (app_id,), None, None, "start-failed", reason))
+                if self._presentation is not None and self._shell_process is not None:
+                    self._presentation.select_shell(self._shell_process.pid)
+                self._set_input_mode(InputMode.SHELL)
                 self.model.return_complete(token)
                 await self._notify()
                 raise ValueError(reason) from error
-            self._steam_launch = launch
-            self.active_identity = launch.title
-            if self._presentation is not None:
-                self._presentation.clear_selection()
-            self._set_input_mode(InputMode.GAME)
-            self.model.primary_started(token, presentation=Presentation.GAME, input_mode=InputMode.GAME)
-            await self._notify()
-            self._watch_task = asyncio.create_task(self._watch_steam(provider, launch))
-            return token
 
     async def _watch_steam(self, provider: SteamProvider, launch: SteamLaunch) -> None:
         await provider.wait_for_exit(launch)
@@ -272,12 +283,12 @@ class ProcessSupervisor:
         )
         self.model.primary_exited(identity.token)
         self.model.record_result(result)
-        self.model.return_complete(identity.token)
-        self.active_identity = None
-        self._steam_launch = None
         if self._presentation is not None and self._shell_process is not None:
             self._presentation.select_shell(self._shell_process.pid)
         self._set_input_mode(InputMode.SHELL)
+        self.model.return_complete(identity.token)
+        self.active_identity = None
+        self._steam_launch = None
         await self._notify()
 
     async def _terminate_group(self, pgid: int) -> None:
