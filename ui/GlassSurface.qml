@@ -19,17 +19,17 @@ Item {
     property vector2d edgeLightDirection: Qt.vector2d(1, -1)
     property real focusAmount: 0
     property real cornerRadius: 0
+    property bool useExplicitSceneGeometry: false
+    property point sceneOriginOverride: Qt.point(0, 0)
+    property size sceneSizeOverride: Qt.size(0, 0)
     // Developer-only diagnostics; production rendering uses mode 0.
     property int diagnosticMode: 0
-    readonly property point sceneOrigin: canonicalTexture
-        ? mapToItem(canonicalTexture, 0, 0) : Qt.point(0, 0)
-    readonly property vector2d sceneSize: Qt.vector2d(width, height)
-
-    Component.onCompleted: {
-        if (root.diagnosticMode === 6)
-            console.log("Canonical glass mapping:", "origin", sceneOrigin.x, sceneOrigin.y,
-                        "surface", width, height, "canonical", canonicalSize.width, canonicalSize.height)
-    }
+    readonly property point sceneOrigin: useExplicitSceneGeometry
+        ? sceneOriginOverride
+        : (canonicalTexture ? mapToItem(canonicalTexture, 0, 0) : Qt.point(0, 0))
+    readonly property vector2d sceneSize: useExplicitSceneGeometry
+        ? Qt.vector2d(sceneSizeOverride.width, sceneSizeOverride.height)
+        : Qt.vector2d(width, height)
 
     ShaderEffect {
         anchors.fill: parent

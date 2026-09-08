@@ -10,6 +10,7 @@ Rectangle {
     property bool homeCard: false
     property string presentationState: "COMPACT"
     property var canonicalTexture
+    property var canonicalCoordinateRoot
     property size canonicalSize: Qt.size(1280, 720)
     property real focalScale: 1
     property real uiScale: 1
@@ -18,6 +19,14 @@ Rectangle {
     readonly property real focalMargin: 30 * focalScale * uiScale
     readonly property real artworkHeight: height - 2 * focalMargin
     readonly property real artworkWidth: artworkHeight / 1.5
+    readonly property point canonicalSceneOrigin: {
+        var origin = canonicalCoordinateRoot
+            ? card.mapToItem(canonicalCoordinateRoot, 0, 0)
+            : Qt.point(0, 0)
+        // mapToItem() is not reactive to ancestor layout changes by itself.
+        var layoutDependency = card.x + card.y + card.width + card.height
+        return Qt.point(origin.x + layoutDependency * 0, origin.y + layoutDependency * 0)
+    }
 
     implicitWidth: recentFocal ? 1100 * uiScale : (compact ? 260 : 210) * uiScale
     implicitHeight: recentFocal ? 560 * uiScale : (compact ? 430 : 330) * uiScale
@@ -29,10 +38,13 @@ Rectangle {
 
     GlassSurface {
         anchors.fill: parent
-        visible: card.homeCard && card.focused
+        visible: card.homeCard
         canonicalTexture: card.canonicalTexture
         canonicalSize: card.canonicalSize
         cornerRadius: card.radius
+        useExplicitSceneGeometry: card.presentationState === "COMPACT"
+        sceneOriginOverride: card.canonicalSceneOrigin
+        sceneSizeOverride: Qt.size(card.width, card.height)
         refractionPixels: 80 * card.uiScale
         dispersionIor: 0.0175
         diffusionPixels: 5 * card.uiScale
@@ -53,11 +65,11 @@ Rectangle {
         y: recentFocal ? focalMargin : 14 * uiScale
         width: recentFocal ? artworkWidth : parent.width - 28 * uiScale
         height: recentFocal ? artworkHeight : width * 1.5
-        property real artworkRadius: recentFocal ? 18 * focalScale * uiScale : 0
+        property real artworkRadius: recentFocal ? 18 * focalScale * uiScale : 10 * uiScale
         property real artworkBorderAlpha: 0.15
         radius: artworkRadius
         color: recentFocal ? "transparent" : "#10182b"
-        clip: recentFocal
+        clip: true
 
         Image {
             id: artworkSource
@@ -173,7 +185,7 @@ Rectangle {
             font.pixelSize: (card.compact ? 14 : 16) * card.uiScale
             wrapMode: Text.WordWrap
             maximumLineCount: 2
-            elide: card.compact ? Text.ElideNone : Text.ElideRight
+            elide: Text.ElideRight
             horizontalAlignment: Text.AlignHCenter
             verticalAlignment: Text.AlignVCenter
             height: parent.height

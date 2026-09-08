@@ -10,8 +10,10 @@ Item {
     property real focalCardHeight: 500
     property real focalScale: 1
     property var canonicalTexture
+    property var canonicalCoordinateRoot
     property size canonicalSize: Qt.size(1280, 720)
     property real uiScale: 1
+    readonly property real compactCardWidth: Math.min(160 * uiScale, focalCardHeight * 0.62)
     signal launchRequested(var game)
 
     Text {
@@ -37,20 +39,22 @@ Item {
                 game: modelData
                 focused: index === selectedIndex
                 presentationState: modelData.game_id === recentHome.selectedGameId ? "FOCUSED" : "COMPACT"
+                compact: presentationState === "COMPACT"
                 showAction: false
                 homeCard: true
                 canonicalTexture: recentHome.canonicalTexture
+                canonicalCoordinateRoot: recentHome.canonicalCoordinateRoot
                 canonicalSize: recentHome.canonicalSize
                 focalScale: recentHome.focalScale
                 uiScale: recentHome.uiScale
                 width: index === selectedIndex
                        ? focalCardWidth
-                       : Math.min(210 * uiScale, focalCardHeight * 0.38)
-                height: index === selectedIndex ? focalCardHeight : width * 1.67
+                       : recentHome.compactCardWidth
+                height: focalCardHeight
                 x: index === selectedIndex
                    ? 0
-                    : focalCardWidth + 18 * uiScale + (index < selectedIndex ? index : index - 1)
-                      * (Math.min(210 * uiScale, focalCardHeight * 0.38) + 18 * uiScale)
+                   : focalCardWidth + 18 * uiScale + (index < selectedIndex ? index : index - 1)
+                      * (recentHome.compactCardWidth + 18 * uiScale)
 
                 MouseArea {
                     anchors.fill: parent

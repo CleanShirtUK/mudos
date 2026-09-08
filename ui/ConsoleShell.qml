@@ -350,6 +350,7 @@ Window {
                      focalScale: 0.67
                      uiScale: root.uiScale
                     canonicalTexture: orbitTexture
+                    canonicalCoordinateRoot: orbitRenderSource
                     canonicalSize: Qt.size(root.width, root.height)
                     onLaunchRequested: root.launchGame(game)
                     Behavior on opacity { NumberAnimation { duration: 220 } }
