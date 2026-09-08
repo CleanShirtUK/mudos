@@ -1,0 +1,48 @@
+import QtQuick
+
+Item {
+    id: root
+
+    property var canonicalTexture
+    property size canonicalSize: Qt.size(1280, 720)
+    property real ior: 1.08
+    property real glassDepth: 0.32
+    property real refractionPixels: 12
+    property real dispersionIor: 0
+    property real diffusionPixels: 0
+    property real transmission: 1
+    property real bevelWidthPx: 6
+    property real bulgeStrength: 0
+    property real focusAmount: 0
+    property real cornerRadius: 0
+    // Developer-only diagnostics; production rendering uses mode 0.
+    property int diagnosticMode: 0
+    readonly property point sceneOrigin: canonicalTexture
+        ? mapToItem(canonicalTexture, 0, 0) : Qt.point(0, 0)
+    readonly property vector2d sceneSize: Qt.vector2d(width, height)
+
+    Component.onCompleted: {
+        if (root.diagnosticMode === 6)
+            console.log("Canonical glass mapping:", "origin", sceneOrigin.x, sceneOrigin.y,
+                        "surface", width, height, "canonical", canonicalSize.width, canonicalSize.height)
+    }
+
+    ShaderEffect {
+        anchors.fill: parent
+        fragmentShader: "shaders/canonical-snell-refraction.frag.qsb"
+        property var source: root.canonicalTexture
+        property vector2d u_sceneOrigin: Qt.vector2d(root.sceneOrigin.x, root.sceneOrigin.y)
+        property vector2d u_sceneSize: root.sceneSize
+        property vector2d u_canonicalSize: Qt.vector2d(root.canonicalSize.width, root.canonicalSize.height)
+        property real u_ior: root.ior
+        property real u_depth: root.glassDepth
+        property real u_refractionPixels: root.refractionPixels
+        property real u_dispersionIor: root.dispersionIor
+        property real u_diffusionPixels: root.diffusionPixels
+        property real u_transmission: root.transmission
+        property real u_bevelWidthPx: root.bevelWidthPx
+        property real u_bulgeStrength: root.bulgeStrength
+        property real u_cornerRadius: root.cornerRadius
+        property int u_diagnostic: root.diagnosticMode
+    }
+}

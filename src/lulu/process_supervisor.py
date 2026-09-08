@@ -61,8 +61,39 @@ class ProcessSupervisor:
         self._shell_identity: LaunchIdentity | None = None
         self._shell_watch_task: asyncio.Task[None] | None = None
         self._steam_launch_task: asyncio.Task[str] | None = None
+        self._shell_output_tasks: list[asyncio.Task[None]] = []
+        self._process_output_tasks: list[asyncio.Task[None]] = []
         self._logger = logging.getLogger("lulu.process-supervisor")
         self._presentation_watchdog = 10.0
+
+    async def _drain_output(
+        self, stream: asyncio.StreamReader, role: str, pid: int, channel: str
+    ) -> None:
+        while line := await stream.readline():
+            text = line.decode(errors="replace").rstrip("\r\n")
+            self._logger.info("child role=%s pid=%s %s: %s", role, pid, channel, text)
+
+    def _capture_output(
+        self,
+        process: asyncio.subprocess.Process,
+        command: list[str],
+        role: str,
+    ) -> list[asyncio.Task[None]]:
+        self._logger.info("child start role=%s pid=%s command=%r", role, process.pid, command)
+        tasks: list[asyncio.Task[None]] = []
+        if process.stdout is not None:
+            tasks.append(asyncio.create_task(self._drain_output(process.stdout, role, process.pid, "stdout")))
+        if process.stderr is not None:
+            tasks.append(asyncio.create_task(self._drain_output(process.stderr, role, process.pid, "stderr")))
+        return tasks
+
+    async def _finish_output(
+        self, tasks: list[asyncio.Task[None]], role: str, pid: int, exit_code: int
+    ) -> None:
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+        status = f"exit_code={exit_code}" if exit_code >= 0 else f"signal={-exit_code}"
+        self._logger.warning("child exit role=%s pid=%s %s", role, pid, status)
 
     async def _notify(self) -> None:
         if self.state_changed is not None:
@@ -95,8 +126,8 @@ class ProcessSupervisor:
                     asyncio.create_subprocess_exec(
                         *command,
                         stdin=asyncio.subprocess.DEVNULL,
-                        stdout=asyncio.subprocess.DEVNULL,
-                        stderr=asyncio.subprocess.DEVNULL,
+                        stdout=asyncio.subprocess.PIPE,
+                        stderr=asyncio.subprocess.PIPE,
                         start_new_session=True,
                     ),
                     timeout=startup_timeout_ms / 1000,
@@ -109,6 +140,7 @@ class ProcessSupervisor:
                     argv=tuple(command),
                 )
                 self._process = process
+                self._process_output_tasks = self._capture_output(process, command, "game")
                 self.active_identity = identity
                 if presentation_controller is not None:
                     presentation_controller.clear_selection()
@@ -156,8 +188,8 @@ class ProcessSupervisor:
                     asyncio.create_subprocess_exec(
                         *command,
                         stdin=asyncio.subprocess.DEVNULL,
-                        stdout=asyncio.subprocess.DEVNULL,
-                        stderr=asyncio.subprocess.DEVNULL,
+                        stdout=asyncio.subprocess.PIPE,
+                        stderr=asyncio.subprocess.PIPE,
                         start_new_session=True,
                     ),
                     timeout=startup_timeout_ms / 1000,
@@ -171,6 +203,7 @@ class ProcessSupervisor:
                 )
                 self._shell_process = process
                 self._shell_identity = identity
+                self._shell_output_tasks = self._capture_output(process, command, "shell")
                 if self._presentation is not None and select_shell:
                     self._presentation.select_shell(process.pid)
                 self._set_input_mode(InputMode.SHELL)
@@ -186,6 +219,8 @@ class ProcessSupervisor:
 
     async def _watch_shell(self, process: asyncio.subprocess.Process) -> None:
         exit_code = await process.wait()
+        await self._finish_output(self._shell_output_tasks, "shell", process.pid, exit_code)
+        self._shell_output_tasks = []
         if self._shell_identity is not None:
             identity = self._shell_identity
             self.model.record_result(
@@ -217,6 +252,8 @@ class ProcessSupervisor:
 
     async def _watch(self, identity: LaunchIdentity, process: asyncio.subprocess.Process) -> None:
         exit_code = await process.wait()
+        await self._finish_output(self._process_output_tasks, "game", process.pid, exit_code)
+        self._process_output_tasks = []
         await self._terminate_group(identity.pgid)
         result = ProcessResult(
             token=identity.token,

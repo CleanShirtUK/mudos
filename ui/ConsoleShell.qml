@@ -212,8 +212,26 @@ Window {
         refreshCatalogue()
     }
 
-    OrbitBackdrop {
+    OrbitRenderSource {
+        id: orbitRenderSource
         anchors.fill: parent
+        visible: false
+    }
+
+    ShaderEffectSource {
+        id: orbitTexture
+        anchors.fill: parent
+        sourceItem: orbitRenderSource
+        sourceRect: Qt.rect(0, 0, root.width, root.height)
+        textureSize: Qt.size(root.width, root.height)
+        live: true
+        hideSource: true
+        visible: false
+    }
+
+    OrbitBackdropView {
+        id: orbitBackdropView
+        texture: orbitTexture
     }
 
     Rectangle {
@@ -320,6 +338,8 @@ Window {
                     focalCardWidth: Math.min(740, root.width - 100, (root.height - 248 - 88) * 1.9 * 0.67)
                     focalCardHeight: root.acceptedRecentCardHeight
                     focalScale: 0.67
+                    canonicalTexture: orbitTexture
+                    canonicalSize: Qt.size(root.width, root.height)
                     onLaunchRequested: root.launchGame(game)
                     Behavior on opacity { NumberAnimation { duration: 220 } }
                     Behavior on scale { NumberAnimation { duration: 220 } }

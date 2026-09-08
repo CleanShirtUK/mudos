@@ -7,6 +7,8 @@ Item {
     property real focalCardWidth: 760
     property real focalCardHeight: 500
     property real focalScale: 1
+    property var canonicalTexture
+    property size canonicalSize: Qt.size(1280, 720)
     signal launchRequested(var game)
 
     Text {
@@ -33,6 +35,8 @@ Item {
                 focused: index === selectedIndex
                 showAction: false
                 homeCard: true
+                canonicalTexture: recentHome.canonicalTexture
+                canonicalSize: recentHome.canonicalSize
                 focalScale: recentHome.focalScale
                 width: index === selectedIndex
                        ? focalCardWidth

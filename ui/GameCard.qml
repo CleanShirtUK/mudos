@@ -8,6 +8,8 @@ Rectangle {
     property bool compact: false
     property bool showAction: false
     property bool homeCard: false
+    property var canonicalTexture
+    property size canonicalSize: Qt.size(1280, 720)
     property real focalScale: 1
     readonly property bool recentFocal: homeCard && focused
     readonly property real focalMargin: 30 * focalScale
@@ -21,6 +23,21 @@ Rectangle {
     border.color: focused ? "#e0c5ff" : "#455274"
     border.width: focused ? 3 : 1
     clip: true
+
+    GlassSurface {
+        anchors.fill: parent
+        visible: card.homeCard && card.focused
+        canonicalTexture: card.canonicalTexture
+        canonicalSize: card.canonicalSize
+        cornerRadius: card.radius
+        refractionPixels: 80
+        dispersionIor: 0.0175
+        diffusionPixels: 5
+        transmission: 0.75
+        bevelWidthPx: 10
+        bulgeStrength: 100.0
+        diagnosticMode: 0
+    }
 
     Rectangle {
         x: recentFocal ? focalMargin : 14
