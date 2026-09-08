@@ -25,6 +25,9 @@ Rectangle {
     // Focal diagnostic stages: 0 neutral, then transmission, diffusion, bevel,
     // bulge, refraction, dispersion, and edge lighting.
     property int opticsStage: -1
+    property real presentationProgress: recentFocal ? 1 : 0
+    property real focalChromeOpacity: presentationProgress
+    property real compactEndpointWidth: 0
     property point sceneOriginOverride: canonicalSceneOrigin
     property size sceneSizeOverride: Qt.size(width, height)
     property point liveSceneOrigin: Qt.point(0, 0)
@@ -48,8 +51,13 @@ Rectangle {
     readonly property bool recentFocal: homeCard && focused
     readonly property string presentationGameId: presentationId || (game ? String(game.game_id) : "")
     readonly property real focalMargin: 30 * focalScale * uiScale
+    readonly property real compactMargin: 14 * uiScale
     readonly property real artworkHeight: height - 2 * focalMargin
     readonly property real artworkWidth: artworkHeight / 1.5
+    readonly property real compactArtworkWidth: compactEndpointWidth > 0
+        ? compactEndpointWidth - 28 * uiScale : width - 28 * uiScale
+    readonly property real compactArtworkHeight: compactArtworkWidth * 1.5
+    function mix(a, b, amount) { return a + (b - a) * amount }
     function focusedColor(color) {
         return Qt.rgba(color.r * focusBrightness, color.g * focusBrightness,
                        color.b * focusBrightness, color.a)
@@ -76,7 +84,7 @@ Rectangle {
         id: glassSurface
         anchors.fill: parent
         visible: card.homeCard
-        debugLabel: card.opticsStage >= 0 ? "focal-optics-stage-" + card.opticsStage : ""
+        debugLabel: ""
         debugCoordinateRoot: card.canonicalCoordinateRoot
         canonicalTexture: card.canonicalTexture
         canonicalSize: card.canonicalSize
@@ -142,7 +150,7 @@ Rectangle {
             if (card.identitySampling || card.liveSceneCoordinates)
                 card.liveSceneOrigin = card.actualGlassSurface.mapToItem(
                     card.canonicalCoordinateRoot, 0, 0)
-            if (card.recentFocal) {
+            if (card.presentationProgress > 0) {
                 var playOrigin = playButton.mapToItem(card, 0, 0)
                 card.livePlayOrigin = Qt.vector2d(playOrigin.x, playOrigin.y)
             }
@@ -152,13 +160,15 @@ Rectangle {
 
     Rectangle {
         id: artworkFrame
-        x: recentFocal ? focalMargin : 14 * uiScale
-        y: recentFocal ? focalMargin : 14 * uiScale
-        width: recentFocal ? artworkWidth : parent.width - 28 * uiScale
-        height: recentFocal ? artworkHeight : width * 1.5
-        property real artworkRadius: recentFocal ? 18 * focalScale * uiScale : 10 * uiScale
+        x: card.mix(compactMargin, focalMargin, card.presentationProgress)
+        y: card.mix(compactMargin, focalMargin, card.presentationProgress)
+        width: card.mix(compactArtworkWidth, artworkWidth, card.presentationProgress)
+        height: card.mix(compactArtworkHeight, artworkHeight, card.presentationProgress)
+        property real artworkRadius: card.mix(10 * uiScale, 18 * focalScale * uiScale,
+                                              card.presentationProgress)
         property real artworkBorderAlpha: 0.15
         radius: artworkRadius
+        z: 2
             color: recentFocal || card.symbolicArtwork || card.stackedGlass
                 ? luluPalette.transparent : luluPalette.artworkSurface
         clip: true
@@ -206,7 +216,9 @@ Rectangle {
     }
 
     Item {
-        visible: recentFocal
+        visible: card.focalChromeOpacity > 0
+        opacity: card.focalChromeOpacity
+        z: 1
         x: focalMargin + artworkWidth + focalMargin
         y: focalMargin
         width: parent.width - x - focalMargin
@@ -253,7 +265,7 @@ Rectangle {
 
             PlayGlassSurface {
                 anchors.fill: parent
-                visible: card.recentFocal
+                visible: card.presentationProgress > 0
                 canonicalTexture: card.canonicalTexture
                 canonicalSize: card.canonicalSize
                 cardOrigin: card.canonicalTexture
@@ -285,7 +297,8 @@ Rectangle {
     }
 
     Column {
-        visible: !recentFocal
+        visible: card.presentationProgress < 1
+        opacity: 1 - card.presentationProgress
         x: 14 * uiScale
         y: 14 * uiScale + (parent.width - 28 * uiScale) * 1.5
         width: parent.width - 28 * uiScale
