@@ -4,6 +4,8 @@ Item {
     property string title: ""
     property string description: ""
     property real uiScale: 1
+    property var typography
+    property var luluPalette
 
     Column {
         x: 0
@@ -13,16 +15,19 @@ Item {
         Text {
             anchors.horizontalCenter: parent.horizontalCenter
             text: title.toUpperCase()
-            color: "#eadcff"
-            font.pixelSize: 26 * uiScale
+            color: luluPalette.headingAccent
+            font.family: typography ? typography.displayFamily : "Zalando Sans Condensed Black"
+            font.weight: typography ? typography.displayWeight : Font.Black
+            font.pixelSize: typography ? typography.size("section", 26) : 26 * uiScale
             font.letterSpacing: 4 * uiScale
         }
 
         Text {
             anchors.horizontalCenter: parent.horizontalCenter
             text: description
-            color: "#9aa8c2"
-            font.pixelSize: 22 * uiScale
+            color: luluPalette.mutedText
+            font.family: typography ? typography.interfaceFamily : "JetBrains Mono"
+            font.pixelSize: typography ? typography.size("secondary", 22) : 22 * uiScale
         }
     }
 }

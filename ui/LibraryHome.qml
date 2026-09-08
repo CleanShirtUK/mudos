@@ -2,6 +2,8 @@ import QtQuick
 
 Item {
     property real cardHeight: 0
+    property var typography
+    property var luluPalette
     property string transitionState: "RESTING"
     property real uiScale: 1
     readonly property string navigationObject: "library"
@@ -15,8 +17,8 @@ Item {
         width: cardHeight * libraryGameCardAspectRatio
         height: cardHeight
         radius: 18 * uiScale
-        color: "#1b2a4a"
-        border.color: "#6675ac"
+        color: luluPalette.libraryCardSurface
+        border.color: luluPalette.libraryBorder
         border.width: uiScale
 
         Column {
@@ -26,15 +28,19 @@ Item {
             Text {
                 anchors.horizontalCenter: parent.horizontalCenter
                 text: "[ ]"
-                color: "#f1f3fb"
-                font.pixelSize: Math.min(100 * uiScale, libraryHomeCard.width * 0.45)
+                color: luluPalette.primaryText
+                font.family: typography ? typography.displayFamily : "Zalando Sans Condensed Black"
+                font.weight: typography ? typography.displayWeight : Font.Black
+                font.pixelSize: Math.min(typography ? typography.size("display", 100) : 100 * uiScale,
+                                          libraryHomeCard.width * 0.45)
             }
 
             Text {
                 anchors.horizontalCenter: parent.horizontalCenter
                 text: "All Games"
-                color: "#f1f3fb"
-                font.pixelSize: 22 * uiScale
+                color: luluPalette.primaryText
+                font.family: typography ? typography.interfaceFamily : "JetBrains Mono"
+                font.pixelSize: typography ? typography.size("body", 22) : 22 * uiScale
             }
         }
 

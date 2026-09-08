@@ -1,0 +1,28 @@
+import QtQuick
+
+QtObject {
+    readonly property color primaryText: "#ffffff"
+    readonly property color secondaryText: "#c5cee2"
+    readonly property color mutedText: "#9aa8c2"
+    readonly property color selectedText: "#ffffff"
+    readonly property color accent: "#e0c5ff"
+    readonly property color focusIndicator: "#e0c5ff"
+    readonly property color warning: "#e0c5ff"
+    readonly property color glassTint: "#1d2a49"
+    readonly property color glassBorder: "#455274"
+    readonly property color backdrop: "#060b16"
+    readonly property color navigationText: "#8492ad"
+    readonly property color headingAccent: "#eadcff"
+    readonly property color cardSurface: "#182540"
+    readonly property color focusedCardSurface: "#283761"
+    readonly property color actionSurface: "#394b78"
+    readonly property color actionText: "#f1e7ff"
+    readonly property color artworkSurface: "#10182b"
+    readonly property color librarySurface: "#14213b"
+    readonly property color libraryCardSurface: "#1b2a4a"
+    readonly property color libraryBorder: "#6675ac"
+    readonly property color libraryHighlight: "#7884c6"
+    readonly property color transparent: "transparent"
+    readonly property color scrollFadeStart: "#0014213b"
+    readonly property color scrollFadeEnd: "#e614213b"
+}

@@ -5,7 +5,7 @@ Window {
     id: root
     visible: true
     visibility: Window.FullScreen
-    color: "#060b16"
+    color: luluPalette.backdrop
     flags: Qt.FramelessWindowHint
 
     property var domains: ["System", "Store", "Library", "Recent"]
@@ -14,6 +14,16 @@ Window {
     readonly property real referenceHeight: 720
     readonly property real uiScale: Math.min(width / referenceWidth, height / referenceHeight)
     function design(value) { return value * uiScale }
+
+    Typography {
+        id: typography
+        uiScale: root.uiScale
+    }
+
+    LuluPalette {
+        id: luluPalette
+    }
+
     readonly property real activeHeadingHeight: design(37)
     readonly property real headingCardGap: design(21)
     readonly property real homeHintTopY: height - design(45)
@@ -242,12 +252,14 @@ Window {
     OrbitBackdropView {
         id: orbitBackdropView
         texture: orbitTexture
+        z: 0
     }
 
     Rectangle {
         id: inputSurface
         anchors.fill: parent
-        color: "transparent"
+        z: 10
+        color: luluPalette.transparent
         focus: true
 
         Keys.onPressed: function(event) {
@@ -309,9 +321,11 @@ Window {
                         required property int index
                         y: root.selectedDomainY + root.domainOffset(index) * root.design(42)
                         text: root.domains[index]
-                        color: index === root.domainIndex ? "#f0dcff" : "#8290aa"
-                        font.pixelSize: root.design(index === root.domainIndex ? 31 : 22)
-                        font.letterSpacing: root.design(3)
+                        color: luluPalette.selectedText
+                        font.family: typography.displayFamily
+                        font.weight: typography.displayWeight
+                        font.pixelSize: typography.size("display", 34 * 0.67)
+                        font.letterSpacing: 0
                         opacity: index === root.domainIndex ? 1 : 0.58
                         scale: index === root.domainIndex ? 1.05 : 1
                         Behavior on color { ColorAnimation { duration: 160 } }
@@ -325,8 +339,9 @@ Window {
                 x: root.design(76)
                 y: parent.height * 0.03
                 text: "HOME"
-                color: "#8492ad"
-                font.pixelSize: root.design(14)
+                color: luluPalette.navigationText
+                font.family: typography.interfaceFamily
+                font.pixelSize: typography.size("section", 14)
                 font.letterSpacing: root.design(4)
                 opacity: 0.8
             }
@@ -349,6 +364,8 @@ Window {
                     focalCardHeight: root.acceptedRecentCardHeight
                      focalScale: 0.67
                      uiScale: root.uiScale
+                     typography: typography
+                     luluPalette: luluPalette
                     canonicalTexture: orbitTexture
                     canonicalCoordinateRoot: orbitRenderSource
                     canonicalSize: Qt.size(root.width, root.height)
@@ -364,6 +381,8 @@ Window {
                     scale: visible ? 1 : 0.94
                      cardHeight: root.acceptedRecentCardHeight
                      uiScale: root.uiScale
+                     typography: typography
+                     luluPalette: luluPalette
                     transitionState: root.libraryTransitionState
                     onOpenRequested: root.activate()
                     Behavior on opacity { NumberAnimation { duration: 220 } }
@@ -377,6 +396,8 @@ Window {
                     scale: visible ? 1 : 0.94
                      title: root.domains[root.domainIndex]
                      uiScale: root.uiScale
+                     typography: typography
+                     luluPalette: luluPalette
                     description: root.domainIndex === 1 ? "Acquisition space is not implemented" : "Platform controls are not implemented"
                     Behavior on opacity { NumberAnimation { duration: 220 } }
                     Behavior on scale { NumberAnimation { duration: 220 } }
@@ -394,6 +415,8 @@ Window {
             transitionState: root.libraryTransitionState
             returnState: root.space === "library" ? "EXPANDED" : "RESTING"
             uiScale: root.uiScale
+            typography: typography
+            luluPalette: luluPalette
             onCollectionChanged: {
                 root.collectionIndex = index
                 root.refreshLibrary()
@@ -419,8 +442,9 @@ Window {
                         : root.domainIndex === 2
                           ? "UP / DOWN  Navigate    A  Open Library"
                           : "UP / DOWN  Navigate    A  Select"
-                color: "#8492ad"
-                font.pixelSize: root.design(14)
+                color: luluPalette.navigationText
+                font.family: typography.interfaceFamily
+                font.pixelSize: typography.size("hint", 14)
                 font.letterSpacing: root.design(1)
                 elide: Text.ElideRight
             }
@@ -430,8 +454,9 @@ Window {
                 width: parent.width * 0.36
                 anchors.verticalCenter: parent.verticalCenter
                 text: root.message
-                color: "#e0c5ff"
-                font.pixelSize: 16
+                color: luluPalette.accent
+                font.family: typography.interfaceFamily
+                font.pixelSize: typography.size("secondary", 16)
                 horizontalAlignment: Text.AlignRight
                 elide: Text.ElideRight
             }

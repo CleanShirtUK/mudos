@@ -14,6 +14,8 @@ Rectangle {
     property size canonicalSize: Qt.size(1280, 720)
     property real focalScale: 1
     property real uiScale: 1
+    property var typography
+    property var luluPalette
     readonly property bool recentFocal: homeCard && focused
     readonly property string presentationGameId: String(game.game_id)
     readonly property real focalMargin: 30 * focalScale * uiScale
@@ -31,8 +33,8 @@ Rectangle {
     implicitWidth: recentFocal ? 1100 * uiScale : (compact ? 260 : 210) * uiScale
     implicitHeight: recentFocal ? 560 * uiScale : (compact ? 430 : 330) * uiScale
     radius: recentFocal ? 28 * focalScale * uiScale : (compact ? 16 : 18) * uiScale
-    color: recentFocal ? "#1d2a49" : (focused ? "#283761" : "#182540")
-    border.color: focused ? "#e0c5ff" : "#455274"
+    color: recentFocal ? luluPalette.glassTint : (focused ? luluPalette.focusedCardSurface : luluPalette.cardSurface)
+    border.color: focused ? luluPalette.focusIndicator : luluPalette.glassBorder
     border.width: (focused ? 3 : 1) * uiScale
     clip: true
 
@@ -68,7 +70,7 @@ Rectangle {
         property real artworkRadius: recentFocal ? 18 * focalScale * uiScale : 10 * uiScale
         property real artworkBorderAlpha: 0.15
         radius: artworkRadius
-        color: recentFocal ? "transparent" : "#10182b"
+            color: recentFocal ? luluPalette.transparent : luluPalette.artworkSurface
         clip: true
 
         Image {
@@ -112,8 +114,10 @@ Rectangle {
             id: focalTitle
             width: parent.width
             text: card.game.title
-            color: "#f1f3fb"
-            font.pixelSize: 34 * focalScale * card.uiScale
+            color: card.luluPalette.primaryText
+            font.family: card.typography ? card.typography.displayFamily : "Zalando Sans Condensed Black"
+            font.weight: card.typography ? card.typography.displayWeight : Font.Black
+            font.pixelSize: card.typography ? card.typography.size("display", 34 * focalScale) : 34 * focalScale * card.uiScale
             wrapMode: Text.WordWrap
             maximumLineCount: 3
             elide: Text.ElideRight
@@ -125,8 +129,9 @@ Rectangle {
             width: parent.width
             y: focalTitle.height + 22 * focalScale * card.uiScale
             text: "Last played " + Qt.formatDateTime(new Date(Number(card.game.last_played) * 1000), "d MMM yyyy")
-            color: "#c5cee2"
-            font.pixelSize: 17 * focalScale * card.uiScale
+            color: card.luluPalette.secondaryText
+            font.family: card.typography ? card.typography.interfaceFamily : "JetBrains Mono"
+            font.pixelSize: card.typography ? card.typography.size("secondary", 17 * focalScale) : 17 * focalScale * card.uiScale
             elide: Text.ElideRight
         }
 
@@ -137,8 +142,8 @@ Rectangle {
             anchors.bottom: parent.bottom
             height: 82 * focalScale * card.uiScale
             radius: 20 * focalScale * card.uiScale
-            color: "#394b78"
-            border.color: "#e0c5ff"
+            color: card.luluPalette.actionSurface
+            border.color: card.luluPalette.focusIndicator
             border.width: 2 * card.uiScale
 
             PlayGlassSurface {
@@ -165,8 +170,9 @@ Rectangle {
             Text {
                 anchors.centerIn: parent
                 text: "A  Play"
-                color: "#f1e7ff"
-                font.pixelSize: 28 * focalScale * card.uiScale
+                color: card.luluPalette.actionText
+                font.family: card.typography ? card.typography.interfaceFamily : "JetBrains Mono"
+                font.pixelSize: card.typography ? card.typography.size("control", 28 * focalScale) : 28 * focalScale * card.uiScale
             }
         }
     }
@@ -181,8 +187,11 @@ Rectangle {
         Text {
             width: parent.width
             text: card.game.title
-            color: "#f1f3fb"
-            font.pixelSize: (card.compact ? 14 : 16) * card.uiScale
+            color: card.luluPalette.primaryText
+            font.family: card.typography ? card.typography.interfaceFamily : "JetBrains Mono"
+            font.pixelSize: card.typography
+                ? card.typography.size("body", card.compact ? 14 * 0.8 : 16)
+                : (card.compact ? 14 * 0.8 : 16) * card.uiScale
             wrapMode: Text.WordWrap
             maximumLineCount: 2
             elide: Text.ElideRight

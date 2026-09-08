@@ -1,0 +1,16 @@
+pkgname=ttf-zalando-sans
+pkgver=1.7
+pkgrel=1
+pkgdesc='Zalando Sans Condensed Black display typeface'
+arch=('any')
+license=('OFL-1.1')
+url='https://github.com/zalando/sans'
+source=("https://github.com/zalando/sans/releases/download/${pkgver}/sans-${pkgver}.zip")
+sha256sums=('bf14085831247fe8a13e91d4dbe1f2a5dc0dfcd0f8d7243f780648f521f1c2d0')
+
+package() {
+    install -Dm644 "${srcdir}/sans-${pkgver}/fonts/otf/ZalandoSans-CondensedBlack.otf" \
+        "${pkgdir}/usr/share/fonts/OTF/ZalandoSans-CondensedBlack.otf"
+    install -Dm644 "${srcdir}/sans-${pkgver}/OFL.txt" \
+        "${pkgdir}/usr/share/licenses/${pkgname}/OFL.txt"
+}

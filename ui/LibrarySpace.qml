@@ -9,6 +9,8 @@ Item {
     property string transitionState: "RESTING"
     property string returnState: "RESTING"
     property real uiScale: 1
+    property var typography
+    property var luluPalette
     readonly property string navigationObject: "library"
     readonly property real surfaceMargin: 44 * uiScale
     readonly property real gridGap: 18 * uiScale
@@ -29,7 +31,7 @@ Item {
 
     Rectangle {
         anchors.fill: parent
-        color: "#060b16"
+        color: luluPalette.backdrop
         opacity: 0.96
     }
 
@@ -39,9 +41,9 @@ Item {
         width: parent.width - 152 * uiScale
         height: parent.height - 128 * uiScale
         radius: 28 * uiScale
-        color: "#14213b"
+        color: luluPalette.librarySurface
         opacity: 0.82
-        border.color: "#7884c6"
+        border.color: luluPalette.libraryHighlight
         border.width: uiScale
     }
 
@@ -49,9 +51,11 @@ Item {
         x: 76 * uiScale + surfaceMargin
         y: 96 * uiScale
         text: "LIBRARY"
-        color: "#eadcff"
-        font.pixelSize: 30 * uiScale
-        font.letterSpacing: 5
+        color: luluPalette.headingAccent
+        font.family: typography ? typography.displayFamily : "Zalando Sans Condensed Black"
+        font.weight: typography ? typography.displayWeight : Font.Black
+        font.pixelSize: typography ? typography.size("section", 30) : 30 * uiScale
+        font.letterSpacing: 5 * uiScale
     }
 
     Row {
@@ -66,8 +70,9 @@ Item {
                 required property int index
                 required property string modelData
                 text: modelData
-                color: index === collectionIndex ? "#f0dcff" : "#8c98b6"
-                font.pixelSize: 20 * uiScale
+                color: index === collectionIndex ? luluPalette.selectedText : luluPalette.navigationText
+                font.family: typography ? typography.interfaceFamily : "JetBrains Mono"
+                font.pixelSize: typography ? typography.size("body", 20) : 20 * uiScale
                 font.bold: index === collectionIndex
 
                 Rectangle {
@@ -77,7 +82,7 @@ Item {
                     anchors.top: parent.bottom
                     anchors.topMargin: 12 * uiScale
                     height: 2 * uiScale
-                    color: collectionFocus ? "#e0c5ff" : "#7884c6"
+                    color: collectionFocus ? luluPalette.focusIndicator : luluPalette.libraryHighlight
                 }
 
                 MouseArea {
@@ -93,8 +98,9 @@ Item {
         y: 206 * uiScale
         visible: libraryGames.length === 0
         text: "No installed launchable games"
-        color: "#9aa8c2"
-        font.pixelSize: 24 * uiScale
+        color: luluPalette.mutedText
+        font.family: typography ? typography.interfaceFamily : "JetBrains Mono"
+        font.pixelSize: typography ? typography.size("secondary", 24) : 24 * uiScale
     }
 
     Item {
@@ -129,6 +135,8 @@ Item {
                         focused: index === selectedIndex && !collectionFocus
                         compact: true
                         uiScale: librarySpace.uiScale
+                        typography: librarySpace.typography
+                        luluPalette: librarySpace.luluPalette
                         showAction: false
 
                         MouseArea {
@@ -147,8 +155,8 @@ Item {
             height: 52 * uiScale
             visible: gridContentHeight + gameGrid.y > parent.height
             gradient: Gradient {
-                GradientStop { position: 0.0; color: "#0014213b" }
-                GradientStop { position: 1.0; color: "#e614213b" }
+                GradientStop { position: 0.0; color: luluPalette.scrollFadeStart }
+                GradientStop { position: 1.0; color: luluPalette.scrollFadeEnd }
             }
         }
     }

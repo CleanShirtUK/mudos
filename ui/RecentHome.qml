@@ -13,6 +13,8 @@ Item {
     property var canonicalCoordinateRoot
     property size canonicalSize: Qt.size(1280, 720)
     property real uiScale: 1
+    property var typography
+    property var luluPalette
     readonly property real compactCardWidth: Math.min(160 * uiScale, focalCardHeight * 0.62)
     signal launchRequested(var game)
 
@@ -20,8 +22,9 @@ Item {
         anchors.centerIn: parent
         visible: recentGames.length === 0
         text: "No recent games yet"
-        color: "#9aa8c2"
-        font.pixelSize: 24 * uiScale
+        color: luluPalette.mutedText
+        font.family: typography ? typography.interfaceFamily : "JetBrains Mono"
+        font.pixelSize: typography ? typography.size("body", 24) : 24 * uiScale
     }
 
     Item {
@@ -47,6 +50,8 @@ Item {
                 canonicalSize: recentHome.canonicalSize
                 focalScale: recentHome.focalScale
                 uiScale: recentHome.uiScale
+                typography: recentHome.typography
+                luluPalette: recentHome.luluPalette
                 width: index === selectedIndex
                        ? focalCardWidth
                        : recentHome.compactCardWidth

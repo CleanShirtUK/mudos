@@ -34,6 +34,25 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertIn("signal collectionChanged", library_space)
         self.assertIn("signal launchRequested", library_space)
 
+    def test_typography_uses_central_semantic_families(self) -> None:
+        typography = (ROOT / "ui" / "Typography.qml").read_text()
+        self.assertIn('displayFamily: "Zalando Sans Condensed Black"', typography)
+        self.assertIn("displayWeight: Font.Black", typography)
+        self.assertIn('interfaceFamily: "JetBrains Mono"', typography)
+        self.assertIn("function size(role, value)", typography)
+        for filename in ("ConsoleShell.qml", "GameCard.qml", "LibraryHome.qml", "LibrarySpace.qml", "PlaceholderHome.qml", "RecentHome.qml"):
+            self.assertIn("typography", (ROOT / "ui" / filename).read_text())
+
+    def test_ui_palette_is_semantic_and_centralized(self) -> None:
+        palette = (ROOT / "ui" / "LuluPalette.qml").read_text()
+        for role in ("primaryText", "secondaryText", "mutedText", "selectedText", "accent",
+                     "focusIndicator", "warning", "glassTint", "glassBorder", "backdrop"):
+            self.assertIn("property color " + role, palette)
+        for filename in ("ConsoleShell.qml", "GameCard.qml", "RecentHome.qml", "LibraryHome.qml", "LibrarySpace.qml", "PlaceholderHome.qml"):
+            component = (ROOT / "ui" / filename).read_text()
+            self.assertIn("luluPalette", component)
+            self.assertNotRegex(component, r'(?m)^\s*(?:border\.)?color:\s*"#')
+
     def test_home_uses_one_fixed_content_stage_and_compact_library_object(self) -> None:
         self.assertIn("readonly property real headingCardGap: design(21)", QML)
         self.assertIn("readonly property real homeHintTopY: height - design(45)", QML)
@@ -99,7 +118,8 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertIn("property vector2d artworkSize", game_card)
         self.assertIn("float pixelWidth = borderWidthPx / min(artworkSize.x, artworkSize.y)", artwork_shader)
         self.assertIn("float border = smoothstep", artwork_shader)
-        self.assertIn('color: recentFocal ? "transparent" : "#10182b"', game_card)
+        self.assertIn("color: recentFocal ? luluPalette.transparent : luluPalette.artworkSurface", game_card)
+        self.assertIn('card.compact ? 14 * 0.8 : 16', game_card)
         self.assertIn("sourceItem: artworkSource", game_card)
         self.assertIn("hideSource: true", game_card)
         self.assertIn("sourceItem: artworkSource\n            hideSource: true\n            visible: false", game_card)
