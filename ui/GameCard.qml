@@ -34,7 +34,7 @@ Rectangle {
         dispersionIor: 0.0175
         diffusionPixels: 5
         transmission: 0.75
-        bevelWidthPx: 10
+        bevelWidthPx: 3
         bulgeStrength: 100.0
         // Retained as a disabled experiment; scene-derived illumination is not material.
         sceneLightStrength: 0
@@ -45,12 +45,15 @@ Rectangle {
     }
 
     Rectangle {
+        id: artworkFrame
         x: recentFocal ? focalMargin : 14
         y: recentFocal ? focalMargin : 14
         width: recentFocal ? artworkWidth : parent.width - 28
         height: recentFocal ? artworkHeight : width * 1.5
-        radius: recentFocal ? 18 * focalScale : 0
-        color: "#10182b"
+        property real artworkRadius: recentFocal ? 18 * focalScale : 0
+        property real artworkBorderAlpha: 0.15
+        radius: artworkRadius
+        color: recentFocal ? "transparent" : "#10182b"
         clip: recentFocal
 
         Image {
@@ -67,12 +70,16 @@ Rectangle {
             anchors.fill: parent
             sourceItem: artworkSource
             hideSource: true
+            visible: false
         }
 
         ShaderEffect {
             anchors.fill: parent
             property var source: artworkTexture
-            property real cornerRadius: recentFocal ? 18 * focalScale / Math.min(width, height) : 0
+            property real cornerRadius: artworkFrame.artworkRadius / Math.min(width, height)
+            property vector2d artworkSize: Qt.vector2d(width, height)
+            property real borderAlpha: artworkFrame.artworkBorderAlpha
+            property int diagnosticMode: 0
             opacity: card.focused ? 1 : 0.68
             fragmentShader: "shaders/card-rounded.frag.qsb"
         }
@@ -117,6 +124,21 @@ Rectangle {
             color: "#394b78"
             border.color: "#e0c5ff"
             border.width: 2
+
+            PlayGlassSurface {
+                anchors.fill: parent
+                visible: card.recentFocal
+                canonicalTexture: card.canonicalTexture
+                cardOrigin: card.canonicalTexture
+                    ? Qt.vector2d(card.mapToItem(card.canonicalTexture, 0, 0).x,
+                                  card.mapToItem(card.canonicalTexture, 0, 0).y)
+                    : Qt.vector2d(0, 0)
+                cardSize: Qt.size(card.width, card.height)
+                cardRadius: card.radius
+                playOrigin: Qt.vector2d(playButton.mapToItem(card, 0, 0).x,
+                                        playButton.mapToItem(card, 0, 0).y)
+                diagnosticMode: 0
+            }
 
             Text {
                 anchors.centerIn: parent

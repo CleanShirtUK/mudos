@@ -40,7 +40,7 @@ The current Recent focal material is the accepted HOST PROVEN baseline. These
 values were physically reviewed on the host test environment only; they are
 not BC-250 proven:
 
-- `bevelWidthPx`: `10`
+- `bevelWidthPx`: `3`
 - `bulgeStrength`: `100`
 - refraction scale: `80 px`
 - wavelength IOR offsets: red `ior - 0.0175`, green `ior`, blue `ior + 0.0175`
@@ -58,9 +58,22 @@ finite-difference gradient and Snell pipeline. The material boundary is an
 antialiased rounded-box mask composited over the untouched canonical backdrop.
 
 Lighting is limited to the accepted geometry-derived directional bevel response:
-it is restricted to the existing 10 px bevel, peaks at the top-right, falls to
+it is restricted to the existing 3 px bevel, peaks at the top-right, falls to
 zero at the top-left and bottom-right, and contributes nothing on the left or
 bottom edges. Play glass is intentionally not part of this baseline.
+
+The accepted focal artwork path is `Image -> ShaderEffectSource` with
+`hideSource: true` and `visible: false` on the source texture item, followed by
+the sole visible rounded `ShaderEffect`. Its radius comes from the focal
+artwork geometry, with derivative antialiasing and a subtle neutral `1 px`
+border at `0.15` alpha.
+
+The accepted Play control is a separate analytical stacked-material consumer.
+It does not capture or reroute the focal card. It evaluates the card material at
+displaced scene coordinates, then applies its own rounded premultiplied mask.
+Play uses no optical bevel, bulge strength `20`, refraction `40 px`, dispersion
+`IOR +/- 0.0175`, constant diffusion `5 px`, transmission `0.82`, and
+directional lighting `0.02`.
 
 ## Qt Quick Optical Layer
 
@@ -80,7 +93,8 @@ prefix and binding-1 sampler, then follows this sequence:
 Dispersion, diffusion, neutral transmission, the accepted surface profile, and
 directional bevel lighting are enabled in the HOST baseline above. Tint,
 additional attenuation, glow, conventional Fresnel/specular lighting, and
-Play-layer glass remain disabled.
+Play-layer glass is enabled only through the accepted analytical Play path
+described above.
 
 The scene-derived lighting experiment is retained but disabled
 (`sceneLightStrength = 0`); it was rejected because even broad scene energy
