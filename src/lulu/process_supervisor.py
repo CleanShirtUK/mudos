@@ -246,7 +246,9 @@ class ProcessSupervisor:
                 if self._presentation is not None:
                     self._presentation.clear_selection()
                 await self._notify()
-                launch = await provider.observe_launch(request, token)
+                launch = await provider.observe_launch(
+                    request, token, orphan_watchdog=startup_timeout_ms / 1000
+                )
                 if self._presentation is not None:
                     self._presentation.select_pid(launch.title.pid)
                 self.model.primary_started(token, presentation=Presentation.GAME, input_mode=InputMode.GAME)

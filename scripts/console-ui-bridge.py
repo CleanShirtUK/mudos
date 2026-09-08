@@ -6,7 +6,7 @@ import json
 import os
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from threading import Thread
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, unquote, urlparse
 
 from dbus_next import BusType
 from dbus_next.aio import MessageBus
@@ -17,8 +17,8 @@ class ConsoleUiBridge:
         self.loop = loop
         self.consoled = consoled
 
-    def call(self, operation: asyncio.Future) -> object:
-        return asyncio.run_coroutine_threadsafe(operation, self.loop).result(timeout=15)
+    def call(self, operation: asyncio.Future, timeout: float = 15) -> object:
+        return asyncio.run_coroutine_threadsafe(operation, self.loop).result(timeout=timeout)
 
     async def list_games(self, scope: str) -> list[dict[str, object]]:
         rows = await self.consoled.call_list_games(scope)
@@ -52,11 +52,11 @@ class ApiHandler(BaseHTTPRequestHandler):
             self._respond(404, {"error": "not found"})
             return
         try:
-            game_id = path.removeprefix("/launch/")
-            token = self.bridge.call(self.bridge.launch_game(game_id))
+            game_id = unquote(path.removeprefix("/launch/"))
+            token = self.bridge.call(self.bridge.launch_game(game_id), timeout=330)
             self._respond(200, {"token": token})
         except Exception as error:  # pragma: no cover - live IPC failure path
-            self._respond(409, {"error": str(error)})
+            self._respond(409, {"error": str(error) or type(error).__name__})
 
     def log_message(self, *_args: object) -> None:
         return

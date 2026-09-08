@@ -21,7 +21,9 @@ class FakeSteamProvider:
     async def request_launch(self, app_id: str) -> SteamLaunchRequest:
         return SteamLaunchRequest(app_id, Mock())
 
-    async def observe_launch(self, request: SteamLaunchRequest, token: str) -> SteamLaunch:
+    async def observe_launch(
+        self, request: SteamLaunchRequest, token: str, orphan_watchdog: float = 300.0
+    ) -> SteamLaunch:
         await self.started.wait()
         identity = LaunchIdentity(token, 42, 42, "/games/SuperMeatBoy", ("SuperMeatBoy",))
         return SteamLaunch(request.app_id, request.launcher, identity)
