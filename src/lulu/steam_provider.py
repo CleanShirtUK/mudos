@@ -122,6 +122,16 @@ class SteamProvider:
     async def request_launch(self, app_id: str) -> SteamLaunchRequest:
         if not app_id.isdecimal() or int(app_id) < 1:
             raise ValueError("Steam AppID must be a positive integer")
+        if not self._steam_client_pids():
+            await asyncio.create_subprocess_exec(
+                self.executable,
+                "-silent",
+                stdin=asyncio.subprocess.DEVNULL,
+                stdout=asyncio.subprocess.DEVNULL,
+                stderr=asyncio.subprocess.DEVNULL,
+                start_new_session=True,
+            )
+            await self._wait_for_steam_client()
         process = await asyncio.create_subprocess_exec(
             self.executable,
             "-silent",
@@ -133,6 +143,13 @@ class SteamProvider:
             start_new_session=True,
         )
         return SteamLaunchRequest(app_id, process)
+
+    async def _wait_for_steam_client(self, timeout: float = 15.0) -> None:
+        deadline = asyncio.get_running_loop().time() + timeout
+        while not self._steam_client_pids():
+            if asyncio.get_running_loop().time() >= deadline:
+                raise TimeoutError("Steam client did not become ready")
+            await asyncio.sleep(self.poll_interval)
 
     async def observe_launch(
         self, request: SteamLaunchRequest, token: str, orphan_watchdog: float = 300.0

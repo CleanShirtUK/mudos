@@ -53,7 +53,7 @@ class ApiHandler(BaseHTTPRequestHandler):
             return
         try:
             game_id = unquote(path.removeprefix("/launch/"))
-            token = self.bridge.call(self.bridge.launch_game(game_id), timeout=330)
+            token = self.bridge.call(self.bridge.launch_game(game_id), timeout=15)
             self._respond(200, {"token": token})
         except Exception as error:  # pragma: no cover - live IPC failure path
             self._respond(409, {"error": str(error) or type(error).__name__})

@@ -59,6 +59,7 @@ class ProcessSupervisor:
         self._shell_process: asyncio.subprocess.Process | None = None
         self._shell_identity: LaunchIdentity | None = None
         self._shell_watch_task: asyncio.Task[None] | None = None
+        self._steam_launch_task: asyncio.Task[str] | None = None
 
     async def _notify(self) -> None:
         if self.state_changed is not None:
@@ -230,12 +231,28 @@ class ProcessSupervisor:
         await self._notify()
 
     async def launch_steam(self, app_id: str, startup_timeout_ms: int) -> str:
+        return await self._launch_steam(app_id, startup_timeout_ms)
+
+    def queue_steam_launch(self, app_id: str, startup_timeout_ms: int) -> str:
+        if startup_timeout_ms < 1:
+            raise ValueError("startup timeout must be positive")
+        if self.active_identity is not None or self.model.state.lifecycle.value != "shell":
+            raise ValueError("another launch owns the session")
+        token = self.model.request_launch(f"steam:{app_id}")
+        self._steam_launch_task = asyncio.create_task(self._launch_steam(app_id, startup_timeout_ms, token))
+        return token
+
+    async def _launch_steam(
+        self, app_id: str, startup_timeout_ms: int, token: str | None = None
+    ) -> str:
         if startup_timeout_ms < 1:
             raise ValueError("startup timeout must be positive")
         async with self._launch_lock:
-            if self.active_identity is not None or self.model.state.lifecycle.value != "shell":
+            if token is None and (
+                self.active_identity is not None or self.model.state.lifecycle.value != "shell"
+            ):
                 raise ValueError("another launch owns the session")
-            token = self.model.request_launch(f"steam:{app_id}")
+            token = token or self.model.request_launch(f"steam:{app_id}")
             await self._notify()
             provider = self._steam_provider or SteamProvider()
             launch: SteamLaunch | None = None
@@ -257,7 +274,7 @@ class ProcessSupervisor:
                 await self._notify()
                 self._watch_task = asyncio.create_task(self._watch_steam(provider, launch))
                 return token
-            except (OSError, asyncio.TimeoutError, ValueError) as error:
+            except (OSError, TimeoutError, ValueError) as error:
                 if launch is not None:
                     await provider.stop(launch)
                 reason = f"Steam launch failed: {error}"

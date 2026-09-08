@@ -2,7 +2,7 @@ import asyncio
 import unittest
 from pathlib import Path
 import tempfile
-from unittest.mock import Mock
+from unittest.mock import AsyncMock, Mock
 from unittest.mock import patch
 
 from lulu.console_sessiond import SessionStateModel
@@ -73,6 +73,66 @@ class SteamProviderTests(unittest.TestCase):
             self.assertEqual(session.state.lifecycle.value, "game")
             self.assertEqual(presentation.events, [("clear", None), ("game", 42)])
 
+            provider.exited.set()
+            await supervisor._watch_task
+            self.assertEqual(session.state.lifecycle.value, "shell")
+
+        asyncio.run(exercise())
+
+    def test_request_launch_starts_steam_infrastructure_before_applaunch(self) -> None:
+        async def exercise() -> None:
+            provider = SteamProvider(executable="steam", poll_interval=0)
+            launcher = Mock()
+            with patch.object(provider, "_steam_client_pids", side_effect=[[], [123]]) as clients:
+                with patch("asyncio.create_subprocess_exec", new_callable=AsyncMock, return_value=launcher) as create:
+                    request = await provider.request_launch("220780")
+
+            self.assertEqual(request.app_id, "220780")
+            self.assertEqual(create.call_count, 2)
+            self.assertEqual(create.call_args_list[0].args[:2], ("steam", "-silent"))
+            self.assertEqual(create.call_args_list[1].args[:4], ("steam", "-silent", "-applaunch", "220780"))
+            self.assertGreaterEqual(clients.call_count, 2)
+
+        asyncio.run(exercise())
+
+    def test_queued_launch_failure_returns_to_shell_asynchronously(self) -> None:
+        class FailingProvider(FakeSteamProvider):
+            async def request_launch(self, app_id: str) -> SteamLaunchRequest:
+                raise TimeoutError("Steam client did not become ready")
+
+        async def exercise() -> None:
+            session = SessionStateModel()
+            supervisor = ProcessSupervisor(session, steam_provider=FailingProvider())
+
+            token = supervisor.queue_steam_launch("220780", 1000)
+            self.assertEqual(session.state.lifecycle.value, "launch_requested")
+            with self.assertRaisesRegex(ValueError, "Steam launch failed"):
+                await supervisor._steam_launch_task
+
+            self.assertEqual(session.state.lifecycle.value, "shell")
+            self.assertEqual(session.last_result.token, token)
+            self.assertIn("Steam launch failed", session.last_failure_reason)
+
+        asyncio.run(exercise())
+
+    def test_queued_launch_returns_before_title_discovery(self) -> None:
+        async def exercise() -> None:
+            session = SessionStateModel()
+            provider = FakeSteamProvider()
+            provider.started.clear()
+            supervisor = ProcessSupervisor(session, steam_provider=provider)
+
+            token = supervisor.queue_steam_launch("40800", 1000)
+            self.assertEqual(session.state.lifecycle.value, "launch_requested")
+            await asyncio.sleep(0)
+            self.assertEqual(session.state.lifecycle.value, "starting")
+
+            provider.started.set()
+            for _ in range(10):
+                await asyncio.sleep(0)
+                if supervisor._watch_task is not None:
+                    break
+            self.assertEqual(session.state.lifecycle.value, "game")
             provider.exited.set()
             await supervisor._watch_task
             self.assertEqual(session.state.lifecycle.value, "shell")

@@ -163,9 +163,9 @@ class ConsoleSessionInterface(ServiceInterface):
             raise self._error(error) from error
 
     @method()
-    async def RequestSteamLaunch(self, app_id: "s", startup_timeout_ms: "u") -> "s":
+    def RequestSteamLaunch(self, app_id: "s", startup_timeout_ms: "u") -> "s":
         try:
-            return await self.supervisor.launch_steam(app_id, startup_timeout_ms)
+            return self.supervisor.queue_steam_launch(app_id, startup_timeout_ms)
         except ValueError as error:
             raise self._error(error) from error
 
