@@ -16,8 +16,8 @@ class GamescopeInvocation:
     output_width: int | None = None
     output_height: int | None = None
     output_refresh: int | None = None
-    nested_width: int = 1280
-    nested_height: int = 720
+    nested_width: int = 1920
+    nested_height: int = 1080
 
     @classmethod
     def from_environment(cls) -> "GamescopeInvocation":
@@ -35,8 +35,8 @@ class GamescopeInvocation:
             output_width=optional_int("LULU_OUTPUT_WIDTH"),
             output_height=optional_int("LULU_OUTPUT_HEIGHT"),
             output_refresh=optional_int("LULU_OUTPUT_REFRESH"),
-            nested_width=optional_int("LULU_NESTED_WIDTH") or 1280,
-            nested_height=optional_int("LULU_NESTED_HEIGHT") or 720,
+            nested_width=optional_int("LULU_NESTED_WIDTH") or 1920,
+            nested_height=optional_int("LULU_NESTED_HEIGHT") or 1080,
         )
 
     def argv(self, payload: list[str]) -> list[str]:

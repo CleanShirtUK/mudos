@@ -19,6 +19,7 @@ layout(std140, binding = 0) uniform buf {
     float u_cardEdgeLightStrength;
     vec2 u_cardEdgeLightDirection;
     vec2 u_playOrigin;
+    vec2 u_canonicalSize;
     vec2 u_playSize;
     float u_playRadius;
     float u_playIor;
@@ -78,17 +79,17 @@ vec4 filtered(vec2 uv, vec2 radiusUv)
 vec4 sampleCardMaterial(vec2 scenePosition)
 {
     vec2 cardUv = scenePosition / u_cardSize;
-    vec2 baseUv = (u_cardOrigin + scenePosition) / vec2(1280.0, 720.0);
+    vec2 baseUv = (u_cardOrigin + scenePosition) / u_canonicalSize;
     vec2 g = gradient(cardUv, u_cardSize, u_cardRadius, u_cardBevelWidth, u_cardBulgeStrength);
     vec3 normal = normalize(vec3(g * u_cardDepth, 1.0));
     vec3 incident = vec3(0, 0, -1);
     vec3 rr = refract(incident, normal, 1.0 / max(u_cardIor - u_cardDispersionIor, 1.001));
     vec3 rg = refract(incident, normal, 1.0 / max(u_cardIor, 1.001));
     vec3 rb = refract(incident, normal, 1.0 / max(u_cardIor + u_cardDispersionIor, 1.001));
-    vec2 radiusUv = vec2(u_cardDiffusionPixels) / vec2(1280.0, 720.0);
-    vec4 red = filtered(baseUv + rr.xy * u_cardRefractionPixels / vec2(1280.0, 720.0), radiusUv);
-    vec4 green = filtered(baseUv + rg.xy * u_cardRefractionPixels / vec2(1280.0, 720.0), radiusUv);
-    vec4 blue = filtered(baseUv + rb.xy * u_cardRefractionPixels / vec2(1280.0, 720.0), radiusUv);
+    vec2 radiusUv = vec2(u_cardDiffusionPixels) / u_canonicalSize;
+    vec4 red = filtered(baseUv + rr.xy * u_cardRefractionPixels / u_canonicalSize, radiusUv);
+    vec4 green = filtered(baseUv + rg.xy * u_cardRefractionPixels / u_canonicalSize, radiusUv);
+    vec4 blue = filtered(baseUv + rb.xy * u_cardRefractionPixels / u_canonicalSize, radiusUv);
     vec4 result = vec4(red.r, green.g, blue.b, green.a);
     result.rgb *= u_cardTransmission;
     float d = roundedDistance(scenePosition, u_cardSize, u_cardRadius);

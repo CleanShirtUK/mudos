@@ -8,6 +8,7 @@ layout(std140, binding = 0) uniform buf {
     float cornerRadius;
     vec2 artworkSize;
     float borderAlpha;
+    float borderWidthPx;
     int diagnosticMode;
 };
 
@@ -24,7 +25,7 @@ void main()
         return;
     }
     vec4 artwork = texture(source, qt_TexCoord0) * alpha;
-    float pixelWidth = 1.0 / min(artworkSize.x, artworkSize.y);
+    float pixelWidth = borderWidthPx / min(artworkSize.x, artworkSize.y);
     float border = smoothstep(-pixelWidth, 0.0, distance)
                  * (1.0 - smoothstep(0.0, antialiasWidth, distance));
     artwork.rgb += vec3(border * borderAlpha);

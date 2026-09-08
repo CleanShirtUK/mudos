@@ -5,6 +5,7 @@ Item {
 
     property vector2d cardOrigin
     property var canonicalTexture
+    property size canonicalSize: Qt.size(1280, 720)
     property size cardSize: Qt.size(1280, 720)
     property real cardRadius: 0
     property real cardIor: 1.08
@@ -32,6 +33,7 @@ Item {
         anchors.fill: parent
         fragmentShader: "shaders/play-stacked-glass.frag.qsb"
         property var source: root.canonicalTexture
+        property vector2d u_canonicalSize: Qt.vector2d(root.canonicalSize.width, root.canonicalSize.height)
         property vector2d u_cardOrigin: root.cardOrigin
         property vector2d u_cardSize: Qt.vector2d(root.cardSize.width, root.cardSize.height)
         property real u_cardRadius: root.cardRadius

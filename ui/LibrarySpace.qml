@@ -1,17 +1,22 @@
 import QtQuick
 
 Item {
+    id: librarySpace
     property var libraryGames: []
     property int selectedIndex: 0
     property int collectionIndex: 0
     property bool collectionFocus: false
-    readonly property int surfaceMargin: 44
-    readonly property int gridGap: 18
+    property string transitionState: "RESTING"
+    property string returnState: "RESTING"
+    property real uiScale: 1
+    readonly property string navigationObject: "library"
+    readonly property real surfaceMargin: 44 * uiScale
+    readonly property real gridGap: 18 * uiScale
     readonly property int gridColumns: 6
-    readonly property int collectionSelectorBottomY: 158
-    readonly property int currentHeaderToGridGap: 22
-    readonly property int headerToGridGap: currentHeaderToGridGap / 2
-    readonly property real usableGridWidth: parent.width - 2 * (76 + surfaceMargin)
+    readonly property real collectionSelectorBottomY: 158 * uiScale
+    readonly property real currentHeaderToGridGap: 22 * uiScale
+    readonly property real headerToGridGap: currentHeaderToGridGap / 2
+    readonly property real usableGridWidth: parent.width - 2 * (76 * uiScale + surfaceMargin)
     readonly property real libraryCardWidth: (usableGridWidth - (gridColumns - 1) * gridGap) / gridColumns
     readonly property real libraryCardHeight: libraryCardWidth * 1.55
     readonly property real gridRowStep: libraryCardHeight + gridGap
@@ -29,39 +34,40 @@ Item {
     }
 
     Rectangle {
-        x: 76
-        y: 64
-        width: parent.width - 152
-        height: parent.height - 128
-        radius: 28
+        x: 76 * uiScale
+        y: 64 * uiScale
+        width: parent.width - 152 * uiScale
+        height: parent.height - 128 * uiScale
+        radius: 28 * uiScale
         color: "#14213b"
         opacity: 0.82
         border.color: "#7884c6"
-        border.width: 1
+        border.width: uiScale
     }
 
     Text {
-        x: 76 + surfaceMargin
-        y: 96
+        x: 76 * uiScale + surfaceMargin
+        y: 96 * uiScale
         text: "LIBRARY"
         color: "#eadcff"
-        font.pixelSize: 30
+        font.pixelSize: 30 * uiScale
         font.letterSpacing: 5
     }
 
     Row {
-        x: 120
-        y: 120
-        width: parent.width - 240
-        spacing: 46
+        x: 120 * uiScale
+        y: 120 * uiScale
+        width: parent.width - 240 * uiScale
+        spacing: 46 * uiScale
 
         Repeater {
             model: ["All Games", "Steam"]
             delegate: Text {
                 required property int index
+                required property string modelData
                 text: modelData
                 color: index === collectionIndex ? "#f0dcff" : "#8c98b6"
-                font.pixelSize: 20
+                font.pixelSize: 20 * uiScale
                 font.bold: index === collectionIndex
 
                 Rectangle {
@@ -69,8 +75,8 @@ Item {
                     anchors.left: parent.left
                     anchors.right: parent.right
                     anchors.top: parent.bottom
-                    anchors.topMargin: 12
-                    height: 2
+                    anchors.topMargin: 12 * uiScale
+                    height: 2 * uiScale
                     color: collectionFocus ? "#e0c5ff" : "#7884c6"
                 }
 
@@ -83,20 +89,20 @@ Item {
     }
 
     Text {
-        x: 120
-        y: 206
+        x: 120 * uiScale
+        y: 206 * uiScale
         visible: libraryGames.length === 0
         text: "No installed launchable games"
         color: "#9aa8c2"
-        font.pixelSize: 24
+        font.pixelSize: 24 * uiScale
     }
 
     Item {
         id: gridViewport
-        x: 76 + surfaceMargin
+        x: 76 * uiScale + surfaceMargin
         y: collectionSelectorBottomY + headerToGridGap
         width: usableGridWidth
-        height: parent.height - 240
+        height: parent.height - 240 * uiScale
         clip: true
 
         Grid {
@@ -113,19 +119,21 @@ Item {
                 delegate: Item {
                     required property int index
                     required property var modelData
+                    readonly property var gameData: modelData
                     width: libraryCardWidth
                     height: libraryCardHeight
 
                     GameCard {
                         anchors.fill: parent
-                        game: modelData
+                        game: gameData
                         focused: index === selectedIndex && !collectionFocus
                         compact: true
+                        uiScale: librarySpace.uiScale
                         showAction: false
 
                         MouseArea {
                             anchors.fill: parent
-                            onClicked: launchRequested(modelData)
+                            onClicked: launchRequested(gameData)
                         }
                     }
                 }
@@ -136,7 +144,7 @@ Item {
             anchors.left: parent.left
             anchors.right: parent.right
             anchors.bottom: parent.bottom
-            height: 52
+            height: 52 * uiScale
             visible: gridContentHeight + gameGrid.y > parent.height
             gradient: Gradient {
                 GradientStop { position: 0.0; color: "#0014213b" }

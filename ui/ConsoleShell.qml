@@ -10,17 +10,23 @@ Window {
 
     property var domains: ["System", "Store", "Library", "Recent"]
     property int domainIndex: 3
-    readonly property int activeHeadingHeight: 37
-    readonly property int headingCardGap: 21
-    readonly property int homeHintTopY: height - 45
-    readonly property real acceptedRecentCardHeight: Math.min(375, (height - 248 - 88) * 0.67)
-    readonly property int homeContentOriginY: homeHintTopY - acceptedRecentCardHeight - headingCardGap
-    readonly property int selectedDomainY: homeContentOriginY - activeHeadingHeight - headingCardGap
+    readonly property real referenceWidth: 1280
+    readonly property real referenceHeight: 720
+    readonly property real uiScale: Math.min(width / referenceWidth, height / referenceHeight)
+    function design(value) { return value * uiScale }
+    readonly property real activeHeadingHeight: design(37)
+    readonly property real headingCardGap: design(21)
+    readonly property real homeHintTopY: height - design(45)
+    readonly property real acceptedRecentCardHeight: Math.min(design(375), (height - design(248 + 88)) * 0.67)
+    readonly property real homeContentOriginY: homeHintTopY - acceptedRecentCardHeight - headingCardGap
+    readonly property real selectedDomainY: homeContentOriginY - activeHeadingHeight - headingCardGap
     property int recentIndex: 0
     property int libraryIndex: 0
     property int collectionIndex: 0
     property string space: "home"
     property string libraryFocus: "games"
+    property string libraryTransitionState: "RESTING"
+    readonly property string libraryNavigationObject: "library"
     property var recentGames: []
     property var libraryGames: []
     property string message: ""
@@ -186,9 +192,11 @@ Window {
         if (domainIndex === 3) {
             launchGame(visibleRecentGame)
         } else if (domainIndex === 2) {
+            libraryTransitionState = "ACTIVATING"
             space = "library"
             libraryFocus = "games"
             libraryIndex = 0
+            libraryTransitionState = "EXPANDED"
             message = ""
         } else if (domainIndex === 1) {
             message = "Store space is not implemented"
@@ -199,8 +207,10 @@ Window {
 
     function back() {
         if (space === "library") {
+            libraryTransitionState = "ACTIVATING"
             space = "home"
             libraryFocus = "games"
+            libraryTransitionState = "RESTING"
             message = ""
         } else {
             message = ""
@@ -288,20 +298,20 @@ Window {
             visible: root.space === "home"
 
             Item {
-                x: 76
+                x: root.design(76)
                 y: 0
-                width: 250
+                width: root.design(250)
                 height: parent.height
 
                 Repeater {
                     model: root.domains
                     delegate: Text {
                         required property int index
-                        y: root.selectedDomainY + root.domainOffset(index) * 42
+                        y: root.selectedDomainY + root.domainOffset(index) * root.design(42)
                         text: root.domains[index]
                         color: index === root.domainIndex ? "#f0dcff" : "#8290aa"
-                        font.pixelSize: index === root.domainIndex ? 31 : 22
-                        font.letterSpacing: 3
+                        font.pixelSize: root.design(index === root.domainIndex ? 31 : 22)
+                        font.letterSpacing: root.design(3)
                         opacity: index === root.domainIndex ? 1 : 0.58
                         scale: index === root.domainIndex ? 1.05 : 1
                         Behavior on color { ColorAnimation { duration: 160 } }
@@ -312,21 +322,21 @@ Window {
             }
 
             Text {
-                x: 76
+                x: root.design(76)
                 y: parent.height * 0.03
                 text: "HOME"
                 color: "#8492ad"
-                font.pixelSize: 14
-                font.letterSpacing: 4
+                font.pixelSize: root.design(14)
+                font.letterSpacing: root.design(4)
                 opacity: 0.8
             }
 
             Item {
                 id: homeContent
-                x: 76
+                x: root.design(76)
                 y: root.homeContentOriginY
-                width: parent.width - 130
-                height: 340
+                width: parent.width - root.design(130)
+                height: root.design(340)
 
                 RecentHome {
                     anchors.fill: parent
@@ -335,9 +345,10 @@ Window {
                     scale: visible ? 1 : 0.94
                     recentGames: root.recentGames
                     selectedIndex: root.recentIndex
-                    focalCardWidth: Math.min(740, root.width - 100, (root.height - 248 - 88) * 1.9 * 0.67)
+                    focalCardWidth: Math.min(root.design(740), root.width - root.design(100), (root.height - root.design(248 + 88)) * 1.9 * 0.67)
                     focalCardHeight: root.acceptedRecentCardHeight
-                    focalScale: 0.67
+                     focalScale: 0.67
+                     uiScale: root.uiScale
                     canonicalTexture: orbitTexture
                     canonicalSize: Qt.size(root.width, root.height)
                     onLaunchRequested: root.launchGame(game)
@@ -350,7 +361,9 @@ Window {
                     visible: root.domainIndex === 2
                     opacity: visible ? 1 : 0
                     scale: visible ? 1 : 0.94
-                    cardHeight: root.acceptedRecentCardHeight
+                     cardHeight: root.acceptedRecentCardHeight
+                     uiScale: root.uiScale
+                    transitionState: root.libraryTransitionState
                     onOpenRequested: root.activate()
                     Behavior on opacity { NumberAnimation { duration: 220 } }
                     Behavior on scale { NumberAnimation { duration: 220 } }
@@ -361,7 +374,8 @@ Window {
                     visible: root.domainIndex === 1 || root.domainIndex === 0
                     opacity: visible ? 1 : 0
                     scale: visible ? 1 : 0.94
-                    title: root.domains[root.domainIndex]
+                     title: root.domains[root.domainIndex]
+                     uiScale: root.uiScale
                     description: root.domainIndex === 1 ? "Acquisition space is not implemented" : "Platform controls are not implemented"
                     Behavior on opacity { NumberAnimation { duration: 220 } }
                     Behavior on scale { NumberAnimation { duration: 220 } }
@@ -376,6 +390,9 @@ Window {
             selectedIndex: root.libraryIndex
             collectionIndex: root.collectionIndex
             collectionFocus: root.libraryFocus === "collection"
+            transitionState: root.libraryTransitionState
+            returnState: root.space === "library" ? "EXPANDED" : "RESTING"
+            uiScale: root.uiScale
             onCollectionChanged: {
                 root.collectionIndex = index
                 root.refreshLibrary()
@@ -388,10 +405,10 @@ Window {
             anchors.left: parent.left
             anchors.right: parent.right
             anchors.bottom: parent.bottom
-            height: 72
+            height: root.design(72)
 
             Text {
-                x: 76
+                x: root.design(76)
                 width: parent.width * 0.54
                 anchors.verticalCenter: parent.verticalCenter
                 text: root.space === "library"
@@ -402,8 +419,8 @@ Window {
                           ? "UP / DOWN  Navigate    A  Open Library"
                           : "UP / DOWN  Navigate    A  Select"
                 color: "#8492ad"
-                font.pixelSize: 14
-                font.letterSpacing: 1
+                font.pixelSize: root.design(14)
+                font.letterSpacing: root.design(1)
                 elide: Text.ElideRight
             }
 
