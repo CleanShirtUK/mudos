@@ -2,6 +2,8 @@
 
 import argparse
 import asyncio
+import logging
+import subprocess
 from dataclasses import asdict
 import os
 import json
@@ -35,6 +37,7 @@ class ConsoleSessionInterface(ServiceInterface):
         self._inputplumber = inputplumber
         self._applied_input_modes: dict[str, InputMode] = {}
         self._controller_monitor_task: asyncio.Task[None] | None = None
+        self._presentation_watchdog_task: asyncio.Task[None] | None = None
         self._bootstrap_output = os.environ.get("LULU_OUTPUT_CONNECTOR")
         self.supervisor = ProcessSupervisor(
             model,
@@ -75,6 +78,15 @@ class ConsoleSessionInterface(ServiceInterface):
 
     async def start_controller_monitor(self) -> None:
         self._controller_monitor_task = asyncio.create_task(self._monitor_controller())
+        self._presentation_watchdog_task = asyncio.create_task(self._monitor_presentation())
+
+    async def _monitor_presentation(self) -> None:
+        while True:
+            try:
+                self.supervisor.ensure_shell_presentation()
+            except (OSError, RuntimeError, TimeoutError, subprocess.SubprocessError) as error:
+                logging.getLogger("lulu.sessiond").warning("shell presentation check failed: %s", error)
+            await asyncio.sleep(0.5)
 
     def _reconcile_input_mode(
         self,
@@ -142,6 +154,10 @@ class ConsoleSessionInterface(ServiceInterface):
             self._controller_monitor_task.cancel()
             await asyncio.gather(self._controller_monitor_task, return_exceptions=True)
             self._controller_monitor_task = None
+        if self._presentation_watchdog_task is not None:
+            self._presentation_watchdog_task.cancel()
+            await asyncio.gather(self._presentation_watchdog_task, return_exceptions=True)
+            self._presentation_watchdog_task = None
 
     @method()
     def GetState(self) -> "s":
@@ -202,6 +218,7 @@ async def serve(bus_type: BusType = BusType.SESSION, bootstrap_shell: bool = Fal
 
 
 def main() -> None:
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--system-bus", action="store_true", help="Use the system D-Bus")
     parser.add_argument("--bootstrap-shell", action="store_true", help="Start the Gamescope-backed Lulu shell")

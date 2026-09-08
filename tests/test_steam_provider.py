@@ -51,6 +51,21 @@ class RecordingPresentation:
         return pid
 
 
+class DelayedPresentation:
+    def __init__(self) -> None:
+        self.process_sets: list[list[int]] = []
+
+    def clear_selection(self) -> None:
+        return
+
+    def select_pids(self, pids, timeout: float) -> int:
+        self.process_sets.append(pids())
+        return 99
+
+    def select_shell(self, pid: int) -> int:
+        return pid
+
+
 class SteamProviderTests(unittest.TestCase):
     def test_starting_retains_ownership_until_game_process_is_discovered(self) -> None:
         async def exercise() -> None:
@@ -91,7 +106,20 @@ class SteamProviderTests(unittest.TestCase):
             self.assertEqual(create.call_count, 2)
             self.assertEqual(create.call_args_list[0].args[:2], ("steam", "-silent"))
             self.assertEqual(create.call_args_list[1].args[:4], ("steam", "-silent", "-applaunch", "220780"))
+            self.assertEqual(create.call_args_list[0].kwargs["env"]["DISPLAY"], ":0")
+            self.assertEqual(create.call_args_list[1].kwargs["env"]["DISPLAY"], ":0")
             self.assertGreaterEqual(clients.call_count, 2)
+
+        asyncio.run(exercise())
+
+    def test_request_launch_rejects_existing_target_before_duplicate_submission(self) -> None:
+        async def exercise() -> None:
+            provider = SteamProvider(executable="steam")
+            with patch.object(provider, "_candidate_pids", return_value=[1234]):
+                with patch("asyncio.create_subprocess_exec", new_callable=AsyncMock) as create:
+                    with self.assertRaisesRegex(ValueError, "already running"):
+                        await provider.request_launch("15700")
+            create.assert_not_awaited()
 
         asyncio.run(exercise())
 
@@ -211,11 +239,14 @@ class SteamProviderTests(unittest.TestCase):
             session = SessionStateModel()
             provider = FakeSteamProvider()
             modes: list[InputMode] = []
+            presentation = RecordingPresentation()
             supervisor = ProcessSupervisor(
                 session,
                 steam_provider=provider,
+                presentation=presentation,
                 input_mode_changed=modes.append,
             )
+            supervisor._shell_process = Mock(pid=7)
             token = await supervisor.launch_steam("40800", 1000)
             self.assertEqual(session.state.lifecycle.value, "game")
             self.assertEqual(session.state.presentation, Presentation.GAME)
@@ -230,7 +261,50 @@ class SteamProviderTests(unittest.TestCase):
             self.assertEqual(modes, [InputMode.GAME, InputMode.SHELL])
             self.assertIsNone(supervisor.active_identity)
             self.assertEqual(session.last_result.token, token)
+            self.assertEqual(presentation.events, [("clear", None), ("game", 42), ("shell", 7)])
             self.assertEqual(session.last_result.pid, 42)
+
+        asyncio.run(exercise())
+
+    def test_target_exit_restores_shell_while_provider_remains_alive(self) -> None:
+        async def exercise() -> None:
+            session = SessionStateModel()
+            provider = FakeSteamProvider()
+            presentation = RecordingPresentation()
+            supervisor = ProcessSupervisor(session, steam_provider=provider, presentation=presentation)
+            supervisor._shell_process = Mock(pid=7)
+            token = await supervisor.launch_steam("15700", 1000)
+            provider.exited.set()
+            await supervisor._watch_task
+            self.assertEqual(session.state.lifecycle.value, "shell")
+            self.assertEqual(session.state.input_mode.value, "shell")
+            self.assertEqual(presentation.events[-1], ("shell", 7))
+            self.assertIsNone(supervisor.active_identity)
+            self.assertEqual(session.last_result.token, token)
+
+        asyncio.run(exercise())
+
+    def test_delayed_indirect_window_owner_enters_pending_before_running(self) -> None:
+        class Provider(FakeSteamProvider):
+            def presentation_pids(self, app_id: str) -> list[int]:
+                return [99]
+
+        async def exercise() -> None:
+            session = SessionStateModel()
+            states: list[str] = []
+            presentation = DelayedPresentation()
+            supervisor = ProcessSupervisor(
+                session,
+                state_changed=lambda: states.append(session.state.lifecycle.value),
+                steam_provider=Provider(),
+                presentation=presentation,
+            )
+            supervisor._shell_process = Mock(pid=7)
+            token = await supervisor.launch_steam("15700", 1000)
+            self.assertEqual(session.state.lifecycle.value, "game")
+            self.assertIn("presentation_pending", states)
+            self.assertEqual(presentation.process_sets, [[99]])
+            self.assertEqual(session.state.launch_token, token)
 
         asyncio.run(exercise())
 

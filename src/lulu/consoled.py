@@ -1,6 +1,7 @@
 """Unified game catalogue and game/content intent boundary."""
 
 import asyncio
+import logging
 
 from dbus_next import BusType, Variant
 from dbus_next.aio import MessageBus
@@ -43,6 +44,7 @@ class ConsoleCatalog:
 BUS_NAME = "org.lulu.Consoled"
 OBJECT_PATH = "/org/lulu/Console"
 INTERFACE_NAME = "org.lulu.Console"
+LOGGER = logging.getLogger("lulu.consoled")
 
 
 class ConsoleInterface(ServiceInterface):
@@ -75,6 +77,7 @@ class ConsoleInterface(ServiceInterface):
         game = games.get(game_id)
         if game is None or not game.launchable:
             raise ValueError("game is not installed and launchable")
+        LOGGER.info("launch dispatch game_id=%s provider=%s provider_id=%s", game_id, game.provider, game.provider_id)
         bus = await MessageBus(bus_type=BusType.SESSION).connect()
         introspection = await bus.introspect("org.lulu.ConsoleSessiond", "/org/lulu/ConsoleSession")
         proxy = bus.get_proxy_object("org.lulu.ConsoleSessiond", "/org/lulu/ConsoleSession", introspection)
@@ -87,6 +90,7 @@ class ConsoleInterface(ServiceInterface):
         else:
             raise ValueError(f"provider launch is unavailable: {game.provider}")
         self.catalogue.store.mark_played(game.game_id)
+        LOGGER.info("launch returned game_id=%s token=%s", game_id, token)
         bus.disconnect()
         self.CatalogueChanged()
         return token
@@ -106,6 +110,7 @@ async def serve() -> None:
 
 
 def main() -> None:
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
     asyncio.run(serve())
 
 

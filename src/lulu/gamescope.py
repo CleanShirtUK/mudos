@@ -2,10 +2,12 @@
 
 from dataclasses import dataclass
 import os
+import logging
 import re
 import subprocess
 import time
 from pathlib import Path
+from collections.abc import Callable
 
 
 @dataclass(frozen=True, slots=True)
@@ -83,6 +85,7 @@ class GamescopePresentation:
         self.display = display or os.environ.get("DISPLAY", ":0")
         self.poll_interval = poll_interval
         self.shell_window: int | None = None
+        self._logger = logging.getLogger("lulu.gamescope")
 
     def _xprop(self, *arguments: str) -> str:
         environment = os.environ.copy()
@@ -129,6 +132,7 @@ class GamescopePresentation:
 
     def select_pid(self, pid: int) -> int:
         window = self.window_for_pid(pid)
+        self._logger.info("select pid=%s window=%s", pid, window)
         self._xprop(
             "-f",
             "GAMESCOPECTRL_BASELAYER_WINDOW",
@@ -139,11 +143,46 @@ class GamescopePresentation:
         )
         return window
 
+    def window_for_pids(self, pids: list[int] | Callable[[], list[int]], timeout: float = 10.0) -> int:
+        deadline = time.monotonic() + timeout
+        while True:
+            wanted = set(pids() if callable(pids) else pids)
+            for window, _app_id, window_pid in self._focusable_windows():
+                if window_pid in wanted or any(self._is_descendant(window_pid, pid) for pid in wanted):
+                    return window
+            if time.monotonic() >= deadline:
+                raise TimeoutError(f"Gamescope window for process set {sorted(wanted)} was not found")
+            time.sleep(self.poll_interval)
+
+    def select_pids(self, pids: list[int] | Callable[[], list[int]], timeout: float = 10.0) -> int:
+        window = self.window_for_pids(pids, timeout)
+        self._logger.info("select process set=%s window=%s", pids() if callable(pids) else pids, window)
+        self._xprop(
+            "-f", "GAMESCOPECTRL_BASELAYER_WINDOW", "32c", "-set",
+            "GAMESCOPECTRL_BASELAYER_WINDOW", str(window),
+        )
+        return window
+
+    def ensure_shell(self, pid: int) -> int:
+        window = self.window_for_pid(pid)
+        try:
+            selected = self._xprop("GAMESCOPECTRL_BASELAYER_WINDOW")
+        except subprocess.CalledProcessError:
+            selected = ""
+        values = re.findall(r"0x[0-9a-fA-F]+|\d+", selected.split("=", 1)[-1])
+        current = int(values[0], 0) if values else 0
+        if current != window:
+            self._logger.info("reassert shell pid=%s window=%s previous=%s", pid, window, current)
+            self.select_pid(pid)
+        self.shell_window = window
+        return window
+
     def select_shell(self, pid: int) -> int:
         self.shell_window = self.select_pid(pid)
         return self.shell_window
 
     def clear_selection(self) -> None:
+        self._logger.info("clear selection")
         self._xprop(
             "-f",
             "GAMESCOPECTRL_BASELAYER_WINDOW",

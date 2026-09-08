@@ -21,6 +21,7 @@ class Lifecycle(StrEnum):
     SHELL = "shell"
     LAUNCH_REQUESTED = "launch_requested"
     STARTING = "starting"
+    PRESENTATION_PENDING = "presentation_pending"
     GAME = "game"
     RETURNING = "returning"
 

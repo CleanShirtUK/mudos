@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 import asyncio
+import logging
 import os
 from pathlib import Path
 import re
@@ -43,6 +44,7 @@ class SteamProvider:
     def __init__(self, executable: str = "steam", poll_interval: float = 0.1) -> None:
         self.executable = executable
         self.poll_interval = poll_interval
+        self._logger = logging.getLogger("lulu.steam-provider")
 
     def list_installed(self, roots: tuple[Path, ...] | None = None) -> list[InstalledSteamGame]:
         roots = roots or self._library_roots()
@@ -122,7 +124,14 @@ class SteamProvider:
     async def request_launch(self, app_id: str) -> SteamLaunchRequest:
         if not app_id.isdecimal() or int(app_id) < 1:
             raise ValueError("Steam AppID must be a positive integer")
-        if not self._steam_client_pids():
+        existing = self._candidate_pids(app_id)
+        if existing:
+            raise ValueError(f"Steam title is already running for AppID {app_id}: {existing}")
+        environment = os.environ.copy()
+        environment.setdefault("DISPLAY", ":0")
+        steam_pids = self._steam_client_pids()
+        self._logger.info("launch request app_id=%s steam_pids=%s", app_id, steam_pids)
+        if not steam_pids:
             await asyncio.create_subprocess_exec(
                 self.executable,
                 "-silent",
@@ -130,6 +139,7 @@ class SteamProvider:
                 stdout=asyncio.subprocess.DEVNULL,
                 stderr=asyncio.subprocess.DEVNULL,
                 start_new_session=True,
+                env=environment,
             )
             await self._wait_for_steam_client()
         process = await asyncio.create_subprocess_exec(
@@ -141,7 +151,9 @@ class SteamProvider:
             stdout=asyncio.subprocess.DEVNULL,
             stderr=asyncio.subprocess.DEVNULL,
             start_new_session=True,
+            env=environment,
         )
+        self._logger.info("launch submitted app_id=%s launcher_pid=%s", app_id, process.pid)
         return SteamLaunchRequest(app_id, process)
 
     async def _wait_for_steam_client(self, timeout: float = 15.0) -> None:
@@ -154,6 +166,7 @@ class SteamProvider:
     async def observe_launch(
         self, request: SteamLaunchRequest, token: str, orphan_watchdog: float = 300.0
     ) -> SteamLaunch:
+        self._logger.info("observe start app_id=%s token=%s watchdog=%.1f", request.app_id, token, orphan_watchdog)
         deadline = asyncio.get_running_loop().time() + orphan_watchdog
         rejected = False
         try:
@@ -176,6 +189,15 @@ class SteamProvider:
                     if not self._steam_client_pids() and not self._steam_launch_markers(request.app_id):
                         raise ValueError(f"Steam rejected launch request with status {request.launcher.returncode}")
                 if asyncio.get_running_loop().time() >= deadline:
+                    self._logger.warning(
+                        "observe timeout app_id=%s token=%s launcher_returncode=%s steam_pids=%s markers=%s candidates=%s",
+                        request.app_id,
+                        token,
+                        request.launcher.returncode,
+                        self._steam_client_pids(),
+                        self._steam_launch_markers(request.app_id),
+                        self._candidate_pids(request.app_id),
+                    )
                     raise TimeoutError(f"Steam launch became orphaned for AppID {request.app_id}")
                 await asyncio.sleep(self.poll_interval)
         finally:
@@ -244,6 +266,10 @@ class SteamProvider:
                 continue
             candidates.append(pid)
         return candidates
+
+    def presentation_pids(self, app_id: str) -> list[int]:
+        """Return current non-runtime AppID processes that may own its window."""
+        return self._candidate_pids(app_id)
 
     @staticmethod
     def _environment(pid: int) -> dict[str, str]:

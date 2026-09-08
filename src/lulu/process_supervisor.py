@@ -2,6 +2,7 @@
 
 from dataclasses import asdict, dataclass
 import asyncio
+import logging
 import os
 import signal
 import subprocess
@@ -60,6 +61,8 @@ class ProcessSupervisor:
         self._shell_identity: LaunchIdentity | None = None
         self._shell_watch_task: asyncio.Task[None] | None = None
         self._steam_launch_task: asyncio.Task[str] | None = None
+        self._logger = logging.getLogger("lulu.process-supervisor")
+        self._presentation_watchdog = 10.0
 
     async def _notify(self) -> None:
         if self.state_changed is not None:
@@ -206,6 +209,12 @@ class ProcessSupervisor:
         if self._input_mode_changed is not None:
             self._input_mode_changed(mode)
 
+    def ensure_shell_presentation(self) -> None:
+        if self.model.state.lifecycle.value != "shell":
+            return
+        if self._presentation is not None and self._shell_process is not None:
+            self._presentation.ensure_shell(self._shell_process.pid)
+
     async def _watch(self, identity: LaunchIdentity, process: asyncio.subprocess.Process) -> None:
         exit_code = await process.wait()
         await self._terminate_group(identity.pgid)
@@ -239,6 +248,7 @@ class ProcessSupervisor:
         if self.active_identity is not None or self.model.state.lifecycle.value != "shell":
             raise ValueError("another launch owns the session")
         token = self.model.request_launch(f"steam:{app_id}")
+        self._logger.info("queued steam app_id=%s token=%s timeout_ms=%s", app_id, token, startup_timeout_ms)
         self._steam_launch_task = asyncio.create_task(self._launch_steam(app_id, startup_timeout_ms, token))
         return token
 
@@ -258,16 +268,26 @@ class ProcessSupervisor:
             launch: SteamLaunch | None = None
             try:
                 request: SteamLaunchRequest = await provider.request_launch(app_id)
+                self._logger.info("steam request ready app_id=%s token=%s", app_id, token)
                 self.model.launch_starting(token)
                 self._set_input_mode(InputMode.GAME)
                 if self._presentation is not None:
                     self._presentation.clear_selection()
                 await self._notify()
                 launch = await provider.observe_launch(
-                    request, token, orphan_watchdog=startup_timeout_ms / 1000
+                    request, token
                 )
+                self._logger.info("steam target observed app_id=%s token=%s pid=%s", app_id, token, launch.title.pid)
+                self.model.primary_observed(token)
+                await self._notify()
                 if self._presentation is not None:
-                    self._presentation.select_pid(launch.title.pid)
+                    pids = getattr(provider, "presentation_pids", lambda _app_id: [launch.title.pid])
+                    if hasattr(self._presentation, "select_pids"):
+                        self._presentation.select_pids(
+                            lambda: pids(app_id), timeout=self._presentation_watchdog
+                        )
+                    else:
+                        self._presentation.select_pid(launch.title.pid)
                 self.model.primary_started(token, presentation=Presentation.GAME, input_mode=InputMode.GAME)
                 self._steam_launch = launch
                 self.active_identity = launch.title
@@ -278,6 +298,7 @@ class ProcessSupervisor:
                 if launch is not None:
                     await provider.stop(launch)
                 reason = f"Steam launch failed: {error}"
+                self._logger.warning("steam launch failed app_id=%s token=%s reason=%s", app_id, token, reason)
                 self.model.fail(token, reason)
                 self.model.record_result(ProcessResult(token, None, None, "steam", (app_id,), None, None, "start-failed", reason))
                 if self._presentation is not None and self._shell_process is not None:
@@ -290,6 +311,7 @@ class ProcessSupervisor:
     async def _watch_steam(self, provider: SteamProvider, launch: SteamLaunch) -> None:
         await provider.wait_for_exit(launch)
         identity = launch.title
+        self._logger.info("steam target exited token=%s pid=%s", identity.token, identity.pid)
         result = ProcessResult(
             token=identity.token,
             pid=identity.pid,
@@ -302,9 +324,15 @@ class ProcessSupervisor:
         )
         self.model.primary_exited(identity.token)
         self.model.record_result(result)
-        if self._presentation is not None and self._shell_process is not None:
-            self._presentation.select_shell(self._shell_process.pid)
-        self._set_input_mode(InputMode.SHELL)
+        try:
+            self._set_input_mode(InputMode.SHELL)
+            if self._presentation is not None and self._shell_process is not None:
+                self._presentation.select_shell(self._shell_process.pid)
+            self._logger.info("steam return restored shell token=%s", identity.token)
+        except Exception as error:
+            self.model.return_failed(identity.token, f"Presentation recovery failed: {error}")
+            await self._notify()
+            return
         self.model.return_complete(identity.token)
         self.active_identity = None
         self._steam_launch = None

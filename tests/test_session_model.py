@@ -33,6 +33,14 @@ class SessionModelTests(unittest.TestCase):
         session.return_complete(token)
         self.assertEqual(session.state.lifecycle, Lifecycle.SHELL)
 
+    def test_return_failure_keeps_returning_ownership(self) -> None:
+        session = SessionStateModel()
+        token = session.request_launch("game")
+        session.fail(token, "launch failed")
+        session.return_failed(token, "Presentation recovery failed: shell missing")
+        self.assertEqual(session.state.lifecycle, Lifecycle.RETURNING)
+        self.assertEqual(session.last_failure_reason, "Presentation recovery failed: shell missing")
+
     def test_invalid_started_and_exit_transitions_are_rejected(self) -> None:
         session = SessionStateModel()
         with self.assertRaises(ValueError):
@@ -41,6 +49,22 @@ class SessionModelTests(unittest.TestCase):
         session.launch_starting(token)
         with self.assertRaises(ValueError):
             session.primary_exited(token)
+
+    def test_failed_generation_cannot_reenter_starting(self) -> None:
+        session = SessionStateModel()
+        token = session.request_launch("game")
+        session.fail(token, "failed")
+        with self.assertRaises(ValueError):
+            session.launch_starting(token)
+
+    def test_process_observed_enters_presentation_pending_before_running(self) -> None:
+        session = SessionStateModel()
+        token = session.request_launch("game")
+        session.launch_starting(token)
+        session.primary_observed(token)
+        self.assertEqual(session.state.lifecycle, Lifecycle.PRESENTATION_PENDING)
+        session.primary_started(token)
+        self.assertEqual(session.state.lifecycle, Lifecycle.GAME)
 
     def test_empty_primary_id_is_rejected_and_new_launch_clears_failure(self) -> None:
         session = SessionStateModel()

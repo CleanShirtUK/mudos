@@ -68,12 +68,18 @@ class SessionStateModel:
         presentation: Presentation = Presentation.GAME,
         input_mode: InputMode = InputMode.GAME,
     ) -> None:
-        if self.state.lifecycle is not Lifecycle.STARTING:
+        if self.state.lifecycle not in (Lifecycle.STARTING, Lifecycle.PRESENTATION_PENDING):
             raise ValueError("primary can start only while launching")
         self._check_token(token)
         self.state.lifecycle = Lifecycle.GAME
         self.state.presentation = presentation
         self.state.input_mode = input_mode
+
+    def primary_observed(self, token: str) -> None:
+        if self.state.lifecycle is not Lifecycle.STARTING:
+            raise ValueError("primary can be observed only while starting")
+        self._check_token(token)
+        self.state.lifecycle = Lifecycle.PRESENTATION_PENDING
 
     def primary_exited(self, token: str, *, success: bool = True) -> None:
         if self.state.lifecycle is not Lifecycle.GAME:
@@ -87,6 +93,7 @@ class SessionStateModel:
         if self.state.lifecycle not in (
             Lifecycle.LAUNCH_REQUESTED,
             Lifecycle.STARTING,
+            Lifecycle.PRESENTATION_PENDING,
             Lifecycle.GAME,
         ):
             raise ValueError("failure requires an active launch")
@@ -101,6 +108,14 @@ class SessionStateModel:
             raise ValueError("return cleanup requires returning lifecycle")
         self._check_token(token)
         self.state = SessionState()
+
+    def return_failed(self, token: str, reason: str) -> None:
+        if self.state.lifecycle is not Lifecycle.RETURNING:
+            raise ValueError("return failure requires returning lifecycle")
+        self._check_token(token)
+        if not reason:
+            raise ValueError("return failure reason is required")
+        self.last_failure_reason = reason
 
     def set_input_mode(self, mode: InputMode) -> None:
         self.state.input_mode = mode

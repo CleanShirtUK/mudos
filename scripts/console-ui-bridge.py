@@ -3,19 +3,24 @@
 
 import asyncio
 import json
+import logging
 import os
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from threading import Thread
 from urllib.parse import parse_qs, unquote, urlparse
+
+
+LOGGER = logging.getLogger("lulu.console-ui-bridge")
 
 from dbus_next import BusType
 from dbus_next.aio import MessageBus
 
 
 class ConsoleUiBridge:
-    def __init__(self, loop: asyncio.AbstractEventLoop, consoled: object) -> None:
+    def __init__(self, loop: asyncio.AbstractEventLoop, consoled: object, sessiond: object) -> None:
         self.loop = loop
         self.consoled = consoled
+        self.sessiond = sessiond
 
     def call(self, operation: asyncio.Future, timeout: float = 15) -> object:
         return asyncio.run_coroutine_threadsafe(operation, self.loop).result(timeout=timeout)
@@ -25,7 +30,13 @@ class ConsoleUiBridge:
         return [{key: value.value for key, value in row.items()} for row in rows]
 
     async def launch_game(self, game_id: str) -> str:
-        return await self.consoled.call_launch_game(game_id, 15000)
+        LOGGER.info("launch request game_id=%s", game_id)
+        token = await self.consoled.call_launch_game(game_id, 15000)
+        LOGGER.info("launch accepted game_id=%s token=%s", game_id, token)
+        return token
+
+    async def state(self) -> dict[str, object]:
+        return json.loads(await self.sessiond.call_get_state())
 
 
 class ApiHandler(BaseHTTPRequestHandler):
@@ -40,6 +51,12 @@ class ApiHandler(BaseHTTPRequestHandler):
         self.wfile.write(data)
 
     def do_GET(self) -> None:
+        if urlparse(self.path).path == "/state":
+            try:
+                self._respond(200, self.bridge.call(self.bridge.state()))
+            except Exception as error:  # pragma: no cover - live IPC failure path
+                self._respond(503, {"error": str(error)})
+            return
         scope = parse_qs(urlparse(self.path).query).get("scope", ["recent"])[0]
         try:
             self._respond(200, self.bridge.call(self.bridge.list_games(scope)))
@@ -53,6 +70,7 @@ class ApiHandler(BaseHTTPRequestHandler):
             return
         try:
             game_id = unquote(path.removeprefix("/launch/"))
+            LOGGER.info("http launch game_id=%s", game_id)
             token = self.bridge.call(self.bridge.launch_game(game_id), timeout=15)
             self._respond(200, {"token": token})
         except Exception as error:  # pragma: no cover - live IPC failure path
@@ -63,14 +81,22 @@ class ApiHandler(BaseHTTPRequestHandler):
 
 
 async def main() -> None:
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
     bus = await MessageBus(bus_type=BusType.SESSION).connect()
     introspection = await bus.introspect("org.lulu.Consoled", "/org/lulu/Console")
     proxy = bus.get_proxy_object("org.lulu.Consoled", "/org/lulu/Console", introspection)
     consoled = proxy.get_interface("org.lulu.Console")
+    session_introspection = await bus.introspect(
+        "org.lulu.ConsoleSessiond", "/org/lulu/ConsoleSession"
+    )
+    session_proxy = bus.get_proxy_object(
+        "org.lulu.ConsoleSessiond", "/org/lulu/ConsoleSession", session_introspection
+    )
+    sessiond = session_proxy.get_interface("org.lulu.ConsoleSession")
     await consoled.call_refresh()
 
     loop = asyncio.get_running_loop()
-    bridge = ConsoleUiBridge(loop, consoled)
+    bridge = ConsoleUiBridge(loop, consoled, sessiond)
     ApiHandler.bridge = bridge
     server = ThreadingHTTPServer(("127.0.0.1", 38123), ApiHandler)
     Thread(target=server.serve_forever, daemon=True).start()

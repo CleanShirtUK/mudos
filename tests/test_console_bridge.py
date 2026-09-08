@@ -20,6 +20,11 @@ class ConsoleBridgeTests(unittest.TestCase):
         self.assertIn("timeout=15", source)
         self.assertIn("str(error) or type(error).__name__", source)
 
+    def test_state_path_reads_authoritative_session_state(self) -> None:
+        source = (ROOT / "scripts" / "console-ui-bridge.py").read_text()
+        self.assertIn('if urlparse(self.path).path == "/state":', source)
+        self.assertIn("call_get_state()", source)
+
 
 if __name__ == "__main__":
     unittest.main()
