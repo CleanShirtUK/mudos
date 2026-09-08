@@ -36,6 +36,11 @@ Rectangle {
         transmission: 0.75
         bevelWidthPx: 10
         bulgeStrength: 100.0
+        // Retained as a disabled experiment; scene-derived illumination is not material.
+        sceneLightStrength: 0
+        sceneLightPixels: 24
+        edgeLightStrength: 0.10
+        edgeLightDirection: Qt.vector2d(1, -1)
         diagnosticMode: 0
     }
 

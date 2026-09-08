@@ -13,6 +13,10 @@ Item {
     property real transmission: 1
     property real bevelWidthPx: 6
     property real bulgeStrength: 0
+    property real sceneLightStrength: 0
+    property real sceneLightPixels: 24
+    property real edgeLightStrength: 0
+    property vector2d edgeLightDirection: Qt.vector2d(1, -1)
     property real focusAmount: 0
     property real cornerRadius: 0
     // Developer-only diagnostics; production rendering uses mode 0.
@@ -42,6 +46,10 @@ Item {
         property real u_transmission: root.transmission
         property real u_bevelWidthPx: root.bevelWidthPx
         property real u_bulgeStrength: root.bulgeStrength
+        property real u_sceneLightStrength: root.sceneLightStrength
+        property real u_sceneLightPixels: root.sceneLightPixels
+        property real u_edgeLightStrength: root.edgeLightStrength
+        property vector2d u_edgeLightDirection: root.edgeLightDirection
         property real u_cornerRadius: root.cornerRadius
         property int u_diagnostic: root.diagnosticMode
     }

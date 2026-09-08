@@ -48,14 +48,19 @@ not BC-250 proven:
 - diffusion kernel: current 5x5 Gaussian, with 1D weights
   `[0.0625, 0.25, 0.375, 0.25, 0.0625]`
 - neutral transmission: `0.75`
+- geometry-derived edge lighting: `edgeLightStrength = 0.10`
+- reusable edge direction: `edgeLightDirection = (1, -1)` for the accepted
+  top-right peak, with smooth perimeter falloff
 
 The optical height is the sum of an exact rounded-box boundary bevel and a
 rounded-box-constrained, aspect-aware cosine bulge. Both use the same
 finite-difference gradient and Snell pipeline. The material boundary is an
 antialiased rounded-box mask composited over the untouched canonical backdrop.
 
-Lighting/specular response and Play glass are intentionally not part of this
-baseline.
+Lighting is limited to the accepted geometry-derived directional bevel response:
+it is restricted to the existing 10 px bevel, peaks at the top-right, falls to
+zero at the top-left and bottom-right, and contributes nothing on the left or
+bottom edges. Play glass is intentionally not part of this baseline.
 
 ## Qt Quick Optical Layer
 
@@ -72,9 +77,15 @@ prefix and binding-1 sampler, then follows this sequence:
 5. Call `refract(viewRay, glassNormal, 1.0 / wavelengthIor)` for each channel.
 6. Apply only the bounded local Snell displacement for the current prototype.
 
-Dispersion, diffusion, neutral transmission, and the accepted surface profile
-are enabled in the HOST baseline above. Tint, additional attenuation,
-edge/specular response, glow, and Play-layer glass remain disabled.
+Dispersion, diffusion, neutral transmission, the accepted surface profile, and
+directional bevel lighting are enabled in the HOST baseline above. Tint,
+additional attenuation, glow, conventional Fresnel/specular lighting, and
+Play-layer glass remain disabled.
+
+The scene-derived lighting experiment is retained but disabled
+(`sceneLightStrength = 0`); it was rejected because even broad scene energy
+made the independent opaque artwork read as a reflected/brightened backdrop
+rather than cohesive glass illumination.
 
 Developer diagnostics are retained but cannot affect normal rendering unless a
 caller explicitly sets `GlassSurface.diagnosticMode`: mode `7` shows total

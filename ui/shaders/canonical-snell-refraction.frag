@@ -17,6 +17,10 @@ layout(std140, binding = 0) uniform buf {
     float u_transmission;
     float u_bevelWidthPx;
     float u_bulgeStrength;
+    float u_sceneLightStrength;
+    float u_sceneLightPixels;
+    float u_edgeLightStrength;
+    vec2 u_edgeLightDirection;
     int u_diagnostic;
 };
 layout(binding = 1) uniform sampler2D source;
@@ -33,6 +37,11 @@ float roundedRectangleDistance(vec2 uv, vec2 size, float radius)
 float smootherstep(float t)
 {
     return t * t * t * (t * (t * 6.0 - 15.0) + 10.0);
+}
+
+float sceneLuminance(vec3 color)
+{
+    return dot(color, vec3(0.2126, 0.7152, 0.0722));
 }
 
 float centralBulgeHeight(vec2 uv, vec2 size, float radius)
@@ -164,6 +173,32 @@ void main()
     fragColor.rgb *= clamp(u_transmission, 0.0, 1.0);
 
     float boundaryDistance = roundedRectangleDistance(uv, u_sceneSize, u_cornerRadius);
+
+    if (u_sceneLightStrength > 0.0) {
+        vec2 lightFilterRadius = vec2(u_sceneLightPixels) / u_canonicalSize;
+        vec3 sceneEnergy = diffuseSample(baseUv, lightFilterRadius).rgb;
+        float normalResponse = clamp(0.25 + 0.75 * (1.0 - normal.z), 0.0, 1.0);
+        float illumination = sceneLuminance(sceneEnergy) * normalResponse;
+        fragColor.rgb += vec3(illumination * u_sceneLightStrength);
+    }
+
+    if (u_edgeLightStrength > 0.0) {
+        float bevelCoordinate = clamp(
+            (boundaryDistance + u_bevelWidthPx) / u_bevelWidthPx, 0.0, 1.0);
+        float edgeBand = smootherstep(bevelCoordinate);
+        float grazingResponse = pow(
+            clamp(1.0 - normal.z, 0.0, 1.0), 0.5);
+        vec2 point = (uv * u_sceneSize - u_sceneSize * 0.5) / (u_sceneSize * 0.5);
+        vec2 lightDirection = normalize(u_edgeLightDirection);
+        float horizontalProgress = smootherstep(clamp(
+            0.5 + 0.5 * point.x * sign(lightDirection.x), 0.0, 1.0));
+        float verticalProgress = smootherstep(clamp(
+            0.5 - 0.5 * point.y * sign(-lightDirection.y), 0.0, 1.0));
+        float perimeterEnvelope = horizontalProgress * verticalProgress;
+        fragColor.rgb += vec3(
+            edgeBand * perimeterEnvelope * grazingResponse * u_edgeLightStrength);
+    }
+
     float antialiasWidth = max(fwidth(boundaryDistance), 0.5);
     float roundedMask = 1.0 - smoothstep(-antialiasWidth, antialiasWidth, boundaryDistance);
     fragColor = mix(canonicalBackdrop, fragColor, roundedMask);
