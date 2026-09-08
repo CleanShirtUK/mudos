@@ -6,6 +6,7 @@ Item {
     property int selectedIndex: 0
     property int transitionFromIndex: 0
     property real transitionProgress: 1
+    property real transitionFadeProgress: 1
     property bool transitionInitialized: false
     readonly property string selectedGameId: recentGames.length && selectedIndex >= 0
         ? String(recentGames[selectedIndex].game_id) : ""
@@ -40,17 +41,21 @@ Item {
         if (!transitionInitialized) {
             transitionFromIndex = selectedIndex
             transitionProgress = 1
+            transitionFadeProgress = 1
             return
         }
         transitionFromIndex = Math.max(0, Math.min(recentGames.length - 1,
                                                     transitionFromIndex))
         transitionProgress = 0
+        transitionFadeProgress = 0
         transitionAnimation.restart()
+        fadeAnimation.restart()
     }
 
     Component.onCompleted: {
         transitionFromIndex = selectedIndex
         transitionProgress = 1
+        transitionFadeProgress = 1
         transitionInitialized = true
     }
 
@@ -59,12 +64,21 @@ Item {
         target: recentHome
         property: "transitionProgress"
         to: 1
-        duration: 300
-        easing.type: Easing.Linear
+        duration: 500
+        easing.type: Easing.OutQuint
         onStopped: {
             recentHome.transitionFromIndex = recentHome.selectedIndex
             recentHome.transitionProgress = 1
         }
+    }
+
+    NumberAnimation {
+        id: fadeAnimation
+        target: recentHome
+        property: "transitionFadeProgress"
+        to: 1
+        duration: 300
+        easing.type: Easing.Linear
     }
 
     Text {
@@ -91,6 +105,7 @@ Item {
                 readonly property int fromRelativeIndex: index - recentHome.transitionFromIndex
                 readonly property int toRelativeIndex: index - recentHome.selectedIndex
                 readonly property real railProgress: recentHome.transitionProgress
+                readonly property real fadeProgress: recentHome.transitionFadeProgress
                 readonly property real blend: fromRelativeIndex === 0
                     ? (toRelativeIndex === 0 ? 1 : 1 - railProgress)
                     : (toRelativeIndex === 0 ? railProgress : 0)
@@ -101,9 +116,9 @@ Item {
                 focalChromeOpacity: fromRelativeIndex === 0 && toRelativeIndex === 0
                     ? 1
                     : fromRelativeIndex === 0
-                      ? Math.max(0, 1 - railProgress * 3)
+                      ? Math.max(0, 1 - fadeProgress * 3)
                       : toRelativeIndex === 0
-                        ? Math.max(0, (railProgress - 0.67) * 3)
+                        ? Math.max(0, (fadeProgress - 0.67) * 3)
                         : 0
                 presentationState: modelData.game_id === recentHome.selectedGameId ? "FOCUSED" : "COMPACT"
                 liveSceneCoordinates: true

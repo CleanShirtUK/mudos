@@ -259,13 +259,14 @@ Rectangle {
             anchors.bottom: parent.bottom
             height: 82 * focalScale * card.uiScale
             radius: 20 * focalScale * card.uiScale
-            color: card.luluPalette.actionSurface
+            color: card.presentationProgress > 0 && card.presentationProgress < 1
+                ? card.luluPalette.transparent : card.luluPalette.actionSurface
             border.color: card.luluPalette.focusIndicator
             border.width: 2 * card.uiScale
 
             PlayGlassSurface {
                 anchors.fill: parent
-                visible: card.presentationProgress > 0
+                visible: card.focalChromeOpacity > 0
                 canonicalTexture: card.canonicalTexture
                 canonicalSize: card.canonicalSize
                 cardOrigin: card.canonicalTexture
