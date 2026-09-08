@@ -8,70 +8,203 @@ Window {
     color: "#060b16"
     flags: Qt.FramelessWindowHint
 
-    property var domains: ["Recent", "Library", "Store", "System"]
-    property int domainIndex: 0
-    property int gameIndex: 0
-    property bool storeFilterSteam: false
+    property var domains: ["System", "Store", "Library", "Recent"]
+    property int domainIndex: 3
+    readonly property int activeHeadingHeight: 37
+    readonly property int headingCardGap: 21
+    readonly property int homeHintTopY: height - 45
+    readonly property real acceptedRecentCardHeight: Math.min(375, (height - 248 - 88) * 0.67)
+    readonly property int homeContentOriginY: homeHintTopY - acceptedRecentCardHeight - headingCardGap
+    readonly property int selectedDomainY: homeContentOriginY - activeHeadingHeight - headingCardGap
+    property int recentIndex: 0
+    property int libraryIndex: 0
+    property int collectionIndex: 0
+    property string space: "home"
+    property string libraryFocus: "games"
     property var recentGames: []
     property var libraryGames: []
     property string message: ""
+    property string launchStatus: "idle"
+    property string launchTitle: ""
+    property string launchToken: ""
+    property int launchGeneration: 0
+    property int launchStateSerial: 0
+    property int launchStateApplied: 0
+    property int launchStateRank: 0
     readonly property string apiUrl: "http://127.0.0.1:38123"
-    readonly property var visibleGames: domainIndex === 0 ? recentGames : libraryGames
+    readonly property var visibleRecentGame: recentGames.length ? recentGames[recentIndex] : null
+    readonly property var visibleLibraryGame: libraryGames.length ? libraryGames[libraryIndex] : null
+    readonly property string libraryScope: collectionIndex === 0 ? "all" : "steam"
 
-    function request(path, method, body, callback) {
+    function request(path, method, body, callback, failureMessage, generation) {
         var request = new XMLHttpRequest()
         request.onreadystatechange = function() {
             if (request.readyState !== XMLHttpRequest.DONE)
                 return
             if (request.status === 200)
                 callback(JSON.parse(request.responseText))
-            else
-                message = "Catalogue unavailable"
+            else if (failureMessage && (generation === undefined || generation === launchGeneration)) {
+                message = failureMessage || "Catalogue unavailable"
+                if (generation !== undefined) {
+                    launchStatus = "failed"
+                    launchStatusTimer.stop()
+                }
+            }
         }
         request.open(method, apiUrl + path)
         request.send(body || "")
     }
 
     function refreshCatalogue() {
-        request("/games?scope=recent", "GET", "", function(data) {
+        request("/?scope=recent", "GET", "", function(data) {
+            var selectedId = visibleRecentGame ? visibleRecentGame.game_id : ""
             recentGames = data
-            if (gameIndex >= recentGames.length)
-                gameIndex = Math.max(0, recentGames.length - 1)
+            var selectedIndex = -1
+            for (var index = 0; index < recentGames.length; index++) {
+                if (recentGames[index].game_id === selectedId) {
+                    selectedIndex = index
+                    break
+                }
+            }
+            if (selectedIndex >= 0)
+                recentIndex = selectedIndex
+            else if (recentIndex >= recentGames.length)
+                recentIndex = Math.max(0, recentGames.length - 1)
         })
-        request("/games?scope=" + (storeFilterSteam ? "steam" : "all"), "GET", "", function(data) {
+        refreshLibrary()
+    }
+
+    function applyLaunchState(state, generation) {
+        if (generation !== launchGeneration)
+            return
+        var stateToken = state.launch_token || (state.last_result ? state.last_result.token : "")
+        if (launchToken && stateToken && stateToken !== launchToken)
+            return
+        var stateRank = state.lifecycle === "launch_requested" || state.lifecycle === "starting" ? 1
+                      : state.lifecycle === "game" ? 2
+                      : state.lifecycle === "returning" ? 3
+                      : 4
+        if (stateRank < launchStateRank)
+            return
+        launchStateRank = stateRank
+        if (state.lifecycle === "launch_requested" || state.lifecycle === "starting"
+                || state.lifecycle === "presentation_pending") {
+            launchStatus = "launching"
+            message = "Launching " + launchTitle
+        } else if (state.lifecycle === "game") {
+            launchStatus = "running"
+            message = "Running " + launchTitle
+        } else if (state.lifecycle === "returning") {
+            launchStatus = "returning"
+            message = "Returning"
+        } else if (state.lifecycle === "shell") {
+            launchStatus = state.last_failure_reason && stateToken === launchToken ? "failed" : "idle"
+            message = launchStatus === "failed" ? "Launch failed" : ""
+            launchStatusTimer.stop()
+        }
+    }
+
+    function refreshLaunchState(generation) {
+        var serial = ++launchStateSerial
+        request("/state", "GET", "", function(state) {
+            if (serial < launchStateApplied)
+                return
+            launchStateApplied = serial
+            applyLaunchState(state, generation)
+        }, "", generation)
+    }
+
+    function refreshLibrary() {
+        request("/?scope=" + libraryScope, "GET", "", function(data) {
             libraryGames = data
-            if (gameIndex >= libraryGames.length)
-                gameIndex = Math.max(0, libraryGames.length - 1)
+            if (libraryIndex >= libraryGames.length)
+                libraryIndex = Math.max(0, libraryGames.length - 1)
         })
     }
 
     function moveDomain(delta) {
+        if (space !== "home")
+            return
         domainIndex = (domainIndex + delta + domains.length) % domains.length
-        gameIndex = 0
         message = ""
     }
 
-    function moveGame(delta) {
-        if (visibleGames.length === 0)
+    function domainOffset(index) {
+        var offset = (index - domainIndex + domains.length) % domains.length
+        return offset === 0 ? 0 : -offset
+    }
+
+    function moveRecent(delta) {
+        if (!recentGames.length)
             return
-        gameIndex = (gameIndex + delta + visibleGames.length) % visibleGames.length
+        recentIndex = (recentIndex + delta + recentGames.length) % recentGames.length
+    }
+
+    function moveLibrary(delta) {
+        if (libraryFocus === "collection") {
+            collectionIndex = (collectionIndex + delta + 2) % 2
+            refreshLibrary()
+            return
+        }
+        if (!libraryGames.length)
+            return
+        libraryIndex = (libraryIndex + delta + libraryGames.length) % libraryGames.length
+    }
+
+    function launchGame(game) {
+        if (!game)
+            return
+        if (launchStatus === "launching" || launchStatus === "running" || launchStatus === "returning")
+            return
+        var generation = ++launchGeneration
+        launchTitle = game.title
+        launchToken = ""
+        launchStatus = "launching"
+        launchStateRank = 1
+        message = "Launching " + game.title
+        request("/launch/" + encodeURIComponent(game.game_id), "POST", "", function(data) {
+            if (generation !== launchGeneration)
+                return
+            launchToken = data.token
+            refreshLaunchState(generation)
+            launchStatusTimer.start()
+            refreshCatalogue()
+        }, "Launch failed", generation)
     }
 
     function activate() {
-        if ((domainIndex !== 0 && domainIndex !== 1) || visibleGames.length === 0) {
-            message = domainIndex === 2 ? "Store is unavailable" : "System space is not implemented"
+        if (space === "library") {
+            if (libraryFocus === "collection") {
+                refreshLibrary()
+                libraryFocus = "games"
+            } else {
+                launchGame(visibleLibraryGame)
+            }
             return
         }
-        var game = visibleGames[gameIndex]
-        message = "Launching " + game.title
-        request("/launch/" + encodeURIComponent(game.game_id), "POST", "", function(data) {
-            message = "Launch requested"
-            refreshCatalogue()
-        })
+
+        if (domainIndex === 3) {
+            launchGame(visibleRecentGame)
+        } else if (domainIndex === 2) {
+            space = "library"
+            libraryFocus = "games"
+            libraryIndex = 0
+            message = ""
+        } else if (domainIndex === 1) {
+            message = "Store space is not implemented"
+        } else {
+            message = "System space is not implemented"
+        }
     }
 
     function back() {
-        message = ""
+        if (space === "library") {
+            space = "home"
+            libraryFocus = "games"
+            message = ""
+        } else {
+            message = ""
+        }
     }
 
     Component.onCompleted: {
@@ -79,24 +212,8 @@ Window {
         refreshCatalogue()
     }
 
-    Rectangle {
+    OrbitBackdrop {
         anchors.fill: parent
-        color: "#060b16"
-        gradient: Gradient {
-            GradientStop { position: 0.0; color: "#111d38" }
-            GradientStop { position: 0.52; color: "#07101f" }
-            GradientStop { position: 1.0; color: "#160d2a" }
-        }
-    }
-
-    Rectangle {
-        width: parent.width * 0.58
-        height: parent.height * 0.8
-        x: parent.width * 0.42
-        y: parent.height * 0.08
-        radius: width / 2
-        color: "#263e72"
-        opacity: 0.16
     }
 
     Rectangle {
@@ -106,19 +223,39 @@ Window {
         focus: true
 
         Keys.onPressed: function(event) {
-            if (event.key === Qt.Key_Up) {
-                moveDomain(-1)
-                event.accepted = true
-            } else if (event.key === Qt.Key_Down) {
-                moveDomain(1)
-                event.accepted = true
-            } else if (event.key === Qt.Key_Left) {
-                moveGame(-1)
-                event.accepted = true
-            } else if (event.key === Qt.Key_Right) {
-                moveGame(1)
-                event.accepted = true
-            } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
+            if (space === "home") {
+                if (event.key === Qt.Key_Up) {
+                    moveDomain(-1)
+                    event.accepted = true
+                } else if (event.key === Qt.Key_Down) {
+                    moveDomain(1)
+                    event.accepted = true
+                } else if (event.key === Qt.Key_Left) {
+                    if (domainIndex === 3)
+                        moveRecent(-1)
+                    event.accepted = true
+                } else if (event.key === Qt.Key_Right) {
+                    if (domainIndex === 3)
+                        moveRecent(1)
+                    event.accepted = true
+                }
+            } else if (space === "library") {
+                if (event.key === Qt.Key_Up) {
+                    libraryFocus = "collection"
+                    event.accepted = true
+                } else if (event.key === Qt.Key_Down) {
+                    libraryFocus = "games"
+                    event.accepted = true
+                } else if (event.key === Qt.Key_Left) {
+                    moveLibrary(-1)
+                    event.accepted = true
+                } else if (event.key === Qt.Key_Right) {
+                    moveLibrary(1)
+                    event.accepted = true
+                }
+            }
+
+            if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
                 activate()
                 event.accepted = true
             } else if (event.key === Qt.Key_Escape || event.key === Qt.Key_Backspace) {
@@ -127,199 +264,147 @@ Window {
             }
         }
 
-        Column {
-            id: domainColumn
-            x: 72
-            y: 172
-            spacing: 22
+        Item {
+            id: homeScene
+            anchors.fill: parent
+            visible: root.space === "home"
 
-            Repeater {
-                model: root.domains
-                delegate: Text {
-                    required property int index
-                    text: modelData
-                    color: index === root.domainIndex ? "#f0dcff" : "#8290aa"
-                    font.pixelSize: index === root.domainIndex ? 30 : 22
-                    font.letterSpacing: 3
-                    opacity: index === root.domainIndex ? 1 : 0.68
-                }
-            }
-        }
-
-        Rectangle {
-            x: 300
-            y: 72
-            width: parent.width - 380
-            height: parent.height - 144
-            radius: 28
-            color: "#14213b"
-            opacity: 0.76
-            border.color: "#7884c6"
-            border.width: 1
-
-            Text {
-                x: 44
-                y: 34
-                text: root.domains[root.domainIndex].toUpperCase()
-                color: "#eadcff"
-                font.pixelSize: 28
-                font.letterSpacing: 5
-            }
-
-            Text {
-                x: 46
-                y: 76
-                visible: root.domainIndex === 0
-                text: "Return to play"
-                color: "#90a0bd"
-                font.pixelSize: 17
-            }
-
-            Row {
-                x: 44
-                y: 118
-                spacing: 36
-                visible: root.domainIndex === 1
-
-                Text {
-                    text: "All Games"
-                    color: root.storeFilterSteam ? "#8c98b6" : "#f0dcff"
-                    font.pixelSize: 19
-                }
-                Text {
-                    text: "Steam"
-                    color: root.storeFilterSteam ? "#f0dcff" : "#8c98b6"
-                    font.pixelSize: 19
-                }
-                MouseArea {
-                    width: 100
-                    height: 32
-                    onClicked: {
-                        root.storeFilterSteam = !root.storeFilterSteam
-                        root.refreshCatalogue()
-                    }
-                }
-            }
-
-            Text {
-                anchors.centerIn: parent
-                visible: root.visibleGames.length === 0 && (root.domainIndex === 0 || root.domainIndex === 1)
-                text: root.domainIndex === 0 ? "No recent games yet" : "No installed launchable games"
-                color: "#9aa8c2"
-                font.pixelSize: 24
-            }
-
-            Text {
-                anchors.centerIn: parent
-                visible: root.domainIndex === 2
-                text: "Store is unavailable"
-                color: "#9aa8c2"
-                font.pixelSize: 24
-            }
-
-            Text {
-                anchors.centerIn: parent
-                visible: root.domainIndex === 3
-                text: "System space is not implemented"
-                color: "#9aa8c2"
-                font.pixelSize: 24
-            }
-
-            Row {
-                id: gameRail
-                x: 44
-                y: 164
-                spacing: 18
-                visible: root.visibleGames.length > 0 && (root.domainIndex === 0 || root.domainIndex === 1)
+            Item {
+                x: 76
+                y: 0
+                width: 250
+                height: parent.height
 
                 Repeater {
-                    model: root.visibleGames
-                    delegate: Rectangle {
+                    model: root.domains
+                    delegate: Text {
                         required property int index
-                        required property var modelData
-                        width: root.domainIndex === 0 && index === root.gameIndex ? 560 : 212
-                        height: root.domainIndex === 0 && index === root.gameIndex ? 430 : 350
-                        radius: 22
-                        color: index === root.gameIndex ? "#283761" : "#182540"
-                        border.color: index === root.gameIndex ? "#e0c5ff" : "#455274"
-                        border.width: index === root.gameIndex ? 3 : 1
-                        clip: true
-
-                        Image {
-                            x: 14
-                            y: 14
-                            width: parent.width - 28
-                            height: parent.height * 0.64
-                            source: modelData.artwork_url
-                            fillMode: Image.PreserveAspectCrop
-                            asynchronous: true
-                            opacity: index === root.gameIndex ? 1 : 0.68
-                        }
-
-                        Rectangle {
-                            anchors.fill: parent
-                            color: "#10182b"
-                            opacity: 0.35
-                        }
-
-                        Column {
-                            x: 22
-                            y: parent.height * 0.68
-                            width: parent.width - 44
-                            spacing: 8
-                            Text {
-                                text: modelData.title
-                                color: "#f1f3fb"
-                                font.pixelSize: index === root.gameIndex ? 27 : 19
-                                elide: Text.ElideRight
-                                width: parent.width
-                            }
-                            Text {
-                                text: modelData.provider.toUpperCase() + "  |  " + modelData.platform
-                                color: "#aab7d0"
-                                font.pixelSize: 14
-                            }
-                            Text {
-                                visible: index === root.gameIndex
-                                text: "A  Launch"
-                                color: "#e0c5ff"
-                                font.pixelSize: 17
-                            }
-                        }
+                        y: root.selectedDomainY + root.domainOffset(index) * 42
+                        text: root.domains[index]
+                        color: index === root.domainIndex ? "#f0dcff" : "#8290aa"
+                        font.pixelSize: index === root.domainIndex ? 31 : 22
+                        font.letterSpacing: 3
+                        opacity: index === root.domainIndex ? 1 : 0.58
+                        scale: index === root.domainIndex ? 1.05 : 1
+                        Behavior on color { ColorAnimation { duration: 160 } }
+                        Behavior on opacity { NumberAnimation { duration: 160 } }
+                        Behavior on scale { NumberAnimation { duration: 160 } }
                     }
                 }
             }
 
             Text {
-                x: 44
-                anchors.bottom: parent.bottom
-                anchors.bottomMargin: 30
-                text: root.message
-                color: "#e0c5ff"
-                font.pixelSize: 17
+                x: 76
+                y: parent.height * 0.03
+                text: "HOME"
+                color: "#8492ad"
+                font.pixelSize: 14
+                font.letterSpacing: 4
+                opacity: 0.8
+            }
+
+            Item {
+                id: homeContent
+                x: 76
+                y: root.homeContentOriginY
+                width: parent.width - 130
+                height: 340
+
+                RecentHome {
+                    anchors.fill: parent
+                    visible: root.domainIndex === 3
+                    opacity: visible ? 1 : 0
+                    scale: visible ? 1 : 0.94
+                    recentGames: root.recentGames
+                    selectedIndex: root.recentIndex
+                    focalCardWidth: Math.min(740, root.width - 100, (root.height - 248 - 88) * 1.9 * 0.67)
+                    focalCardHeight: root.acceptedRecentCardHeight
+                    focalScale: 0.67
+                    onLaunchRequested: root.launchGame(game)
+                    Behavior on opacity { NumberAnimation { duration: 220 } }
+                    Behavior on scale { NumberAnimation { duration: 220 } }
+                }
+
+                LibraryHome {
+                    anchors.fill: parent
+                    visible: root.domainIndex === 2
+                    opacity: visible ? 1 : 0
+                    scale: visible ? 1 : 0.94
+                    cardHeight: root.acceptedRecentCardHeight
+                    onOpenRequested: root.activate()
+                    Behavior on opacity { NumberAnimation { duration: 220 } }
+                    Behavior on scale { NumberAnimation { duration: 220 } }
+                }
+
+                PlaceholderHome {
+                    anchors.fill: parent
+                    visible: root.domainIndex === 1 || root.domainIndex === 0
+                    opacity: visible ? 1 : 0
+                    scale: visible ? 1 : 0.94
+                    title: root.domains[root.domainIndex]
+                    description: root.domainIndex === 1 ? "Acquisition space is not implemented" : "Platform controls are not implemented"
+                    Behavior on opacity { NumberAnimation { duration: 220 } }
+                    Behavior on scale { NumberAnimation { duration: 220 } }
+                }
             }
         }
 
-        Text {
-            anchors.right: parent.right
-            anchors.rightMargin: 54
-            anchors.top: parent.top
-            anchors.topMargin: 36
-            text: "A  Select     B  Back"
-            color: "#b6bfd2"
-            font.pixelSize: 17
+        LibrarySpace {
+            anchors.fill: parent
+            visible: root.space === "library"
+            libraryGames: root.libraryGames
+            selectedIndex: root.libraryIndex
+            collectionIndex: root.collectionIndex
+            collectionFocus: root.libraryFocus === "collection"
+            onCollectionChanged: {
+                root.collectionIndex = index
+                root.refreshLibrary()
+            }
+            onLaunchRequested: root.launchGame(game)
         }
 
-        Text {
+        Item {
+            id: interactionRail
             anchors.left: parent.left
-            anchors.leftMargin: 72
+            anchors.right: parent.right
             anchors.bottom: parent.bottom
-            anchors.bottomMargin: 36
-            text: "UP / DOWN  DOMAIN       LEFT / RIGHT  CONTENT"
-            color: "#8492ad"
-            font.pixelSize: 14
-            font.letterSpacing: 1
+            height: 72
+
+            Text {
+                x: 76
+                width: parent.width * 0.54
+                anchors.verticalCenter: parent.verticalCenter
+                text: root.space === "library"
+                      ? "LEFT / RIGHT  Navigate    UP / DOWN  Collection / Games    A  Launch    B  Back"
+                      : root.domainIndex === 3
+                        ? "UP / DOWN  Navigate    LEFT / RIGHT  Games    A  Launch"
+                        : root.domainIndex === 2
+                          ? "UP / DOWN  Navigate    A  Open Library"
+                          : "UP / DOWN  Navigate    A  Select"
+                color: "#8492ad"
+                font.pixelSize: 14
+                font.letterSpacing: 1
+                elide: Text.ElideRight
+            }
+
+            Text {
+                x: parent.width * 0.58
+                width: parent.width * 0.36
+                anchors.verticalCenter: parent.verticalCenter
+                text: root.message
+                color: "#e0c5ff"
+                font.pixelSize: 16
+                horizontalAlignment: Text.AlignRight
+                elide: Text.ElideRight
+            }
         }
+    }
+
+    Timer {
+        id: launchStatusTimer
+        interval: 150
+        repeat: true
+        onTriggered: root.refreshLaunchState(root.launchGeneration)
     }
 
     Timer {
