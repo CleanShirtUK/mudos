@@ -8,6 +8,7 @@ from dbus_next.aio import MessageBus
 from dbus_next.service import ServiceInterface, method, signal
 
 from .catalogue import CatalogueStore
+from .artwork import SteamGridDBArtwork
 from .contracts import ServiceDescriptor, ServiceName
 from .emulator_runtime import EmulatorRuntimeAdapter
 from .steam_provider import SteamProvider
@@ -35,9 +36,12 @@ class ConsoleCatalog:
     def __init__(self, store: CatalogueStore | None = None, provider: SteamProvider | None = None) -> None:
         self.store = store or CatalogueStore()
         self.provider = provider or SteamProvider()
+        self.artwork = SteamGridDBArtwork()
 
     def refresh(self) -> list[dict[str, object]]:
         self.store.reconcile_steam(self.provider)
+        for game_id, artwork_url in self.artwork.enrich(self.store.list_games()).items():
+            self.store.set_artwork_url(game_id, artwork_url)
         return [game.as_dict() for game in self.store.list_games()]
 
 

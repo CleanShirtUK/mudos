@@ -147,3 +147,10 @@ class CatalogueStore:
     def mark_played(self, game_id: str) -> None:
         self.connection.execute("UPDATE games SET last_played = unixepoch(), updated_at = unixepoch() WHERE game_id = ?", (game_id,))
         self.connection.commit()
+
+    def set_artwork_url(self, game_id: str, artwork_url: str) -> None:
+        self.connection.execute(
+            "UPDATE games SET artwork_url = ?, updated_at = unixepoch() WHERE game_id = ?",
+            (artwork_url, game_id),
+        )
+        self.connection.commit()
