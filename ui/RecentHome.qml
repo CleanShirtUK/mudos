@@ -16,6 +16,8 @@ Item {
     property var typography
     property var luluPalette
     property real compactCardWidth: Math.min(160 * uiScale, focalCardHeight * 0.62)
+    property real railGap: 18 * uiScale
+    property int visibleRailRadius: 3
     signal launchRequested(var game)
 
     Text {
@@ -39,6 +41,7 @@ Item {
             delegate: GameCard {
                 required property int index
                 required property var modelData
+                readonly property int relativeIndex: index - recentHome.selectedIndex
                 game: modelData
                 focused: index === selectedIndex
                 presentationState: modelData.game_id === recentHome.selectedGameId ? "FOCUSED" : "COMPACT"
@@ -54,14 +57,17 @@ Item {
                 uiScale: recentHome.uiScale
                 typography: recentHome.typography
                 luluPalette: recentHome.luluPalette
-                width: index === selectedIndex
-                       ? focalCardWidth
-                       : recentHome.compactCardWidth
-                height: focalCardHeight
-                x: index === selectedIndex
-                   ? 0
-                   : focalCardWidth + 18 * uiScale + (index < selectedIndex ? index : index - 1)
-                      * (recentHome.compactCardWidth + 18 * uiScale)
+                 visible: Math.abs(relativeIndex) <= recentHome.visibleRailRadius
+                 width: relativeIndex === 0
+                        ? focalCardWidth
+                        : recentHome.compactCardWidth
+                 height: focalCardHeight
+                 x: relativeIndex === 0
+                    ? 0
+                    : relativeIndex < 0
+                      ? relativeIndex * (recentHome.compactCardWidth + recentHome.railGap)
+                      : focalCardWidth + recentHome.railGap
+                        + (relativeIndex - 1) * (recentHome.compactCardWidth + recentHome.railGap)
 
                 MouseArea {
                     anchors.fill: parent

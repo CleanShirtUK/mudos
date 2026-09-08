@@ -9,7 +9,7 @@ Window {
     flags: Qt.FramelessWindowHint
 
     property var domains: ["System", "Store", "Library", "Recent"]
-    property int domainIndex: 3
+    property int selectedCategoryIndex: 3
     readonly property real referenceWidth: 1280
     readonly property real referenceHeight: 720
     readonly property real uiScale: Math.min(width / referenceWidth, height / referenceHeight)
@@ -26,11 +26,22 @@ Window {
 
     readonly property real activeHeadingHeight: design(37)
     readonly property real headingCardGap: design(21)
+    readonly property real homeCategoryRailX: design(52)
+    readonly property real homeCategoryFontSize: typography.size("display", 48)
+    readonly property real homeCategoryGap: design(25)
+    readonly property real homeCategoryPitch: homeCategoryFontSize + homeCategoryGap
     readonly property real homeHintTopY: height - design(45)
+    readonly property real homeBottomBandCenterY: height - design(36)
     readonly property real acceptedRecentCardHeight: Math.min(design(375), (height - design(248 + 88)) * 0.67)
+    readonly property real homeFocalCardHeight: Math.min(design(500), (height - design(248 + 88)) * 0.82)
+    readonly property real homeContentRailX: design(52)
+    readonly property real homeFocalCardWidth: Math.min(design(900), width - homeContentRailX - design(40), homeFocalCardHeight * 1.9)
+    readonly property real homeCompactCardWidth: Math.min(design(220), homeFocalCardHeight * 0.62)
+    readonly property real homeInterCardGap: design(24)
     readonly property real compactCardWidth: Math.min(design(160), acceptedRecentCardHeight * 0.62)
     readonly property real homeContentOriginY: homeHintTopY - acceptedRecentCardHeight - headingCardGap
-    readonly property real selectedDomainY: homeContentOriginY - activeHeadingHeight - headingCardGap
+    readonly property real homeActiveContentOriginY: homeHintTopY - homeFocalCardHeight - headingCardGap
+    readonly property real selectedDomainY: homeActiveContentOriginY - activeHeadingHeight - headingCardGap
     property int recentIndex: 0
     property int libraryIndex: 0
     property int collectionIndex: 0
@@ -145,25 +156,25 @@ Window {
     function moveDomain(delta) {
         if (space !== "home")
             return
-        domainIndex = (domainIndex + delta + domains.length) % domains.length
+        selectedCategoryIndex = Math.max(0, Math.min(domains.length - 1,
+                                                     selectedCategoryIndex + delta))
         message = ""
     }
 
     function domainOffset(index) {
-        var offset = (index - domainIndex + domains.length) % domains.length
-        return offset === 0 ? 0 : -offset
+        return index - selectedCategoryIndex
     }
 
     function moveRecent(delta) {
         if (!recentGames.length)
             return
-        recentIndex = (recentIndex + delta + recentGames.length) % recentGames.length
+        recentIndex = Math.max(0, Math.min(recentGames.length - 1, recentIndex + delta))
     }
 
     function moveLibrary(delta) {
         if (!libraryGames.length)
             return
-        libraryIndex = (libraryIndex + delta + libraryGames.length) % libraryGames.length
+        libraryIndex = Math.max(0, Math.min(libraryGames.length - 1, libraryIndex + delta))
     }
 
     function moveLibraryVertical(delta) {
@@ -185,7 +196,7 @@ Window {
     }
 
     function moveLibraryCollection(delta) {
-        collectionIndex = (collectionIndex + delta + 2) % 2
+        collectionIndex = Math.max(0, Math.min(1, collectionIndex + delta))
         refreshLibrary()
     }
 
@@ -221,9 +232,9 @@ Window {
             return
         }
 
-        if (domainIndex === 3) {
+        if (selectedCategoryIndex === 3) {
             launchGame(visibleRecentGame)
-        } else if (domainIndex === 2) {
+        } else if (selectedCategoryIndex === 2) {
             libraryTransitionState = "ACTIVATING"
             space = "library"
             libraryFocus = "games"
@@ -231,7 +242,7 @@ Window {
             libraryFirstVisibleRow = 0
             libraryTransitionState = "EXPANDED"
             message = ""
-        } else if (domainIndex === 1) {
+        } else if (selectedCategoryIndex === 1) {
             message = "Store space is not implemented"
         } else {
             message = "System space is not implemented"
@@ -294,12 +305,16 @@ Window {
                     moveDomain(1)
                     event.accepted = true
                 } else if (event.key === Qt.Key_Left) {
-                    if (domainIndex === 3)
+                    if (selectedCategoryIndex === 3)
                         moveRecent(-1)
+                    else if (selectedCategoryIndex === 2)
+                        moveLibrary(-1)
                     event.accepted = true
                 } else if (event.key === Qt.Key_Right) {
-                    if (domainIndex === 3)
+                    if (selectedCategoryIndex === 3)
                         moveRecent(1)
+                    else if (selectedCategoryIndex === 2)
+                        moveLibrary(1)
                     event.accepted = true
                 }
             } else if (space === "library") {
@@ -339,7 +354,7 @@ Window {
             visible: root.space === "home"
 
             Item {
-                x: root.design(76)
+                x: root.homeCategoryRailX
                 y: 0
                 width: root.design(250)
                 height: parent.height
@@ -348,50 +363,42 @@ Window {
                     model: root.domains
                     delegate: Text {
                         required property int index
-                        y: root.selectedDomainY + root.domainOffset(index) * root.design(42)
+                        readonly property int relativeCategoryIndex: index - root.selectedCategoryIndex
+                        readonly property bool isPreview: relativeCategoryIndex === 1
+                        y: isPreview
+                           ? root.homeBottomBandCenterY - height * 0.5
+                           : root.selectedDomainY + root.domainOffset(index) * root.homeCategoryPitch
+                        visible: relativeCategoryIndex <= 1
                         text: root.domains[index]
                         color: luluPalette.selectedText
                         font.family: typography.displayFamily
                         font.weight: typography.displayWeight
-                        font.pixelSize: typography.size("display", 34 * 0.67)
+                        font.pixelSize: root.homeCategoryFontSize
                         font.letterSpacing: 0
-                        opacity: index === root.domainIndex ? 1 : 0.58
-                        scale: index === root.domainIndex ? 1.05 : 1
-                        Behavior on color { ColorAnimation { duration: 160 } }
-                        Behavior on opacity { NumberAnimation { duration: 160 } }
-                        Behavior on scale { NumberAnimation { duration: 160 } }
+                        opacity: relativeCategoryIndex === 0 ? 1 : 0.58
+                        scale: relativeCategoryIndex === 0 ? 1.05 : 1
                     }
                 }
             }
 
-            Text {
-                x: root.design(76)
-                y: parent.height * 0.03
-                text: "HOME"
-                color: luluPalette.navigationText
-                font.family: typography.interfaceFamily
-                font.pixelSize: typography.size("section", 14)
-                font.letterSpacing: root.design(4)
-                opacity: 0.8
-            }
-
             Item {
                 id: homeContent
-                x: root.design(76)
-                y: root.homeContentOriginY
-                width: parent.width - root.design(130)
-                height: root.design(340)
+                x: root.homeContentRailX
+                y: root.homeActiveContentOriginY
+                width: parent.width - root.homeContentRailX - root.design(40)
+                height: root.homeFocalCardHeight
 
                 RecentHome {
                     anchors.fill: parent
-                    visible: root.domainIndex === 3
+                    visible: root.selectedCategoryIndex === 3
                     opacity: visible ? 1 : 0
                     scale: visible ? 1 : 0.94
                     recentGames: root.recentGames
                     selectedIndex: root.recentIndex
-                    focalCardWidth: Math.min(root.design(740), root.width - root.design(100), (root.height - root.design(248 + 88)) * 1.9 * 0.67)
-                    focalCardHeight: root.acceptedRecentCardHeight
-                    compactCardWidth: root.compactCardWidth
+                    focalCardWidth: root.homeFocalCardWidth
+                    focalCardHeight: root.homeFocalCardHeight
+                    compactCardWidth: root.homeCompactCardWidth
+                    railGap: root.homeInterCardGap
                      focalScale: 0.67
                      uiScale: root.uiScale
                      typography: typography
@@ -400,13 +407,11 @@ Window {
                      canonicalCoordinateRoot: orbitRenderSource
                      canonicalSize: Qt.size(root.width, root.height)
                     onLaunchRequested: root.launchGame(game)
-                    Behavior on opacity { NumberAnimation { duration: 220 } }
-                    Behavior on scale { NumberAnimation { duration: 220 } }
                 }
 
                 LibraryHome {
                     anchors.fill: parent
-                    visible: root.domainIndex === 2
+                    visible: root.selectedCategoryIndex === 2
                     opacity: visible ? 1 : 0
                     scale: visible ? 1 : 0.94
                      cardHeight: root.acceptedRecentCardHeight
@@ -419,22 +424,18 @@ Window {
                      compactCardWidth: root.compactCardWidth
                     transitionState: root.libraryTransitionState
                     onOpenRequested: root.activate()
-                    Behavior on opacity { NumberAnimation { duration: 220 } }
-                    Behavior on scale { NumberAnimation { duration: 220 } }
                 }
 
                 PlaceholderHome {
                     anchors.fill: parent
-                    visible: root.domainIndex === 1 || root.domainIndex === 0
+                    visible: root.selectedCategoryIndex === 1 || root.selectedCategoryIndex === 0
                     opacity: visible ? 1 : 0
                     scale: visible ? 1 : 0.94
-                     title: root.domains[root.domainIndex]
+                     title: root.domains[root.selectedCategoryIndex]
                      uiScale: root.uiScale
                      typography: typography
                      luluPalette: luluPalette
-                    description: root.domainIndex === 1 ? "Acquisition space is not implemented" : "Platform controls are not implemented"
-                    Behavior on opacity { NumberAnimation { duration: 220 } }
-                    Behavior on scale { NumberAnimation { duration: 220 } }
+                    description: root.selectedCategoryIndex === 1 ? "Acquisition space is not implemented" : "Platform controls are not implemented"
                 }
             }
         }
@@ -514,23 +515,24 @@ Window {
             }
 
             Row {
-                x: root.design(76)
                 width: parent.width * 0.54
+                anchors.right: parent.right
+                anchors.rightMargin: root.design(76)
                 anchors.verticalCenter: parent.verticalCenter
                 visible: root.space !== "library"
                 spacing: root.design(14)
 
                 ControllerHint {
                     action: "navigation"
-                    label: root.domainIndex === 3 ? "Navigate / Games" : "Navigate"
+                     label: root.selectedCategoryIndex === 3 ? "Navigate / Games" : "Navigate"
                     uiScale: root.uiScale
                     typography: typography
                     luluPalette: luluPalette
                 }
                 ControllerHint {
                     action: "confirm"
-                    label: root.domainIndex === 3 ? "Launch"
-                          : root.domainIndex === 2 ? "Open Library" : "Select"
+                     label: root.selectedCategoryIndex === 3 ? "Launch"
+                           : root.selectedCategoryIndex === 2 ? "Open Library" : "Select"
                     uiScale: root.uiScale
                     typography: typography
                     luluPalette: luluPalette
