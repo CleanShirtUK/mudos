@@ -4,6 +4,7 @@ Item {
     id: librarySpace
     property var libraryGames: []
     property int selectedIndex: 0
+    property int firstVisibleRow: 0
     property int collectionIndex: 0
     property bool collectionFocus: false
     property string transitionState: "RESTING"
@@ -11,17 +12,44 @@ Item {
     property real uiScale: 1
     property var typography
     property var luluPalette
+    property var canonicalTexture
+    property var canonicalCoordinateRoot
+    property size canonicalSize: Qt.size(1280, 720)
     readonly property string navigationObject: "library"
     readonly property real surfaceMargin: 44 * uiScale
-    readonly property real gridGap: 18 * uiScale
-    readonly property int gridColumns: 6
-    readonly property real collectionSelectorBottomY: 158 * uiScale
+    readonly property real gridGap: 14 * uiScale
+    readonly property int gridColumns: 7
+    readonly property real fullscreenPanelBevelWidth: 6 * uiScale
+    readonly property real fullscreenPanelCardSelectionScale: 1.05
+    readonly property real fullscreenPanelCardSafetyMargin: 4 * uiScale
+    readonly property real fullscreenPanelBorderWidth: 0
+    readonly property real fullscreenPanelTransmission: 1
+    readonly property real collectionSelectorBottomY: 164 * uiScale
     readonly property real currentHeaderToGridGap: 22 * uiScale
     readonly property real headerToGridGap: currentHeaderToGridGap / 2
     readonly property real usableGridWidth: parent.width - 2 * (76 * uiScale + surfaceMargin)
-    readonly property real libraryCardWidth: (usableGridWidth - (gridColumns - 1) * gridGap) / gridColumns
+    readonly property real gridTop: collectionSelectorBottomY + headerToGridGap
+    readonly property real gridBottom: parent.height - 64 * uiScale
+    readonly property real gridRegionHeight: Math.max(0, gridBottom - gridTop)
+    readonly property real horizontalCardWidth: (usableGridWidth - (gridColumns - 1) * gridGap
+        - 2 * fullscreenPanelCardSafetyMargin) /
+        (gridColumns + fullscreenPanelCardSelectionScale - 1.0)
+    readonly property real verticalCardWidth: (gridRegionHeight - gridGap
+        - 2 * fullscreenPanelCardSafetyMargin) /
+        (1.55 * (2 + 2 * (fullscreenPanelCardSelectionScale - 1.0)))
+    readonly property real libraryCardWidth: Math.min(horizontalCardWidth, verticalCardWidth)
     readonly property real libraryCardHeight: libraryCardWidth * 1.55
+    readonly property real gridHorizontalGrowth:
+        ((fullscreenPanelCardSelectionScale - 1.0) * libraryCardWidth) / 2
+    readonly property real gridVerticalGrowth:
+        ((fullscreenPanelCardSelectionScale - 1.0) * libraryCardHeight) / 2
+    readonly property real gridLeftInset: gridHorizontalGrowth + fullscreenPanelCardSafetyMargin
+    readonly property real gridRightInset: gridLeftInset
+    readonly property real gridTopInset: gridVerticalGrowth + fullscreenPanelCardSafetyMargin
+    readonly property real gridBottomInset: gridTopInset
     readonly property real gridRowStep: libraryCardHeight + gridGap
+    property point surfaceSceneOrigin: Qt.point(0, 0)
+    property real unfocusedBrightness: 0.6
     readonly property int gridRow: Math.floor(selectedIndex / gridColumns)
     readonly property real gridContentHeight: libraryGames.length
         ? Math.ceil(libraryGames.length / gridColumns) * gridRowStep - gridGap
@@ -29,22 +57,31 @@ Item {
     signal collectionChanged(int index)
     signal launchRequested(var game)
 
-    Rectangle {
-        anchors.fill: parent
-        color: luluPalette.backdrop
-        opacity: 0.96
-    }
-
-    Rectangle {
+    Item {
+        id: librarySurface
         x: 76 * uiScale
         y: 64 * uiScale
         width: parent.width - 152 * uiScale
         height: parent.height - 128 * uiScale
-        radius: 28 * uiScale
-        color: luluPalette.librarySurface
-        opacity: 0.82
-        border.color: luluPalette.libraryHighlight
-        border.width: uiScale
+
+        GlassSurface {
+            anchors.fill: parent
+            canonicalTexture: librarySpace.canonicalTexture
+            canonicalSize: librarySpace.canonicalSize
+            cornerRadius: 28 * uiScale
+            useExplicitSceneGeometry: true
+            sceneOriginOverride: librarySpace.surfaceSceneOrigin
+            sceneSizeOverride: Qt.size(librarySurface.width, librarySurface.height)
+            refractionPixels: 80 * uiScale
+            dispersionIor: 0.0175
+            diffusionPixels: 5 * uiScale
+            transmission: librarySpace.fullscreenPanelTransmission
+            bevelWidthPx: librarySpace.fullscreenPanelBevelWidth
+            bulgeStrength: 100
+            edgeLightStrength: 0.10
+            edgeLightDirection: Qt.vector2d(1, -1)
+        }
+
     }
 
     Text {
@@ -60,7 +97,7 @@ Item {
 
     Row {
         x: 120 * uiScale
-        y: 120 * uiScale
+        y: 136 * uiScale
         width: parent.width - 240 * uiScale
         spacing: 46 * uiScale
 
@@ -72,7 +109,7 @@ Item {
                 text: modelData
                 color: index === collectionIndex ? luluPalette.selectedText : luluPalette.navigationText
                 font.family: typography ? typography.interfaceFamily : "JetBrains Mono"
-                font.pixelSize: typography ? typography.size("body", 20) : 20 * uiScale
+                font.pixelSize: typography ? typography.size("secondary", 14) : 14 * uiScale
                 font.bold: index === collectionIndex
 
                 Rectangle {
@@ -80,7 +117,7 @@ Item {
                     anchors.left: parent.left
                     anchors.right: parent.right
                     anchors.top: parent.bottom
-                    anchors.topMargin: 12 * uiScale
+                    anchors.topMargin: 6 * uiScale
                     height: 2 * uiScale
                     color: collectionFocus ? luluPalette.focusIndicator : luluPalette.libraryHighlight
                 }
@@ -105,16 +142,17 @@ Item {
 
     Item {
         id: gridViewport
-        x: 76 * uiScale + surfaceMargin
-        y: collectionSelectorBottomY + headerToGridGap
-        width: usableGridWidth
-        height: parent.height - 240 * uiScale
+        x: 76 * uiScale + surfaceMargin - gridLeftInset
+        y: gridTop - gridTopInset
+        width: usableGridWidth + gridLeftInset + gridRightInset
+        height: gridRegionHeight + gridTopInset + gridBottomInset
         clip: true
 
         Grid {
             id: gameGrid
-            y: -gridRow * gridRowStep
-            width: usableGridWidth
+            x: gridLeftInset
+            y: gridTopInset - firstVisibleRow * gridRowStep
+            width: usableGridWidth - gridLeftInset - gridRightInset
             columns: gridColumns
             rowSpacing: gridGap
             columnSpacing: gridGap
@@ -137,7 +175,28 @@ Item {
                         uiScale: librarySpace.uiScale
                         typography: librarySpace.typography
                         luluPalette: librarySpace.luluPalette
+                        canonicalTexture: librarySpace.canonicalTexture
+                        canonicalCoordinateRoot: librarySpace.canonicalCoordinateRoot
+                        canonicalSize: librarySpace.canonicalSize
                         showAction: false
+                        stackedGlass: true
+                        stackedCardBevelWidth: 3 * librarySpace.uiScale
+                        stackedPlayBevelWidth: 3 * librarySpace.uiScale
+                        stackedPlayEdgeLightStrength: 0.18
+                        stackedCardBulgeStrength: 0
+                        stackedCardRefractionPixels: 0
+                        stackedCardDispersionIor: 0
+                        stackedPlayRefractionPixels: 8 * librarySpace.uiScale
+                        stackedPlayDispersionIor: 0
+                        stackedPlayBulgeStrength: 0
+                        focusBrightness: focused ? 1 : librarySpace.unfocusedBrightness
+                        stackedCoordinateRoot: librarySurface
+                        stackedCardOrigin: Qt.vector2d(librarySpace.surfaceSceneOrigin.x,
+                                                       librarySpace.surfaceSceneOrigin.y)
+                        stackedCardSize: Qt.vector2d(librarySurface.width,
+                                                    librarySurface.height)
+                        scale: focused ? librarySpace.fullscreenPanelCardSelectionScale : 1
+                        z: focused ? 2 : 1
 
                         MouseArea {
                             anchors.fill: parent
@@ -148,16 +207,13 @@ Item {
             }
         }
 
-        Rectangle {
-            anchors.left: parent.left
-            anchors.right: parent.right
-            anchors.bottom: parent.bottom
-            height: 52 * uiScale
-            visible: gridContentHeight + gameGrid.y > parent.height
-            gradient: Gradient {
-                GradientStop { position: 0.0; color: luluPalette.scrollFadeStart }
-                GradientStop { position: 1.0; color: luluPalette.scrollFadeEnd }
-            }
-        }
+    }
+
+    Timer {
+        interval: 16
+        running: librarySpace.visible
+        repeat: true
+        onTriggered: librarySpace.surfaceSceneOrigin =
+            librarySurface.mapToItem(librarySpace.canonicalCoordinateRoot, 0, 0)
     }
 }

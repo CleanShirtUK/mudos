@@ -27,6 +27,9 @@ Item {
     property real playDiffusionPixels: 5
     property real playTransmission: 0.82
     property real playBulgeStrength: 20
+    property real playBevelWidth: 0
+    property real playEdgeLightStrength: 0
+    property real focusBrightness: 1
     property int diagnosticMode: 0
 
     ShaderEffect {
@@ -57,6 +60,10 @@ Item {
         property real u_playDiffusionPixels: root.playDiffusionPixels
         property real u_playTransmission: root.playTransmission
         property real u_playBulgeStrength: root.playBulgeStrength
+        property real u_playBevelWidth: root.playBevelWidth
+        property real u_playEdgeLightStrength: root.playEdgeLightStrength
+        property real u_focusBrightness: root.focusBrightness
         property int u_diagnostic: root.diagnosticMode
     }
+
 }

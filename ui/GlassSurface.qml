@@ -20,6 +20,7 @@ Item {
     property real focusAmount: 0
     property real cornerRadius: 0
     property bool useExplicitSceneGeometry: false
+    property bool identitySampling: false
     property point sceneOriginOverride: Qt.point(0, 0)
     property size sceneSizeOverride: Qt.size(0, 0)
     // Developer-only diagnostics; production rendering uses mode 0.
@@ -33,7 +34,9 @@ Item {
 
     ShaderEffect {
         anchors.fill: parent
-        fragmentShader: "shaders/canonical-snell-refraction.frag.qsb"
+        fragmentShader: root.identitySampling
+            ? "shaders/canonical-identity.frag.qsb"
+            : "shaders/canonical-snell-refraction.frag.qsb"
         property var source: root.canonicalTexture
         property vector2d u_sceneOrigin: Qt.vector2d(root.sceneOrigin.x, root.sceneOrigin.y)
         property vector2d u_sceneSize: root.sceneSize

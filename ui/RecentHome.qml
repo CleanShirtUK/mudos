@@ -15,7 +15,7 @@ Item {
     property real uiScale: 1
     property var typography
     property var luluPalette
-    readonly property real compactCardWidth: Math.min(160 * uiScale, focalCardHeight * 0.62)
+    property real compactCardWidth: Math.min(160 * uiScale, focalCardHeight * 0.62)
     signal launchRequested(var game)
 
     Text {

@@ -1,52 +1,54 @@
 import QtQuick
 
 Item {
+    id: libraryHome
     property real cardHeight: 0
     property var typography
     property var luluPalette
+    property var canonicalTexture
+    property var canonicalCoordinateRoot
+    property size canonicalSize: Qt.size(1280, 720)
+    property real compactCardWidth: 160 * uiScale
+    property point allGamesSceneOrigin: Qt.point(0, 0)
     property string transitionState: "RESTING"
     property real uiScale: 1
     readonly property string navigationObject: "library"
-    readonly property real libraryGameCardAspectRatio: 1 / 1.55
     signal openRequested()
 
-    Rectangle {
+    GameCard {
         id: libraryHomeCard
         x: 0
         y: 0
-        width: cardHeight * libraryGameCardAspectRatio
+        width: compactCardWidth
         height: cardHeight
-        radius: 18 * uiScale
-        color: luluPalette.libraryCardSurface
-        border.color: luluPalette.libraryBorder
-        border.width: uiScale
-
-        Column {
-            anchors.centerIn: parent
-            spacing: 18 * uiScale
-
-            Text {
-                anchors.horizontalCenter: parent.horizontalCenter
-                text: "[ ]"
-                color: luluPalette.primaryText
-                font.family: typography ? typography.displayFamily : "Zalando Sans Condensed Black"
-                font.weight: typography ? typography.displayWeight : Font.Black
-                font.pixelSize: Math.min(typography ? typography.size("display", 100) : 100 * uiScale,
-                                          libraryHomeCard.width * 0.45)
-            }
-
-            Text {
-                anchors.horizontalCenter: parent.horizontalCenter
-                text: "All Games"
-                color: luluPalette.primaryText
-                font.family: typography ? typography.interfaceFamily : "JetBrains Mono"
-                font.pixelSize: typography ? typography.size("body", 22) : 22 * uiScale
-            }
-        }
+        compact: true
+        homeCard: true
+        presentationState: "COMPACT"
+        displayTitle: "All Games"
+        presentationId: "library:all"
+        symbolicArtwork: "[ ]"
+        identitySampling: false
+        typography: libraryHome.typography
+        luluPalette: libraryHome.luluPalette
+        canonicalTexture: libraryHome.canonicalTexture
+        canonicalCoordinateRoot: libraryHome.canonicalCoordinateRoot
+        canonicalSize: libraryHome.canonicalSize
+        sceneOriginOverride: libraryHome.allGamesSceneOrigin
+        sceneSizeOverride: Qt.size(libraryHomeCard.actualGlassSurface.width,
+                                   libraryHomeCard.actualGlassSurface.height)
 
         MouseArea {
             anchors.fill: parent
             onClicked: openRequested()
         }
+    }
+
+    Timer {
+        interval: 16
+        running: libraryHome.visible
+        repeat: true
+        onTriggered: libraryHome.allGamesSceneOrigin =
+            libraryHomeCard.actualGlassSurface.mapToItem(
+                libraryHome.canonicalCoordinateRoot, 0, 0)
     }
 }

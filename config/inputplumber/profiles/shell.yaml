@@ -69,6 +69,18 @@ mapping:
         button: South
     target_events:
       - keyboard: KeyEnter
+  - name: Left bumper previous collection
+    source_event:
+      gamepad:
+        button: LeftBumper
+    target_events:
+      - keyboard: KeyPageUp
+  - name: Right bumper next collection
+    source_event:
+      gamepad:
+        button: RightBumper
+    target_events:
+      - keyboard: KeyPageDown
   - name: East goes back
     source_event:
       gamepad:

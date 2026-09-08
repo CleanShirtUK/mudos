@@ -9,6 +9,7 @@ layout(std140, binding = 0) uniform buf {
     vec2 artworkSize;
     float borderAlpha;
     float borderWidthPx;
+    float focusBrightness;
     int diagnosticMode;
 };
 
@@ -30,5 +31,6 @@ void main()
                  * (1.0 - smoothstep(0.0, antialiasWidth, distance));
     artwork.rgb += vec3(border * borderAlpha);
     artwork.a = max(artwork.a, border * borderAlpha);
+    artwork.rgb *= focusBrightness;
     fragColor = artwork * qt_Opacity;
 }

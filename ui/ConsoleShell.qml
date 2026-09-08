@@ -28,6 +28,7 @@ Window {
     readonly property real headingCardGap: design(21)
     readonly property real homeHintTopY: height - design(45)
     readonly property real acceptedRecentCardHeight: Math.min(design(375), (height - design(248 + 88)) * 0.67)
+    readonly property real compactCardWidth: Math.min(design(160), acceptedRecentCardHeight * 0.62)
     readonly property real homeContentOriginY: homeHintTopY - acceptedRecentCardHeight - headingCardGap
     readonly property real selectedDomainY: homeContentOriginY - activeHeadingHeight - headingCardGap
     property int recentIndex: 0
@@ -35,6 +36,7 @@ Window {
     property int collectionIndex: 0
     property string space: "home"
     property string libraryFocus: "games"
+    property int libraryFirstVisibleRow: 0
     property string libraryTransitionState: "RESTING"
     readonly property string libraryNavigationObject: "library"
     property var recentGames: []
@@ -135,6 +137,8 @@ Window {
             libraryGames = data
             if (libraryIndex >= libraryGames.length)
                 libraryIndex = Math.max(0, libraryGames.length - 1)
+            libraryFirstVisibleRow = Math.min(libraryFirstVisibleRow,
+                                              Math.max(0, Math.floor(Math.max(0, libraryGames.length - 1) / 7) - 1))
         })
     }
 
@@ -157,14 +161,32 @@ Window {
     }
 
     function moveLibrary(delta) {
-        if (libraryFocus === "collection") {
-            collectionIndex = (collectionIndex + delta + 2) % 2
-            refreshLibrary()
-            return
-        }
         if (!libraryGames.length)
             return
         libraryIndex = (libraryIndex + delta + libraryGames.length) % libraryGames.length
+    }
+
+    function moveLibraryVertical(delta) {
+        if (!libraryGames.length)
+            return
+        var column = libraryIndex % 7
+        var row = Math.floor(libraryIndex / 7) + delta
+        if (row < 0)
+            return
+        var target = row * 7 + column
+        var rowStart = row * 7
+        if (rowStart >= libraryGames.length)
+            return
+        libraryIndex = Math.min(target, libraryGames.length - 1)
+        if (row >= libraryFirstVisibleRow + 2)
+            libraryFirstVisibleRow = row - 1
+        else if (row < libraryFirstVisibleRow)
+            libraryFirstVisibleRow = row
+    }
+
+    function moveLibraryCollection(delta) {
+        collectionIndex = (collectionIndex + delta + 2) % 2
+        refreshLibrary()
     }
 
     function launchGame(game) {
@@ -206,6 +228,7 @@ Window {
             space = "library"
             libraryFocus = "games"
             libraryIndex = 0
+            libraryFirstVisibleRow = 0
             libraryTransitionState = "EXPANDED"
             message = ""
         } else if (domainIndex === 1) {
@@ -281,16 +304,22 @@ Window {
                 }
             } else if (space === "library") {
                 if (event.key === Qt.Key_Up) {
-                    libraryFocus = "collection"
+                    moveLibraryVertical(-1)
                     event.accepted = true
                 } else if (event.key === Qt.Key_Down) {
-                    libraryFocus = "games"
+                    moveLibraryVertical(1)
                     event.accepted = true
                 } else if (event.key === Qt.Key_Left) {
                     moveLibrary(-1)
                     event.accepted = true
                 } else if (event.key === Qt.Key_Right) {
                     moveLibrary(1)
+                    event.accepted = true
+                } else if (event.key === Qt.Key_PageUp) {
+                    moveLibraryCollection(-1)
+                    event.accepted = true
+                } else if (event.key === Qt.Key_PageDown) {
+                    moveLibraryCollection(1)
                     event.accepted = true
                 }
             }
@@ -362,13 +391,14 @@ Window {
                     selectedIndex: root.recentIndex
                     focalCardWidth: Math.min(root.design(740), root.width - root.design(100), (root.height - root.design(248 + 88)) * 1.9 * 0.67)
                     focalCardHeight: root.acceptedRecentCardHeight
+                    compactCardWidth: root.compactCardWidth
                      focalScale: 0.67
                      uiScale: root.uiScale
                      typography: typography
                      luluPalette: luluPalette
-                    canonicalTexture: orbitTexture
-                    canonicalCoordinateRoot: orbitRenderSource
-                    canonicalSize: Qt.size(root.width, root.height)
+                     canonicalTexture: orbitTexture
+                     canonicalCoordinateRoot: orbitRenderSource
+                     canonicalSize: Qt.size(root.width, root.height)
                     onLaunchRequested: root.launchGame(game)
                     Behavior on opacity { NumberAnimation { duration: 220 } }
                     Behavior on scale { NumberAnimation { duration: 220 } }
@@ -383,6 +413,10 @@ Window {
                      uiScale: root.uiScale
                      typography: typography
                      luluPalette: luluPalette
+                     canonicalTexture: orbitTexture
+                     canonicalCoordinateRoot: orbitRenderSource
+                     canonicalSize: Qt.size(root.width, root.height)
+                     compactCardWidth: root.compactCardWidth
                     transitionState: root.libraryTransitionState
                     onOpenRequested: root.activate()
                     Behavior on opacity { NumberAnimation { duration: 220 } }
@@ -412,11 +446,15 @@ Window {
             selectedIndex: root.libraryIndex
             collectionIndex: root.collectionIndex
             collectionFocus: root.libraryFocus === "collection"
-            transitionState: root.libraryTransitionState
-            returnState: root.space === "library" ? "EXPANDED" : "RESTING"
-            uiScale: root.uiScale
-            typography: typography
-            luluPalette: luluPalette
+             transitionState: root.libraryTransitionState
+             returnState: root.space === "library" ? "EXPANDED" : "RESTING"
+             uiScale: root.uiScale
+             typography: typography
+             luluPalette: luluPalette
+             canonicalTexture: orbitTexture
+             canonicalCoordinateRoot: orbitRenderSource
+             canonicalSize: Qt.size(root.width, root.height)
+             firstVisibleRow: root.libraryFirstVisibleRow
             onCollectionChanged: {
                 root.collectionIndex = index
                 root.refreshLibrary()
@@ -431,22 +469,72 @@ Window {
             anchors.bottom: parent.bottom
             height: root.design(72)
 
-            Text {
+            Row {
                 x: root.design(76)
                 width: parent.width * 0.54
                 anchors.verticalCenter: parent.verticalCenter
-                text: root.space === "library"
-                      ? "LEFT / RIGHT  Navigate    UP / DOWN  Collection / Games    A  Launch    B  Back"
-                      : root.domainIndex === 3
-                        ? "UP / DOWN  Navigate    LEFT / RIGHT  Games    A  Launch"
-                        : root.domainIndex === 2
-                          ? "UP / DOWN  Navigate    A  Open Library"
-                          : "UP / DOWN  Navigate    A  Select"
-                color: luluPalette.navigationText
-                font.family: typography.interfaceFamily
-                font.pixelSize: typography.size("hint", 14)
-                font.letterSpacing: root.design(1)
-                elide: Text.ElideRight
+                visible: root.space === "library"
+                spacing: root.design(14)
+
+                ControllerHint {
+                    action: "navigation"
+                    label: "Games"
+                    uiScale: root.uiScale
+                    typography: typography
+                    luluPalette: luluPalette
+                }
+                ControllerHint {
+                    action: "previousCollection"
+                    label: "Prev"
+                    uiScale: root.uiScale
+                    typography: typography
+                    luluPalette: luluPalette
+                }
+                ControllerHint {
+                    action: "nextCollection"
+                    label: "Next"
+                    uiScale: root.uiScale
+                    typography: typography
+                    luluPalette: luluPalette
+                }
+                ControllerHint {
+                    action: "confirm"
+                    label: root.space === "library" ? "Launch" : "Select"
+                    uiScale: root.uiScale
+                    typography: typography
+                    luluPalette: luluPalette
+                }
+                ControllerHint {
+                    action: "back"
+                    label: "Back"
+                    uiScale: root.uiScale
+                    typography: typography
+                    luluPalette: luluPalette
+                }
+            }
+
+            Row {
+                x: root.design(76)
+                width: parent.width * 0.54
+                anchors.verticalCenter: parent.verticalCenter
+                visible: root.space !== "library"
+                spacing: root.design(14)
+
+                ControllerHint {
+                    action: "navigation"
+                    label: root.domainIndex === 3 ? "Navigate / Games" : "Navigate"
+                    uiScale: root.uiScale
+                    typography: typography
+                    luluPalette: luluPalette
+                }
+                ControllerHint {
+                    action: "confirm"
+                    label: root.domainIndex === 3 ? "Launch"
+                          : root.domainIndex === 2 ? "Open Library" : "Select"
+                    uiScale: root.uiScale
+                    typography: typography
+                    luluPalette: luluPalette
+                }
             }
 
             Text {

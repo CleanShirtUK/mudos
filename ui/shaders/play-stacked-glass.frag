@@ -29,6 +29,9 @@ layout(std140, binding = 0) uniform buf {
     float u_playDiffusionPixels;
     float u_playTransmission;
     float u_playBulgeStrength;
+    float u_playBevelWidth;
+    float u_playEdgeLightStrength;
+    float u_focusBrightness;
     int u_diagnostic;
 };
 layout(binding = 1) uniform sampler2D source;
@@ -52,6 +55,30 @@ float bulgeHeight(vec2 uv, vec2 size, float radius, float bevel, float strength)
     vec2 n = clamp(abs(uv - 0.5) * 2.0, vec2(0.0), vec2(1.0));
     float dome = cos(n.x * 1.57079633) * cos(n.y * 1.57079633);
     return strength * dome * fade;
+}
+
+float bevelHeight(vec2 uv, vec2 size, float radius, float bevel)
+{
+    float boundaryDistance = roundedDistance(uv * size, size, radius);
+    float transitionWidth = max(bevel, 1.0);
+    float t = clamp((transitionWidth + boundaryDistance) / transitionWidth, 0.0, 1.0);
+    return smooth5(t);
+}
+
+vec2 cardSurfaceGradient(vec2 uv, vec2 size, float radius, float bevel, float strength)
+{
+    vec2 e = 1.0 / size;
+    vec2 gradient = vec2(
+        (bevelHeight(uv + vec2(e.x, 0), size, radius, bevel)
+         + bulgeHeight(uv + vec2(e.x, 0), size, radius, bevel, strength))
+        - (bevelHeight(uv - vec2(e.x, 0), size, radius, bevel)
+         + bulgeHeight(uv - vec2(e.x, 0), size, radius, bevel, strength)),
+        (bevelHeight(uv + vec2(0, e.y), size, radius, bevel)
+         + bulgeHeight(uv + vec2(0, e.y), size, radius, bevel, strength))
+        - (bevelHeight(uv - vec2(0, e.y), size, radius, bevel)
+         + bulgeHeight(uv - vec2(0, e.y), size, radius, bevel, strength)))
+        / (2.0 * e);
+    return gradient;
 }
 
 vec2 gradient(vec2 uv, vec2 size, float radius, float bevel, float strength)
@@ -80,7 +107,8 @@ vec4 sampleCardMaterial(vec2 scenePosition)
 {
     vec2 cardUv = scenePosition / u_cardSize;
     vec2 baseUv = (u_cardOrigin + scenePosition) / u_canonicalSize;
-    vec2 g = gradient(cardUv, u_cardSize, u_cardRadius, u_cardBevelWidth, u_cardBulgeStrength);
+    vec2 g = cardSurfaceGradient(cardUv, u_cardSize, u_cardRadius,
+                                  u_cardBevelWidth, u_cardBulgeStrength);
     vec3 normal = normalize(vec3(g * u_cardDepth, 1.0));
     vec3 incident = vec3(0, 0, -1);
     vec3 rr = refract(incident, normal, 1.0 / max(u_cardIor - u_cardDispersionIor, 1.001));
@@ -131,11 +159,14 @@ void main()
         return;
     }
     vec2 e = 1.0 / u_playSize;
-    vec2 playGradient = vec2(
-        bulgeHeight(playUv + vec2(e.x,0), u_playSize, u_playRadius, 0.0, u_playBulgeStrength)
-        - bulgeHeight(playUv - vec2(e.x,0), u_playSize, u_playRadius, 0.0, u_playBulgeStrength),
-        bulgeHeight(playUv + vec2(0,e.y), u_playSize, u_playRadius, 0.0, u_playBulgeStrength)
-        - bulgeHeight(playUv - vec2(0,e.y), u_playSize, u_playRadius, 0.0, u_playBulgeStrength)) / (2.0 * e);
+    vec2 playGradient = u_playBevelWidth > 0.0
+        ? cardSurfaceGradient(playUv, u_playSize, u_playRadius,
+                              u_playBevelWidth, u_playBulgeStrength)
+        : vec2(
+            bulgeHeight(playUv + vec2(e.x,0), u_playSize, u_playRadius, 0.0, u_playBulgeStrength)
+            - bulgeHeight(playUv - vec2(e.x,0), u_playSize, u_playRadius, 0.0, u_playBulgeStrength),
+            bulgeHeight(playUv + vec2(0,e.y), u_playSize, u_playRadius, 0.0, u_playBulgeStrength)
+            - bulgeHeight(playUv - vec2(0,e.y), u_playSize, u_playRadius, 0.0, u_playBulgeStrength)) / (2.0 * e);
     vec3 n = normalize(vec3(playGradient * u_playDepth, 1.0));
     vec3 i = vec3(0,0,-1);
     vec3 rR = refract(i,n,1.0/max(u_playIor-u_playDispersionIor,1.001));
@@ -147,6 +178,14 @@ void main()
     vec4 blue = playFiltered(scenePosition + rB.xy*u_playRefractionPixels, playRadius);
     vec4 result = vec4(red.r, green.g, blue.b, green.a);
     result.rgb *= u_playTransmission;
+    float bevelBand = u_playBevelWidth > 0.0
+        ? 1.0 - smoothstep(-1.0, 1.0,
+            abs(boundaryDistance) - u_playBevelWidth) : 0.0;
+    vec2 lightDirection = normalize(u_cardEdgeLightDirection);
+    float directional = clamp(dot(normalize(vec3(lightDirection, 0)),
+        vec3(n.xy, 0)), 0.0, 1.0);
+    result.rgb += vec3(bevelBand * directional * u_playEdgeLightStrength);
+    result.rgb *= u_focusBrightness;
     // The focal card underneath owns every pixel outside the Play footprint.
     fragColor = vec4(result.rgb * playMask, playMask) * qt_Opacity;
 }
