@@ -25,6 +25,8 @@ layout(std140, binding = 0) uniform buf {
     float u_playIor;
     float u_playDepth;
     float u_playRefractionPixels;
+    float u_playRefractionBiasPx;
+    float u_playMaterialBiasPx;
     float u_playDispersionIor;
     float u_playDiffusionPixels;
     float u_playTransmission;
@@ -158,24 +160,32 @@ void main()
         fragColor = vec4(vec3(1.0, 0.05, 0.8) * playMask, playMask) * qt_Opacity;
         return;
     }
-    vec2 e = 1.0 / u_playSize;
-    vec2 playGradient = u_playBevelWidth > 0.0
-        ? cardSurfaceGradient(playUv, u_playSize, u_playRadius,
-                              u_playBevelWidth, u_playBulgeStrength)
-        : vec2(
-            bulgeHeight(playUv + vec2(e.x,0), u_playSize, u_playRadius, 0.0, u_playBulgeStrength)
-            - bulgeHeight(playUv - vec2(e.x,0), u_playSize, u_playRadius, 0.0, u_playBulgeStrength),
-            bulgeHeight(playUv + vec2(0,e.y), u_playSize, u_playRadius, 0.0, u_playBulgeStrength)
-            - bulgeHeight(playUv - vec2(0,e.y), u_playSize, u_playRadius, 0.0, u_playBulgeStrength)) / (2.0 * e);
+    if (u_diagnostic == 3) {
+        fragColor = sampleCardMaterial(scenePosition) * qt_Opacity;
+        return;
+    }
+    // Keep the Play refraction normal local to the rounded perimeter. The old
+    // zero-bevel bulge fallback produced a broad interior height field.
+    const float playOpticalEdgeWidth = 8.0;
+    vec2 playGradient = cardSurfaceGradient(
+        playUv, u_playSize, u_playRadius, playOpticalEdgeWidth, 0.0);
+    float edgeBiasBand = 1.0 - smoothstep(0.0, playOpticalEdgeWidth,
+                                           abs(boundaryDistance));
+    vec2 playRefractionBias = vec2(-1.0, -1.0)
+        * u_playRefractionBiasPx * edgeBiasBand;
+    vec2 playMaterialBias = vec2(-1.0, -1.0) * u_playMaterialBiasPx;
     vec3 n = normalize(vec3(playGradient * u_playDepth, 1.0));
     vec3 i = vec3(0,0,-1);
     vec3 rR = refract(i,n,1.0/max(u_playIor-u_playDispersionIor,1.001));
     vec3 rG = refract(i,n,1.0/max(u_playIor,1.001));
     vec3 rB = refract(i,n,1.0/max(u_playIor+u_playDispersionIor,1.001));
     vec2 playRadius = vec2(u_playDiffusionPixels) / min(u_playSize.x, u_playSize.y);
-    vec4 red = playFiltered(scenePosition + rR.xy*u_playRefractionPixels, playRadius);
-    vec4 green = playFiltered(scenePosition + rG.xy*u_playRefractionPixels, playRadius);
-    vec4 blue = playFiltered(scenePosition + rB.xy*u_playRefractionPixels, playRadius);
+    vec4 red = playFiltered(scenePosition + playMaterialBias + playRefractionBias
+                            + rR.xy*u_playRefractionPixels, playRadius);
+    vec4 green = playFiltered(scenePosition + playMaterialBias + playRefractionBias
+                              + rG.xy*u_playRefractionPixels, playRadius);
+    vec4 blue = playFiltered(scenePosition + playMaterialBias + playRefractionBias
+                             + rB.xy*u_playRefractionPixels, playRadius);
     vec4 result = vec4(red.r, green.g, blue.b, green.a);
     result.rgb *= u_playTransmission;
     float bevelBand = u_playBevelWidth > 0.0

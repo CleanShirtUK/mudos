@@ -25,6 +25,8 @@ Item {
     property size sceneSizeOverride: Qt.size(0, 0)
     // Developer-only diagnostics; production rendering uses mode 0.
     property int diagnosticMode: 0
+    property string debugLabel: ""
+    property var debugCoordinateRoot
     readonly property point sceneOrigin: useExplicitSceneGeometry
         ? sceneOriginOverride
         : (canonicalTexture ? mapToItem(canonicalTexture, 0, 0) : Qt.point(0, 0))
@@ -55,5 +57,20 @@ Item {
         property vector2d u_edgeLightDirection: root.edgeLightDirection
         property real u_cornerRadius: root.cornerRadius
         property int u_diagnostic: root.diagnosticMode
+    }
+
+    Timer {
+        interval: 1500
+        running: root.debugLabel !== ""
+        repeat: false
+        onTriggered: {
+            var mapped = root.mapToItem(root.debugCoordinateRoot, 0, 0)
+            console.log("FOCAL_PRODUCTION_PROBE", root.debugLabel,
+                        "mapped", mapped.x, mapped.y,
+                        "sceneOrigin", root.sceneOrigin.x, root.sceneOrigin.y,
+                        "sceneSize", root.sceneSize.x, root.sceneSize.y,
+                        "canonicalSize", root.canonicalSize.width, root.canonicalSize.height,
+                        "textureSize", root.canonicalTexture.width, root.canonicalTexture.height)
+        }
     }
 }

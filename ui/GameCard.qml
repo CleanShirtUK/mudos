@@ -20,8 +20,15 @@ Rectangle {
     property string presentationId: ""
     property string symbolicArtwork: ""
     property bool identitySampling: false
+    property bool liveSceneCoordinates: false
+    property bool neutralOptics: false
+    // Focal diagnostic stages: 0 neutral, then transmission, diffusion, bevel,
+    // bulge, refraction, dispersion, and edge lighting.
+    property int opticsStage: -1
     property point sceneOriginOverride: canonicalSceneOrigin
     property size sceneSizeOverride: Qt.size(width, height)
+    property point liveSceneOrigin: Qt.point(0, 0)
+    property vector2d livePlayOrigin: Qt.vector2d(0, 0)
     property alias actualGlassSurface: glassSurface
     property bool stackedGlass: false
     property var stackedCoordinateRoot
@@ -69,23 +76,28 @@ Rectangle {
         id: glassSurface
         anchors.fill: parent
         visible: card.homeCard
+        debugLabel: card.opticsStage >= 0 ? "focal-optics-stage-" + card.opticsStage : ""
+        debugCoordinateRoot: card.canonicalCoordinateRoot
         canonicalTexture: card.canonicalTexture
         canonicalSize: card.canonicalSize
         cornerRadius: card.radius
         useExplicitSceneGeometry: card.presentationState === "COMPACT"
-        sceneOriginOverride: card.sceneOriginOverride
-        sceneSizeOverride: card.sceneSizeOverride
-        identitySampling: card.identitySampling
-        refractionPixels: 80 * card.uiScale
-        dispersionIor: 0.0175
-        diffusionPixels: 5 * card.uiScale
-        transmission: 0.75
-        bevelWidthPx: 3 * card.uiScale
-        bulgeStrength: 100.0
+            || card.identitySampling || card.liveSceneCoordinates
+        sceneOriginOverride: card.identitySampling || card.liveSceneCoordinates
+            ? card.liveSceneOrigin : card.sceneOriginOverride
+        sceneSizeOverride: card.identitySampling || card.liveSceneCoordinates
+            ? Qt.size(card.width, card.height) : card.sceneSizeOverride
+        identitySampling: false
+        refractionPixels: card.opticsStage >= 0 && card.opticsStage < 5 ? 0 : 80 * card.uiScale
+        dispersionIor: card.opticsStage >= 0 && card.opticsStage < 6 ? 0 : 0.0175
+        diffusionPixels: card.opticsStage >= 0 && card.opticsStage < 2 ? 0 : 5 * card.uiScale
+        transmission: card.opticsStage >= 0 && card.opticsStage < 1 ? 1 : 0.75
+        bevelWidthPx: card.opticsStage >= 0 && card.opticsStage < 3 ? 0 : 3 * card.uiScale
+        bulgeStrength: card.opticsStage >= 0 && card.opticsStage < 4 ? 0 : 100.0
         // Retained as a disabled experiment; scene-derived illumination is not material.
         sceneLightStrength: 0
         sceneLightPixels: 24
-        edgeLightStrength: 0.10
+        edgeLightStrength: card.opticsStage >= 0 && card.opticsStage < 7 ? 0 : 0.10
         edgeLightDirection: Qt.vector2d(1, -1)
         diagnosticMode: 0
     }
@@ -119,11 +131,21 @@ Rectangle {
 
     Timer {
         interval: 16
-        running: card.stackedGlass && card.stackedCoordinateRoot
+        running: (card.stackedGlass || card.identitySampling || card.liveSceneCoordinates)
+            && card.canonicalCoordinateRoot
         repeat: true
         onTriggered: {
-            var origin = card.mapToItem(card.stackedCoordinateRoot, 0, 0)
-            card.stackedPlayOrigin = Qt.vector2d(origin.x, origin.y)
+            if (card.stackedGlass) {
+                var stackedOrigin = card.mapToItem(card.stackedCoordinateRoot, 0, 0)
+                card.stackedPlayOrigin = Qt.vector2d(stackedOrigin.x, stackedOrigin.y)
+            }
+            if (card.identitySampling || card.liveSceneCoordinates)
+                card.liveSceneOrigin = card.actualGlassSurface.mapToItem(
+                    card.canonicalCoordinateRoot, 0, 0)
+            if (card.recentFocal) {
+                var playOrigin = playButton.mapToItem(card, 0, 0)
+                card.livePlayOrigin = Qt.vector2d(playOrigin.x, playOrigin.y)
+            }
         }
     }
 
@@ -240,14 +262,16 @@ Rectangle {
                     : Qt.vector2d(0, 0)
                 cardSize: Qt.size(card.width, card.height)
                 cardRadius: card.radius
-                playOrigin: Qt.vector2d(playButton.mapToItem(card, 0, 0).x,
-                                        playButton.mapToItem(card, 0, 0).y)
+                 playOrigin: card.livePlayOrigin
                 cardRefractionPixels: 80 * card.uiScale
                 cardDiffusionPixels: 5 * card.uiScale
-                cardBevelWidth: 3 * card.uiScale
-                playRefractionPixels: 40 * card.uiScale
-                playDiffusionPixels: 5 * card.uiScale
-                diagnosticMode: 0
+                 cardBevelWidth: 3 * card.uiScale
+                 playRefractionPixels: 40 * card.uiScale
+                 playRefractionBiasPx: 100 * card.uiScale
+                 playMaterialBiasPx: 100 * card.uiScale
+                 playDispersionIor: 0
+                 playDiffusionPixels: 5 * card.uiScale
+                 diagnosticMode: 0
             }
 
             Text {

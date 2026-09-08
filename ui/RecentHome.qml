@@ -42,6 +42,8 @@ Item {
                 game: modelData
                 focused: index === selectedIndex
                 presentationState: modelData.game_id === recentHome.selectedGameId ? "FOCUSED" : "COMPACT"
+                liveSceneCoordinates: recentFocal
+                opticsStage: recentFocal ? 7 : -1
                 compact: presentationState === "COMPACT"
                 showAction: false
                 homeCard: true
