@@ -52,7 +52,7 @@ Rectangle {
             property var source: artworkTexture
             property real cornerRadius: recentFocal ? 18 * focalScale / Math.min(width, height) : 0
             opacity: card.focused ? 1 : 0.68
-            fragmentShader: "\n                uniform sampler2D source;\n                uniform lowp float qt_Opacity;\n                uniform highp float cornerRadius;\n                varying highp vec2 qt_TexCoord0;\n                void main() {\n                    highp vec2 q = abs(qt_TexCoord0 - vec2(0.5)) - vec2(0.5 - cornerRadius);\n                    highp float distance = length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - cornerRadius;\n                    lowp float alpha = 1.0 - smoothstep(0.0, 0.002, distance);\n                    gl_FragColor = texture2D(source, qt_TexCoord0) * alpha * qt_Opacity;\n                }\n            "
+            fragmentShader: "shaders/card-rounded.frag.qsb"
         }
     }
 
