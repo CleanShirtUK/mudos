@@ -9,6 +9,7 @@ Item {
     property bool collectionFocus: false
     property string transitionState: "RESTING"
     property string returnState: "RESTING"
+    property real contentOpacity: 1
     property real uiScale: 1
     property var typography
     property var luluPalette
@@ -24,6 +25,8 @@ Item {
     readonly property real fullscreenPanelCardSafetyMargin: 4 * uiScale
     readonly property real fullscreenPanelBorderWidth: 0
     readonly property real fullscreenPanelTransmission: 1
+    readonly property real morphTransmission: 1
+    readonly property real morphBulgeStrength: 100
     readonly property real collectionSelectorBottomY: 164 * uiScale
     readonly property real currentHeaderToGridGap: 22 * uiScale
     readonly property real headerToGridGap: currentHeaderToGridGap / 2
@@ -57,35 +60,19 @@ Item {
     signal collectionChanged(int index)
     signal launchRequested(var game)
 
+    // Keeps stacked-card shader coordinates aligned with the persistent shell surface.
     Item {
         id: librarySurface
         x: 76 * uiScale
         y: 64 * uiScale
         width: parent.width - 152 * uiScale
         height: parent.height - 128 * uiScale
-
-        GlassSurface {
-            anchors.fill: parent
-            canonicalTexture: librarySpace.canonicalTexture
-            canonicalSize: librarySpace.canonicalSize
-            cornerRadius: 28 * uiScale
-            useExplicitSceneGeometry: true
-            sceneOriginOverride: librarySpace.surfaceSceneOrigin
-            sceneSizeOverride: Qt.size(librarySurface.width, librarySurface.height)
-            refractionPixels: 80 * uiScale
-            dispersionIor: 0.0175
-            diffusionPixels: 5 * uiScale
-            transmission: librarySpace.fullscreenPanelTransmission
-            bevelWidthPx: librarySpace.fullscreenPanelBevelWidth
-            bulgeStrength: 100
-            edgeLightStrength: 0.10
-            edgeLightDirection: Qt.vector2d(1, -1)
-        }
-
+        visible: false
     }
 
     Text {
         x: 76 * uiScale + surfaceMargin
+        opacity: librarySpace.contentOpacity
         y: 96 * uiScale
         text: "LIBRARY"
         color: luluPalette.headingAccent
@@ -97,6 +84,7 @@ Item {
 
     Row {
         x: 120 * uiScale
+        opacity: librarySpace.contentOpacity
         y: 136 * uiScale
         width: parent.width - 240 * uiScale
         spacing: 46 * uiScale
@@ -132,6 +120,7 @@ Item {
 
     Text {
         x: 120 * uiScale
+        opacity: librarySpace.contentOpacity
         y: 206 * uiScale
         visible: libraryGames.length === 0
         text: "No installed launchable games"
@@ -142,6 +131,7 @@ Item {
 
     Item {
         id: gridViewport
+        opacity: librarySpace.contentOpacity
         x: 76 * uiScale + surfaceMargin - gridLeftInset
         y: gridTop - gridTopInset
         width: usableGridWidth + gridLeftInset + gridRightInset
@@ -209,11 +199,4 @@ Item {
 
     }
 
-    Timer {
-        interval: 16
-        running: librarySpace.visible
-        repeat: true
-        onTriggered: librarySpace.surfaceSceneOrigin =
-            librarySurface.mapToItem(librarySpace.canonicalCoordinateRoot, 0, 0)
-    }
 }

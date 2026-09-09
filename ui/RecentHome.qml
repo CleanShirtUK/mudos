@@ -22,6 +22,13 @@ Item {
     property real compactCardWidth: Math.min(160 * uiScale, focalCardHeight * 0.62)
     property real railGap: 18 * uiScale
     property int visibleRailRadius: 3
+    property var presentationStartX: []
+    property var presentationStartWidth: []
+    property var presentationStartProgress: []
+    property var presentationStartChrome: []
+    property var presentationStartCompactTitle: []
+    property var presentationStartVisible: []
+    property bool suppressTransitionCompletion: false
     signal launchRequested(var game)
 
     function railX(relativeIndex) {
@@ -37,18 +44,51 @@ Item {
         return relativeIndex === 0 ? focalCardWidth : compactCardWidth
     }
 
-    onSelectedIndexChanged: {
-        if (!transitionInitialized) {
-            transitionFromIndex = selectedIndex
-            transitionProgress = 1
-            transitionFadeProgress = 1
-            return
+    function capturePresentation() {
+        var startsX = []
+        var startsWidth = []
+        var startsProgress = []
+        var startsChrome = []
+        var startsCompactTitle = []
+        var startsVisible = []
+        for (var index = 0; index < recentGames.length; index++) {
+            var card = recentRepeater.itemAt(index)
+            startsX[index] = card ? card.x : railX(index - selectedIndex)
+            startsWidth[index] = card ? card.width : railWidth(index - selectedIndex)
+            startsProgress[index] = card ? card.presentationProgress
+                                          : (index === selectedIndex ? 1 : 0)
+            startsChrome[index] = card ? card.focalChromeOpacity
+                                        : (index === selectedIndex ? 1 : 0)
+            startsCompactTitle[index] = card ? card.compactTitleOpacity
+                                              : (index === selectedIndex ? 0 : 1)
+            startsVisible[index] = card ? card.visible : true
         }
-        transitionFromIndex = Math.max(0, Math.min(recentGames.length - 1,
-                                                    transitionFromIndex))
+        presentationStartX = startsX
+        presentationStartWidth = startsWidth
+        presentationStartProgress = startsProgress
+        presentationStartChrome = startsChrome
+        presentationStartCompactTitle = startsCompactTitle
+        presentationStartVisible = startsVisible
+        console.log("RECENT_RETARGET", "capture", "selected", selectedIndex,
+                    "progress", transitionProgress, "x", startsX,
+                    "width", startsWidth, "presentation", startsProgress,
+                    "chrome", startsChrome, "compactTitle", startsCompactTitle)
+    }
+
+    function beginRetarget() {
+        transitionFromIndex = selectedIndex
+        console.log("RECENT_RETARGET", "target", selectedIndex,
+                    "toX", recentGames.map(function(game, index) {
+                        return railX(index - selectedIndex)
+                    }), "toWidth", recentGames.map(function(game, index) {
+                        return railWidth(index - selectedIndex)
+                    }))
+        suppressTransitionCompletion = true
+        transitionAnimation.stop()
+        suppressTransitionCompletion = false
         transitionProgress = 0
         transitionFadeProgress = 0
-        transitionAnimation.restart()
+        transitionAnimation.start()
         fadeAnimation.restart()
     }
 
@@ -57,6 +97,7 @@ Item {
         transitionProgress = 1
         transitionFadeProgress = 1
         transitionInitialized = true
+        capturePresentation()
     }
 
     NumberAnimation {
@@ -67,8 +108,11 @@ Item {
         duration: 500
         easing.type: Easing.OutQuint
         onStopped: {
-            recentHome.transitionFromIndex = recentHome.selectedIndex
+            if (recentHome.suppressTransitionCompletion)
+                return
             recentHome.transitionProgress = 1
+            recentHome.transitionFadeProgress = 1
+            recentHome.capturePresentation()
         }
     }
 
@@ -98,28 +142,29 @@ Item {
         visible: recentGames.length > 0
 
         Repeater {
+            id: recentRepeater
             model: recentGames
             delegate: GameCard {
                 required property int index
                 required property var modelData
-                readonly property int fromRelativeIndex: index - recentHome.transitionFromIndex
                 readonly property int toRelativeIndex: index - recentHome.selectedIndex
                 readonly property real railProgress: recentHome.transitionProgress
-                readonly property real fadeProgress: recentHome.transitionFadeProgress
-                readonly property real blend: fromRelativeIndex === 0
-                    ? (toRelativeIndex === 0 ? 1 : 1 - railProgress)
-                    : (toRelativeIndex === 0 ? railProgress : 0)
+                readonly property real startX: recentHome.presentationStartX[index] || 0
+                readonly property real startWidth: recentHome.presentationStartWidth[index] || 0
+                readonly property real startProgress: recentHome.presentationStartProgress[index] || 0
+                readonly property real startChrome: recentHome.presentationStartChrome[index] || 0
+                readonly property real startCompactTitle: recentHome.presentationStartCompactTitle[index] || 0
+                readonly property real targetProgress: index === recentHome.selectedIndex ? 1 : 0
+                readonly property real blend: startProgress
+                    + (targetProgress - startProgress) * railProgress
                 game: modelData
                 focused: index === recentHome.selectedIndex
                 presentationProgress: blend
                 compactEndpointWidth: recentHome.compactCardWidth
-                focalChromeOpacity: fromRelativeIndex === 0 && toRelativeIndex === 0
-                    ? 1
-                    : fromRelativeIndex === 0
-                      ? Math.max(0, 1 - fadeProgress * 3)
-                      : toRelativeIndex === 0
-                        ? Math.max(0, (fadeProgress - 0.67) * 3)
-                        : 0
+                focalChromeOpacity: startChrome
+                    + ((index === recentHome.selectedIndex ? 1 : 0) - startChrome) * railProgress
+                compactTitleOpacity: startCompactTitle
+                    + ((index === recentHome.selectedIndex ? 0 : 1) - startCompactTitle) * railProgress
                 presentationState: modelData.game_id === recentHome.selectedGameId ? "FOCUSED" : "COMPACT"
                 liveSceneCoordinates: true
                 opticsStage: blend > 0 ? 7 : -1
@@ -133,15 +178,11 @@ Item {
                 uiScale: recentHome.uiScale
                 typography: recentHome.typography
                 luluPalette: recentHome.luluPalette
-                 visible: Math.min(Math.abs(fromRelativeIndex), Math.abs(toRelativeIndex))
-                     <= recentHome.visibleRailRadius
-                 width: recentHome.railWidth(fromRelativeIndex)
-                     + (recentHome.railWidth(toRelativeIndex)
-                        - recentHome.railWidth(fromRelativeIndex)) * railProgress
-                 height: focalCardHeight
-                 x: recentHome.railX(fromRelativeIndex)
-                    + (recentHome.railX(toRelativeIndex)
-                       - recentHome.railX(fromRelativeIndex)) * railProgress
+                  visible: recentHome.presentationStartVisible[index]
+                      || Math.abs(toRelativeIndex) <= recentHome.visibleRailRadius
+                  width: startWidth + (recentHome.railWidth(toRelativeIndex) - startWidth) * railProgress
+                  height: focalCardHeight
+                  x: startX + (recentHome.railX(toRelativeIndex) - startX) * railProgress
 
                 MouseArea {
                     anchors.fill: parent

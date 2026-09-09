@@ -8,6 +8,8 @@ Rectangle {
     property bool compact: false
     property bool showAction: false
     property bool homeCard: false
+    property bool glassVisible: true
+    property bool librarySurfaceMaterial: false
     property string presentationState: "COMPACT"
     property var canonicalTexture
     property var canonicalCoordinateRoot
@@ -27,6 +29,8 @@ Rectangle {
     property int opticsStage: -1
     property real presentationProgress: recentFocal ? 1 : 0
     property real focalChromeOpacity: presentationProgress
+    property real presentationContentOpacity: 1
+    property real compactTitleOpacity: 1
     property real compactEndpointWidth: 0
     property point sceneOriginOverride: canonicalSceneOrigin
     property size sceneSizeOverride: Qt.size(width, height)
@@ -74,16 +78,17 @@ Rectangle {
     implicitWidth: recentFocal ? 1100 * uiScale : (compact ? 260 : 210) * uiScale
     implicitHeight: recentFocal ? 560 * uiScale : (compact ? 430 : 330) * uiScale
     radius: recentFocal ? 28 * focalScale * uiScale : (compact ? 16 : 18) * uiScale
-    color: card.stackedGlass ? luluPalette.transparent
+    color: card.stackedGlass || card.librarySurfaceMaterial ? luluPalette.transparent
         : (recentFocal ? luluPalette.glassTint : (focused ? luluPalette.focusedCardSurface : luluPalette.cardSurface))
-    border.color: focused ? luluPalette.focusIndicator : luluPalette.glassBorder
-    border.width: (focused ? 3 : 1) * uiScale
+    border.color: card.librarySurfaceMaterial ? luluPalette.transparent
+        : (focused ? luluPalette.focusIndicator : luluPalette.glassBorder)
+    border.width: card.librarySurfaceMaterial ? 0 : (focused ? 3 : 1) * uiScale
     clip: true
 
     GlassSurface {
         id: glassSurface
         anchors.fill: parent
-        visible: card.homeCard
+        visible: card.homeCard && card.glassVisible
         debugLabel: ""
         debugCoordinateRoot: card.canonicalCoordinateRoot
         canonicalTexture: card.canonicalTexture
@@ -99,7 +104,8 @@ Rectangle {
         refractionPixels: card.opticsStage >= 0 && card.opticsStage < 5 ? 0 : 80 * card.uiScale
         dispersionIor: card.opticsStage >= 0 && card.opticsStage < 6 ? 0 : 0.0175
         diffusionPixels: card.opticsStage >= 0 && card.opticsStage < 2 ? 0 : 5 * card.uiScale
-        transmission: card.opticsStage >= 0 && card.opticsStage < 1 ? 1 : 0.75
+        transmission: card.librarySurfaceMaterial ? 1
+            : (card.opticsStage >= 0 && card.opticsStage < 1 ? 1 : 0.75)
         bevelWidthPx: card.opticsStage >= 0 && card.opticsStage < 3 ? 0 : 3 * card.uiScale
         bulgeStrength: card.opticsStage >= 0 && card.opticsStage < 4 ? 0 : 100.0
         // Retained as a disabled experiment; scene-derived illumination is not material.
@@ -169,6 +175,7 @@ Rectangle {
         property real artworkBorderAlpha: 0.15
         radius: artworkRadius
         z: 2
+        opacity: card.presentationContentOpacity
             color: recentFocal || card.symbolicArtwork || card.stackedGlass
                 ? luluPalette.transparent : luluPalette.artworkSurface
         clip: true
@@ -298,11 +305,13 @@ Rectangle {
     }
 
     Column {
-        visible: card.presentationProgress < 1
-        opacity: 1 - card.presentationProgress
+        visible: card.compactTitleOpacity > 0
+        opacity: card.compactTitleOpacity * card.presentationContentOpacity
         x: 14 * uiScale
-        y: 14 * uiScale + (parent.width - 28 * uiScale) * 1.5
-        width: parent.width - 28 * uiScale
+        y: 14 * uiScale + ((card.compactEndpointWidth > 0
+                            ? card.compactEndpointWidth : parent.width) - 28 * uiScale) * 1.5
+        width: (card.compactEndpointWidth > 0 ? card.compactEndpointWidth : parent.width)
+            - 28 * uiScale
         height: parent.height - y
 
         Text {
@@ -311,8 +320,10 @@ Rectangle {
             color: card.focusedColor(card.luluPalette.primaryText)
             font.family: card.typography ? card.typography.interfaceFamily : "JetBrains Mono"
             font.pixelSize: card.typography
-                ? card.typography.size("body", card.compact ? 14 * 0.8 : 16)
-                : (card.compact ? 14 * 0.8 : 16) * card.uiScale
+                ? card.typography.size("body", card.compactEndpointWidth > 0 ? 14 * 0.8
+                    : (card.compact ? 14 * 0.8 : 16))
+                : (card.compactEndpointWidth > 0 ? 14 * 0.8
+                    : (card.compact ? 14 * 0.8 : 16)) * card.uiScale
             wrapMode: Text.WordWrap
             maximumLineCount: 2
             elide: Text.ElideRight

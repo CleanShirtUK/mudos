@@ -11,6 +11,11 @@ Item {
     property real compactCardWidth: 160 * uiScale
     property point allGamesSceneOrigin: Qt.point(0, 0)
     property string transitionState: "RESTING"
+    property real transitionProgress: 0
+    property bool transitionExpanding: true
+    property real contentOpacity: 1
+    readonly property bool transitioning: transitionState === "ACTIVATING"
+
     property real uiScale: 1
     readonly property string navigationObject: "library"
     signal openRequested()
@@ -23,6 +28,10 @@ Item {
         height: cardHeight
         compact: true
         homeCard: true
+        glassVisible: false
+        librarySurfaceMaterial: true
+        opacity: 1
+        presentationContentOpacity: libraryHome.contentOpacity
         presentationState: "COMPACT"
         displayTitle: "All Games"
         presentationId: "library:all"
