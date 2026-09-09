@@ -38,6 +38,10 @@ class ConsoleUiBridge:
     async def state(self) -> dict[str, object]:
         return json.loads(await self.sessiond.call_get_state())
 
+    async def list_system_settings(self, category: str) -> list[dict[str, object]]:
+        rows = await self.consoled.call_list_system_settings(category)
+        return [{key: value.value for key, value in row.items()} for row in rows]
+
 
 class ApiHandler(BaseHTTPRequestHandler):
     bridge: ConsoleUiBridge
@@ -54,6 +58,13 @@ class ApiHandler(BaseHTTPRequestHandler):
         if urlparse(self.path).path == "/state":
             try:
                 self._respond(200, self.bridge.call(self.bridge.state()))
+            except Exception as error:  # pragma: no cover - live IPC failure path
+                self._respond(503, {"error": str(error)})
+            return
+        if urlparse(self.path).path == "/settings":
+            category = parse_qs(urlparse(self.path).query).get("category", ["System"])[0]
+            try:
+                self._respond(200, self.bridge.call(self.bridge.list_system_settings(category)))
             except Exception as error:  # pragma: no cover - live IPC failure path
                 self._respond(503, {"error": str(error)})
             return

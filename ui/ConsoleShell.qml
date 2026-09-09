@@ -50,6 +50,11 @@ Window {
     property int libraryIndex: 0
     property int collectionIndex: 0
     property string space: "home"
+    property int systemCategoryIndex: 0
+    property int systemRowIndex: 0
+    property bool systemLanding: true
+    property var systemCategories: ["Display", "Audio", "Network", "Bluetooth", "Controllers", "Storage", "System", "Lulu"]
+    property var systemSettings: []
     property string libraryFocus: "games"
     property int libraryFirstVisibleRow: 0
     property string libraryTransitionState: "RESTING"
@@ -206,6 +211,14 @@ Window {
         })
     }
 
+    function refreshSystemSettings() {
+        request("/settings?category=" + encodeURIComponent(systemCategories[systemCategoryIndex]),
+                "GET", "", function(data) {
+                    systemSettings = data
+                    systemRowIndex = Math.min(systemRowIndex, Math.max(0, data.length - 1))
+                })
+    }
+
     function moveDomain(delta) {
         if (space !== "home")
             return
@@ -317,6 +330,14 @@ Window {
     }
 
     function activate() {
+        if (space === "system") {
+            if (systemLanding) {
+                systemLanding = false
+                systemRowIndex = 0
+                refreshSystemSettings()
+            }
+            return
+        }
         if (space === "library") {
             if (libraryFocus === "collection") {
                 refreshLibrary()
@@ -341,6 +362,12 @@ Window {
             homeFadeOut.restart()
             libraryFocus = "games"
             message = ""
+        } else if (selectedCategoryIndex === 0) {
+            systemCategoryIndex = 0
+            systemRowIndex = 0
+            systemLanding = true
+            space = "system"
+            message = ""
         } else if (selectedCategoryIndex === 1) {
             message = "Store space is not implemented"
         } else {
@@ -349,7 +376,13 @@ Window {
     }
 
     function back() {
-        if (space === "library") {
+        if (space === "system") {
+            if (systemLanding)
+                space = "home"
+            else
+                systemLanding = true
+            message = ""
+        } else if (space === "library") {
             libraryTransitionState = "ACTIVATING"
             libraryTransitioning = true
             libraryTransitionExpanding = false
@@ -532,6 +565,36 @@ Window {
                     moveLibraryCollection(1)
                     event.accepted = true
                 }
+            } else if (space === "system") {
+                if (systemLanding && event.key === Qt.Key_Left) {
+                    systemCategoryIndex = Math.max(0, systemCategoryIndex - 1)
+                    event.accepted = true
+                } else if (systemLanding && event.key === Qt.Key_Right) {
+                    systemCategoryIndex = Math.min(systemCategories.length - 1, systemCategoryIndex + 1)
+                    event.accepted = true
+                } else if (systemLanding && event.key === Qt.Key_Up) {
+                    systemCategoryIndex = Math.max(0, systemCategoryIndex - 4)
+                    event.accepted = true
+                } else if (systemLanding && event.key === Qt.Key_Down) {
+                    systemCategoryIndex = Math.min(systemCategories.length - 1, systemCategoryIndex + 4)
+                    event.accepted = true
+                } else if (event.key === Qt.Key_Up) {
+                    systemRowIndex = Math.max(0, systemRowIndex - 1)
+                    event.accepted = true
+                } else if (event.key === Qt.Key_Down) {
+                    systemRowIndex = Math.min(Math.max(0, systemSettings.length - 1), systemRowIndex + 1)
+                    event.accepted = true
+                } else if (!systemLanding && event.key === Qt.Key_PageUp) {
+                    systemCategoryIndex = Math.max(0, systemCategoryIndex - 1)
+                    systemRowIndex = 0
+                    refreshSystemSettings()
+                    event.accepted = true
+                } else if (!systemLanding && event.key === Qt.Key_PageDown) {
+                    systemCategoryIndex = Math.min(systemCategories.length - 1, systemCategoryIndex + 1)
+                    systemRowIndex = 0
+                    refreshSystemSettings()
+                    event.accepted = true
+                }
             }
 
             if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
@@ -680,9 +743,23 @@ Window {
                     onOpenRequested: root.activate()
                 }
 
+                SystemHome {
+                    anchors.fill: parent
+                    visible: root.selectedCategoryIndex === 0
+                    categories: root.systemCategories
+                    selectedIndex: root.systemCategoryIndex
+                    uiScale: root.uiScale
+                    typography: typography
+                    luluPalette: luluPalette
+                    onOpenRequested: {
+                        root.systemCategoryIndex = index
+                        root.activate()
+                    }
+                }
+
                 PlaceholderHome {
                     anchors.fill: parent
-                    visible: root.selectedCategoryIndex === 1 || root.selectedCategoryIndex === 0
+                    visible: root.selectedCategoryIndex === 1
                     opacity: visible ? 1 : 0
                     scale: visible ? 1 : 0.94
                     title: root.domains[root.selectedCategoryIndex]
@@ -729,6 +806,31 @@ Window {
                 root.refreshLibrary()
             }
             onLaunchRequested: root.launchGame(game)
+        }
+
+        SystemHome {
+            anchors.fill: parent
+            visible: root.space === "system" && root.systemLanding
+            categories: root.systemCategories
+            selectedIndex: root.systemCategoryIndex
+            uiScale: root.uiScale
+            typography: typography
+            luluPalette: luluPalette
+            onOpenRequested: {
+                root.systemCategoryIndex = index
+                root.activate()
+            }
+        }
+
+        SystemSpace {
+            anchors.fill: parent
+            visible: root.space === "system" && !root.systemLanding
+            category: root.systemCategories[root.systemCategoryIndex]
+            settings: root.systemSettings
+            selectedIndex: root.systemRowIndex
+            uiScale: root.uiScale
+            typography: typography
+            luluPalette: luluPalette
         }
 
         Item {

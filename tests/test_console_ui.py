@@ -87,6 +87,19 @@ class ConsoleUiTests(unittest.TestCase):
             self.assertIn("luluPalette", component)
             self.assertNotRegex(component, r'(?m)^\s*(?:border\.)?color:\s*"#')
 
+    def test_system_settings_is_controller_first_and_backend_driven(self) -> None:
+        system_home = (ROOT / "ui" / "SystemHome.qml").read_text()
+        system_space = (ROOT / "ui" / "SystemSpace.qml").read_text()
+        self.assertIn('property var systemCategories:', QML)
+        self.assertIn('property var systemSettings:', QML)
+        self.assertIn('systemCategoryIndex = Math.max(0, systemCategoryIndex - 1)', QML)
+        self.assertIn('systemCategoryIndex = Math.min(systemCategories.length - 1, systemCategoryIndex + 1)', QML)
+        self.assertIn('request("/settings?category="', QML)
+        self.assertIn('signal openRequested(int index)', system_home)
+        self.assertIn('PageUp', QML)
+        self.assertIn('PageDown', QML)
+        self.assertIn('modelData.label', system_space)
+
     def test_home_uses_one_fixed_content_stage_and_compact_library_object(self) -> None:
         self.assertIn("readonly property real headingCardGap: design(21)", QML)
         self.assertIn("readonly property real homeHintTopY: height - design(45)", QML)

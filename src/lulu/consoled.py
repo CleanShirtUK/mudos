@@ -12,6 +12,7 @@ from .artwork import SteamGridDBArtwork
 from .contracts import ServiceDescriptor, ServiceName
 from .emulator_runtime import EmulatorRuntimeAdapter
 from .steam_provider import SteamProvider
+from .system_settings import CATEGORIES as SYSTEM_CATEGORIES, SystemSettingsProvider
 
 
 DESCRIPTOR = ServiceDescriptor(
@@ -52,10 +53,12 @@ LOGGER = logging.getLogger("lulu.consoled")
 
 
 class ConsoleInterface(ServiceInterface):
-    def __init__(self, catalogue: ConsoleCatalog, local_runtime: EmulatorRuntimeAdapter | None = None) -> None:
+    def __init__(self, catalogue: ConsoleCatalog, local_runtime: EmulatorRuntimeAdapter | None = None,
+                 system_settings: SystemSettingsProvider | None = None) -> None:
         super().__init__(INTERFACE_NAME)
         self.catalogue = catalogue
         self.local_runtime = local_runtime
+        self.system_settings = system_settings or SystemSettingsProvider()
 
     @staticmethod
     def _variants(game: dict[str, object]) -> dict[str, Variant]:
@@ -74,6 +77,14 @@ class ConsoleInterface(ServiceInterface):
         else:
             games = self.catalogue.store.list_games(scope)
         return [self._variants(game.as_dict()) for game in games]
+
+    @method()
+    def ListSystemSettings(self, category: "s") -> "aa{sv}":
+        return [self._variants(item) for item in self.system_settings.list_settings(category)]
+
+    @method()
+    def ListSystemCategories(self) -> "as":
+        return list(SYSTEM_CATEGORIES)
 
     @method()
     async def LaunchGame(self, game_id: "s", timeout_ms: "u") -> "s":
