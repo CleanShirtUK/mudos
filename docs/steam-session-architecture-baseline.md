@@ -51,3 +51,28 @@ Cuphead launch, Gamescope listed AppIDs `268910` and `769` and presented
 Cuphead. Exiting Cuphead through its own menu naturally returned to Lulu. A
 second Cuphead launch succeeded without restarting Steam, and its exit again
 returned to Lulu. No focus or recovery workaround was required.
+
+## Non-Steam Runtime Boundary
+
+The first validated non-Steam provider is RetroArch. Its identity is not
+represented as a Steam shortcut and is not assigned through the RetroArch
+window. Lulu predeclares a Gamescope AppID priority list of
+`4000000001, 769`, then launches unmodified RetroArch in a transient systemd
+user scope named `app-steam-app4000000001-<integer>.scope`. Gamescope derives
+the runtime AppID from the cgroup, presents the first available priority entry,
+and naturally falls through to Lulu when the scope ends.
+
+For RetroArch, Lulu requests graceful termination by stopping the runtime
+scope. The scope's SIGTERM path produced clean RetroArch deinitialization,
+completed scope termination, no SIGKILL escalation, and natural return to Lulu.
+This termination behavior is provider-specific and is not generalized to
+future runtimes.
+
+See `non-steam-runtime-architecture-baseline.md` and
+`retroarch-runtime-validation-20260909.md` for the decision and evidence
+records. Production AppID allocation, other runtime providers, catalogue
+integration, and permanent Gamescope package policy remain unresolved.
+
+Future session startup must establish a deterministic Gamescope control
+baseline. The test session contained stale `GAMESCOPECTRL_BASELAYER_WINDOW`
+and `GAMESCOPECTRL_BASELAYER_APPID` values; the former was already invalid.
