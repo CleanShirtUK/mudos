@@ -31,22 +31,14 @@ Item {
     height: surfaceHeight
     visible: surfaceVisible
 
-    GlassSurface {
+    NavigationCardSurface {
         anchors.fill: parent
         canonicalTexture: root.canonicalTexture
         canonicalSize: root.canonicalSize
+        canonicalCoordinateRoot: root.canonicalCoordinateRoot
         cornerRadius: 16 * root.uiScale + 12 * root.uiScale * root.progress
-        useExplicitSceneGeometry: true
-        sceneOriginOverride: root.liveSceneOrigin
-        sceneSizeOverride: Qt.size(root.width, root.height)
-        refractionPixels: 80 * root.uiScale
-        dispersionIor: 0.0175
-        diffusionPixels: 5 * root.uiScale
-        transmission: 1
         bevelWidthPx: 3 * root.uiScale + 3 * root.uiScale * root.progress
-        bulgeStrength: 100
-        edgeLightStrength: 0.10
-        edgeLightDirection: Qt.vector2d(1, -1)
+        liveSceneOrigin: root.liveSceneOrigin
     }
 
     Timer {

@@ -10,6 +10,7 @@ Window {
 
     property var domains: ["System", "Store", "Library", "Recent"]
     property int selectedCategoryIndex: 3
+    property int desiredCategoryIndex: 3
     readonly property real referenceWidth: 1280
     readonly property real referenceHeight: 720
     readonly property real uiScale: Math.min(width / referenceWidth, height / referenceHeight)
@@ -51,6 +52,7 @@ Window {
     property int collectionIndex: 0
     property string space: "home"
     property int systemCategoryIndex: 0
+    property var systemHomeRailRef: null
     property int systemRowIndex: 0
     property bool systemLanding: true
     property var systemCategories: ["Display", "Audio", "Network", "Bluetooth", "Controllers", "Storage", "System", "Lulu"]
@@ -69,44 +71,32 @@ Window {
     property int homeCategoryTarget: 3
     property int homeCategoryDirection: 1
     property real homeCategoryProgress: 1
+    property int homeCategoryHopDuration: 250
     readonly property real homeCategoryTravel: height + design(72)
+    property real titleRailY: selectedDomainY - selectedCategoryIndex * homeCategoryPitch
+    property bool suppressTitleRailCompletion: false
+    readonly property real titleRailTargetY: selectedDomainY
+        - (homeCategoryTransitioning ? homeCategoryTarget : selectedCategoryIndex)
+            * homeCategoryPitch
+    readonly property real titleRailActiveGap: Math.max(0,
+        homeBottomBandCenterY - selectedDomainY - homeCategoryPitch)
     readonly property real libraryHomePresentationHeight: !homeCategoryTransitioning
         ? homeFocalCardHeight
-        : homeCategoryTarget === 2
+        : homeCategoryTarget === 2 && homeCategoryDirection === 1
           ? homeFocalCardHeight * homeCategoryProgress
-          : homeCategoryFrom === 2
+          : homeCategoryFrom === 2 && homeCategoryDirection === -1
             ? homeFocalCardHeight * (1 - homeCategoryProgress)
             : homeFocalCardHeight
-    readonly property real recentRevealHeight: !homeCategoryTransitioning
-        || homeCategoryFrom !== 2 && homeCategoryTarget !== 3
-        ? homeFocalCardHeight : homeFocalCardHeight * homeCategoryProgress
-
-    function auditHomeCategoryTitles() {
-        var entries = []
-        var participants = [homeCategoryFrom, homeCategoryTarget]
-        for (var participant = 0; participant < participants.length; participant++) {
-            var index = participants[participant]
-            var title = homeCategoryTitles.itemAt(index)
-            if (!title) {
-                entries.push(index + ":missing")
-                continue
-            }
-            var mapped = title.mapToItem(root, 0, 0)
-            entries.push(index + ":visible=" + title.visible
-                + ",opacity=" + title.opacity
-                + ",parentVisible=" + title.parent.visible
-                + ",parentOpacity=" + title.parent.opacity
-                + ",parentClip=" + title.parent.clip
-                + ",z=" + title.z
-                + ",x=" + mapped.x + ",y=" + mapped.y)
-        }
-        console.log("HOME_TITLE_AUDIT", homeCategoryProgress, entries.join(" | "))
+    function homeCategoryRevealHeight(index) {
+        if (!homeCategoryTransitioning)
+            return homeFocalCardHeight
+        if (homeCategoryDirection === 1 && index === homeCategoryTarget)
+            return homeFocalCardHeight * homeCategoryProgress
+        if (homeCategoryDirection === -1 && index === homeCategoryFrom)
+            return homeFocalCardHeight * (1 - homeCategoryProgress)
+        return homeFocalCardHeight
     }
 
-    onHomeCategoryTransitioningChanged: {
-        if (homeCategoryTransitioning)
-            auditHomeCategoryTitles()
-    }
     readonly property string libraryNavigationObject: "library"
     property var recentGames: []
     property var libraryGames: []
@@ -219,26 +209,34 @@ Window {
                 })
     }
 
+    function startNextHomeCategoryHop(chained) {
+        if (selectedCategoryIndex === desiredCategoryIndex)
+            return
+        homeCategoryHopDuration = chained ? 100 : 250
+        homeCategoryFrom = selectedCategoryIndex
+        homeCategoryTarget = selectedCategoryIndex
+            + (desiredCategoryIndex > selectedCategoryIndex ? 1 : -1)
+        homeCategoryDirection = selectedCategoryIndex > homeCategoryTarget ? 1 : -1
+        homeCategoryProgress = 0
+        homeCategoryTransitioning = true
+        suppressTitleRailCompletion = true
+        titleRailAnimation.stop()
+        suppressTitleRailCompletion = false
+        titleRailAnimation.start()
+        homeCategoryAnimation.start()
+    }
+
     function moveDomain(delta) {
         if (space !== "home")
             return
         var nextIndex = Math.max(0, Math.min(domains.length - 1,
-                                             selectedCategoryIndex + delta))
-        if (nextIndex === selectedCategoryIndex)
+                                             desiredCategoryIndex + delta))
+        if (nextIndex === desiredCategoryIndex)
             return
-        if ((selectedCategoryIndex === 2 || selectedCategoryIndex === 3)
-                && (nextIndex === 2 || nextIndex === 3)) {
-            homeCategoryFrom = selectedCategoryIndex
-            homeCategoryTarget = nextIndex
-            homeCategoryDirection = selectedCategoryIndex === 3 && nextIndex === 2 ? 1 : -1
-            selectedCategoryIndex = nextIndex
-            homeCategoryProgress = 0
-            homeCategoryTransitioning = true
-            homeCategoryAnimation.start()
-            message = ""
+        desiredCategoryIndex = nextIndex
+        if (homeCategoryAnimation.running)
             return
-        }
-        selectedCategoryIndex = nextIndex
+        startNextHomeCategoryHop()
         message = ""
     }
 
@@ -249,9 +247,24 @@ Window {
     function homeCategoryOffset(index) {
         if (!homeCategoryTransitioning)
             return 0
-        if (index === homeCategoryFrom && homeCategoryFrom === 3)
+        if (index === homeCategoryFrom)
             return homeCategoryDirection * homeCategoryTravel * homeCategoryProgress
+        if (index === homeCategoryTarget)
+            return -homeCategoryDirection * homeCategoryTravel * (1 - homeCategoryProgress)
         return 0
+    }
+
+    function titleRailLayoutY(index, activeIndex) {
+        return index * homeCategoryPitch
+            + (index > activeIndex ? titleRailActiveGap : 0)
+    }
+
+    function titleRailChildY(index) {
+        if (!homeCategoryTransitioning)
+            return titleRailLayoutY(index, selectedCategoryIndex)
+        var fromY = titleRailLayoutY(index, homeCategoryFrom)
+        var targetY = titleRailLayoutY(index, homeCategoryTarget)
+        return fromY + (targetY - fromY) * homeCategoryProgress
     }
 
     function homeCategoryChromeOpacity(index) {
@@ -283,6 +296,11 @@ Window {
         if (!libraryGames.length)
             return
         libraryIndex = Math.max(0, Math.min(libraryGames.length - 1, libraryIndex + delta))
+    }
+
+    function moveLibraryLanding(delta) {
+        libraryHomeLanding.moveSelection(delta)
+        collectionIndex = libraryHomeLanding.selectedIndex
     }
 
     function moveLibraryVertical(delta) {
@@ -331,11 +349,6 @@ Window {
 
     function activate() {
         if (space === "system") {
-            if (systemLanding) {
-                systemLanding = false
-                systemRowIndex = 0
-                refreshSystemSettings()
-            }
             return
         }
         if (space === "library") {
@@ -356,6 +369,7 @@ Window {
             libraryTransitionExpanding = true
             libraryTransitionProgress = 0
             libraryTransitionAnimation.restart()
+            refreshLibrary()
             libraryContentFadeOut.stop()
             libraryContentFadeIn.restart()
             homeFadeIn.stop()
@@ -363,11 +377,7 @@ Window {
             libraryFocus = "games"
             message = ""
         } else if (selectedCategoryIndex === 0) {
-            systemCategoryIndex = 0
-            systemRowIndex = 0
-            systemLanding = true
-            space = "system"
-            message = ""
+            openSystemCategory(systemHomeRailRef ? systemHomeRailRef.selectedIndex : systemCategoryIndex)
         } else if (selectedCategoryIndex === 1) {
             message = "Store space is not implemented"
         } else {
@@ -375,12 +385,35 @@ Window {
         }
     }
 
+    function openSystemCategory(index) {
+        systemCategoryIndex = Math.max(0, Math.min(systemCategories.length - 1, index))
+        systemRowIndex = 0
+        systemLanding = false
+        space = "system"
+        console.log("SYSTEM_HOME_ACTIVATE", "category", systemCategories[systemCategoryIndex])
+        refreshSystemSettings()
+        console.log("SETTINGS_PAGE_OPEN", "category", systemCategories[systemCategoryIndex])
+    }
+
+    function moveSystemCategory(delta) {
+        var rail = space === "home" ? systemHomeRailRef : systemLandingHome
+        var oldIndex = rail.selectedIndex
+        rail.moveSelection(delta)
+        systemCategoryIndex = rail.selectedIndex
+        if (oldIndex !== rail.selectedIndex)
+            console.log("SYSTEM_HOME_NAV", "old", systemCategories[oldIndex],
+                        "new", systemCategories[rail.selectedIndex])
+    }
+
     function back() {
         if (space === "system") {
             if (systemLanding)
                 space = "home"
-            else
+            else {
+                console.log("SETTINGS_PAGE_CLOSE", "category", systemCategories[systemCategoryIndex])
+                space = "home"
                 systemLanding = true
+            }
             message = ""
         } else if (space === "library") {
             libraryTransitionState = "ACTIVATING"
@@ -426,13 +459,32 @@ Window {
         target: root
         property: "homeCategoryProgress"
         to: 1
-        duration: 500
+        duration: root.homeCategoryHopDuration
         easing.type: Easing.OutQuint
         onStopped: {
             root.homeCategoryProgress = 1
             root.homeCategoryTransitioning = false
+            root.selectedCategoryIndex = root.homeCategoryTarget
             root.homeCategoryFrom = root.selectedCategoryIndex
             root.homeCategoryTarget = root.selectedCategoryIndex
+            if (root.selectedCategoryIndex === root.desiredCategoryIndex)
+                root.homeCategoryHopDuration = 250
+            else
+                root.startNextHomeCategoryHop(true)
+        }
+    }
+
+    NumberAnimation {
+        id: titleRailAnimation
+        target: root
+        property: "titleRailY"
+        to: root.titleRailTargetY
+        duration: root.homeCategoryHopDuration
+        easing.type: Easing.OutQuint
+        onStopped: {
+            if (root.suppressTitleRailCompletion)
+                return
+            root.titleRailY = root.titleRailTargetY
         }
     }
 
@@ -536,13 +588,17 @@ Window {
                     if (selectedCategoryIndex === 3)
                         moveRecent(-1)
                     else if (selectedCategoryIndex === 2)
-                        moveLibrary(-1)
+                        moveLibraryLanding(-1)
+                    else if (selectedCategoryIndex === 0)
+                        moveSystemCategory(-1)
                     event.accepted = true
                 } else if (event.key === Qt.Key_Right) {
                     if (selectedCategoryIndex === 3)
                         moveRecent(1)
                     else if (selectedCategoryIndex === 2)
-                        moveLibrary(1)
+                        moveLibraryLanding(1)
+                    else if (selectedCategoryIndex === 0)
+                        moveSystemCategory(1)
                     event.accepted = true
                 }
             } else if (space === "library") {
@@ -567,16 +623,16 @@ Window {
                 }
             } else if (space === "system") {
                 if (systemLanding && event.key === Qt.Key_Left) {
-                    systemCategoryIndex = Math.max(0, systemCategoryIndex - 1)
+                    moveSystemCategory(-1)
                     event.accepted = true
                 } else if (systemLanding && event.key === Qt.Key_Right) {
-                    systemCategoryIndex = Math.min(systemCategories.length - 1, systemCategoryIndex + 1)
+                    moveSystemCategory(1)
                     event.accepted = true
                 } else if (systemLanding && event.key === Qt.Key_Up) {
-                    systemCategoryIndex = Math.max(0, systemCategoryIndex - 4)
+                    moveSystemCategory(-4)
                     event.accepted = true
                 } else if (systemLanding && event.key === Qt.Key_Down) {
-                    systemCategoryIndex = Math.min(systemCategories.length - 1, systemCategoryIndex + 4)
+                    moveSystemCategory(4)
                     event.accepted = true
                 } else if (event.key === Qt.Key_Up) {
                     systemRowIndex = Math.max(0, systemRowIndex - 1)
@@ -621,10 +677,7 @@ Window {
             fullscreenHeight: root.height - 128 * root.uiScale
             uiScale: root.uiScale
             verticalOffset: root.homeCategoryOffset(2)
-            surfaceVisible: root.selectedCategoryIndex === 2
-                || (root.homeCategoryTransitioning
-                    && (root.homeCategoryFrom === 2 || root.homeCategoryTarget === 2))
-                || root.space === "library" || root.libraryTransitioning
+             surfaceVisible: root.space === "library" || root.libraryTransitioning
         }
 
         Item {
@@ -637,66 +690,64 @@ Window {
                 y: 0
                 width: root.design(250)
                 height: parent.height
+                clip: true
+                Item {
+                    id: titleRail
+                    y: root.titleRailY
+                    width: parent.width
+                    height: parent.height
 
-                Repeater {
-                    id: homeCategoryTitles
-                    model: root.domains
-                    delegate: Text {
-                        required property int index
-                        readonly property int relativeCategoryIndex: index - root.selectedCategoryIndex
-                        readonly property bool isPreview: relativeCategoryIndex === 1
-                        y: root.homeCategoryTransitioning
-                           && (index === root.homeCategoryFrom || index === root.homeCategoryTarget)
-                           ? root.selectedDomainY + root.homeCategoryOffset(index)
-                           : isPreview
-                             ? root.homeBottomBandCenterY - height * 0.5
-                             : root.selectedDomainY + root.domainOffset(index) * root.homeCategoryPitch
-                        visible: root.homeCategoryTransitioning
-                            ? index === root.homeCategoryFrom || index === root.homeCategoryTarget
-                            : relativeCategoryIndex <= 1
-                        text: root.domains[index]
-                        color: luluPalette.selectedText
-                        font.family: typography.displayFamily
-                        font.weight: typography.displayWeight
-                        font.pixelSize: root.homeCategoryFontSize
-                        font.letterSpacing: 0
-                        opacity: root.homeCategoryTransitioning
-                            ? root.homeCategoryChromeOpacity(index)
-                            : relativeCategoryIndex === 0 ? 1 : 0.58
-                        scale: relativeCategoryIndex === 0 ? 1.05 : 1
+                    Repeater {
+                        id: homeCategoryTitles
+                        model: root.domains
+                        delegate: Text {
+                            required property int index
+                            y: root.titleRailChildY(index)
+                            visible: true
+                            text: root.domains[index]
+                            color: luluPalette.selectedText
+                            font.family: typography.displayFamily
+                            font.weight: typography.displayWeight
+                            font.pixelSize: root.homeCategoryFontSize
+                            font.letterSpacing: 0
+                            opacity: 1
+                            scale: 1
+                        }
                     }
                 }
             }
 
-            Timer {
-                id: homeTitleAuditTimer
-                interval: 125
-                repeat: true
-                running: root.homeCategoryTransitioning
-                onTriggered: root.auditHomeCategoryTitles()
-            }
 
             Item {
+                id: homeCardViewport
+                x: 0
+                y: root.homeActiveContentOriginY
+                width: parent.width
+                height: root.homeBottomBandCenterY - root.homeActiveContentOriginY
+                clip: true
+                // The viewport is presentation-only. Children retain full card
+                // geometry so glass shaders keep their canonical scene mapping.
+                Item {
                 id: homeContent
                 x: root.homeContentRailX
-                y: root.homeActiveContentOriginY
+                y: 0
                 width: parent.width - root.homeContentRailX - root.design(40)
                 height: root.homeFocalCardHeight
 
                 Item {
                     id: recentReveal
-                    x: 0
+                    x: -root.homeContentRailX
                     y: root.homeCategoryOffset(3)
-                    width: parent.width
-                    height: root.recentRevealHeight
+                    width: root.width
+                    height: root.homeCategoryRevealHeight(3)
                     clip: true
                     visible: root.selectedCategoryIndex === 3
                         || (root.homeCategoryTransitioning
                             && (root.homeCategoryFrom === 3 || root.homeCategoryTarget === 3))
-                    opacity: visible ? 1 : 0
+                    opacity: 1
                     RecentHome {
                         id: recentHome
-                        x: 0
+                        x: root.homeContentRailX
                         y: 0
                         width: recentReveal.width
                         height: root.homeFocalCardHeight
@@ -717,56 +768,98 @@ Window {
                     }
                 }
 
-                LibraryHome {
-                    x: 0
+                Item {
+                    id: libraryReveal
+                    x: -root.homeContentRailX
                     y: root.homeCategoryOffset(2)
-                    width: parent.width
-                    height: parent.height
+                    width: root.width
+                    height: root.homeCategoryRevealHeight(2)
+                    clip: true
                     visible: root.selectedCategoryIndex === 2
                         || (root.homeCategoryTransitioning
                             && (root.homeCategoryFrom === 2 || root.homeCategoryTarget === 2))
-                    opacity: visible ? 1 : 0
-                    scale: visible ? 1 : 0.94
-                    cardHeight: root.homeFocalCardHeight
-                    uiScale: root.uiScale
-                    typography: typography
-                    luluPalette: luluPalette
-                    canonicalTexture: orbitTexture
-                    canonicalCoordinateRoot: orbitRenderSource
-                    canonicalSize: Qt.size(root.width, root.height)
-                    compactCardWidth: root.compactCardWidth
-                    transitionState: root.libraryTransitionState
-                    transitionProgress: root.libraryTransitionProgress
-                    transitionExpanding: root.libraryTransitionExpanding
-                    contentOpacity: root.homeCategoryTransitioning
-                        ? root.homeCategoryChromeOpacity(2) : root.homeContentOpacity
-                    onOpenRequested: root.activate()
-                }
-
-                SystemHome {
-                    anchors.fill: parent
-                    visible: root.selectedCategoryIndex === 0
-                    categories: root.systemCategories
-                    selectedIndex: root.systemCategoryIndex
-                    uiScale: root.uiScale
-                    typography: typography
-                    luluPalette: luluPalette
-                    onOpenRequested: {
-                        root.systemCategoryIndex = index
-                        root.activate()
+                    LibraryHome {
+                        id: libraryHomeLanding
+                        x: root.homeContentRailX
+                        width: libraryReveal.width - root.homeContentRailX
+                        height: root.homeFocalCardHeight
+                        scale: libraryReveal.visible ? 1 : 0.94
+                        cardHeight: root.homeFocalCardHeight
+                        uiScale: root.uiScale
+                        typography: typography
+                        luluPalette: luluPalette
+                        canonicalTexture: orbitTexture
+                        canonicalCoordinateRoot: orbitRenderSource
+                        canonicalSize: Qt.size(root.width, root.height)
+                        compactCardWidth: root.compactCardWidth
+                        transitionState: root.libraryTransitionState
+                        transitionProgress: root.libraryTransitionProgress
+                        transitionExpanding: root.libraryTransitionExpanding
+                        contentOpacity: root.homeContentOpacity
+                        selectedIndex: root.collectionIndex
+                        onOpenRequested: {
+                            root.collectionIndex = index
+                            root.activate()
+                        }
                     }
                 }
 
-                PlaceholderHome {
-                    anchors.fill: parent
+                Item {
+                    id: storeReveal
+                    x: 0
+                    y: root.homeCategoryOffset(1)
+                    width: parent.width
+                    height: root.homeCategoryRevealHeight(1)
+                    clip: true
+                    opacity: 1
                     visible: root.selectedCategoryIndex === 1
-                    opacity: visible ? 1 : 0
-                    scale: visible ? 1 : 0.94
-                    title: root.domains[root.selectedCategoryIndex]
-                    uiScale: root.uiScale
-                    typography: typography
-                    luluPalette: luluPalette
-                    description: root.selectedCategoryIndex === 1 ? "Acquisition space is not implemented" : "Platform controls are not implemented"
+                        || (root.homeCategoryTransitioning
+                            && (root.homeCategoryFrom === 1 || root.homeCategoryTarget === 1))
+                    StoreHome {
+                        width: storeReveal.width
+                        height: root.homeFocalCardHeight
+                        cardWidth: root.compactCardWidth
+                        cardHeight: root.homeFocalCardHeight
+                        uiScale: root.uiScale
+                        typography: typography
+                        luluPalette: luluPalette
+                        canonicalTexture: orbitTexture
+                        canonicalCoordinateRoot: orbitRenderSource
+                        canonicalSize: Qt.size(root.width, root.height)
+                    }
+                }
+
+                Item {
+                    id: systemReveal
+                    x: -root.homeContentRailX
+                    y: root.homeCategoryOffset(0)
+                    width: root.width
+                    height: root.homeCategoryRevealHeight(0)
+                    clip: true
+                    opacity: 1
+                    visible: root.selectedCategoryIndex === 0
+                        || (root.homeCategoryTransitioning
+                            && (root.homeCategoryFrom === 0 || root.homeCategoryTarget === 0))
+                    SystemHome {
+                        id: systemHomeRail
+                        x: root.homeContentRailX
+                        width: systemReveal.width - root.homeContentRailX
+                        height: root.homeFocalCardHeight
+                        y: 0
+                        cardWidth: root.compactCardWidth
+                        cardHeight: root.homeFocalCardHeight
+                        categories: root.systemCategories
+                        selectedIndex: root.systemCategoryIndex
+                        uiScale: root.uiScale
+                        typography: typography
+                        luluPalette: luluPalette
+                        canonicalTexture: orbitTexture
+                        canonicalCoordinateRoot: orbitRenderSource
+                        canonicalSize: Qt.size(root.width, root.height)
+                    }
+                    Component.onCompleted: root.systemHomeRailRef = systemHomeRail
+                }
+
                 }
             }
         }
@@ -809,6 +902,7 @@ Window {
         }
 
         SystemHome {
+            id: systemLandingHome
             anchors.fill: parent
             visible: root.space === "system" && root.systemLanding
             categories: root.systemCategories
@@ -816,10 +910,10 @@ Window {
             uiScale: root.uiScale
             typography: typography
             luluPalette: luluPalette
-            onOpenRequested: {
-                root.systemCategoryIndex = index
-                root.activate()
-            }
+            canonicalTexture: orbitTexture
+            canonicalCoordinateRoot: orbitRenderSource
+            canonicalSize: Qt.size(root.width, root.height)
+            onOpenRequested: root.openSystemCategory(index)
         }
 
         SystemSpace {

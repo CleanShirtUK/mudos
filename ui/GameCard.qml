@@ -31,6 +31,7 @@ Rectangle {
     property real focalChromeOpacity: presentationProgress
     property real presentationContentOpacity: 1
     property real compactTitleOpacity: 1
+    property real selectionProgress: focused ? 1 : 0
     property real compactEndpointWidth: 0
     property point sceneOriginOverride: canonicalSceneOrigin
     property size sceneSizeOverride: Qt.size(width, height)
@@ -79,10 +80,25 @@ Rectangle {
     implicitHeight: recentFocal ? 560 * uiScale : (compact ? 430 : 330) * uiScale
     radius: recentFocal ? 28 * focalScale * uiScale : (compact ? 16 : 18) * uiScale
     color: card.stackedGlass || card.librarySurfaceMaterial ? luluPalette.transparent
-        : (recentFocal ? luluPalette.glassTint : (focused ? luluPalette.focusedCardSurface : luluPalette.cardSurface))
+        : (recentFocal ? luluPalette.glassTint
+           : Qt.rgba(luluPalette.cardSurface.r
+               + (luluPalette.focusedCardSurface.r - luluPalette.cardSurface.r) * card.selectionProgress,
+               luluPalette.cardSurface.g
+               + (luluPalette.focusedCardSurface.g - luluPalette.cardSurface.g) * card.selectionProgress,
+               luluPalette.cardSurface.b
+               + (luluPalette.focusedCardSurface.b - luluPalette.cardSurface.b) * card.selectionProgress,
+               luluPalette.cardSurface.a
+               + (luluPalette.focusedCardSurface.a - luluPalette.cardSurface.a) * card.selectionProgress))
     border.color: card.librarySurfaceMaterial ? luluPalette.transparent
-        : (focused ? luluPalette.focusIndicator : luluPalette.glassBorder)
-    border.width: card.librarySurfaceMaterial ? 0 : (focused ? 3 : 1) * uiScale
+        : Qt.rgba(luluPalette.glassBorder.r
+            + (luluPalette.focusIndicator.r - luluPalette.glassBorder.r) * card.selectionProgress,
+            luluPalette.glassBorder.g
+            + (luluPalette.focusIndicator.g - luluPalette.glassBorder.g) * card.selectionProgress,
+            luluPalette.glassBorder.b
+            + (luluPalette.focusIndicator.b - luluPalette.glassBorder.b) * card.selectionProgress,
+            luluPalette.glassBorder.a
+            + (luluPalette.focusIndicator.a - luluPalette.glassBorder.a) * card.selectionProgress)
+    border.width: card.librarySurfaceMaterial ? 0 : (1 + 2 * card.selectionProgress) * uiScale
     clip: true
 
     GlassSurface {
@@ -222,7 +238,7 @@ Rectangle {
         }
     }
 
-    Item {
+        Item {
         visible: card.focalChromeOpacity > 0
         opacity: card.focalChromeOpacity
         z: 1

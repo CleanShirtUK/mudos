@@ -7,8 +7,9 @@ This is the first bounded System/Settings slice on the development HOST.
 - `SystemSettingsProvider` normalizes product-facing rows by category.
 - `ConsoleInterface.ListSystemCategories` and `ListSystemSettings` expose the model over the existing consoled D-Bus boundary.
 - The UI bridge exposes read-only settings at `/settings?category=<name>`.
-- System Home presents Display, Audio, Network, Bluetooth, Controllers, Storage, System and Lulu categories.
-- A/B opens and backs out of System pages; D-pad moves rows; PageUp/PageDown provide bounded page navigation.
+- System Home presents Display, Audio, Network, Bluetooth, Controllers, Storage, System and Lulu as a direct NavigationCard rail.
+- A opens the selected category page directly; B returns to the System rail with selection preserved.
+- D-pad moves settings rows; PageUp/PageDown provide bounded direct category-page navigation.
 - The System page presents stable row identity, kind, value, detail and writable metadata.
 
 ## HOST Proven
@@ -39,9 +40,10 @@ This is the first bounded System/Settings slice on the development HOST.
 - Final controller-native virtual keyboard is deferred.
 - Settings page animation and horizontal transition grammar are deferred.
 
-## Next Session Animation Queue
+## Next Functionality Priorities
 
-1. Finish the vertical Home-category transition.
-2. Animate selected/unselected game-card size and dimming with accepted retargeting.
-3. Add a Steam card beneath Library alongside All Games.
-4. Use Library cards and System pages to develop horizontal transitions.
+1. Prove display/output control.
+2. Prove audio routing and control.
+3. Prove NetworkManager/Wi-Fi and Bluetooth/BlueZ operations.
+4. Prove controller management, storage status, update strategy, and reboot/shutdown paths.
+5. Implement Lulu-owned configuration persistence.

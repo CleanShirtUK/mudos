@@ -14,41 +14,91 @@ Item {
     property real transitionProgress: 0
     property bool transitionExpanding: true
     property real contentOpacity: 1
+    property int selectedIndex: 0
+    property var selectionStart: [1, 0]
+    property real selectionProgress: 1
+    property var presentationStartX: [0, 178]
+    property int transitionFromIndex: 0
+    property bool suppressSelectionCompletion: false
     readonly property bool transitioning: transitionState === "ACTIVATING"
 
     property real uiScale: 1
     readonly property string navigationObject: "library"
-    signal openRequested()
+    signal openRequested(int index)
 
-    GameCard {
-        id: libraryHomeCard
-        x: 0
-        y: 0
-        width: compactCardWidth
-        height: cardHeight
-        compact: true
-        homeCard: true
-        glassVisible: false
-        librarySurfaceMaterial: true
-        opacity: 1
-        presentationContentOpacity: libraryHome.contentOpacity
-        presentationState: "COMPACT"
-        displayTitle: "All Games"
-        presentationId: "library:all"
-        symbolicArtwork: "[ ]"
-        identitySampling: false
-        typography: libraryHome.typography
-        luluPalette: libraryHome.luluPalette
-        canonicalTexture: libraryHome.canonicalTexture
-        canonicalCoordinateRoot: libraryHome.canonicalCoordinateRoot
-        canonicalSize: libraryHome.canonicalSize
-        sceneOriginOverride: libraryHome.allGamesSceneOrigin
-        sceneSizeOverride: Qt.size(libraryHomeCard.actualGlassSurface.width,
-                                   libraryHomeCard.actualGlassSurface.height)
+    function railX(relativeIndex) {
+        return relativeIndex * (compactCardWidth + 18 * uiScale)
+    }
 
-        MouseArea {
-            anchors.fill: parent
-            onClicked: openRequested()
+    function captureSelection() {
+        var starts = []
+        var startsX = []
+        for (var index = 0; index < 2; index++) {
+            var card = cardRepeater.itemAt(index)
+            starts[index] = card ? card.selectionProgress : (index === selectedIndex ? 1 : 0)
+            startsX[index] = card ? card.x : railX(index - selectedIndex)
+        }
+        selectionStart = starts
+        presentationStartX = startsX
+    }
+
+    function moveSelection(delta) {
+        var nextIndex = Math.max(0, Math.min(1, selectedIndex + delta))
+        if (nextIndex === selectedIndex)
+            return
+        captureSelection()
+        transitionFromIndex = selectedIndex
+        selectedIndex = nextIndex
+        suppressSelectionCompletion = true
+        selectionAnimation.stop()
+        suppressSelectionCompletion = false
+        selectionProgress = 0
+        selectionAnimation.start()
+    }
+
+    Component.onCompleted: captureSelection()
+
+    NumberAnimation {
+        id: selectionAnimation
+        target: libraryHome
+        property: "selectionProgress"
+        to: 1
+        duration: 500
+        easing.type: Easing.OutQuint
+        onStopped: {
+            if (libraryHome.suppressSelectionCompletion)
+                return
+            libraryHome.selectionProgress = 1
+            libraryHome.captureSelection()
+        }
+    }
+
+    Repeater {
+        id: cardRepeater
+        model: ["All Games", "Steam"]
+        delegate: NavigationCard {
+            required property int index
+            required property string modelData
+            readonly property real startX: libraryHome.presentationStartX[index] || 0
+            readonly property real targetX: libraryHome.railX(index - libraryHome.selectedIndex)
+            x: startX + (targetX - startX) * libraryHome.selectionProgress
+            y: 0
+            width: libraryHome.compactCardWidth
+            height: libraryHome.cardHeight
+            focused: index === libraryHome.selectedIndex
+            selectionProgress: (libraryHome.selectionStart[index] || 0)
+                + ((index === libraryHome.selectedIndex ? 1 : 0)
+                   - (libraryHome.selectionStart[index] || 0)) * libraryHome.selectionProgress
+            displayTitle: modelData
+            symbolicArtwork: "[ ]"
+            uiScale: libraryHome.uiScale
+            typography: libraryHome.typography
+            luluPalette: libraryHome.luluPalette
+            canonicalTexture: libraryHome.canonicalTexture
+            canonicalCoordinateRoot: libraryHome.canonicalCoordinateRoot
+            canonicalSize: libraryHome.canonicalSize
+            opacity: libraryHome.contentOpacity
+            onActivated: libraryHome.openRequested(index)
         }
     }
 
@@ -56,8 +106,11 @@ Item {
         interval: 16
         running: libraryHome.visible
         repeat: true
-        onTriggered: libraryHome.allGamesSceneOrigin =
-            libraryHomeCard.actualGlassSurface.mapToItem(
-                libraryHome.canonicalCoordinateRoot, 0, 0)
+        onTriggered: {
+            var card = cardRepeater.itemAt(0)
+            if (card)
+                libraryHome.allGamesSceneOrigin = card.mapToItem(
+                    libraryHome.canonicalCoordinateRoot, 0, 0)
+        }
     }
 }
