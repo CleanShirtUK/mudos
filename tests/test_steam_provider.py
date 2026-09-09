@@ -112,6 +112,27 @@ class SteamProviderTests(unittest.TestCase):
 
         asyncio.run(exercise())
 
+    def test_open_game_details_detaches_uri_without_waiting(self) -> None:
+        provider = SteamProvider(executable="steam")
+        with patch("lulu.steam_provider.subprocess.Popen") as popen:
+            uri = provider.open_game_details("268910")
+
+        self.assertEqual(uri, "steam://nav/games/details/268910")
+        popen.assert_called_once()
+        self.assertEqual(popen.call_args.args[0], ["steam", uri])
+        self.assertTrue(popen.call_args.kwargs["start_new_session"])
+        self.assertNotIn("-applaunch", popen.call_args.args)
+
+    def test_launch_gamepad_title_detaches_rungame_uri_without_waiting(self) -> None:
+        provider = SteamProvider(executable="steam")
+        with patch("lulu.steam_provider.subprocess.Popen") as popen:
+            uri = provider.launch_gamepad_title("268910")
+
+        self.assertEqual(uri, "steam://rungameid/268910")
+        popen.assert_called_once()
+        self.assertEqual(popen.call_args.args[0], ["steam", uri])
+        self.assertTrue(popen.call_args.kwargs["start_new_session"])
+
     def test_request_launch_rejects_existing_target_before_duplicate_submission(self) -> None:
         async def exercise() -> None:
             provider = SteamProvider(executable="steam")

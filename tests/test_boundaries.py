@@ -206,6 +206,10 @@ class BoundaryTests(unittest.TestCase):
         configured = GamescopeInvocation(output="HDMI-A-1").argv(["/usr/bin/true"])
         self.assertEqual(configured[3:5], ["--prefer-output", "HDMI-A-1"])
 
+    def test_gamescope_invocation_can_enable_steam_integration(self) -> None:
+        command = GamescopeInvocation(steam=True).argv(["/usr/bin/true"])
+        self.assertIn("--steam", command)
+
     def test_gamescope_discovers_connected_connector(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             drm = Path(directory) / "card0-HDMI-A-1"

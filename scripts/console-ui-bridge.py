@@ -22,18 +22,21 @@ class ConsoleUiBridge:
         self.consoled = consoled
         self.sessiond = sessiond
 
-    def call(self, operation: asyncio.Future, timeout: float = 15) -> object:
+    def call(self, operation: asyncio.Future, timeout: float | None = 15) -> object:
         return asyncio.run_coroutine_threadsafe(operation, self.loop).result(timeout=timeout)
 
     async def list_games(self, scope: str) -> list[dict[str, object]]:
         rows = await self.consoled.call_list_games(scope)
         return [{key: value.value for key, value in row.items()} for row in rows]
 
-    async def launch_game(self, game_id: str) -> str:
+    async def launch_game(self, game_id: str) -> dict[str, object]:
         LOGGER.info("launch request game_id=%s", game_id)
         token = await self.consoled.call_launch_game(game_id, 15000)
         LOGGER.info("launch accepted game_id=%s token=%s", game_id, token)
-        return token
+        return {
+            "token": token,
+            "navigation_only": token.startswith("steam://nav/games/details/"),
+        }
 
     async def state(self) -> dict[str, object]:
         return json.loads(await self.sessiond.call_get_state())
@@ -82,7 +85,8 @@ class ApiHandler(BaseHTTPRequestHandler):
         try:
             game_id = unquote(path.removeprefix("/launch/"))
             LOGGER.info("http launch game_id=%s", game_id)
-            token = self.bridge.call(self.bridge.launch_game(game_id), timeout=15)
+            timeout = None if game_id.startswith("steam:") else 15
+            token = self.bridge.call(self.bridge.launch_game(game_id), timeout=timeout)
             self._respond(200, {"token": token})
         except Exception as error:  # pragma: no cover - live IPC failure path
             self._respond(409, {"error": str(error) or type(error).__name__})
@@ -114,7 +118,8 @@ async def main() -> None:
 
     environment = os.environ.copy()
     qml = os.environ.get("LULU_UI_FILE", "/opt/lulu/ui/ConsoleShell.qml")
-    process = await asyncio.create_subprocess_exec("qmlscene6", qml, env=environment)
+    shell = os.environ.get("LULU_SHELL_EXECUTABLE", "/opt/lulu/bin/lulu-shell")
+    process = await asyncio.create_subprocess_exec(shell, qml, env=environment)
     await process.wait()
     server.shutdown()
     bus.disconnect()

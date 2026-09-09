@@ -27,6 +27,10 @@ INTERFACE_NAME = "org.lulu.ConsoleSession"
 
 
 class ConsoleSessionInterface(ServiceInterface):
+    # Temporary Steam baseline: retain the implementation but do not reassert
+    # Lulu's Gamescope shell selection.
+    _presentation_watchdog_enabled = False
+
     def __init__(self, model: SessionStateModel) -> None:
         super().__init__(INTERFACE_NAME)
         self.model = model
@@ -78,7 +82,8 @@ class ConsoleSessionInterface(ServiceInterface):
 
     async def start_controller_monitor(self) -> None:
         self._controller_monitor_task = asyncio.create_task(self._monitor_controller())
-        self._presentation_watchdog_task = asyncio.create_task(self._monitor_presentation())
+        if self._presentation_watchdog_enabled:
+            self._presentation_watchdog_task = asyncio.create_task(self._monitor_presentation())
 
     async def _monitor_presentation(self) -> None:
         while True:
@@ -139,6 +144,7 @@ class ConsoleSessionInterface(ServiceInterface):
         output = self._bootstrap_output or discover_presentation_output()
         invocation = GamescopeInvocation.from_environment()
         invocation = GamescopeInvocation(
+            steam=True,
             output=output,
             output_width=invocation.output_width,
             output_height=invocation.output_height,

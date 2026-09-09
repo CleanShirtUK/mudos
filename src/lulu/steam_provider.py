@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import re
 import signal
+import subprocess
 
 from .launch_identity import LaunchIdentity
 
@@ -45,6 +46,42 @@ class SteamProvider:
         self.executable = executable
         self.poll_interval = poll_interval
         self._logger = logging.getLogger("lulu.steam-provider")
+
+    def open_game_details(self, app_id: str) -> str:
+        """Navigate the existing Steam client without taking lifecycle ownership."""
+        if not app_id.isdecimal() or int(app_id) < 1:
+            raise ValueError("Steam AppID must be a positive integer")
+        uri = f"steam://nav/games/details/{app_id}"
+        environment = os.environ.copy()
+        environment.setdefault("DISPLAY", ":0")
+        subprocess.Popen(
+            [self.executable, uri],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+            env=environment,
+        )
+        self._logger.info("opened Steam game details app_id=%s uri=%s", app_id, uri)
+        return uri
+
+    def launch_gamepad_title(self, app_id: str) -> str:
+        """Ask the resident Steam client to launch an AppID after navigation."""
+        if not app_id.isdecimal() or int(app_id) < 1:
+            raise ValueError("Steam AppID must be a positive integer")
+        uri = f"steam://rungameid/{app_id}"
+        environment = os.environ.copy()
+        environment.setdefault("DISPLAY", ":0")
+        subprocess.Popen(
+            [self.executable, uri],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+            env=environment,
+        )
+        self._logger.info("requested Steam launch app_id=%s uri=%s", app_id, uri)
+        return uri
 
     def list_installed(self, roots: tuple[Path, ...] | None = None) -> list[InstalledSteamGame]:
         roots = roots or self._library_roots()

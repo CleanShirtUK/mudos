@@ -17,7 +17,7 @@ class ConsoleBridgeTests(unittest.TestCase):
 
     def test_launch_call_has_a_provider_watchdog_timeout(self) -> None:
         source = (ROOT / "scripts" / "console-ui-bridge.py").read_text()
-        self.assertIn("timeout=15", source)
+        self.assertIn("timeout = None if game_id.startswith(\"steam:\") else 15", source)
         self.assertIn("str(error) or type(error).__name__", source)
 
     def test_state_path_reads_authoritative_session_state(self) -> None:

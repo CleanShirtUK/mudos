@@ -12,6 +12,7 @@ from collections.abc import Callable
 
 @dataclass(frozen=True, slots=True)
 class GamescopeInvocation:
+    steam: bool = False
     output: str | None = None
     output_width: int | None = None
     output_height: int | None = None
@@ -44,6 +45,10 @@ class GamescopeInvocation:
             raise ValueError("Gamescope payload is required")
         command = [
             "gamescope",
+        ]
+        if self.steam:
+            command += ["--steam"]
+        command += [
             "--backend",
             "drm",
         ]

@@ -3,7 +3,7 @@ import QtQuick.Window
 
 Window {
     id: root
-    visible: true
+    visible: false
     visibility: Window.FullScreen
     color: luluPalette.backdrop
     flags: Qt.FramelessWindowHint
@@ -341,6 +341,12 @@ Window {
             if (generation !== launchGeneration)
                 return
             launchToken = data.token
+            if (data.navigation_only) {
+                launchStatusTimer.stop()
+                launchStatus = "idle"
+                message = ""
+                return
+            }
             refreshLaunchState(generation)
             launchStatusTimer.start()
             refreshCatalogue()

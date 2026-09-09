@@ -93,13 +93,21 @@ class ConsoleInterface(ServiceInterface):
         if game is None or not game.launchable:
             raise ValueError("game is not installed and launchable")
         LOGGER.info("launch dispatch game_id=%s provider=%s provider_id=%s", game_id, game.provider, game.provider_id)
+        if game.provider == "steam":
+            details_uri = self.catalogue.provider.open_game_details(game.provider_id)
+            launch_uri = self.catalogue.provider.launch_gamepad_title(game.provider_id)
+            LOGGER.info(
+                "Steam contextual launch submitted game_id=%s details=%s launch=%s",
+                game_id,
+                details_uri,
+                launch_uri,
+            )
+            return details_uri
         bus = await MessageBus(bus_type=BusType.SESSION).connect()
         introspection = await bus.introspect("org.lulu.ConsoleSessiond", "/org/lulu/ConsoleSession")
         proxy = bus.get_proxy_object("org.lulu.ConsoleSessiond", "/org/lulu/ConsoleSession", introspection)
         session = proxy.get_interface("org.lulu.ConsoleSession")
-        if game.provider == "steam":
-            token = await session.call_request_steam_launch(game.provider_id, timeout_ms)
-        elif game.provider == "local" and self.local_runtime is not None:
+        if game.provider == "local" and self.local_runtime is not None:
             intent = self.local_runtime.launch_intent(game)
             token = await session.call_request_launch([intent.executable, *intent.arguments], timeout_ms)
         else:
