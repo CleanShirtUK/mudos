@@ -10,6 +10,7 @@
 #include <xcb/xcb.h>
 
 #include <csignal>
+#include <cerrno>
 #include <cstdlib>
 #include <cstring>
 #include <dirent.h>
@@ -65,9 +66,13 @@ private:
         else if (command == QStringLiteral("ui_down"))
             viewModel_->insert("selection", 1);
         else if (command == QStringLiteral("ui_accept"))
-            qInfo() << "Guide would activate"
-                    << (viewModel_->value("selection").toInt() == 0
-                            ? "Quit Current Application" : "Kill Current Application");
+        {
+            if (viewModel_->value("selection").toInt() == 0)
+                sendDelete();
+            else
+                sendTerminate();
+            QCoreApplication::quit();
+        }
         else if (command == QStringLiteral("ui_back") || command == QStringLiteral("ui_guide"))
             QCoreApplication::quit();
     }
@@ -116,6 +121,12 @@ private:
         xcb_flush(x11->connection());
         free(protocolReply);
         free(deleteReply);
+    }
+
+    void sendTerminate()
+    {
+        if (::kill(static_cast<pid_t>(targetPid_), SIGTERM) < 0 && errno != ESRCH)
+            qWarning() << "Guide SIGTERM failed for PID" << targetPid_ << strerror(errno);
     }
 
     QQuickWindow *window_;
