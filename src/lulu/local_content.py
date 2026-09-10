@@ -5,6 +5,8 @@ import hashlib
 from pathlib import Path
 import re
 
+from .emulation import PLATFORMS, PlatformDefinition
+
 
 @dataclass(frozen=True, slots=True)
 class LocalContentGame:
@@ -15,39 +17,34 @@ class LocalContentGame:
     launchable: bool
     install_state: str
     reason: str
+    runtime: str = ""
+    platform_label: str = ""
 
 
 class LocalContentProvider:
     """Scan only a caller-supplied fixture root; never discover host paths."""
-
-    _extensions = {
-        "nes": (".nes",),
-        "genesis": (".bin",),
-        "ps2": (".cue", ".iso"),
-        "wii": (".rvz",),
-        "switch": (".nsp",),
-    }
 
     def __init__(
         self,
         runtime_paths: dict[str, Path] | None = None,
         bios_paths: dict[str, tuple[Path, ...]] | None = None,
     ) -> None:
-        self.runtime_paths = runtime_paths or {}
-        self.bios_paths = bios_paths or {}
+        self.runtime_paths = ({key: definition.executable for key, definition in PLATFORMS.items()}
+                              if runtime_paths is None else runtime_paths)
+        self.bios_paths = {} if bios_paths is None else bios_paths
 
     def list_installed(self, root: Path) -> list[LocalContentGame]:
         if not root.is_dir():
             return []
         games: list[LocalContentGame] = []
-        for platform, extensions in self._extensions.items():
+        for platform, definition in PLATFORMS.items():
             platform_root = root / platform
             for content in sorted(platform_root.iterdir() if platform_root.is_dir() else ()):
-                if content.suffix.lower() not in extensions or not content.is_file():
+                if content.suffix.lower() not in definition.extensions or not content.is_file():
                     continue
                 valid, reason = self._content_status(platform, content)
                 runtime_ready = self.runtime_paths.get(platform, Path()).is_file()
-                bios_ready = self._bios_ready(platform)
+                bios_ready = self._bios_ready(platform, definition)
                 launchable = valid and runtime_ready and bios_ready
                 if valid and not bios_ready:
                     reason = "bios-missing"
@@ -62,14 +59,19 @@ class LocalContentProvider:
                         launchable=launchable,
                         install_state="installed" if valid else "invalid",
                         reason=reason,
+                        runtime=definition.runtime,
+                        platform_label=definition.label,
                     )
                 )
         return sorted(games, key=lambda game: game.title.casefold())
 
-    def _bios_ready(self, platform: str) -> bool:
-        if platform != "ps2":
+    def _bios_ready(self, platform: str, definition: PlatformDefinition) -> bool:
+        if definition.bios_subdirectory is None:
             return True
-        return any(path.is_file() for path in self.bios_paths.get(platform, ()))
+        paths = self.bios_paths.get(platform, ())
+        if paths:
+            return any(path.is_file() for path in paths)
+        return any(path.is_file() for path in definition.bios_root.iterdir()) if definition.bios_root.is_dir() else False
 
     @staticmethod
     def _title(content: Path) -> str:

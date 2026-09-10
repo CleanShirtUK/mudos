@@ -15,6 +15,7 @@ Item {
     property bool transitionExpanding: true
     property real contentOpacity: 1
     property int selectedIndex: 0
+    property var categories: [{"label": "All Games", "scope": "all"}, {"label": "Steam", "scope": "steam"}]
     property var selectionStart: [1, 0]
     property real selectionProgress: 1
     property var presentationStartX: [0, 178]
@@ -33,7 +34,7 @@ Item {
     function captureSelection() {
         var starts = []
         var startsX = []
-        for (var index = 0; index < 2; index++) {
+        for (var index = 0; index < categories.length; index++) {
             var card = cardRepeater.itemAt(index)
             starts[index] = card ? card.selectionProgress : (index === selectedIndex ? 1 : 0)
             startsX[index] = card ? card.x : railX(index - selectedIndex)
@@ -43,7 +44,7 @@ Item {
     }
 
     function moveSelection(delta) {
-        var nextIndex = Math.max(0, Math.min(1, selectedIndex + delta))
+        var nextIndex = Math.max(0, Math.min(categories.length - 1, selectedIndex + delta))
         if (nextIndex === selectedIndex)
             return
         captureSelection()
@@ -75,10 +76,10 @@ Item {
 
     Repeater {
         id: cardRepeater
-        model: ["All Games", "Steam"]
+        model: libraryHome.categories // model: ["All Games", "Steam"]
         delegate: NavigationCard {
             required property int index
-            required property string modelData
+            required property var modelData
             readonly property real startX: libraryHome.presentationStartX[index] || 0
             readonly property real targetX: libraryHome.railX(index - libraryHome.selectedIndex)
             x: startX + (targetX - startX) * libraryHome.selectionProgress
@@ -89,7 +90,7 @@ Item {
             selectionProgress: (libraryHome.selectionStart[index] || 0)
                 + ((index === libraryHome.selectedIndex ? 1 : 0)
                    - (libraryHome.selectionStart[index] || 0)) * libraryHome.selectionProgress
-            displayTitle: modelData
+            displayTitle: modelData.label
             symbolicArtwork: "[ ]"
             uiScale: libraryHome.uiScale
             typography: libraryHome.typography

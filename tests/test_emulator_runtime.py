@@ -37,6 +37,16 @@ class EmulatorRuntimeTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "runtime-core-missing"):
                 EmulatorRuntimeAdapter({"nes": executable}).launch_intent(game)
 
+    def test_dolphin_intent_is_platform_driven(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            executable = Path(directory) / "dolphin-emu"
+            executable.write_bytes(b"fixture")
+            game = LocalContentGame("local:wii:id", "Wii", "wii", "/fixture/game.rvz", True, "installed", "ready")
+
+            intent = EmulatorRuntimeAdapter({"wii": executable}).launch_intent(game)
+
+        self.assertEqual(intent.arguments, ("-e", "/fixture/game.rvz"))
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -16,7 +16,7 @@ class EmulatorLaunchIntent:
 class EmulatorRuntimeAdapter:
     """Build backend launch intent without exposing runtime details to QML."""
 
-    _retroarch_platforms = {"nes", "genesis", "ps2"}
+    _retroarch_platforms = {"nes", "genesis"}
 
     def __init__(self, runtime_paths: dict[str, Path], core_paths: dict[str, Path] | None = None) -> None:
         self.runtime_paths = runtime_paths
@@ -34,9 +34,12 @@ class EmulatorRuntimeAdapter:
                 raise ValueError(f"runtime-core-missing: {game.platform}")
             content_path = getattr(game, "content_path", getattr(game, "install_dir", ""))
             arguments = ("-L", str(core), content_path)
-        elif game.platform == "wii":
+        elif game.platform in {"wii", "ps2"}:
             content_path = getattr(game, "content_path", getattr(game, "install_dir", ""))
-            arguments = ("-e", content_path)
+            arguments = ("-e", content_path) if game.platform == "wii" else (content_path,)
+        elif game.platform == "switch":
+            content_path = getattr(game, "content_path", getattr(game, "install_dir", ""))
+            arguments = (content_path,)
         else:
             raise ValueError(f"unsupported-runtime: {game.platform}")
         return EmulatorLaunchIntent(game.platform, str(executable), arguments)

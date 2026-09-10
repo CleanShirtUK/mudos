@@ -10,6 +10,8 @@ Environment=PYTHONPATH=/opt/lulu/lib
 Environment=XDG_RUNTIME_DIR=/run/user/958
 Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/958/bus
 Environment=LULU_STEAM_ROOTS=/var/lib/lulu/.local/share/Steam
+Environment=LULU_ROM_ROOT=/var/lib/lulu/roms
+Environment=LULU_BIOS_ROOT=/var/lib/lulu/bios
 # Optional secret is supplied by a systemd drop-in, never in this unit.
 Environment=LULU_ARTWORK_CACHE=/var/lib/lulu/.cache/lulu/steamgriddb
 EnvironmentFile=-/etc/lulu/steamgriddb.env

@@ -77,3 +77,19 @@ class CatalogueTests(unittest.TestCase):
         self.assertEqual(record.provider, "local")
         self.assertEqual(record.platform, "nes")
         self.assertEqual(store.list_games(), [])
+
+    def test_all_games_combines_steam_and_discovered_platforms(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "roms"
+            (root / "nes").mkdir(parents=True)
+            (root / "nes" / "Mario.nes").write_bytes(b"fixture")
+            store = CatalogueStore(Path(directory) / "catalogue.sqlite3")
+            store.reconcile_steam(FakeSteamProvider([
+                InstalledSteamGame("10", "Steam Game", "/games/a", "/games", 1, 0)
+            ]))
+            store.reconcile_local(LocalContentProvider({"nes": Path("/usr/bin/true")}), root)
+            games = store.list_games()
+
+        self.assertEqual({game.provider for game in games}, {"steam", "local"})
+        self.assertEqual(store.list_games("platform:nes")[0].title, "Mario")
+        self.assertEqual(store.list_platforms(), [("nes", "Nintendo Entertainment System")])

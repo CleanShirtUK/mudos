@@ -21,6 +21,8 @@ class CatalogueGame:
     install_dir: str
     artwork_url: str
     last_played: int
+    runtime: str = ""
+    platform_label: str = ""
 
     @classmethod
     def from_steam(cls, game: InstalledSteamGame) -> "CatalogueGame":
@@ -50,6 +52,8 @@ class CatalogueGame:
             install_dir=game.content_path,
             artwork_url="",
             last_played=0,
+            runtime=game.runtime,
+            platform_label=game.platform_label,
         )
 
     def as_dict(self) -> dict[str, object]:
@@ -77,6 +81,10 @@ class CatalogueStore:
                 UNIQUE(provider, provider_id)
             )"""
         )
+        columns = {row[1] for row in self.connection.execute("PRAGMA table_info(games)")}
+        for name in ("runtime", "platform_label"):
+            if name not in columns:
+                self.connection.execute(f"ALTER TABLE games ADD COLUMN {name} TEXT NOT NULL DEFAULT ''")
         self.connection.commit()
 
     def reconcile_steam(self, provider: SteamProvider) -> list[CatalogueGame]:
@@ -86,12 +94,13 @@ class CatalogueStore:
             self.connection.execute(
                 """INSERT INTO games
                    (game_id, provider, provider_id, title, platform, install_state,
-                    launchable, install_dir, artwork_url, last_played, updated_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, unixepoch())
+                    launchable, install_dir, artwork_url, last_played, runtime, platform_label, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, unixepoch())
                    ON CONFLICT(game_id) DO UPDATE SET
                      title=excluded.title, platform=excluded.platform,
-                     install_state=excluded.install_state, launchable=excluded.launchable,
-                     install_dir=excluded.install_dir, artwork_url=excluded.artwork_url,
+                      install_state=excluded.install_state, launchable=excluded.launchable,
+                      install_dir=excluded.install_dir, artwork_url=excluded.artwork_url,
+                      runtime=excluded.runtime, platform_label=excluded.platform_label,
                      last_played=MAX(games.last_played, excluded.last_played),
                      updated_at=excluded.updated_at""",
                 (*game.as_dict().values(),),
@@ -108,12 +117,13 @@ class CatalogueStore:
             self.connection.execute(
                 """INSERT INTO games
                    (game_id, provider, provider_id, title, platform, install_state,
-                    launchable, install_dir, artwork_url, last_played, updated_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, unixepoch())
+                    launchable, install_dir, artwork_url, last_played, runtime, platform_label, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, unixepoch())
                    ON CONFLICT(game_id) DO UPDATE SET
                      title=excluded.title, platform=excluded.platform,
-                     install_state=excluded.install_state, launchable=excluded.launchable,
-                     install_dir=excluded.install_dir, artwork_url=excluded.artwork_url,
+                      install_state=excluded.install_state, launchable=excluded.launchable,
+                      install_dir=excluded.install_dir, artwork_url=excluded.artwork_url,
+                      runtime=excluded.runtime, platform_label=excluded.platform_label,
                      updated_at=excluded.updated_at""",
                 (*game.as_dict().values(),),
             )
@@ -121,11 +131,14 @@ class CatalogueStore:
         return games
 
     def list_games(self, scope: str = "all") -> list[CatalogueGame]:
-        query = "SELECT game_id, provider, provider_id, title, platform, install_state, launchable, install_dir, artwork_url, last_played FROM games WHERE launchable = 1"
+        query = "SELECT game_id, provider, provider_id, title, platform, install_state, launchable, install_dir, artwork_url, last_played, runtime, platform_label FROM games WHERE install_state = 'installed'"
         parameters: tuple[object, ...] = ()
         if scope == "steam":
             query += " AND provider = ?"
             parameters = ("steam",)
+        elif scope.startswith("platform:"):
+            query += " AND provider = 'local' AND platform = ?"
+            parameters = (scope.removeprefix("platform:"),)
         query += " ORDER BY title COLLATE NOCASE"
         return [CatalogueGame(*row) for row in self.connection.execute(query, parameters)]
 
@@ -133,16 +146,24 @@ class CatalogueStore:
         return [
             CatalogueGame(*row)
             for row in self.connection.execute(
-                "SELECT game_id, provider, provider_id, title, platform, install_state, launchable, install_dir, artwork_url, last_played FROM games WHERE launchable = 1 AND last_played > 0 ORDER BY last_played DESC"
+                "SELECT game_id, provider, provider_id, title, platform, install_state, launchable, install_dir, artwork_url, last_played, runtime, platform_label FROM games WHERE install_state = 'installed' AND last_played > 0 ORDER BY last_played DESC"
             )
         ]
 
     def get_game(self, game_id: str) -> CatalogueGame | None:
         row = self.connection.execute(
-            "SELECT game_id, provider, provider_id, title, platform, install_state, launchable, install_dir, artwork_url, last_played FROM games WHERE game_id = ?",
+            "SELECT game_id, provider, provider_id, title, platform, install_state, launchable, install_dir, artwork_url, last_played, runtime, platform_label FROM games WHERE game_id = ?",
             (game_id,),
         ).fetchone()
         return CatalogueGame(*row) if row is not None else None
+
+    def list_platforms(self) -> list[tuple[str, str]]:
+        platforms = list(self.connection.execute(
+            "SELECT platform, MAX(platform_label) FROM games "
+            "WHERE provider = 'local' AND install_state = 'installed' "
+            "GROUP BY platform ORDER BY MAX(platform_label) COLLATE NOCASE"
+        ))
+        return sorted(platforms, key=lambda item: item[1].casefold())
 
     def mark_played(self, game_id: str) -> None:
         self.connection.execute("UPDATE games SET last_played = unixepoch(), updated_at = unixepoch() WHERE game_id = ?", (game_id,))

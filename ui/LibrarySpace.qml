@@ -6,6 +6,7 @@ Item {
     property int selectedIndex: 0
     property int firstVisibleRow: 0
     property int collectionIndex: 0
+    property var collections: [{"label": "All Games", "scope": "all"}, {"label": "Steam", "scope": "steam"}]
     property bool collectionFocus: false
     property string transitionState: "RESTING"
     property string returnState: "RESTING"
@@ -90,11 +91,12 @@ Item {
         spacing: 46 * uiScale
 
         Repeater {
-            model: ["All Games", "Steam"]
+            model: librarySpace.collections
             delegate: Text {
                 required property int index
-                required property string modelData
-                text: modelData
+                required property var modelData
+                // required property string modelData (legacy string-model contract)
+                text: modelData.label
                 color: index === collectionIndex ? luluPalette.selectedText : luluPalette.navigationText
                 font.family: typography ? typography.interfaceFamily : "JetBrains Mono"
                 font.pixelSize: typography ? typography.size("secondary", 14) : 14 * uiScale
@@ -123,7 +125,7 @@ Item {
         opacity: librarySpace.contentOpacity
         y: 206 * uiScale
         visible: libraryGames.length === 0
-        text: "No installed launchable games"
+        text: "No installed games"
         color: luluPalette.mutedText
         font.family: typography ? typography.interfaceFamily : "JetBrains Mono"
         font.pixelSize: typography ? typography.size("secondary", 24) : 24 * uiScale

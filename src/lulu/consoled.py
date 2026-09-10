@@ -11,6 +11,8 @@ from .catalogue import CatalogueStore
 from .artwork import SteamGridDBArtwork
 from .contracts import ServiceDescriptor, ServiceName
 from .emulator_runtime import EmulatorRuntimeAdapter
+from .emulation import PLATFORMS, ROM_ROOT, ensure_storage
+from .local_content import LocalContentProvider
 from .steam_provider import SteamProvider
 from .system_settings import CATEGORIES as SYSTEM_CATEGORIES, SystemSettingsProvider
 
@@ -34,16 +36,24 @@ class ConsoleCatalog:
 
     descriptor = DESCRIPTOR
 
-    def __init__(self, store: CatalogueStore | None = None, provider: SteamProvider | None = None) -> None:
+    def __init__(self, store: CatalogueStore | None = None, provider: SteamProvider | None = None,
+                 local_provider: LocalContentProvider | None = None) -> None:
         self.store = store or CatalogueStore()
         self.provider = provider or SteamProvider()
+        self.local_provider = local_provider or LocalContentProvider()
         self.artwork = SteamGridDBArtwork()
 
     def refresh(self) -> list[dict[str, object]]:
         self.store.reconcile_steam(self.provider)
+        ensure_storage()
+        self.store.reconcile_local(self.local_provider, ROM_ROOT)
         for game_id, artwork_url in self.artwork.enrich(self.store.list_games()).items():
             self.store.set_artwork_url(game_id, artwork_url)
         return [game.as_dict() for game in self.store.list_games()]
+
+    def platform_categories(self) -> list[dict[str, str]]:
+        return [{"scope": f"platform:{platform}", "platform": platform, "label": label}
+                for platform, label in self.store.list_platforms()]
 
 
 BUS_NAME = "org.lulu.Consoled"
@@ -77,6 +87,10 @@ class ConsoleInterface(ServiceInterface):
         else:
             games = self.catalogue.store.list_games(scope)
         return [self._variants(game.as_dict()) for game in games]
+
+    @method()
+    def ListPlatformCategories(self) -> "aa{sv}":
+        return [self._variants(category) for category in self.catalogue.platform_categories()]
 
     @method()
     def ListSystemSettings(self, category: "s") -> "aa{sv}":
@@ -126,8 +140,12 @@ class ConsoleInterface(ServiceInterface):
 async def serve() -> None:
     catalogue = ConsoleCatalog()
     catalogue.refresh()
+    runtime = EmulatorRuntimeAdapter(
+        {platform: definition.executable for platform, definition in PLATFORMS.items()},
+        {platform: definition.core for platform, definition in PLATFORMS.items() if definition.core is not None},
+    )
     bus = await MessageBus(bus_type=BusType.SESSION).connect()
-    bus.export(OBJECT_PATH, ConsoleInterface(catalogue))
+    bus.export(OBJECT_PATH, ConsoleInterface(catalogue, runtime))
     await bus.request_name(BUS_NAME)
     await asyncio.Event().wait()
 
