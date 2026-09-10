@@ -81,6 +81,7 @@ session ownership remains with the existing ConsoleSessiond boundary.
 Runtime paths must be executable/readable by the Lulu `lulu` service account, and
 ROM/BIOS directories must be readable by that account. Static validation can
 check directory discovery, metadata, scopes, command intents, SQL records, and
-QML bindings without starting gameplay. Actual emulator, Gamescope, and
-lifecycle validation is intentionally pending while the parallel lifecycle
-debug session is active.
+QML bindings without starting gameplay. RetroArch has dated direct-path evidence
+in [RetroArch runtime validation](retroarch-runtime-validation-20260909.md);
+other emulator providers and full authoritative lifecycle coverage remain
+pending.

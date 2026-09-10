@@ -29,4 +29,9 @@ This archive preserves the pre-reset padded Snell experiment that was deployed f
 
 ## Evidence
 
-The experiment and its investigation remain documented in `EVID-D1-014` through `EVID-D1-017`, with upstream comparison and GPLv3 notes in `EVID-D1-016`. The live accepted UI/Orbit baseline remains recoverable from Lulu commits `ffb92a1` and `46521a5`; this archive does not alter those commits or delete any history.
+The experiment and its investigation were documented in external evidence
+records `EVID-D1-014` through `EVID-D1-017`; those artifacts are not present in
+this checkout, so the references are retained as historical provenance rather
+than local links. The live accepted UI/Orbit baseline remains recoverable from
+Mudos commits `ffb92a1` and `46521a5`; this archive does not alter those commits
+or delete any history.
