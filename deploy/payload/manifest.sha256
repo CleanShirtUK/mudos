@@ -1,4 +1,5 @@
 fd19a2b32c6d2c40b3e8d7a6405a591a4b221710bed7f18291eb86e5bd4551d6  ./bin/lulu-shell
+6f14d3589b61fdd428b7579680a8733713038592c952844ae7fe9a420ffc9d27  ./bin/lulu-vt
 cbf5d884cdace6b2dfb15052c3927f076be5865961fdbc08d40ae691d449352a  ./bin/mudos-guide
 5302905ba570185d574479693a66bdb0e599d8408a61678a93da8a2d76d7e370  ./bin/verify-mudos.sh
 d8eeda0ddbdd1d0e03ebf70856353fed6bc102d91f34b46bce64acdc4aba636c  ./config/inputplumber/devices/lulu-composite.yaml
