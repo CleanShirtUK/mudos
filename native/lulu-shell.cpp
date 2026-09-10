@@ -1,6 +1,11 @@
 #include <QGuiApplication>
 #include <QDebug>
 #include <QFile>
+#include <QDBusConnection>
+#include <QDBusInterface>
+#include <QDBusMessage>
+#include <QDBusVariant>
+#include <QProcess>
 #include <QQmlContext>
 #include <QQmlPropertyMap>
 #include <QQmlApplicationEngine>
@@ -14,6 +19,10 @@
 #include <xcb/xcb.h>
 
 #include <cstdlib>
+#include <csignal>
+#include <cstring>
+#include <string>
+#include <unistd.h>
 #include <QTextStream>
 
 namespace {
@@ -29,6 +38,8 @@ void diagnosticMessageHandler(QtMsgType, const QMessageLogContext &, const QStri
 
 class ControllerBridge final : public QQmlPropertyMap
 {
+    Q_OBJECT
+
 public:
     explicit ControllerBridge(QQuickWindow *window, QObject *parent = nullptr)
         : QQmlPropertyMap(this, parent), window_(window)
@@ -41,6 +52,10 @@ public:
         insert("action", QString());
         insert("actionSerial", 0);
         insert("luluPresented", false);
+        insert("guideSelection", 0);
+        QDBusConnection::systemBus().connect(
+            inputService, dbusTargetPath, dbusInterface, "InputEvent", this,
+            SLOT(onInputEvent(QString,double)));
         if (initialized)
             scanGamepads();
         timer_.setInterval(5);
@@ -64,7 +79,101 @@ public:
         setupPresentationObserver();
     }
 
+private slots:
+    void onInputEvent(const QString &event, double value)
+    {
+        handleInputEvent(event, value);
+    }
+
 private:
+    static constexpr const char *inputService = "org.shadowblip.InputPlumber";
+    static constexpr const char *inputPath = "/org/shadowblip/InputPlumber/CompositeDevice0";
+    static constexpr const char *inputInterface = "org.shadowblip.Input.CompositeDevice";
+
+    bool setInterceptMode(uint mode)
+    {
+        QDBusMessage message = QDBusMessage::createMethodCall(
+            inputService, inputPath, "org.freedesktop.DBus.Properties", "Set");
+        message << QString::fromLatin1(inputInterface) << QStringLiteral("InterceptMode")
+                << QVariant::fromValue(QDBusVariant(QVariant::fromValue(mode)));
+        const auto reply = QDBusConnection::systemBus().call(message);
+        if (reply.type() == QDBusMessage::ErrorMessage) {
+            qWarning() << "InputPlumber mode change failed" << reply.errorMessage();
+            return false;
+        }
+        return true;
+    }
+
+    void clearTarget()
+    {
+        targetWindow_ = XCB_WINDOW_NONE;
+        targetPid_ = 0;
+    }
+
+    void restoreInput()
+    {
+        setInterceptMode(1);
+        clearTarget();
+    }
+
+    void handleInputEvent(const QString &event, double value)
+    {
+        if (value != 1.0)
+            return;
+        if (event == QStringLiteral("ui_guide") && !guideProcess_) {
+            startGuide();
+            return;
+        }
+        if (guideProcess_ && (event == QStringLiteral("ui_guide")
+                              || event == QStringLiteral("ui_up")
+                              || event == QStringLiteral("ui_down")
+                              || event == QStringLiteral("ui_accept")
+                              || event == QStringLiteral("ui_back"))) {
+            guideProcess_->write(event.toUtf8() + '\n');
+        }
+    }
+
+    void finishGuide()
+    {
+        if (guideProcess_) {
+            guideProcess_->deleteLater();
+            guideProcess_ = nullptr;
+        }
+        restoreInput();
+    }
+
+    bool startGuide()
+    {
+        if (guideProcess_ || !presentationConnection_ || !focusedWindow_ || !window_
+            || focusedWindow_ == window_->winId()) {
+            restoreInput();
+            return false;
+        }
+        targetWindow_ = focusedWindow_;
+        targetPid_ = windowProperty(targetWindow_, "_NET_WM_PID");
+        if (targetPid_ <= 1) {
+            restoreInput();
+            return false;
+        }
+        guideProcess_ = new QProcess(this);
+        connect(guideProcess_, &QProcess::readyReadStandardOutput, this, [this]() {
+            qInfo().noquote() << guideProcess_->readAllStandardOutput().trimmed();
+        });
+        connect(guideProcess_, &QProcess::readyReadStandardError, this, [this]() {
+            qWarning().noquote() << guideProcess_->readAllStandardError().trimmed();
+        });
+        connect(guideProcess_, &QProcess::finished, this,
+                [this](int, QProcess::ExitStatus) { finishGuide(); });
+        guideProcess_->start("/opt/lulu/bin/mudos-guide", {
+            QString::number(targetWindow_), QString::number(targetPid_)
+        });
+        if (!guideProcess_->waitForStarted(1000)) {
+            finishGuide();
+            return false;
+        }
+        return true;
+    }
+
     void scanGamepads()
     {
         int count = 0;
@@ -133,6 +242,8 @@ private:
         qInfo() << "SDL semantic navigation dispatch" << action;
         insert("action", QString::fromLatin1(action));
         insert("actionSerial", value("actionSerial").toInt() + 1);
+        if (guideProcess_)
+            return;
         static const std::pair<const char *, const char *> routes[] = {
             {"up", "controllerUp"}, {"down", "controllerDown"},
             {"left", "controllerLeft"}, {"right", "controllerRight"},
@@ -154,7 +265,7 @@ private:
     }
     bool dispatchAllowed() const
     {
-        return window_ && luluPresented_;
+        return window_ && (luluPresented_ || guideProcess_);
     }
 
     void setupPresentationObserver()
@@ -255,14 +366,38 @@ private:
         }
     }
 
+    uint32_t windowProperty(xcb_window_t window, const char *name)
+    {
+        const auto cookie = xcb_intern_atom(presentationConnection_, 0, std::strlen(name), name);
+        auto *atom = xcb_intern_atom_reply(presentationConnection_, cookie, nullptr);
+        if (!atom)
+            return 0;
+        const auto property = xcb_get_property(presentationConnection_, 0, window, atom->atom,
+                                               XCB_GET_PROPERTY_TYPE_ANY, 0, 1);
+        auto *reply = xcb_get_property_reply(presentationConnection_, property, nullptr);
+        uint32_t value = 0;
+        if (reply && reply->format == 32
+            && xcb_get_property_value_length(reply) >= static_cast<int>(sizeof(uint32_t)))
+            value = *static_cast<const uint32_t *>(xcb_get_property_value(reply));
+        free(reply);
+        free(atom);
+        return value;
+    }
+
     QQuickWindow *window_;
     QTimer timer_;
+    static constexpr const char *dbusTargetPath =
+        "/org/shadowblip/InputPlumber/devices/target/dbus0";
+    static constexpr const char *dbusInterface = "org.shadowblip.Input.DBusDevice";
     xcb_connection_t *presentationConnection_ = nullptr;
     xcb_window_t presentationRoot_ = XCB_WINDOW_NONE;
     xcb_atom_t presentationAtom_ = XCB_ATOM_NONE;
     QSocketNotifier *presentationNotifier_ = nullptr;
     bool luluPresented_ = false;
     uint32_t focusedWindow_ = 0;
+    xcb_window_t targetWindow_ = XCB_WINDOW_NONE;
+    uint32_t targetPid_ = 0;
+    QProcess *guideProcess_ = nullptr;
     SDL_Gamepad *gamepad_ = nullptr;
 };
 
@@ -315,3 +450,5 @@ int main(int argc, char **argv)
     window->show();
     return application.exec();
 }
+
+#include "lulu-shell.moc"
