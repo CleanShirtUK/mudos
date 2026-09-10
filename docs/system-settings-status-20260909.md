@@ -1,20 +1,20 @@
 # System Settings Status: 2026-09-09
 
-This is the first bounded System/Settings slice on the development HOST.
+This is the first bounded Mudos System/Settings slice on the development host.
 
 ## Implemented
 
 - `SystemSettingsProvider` normalizes product-facing rows by category.
 - `ConsoleInterface.ListSystemCategories` and `ListSystemSettings` expose the model over the existing consoled D-Bus boundary.
 - The UI bridge exposes read-only settings at `/settings?category=<name>`.
-- System Home presents Display, Audio, Network, Bluetooth, Controllers, Storage, System and Lulu as a direct NavigationCard rail.
+- System Home presents Display, Audio, Network, Bluetooth, Controllers, Storage, System and Mudos as a direct NavigationCard rail.
 - A opens the selected category page directly; B returns to the System rail with selection preserved.
 - D-pad moves settings rows; PageUp/PageDown provide bounded direct category-page navigation.
 - The System page presents stable row identity, kind, value, detail and writable metadata.
 
 ## HOST Proven
 
-- Hostname, OS/platform string and kernel are read from the running host.
+- Hostname, host-platform string and kernel are read from the running host.
 - Root storage total/free space is read from the host filesystem.
 - Default audio sink is read when `pactl` is available.
 - Network general state, Wi-Fi radio state and host IP address are read when NetworkManager tools are available.
@@ -29,7 +29,7 @@ This is the first bounded System/Settings slice on the development HOST.
 - Detailed controller identity, player assignment, battery and vibration controls.
 - Per-game storage usage and installation-root mutation.
 - Reboot/shutdown confirmation path.
-- Lulu-owned preference persistence and reduced-motion policy.
+- Mudos-owned preference persistence and reduced-motion policy.
 
 ## Unsupported Or Deferred
 
@@ -46,4 +46,4 @@ This is the first bounded System/Settings slice on the development HOST.
 2. Prove audio routing and control.
 3. Prove NetworkManager/Wi-Fi and Bluetooth/BlueZ operations.
 4. Prove controller management, storage status, update strategy, and reboot/shutdown paths.
-5. Implement Lulu-owned configuration persistence.
+5. Implement Mudos-owned configuration persistence.

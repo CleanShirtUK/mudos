@@ -1,4 +1,4 @@
-# Lulu Liquid Glass Optical Architecture
+# Mudos Liquid Glass Optical Architecture
 
 ## Reference Pipeline
 

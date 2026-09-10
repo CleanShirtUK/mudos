@@ -1,8 +1,10 @@
 # Steam Details Baseline
 
-This is a temporary diagnostic mode for comparing Steam startup latency with
-Lulu's Steam lifecycle owner removed from the path. It is intentionally not a
-replacement architecture.
+This is a retained diagnostic record for comparing Steam startup latency while
+the Mudos Steam lifecycle owner was removed from the path. It is historical,
+not a replacement architecture. The live implementation may have moved beyond
+the exact navigation-only behavior recorded below; consult the implementation
+inventory and dated Steam architecture evidence for current status.
 
 ## Existing behavior bypassed
 
@@ -31,17 +33,18 @@ created for this navigation request.
 
 ## Experimental behavior
 
-For a Steam title, Play now invokes the Steam CLI with:
+At the time of this diagnostic capture, a Steam title's Play action invoked the
+Steam CLI with:
 
 ```text
 steam://nav/games/details/<appid>
 ```
 
-The process is detached and not waited on. Steam's normal single-client URI
-handling is relied upon. Lulu does not issue `-applaunch` or
-`steam://rungameid`, inspect `STEAM_GAME`, manipulate focus/presentation, or
-monitor the resulting game. The UI skips launch-state polling for this
-response. Local/emulator launches still use the existing path.
+The process was detached and not waited on. Steam's normal single-client URI
+handling was relied upon. This record therefore does not establish the current
+Mudos launch contract, which also has a `steam://rungameid` path in
+`src/lulu/consoled.py`. The UI skipped launch-state polling for the diagnostic
+response. Local/emulator launches used the existing path.
 
 The old implementation is not deleted or commented out. It remains in
 `src/lulu/process_supervisor.py` and the Steam lifecycle methods in
@@ -63,7 +66,7 @@ or probe files were changed. The existing shell process remains resident, and
 the controller monitor remains active for shell input bookkeeping; it does not
 write Gamescope state.
 
-## Restore old behavior
+## Historical Restore Notes
 
 Set `_presentation_watchdog_enabled = True` in `src/lulu/sessiond.py`, then
 restore the Steam branch in `src/lulu/consoled.py` to call

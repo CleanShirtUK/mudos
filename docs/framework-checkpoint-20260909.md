@@ -1,4 +1,4 @@
-# Lulu Framework Checkpoint: 2026-09-09
+# Mudos Framework Checkpoint: 2026-09-09
 
 This is the current known-good interaction and presentation baseline.
 
@@ -30,9 +30,9 @@ This is the current known-good interaction and presentation baseline.
 ## Settings Status
 
 - Implemented: normalized category/row model, host status reads, D-Bus exposure, HTTP bridge, row navigation, and direct category-page routing.
-- HOST Proven: hostname/platform/kernel, root storage totals, default audio sink when available, NetworkManager state/IP when available, and Bluetooth power state when available.
-- TO PROVE: output modes/HDR/VRR, audio mutation, Wi-Fi operations, Bluetooth pairing, detailed controller management, storage usage/mutation, update strategy, reboot/shutdown, and Lulu preference persistence.
-- BC-250 Proven: nothing is claimed by this checkpoint; development HOST observations remain HOST-only.
+- Development-host proven: hostname/host-platform/kernel, root storage totals, default audio sink when available, NetworkManager state/IP when available, and Bluetooth power state when available.
+- TO PROVE: output modes/HDR/VRR, audio mutation, Wi-Fi operations, Bluetooth pairing, detailed controller management, storage usage/mutation, update strategy, reboot/shutdown, and Mudos preference persistence.
+- BC-250 proven: nothing is claimed by this checkpoint; development-host observations remain host-only.
 
 ## Known Remaining Work
 

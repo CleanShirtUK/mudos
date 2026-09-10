@@ -1,6 +1,6 @@
-# Lulu Proton WinePulse Fallback Input
+# Mudos Proton WinePulse Fallback Input
 
-Lulu intentionally provides an always-present virtual capture endpoint because
+Mudos intentionally provides an always-present virtual capture endpoint because
 Proton/WinePulse can incur repeated approximately 30-second startup waits when
 no non-monitor capture source exists. This endpoint does not represent a
 microphone and does not require physical audio hardware.

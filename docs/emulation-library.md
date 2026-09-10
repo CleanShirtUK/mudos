@@ -4,7 +4,7 @@ Status: initial implementation, 2026-09-10.
 
 ## Storage
 
-Lulu's persistent emulation roots are:
+The Lulu appliance's persistent emulation roots are:
 
 ```text
 /var/lib/lulu/roms/<platform-id>/
@@ -19,7 +19,7 @@ platform directory. BIOS files go in the matching BIOS directory; emulator
 specific subdirectories can be declared by the platform definition (PS2 uses
 `bios/ps2`). Lulu never downloads or copies BIOS files.
 
-`lulu.consoled` calls `ensure_storage()` at startup. It creates the common
+The Mudos `lulu.consoled` service calls `ensure_storage()` at startup. It creates the common
 roots and the known platform directories, but does not create firmware files.
 
 ## Discovery
@@ -78,7 +78,7 @@ session ownership remains with the existing ConsoleSessiond boundary.
 4. Add provider/runtime unit tests and refresh the catalogue. No QML category
    code should be added for the platform.
 
-Runtime paths must be executable/readable by the `lulu` service account, and
+Runtime paths must be executable/readable by the Lulu `lulu` service account, and
 ROM/BIOS directories must be readable by that account. Static validation can
 check directory discovery, metadata, scopes, command intents, SQL records, and
 QML bindings without starting gameplay. Actual emulator, Gamescope, and
