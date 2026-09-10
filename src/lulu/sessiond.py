@@ -227,6 +227,12 @@ class ConsoleSessionInterface(ServiceInterface):
         ):
             body = getattr(message, "body", ())
             if len(body) > 1 and body[0] == "org.shadowblip.InputManager" and "GamepadOrder" in body[1]:
+                order = body[1]["GamepadOrder"]
+                order = getattr(order, "value", order)
+                if not order:
+                    # Clear lifetime state before a fast disconnect/reconnect can
+                    # reuse the same object path.
+                    self._initialized_composites.clear()
                 if self._inputplumber_event is not None:
                     self._inputplumber_event.set()
 

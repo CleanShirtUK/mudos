@@ -3,6 +3,7 @@ import asyncio
 from pathlib import Path
 import tempfile
 from unittest.mock import patch
+from dbus_next import MessageType
 
 from lulu.applicationd import ApplicationCatalog
 from lulu.console_sessiond import SessionStateModel
@@ -204,6 +205,29 @@ class BoundaryTests(unittest.TestCase):
         asyncio.run(interface._initialize_composite(path))
 
         self.assertEqual(client.intercepts, [(1, path)])
+
+    def test_empty_gamepad_order_clears_recreated_composite_lifetime_state(self) -> None:
+        path = "/org/shadowblip/InputPlumber/CompositeDevice0"
+        interface = input_mode_interface(RecordingInputPlumber({path: ("045e_0291", ("/dev/input/event13",))}))
+        interface._initialized_composites = {path}
+        interface._inputplumber_event = asyncio.Event()
+
+        message = type(
+            "Signal",
+            (),
+            {
+                "message_type": MessageType.SIGNAL,
+                "path": "/org/shadowblip/InputPlumber/Manager",
+                "interface": "org.freedesktop.DBus.Properties",
+                "member": "PropertiesChanged",
+                "body": ("org.shadowblip.InputManager", {"GamepadOrder": []}, []),
+            },
+        )()
+
+        interface._handle_inputplumber_signal(message)
+
+        self.assertEqual(interface._initialized_composites, set())
+        self.assertTrue(interface._inputplumber_event.is_set())
 
     def test_reconciliation_preserves_registry_ownership_and_player_assignment(self) -> None:
         path = "/org/shadowblip/InputPlumber/CompositeDevice0"
