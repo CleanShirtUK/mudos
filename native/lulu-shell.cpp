@@ -165,13 +165,27 @@ private:
         connect(guideProcess_, &QProcess::finished, this,
                 [this](int, QProcess::ExitStatus) { finishGuide(); });
         guideProcess_->start("/opt/lulu/bin/mudos-guide", {
-            QString::number(targetWindow_), QString::number(targetPid_)
+            QString::number(targetWindow_), QString::number(targetPid_), providerMenuCommand(targetPid_)
         });
         if (!guideProcess_->waitForStarted(1000)) {
             finishGuide();
             return false;
         }
         return true;
+    }
+
+    QString providerMenuCommand(uint32_t pid) const
+    {
+        QFile environment(QStringLiteral("/proc/%1/environ").arg(pid));
+        if (!environment.open(QIODevice::ReadOnly))
+            return {};
+        const auto entries = environment.readAll().split('\0');
+        for (const auto &entry : entries) {
+            const QByteArray prefix("MUDOS_PROVIDER_MENU_COMMAND=");
+            if (entry.startsWith(prefix))
+                return QString::fromUtf8(entry.mid(prefix.size()));
+        }
+        return {};
     }
 
     void scanGamepads()

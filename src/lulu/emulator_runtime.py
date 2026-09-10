@@ -22,6 +22,16 @@ class EmulatorRuntimeAdapter:
         self.runtime_paths = runtime_paths
         self.core_paths = core_paths or {}
 
+    @staticmethod
+    def supports_provider_menu(platform: str) -> bool:
+        return platform in EmulatorRuntimeAdapter._retroarch_platforms
+
+    @staticmethod
+    def open_provider_menu(platform: str) -> tuple[str, ...]:
+        if not EmulatorRuntimeAdapter.supports_provider_menu(platform):
+            raise ValueError(f"provider menu is unsupported: {platform}")
+        return ("/usr/bin/retroarch", "--command", "MENU_TOGGLE")
+
     def launch_intent(self, game: LocalContentGame) -> EmulatorLaunchIntent:
         if not game.launchable:
             raise ValueError(f"content is not launchable: {game.reason}")

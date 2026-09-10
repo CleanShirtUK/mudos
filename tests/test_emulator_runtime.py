@@ -7,6 +7,19 @@ from lulu.local_content import LocalContentGame
 
 
 class EmulatorRuntimeTests(unittest.TestCase):
+    def test_retroarch_provider_menu_capability_and_command(self) -> None:
+        self.assertTrue(EmulatorRuntimeAdapter.supports_provider_menu("nes"))
+        self.assertEqual(
+            EmulatorRuntimeAdapter.open_provider_menu("nes"),
+            ("/usr/bin/retroarch", "--command", "MENU_TOGGLE"),
+        )
+
+    def test_other_provider_menus_are_not_advertised(self) -> None:
+        for platform in ("ps2", "wii", "switch"):
+            self.assertFalse(EmulatorRuntimeAdapter.supports_provider_menu(platform))
+            with self.assertRaises(ValueError):
+                EmulatorRuntimeAdapter.open_provider_menu(platform)
+
     def test_retroarch_intent_contains_core_and_content_only(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

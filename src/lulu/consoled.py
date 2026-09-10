@@ -2,6 +2,11 @@
 
 import asyncio
 import logging
+import os
+from pathlib import Path
+import subprocess
+import tempfile
+import shlex
 
 from dbus_next import BusType, Variant
 from dbus_next.aio import MessageBus
@@ -62,6 +67,61 @@ INTERFACE_NAME = "org.lulu.Console"
 LOGGER = logging.getLogger("lulu.consoled")
 
 
+def _retroarch_joypad_index(vendor: str = "045e", product: str = "028e") -> int:
+    """Resolve the RetroArch udev index for Lulu's virtual Xbox target."""
+    devices: list[tuple[int, str, str]] = []
+    for sysfs_name in Path("/sys/class/input").glob("event*/device"):
+        event_name = sysfs_name.parent.name
+        try:
+            event_number = int(event_name.removeprefix("event"))
+            current_vendor = (sysfs_name / "id/vendor").read_text().strip().lower()
+            current_product = (sysfs_name / "id/product").read_text().strip().lower()
+        except (FileNotFoundError, OSError, ValueError):
+            continue
+        device = Path("/dev/input") / event_name
+        if not os.access(device, os.R_OK) or not os.access(device, os.W_OK):
+            continue
+        try:
+            properties = subprocess.run(
+                ["udevadm", "info", "--query=property", "--name", str(device)],
+                check=True,
+                capture_output=True,
+                text=True,
+            ).stdout
+        except (OSError, subprocess.SubprocessError):
+            continue
+        if "ID_INPUT_JOYSTICK=1" not in properties.splitlines():
+            continue
+        devices.append((event_number, current_vendor, current_product))
+
+    devices.sort()
+    for index, (_event_number, current_vendor, current_product) in enumerate(devices):
+        if current_vendor == vendor.lower() and current_product == product.lower():
+            return index
+    raise RuntimeError(f"InputPlumber Xbox controller {vendor}:{product} was not found")
+
+
+def _retroarch_child_config(joypad_index: int) -> str:
+    directory = Path(os.environ.get("XDG_RUNTIME_DIR", "/tmp"))
+    with tempfile.NamedTemporaryFile(
+        mode="w",
+        encoding="ascii",
+        prefix="lulu-retroarch-",
+        suffix=".cfg",
+        dir=directory,
+        delete=False,
+    ) as config:
+        config.write(
+            f'input_player1_joypad_index = "{joypad_index}"\n'
+            'input_player2_joypad_index = "0"\n'
+            'network_cmd_enable = "true"\n'
+            'network_cmd_port = "55355"\n'
+            'quit_on_close_content = "true"\n'
+            'config_save_on_exit = "false"\n'
+        )
+        return config.name
+
+
 class ConsoleInterface(ServiceInterface):
     def __init__(self, catalogue: ConsoleCatalog, local_runtime: EmulatorRuntimeAdapter | None = None,
                  system_settings: SystemSettingsProvider | None = None) -> None:
@@ -117,18 +177,60 @@ class ConsoleInterface(ServiceInterface):
                 launch_uri,
             )
             return details_uri
-        bus = await MessageBus(bus_type=BusType.SESSION).connect()
-        introspection = await bus.introspect("org.lulu.ConsoleSessiond", "/org/lulu/ConsoleSession")
-        proxy = bus.get_proxy_object("org.lulu.ConsoleSessiond", "/org/lulu/ConsoleSession", introspection)
-        session = proxy.get_interface("org.lulu.ConsoleSession")
         if game.provider == "local" and self.local_runtime is not None:
             intent = self.local_runtime.launch_intent(game)
-            token = await session.call_request_launch([intent.executable, *intent.arguments], timeout_ms)
+            command = [intent.executable, *intent.arguments]
+            child_config_path: str | None = None
+            if intent.platform in {"nes", "genesis"}:
+                joypad_index = await asyncio.to_thread(_retroarch_joypad_index)
+                child_config_path = await asyncio.to_thread(_retroarch_child_config, joypad_index)
+                command[1:1] = [
+                    "--appendconfig",
+                    child_config_path,
+                ]
+                LOGGER.info("local runtime controller game_id=%s joypad_index=%s", game_id, joypad_index)
+            LOGGER.info(
+                "local runtime dispatch game_id=%s runtime=%s core=%s rom=%s command=%r",
+                game_id,
+                intent.executable,
+                intent.arguments[1] if intent.platform in {"nes", "genesis"} else "",
+                intent.arguments[-1],
+                command,
+            )
+            child_environment = os.environ.copy()
+            if intent.platform in {"nes", "genesis"}:
+                child_environment.pop("WAYLAND_DISPLAY", None)
+                child_environment["LIBRETRO_AUTOCONFIG_DIRECTORY"] = (
+                    "/opt/lulu/config/retroarch/autoconfig"
+                )
+                child_environment["MUDOS_PROVIDER_MENU_COMMAND"] = shlex.join(
+                    self.local_runtime.open_provider_menu(intent.platform)
+                )
+            process = await asyncio.create_subprocess_exec(
+                *command,
+                stdin=asyncio.subprocess.DEVNULL,
+                stdout=asyncio.subprocess.DEVNULL,
+                stderr=asyncio.subprocess.DEVNULL,
+                env=child_environment,
+                start_new_session=True,
+            )
+
+            async def reap() -> None:
+                exit_code = await process.wait()
+                if child_config_path is not None:
+                    try:
+                        os.unlink(child_config_path)
+                    except FileNotFoundError:
+                        pass
+                LOGGER.info("local runtime exit game_id=%s pid=%s exit_code=%s", game_id, process.pid, exit_code)
+
+            asyncio.create_task(reap())
+            token = f"local:{process.pid}"
+            LOGGER.info("local runtime started game_id=%s pid=%s token=%s", game_id, process.pid, token)
         else:
             raise ValueError(f"provider launch is unavailable: {game.provider}")
         self.catalogue.store.mark_played(game.game_id)
         LOGGER.info("launch returned game_id=%s token=%s", game_id, token)
-        bus.disconnect()
         self.CatalogueChanged()
         return token
 

@@ -6,6 +6,7 @@
 #include <QQuickWindow>
 #include <QUrl>
 #include <QSocketNotifier>
+#include <QProcess>
 
 #include <xcb/xcb.h>
 
@@ -22,8 +23,9 @@ class GuideWindow final : public QObject
 {
 public:
     GuideWindow(QQuickWindow *window, uint32_t targetXid, uint32_t targetPid,
-                QQmlPropertyMap *viewModel)
-        : window_(window), targetXid_(targetXid), targetPid_(targetPid), viewModel_(viewModel)
+                const QString &providerMenuCommand, QQmlPropertyMap *viewModel)
+        : window_(window), targetXid_(targetXid), targetPid_(targetPid),
+          providerMenuCommand_(providerMenuCommand), viewModel_(viewModel)
     {
     }
 
@@ -62,11 +64,18 @@ private:
     {
         if (command == QStringLiteral("ui_up"))
             viewModel_->insert("selection", 0);
-        else if (command == QStringLiteral("ui_down"))
-            return;
+        else if (command == QStringLiteral("ui_down")) {
+            if (viewModel_->value("providerMenuAvailable").toBool())
+                viewModel_->insert("selection", 1);
+        }
         else if (command == QStringLiteral("ui_accept"))
         {
-            sendDelete();
+            const bool providerMenuAvailable = viewModel_->value("providerMenuAvailable").toBool();
+            const int selection = viewModel_->value("selection").toInt();
+            if (providerMenuAvailable && selection == 0)
+                openProviderMenu();
+            else
+                sendDelete();
             QCoreApplication::quit();
         }
         else if (command == QStringLiteral("ui_back") || command == QStringLiteral("ui_guide"))
@@ -119,9 +128,23 @@ private:
         free(deleteReply);
     }
 
+    void openProviderMenu()
+    {
+        const auto command = QProcess::splitCommand(providerMenuCommand_);
+        if (command.isEmpty())
+            return;
+        QProcess providerProcess;
+        providerProcess.start(command.constFirst(), command.mid(1));
+        if (!providerProcess.waitForStarted(1000)
+            || !providerProcess.waitForFinished(1000)) {
+            qWarning() << "Provider menu command failed to start" << providerMenuCommand_;
+        }
+    }
+
     QQuickWindow *window_;
     uint32_t targetXid_;
     uint32_t targetPid_;
+    QString providerMenuCommand_;
     QQmlPropertyMap *viewModel_;
     QSocketNotifier *inputNotifier_ = nullptr;
     QByteArray inputBuffer_;
@@ -131,14 +154,16 @@ private:
 
 int main(int argc, char **argv)
 {
-    if (argc != 3)
+    if (argc < 3 || argc > 4)
         return EXIT_FAILURE;
     const auto targetXid = static_cast<uint32_t>(std::strtoul(argv[1], nullptr, 0));
     const auto targetPid = static_cast<uint32_t>(std::strtoul(argv[2], nullptr, 0));
+    const auto providerMenuCommand = argc == 4 ? QString::fromLocal8Bit(argv[3]) : QString();
 
     QGuiApplication application(argc, argv);
     QQmlPropertyMap viewModel;
     viewModel.insert("selection", 0);
+    viewModel.insert("providerMenuAvailable", !providerMenuCommand.isEmpty());
     QQmlApplicationEngine engine;
     engine.rootContext()->setContextProperty("guideModel", &viewModel);
     engine.load(QUrl::fromLocalFile(qEnvironmentVariable("LULU_GUIDE_UI_FILE",
@@ -148,7 +173,7 @@ int main(int argc, char **argv)
     auto *window = qobject_cast<QQuickWindow *>(engine.rootObjects().constFirst());
     if (!window)
         return EXIT_FAILURE;
-    GuideWindow guide(window, targetXid, targetPid, &viewModel);
+    GuideWindow guide(window, targetXid, targetPid, providerMenuCommand, &viewModel);
     if (!guide.prepare())
         return EXIT_FAILURE;
     window->show();
