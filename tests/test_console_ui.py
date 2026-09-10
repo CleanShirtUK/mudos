@@ -444,7 +444,7 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertNotIn('message = "Launch requested"', QML)
         self.assertIn("if (stateRank < launchStateRank)", QML)
         self.assertIn('state.lifecycle === "presentation_pending"', QML)
-        self.assertIn('launchStatus === "launching" || launchStatus === "running"', QML)
+        self.assertNotIn('launchStatus === "launching" || launchStatus === "running"', QML)
 
 
 if __name__ == "__main__":

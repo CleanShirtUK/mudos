@@ -72,6 +72,7 @@ class SteamProvider:
         uri = f"steam://rungameid/{app_id}"
         environment = os.environ.copy()
         environment.setdefault("DISPLAY", ":0")
+        self._logger.info("steam-launch-request appid=%s uri=%s", app_id, uri)
         subprocess.Popen(
             [self.executable, uri],
             stdin=subprocess.DEVNULL,

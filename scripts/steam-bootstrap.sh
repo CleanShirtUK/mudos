@@ -23,4 +23,4 @@ export DISPLAY=${DISPLAY:-:0}
 export DBUS_SESSION_BUS_ADDRESS=${DBUS_SESSION_BUS_ADDRESS:-unix:path=/run/user/958/bus}
 export XDG_CURRENT_DESKTOP=gamescope
 
-exec /usr/bin/steam steam://open/bigpicture
+exec /usr/bin/steam +open steam://open/minigameslist

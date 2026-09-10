@@ -50,6 +50,7 @@ Window {
     property int recentIndex: 0
     property int libraryIndex: 0
     property int collectionIndex: 0
+    property var libraryCollections: [{"label": "All Games", "scope": "all"}, {"label": "Steam", "scope": "steam"}]
     property string space: "home"
     property int systemCategoryIndex: 0
     property var systemHomeRailRef: null
@@ -103,7 +104,11 @@ Window {
     property string message: ""
     property string launchStatus: "idle"
     property string launchTitle: ""
+    property string launchGameId: ""
     property string launchToken: ""
+    property bool launchOverlayVisible: false
+    property bool launchOverlayRetired: false
+    property var launchLogLines: []
     property int launchGeneration: 0
     property int launchStateSerial: 0
     property int launchStateApplied: 0
@@ -111,7 +116,8 @@ Window {
     readonly property string apiUrl: "http://127.0.0.1:38123"
     readonly property var visibleRecentGame: recentGames.length ? recentGames[recentIndex] : null
     readonly property var visibleLibraryGame: libraryGames.length ? libraryGames[libraryIndex] : null
-    readonly property string libraryScope: collectionIndex === 0 ? "all" : "steam"
+    readonly property string libraryScope: libraryCollections.length > collectionIndex
+        ? libraryCollections[collectionIndex].scope : "all"
 
     function request(path, method, body, callback, failureMessage, generation) {
         var request = new XMLHttpRequest()
@@ -149,6 +155,14 @@ Window {
                 recentIndex = Math.max(0, recentGames.length - 1)
         })
         refreshLibrary()
+        request("/platforms", "GET", "", function(data) {
+            var collections = [{"label": "All Games", "scope": "all"}, {"label": "Steam", "scope": "steam"}]
+            for (var index = 0; index < data.length; index++)
+                collections.push(data[index])
+            libraryCollections = collections
+            if (collectionIndex >= libraryCollections.length)
+                collectionIndex = 0
+        })
     }
 
     function applyLaunchState(state, generation) {
@@ -189,6 +203,13 @@ Window {
             launchStateApplied = serial
             applyLaunchState(state, generation)
         }, "", generation)
+    }
+
+    function refreshLaunchLog() {
+        request("/launch-log", "GET", "", function(data) {
+            if (data.active && data.game_id === launchGameId)
+                launchLogLines = data.lines
+        })
     }
 
     function refreshLibrary() {
@@ -322,18 +343,21 @@ Window {
     }
 
     function moveLibraryCollection(delta) {
-        collectionIndex = Math.max(0, Math.min(1, collectionIndex + delta))
+        collectionIndex = Math.max(0, Math.min(libraryCollections.length - 1, collectionIndex + delta))
         refreshLibrary()
     }
 
     function launchGame(game) {
         if (!game)
             return
-        if (launchStatus === "launching" || launchStatus === "running" || launchStatus === "returning")
-            return
         var generation = ++launchGeneration
         launchTitle = game.title
+        launchGameId = String(game.game_id)
         launchToken = ""
+        launchOverlayVisible = true
+        launchOverlayRetired = false
+        launchLogLines = ["[Lulu] Play requested: " + game.title + " / " + game.game_id]
+        launchLogTimer.start()
         launchStatus = "launching"
         launchStateRank = 1
         message = "Launching " + game.title
@@ -351,6 +375,16 @@ Window {
             launchStatusTimer.start()
             refreshCatalogue()
         }, "Launch failed", generation)
+    }
+
+    Connections {
+        target: controllerBridge
+        function onValueChanged(key, value) {
+            if (key === "luluPresented" && !value)
+                root.launchOverlayRetired = true
+            if (key === "luluPresented" && !value)
+                root.launchOverlayVisible = false
+        }
     }
 
     function activate() {
@@ -552,6 +586,55 @@ Window {
         refreshCatalogue()
     }
 
+    function controllerUp() {
+            if (root.space === "home") root.moveDomain(-1)
+            else if (root.space === "library") root.moveLibraryVertical(-1)
+            else if (root.space === "system") {
+                if (root.systemLanding) root.moveSystemCategory(-4)
+                else root.systemRowIndex = Math.max(0, root.systemRowIndex - 1)
+            }
+    }
+    function controllerDown() {
+            if (root.space === "home") root.moveDomain(1)
+            else if (root.space === "library") root.moveLibraryVertical(1)
+            else if (root.space === "system") {
+                if (root.systemLanding) root.moveSystemCategory(4)
+                else root.systemRowIndex = Math.min(Math.max(0, root.systemSettings.length - 1), root.systemRowIndex + 1)
+            }
+    }
+    function controllerLeft() {
+            if (root.space === "home") {
+                if (root.selectedCategoryIndex === 3) root.moveRecent(-1)
+                else if (root.selectedCategoryIndex === 2) root.moveLibraryLanding(-1)
+                else if (root.selectedCategoryIndex === 0) root.moveSystemCategory(-1)
+            } else if (root.space === "library") {
+                root.moveLibrary(-1)
+            } else if (root.space === "system") {
+                if (root.systemLanding) root.moveSystemCategory(-1)
+                else root.systemRowIndex = Math.max(0, root.systemRowIndex - 1)
+            }
+    }
+    function controllerRight() {
+            if (root.space === "home") {
+                if (root.selectedCategoryIndex === 3) root.moveRecent(1)
+                else if (root.selectedCategoryIndex === 2) root.moveLibraryLanding(1)
+                else if (root.selectedCategoryIndex === 0) root.moveSystemCategory(1)
+            } else if (root.space === "library") {
+                root.moveLibrary(1)
+            } else if (root.space === "system") {
+                if (root.systemLanding) root.moveSystemCategory(1)
+                else root.systemRowIndex = Math.min(Math.max(0, root.systemSettings.length - 1), root.systemRowIndex + 1)
+            }
+    }
+    function controllerShoulder(delta) {
+        if (root.space === "library") root.moveLibraryCollection(delta)
+        else if (root.space === "system" && !root.systemLanding) {
+            root.systemCategoryIndex = Math.max(0, Math.min(root.systemCategories.length - 1,
+                root.systemCategoryIndex + delta))
+            root.systemRowIndex = 0
+            root.refreshSystemSettings()
+        }
+    }
     OrbitRenderSource {
         id: orbitRenderSource
         anchors.fill: parent
@@ -802,7 +885,8 @@ Window {
                         transitionProgress: root.libraryTransitionProgress
                         transitionExpanding: root.libraryTransitionExpanding
                         contentOpacity: root.homeContentOpacity
-                        selectedIndex: root.collectionIndex
+                         selectedIndex: root.collectionIndex
+                         categories: root.libraryCollections
                         onOpenRequested: {
                             root.collectionIndex = index
                             root.activate()
@@ -888,7 +972,8 @@ Window {
             visible: root.space === "library" || root.libraryTransitioning
             libraryGames: root.libraryGames
             selectedIndex: root.libraryIndex
-            collectionIndex: root.collectionIndex
+             collectionIndex: root.collectionIndex
+             collections: root.libraryCollections
             collectionFocus: root.libraryFocus === "collection"
              transitionState: root.libraryTransitionState
              returnState: root.space === "library" ? "EXPANDED" : "RESTING"
@@ -1031,6 +1116,60 @@ Window {
         interval: 150
         repeat: true
         onTriggered: root.refreshLaunchState(root.launchGeneration)
+    }
+
+    Timer {
+        id: launchLogTimer
+        interval: 500
+        repeat: true
+        onTriggered: root.refreshLaunchLog()
+    }
+
+    Rectangle {
+        id: launchLogOverlay
+        visible: root.launchOverlayVisible && !root.launchOverlayRetired
+                 && controllerBridge && controllerBridge.luluPresented
+        z: 100
+        x: root.width - width - root.design(28)
+        y: root.design(28)
+        width: Math.min(root.width * 0.45, root.design(680))
+        height: Math.min(root.height * 0.48, root.design(430))
+        clip: true
+        color: Qt.rgba(0.03, 0.04, 0.07, 0.96)
+        border.color: luluPalette.accent
+        border.width: 1
+        Text {
+            x: root.design(12)
+            y: root.design(8)
+            width: parent.width - root.design(24)
+            text: "Launching " + root.launchTitle + " (" + root.launchGameId + ")"
+            color: luluPalette.primaryText
+            font.family: typography.interfaceFamily
+            font.pixelSize: typography.size("secondary", 16)
+            elide: Text.ElideRight
+        }
+        ListView {
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.top: parent.top
+            anchors.bottom: parent.bottom
+            anchors.margins: root.design(12)
+            anchors.topMargin: root.design(38)
+            model: root.launchLogLines
+            interactive: false
+            clip: true
+            onCountChanged: positionViewAtEnd()
+            delegate: Text {
+                width: launchLogOverlay.width - root.design(24)
+                height: implicitHeight
+                text: modelData
+                color: luluPalette.secondaryText
+                font.family: "monospace"
+                font.pixelSize: typography.size("secondary", 10)
+                wrapMode: Text.Wrap
+                elide: Text.ElideRight
+            }
+        }
     }
 
     Timer {
