@@ -31,7 +31,7 @@ Window {
             y: 76
             spacing: 12
             Repeater {
-                model: ["Quit Current Application", "Kill Current Application"]
+                model: ["Quit Current Application"]
                 delegate: Rectangle {
                     width: 472
                     height: 48

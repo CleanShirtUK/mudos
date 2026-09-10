@@ -10,8 +10,9 @@ InputPlumber 0.79.0, and Cuphead session.
   `/org/shadowblip/InputPlumber/devices/target/dbus0` using
   `org.shadowblip.Input.DBusDevice.InputEvent(string, double)`.
 - A `ui_guide` press opens the disposable `mudos-guide` helper.
-- `ui_up`, `ui_down`, `ui_accept`, `ui_back`, and `ui_guide` are forwarded to
-  the helper over its process stdin; release events are ignored.
+- `ui_accept` activates the single Quit action. `ui_up` and `ui_down` do not
+  change selection; `ui_back` and `ui_guide` close the helper. Release events
+  are ignored.
 - The helper uses only `GAMESCOPE_EXTERNAL_OVERLAY=1` for presentation.
 - Helper process exit restores `InterceptMode=1` and clears captured target
   state.
@@ -25,15 +26,31 @@ InputPlumber 0.79.0, and Cuphead session.
 - Guide-again closes Guide and restores mode 1.
 - Cuphead remains visible and receives controller input after close.
 
-## Known Defect
+The validated v0 application action is:
 
-Guide intermittently requires two presses to open. B intermittently requires
-two presses to close. The behavior is intermittent. The underlying Guide
-open/navigation/close architecture otherwise works.
+```text
+WM_DELETE_WINDOW -> captured target XID
+helper exits -> parent restores InterceptMode=1
+```
 
-This defect is pending and is not addressed by this checkpoint. Future
-investigation must begin with external reconnaissance of how OpenGamepadUI and
-upstream InputPlumber consumers handle:
+The helper does not wait for the target process to exit.
+
+## Deferred Force Close
+
+`Force Close Current Application` is deferred. It must begin with external
+reconnaissance and may require provider-specific handling for Steam/Proton,
+native games, and emulator process groups. No force-termination primitive is
+retained in the v0 production helper.
+
+## Historical Observation
+
+An earlier dirty-session diagnostic observed intermittent two-press behavior
+for Guide open and B close. It was not reproduced in the clean v0 validation
+above and is retained as historical evidence only.
+
+If the behavior recurs from a clean session, future investigation must begin
+with external reconnaissance of how OpenGamepadUI and upstream InputPlumber
+consumers handle:
 
 - `InputEvent` press/release pairs
 - `ui_guide`
