@@ -1,14 +1,270 @@
 #include <QGuiApplication>
-#include <qnativeinterface.h>
+#include <QDebug>
+#include <QFile>
+#include <QQmlContext>
+#include <QQmlPropertyMap>
 #include <QQmlApplicationEngine>
 #include <QQuickWindow>
+#include <QSocketNotifier>
+#include <QTimer>
+#include <qnativeinterface.h>
 #include <QUrl>
 
+#include <SDL3/SDL.h>
 #include <xcb/xcb.h>
 
 #include <cstdlib>
+#include <QTextStream>
 
 namespace {
+
+void diagnosticMessageHandler(QtMsgType, const QMessageLogContext &, const QString &message)
+{
+    QFile file("/tmp/lulu-controller-diagnostics.log");
+    if (file.open(QIODevice::WriteOnly | QIODevice::Append | QIODevice::Text)) {
+        QTextStream stream(&file);
+        stream << message << '\n';
+    }
+}
+
+class ControllerBridge final : public QQmlPropertyMap
+{
+public:
+    explicit ControllerBridge(QQuickWindow *window, QObject *parent = nullptr)
+        : QQmlPropertyMap(this, parent), window_(window)
+    {
+        const bool initialized = SDL_Init(SDL_INIT_GAMEPAD);
+        qInfo() << "controller SDL init" << initialized;
+        insert("controllerConnected", false);
+        insert("controllerIndex", -1);
+        insert("controllerIdentity", QString());
+        insert("action", QString());
+        insert("actionSerial", 0);
+        insert("luluPresented", false);
+        if (initialized)
+            scanGamepads();
+        timer_.setInterval(5);
+        connect(&timer_, &QTimer::timeout, this, &ControllerBridge::poll);
+        timer_.start();
+    }
+
+    ~ControllerBridge() override
+    {
+        if (presentationConnection_)
+            xcb_disconnect(presentationConnection_);
+        if (gamepad_)
+            SDL_CloseGamepad(gamepad_);
+        SDL_QuitSubSystem(SDL_INIT_GAMEPAD);
+    }
+
+    void setWindow(QQuickWindow *window)
+    {
+        window_ = window;
+        qInfo() << "controller Lulu window" << window_->winId();
+        setupPresentationObserver();
+    }
+
+private:
+    void scanGamepads()
+    {
+        int count = 0;
+        SDL_JoystickID *ids = SDL_GetGamepads(&count);
+        qInfo() << "SDL gamepad scan count=" << count;
+        if (ids && count > 0) {
+            gamepad_ = SDL_OpenGamepad(ids[0]);
+            if (gamepad_) {
+                qInfo() << "SDL gamepad opened" << SDL_GetGamepadName(gamepad_);
+                insert("controllerConnected", true);
+                insert("controllerIndex", 1);
+                insert("controllerIdentity", QString::fromUtf8(SDL_GetGamepadName(gamepad_)));
+            }
+        }
+        SDL_free(ids);
+    }
+
+    void poll()
+    {
+        SDL_Event event;
+        while (SDL_PollEvent(&event)) {
+            if (event.type == SDL_EVENT_GAMEPAD_ADDED && !gamepad_) {
+                gamepad_ = SDL_OpenGamepad(event.gdevice.which);
+                if (gamepad_) {
+                    insert("controllerConnected", true);
+                    insert("controllerIndex", 1);
+                    insert("controllerIdentity", QString::fromUtf8(SDL_GetGamepadName(gamepad_)));
+                }
+            } else if (event.type == SDL_EVENT_GAMEPAD_REMOVED && gamepad_
+                       && event.gdevice.which == SDL_GetGamepadID(gamepad_)) {
+                SDL_CloseGamepad(gamepad_);
+                gamepad_ = nullptr;
+                insert("controllerConnected", false);
+                insert("controllerIndex", -1);
+                insert("controllerIdentity", QString());
+            } else if (event.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN) {
+                const bool allowed = dispatchAllowed();
+                qInfo() << "SDL button event received"
+                        << "button=" << event.gbutton.button
+                        << "focused_window=" << focusedWindow_
+                        << "lulu_xid=" << (window_ ? window_->winId() : 0)
+                        << "luluPresented=" << luluPresented_
+                        << "dispatch=" << (allowed ? "yes" : "no");
+                if (!allowed)
+                    continue;
+                static const std::pair<SDL_GamepadButton, const char *> routes[] = {
+                    {SDL_GAMEPAD_BUTTON_DPAD_UP, "up"}, {SDL_GAMEPAD_BUTTON_DPAD_DOWN, "down"},
+                    {SDL_GAMEPAD_BUTTON_DPAD_LEFT, "left"}, {SDL_GAMEPAD_BUTTON_DPAD_RIGHT, "right"},
+                    {SDL_GAMEPAD_BUTTON_SOUTH, "confirm"}, {SDL_GAMEPAD_BUTTON_EAST, "back"},
+                    {SDL_GAMEPAD_BUTTON_LEFT_SHOULDER, "leftShoulder"},
+                    {SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER, "rightShoulder"},
+                };
+                for (const auto &[button, action] : routes) {
+                    if (event.gbutton.button == button) {
+                        publish(action);
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+private:
+    void publish(const char *action)
+    {
+        qInfo() << "SDL semantic navigation dispatch" << action;
+        insert("action", QString::fromLatin1(action));
+        insert("actionSerial", value("actionSerial").toInt() + 1);
+        static const std::pair<const char *, const char *> routes[] = {
+            {"up", "controllerUp"}, {"down", "controllerDown"},
+            {"left", "controllerLeft"}, {"right", "controllerRight"},
+            {"confirm", "activate"}, {"back", "back"},
+            {"leftShoulder", "controllerShoulder"},
+            {"rightShoulder", "controllerShoulder"},
+        };
+        for (const auto &[name, function] : routes) {
+            if (qstrcmp(name, action) == 0) {
+                if (qstrcmp(function, "controllerShoulder") == 0) {
+                    const int delta = qstrcmp(action, "leftShoulder") == 0 ? -1 : 1;
+                    QMetaObject::invokeMethod(window_, function, Q_ARG(QVariant, delta));
+                } else {
+                    QMetaObject::invokeMethod(window_, function);
+                }
+                break;
+            }
+        }
+    }
+    bool dispatchAllowed() const
+    {
+        return window_ && luluPresented_;
+    }
+
+    void setupPresentationObserver()
+    {
+        presentationConnection_ = xcb_connect(nullptr, nullptr);
+        if (!presentationConnection_ || xcb_connection_has_error(presentationConnection_)) {
+            qWarning() << "Gamescope focus observer connection failed";
+            if (presentationConnection_)
+                xcb_disconnect(presentationConnection_);
+            presentationConnection_ = nullptr;
+            return;
+        }
+
+        const xcb_setup_t *setup = xcb_get_setup(presentationConnection_);
+        const xcb_screen_t *screen = xcb_setup_roots_iterator(setup).data;
+        if (!screen) {
+            qWarning() << "Gamescope focus observer has no X11 screen";
+            xcb_disconnect(presentationConnection_);
+            presentationConnection_ = nullptr;
+            return;
+        }
+        presentationRoot_ = screen->root;
+
+        const xcb_intern_atom_cookie_t cookie =
+            xcb_intern_atom(presentationConnection_, 0, sizeof("GAMESCOPE_FOCUSED_WINDOW") - 1,
+                            "GAMESCOPE_FOCUSED_WINDOW");
+        xcb_intern_atom_reply_t *reply = xcb_intern_atom_reply(presentationConnection_, cookie, nullptr);
+        if (!reply) {
+            qWarning() << "Gamescope focus observer could not intern atom";
+            xcb_disconnect(presentationConnection_);
+            presentationConnection_ = nullptr;
+            return;
+        }
+        presentationAtom_ = reply->atom;
+        free(reply);
+
+        const uint32_t mask = XCB_EVENT_MASK_PROPERTY_CHANGE;
+        xcb_change_window_attributes(presentationConnection_, presentationRoot_,
+                                     XCB_CW_EVENT_MASK, &mask);
+        xcb_flush(presentationConnection_);
+
+        presentationNotifier_ = new QSocketNotifier(
+            xcb_get_file_descriptor(presentationConnection_), QSocketNotifier::Read, this);
+        connect(presentationNotifier_, &QSocketNotifier::activated, this,
+                &ControllerBridge::drainPresentationEvents);
+        qInfo() << "Gamescope focus observer initialized"
+                << "root=" << presentationRoot_
+                << "atom=" << presentationAtom_
+                << "fd=" << xcb_get_file_descriptor(presentationConnection_);
+        updatePresentationState();
+    }
+
+    void drainPresentationEvents()
+    {
+        int processed = 0;
+        while (processed++ < 32) {
+            xcb_generic_event_t *event = xcb_poll_for_event(presentationConnection_);
+            if (!event)
+                break;
+            const uint8_t responseType = event->response_type & ~0x80;
+            if (responseType == XCB_PROPERTY_NOTIFY) {
+                const auto *property = reinterpret_cast<const xcb_property_notify_event_t *>(event);
+                if (property->window == presentationRoot_ && property->atom == presentationAtom_) {
+                    updatePresentationState();
+                }
+            }
+            free(event);
+        }
+    }
+
+    void updatePresentationState()
+    {
+        bool presented = false;
+        uint32_t focusedWindow = 0;
+        if (presentationConnection_ && presentationAtom_ && window_) {
+            const auto cookie = xcb_get_property(
+                presentationConnection_, 0, presentationRoot_, presentationAtom_,
+                XCB_GET_PROPERTY_TYPE_ANY, 0, 1);
+            xcb_get_property_reply_t *reply = xcb_get_property_reply(presentationConnection_, cookie, nullptr);
+            if (reply) {
+                if (reply->format == 32 && xcb_get_property_value_length(reply) >= static_cast<int>(sizeof(uint32_t))) {
+                    const auto *value = static_cast<const uint32_t *>(xcb_get_property_value(reply));
+                    focusedWindow = *value;
+                    presented = focusedWindow == window_->winId();
+                }
+                free(reply);
+            }
+        }
+        const bool changed = focusedWindow != focusedWindow_ || presented != luluPresented_;
+        focusedWindow_ = focusedWindow;
+        if (changed) {
+            qInfo() << "Gamescope focus state"
+                    << "focused_window=" << focusedWindow_
+                    << "lulu_xid=" << (window_ ? window_->winId() : 0)
+                    << "luluPresented=" << presented;
+            luluPresented_ = presented;
+            insert("luluPresented", presented);
+        }
+    }
+
+    QQuickWindow *window_;
+    QTimer timer_;
+    xcb_connection_t *presentationConnection_ = nullptr;
+    xcb_window_t presentationRoot_ = XCB_WINDOW_NONE;
+    xcb_atom_t presentationAtom_ = XCB_ATOM_NONE;
+    QSocketNotifier *presentationNotifier_ = nullptr;
+    bool luluPresented_ = false;
+    uint32_t focusedWindow_ = 0;
+    SDL_Gamepad *gamepad_ = nullptr;
+};
 
 bool setSteamGame(QQuickWindow *window)
 {
@@ -36,8 +292,11 @@ bool setSteamGame(QQuickWindow *window)
 
 int main(int argc, char **argv)
 {
+    qInstallMessageHandler(diagnosticMessageHandler);
     QGuiApplication application(argc, argv);
     QQmlApplicationEngine engine;
+    ControllerBridge controller(nullptr, &application);
+    engine.rootContext()->setContextProperty("controllerBridge", &controller);
     const QString qmlPath = qEnvironmentVariable("LULU_UI_FILE", "/opt/lulu/ui/ConsoleShell.qml");
     engine.load(QUrl::fromLocalFile(qmlPath));
 
@@ -49,6 +308,7 @@ int main(int argc, char **argv)
         return EXIT_FAILURE;
 
     window->create();
+    controller.setWindow(window);
     if (!setSteamGame(window))
         return EXIT_FAILURE;
 

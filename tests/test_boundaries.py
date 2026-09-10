@@ -1,4 +1,5 @@
 import unittest
+import asyncio
 from pathlib import Path
 import tempfile
 from unittest.mock import patch
@@ -18,6 +19,7 @@ class RecordingInputPlumber:
     def __init__(self, composites: dict[str, tuple[str, tuple[str, ...]]]) -> None:
         self.composites = composites
         self.loads: list[tuple[InputMode, str | None]] = []
+        self.intercepts: list[tuple[int, str | None]] = []
 
     def runtime_composite_statuses(self) -> dict[str, tuple[str, tuple[str, ...]]]:
         return self.composites
@@ -26,6 +28,12 @@ class RecordingInputPlumber:
         self, mode: InputMode, object_path: str | None = None, *, execute: bool = True
     ) -> list[str]:
         self.loads.append((mode, object_path))
+        return []
+
+    def set_intercept_mode(
+        self, mode: int, object_path: str | None = None, *, execute: bool = True
+    ) -> list[str]:
+        self.intercepts.append((mode, object_path))
         return []
 
 
@@ -185,6 +193,17 @@ class BoundaryTests(unittest.TestCase):
         interface._reconcile_input_mode(client.composites, InputMode.SHELL)
 
         self.assertEqual(client.loads, [(InputMode.SHELL, path)])
+
+    def test_composite_intercept_mode_is_initialized_once_per_runtime_instance(self) -> None:
+        path = "/org/shadowblip/InputPlumber/CompositeDevice0"
+        client = RecordingInputPlumber({path: ("045e_0291", ("/dev/input/event13",))})
+        interface = input_mode_interface(client)
+        interface._initialized_composites = set()
+
+        asyncio.run(interface._initialize_composite(path))
+        asyncio.run(interface._initialize_composite(path))
+
+        self.assertEqual(client.intercepts, [(1, path)])
 
     def test_reconciliation_preserves_registry_ownership_and_player_assignment(self) -> None:
         path = "/org/shadowblip/InputPlumber/CompositeDevice0"

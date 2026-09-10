@@ -2,6 +2,7 @@
 Description=Lulu graphical console session on VT %i
 Requires=seatd.service
 Wants=inputplumber.service
+PartOf=inputplumber.service
 After=seatd.service inputplumber.service systemd-logind.service systemd-user-sessions.service
 Conflicts=getty@tty%i.service
 Before=getty@tty%i.service
@@ -21,6 +22,7 @@ TTYVHangup=yes
 TTYVTDisallocate=yes
 WorkingDirectory=/var/lib/lulu
 Environment=PYTHONPATH=/opt/lulu/lib
+Environment=LULU_NATIVE_CONTROLLER=1
 EnvironmentFile=-/etc/lulu/presentation.conf
 ExecStartPre=+/opt/lulu/bin/lulu-vt activate %i
 ExecStart=/usr/bin/python -m lulu.sessiond --bootstrap-shell

@@ -46,14 +46,21 @@ class InputPlumberClient:
             subprocess.run(command, check=True)
         return command
 
-    def set_intercept_mode(self, mode: int, *, execute: bool = True) -> list[str]:
+    def set_intercept_mode(
+        self,
+        mode: int,
+        object_path: str | None = None,
+        *,
+        execute: bool = True,
+    ) -> list[str]:
         if mode not in range(4):
             raise ValueError("InputPlumber InterceptMode must be between 0 and 3")
+        object_path = object_path or self.object_path
         command = [
             self.busctl,
             "set-property",
             "org.shadowblip.InputPlumber",
-            self.object_path,
+            object_path,
             "org.shadowblip.Input.CompositeDevice",
             "InterceptMode",
             "u",
