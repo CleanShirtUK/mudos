@@ -34,9 +34,9 @@ There is no local `ShaderEffectSource`, per-card `sourceRect`, padding, or
 coordinate correction in this contract. This identity mapping was physically
 accepted with animated Orbit lines crossing the card boundary.
 
-## Accepted HOST Optical Baseline
+## Accepted Development-Host Optical Baseline
 
-The current Recent focal material is the accepted HOST PROVEN baseline. These
+The current Recent focal material is the accepted development-host-proven baseline. These
 values were physically reviewed on the host test environment only; they are
 not BC-250 proven:
 
@@ -91,7 +91,7 @@ prefix and binding-1 sampler, then follows this sequence:
 6. Apply only the bounded local Snell displacement for the current prototype.
 
 Dispersion, diffusion, neutral transmission, the accepted surface profile, and
-directional bevel lighting are enabled in the HOST baseline above. Tint,
+directional bevel lighting are enabled in the development-host baseline above. Tint,
 additional attenuation, glow, conventional Fresnel/specular lighting, and
 Play-layer glass is enabled only through the accepted analytical Play path
 described above.

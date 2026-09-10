@@ -12,7 +12,7 @@ This is the first bounded Mudos System/Settings slice on the development host.
 - D-pad moves settings rows; PageUp/PageDown provide bounded direct category-page navigation.
 - The System page presents stable row identity, kind, value, detail and writable metadata.
 
-## HOST Proven
+## Development-Host Proven
 
 - Hostname, host-platform string and kernel are read from the running host.
 - Root storage total/free space is read from the host filesystem.

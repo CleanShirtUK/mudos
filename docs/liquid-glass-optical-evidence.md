@@ -2,7 +2,7 @@
 
 ## Status
 
-**HOST PROVEN, not BC-250 proven.**
+**Development-host proven, not BC-250 proven.**
 
 This record covers the accepted optical baseline physically reviewed on the
 host test environment. No claim is made about BC-250 hardware validation.

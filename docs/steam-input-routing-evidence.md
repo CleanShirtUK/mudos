@@ -13,7 +13,7 @@ virtual targets. The same physical controller then navigated Steam Big Picture.
 After Steam exited, `console-sessiond.SetInputMode("shell")` restored
 InputPlumber to `Lulu SHELL`; the controller again navigated Mudos. The
 persistent composite remained connected and retained navigation ownership. No
-HOST controller device or HOST user state was involved.
+development-host controller device or development-host user state was involved.
 
 The durable bootstrap must therefore be lifecycle-integrated: Steam foreground
 requires a sessiond-owned GAME transition, and Steam return requires a
