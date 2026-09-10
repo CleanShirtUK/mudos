@@ -21,6 +21,7 @@ and conditions that were true when they were captured.
 - [Steam input routing evidence](steam-input-routing-evidence.md)
 - [Non-Steam runtime architecture baseline](non-steam-runtime-architecture-baseline.md)
 - [Emulation library convention](emulation-library.md)
+- [Provider menu reconnaissance](provider-menu-reconnaissance.md): external-first research; no implementation yet
 
 ## Dated Validation And Research
 
