@@ -1,0 +1,341 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+readonly SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+readonly PAYLOAD="${SCRIPT_DIR}/payload"
+readonly LOG_FILE=/var/log/mudos-install.log
+readonly LOCK_FILE=/run/lock/mudos-install.lock
+readonly VERSION=7c96e06
+readonly VERSION_TAG=known-good-test-environment-20260910
+
+STAGE="preflight"
+VERIFY_ONLY=0
+SYSTEM_CHANGED=0
+INPUT_CHANGED=0
+RELEASE_CHANGED=0
+
+PACKAGES=(
+    inputplumber gamescope-git dolphin-emu retroarch
+    libretro-nestopia libretro-genesis-plus-gx steam steam-devices
+    seatd pipewire wireplumber qt6-base qt6-declarative sdl3 python
+    python-dbus-next python-rapidyaml rapidyaml
+)
+
+log() { printf '[mudos] %s\n' "$*"; }
+die() { log "ERROR: $*" >&2; exit 1; }
+step() {
+    STAGE="$1"
+    log "[$2/10] $1"
+}
+on_error() {
+    local status=$?
+    log "FAILED stage: ${STAGE}" >&2
+    log "The command failed with status ${status}. Inspect ${LOG_FILE} and run: systemctl status inputplumber.service lulu.target" >&2
+    exit "$status"
+}
+trap on_error ERR
+
+usage() {
+    cat <<'EOF'
+Usage: sudo ./install-mudos.sh [--verify]
+
+  --verify    verify the installed host without changing it
+EOF
+}
+
+while (($#)); do
+    case "$1" in
+        --verify) VERIFY_ONLY=1 ;;
+        -h|--help) usage; exit 0 ;;
+        *) die "unknown argument: $1" ;;
+    esac
+    shift
+done
+
+if (( EUID != 0 )); then
+    die 'run as root, for example: sudo ./install-mudos.sh'
+fi
+
+install -d -m 0755 "$(dirname "$LOG_FILE")"
+exec > >(tee -a "$LOG_FILE") 2>&1
+exec 9>"$LOCK_FILE"
+flock -n 9 || die 'another Mudos installer is already running'
+
+require_file() { [[ -f "$1" ]] || die "missing required file: $1"; }
+require_dir() { [[ -d "$1" ]] || die "missing required directory: $1"; }
+
+verify_payload() {
+    require_file "$SCRIPT_DIR/CHECKPOINT"
+    require_dir "$PAYLOAD"
+    grep -Fxq "commit: ${VERSION}" "$SCRIPT_DIR/CHECKPOINT" || die 'payload checkpoint commit mismatch'
+    grep -Fxq "tag: ${VERSION_TAG}" "$SCRIPT_DIR/CHECKPOINT" || die 'payload checkpoint tag mismatch'
+    require_file "$PAYLOAD/manifest.sha256"
+    (cd "$PAYLOAD" && sha256sum --strict --check manifest.sha256)
+    for path in lib/lulu bin/lulu-shell bin/mudos-guide bin/lulu-vt bin/verify-mudos.sh ui config packaging; do
+        [[ -e "$PAYLOAD/$path" ]] || die "payload is incomplete: $path"
+    done
+}
+
+verify_packages() {
+    local package
+    for package in "${PACKAGES[@]}"; do
+        pacman -Q "$package" >/dev/null 2>&1 || die "required package is not installed: $package"
+    done
+    pacman -Q ttf-zalando-sans >/dev/null 2>&1 || die 'required package is not installed: ttf-zalando-sans'
+    command -v python >/dev/null || die 'python executable is missing'
+    command -v systemctl >/dev/null || die 'systemctl executable is missing'
+    command -v busctl >/dev/null || die 'busctl executable is missing'
+    for executable in dolphin-emu pcsx2 pcsx2-qt retroarch gamescope; do
+        command -v "$executable" >/dev/null || die "required executable is missing: $executable"
+    done
+}
+
+verify_installed() {
+    verify_packages
+    [[ -L /opt/lulu/current && -f /opt/lulu/current/RELEASE ]] || die '/opt/lulu/current is not a versioned release'
+    grep -Fxq "commit=${VERSION}" /opt/lulu/current/RELEASE || die 'installed release commit does not match checkpoint'
+    grep -Fxq "tag=${VERSION_TAG}" /opt/lulu/current/RELEASE || die 'installed release tag does not match checkpoint'
+    for path in lib/lulu bin/lulu-shell bin/mudos-guide bin/lulu-vt ui config; do
+        [[ -e "/opt/lulu/current/$path" ]] || die "installed payload is incomplete: $path"
+    done
+    id lulu >/dev/null 2>&1 || die 'lulu user is missing'
+    [[ "$(id -u lulu)" == 958 && "$(id -g lulu)" == 958 ]] || die 'lulu UID/GID is not 958'
+    getent group seat >/dev/null || die 'seat group is missing'
+    for path in /var/lib/lulu/roms/nes /var/lib/lulu/roms/genesis /var/lib/lulu/roms/ps2 /var/lib/lulu/roms/wii /var/lib/lulu/bios/ps2; do
+        [[ -d "$path" ]] || die "required data directory is missing: $path"
+        [[ "$(stat -c '%U:%G' "$path")" == lulu:lulu ]] || die "wrong ownership: $path"
+    done
+    for file in lulu.target lulu-session@.service lulu-consoled.service; do
+        systemd-analyze verify "/etc/systemd/system/$file"
+    done
+    systemd-analyze verify /etc/systemd/system/inputplumber.service.d/restart.conf 2>/dev/null || true
+    systemctl is-enabled --quiet seatd.service || die 'seatd.service is not enabled'
+    systemctl is-enabled --quiet inputplumber.service || die 'inputplumber.service is not enabled'
+    [[ -L /etc/systemd/system/multi-user.target.wants/lulu.target ]] || die 'lulu.target is not enabled at boot'
+    systemctl is-active --quiet inputplumber.service || die 'inputplumber.service is not active'
+    [[ -f /etc/inputplumber/devices.d/lulu-composite.yaml ]] || die 'InputPlumber device configuration is missing'
+    [[ -f /etc/lulu/presentation.conf ]] || die 'presentation configuration is missing'
+    python -m compileall -q /opt/lulu/current/lib
+    local binary
+    for binary in /opt/lulu/current/bin/lulu-shell /opt/lulu/current/bin/mudos-guide; do
+        ldd "$binary" | grep -q 'not found' && die "native dependency is missing: $binary"
+    done
+    log 'static installation verification passed'
+}
+
+install_packages() {
+    local package
+    local missing_repo_packages=()
+    for package in "${PACKAGES[@]}"; do
+        if ! pacman -Q "$package" >/dev/null 2>&1 && ! pacman -Si "$package" >/dev/null 2>&1; then
+            missing_repo_packages+=("$package")
+        fi
+    done
+    ((${#missing_repo_packages[@]} == 0)) || die "required packages are unavailable from configured repositories: ${missing_repo_packages[*]}"
+    pacman -S --needed --noconfirm "${PACKAGES[@]}"
+
+    if ! pacman -Q rapidyaml >/dev/null 2>&1 || ! pacman -Q python-rapidyaml >/dev/null 2>&1; then
+        if pacman -Si rapidyaml >/dev/null 2>&1 && pacman -Si python-rapidyaml >/dev/null 2>&1; then
+            pacman -S --needed --noconfirm rapidyaml python-rapidyaml
+        else
+            build_payload_packages rapidyaml rapidyaml python-rapidyaml
+        fi
+    fi
+    if ! pacman -Q pcsx2 >/dev/null 2>&1; then
+        if pacman -Si pcsx2 >/dev/null 2>&1; then
+            pacman -S --needed --noconfirm pcsx2
+        else
+            build_payload_packages pcsx2 pcsx2
+        fi
+    fi
+    if ! pacman -Q ttf-zalando-sans >/dev/null 2>&1; then
+        if pacman -Si ttf-zalando-sans >/dev/null 2>&1; then
+            pacman -S --needed --noconfirm ttf-zalando-sans
+        else
+            build_payload_packages ttf-zalando-sans ttf-zalando-sans
+        fi
+    fi
+}
+
+build_payload_packages() {
+    local source_dir="$1"
+    local package_name
+    shift
+    [[ -f "$PAYLOAD/packages/$source_dir/PKGBUILD" ]] || die "$source_dir is unavailable and its payload PKGBUILD is missing"
+    local build_user=${SUDO_USER:-}
+    [[ -n "$build_user" && "$build_user" != root ]] || die "building $source_dir requires invoking the installer through sudo from a non-root user"
+    pacman -S --needed --noconfirm base-devel
+    local build_dir
+    build_dir="$(mktemp -d "/var/tmp/mudos-${source_dir}.XXXXXX")"
+    chown "$build_user:$build_user" "$build_dir"
+    cp -a "$PAYLOAD/packages/$source_dir/." "$build_dir/"
+    chown -R "$build_user:$build_user" "$build_dir"
+    runuser -u "$build_user" -- makepkg --syncdeps --noconfirm --needed --dir "$build_dir"
+    for package_name in "$@"; do
+        local package_file
+        package_file="$(find "$build_dir" -maxdepth 1 -type f -name "${package_name}-*.pkg.tar.*" -print -quit)"
+        [[ -n "$package_file" ]] || die "$source_dir PKGBUILD did not produce $package_name"
+        pacman -U --needed --noconfirm "$package_file"
+    done
+    rm -rf "$build_dir"
+}
+
+ensure_user() {
+    local group
+    if getent passwd lulu >/dev/null; then
+        [[ "$(id -u lulu)" == 958 ]] || die 'existing lulu user does not have UID 958'
+        [[ "$(id -g lulu)" == 958 ]] || die 'existing lulu primary group does not have GID 958'
+        getent group lulu >/dev/null || die 'existing lulu user has no lulu group'
+        [[ "$(getent group lulu | cut -d: -f3)" == 958 ]] || die 'existing lulu group does not have GID 958'
+    else
+        getent passwd 958 >/dev/null && die 'UID 958 is already assigned to another user'
+        getent group 958 >/dev/null && die 'GID 958 is already assigned to another group'
+        groupadd --gid 958 lulu
+        useradd --uid 958 --gid 958 --create-home --home-dir /var/lib/lulu --shell /usr/bin/nologin lulu
+    fi
+    getent group seat >/dev/null || groupadd seat
+    usermod --append --groups seat lulu
+    for group in lulu seat; do getent group "$group" >/dev/null || die "missing group: $group"; done
+}
+
+install_tree() {
+    install -d -m 0755 /opt/lulu/releases /etc/lulu /etc/inputplumber/devices.d
+    for path in \
+        /var/lib/lulu /var/lib/lulu/roms /var/lib/lulu/roms/nes \
+        /var/lib/lulu/roms/genesis /var/lib/lulu/roms/ps2 /var/lib/lulu/roms/wii \
+        /var/lib/lulu/bios /var/lib/lulu/bios/ps2 /var/lib/lulu/.config \
+        /var/lib/lulu/.cache /var/lib/lulu/.local/share; do
+        install -d -m 0755 "$path"
+    done
+    chown -R lulu:lulu /var/lib/lulu
+
+    local digest release release_dir tmp link
+    digest="$(sha256sum "$PAYLOAD/manifest.sha256" | cut -c1-12)"
+    release="${VERSION}-${digest}"
+    release_dir="/opt/lulu/releases/$release"
+    if [[ ! -d "$release_dir" ]]; then
+        tmp="$(mktemp -d /opt/lulu/releases/.staging.XXXXXX)"
+        cp -a "$PAYLOAD/." "$tmp/"
+        printf 'commit=%s\ntag=%s\nmanifest=%s\n' "$VERSION" "$VERSION_TAG" "$digest" > "$tmp/RELEASE"
+        chmod -R u+rwX,go+rX "$tmp"
+        mv "$tmp" "$release_dir"
+    fi
+    if [[ "$(readlink /opt/lulu/current 2>/dev/null || true)" != "$release" ]]; then
+        link="/opt/lulu/current.new.$$"
+        ln -s "$release" "$link"
+        mv -Tf "$link" /opt/lulu/current
+        RELEASE_CHANGED=1
+    fi
+
+    for path in lib bin config ui scripts; do
+        local stable="/opt/lulu/$path"
+        if [[ -e "$stable" && ! -L "$stable" ]]; then
+            mv "$stable" "/opt/lulu/$path.legacy.$(date +%s)"
+        fi
+        ln -sfn "current/$path" "$stable"
+    done
+    chown -R root:root "$release_dir"
+}
+
+install_system_state() {
+    local source destination
+    for source in lulu.target lulu-session@.service lulu-consoled.service; do
+        destination="/etc/systemd/system/$source"
+        if ! cmp -s "$PAYLOAD/packaging/$source" "$destination" 2>/dev/null; then
+            install -m 0644 "$PAYLOAD/packaging/$source" "$destination"
+            SYSTEM_CHANGED=1
+        fi
+    done
+    if ! cmp -s "$PAYLOAD/packaging/lulu-session.pam" /etc/pam.d/lulu-session 2>/dev/null; then
+        install -m 0644 "$PAYLOAD/packaging/lulu-session.pam" /etc/pam.d/lulu-session
+        SYSTEM_CHANGED=1
+    fi
+    install -d -m 0755 /etc/systemd/system/inputplumber.service.d
+    if ! cmp -s "$PAYLOAD/packaging/inputplumber-restart.conf" /etc/systemd/system/inputplumber.service.d/restart.conf 2>/dev/null; then
+        install -m 0644 "$PAYLOAD/packaging/inputplumber-restart.conf" /etc/systemd/system/inputplumber.service.d/restart.conf
+        SYSTEM_CHANGED=1
+    fi
+    if ! cmp -s "$PAYLOAD/config/inputplumber/devices/lulu-composite.yaml" /etc/inputplumber/devices.d/lulu-composite.yaml 2>/dev/null; then
+        install -m 0644 "$PAYLOAD/config/inputplumber/devices/lulu-composite.yaml" /etc/inputplumber/devices.d/lulu-composite.yaml
+        INPUT_CHANGED=1
+    fi
+    if [[ ! -e /etc/lulu/presentation.conf ]]; then
+        install -m 0644 "$PAYLOAD/packaging/presentation.conf" /etc/lulu/presentation.conf
+        SYSTEM_CHANGED=1
+    fi
+    install -d -o lulu -g lulu -m 0700 /var/lib/lulu/.config/pipewire/pipewire-pulse.conf.d
+    if ! cmp -s "$PAYLOAD/packaging/pipewire/lulu-fallback-input.conf" /var/lib/lulu/.config/pipewire/pipewire-pulse.conf.d/lulu-fallback-input.conf 2>/dev/null; then
+        install -o lulu -g lulu -m 0644 "$PAYLOAD/packaging/pipewire/lulu-fallback-input.conf" /var/lib/lulu/.config/pipewire/pipewire-pulse.conf.d/lulu-fallback-input.conf
+    fi
+    if ! cmp -s "$PAYLOAD/bin/verify-mudos.sh" /opt/lulu/current/bin/verify-mudos.sh 2>/dev/null; then
+        install -m 0755 "$PAYLOAD/bin/verify-mudos.sh" /opt/lulu/current/bin/verify-mudos.sh
+        RELEASE_CHANGED=1
+    fi
+    if (( SYSTEM_CHANGED || INPUT_CHANGED )); then systemctl daemon-reload; fi
+    systemd-analyze verify /etc/systemd/system/lulu.target /etc/systemd/system/lulu-session@.service /etc/systemd/system/lulu-consoled.service
+}
+
+enable_services() {
+    systemctl enable seatd.service inputplumber.service
+    mkdir -p /etc/systemd/system/multi-user.target.wants
+    ln -sfn /etc/systemd/system/lulu.target /etc/systemd/system/multi-user.target.wants/lulu.target
+    systemctl start seatd.service inputplumber.service
+    if (( RELEASE_CHANGED || SYSTEM_CHANGED )); then
+        systemctl try-restart lulu-consoled.service lulu-session@2.service
+    fi
+}
+
+if (( VERIFY_ONLY )); then
+    step 'Checking installed host' 1
+    verify_installed
+    exit 0
+fi
+
+step 'Checking host and USB payload' 1
+verify_payload
+[[ -f /etc/os-release ]] || die 'missing /etc/os-release'
+grep -Eq '^(ID|ID_LIKE)=.*(cachyos|arch)' /etc/os-release || die 'this installer requires CachyOS or an Arch-derived host'
+command -v pacman >/dev/null || die 'pacman is required'
+
+step 'Installing packages' 2
+install_packages
+
+step 'Creating users and groups' 3
+ensure_user
+
+step 'Creating filesystem state' 4
+install_tree
+
+step 'Deploying complete Mudos release' 5
+[[ -f /opt/lulu/current/RELEASE ]] || die 'release marker was not installed'
+
+step 'Installing systemd and session state' 6
+install_system_state
+
+step 'Installing InputPlumber configuration' 7
+if (( INPUT_CHANGED )); then
+    systemctl restart inputplumber.service
+else
+    systemctl start inputplumber.service
+fi
+
+step 'Verifying udev and permissions' 8
+if pacman -Ql steam-devices | grep -Eq '/(udev/rules.d|modprobe.d)/'; then
+    udevadm control --reload-rules
+    if (( INPUT_CHANGED )); then udevadm trigger --subsystem-match=input; fi
+else
+    die 'steam-devices did not install device permission rules'
+fi
+getent group seat >/dev/null
+
+step 'Installing Gamescope and provider prerequisites' 9
+python -m compileall -q /opt/lulu/current/lib
+command -v dolphin-emu >/dev/null
+command -v pcsx2 >/dev/null
+command -v retroarch >/dev/null
+
+step 'Enabling services and final verification' 10
+enable_services
+verify_installed
+log "installation complete: ${VERSION_TAG} (${VERSION})"
+log 'Reboot before performing first-boot hardware acceptance.'

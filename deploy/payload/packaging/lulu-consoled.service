@@ -1,0 +1,27 @@
+[Unit]
+Description=Lulu game catalogue service
+Requires=user@958.service
+After=user@958.service
+
+[Service]
+Type=simple
+User=lulu
+Environment=PYTHONPATH=/opt/lulu/lib
+Environment=XDG_RUNTIME_DIR=/run/user/958
+Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/958/bus
+Environment=LULU_STEAM_ROOTS=/var/lib/lulu/.local/share/Steam
+Environment=LULU_ROM_ROOT=/var/lib/lulu/roms
+Environment=LULU_BIOS_ROOT=/var/lib/lulu/bios
+Environment=DISPLAY=:0
+Environment=XAUTHORITY=/var/lib/lulu/.Xauthority
+Environment=WAYLAND_DISPLAY=gamescope-0
+Environment=PULSE_SERVER=unix:/run/user/958/pulse/native
+# Optional secret is supplied by a systemd drop-in, never in this unit.
+Environment=LULU_ARTWORK_CACHE=/var/lib/lulu/.cache/lulu/steamgriddb
+EnvironmentFile=-/etc/lulu/steamgriddb.env
+ExecStart=/usr/bin/python -m lulu.consoled
+Restart=on-failure
+RestartSec=2s
+
+[Install]
+WantedBy=lulu.target

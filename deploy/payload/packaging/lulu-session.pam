@@ -1,0 +1,3 @@
+# Lulu appliance session: no authentication, only logind session registration.
+account required pam_permit.so
+session required pam_systemd.so

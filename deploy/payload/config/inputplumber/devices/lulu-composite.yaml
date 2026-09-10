@@ -1,0 +1,22 @@
+# Lulu's recreated target topology.
+# Mode profiles intentionally omit target_devices: changing mode must not
+# recreate or replace the virtual devices.
+version: 1
+kind: CompositeDevice
+name: Lulu Controller
+maximum_sources: 1
+matches: []
+source_devices:
+  - group: gamepad
+    unique: true
+    evdev:
+      vendor_id: "045e"
+      product_id: "02a1"
+      handler: event*
+options:
+  auto_manage: true
+  persist: false
+target_devices:
+  - gamepad
+  - keyboard
+  - mouse
