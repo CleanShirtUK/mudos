@@ -7,6 +7,7 @@ from pathlib import Path
 import subprocess
 import tempfile
 import shlex
+import json
 
 from dbus_next import BusType, Variant
 from dbus_next.aio import MessageBus
@@ -15,8 +16,10 @@ from dbus_next.service import ServiceInterface, method, signal
 from .catalogue import CatalogueStore
 from .artwork import SteamGridDBArtwork
 from .contracts import ServiceDescriptor, ServiceName
+from .controller_provisioning import ensure_provider_controller_config
 from .emulator_runtime import EmulatorRuntimeAdapter
 from .emulation import PLATFORMS, ROM_ROOT, ensure_storage
+from .inputplumber import InputPlumberClient
 from .local_content import LocalContentProvider
 from .steam_provider import SteamProvider
 from .system_settings import CATEGORIES as SYSTEM_CATEGORIES, SystemSettingsProvider
@@ -67,41 +70,39 @@ INTERFACE_NAME = "org.lulu.Console"
 LOGGER = logging.getLogger("lulu.consoled")
 
 
-def _retroarch_joypad_index(vendor: str = "045e", product: str = "028e") -> int:
-    """Resolve the RetroArch udev index for Lulu's virtual Xbox target."""
-    devices: list[tuple[int, str, str]] = []
-    for sysfs_name in Path("/sys/class/input").glob("event*/device"):
-        event_name = sysfs_name.parent.name
-        try:
-            event_number = int(event_name.removeprefix("event"))
-            current_vendor = (sysfs_name / "id/vendor").read_text().strip().lower()
-            current_product = (sysfs_name / "id/product").read_text().strip().lower()
-        except (FileNotFoundError, OSError, ValueError):
-            continue
-        device = Path("/dev/input") / event_name
-        if not os.access(device, os.R_OK) or not os.access(device, os.W_OK):
-            continue
-        try:
-            properties = subprocess.run(
-                ["udevadm", "info", "--query=property", "--name", str(device)],
-                check=True,
-                capture_output=True,
-                text=True,
-            ).stdout
-        except (OSError, subprocess.SubprocessError):
-            continue
-        if "ID_INPUT_JOYSTICK=1" not in properties.splitlines():
-            continue
-        devices.append((event_number, current_vendor, current_product))
-
-    devices.sort()
-    for index, (_event_number, current_vendor, current_product) in enumerate(devices):
-        if current_vendor == vendor.lower() and current_product == product.lower():
-            return index
-    raise RuntimeError(f"InputPlumber Xbox controller {vendor}:{product} was not found")
+def _mudos_provider_device_indices() -> dict[int, int]:
+    """Resolve logical players to current InputPlumber gamepad target indices."""
+    client = InputPlumberClient("/org/shadowblip/InputPlumber/CompositeDevice0", {})
+    slots = client.runtime_gamepad_slots()
+    state = subprocess.run(
+        [
+            "busctl",
+            "--user",
+            "call",
+            "org.lulu.ConsoleSessiond",
+            "/org/lulu/ConsoleSession",
+            "org.lulu.ConsoleSession",
+            "GetState",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+    state_json = json.loads(state.removeprefix("s ").strip())
+    if isinstance(state_json, str):
+        state_json = json.loads(state_json)
+    assignments = state_json.get("controller", {}).get("controllers", {})
+    result: dict[int, int] = {}
+    for runtime_path, _persistent_id, target_index in slots:
+        player = assignments.get(runtime_path, {}).get("player")
+        if isinstance(player, int) and player in range(1, 5):
+            result[player] = target_index
+    if not result:
+        raise RuntimeError("Mudos has no assigned InputPlumber gamepad slots")
+    return result
 
 
-def _retroarch_child_config(joypad_index: int) -> str:
+def _retroarch_child_config(device_indices: dict[int, int]) -> str:
     directory = Path(os.environ.get("XDG_RUNTIME_DIR", "/tmp"))
     with tempfile.NamedTemporaryFile(
         mode="w",
@@ -112,9 +113,10 @@ def _retroarch_child_config(joypad_index: int) -> str:
         delete=False,
     ) as config:
         config.write(
-            f'input_player1_joypad_index = "{joypad_index}"\n'
-            'input_player2_joypad_index = "0"\n'
-            'network_cmd_enable = "true"\n'
+            "".join(
+                f'input_player{player}_joypad_index = "{device_indices[player] + 1 if player in device_indices else -1}"\n'
+                for player in range(1, 5)
+            ) + 'network_cmd_enable = "true"\n'
             'network_cmd_port = "55355"\n'
             'quit_on_close_content = "true"\n'
             'config_save_on_exit = "false"\n'
@@ -181,14 +183,33 @@ class ConsoleInterface(ServiceInterface):
             intent = self.local_runtime.launch_intent(game)
             command = [intent.executable, *intent.arguments]
             child_config_path: str | None = None
+            if intent.platform in {"ps2", "wii"}:
+                controller_provider = {"ps2": "pcsx2", "wii": "dolphin"}[intent.platform]
+                device_indices = await asyncio.to_thread(_mudos_provider_device_indices)
+                controller_config_path = await asyncio.to_thread(
+                    ensure_provider_controller_config,
+                    controller_provider,
+                    None,
+                    max(device_indices),
+                    device_indices,
+                )
+                LOGGER.info(
+                    "local runtime controller profile provider=%s path=%s",
+                    controller_provider,
+                    controller_config_path,
+                )
             if intent.platform in {"nes", "genesis"}:
-                joypad_index = await asyncio.to_thread(_retroarch_joypad_index)
-                child_config_path = await asyncio.to_thread(_retroarch_child_config, joypad_index)
+                device_indices = await asyncio.to_thread(_mudos_provider_device_indices)
+                child_config_path = await asyncio.to_thread(_retroarch_child_config, device_indices)
                 command[1:1] = [
                     "--appendconfig",
                     child_config_path,
                 ]
-                LOGGER.info("local runtime controller game_id=%s joypad_index=%s", game_id, joypad_index)
+                LOGGER.info(
+                    "local runtime controller game_id=%s device_indices=%s",
+                    game_id,
+                    device_indices,
+                )
             LOGGER.info(
                 "local runtime dispatch game_id=%s runtime=%s core=%s rom=%s command=%r",
                 game_id,
@@ -198,8 +219,9 @@ class ConsoleInterface(ServiceInterface):
                 command,
             )
             child_environment = os.environ.copy()
-            if intent.platform in {"nes", "genesis"}:
+            if intent.platform in {"nes", "genesis", "ps2"}:
                 child_environment.pop("WAYLAND_DISPLAY", None)
+            if intent.platform in {"nes", "genesis"}:
                 child_environment["LIBRETRO_AUTOCONFIG_DIRECTORY"] = (
                     "/opt/lulu/config/retroarch/autoconfig"
                 )

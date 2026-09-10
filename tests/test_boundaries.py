@@ -125,7 +125,7 @@ class BoundaryTests(unittest.TestCase):
         )
         self.assertEqual(registry.navigation_controller_id, "CompositeDevice0")
         self.assertEqual(registry.controllers["CompositeDevice0"].player, 1)
-        self.assertIsNone(registry.controllers["CompositeDevice1"].player)
+        self.assertEqual(registry.controllers["CompositeDevice1"].player, 2)
 
         registry.observe_runtime_composites(
             {"CompositeDevice1": ("045e_0291", ("/dev/input/event22",))}
@@ -134,7 +134,36 @@ class BoundaryTests(unittest.TestCase):
         self.assertTrue(registry.controllers["CompositeDevice1"].connected)
         self.assertEqual(registry.controllers["CompositeDevice0"].player, 1)
         self.assertEqual(registry.navigation_controller_id, "CompositeDevice1")
-        self.assertIsNone(registry.controllers["CompositeDevice1"].player)
+        self.assertEqual(registry.controllers["CompositeDevice1"].player, 2)
+
+    def test_runtime_order_does_not_reshuffle_connected_players(self) -> None:
+        registry = ControllerRegistry()
+        registry.observe_runtime_composites(
+            {
+                "CompositeDevice0": ("receiver", ("/dev/input/event8",)),
+                "CompositeDevice1": ("receiver", ("/dev/input/event22",)),
+                "CompositeDevice2": ("receiver", ("/dev/input/event26",)),
+            }
+        )
+        registry.observe_runtime_composites(
+            {
+                "CompositeDevice0": ("receiver", ("/dev/input/event8",)),
+                "CompositeDevice2": ("receiver", ("/dev/input/event26",)),
+                "CompositeDevice1": ("receiver", ("/dev/input/event22",)),
+            }
+        )
+        self.assertEqual(
+            {
+                key: value.player
+                for key, value in registry.controllers.items()
+                if value.connected
+            },
+            {
+                "CompositeDevice0": 1,
+                "CompositeDevice1": 2,
+                "CompositeDevice2": 3,
+            },
+        )
 
     def test_intercept_mode_is_bounded_to_inputplumber_api_values(self) -> None:
         client = default_inputplumber_client(Path("config/inputplumber"))

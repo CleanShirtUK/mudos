@@ -3,6 +3,7 @@ import unittest
 from pathlib import Path
 
 from lulu.emulator_runtime import EmulatorRuntimeAdapter
+from lulu.controller_provisioning import ensure_provider_controller_config
 from lulu.local_content import LocalContentGame
 
 
@@ -59,6 +60,74 @@ class EmulatorRuntimeTests(unittest.TestCase):
             intent = EmulatorRuntimeAdapter({"wii": executable}).launch_intent(game)
 
         self.assertEqual(intent.arguments, ("-e", "/fixture/game.rvz"))
+
+    def test_pcsx2_intent_uses_controller_first_direct_boot(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            executable = Path(directory) / "pcsx2-qt"
+            executable.write_bytes(b"fixture")
+            game = LocalContentGame("local:ps2:id", "Game", "ps2", "/fixture/game.cue", True, "installed", "ready")
+
+            intent = EmulatorRuntimeAdapter({"ps2": executable}).launch_intent(game)
+
+        self.assertEqual(
+            intent.arguments,
+            ("-batch", "-fullscreen", "-bigpicture", "--", "/fixture/game.cue"),
+        )
+
+    def test_pcsx2_controller_profile_is_native_and_idempotent(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            path = ensure_provider_controller_config("pcsx2", root)
+            first = path.read_text()
+            ensure_provider_controller_config("pcsx2", root)
+
+            self.assertEqual(path.read_text(), first)
+            self.assertIn("[Pad1]", first)
+            self.assertIn("Cross = SDL-1/FaceSouth", first)
+            self.assertIn("Up = SDL-1/DPadDown", first)
+            self.assertIn("L2 = SDL-1/+LeftTrigger", first)
+            self.assertNotIn("Keyboard/", first)
+            self.assertIn("[Pad2]", first)
+            self.assertIn("Cross = SDL-2/FaceSouth", first)
+
+    def test_dolphin_controller_profile_uses_inputplumber_virtual_name(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = ensure_provider_controller_config("dolphin", Path(directory))
+            content = path.read_text()
+
+            self.assertIn("Device = SDL/0/Xbox 360 Controller", content)
+            self.assertIn("Buttons/A = `Button A`", content)
+            self.assertIn("Main Stick/Up = `Left Y+`", content)
+            self.assertIn("Triggers/L-Analog = `Trigger L`", content)
+            self.assertIn("Main Stick/Calibration = 100.00", content)
+            self.assertIn("[GCPad2]", content)
+            self.assertIn("Device = SDL/1/Xbox 360 Controller", content)
+
+            dolphin = Path(directory) / "dolphin-emu" / "Dolphin.ini"
+            dolphin_content = dolphin.read_text()
+            self.assertIn("SIDevice0 = 6", dolphin_content)
+            self.assertIn("WiimoteSource0 = 0", dolphin_content)
+
+            wiimote = Path(directory) / "dolphin-emu" / "WiimoteNew.ini"
+            wiimote_content = wiimote.read_text()
+            self.assertNotIn("[Wiimote1]", wiimote_content)
+
+    def test_provider_profiles_follow_logical_player_device_indices(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            pcsx2 = ensure_provider_controller_config(
+                "pcsx2", root, 3, {1: 0, 2: 2, 3: 1}
+            ).read_text()
+            dolphin = ensure_provider_controller_config(
+                "dolphin", root, 3, {1: 0, 2: 2, 3: 1}
+            ).read_text()
+
+        self.assertIn("[Pad2]", pcsx2)
+        self.assertIn("Cross = SDL-3/FaceSouth", pcsx2)
+        self.assertIn("[GCPad2]", dolphin)
+        self.assertIn("Device = SDL/2/Xbox 360 Controller", dolphin)
+        self.assertIn("[GCPad3]", dolphin)
+        self.assertIn("Device = SDL/1/Xbox 360 Controller", dolphin)
 
 
 if __name__ == "__main__":

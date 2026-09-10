@@ -25,6 +25,7 @@ DESCRIPTOR = ServiceDescriptor(
 @dataclass(slots=True)
 class Controller:
     controller_id: str
+    physical_identity: str | None = None
     capabilities: frozenset[str] = frozenset()
     connected: bool = True
     player: int | None = None
@@ -86,7 +87,7 @@ class ControllerRegistry:
     def observe_runtime_composites(
         self, composites: dict[str, tuple[str, tuple[str, ...]]]
     ) -> None:
-        """Reconcile runtime-local composite slots and transfer navigation."""
+        """Assign ordered runtime composites to stable logical player slots."""
         connected_ids = [
             runtime_id for runtime_id, (_, sources) in composites.items() if sources
         ]
@@ -99,8 +100,21 @@ class ControllerRegistry:
             if not source_paths:
                 continue
             controller = self.controllers.get(runtime_id)
-            if controller is None:
-                controller = Controller(runtime_id, player=1 if not self.controllers else None)
+            if controller is None or not controller.connected:
+                connected_players = {
+                    candidate.player
+                    for candidate in self.controllers.values()
+                    if candidate.connected and candidate.player is not None
+                }
+                player = next(
+                    (candidate for candidate in range(1, 5) if candidate not in connected_players),
+                    None,
+                )
+                controller = Controller(
+                    runtime_id,
+                    physical_identity=persistent_id or None,
+                    player=player,
+                )
                 self.connect(controller)
             else:
                 controller.connected = True

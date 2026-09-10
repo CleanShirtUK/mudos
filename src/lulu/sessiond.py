@@ -91,7 +91,9 @@ class ConsoleSessionInterface(ServiceInterface):
         if self._inputplumber.object_path not in composites:
             raise RuntimeError("persistent InputPlumber composite is unavailable")
         self.controller_registry.observe_runtime_composites(composites)
-        await self._initialize_composite(self._inputplumber.object_path)
+        for object_path, (_, source_paths) in composites.items():
+            if source_paths:
+                await self._initialize_composite(object_path)
         self._inputplumber_event = asyncio.Event()
         self._inputplumber_bus = await MessageBus(bus_type=BusType.SYSTEM).connect()
         introspection = await self._inputplumber_bus.introspect(

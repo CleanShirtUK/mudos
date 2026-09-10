@@ -105,7 +105,10 @@ class GamescopePresentation:
         return completed.stdout
 
     def _focusable_windows(self) -> list[tuple[int, int, int]]:
-        output = self._xprop("GAMESCOPE_FOCUSABLE_WINDOWS")
+        try:
+            output = self._xprop("GAMESCOPE_FOCUSABLE_WINDOWS")
+        except subprocess.CalledProcessError:
+            return []
         values = [int(value, 0) for value in re.findall(r"0x[0-9a-fA-F]+|\d+", output.split("=", 1)[-1])]
         return [tuple(values[index : index + 3]) for index in range(0, len(values) - 2, 3)]
 
@@ -136,7 +139,7 @@ class GamescopePresentation:
         return False
 
     def select_pid(self, pid: int) -> int:
-        window = self.window_for_pid(pid)
+        window = self.window_for_pid(pid, timeout=10.0)
         self._logger.info("select pid=%s window=%s", pid, window)
         self._xprop(
             "-f",

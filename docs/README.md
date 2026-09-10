@@ -22,6 +22,8 @@ and conditions that were true when they were captured.
 - [Non-Steam runtime architecture baseline](non-steam-runtime-architecture-baseline.md)
 - [Emulation library convention](emulation-library.md)
 - [Provider menu reconnaissance](provider-menu-reconnaissance.md): external-first research; no implementation yet
+- [Emulator controller provisioning](emulator-controller-provisioning.md): native PCSX2 and Dolphin profile contract
+- [Known-good test environment](known-good-test-environment-20260910.md): complete CachyOS milestone audit and reproduction boundary
 
 ## Dated Validation And Research
 

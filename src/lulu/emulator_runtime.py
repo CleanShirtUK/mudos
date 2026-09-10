@@ -46,7 +46,9 @@ class EmulatorRuntimeAdapter:
             arguments = ("-L", str(core), content_path)
         elif game.platform in {"wii", "ps2"}:
             content_path = getattr(game, "content_path", getattr(game, "install_dir", ""))
-            arguments = ("-e", content_path) if game.platform == "wii" else (content_path,)
+            arguments = ("-e", content_path) if game.platform == "wii" else (
+                "-batch", "-fullscreen", "-bigpicture", "--", content_path
+            )
         elif game.platform == "switch":
             content_path = getattr(game, "content_path", getattr(game, "install_dir", ""))
             arguments = (content_path,)

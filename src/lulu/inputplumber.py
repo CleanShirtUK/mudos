@@ -110,11 +110,64 @@ class InputPlumberClient:
             capture_output=True,
             text=True,
         ).stdout
-        paths = sorted(
-            set(
-                re.findall(
-                    r"(/org/shadowblip/InputPlumber/CompositeDevice\d+)", tree
+        paths = list(self.gamepad_order())
+        if not paths:
+            paths = sorted(
+                set(
+                    re.findall(
+                        r"(/org/shadowblip/InputPlumber/CompositeDevice\d+)", tree
+                    )
                 )
             )
-        )
         return {path: self.composite_status(path) for path in paths}
+
+    def gamepad_order(self, *, execute: bool = True) -> tuple[str, ...]:
+        """Return InputPlumber's current ordered composite handles."""
+        if not execute:
+            return ()
+        result = subprocess.run(
+            [
+                self.busctl,
+                "get-property",
+                "org.shadowblip.InputPlumber",
+                "/org/shadowblip/InputPlumber/Manager",
+                "org.shadowblip.InputManager",
+                "GamepadOrder",
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout
+        return tuple(re.findall(r'"(/org/shadowblip/InputPlumber/CompositeDevice\d+)"', result))
+
+    def runtime_gamepad_slots(self, *, execute: bool = True) -> list[tuple[str, str, int]]:
+        """Return ordered runtime handles and their current gamepad target indices."""
+        if not execute:
+            return []
+        slots: list[tuple[str, str, int]] = []
+        for runtime_path in self.gamepad_order():
+            persistent_id, source_paths = self.composite_status(runtime_path)
+            if not source_paths:
+                continue
+            targets = subprocess.run(
+                [
+                    self.busctl,
+                    "get-property",
+                    "org.shadowblip.InputPlumber",
+                    runtime_path,
+                    "org.shadowblip.Input.CompositeDevice",
+                    "TargetDevices",
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+            ).stdout
+            gamepad_indices = [
+                int(index)
+                for index in re.findall(
+                    r"/org/shadowblip/InputPlumber/devices/target/gamepad(\d+)", targets
+                )
+            ]
+            if gamepad_indices:
+                slots.append((runtime_path, persistent_id, gamepad_indices[0]))
+        return slots

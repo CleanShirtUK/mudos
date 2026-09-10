@@ -14,6 +14,8 @@
 #include <QTimer>
 #include <qnativeinterface.h>
 #include <QUrl>
+#include <QHash>
+#include <QSet>
 
 #include <SDL3/SDL.h>
 #include <xcb/xcb.h>
@@ -36,9 +38,32 @@ void diagnosticMessageHandler(QtMsgType, const QMessageLogContext &, const QStri
     }
 }
 
+class ControllerBridge;
+
+class DbusInputRelay final : public QObject
+{
+    Q_OBJECT
+
+public:
+    DbusInputRelay(ControllerBridge *owner, QString compositePath, QObject *parent)
+        : QObject(parent), owner_(owner), compositePath_(std::move(compositePath))
+    {
+    }
+
+    const QString &compositePath() const { return compositePath_; }
+
+public slots:
+    void onInputEvent(const QString &event, double value);
+
+private:
+    ControllerBridge *owner_;
+    QString compositePath_;
+};
+
 class ControllerBridge final : public QQmlPropertyMap
 {
     Q_OBJECT
+    friend class DbusInputRelay;
 
 public:
     explicit ControllerBridge(QQuickWindow *window, QObject *parent = nullptr)
@@ -53,9 +78,11 @@ public:
         insert("actionSerial", 0);
         insert("luluPresented", false);
         insert("guideSelection", 0);
-        QDBusConnection::systemBus().connect(
-            inputService, dbusTargetPath, dbusInterface, "InputEvent", this,
-            SLOT(onInputEvent(QString,double)));
+        refreshDbusSubscriptions();
+        dbusDiscoveryTimer_.setInterval(500);
+        connect(&dbusDiscoveryTimer_, &QTimer::timeout,
+                this, &ControllerBridge::refreshDbusSubscriptions);
+        dbusDiscoveryTimer_.start();
         if (initialized)
             scanGamepads();
         timer_.setInterval(5);
@@ -80,20 +107,19 @@ public:
     }
 
 private slots:
-    void onInputEvent(const QString &event, double value)
+    void onDbusInputEvent(const QString &compositePath, const QString &event, double value)
     {
-        handleInputEvent(event, value);
+        handleInputEvent(compositePath, event, value);
     }
 
 private:
     static constexpr const char *inputService = "org.shadowblip.InputPlumber";
-    static constexpr const char *inputPath = "/org/shadowblip/InputPlumber/CompositeDevice0";
     static constexpr const char *inputInterface = "org.shadowblip.Input.CompositeDevice";
 
-    bool setInterceptMode(uint mode)
+    bool setInterceptMode(const QString &compositePath, uint mode)
     {
         QDBusMessage message = QDBusMessage::createMethodCall(
-            inputService, inputPath, "org.freedesktop.DBus.Properties", "Set");
+            inputService, compositePath, "org.freedesktop.DBus.Properties", "Set");
         message << QString::fromLatin1(inputInterface) << QStringLiteral("InterceptMode")
                 << QVariant::fromValue(QDBusVariant(QVariant::fromValue(mode)));
         const auto reply = QDBusConnection::systemBus().call(message);
@@ -112,19 +138,23 @@ private:
 
     void restoreInput()
     {
-        setInterceptMode(1);
+        if (!guideOwnerComposite_.isEmpty())
+            setInterceptMode(guideOwnerComposite_, 1);
+        guideOwnerComposite_.clear();
         clearTarget();
     }
 
-    void handleInputEvent(const QString &event, double value)
+    void handleInputEvent(const QString &compositePath, const QString &event, double value)
     {
         if (value != 1.0)
             return;
         if (event == QStringLiteral("ui_guide") && !guideProcess_) {
+            guideOwnerComposite_ = compositePath;
             startGuide();
             return;
         }
-        if (guideProcess_ && (event == QStringLiteral("ui_guide")
+        if (guideProcess_ && compositePath == guideOwnerComposite_
+            && (event == QStringLiteral("ui_guide")
                               || event == QStringLiteral("ui_up")
                               || event == QStringLiteral("ui_down")
                               || event == QStringLiteral("ui_accept")
@@ -172,6 +202,44 @@ private:
             return false;
         }
         return true;
+    }
+
+    void refreshDbusSubscriptions()
+    {
+        QDBusInterface manager(inputService,
+                               "/org/shadowblip/InputPlumber/Manager",
+                               "org.shadowblip.InputManager",
+                               QDBusConnection::systemBus());
+        const QStringList composites = manager.property("GamepadOrder").toStringList();
+        QSet<QString> discovered;
+        for (const QString &compositePath : composites) {
+            QDBusInterface composite(inputService, compositePath,
+                                     "org.shadowblip.Input.CompositeDevice",
+                                     QDBusConnection::systemBus());
+            for (const QString &dbusPath : composite.property("DbusDevices").toStringList()) {
+                discovered.insert(dbusPath);
+                if (dbusRelays_.contains(dbusPath))
+                    continue;
+                auto *relay = new DbusInputRelay(this, compositePath, this);
+                dbusRelays_.insert(dbusPath, relay);
+                QDBusConnection::systemBus().connect(
+                    inputService, dbusPath, dbusInterface, "InputEvent",
+                    relay, SLOT(onInputEvent(QString,double)));
+                qInfo() << "subscribed InputPlumber D-Bus target"
+                        << dbusPath << "composite=" << compositePath;
+            }
+        }
+        for (auto iterator = dbusRelays_.begin(); iterator != dbusRelays_.end();) {
+            if (discovered.contains(iterator.key())) {
+                ++iterator;
+                continue;
+            }
+            QDBusConnection::systemBus().disconnect(
+                inputService, iterator.key(), dbusInterface, "InputEvent",
+                iterator.value(), SLOT(onInputEvent(QString,double)));
+            iterator.value()->deleteLater();
+            iterator = dbusRelays_.erase(iterator);
+        }
     }
 
     QString providerMenuCommand(uint32_t pid) const
@@ -400,8 +468,6 @@ private:
 
     QQuickWindow *window_;
     QTimer timer_;
-    static constexpr const char *dbusTargetPath =
-        "/org/shadowblip/InputPlumber/devices/target/dbus0";
     static constexpr const char *dbusInterface = "org.shadowblip.Input.DBusDevice";
     xcb_connection_t *presentationConnection_ = nullptr;
     xcb_window_t presentationRoot_ = XCB_WINDOW_NONE;
@@ -412,8 +478,16 @@ private:
     xcb_window_t targetWindow_ = XCB_WINDOW_NONE;
     uint32_t targetPid_ = 0;
     QProcess *guideProcess_ = nullptr;
+    QTimer dbusDiscoveryTimer_;
+    QHash<QString, DbusInputRelay *> dbusRelays_;
+    QString guideOwnerComposite_;
     SDL_Gamepad *gamepad_ = nullptr;
 };
+
+void DbusInputRelay::onInputEvent(const QString &event, double value)
+{
+    owner_->onDbusInputEvent(compositePath_, event, value);
+}
 
 bool setSteamGame(QQuickWindow *window)
 {

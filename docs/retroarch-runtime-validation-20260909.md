@@ -105,3 +105,41 @@ GAMESCOPECTRL_BASELAYER_APPID = 413091, 769
 The window value was already invalid. Future Lulu session startup must
 establish a deterministic Gamescope control baseline rather than inheriting
 stale root properties.
+
+## Direct Lulu NES Path
+
+Validated 2026-09-10 through Lulu's local launch boundary using the unmodified
+RetroArch binary, packaged Nestopia core, and `Super Mario Bros (E).nes`.
+
+The RetroArch child receives `DISPLAY`, `XAUTHORITY`, and `PULSE_SERVER`, with
+`WAYLAND_DISPLAY` unset so it selects X11/GLX. Its child-only
+`LIBRETRO_AUTOCONFIG_DIRECTORY` supplies the standard Xbox 360 udev mapping.
+The generated append config disables RetroArch config saving, so the launch
+path does not intentionally modify persistent RetroArch or InputPlumber
+configuration. It now also provisions `quit_on_close_content = "true"` for
+Mudos-managed NES/Genesis launches. This is required so one Mudos Guide Quit
+request closes RetroArch content and exits the frontend.
+
+Before each launch, Lulu resolves the current RetroArch joypad index by
+matching the accessible joystick's sysfs VID/PID `045e:028e` and generates a
+temporary append config containing that index. The resolver does not identify
+the controller by an event-device number.
+
+Two launches passed: the first with the controller already connected, and the
+second after a controller power-cycle caused InputPlumber to recreate the
+virtual pad. Both launches presented normally, accepted NES controls, exited
+normally, and returned control to Lulu. This is machine/deployment evidence for
+the Mudos local-runtime path. Audio remains unverified because the
+system output device is not configured.
+
+## RetroArch Quit Settings
+
+`Quit on Close Content` was enabled manually before the fresh NES retest. The
+setting is now provisioned per Mudos RetroArch launch through the temporary
+append config, so future installs do not depend on interactive frontend setup.
+
+`Press Quit Twice` / `Confirm Quit` was inspected but not changed. The deployed
+`/etc/retroarch.cfg` has no explicit `confirm_quit` entry; the installed
+RetroArch build reports its default as enabled. The effective saved frontend
+state is therefore not independently proven by repository configuration, and
+Mudos does not currently override it.
