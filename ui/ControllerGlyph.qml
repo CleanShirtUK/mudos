@@ -1,6 +1,6 @@
 import QtQuick
 
-Image {
+Item {
     property string action: "confirm"
     property real glyphSize: 22
     readonly property var glyphFiles: ({
@@ -14,10 +14,27 @@ Image {
         left: "SteamDeck_Dpad_Left.png",
         right: "SteamDeck_Dpad_Right.png"
     })
-    source: "controllerglyphs/" + (glyphFiles[action] || glyphFiles.confirm)
-    sourceSize: Qt.size(glyphSize, glyphSize)
     width: glyphSize
     height: glyphSize
-    fillMode: Image.PreserveAspectFit
-    smooth: true
+
+    Image {
+        anchors.fill: parent
+        visible: parent.action !== "options"
+        source: "controllerglyphs/" + (glyphFiles[parent.action] || glyphFiles.confirm)
+        sourceSize: Qt.size(parent.glyphSize, parent.glyphSize)
+        fillMode: Image.PreserveAspectFit
+        smooth: true
+    }
+
+    Text {
+        anchors.fill: parent
+        visible: parent.action === "options"
+        text: "X"
+        color: "white"
+        font.family: "JetBrains Mono"
+        font.bold: true
+        font.pixelSize: parent.glyphSize * 0.8
+        horizontalAlignment: Text.AlignHCenter
+        verticalAlignment: Text.AlignVCenter
+    }
 }
