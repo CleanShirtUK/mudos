@@ -65,6 +65,8 @@ IDENTITY_COLUMNS = (
     "canonical_title", "match_status", "match_method", "match_confidence",
     "match_locked", "metadata_checked_at",
 )
+TEMPORARY_METADATA_RETRY_SECONDS = 15 * 60
+NORMAL_METADATA_RETRY_SECONDS = 24 * 60 * 60
 SELECT_COLUMNS = (
     "game_id, provider, provider_id, title, platform, install_state, launchable, install_dir, "
     "artwork_url, last_played, runtime, platform_label, " + ", ".join(IDENTITY_COLUMNS)
@@ -159,11 +161,19 @@ class CatalogueStore:
         return sorted(platforms, key=lambda item: item[1].casefold())
 
     def needs_metadata_match(self, game_id: str, now: int | None = None) -> bool:
-        row = self.connection.execute("SELECT match_locked, metadata_game_id, metadata_checked_at FROM games WHERE game_id=?", (game_id,)).fetchone()
+        row = self.connection.execute(
+            "SELECT match_locked, metadata_game_id, match_status, match_method, metadata_checked_at "
+            "FROM games WHERE game_id=?", (game_id,)
+        ).fetchone()
         if row is None or row[0] or row[1]:
             return False
         current = int(time.time()) if now is None else now
-        return not row[2] or current - row[2] >= 86400
+        cooldown = (
+            TEMPORARY_METADATA_RETRY_SECONDS
+            if row[3] == "network-error"
+            else NORMAL_METADATA_RETRY_SECONDS
+        )
+        return not row[4] or current - row[4] >= cooldown
 
     def apply_metadata_match(self, game_id: str, match: MetadataMatch) -> None:
         row = self.connection.execute("SELECT match_locked FROM games WHERE game_id=?", (game_id,)).fetchone()

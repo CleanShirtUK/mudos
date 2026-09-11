@@ -78,6 +78,47 @@ class MetadataTests(unittest.TestCase):
                 provider.enrich([game])
         self.assertEqual(request.call_args.args[0], "/v2/grids/game/42?dimensions=600x900")
 
+    def test_network_error_has_a_short_but_nonzero_retry_cooldown(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = CatalogueStore(Path(directory) / "catalogue.sqlite3")
+            store.connection.execute(
+                "INSERT INTO games (game_id, provider, provider_id, title, platform, install_state, "
+                "launchable, install_dir, artwork_url, match_status, match_method, metadata_checked_at) "
+                "VALUES ('local:1', 'local', '1', 'Mario', 'nes', 'installed', 1, '/rom', '', "
+                "'unmatched', 'network-error', 1000)"
+            )
+            store.connection.commit()
+            self.assertFalse(store.needs_metadata_match("local:1", 1000 + 899))
+            self.assertTrue(store.needs_metadata_match("local:1", 1000 + 900))
+
+    def test_no_result_ambiguous_and_low_confidence_use_the_long_cooldown(self):
+        for method in ("no-result", "close-results", "low-confidence"):
+            with self.subTest(method=method), tempfile.TemporaryDirectory() as directory:
+                store = CatalogueStore(Path(directory) / "catalogue.sqlite3")
+                store.connection.execute(
+                    "INSERT INTO games (game_id, provider, provider_id, title, platform, install_state, "
+                    "launchable, install_dir, artwork_url, match_status, match_method, metadata_checked_at) "
+                    "VALUES (?, 'local', ?, 'Mario', 'nes', 'installed', 1, '/rom', '', 'unmatched', ?, 1000)",
+                    (f"local:{method}", method, method),
+                )
+                store.connection.commit()
+                self.assertFalse(store.needs_metadata_match(f"local:{method}", 1000 + 86400 - 1))
+                self.assertTrue(store.needs_metadata_match(f"local:{method}", 1000 + 86400))
+
+    def test_manual_and_confirmed_matches_never_need_automatic_search(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = CatalogueStore(Path(directory) / "catalogue.sqlite3")
+            store.connection.execute(
+                "INSERT INTO games (game_id, provider, provider_id, title, platform, install_state, "
+                "launchable, install_dir, artwork_url, metadata_game_id, match_status, match_method, "
+                "metadata_checked_at, match_locked) VALUES "
+                "('manual', 'local', 'manual', 'Manual', 'nes', 'installed', 1, '/rom', '', '9', 'manual', 'manual', 1000, 1), "
+                "('confirmed', 'local', 'confirmed', 'Confirmed', 'nes', 'installed', 1, '/rom', '', '8', 'matched', 'title', 1000, 0)"
+            )
+            store.connection.commit()
+            self.assertFalse(store.needs_metadata_match("manual", 1000 + 999999))
+            self.assertFalse(store.needs_metadata_match("confirmed", 1000 + 999999))
+
 
 if __name__ == "__main__":
     unittest.main()
