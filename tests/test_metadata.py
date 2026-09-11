@@ -25,6 +25,10 @@ class MetadataTests(unittest.TestCase):
         self.assertEqual(clean_local_title("The.Legend.of.Zelda.Ocarina.of.Time.(Europe).nes"), "The Legend of Zelda Ocarina of Time")
         self.assertEqual(clean_local_title("Tom & Jerry: War of the Whiskers (USA).iso"), "Tom & Jerry: War of the Whiskers")
         self.assertEqual(clean_local_title("Sonic & Knuckles [!].bin"), "Sonic & Knuckles")
+        self.assertEqual(clean_local_title("Mario Kart 8 Deluxe [0100152000022000][v0].nsp"), "Mario Kart 8 Deluxe")
+        self.assertEqual(clean_local_title("Mario Kart Wii (Europe, Australia) (En,Fr,De,Es,It).rvz"), "Mario Kart Wii")
+        self.assertEqual(clean_local_title("Mario.Kart.8.Deluxe.DLC.Booster.Course.Pass.0100152000023001.v65536.nsp"), "Mario Kart 8 Deluxe")
+        self.assertEqual(clean_local_title("Sonic the Hedgehog (JUE) [!].bin"), "Sonic the Hedgehog")
 
     def test_platform_match_beats_wrong_platform_and_ambiguity_is_preserved(self):
         candidates = [
@@ -39,6 +43,13 @@ class MetadataTests(unittest.TestCase):
             MetadataCandidate("2", "Zelda", platforms=("NES",)),
         ])).match("Zelda.nes", "nes")
         self.assertEqual(ambiguous.status, "ambiguous")
+
+    def test_strongest_credible_title_wins_close_sequel_results(self):
+        result = MetadataMatcher(FakeMetadata([
+            MetadataCandidate("1", "Crazy Taxi"),
+            MetadataCandidate("2", "Crazy Taxi 2"),
+        ])).match("Crazy Taxi (USA).cue", "ps2")
+        self.assertEqual((result.status, result.game_id), ("matched", "1"))
 
     def test_no_result_and_network_failure_are_unmatched(self):
         self.assertEqual(MetadataMatcher(FakeMetadata([])).match("Unknown.nes", "nes").status, "unmatched")

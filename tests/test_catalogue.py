@@ -93,3 +93,22 @@ class CatalogueTests(unittest.TestCase):
         self.assertEqual({game.provider for game in games}, {"steam", "local"})
         self.assertEqual(store.list_games("platform:nes")[0].title, "Mario")
         self.assertEqual(store.list_platforms(), [("nes", "Nintendo Entertainment System")])
+
+    def test_user_presentation_and_artwork_overrides_survive_rescan(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "roms"
+            (root / "nes").mkdir(parents=True)
+            (root / "nes" / "Mario.nes").write_bytes(b"fixture")
+            store = CatalogueStore(Path(directory) / "catalogue.sqlite3")
+            provider = LocalContentProvider({"nes": Path("/usr/bin/true")})
+            store.reconcile_local(provider, root)
+            game_id = store.list_games()[0].game_id
+
+            store.set_display_title_override(game_id, "My Mario")
+            store.suppress_artwork(game_id)
+            store.reconcile_local(provider, root)
+            record = store.get_game(game_id)
+
+        self.assertEqual(record.title, "My Mario")
+        self.assertEqual(record.display_title_override, "My Mario")
+        self.assertTrue(record.artwork_suppressed)

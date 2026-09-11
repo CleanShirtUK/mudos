@@ -24,3 +24,10 @@ class ArtworkTests(unittest.TestCase):
         with patch("lulu.artwork.SteamGridDBArtwork._request_json", side_effect=request):
             self.assertEqual(provider._find_image("steam", "440", "Team Fortress 2"), "https://cdn.example/grid.jpg")
         self.assertEqual(calls, ["/v2/grids/steam/440?dimensions=600x900"])
+
+    def test_suppressed_artwork_is_not_resolved(self) -> None:
+        provider = SteamGridDBArtwork(api_key="test", cache_dir=Path(tempfile.mkdtemp()))
+        game = type("Game", (), {"game_id": "local:1", "artwork_suppressed": True})()
+        with patch("lulu.artwork.SteamGridDBArtwork._resolve") as resolve:
+            self.assertEqual(provider.enrich([game]), {})
+        resolve.assert_not_called()
