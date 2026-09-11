@@ -76,7 +76,7 @@ class MetadataTests(unittest.TestCase):
         with patch.object(SteamGridDBArtwork, "_request_json", return_value={"data": [{"url": "https://cdn.example/grid.jpg"}]}) as request:
             with patch.object(SteamGridDBArtwork, "_download"):
                 provider.enrich([game])
-        self.assertEqual(request.call_args.args[1], "/v2/grids/game/42?dimensions=600x900")
+        self.assertEqual(request.call_args.args[0], "/v2/grids/game/42?dimensions=600x900")
 
 
 if __name__ == "__main__":
