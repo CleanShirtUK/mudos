@@ -13,7 +13,7 @@ class LocalContentTests(unittest.TestCase):
             (root / "ps2" / "Crazy Taxi (USA).bin").write_bytes(b"disc")
             (root / "ps2" / "Crazy Taxi (USA).cue").write_text('FILE "Crazy Taxi (USA).bin" BINARY\n')
 
-            games = LocalContentProvider().list_installed(root)
+            games = LocalContentProvider({"ps2": Path("/runtime/pcsx2")}).list_installed(root)
 
         self.assertEqual(len(games), 1)
         self.assertEqual(games[0].install_state, "installed")

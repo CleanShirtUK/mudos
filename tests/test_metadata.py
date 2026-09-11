@@ -73,10 +73,10 @@ class MetadataTests(unittest.TestCase):
     def test_artwork_uses_persisted_canonical_id(self):
         game = type("Game", (), {"game_id": "local:nes:1", "provider": "local", "provider_id": "local:nes:1", "title": "Mario Kart", "metadata_provider": "steamgriddb", "metadata_game_id": "42"})()
         provider = SteamGridDBArtwork("test", Path(tempfile.mkdtemp()))
-        with patch.object(provider, "_request_json", return_value={"data": [{"url": "https://cdn.example/grid.jpg"}]}) as request:
+        with patch.object(SteamGridDBArtwork, "_request_json", return_value={"data": [{"url": "https://cdn.example/grid.jpg"}]}) as request:
             with patch.object(provider, "_download"):
                 provider.enrich([game])
-        self.assertEqual(request.call_args.args[0], "/v2/grids/game/42?dimensions=600x900")
+        self.assertEqual(request.call_args.args[1], "/v2/grids/game/42?dimensions=600x900")
 
 
 if __name__ == "__main__":

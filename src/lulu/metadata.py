@@ -160,7 +160,7 @@ def _platform_match(platform: str, candidate: MetadataCandidate) -> bool | None:
         return None
     expected = PLATFORM_ALIASES.get(platform, {platform.casefold()})
     actual = {item.casefold() for item in candidate.platforms}
-    return any(alias in actual or any(alias in item for alias in actual) for alias in expected)
+    return any(alias in actual or any(alias in actual_item for actual_item in actual) for alias in expected)
 
 
 def _similarity(query: str, candidate: MetadataCandidate) -> float:
