@@ -6,6 +6,7 @@ from pathlib import Path
 import re
 
 from .emulation import PLATFORMS, PlatformDefinition
+from .metadata import clean_local_title
 
 
 @dataclass(frozen=True, slots=True)
@@ -19,6 +20,7 @@ class LocalContentGame:
     reason: str
     runtime: str = ""
     platform_label: str = ""
+    source_title: str = ""
 
 
 class LocalContentProvider:
@@ -53,7 +55,7 @@ class LocalContentProvider:
                 games.append(
                     LocalContentGame(
                         content_id=self._content_id(platform, content.relative_to(root)),
-                        title=self._title(content),
+                        title=clean_local_title(content.name),
                         platform=platform,
                         content_path=str(content),
                         launchable=launchable,
@@ -61,6 +63,7 @@ class LocalContentProvider:
                         reason=reason,
                         runtime=definition.runtime,
                         platform_label=definition.label,
+                        source_title=content.name,
                     )
                 )
         return sorted(games, key=lambda game: game.title.casefold())
@@ -72,10 +75,6 @@ class LocalContentProvider:
         if paths:
             return any(path.is_file() for path in paths)
         return any(path.is_file() for path in definition.bios_root.iterdir()) if definition.bios_root.is_dir() else False
-
-    @staticmethod
-    def _title(content: Path) -> str:
-        return re.sub(r"\s+", " ", content.stem.replace("_", " ")).strip()
 
     @staticmethod
     def _content_id(platform: str, content: Path) -> str:

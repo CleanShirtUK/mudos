@@ -34,20 +34,24 @@ class SteamGridDBArtwork:
             artwork = self._resolve(
                 game_id, str(getattr(game, "provider")),
                 str(getattr(game, "provider_id")), str(getattr(game, "title")),
+                str(getattr(game, "metadata_provider", "")),
+                str(getattr(game, "metadata_game_id", "")),
             )
             if artwork:
                 resolved[game_id] = artwork
         return resolved
 
-    def _resolve(self, game_id: str, provider: str, provider_id: str, title: str) -> str:
-        key = hashlib.sha256(game_id.encode()).hexdigest()
+    def _resolve(self, game_id: str, provider: str, provider_id: str, title: str,
+                 metadata_provider: str = "", metadata_game_id: str = "") -> str:
+        identity = f"{metadata_provider}:{metadata_game_id}" if metadata_provider and metadata_game_id else game_id
+        key = hashlib.sha256(identity.encode()).hexdigest()
         metadata_path = self.cache_dir / f"{key}.json"
         try:
             metadata = json.loads(metadata_path.read_text()) if metadata_path.exists() else {}
             image_url = str(metadata.get("image_url", ""))
             if not image_url:
-                image_url = self._find_image(provider, provider_id, title)
-                self._write_json(metadata_path, {"image_url": image_url, "title": title})
+                image_url = self._find_image(provider, provider_id, title, metadata_provider, metadata_game_id)
+                self._write_json(metadata_path, {"image_url": image_url, "identity": identity})
             if not image_url:
                 return ""
             image_path = self.cache_dir / f"{key}.jpg"
@@ -58,16 +62,14 @@ class SteamGridDBArtwork:
             self._logger.warning("artwork enrichment failed for %s: %s", game_id, error)
             return ""
 
-    def _find_image(self, provider: str, provider_id: str, title: str) -> str:
-        if provider == "steam" and provider_id.isdecimal():
+    def _find_image(self, provider: str, provider_id: str, title: str,
+                    metadata_provider: str = "", metadata_game_id: str = "") -> str:
+        if metadata_provider == "steamgriddb" and metadata_game_id:
+            path = f"/v2/grids/game/{metadata_game_id}"
+        elif provider == "steam" and provider_id.isdecimal():
             path = f"/v2/grids/steam/{provider_id}"
         else:
-            query = urllib.parse.quote(title, safe="")
-            search = self._request_json(f"/v2/search/autocomplete/{query}")
-            candidates = search.get("data", [])
-            if not candidates:
-                return ""
-            path = f"/v2/grids/game/{candidates[0].get('id', '')}"
+            return ""
         result = self._request_json(path + "?dimensions=600x900")
         return next((str(item.get("url", "")) for item in result.get("data", []) if item.get("url")), "")
 

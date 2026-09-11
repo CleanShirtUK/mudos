@@ -21,6 +21,7 @@ from .emulator_runtime import EmulatorRuntimeAdapter
 from .emulation import PLATFORMS, ROM_ROOT, ensure_storage
 from .inputplumber import InputPlumberClient
 from .local_content import LocalContentProvider
+from .metadata import MetadataMatcher, SteamGridDBMetadata
 from .steam_provider import SteamProvider
 from .system_settings import CATEGORIES as SYSTEM_CATEGORIES, SystemSettingsProvider
 
@@ -45,19 +46,35 @@ class ConsoleCatalog:
     descriptor = DESCRIPTOR
 
     def __init__(self, store: CatalogueStore | None = None, provider: SteamProvider | None = None,
-                 local_provider: LocalContentProvider | None = None) -> None:
+                 local_provider: LocalContentProvider | None = None,
+                 metadata: SteamGridDBMetadata | None = None) -> None:
         self.store = store or CatalogueStore()
         self.provider = provider or SteamProvider()
         self.local_provider = local_provider or LocalContentProvider()
         self.artwork = SteamGridDBArtwork()
+        self.metadata = metadata or SteamGridDBMetadata()
+        self.matcher = MetadataMatcher(self.metadata)
 
     def refresh(self) -> list[dict[str, object]]:
         self.store.reconcile_steam(self.provider)
         ensure_storage()
         self.store.reconcile_local(self.local_provider, ROM_ROOT)
-        for game_id, artwork_url in self.artwork.enrich(self.store.list_games()).items():
+        for game in self.store.list_games():
+            if self.store.needs_metadata_match(game.game_id):
+                self.store.apply_metadata_match(
+                    game.game_id, self.matcher.match(game.source_title or game.title, game.platform)
+                )
+        games = self.store.list_games()
+        for game_id, artwork_url in self.artwork.enrich(games).items():
             self.store.set_artwork_url(game_id, artwork_url)
         return [game.as_dict() for game in self.store.list_games()]
+
+    def set_metadata_match(self, game_id: str, provider: str, metadata_game_id: str,
+                           canonical_title: str) -> None:
+        self.store.set_metadata_match(game_id, provider, metadata_game_id, canonical_title)
+
+    def clear_metadata_match(self, game_id: str) -> None:
+        self.store.clear_metadata_match(game_id)
 
     def platform_categories(self) -> list[dict[str, str]]:
         return [{"scope": f"platform:{platform}", "platform": platform, "label": label}
