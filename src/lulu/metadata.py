@@ -112,7 +112,35 @@ class SteamGridDBMetadata:
             except (OSError, ValueError, urllib.error.URLError, TimeoutError) as error:
                 self._logger.warning("metadata search failed: %s", error)
                 return None
-        return [self._candidate(item) for item in payload.get("data", []) if isinstance(item, dict)]
+        candidates = [self._candidate(item) for item in payload.get("data", []) if isinstance(item, dict)]
+        hydrated: list[MetadataCandidate] = []
+        for candidate in candidates[:10]:
+            if candidate.platforms or not candidate.game_id:
+                hydrated.append(candidate)
+                continue
+            details = self._game(candidate.game_id)
+            if details:
+                merged = dict(candidate.raw or {})
+                merged.update(details)
+                hydrated.append(self._candidate(merged))
+            else:
+                hydrated.append(candidate)
+        return hydrated + candidates[10:]
+
+    def _game(self, game_id: str) -> dict[str, object] | None:
+        key = hashlib.sha256(f"game:{game_id}".encode()).hexdigest()
+        payload = self._cached(key)
+        if payload is not None:
+            return payload
+        try:
+            payload = self._request_json(f"/v2/games/id/{urllib.parse.quote(game_id, safe='')}")
+            data = payload.get("data")
+            if isinstance(data, dict):
+                self._write_cache(key, data)
+                return data
+        except (OSError, ValueError, urllib.error.URLError, TimeoutError) as error:
+            self._logger.warning("metadata details failed for %s: %s", game_id, error)
+        return None
 
     def _request_json(self, path: str) -> dict[str, object]:
         request = urllib.request.Request(

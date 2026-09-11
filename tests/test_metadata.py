@@ -47,7 +47,7 @@ class MetadataTests(unittest.TestCase):
     def test_search_cache_avoids_second_request(self):
         with tempfile.TemporaryDirectory() as directory:
             provider = SteamGridDBMetadata("test", Path(directory))
-            with patch.object(provider, "_request_json", return_value={"data": [{"id": 7, "name": "Mario"}]}) as request:
+            with patch.object(provider, "_request_json", return_value={"data": [{"id": 7, "name": "Mario", "platforms": ["NES"]}]}) as request:
                 self.assertEqual(provider.search("Mario", "nes")[0].game_id, "7")
                 self.assertEqual(provider.search("Mario", "nes")[0].game_id, "7")
             request.assert_called_once()

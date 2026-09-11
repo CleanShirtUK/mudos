@@ -166,13 +166,14 @@ class CatalogueStore:
         return not row[2] or current - row[2] >= 86400
 
     def apply_metadata_match(self, game_id: str, match: MetadataMatch) -> None:
-        if not self.needs_metadata_match(game_id, now=0) and self.connection.execute("SELECT match_locked FROM games WHERE game_id=?", (game_id,)).fetchone()[0]:
+        row = self.connection.execute("SELECT match_locked FROM games WHERE game_id=?", (game_id,)).fetchone()
+        if row is None or row[0]:
             return
         title = match.canonical_title if match.status == "matched" else match.normalized_search_title
         self.connection.execute(
             """UPDATE games SET title=?, normalized_search_title=?, metadata_provider=?, metadata_game_id=?,
                canonical_title=?, match_status=?, match_method=?, match_confidence=?, match_locked=0,
-               metadata_checked_at=?, artwork_url=CASE WHEN ?='matched' THEN '' ELSE artwork_url END,
+               metadata_checked_at=?, artwork_url=artwork_url,
                updated_at=unixepoch() WHERE game_id=? AND match_locked=0""",
             (title, match.normalized_search_title, match.provider, match.game_id, match.canonical_title,
              match.status, match.method, match.confidence, int(time.time()), match.status, game_id),
