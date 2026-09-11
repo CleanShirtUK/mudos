@@ -36,6 +36,8 @@ def _is_noise_token(value: str) -> bool:
         value in NOISE_WORDS
         or value in NOISE_REGION_WORDS
         or bool(re.fullmatch(r"[0-9a-f]{8,20}", value))
+        or bool(re.fullmatch(r"\d+(?:\.\d+)+", value))
+        or bool(re.fullmatch(r"\d{1,3}", value))
         or bool(re.fullmatch(r"[a-z]{1,3}\d+(?:\.\d+)*", value))
         or bool(re.fullmatch(r"[a-z]{2,3}", value) and value not in {"the", "and"})
         or bool(re.fullmatch(r"(?:rev|revision|v|version)\s*\d+[a-z]?", value))

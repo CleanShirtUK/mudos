@@ -29,6 +29,7 @@ class MetadataTests(unittest.TestCase):
         self.assertEqual(clean_local_title("Mario Kart Wii (Europe, Australia) (En,Fr,De,Es,It).rvz"), "Mario Kart Wii")
         self.assertEqual(clean_local_title("Mario.Kart.8.Deluxe.DLC.Booster.Course.Pass.0100152000023001.v65536.nsp"), "Mario Kart 8 Deluxe")
         self.assertEqual(clean_local_title("Sonic the Hedgehog (JUE) [!].bin"), "Sonic the Hedgehog")
+        self.assertEqual(clean_local_title("Super Mario Bros. Wonder[010015100B514000][1.0.0][0][16.0.3].nsp"), "Super Mario Bros Wonder")
 
     def test_platform_match_beats_wrong_platform_and_ambiguity_is_preserved(self):
         candidates = [
