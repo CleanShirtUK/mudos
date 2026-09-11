@@ -176,7 +176,7 @@ class CatalogueStore:
                metadata_checked_at=?, artwork_url=artwork_url,
                updated_at=unixepoch() WHERE game_id=? AND match_locked=0""",
             (title, match.normalized_search_title, match.provider, match.game_id, match.canonical_title,
-             match.status, match.method, match.confidence, int(time.time()), match.status, game_id),
+             match.status, match.method, match.confidence, int(time.time()), game_id),
         )
         self.connection.commit()
 
