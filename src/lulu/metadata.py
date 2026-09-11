@@ -48,7 +48,7 @@ def clean_local_title(value: str) -> str:
     title = re.sub(r"(?<!\d)\.(?!\d)", " ", title)
 
     def remove_group(match: re.Match[str]) -> str:
-        contents = re.sub(r"\s+", " ", match.group(1).strip())
+        contents = re.sub(r"\s+", " ", (match.group(1) or match.group(2) or "").strip())
         parts = [part.strip() for part in re.split(r"[,;/]+", contents) if part.strip()]
         return "" if parts and all(_is_noise_token(part) for part in parts) else match.group(0)
 
