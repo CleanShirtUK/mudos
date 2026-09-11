@@ -25,6 +25,14 @@ class ConsoleBridgeTests(unittest.TestCase):
         self.assertIn('if urlparse(self.path).path == "/state":', source)
         self.assertIn("call_get_state()", source)
 
+    def test_metadata_options_paths_use_the_service_boundary(self) -> None:
+        source = (ROOT / "scripts" / "console-ui-bridge.py").read_text()
+        for path in ("/metadata/search", "/metadata/match/", "/metadata/title/", "/metadata/artwork/"):
+            self.assertIn(path, source)
+        for method_name in ("call_search_metadata", "call_set_metadata_match", "call_set_title_override",
+                            "call_clear_title_override", "call_suppress_artwork", "call_restore_artwork"):
+            self.assertIn(method_name, source)
+
 
 if __name__ == "__main__":
     unittest.main()

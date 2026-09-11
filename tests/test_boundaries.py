@@ -9,6 +9,8 @@ from lulu.applicationd import ApplicationCatalog
 from lulu.console_sessiond import SessionStateModel
 from lulu.console_ui import ConsoleUi
 from lulu.consoled import ConsoleCatalog
+from lulu.catalogue import CatalogueGame, CatalogueStore
+from lulu.metadata import MetadataCandidate
 from lulu.controllerd import Controller, ControllerRegistry
 from lulu.controllerd import default_inputplumber_client
 from lulu.contracts import InputMode, Lifecycle, Overlay, Role, ServiceName
@@ -48,6 +50,60 @@ def input_mode_interface(
 
 
 class BoundaryTests(unittest.TestCase):
+    def test_console_catalog_metadata_search_exposes_duplicate_candidates(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = CatalogueStore(Path(directory) / "catalogue.sqlite3")
+            store._upsert(CatalogueGame(
+                "local:ps2:1", "local", "local:ps2:1", "Shadow of the Colossus", "ps2",
+                "installed", True, "/roms/shadow.iso", "", 0, source_title="Shadow of the Colossus",
+                normalized_search_title="Shadow of the Colossus",
+            ))
+            store.connection.commit()
+
+            class FakeMetadata:
+                def search(self, query, platform):
+                    return [MetadataCandidate("86", "Shadow of the Colossus"), MetadataCandidate("5414306", "Shadow of the Colossus")]
+
+            catalogue = ConsoleCatalog(store=store, metadata=FakeMetadata())
+            results = catalogue.metadata_search("local:ps2:1", "Shadow of the Colossus")
+
+        self.assertEqual([result["id"] for result in results], ["86", "5414306"])
+
+    def test_metadata_match_operations_preserve_launch_identity(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = CatalogueStore(Path(directory) / "catalogue.sqlite3")
+            store._upsert(CatalogueGame(
+                "local:nes:1", "local", "local:nes:1", "Mario", "nes", "installed", True,
+                "/roms/mario.nes", "", 0, source_title="Mario", normalized_search_title="Mario",
+            ))
+            store.connection.commit()
+            catalogue = ConsoleCatalog(store=store)
+            catalogue.artwork = type("Artwork", (), {"enrich": lambda self, games: {}})()
+            catalogue.apply_metadata_match("local:nes:1", "steamgriddb", "42", "Mario Kart")
+            record = store.get_game("local:nes:1")
+
+        self.assertEqual((record.provider, record.provider_id), ("local", "local:nes:1"))
+        self.assertEqual((record.metadata_provider, record.metadata_game_id, record.match_status),
+                         ("steamgriddb", "42", "manual"))
+
+    def test_metadata_search_failure_does_not_mutate_game(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = CatalogueStore(Path(directory) / "catalogue.sqlite3")
+            store._upsert(CatalogueGame(
+                "local:nes:1", "local", "local:nes:1", "Mario", "nes", "installed", True,
+                "/roms/mario.nes", "", 0, source_title="Mario", normalized_search_title="Mario",
+            ))
+            store.connection.commit()
+
+            class FailedMetadata:
+                def search(self, query, platform):
+                    return None
+
+            catalogue = ConsoleCatalog(store=store, metadata=FailedMetadata())
+            self.assertEqual(catalogue.metadata_search("local:nes:1", "Mario"), [])
+            record = store.get_game("local:nes:1")
+
+        self.assertEqual((record.title, record.metadata_game_id, record.match_status), ("Mario", "", ""))
     def test_all_first_step_boundaries_are_explicit(self) -> None:
         self.assertEqual(
             {
