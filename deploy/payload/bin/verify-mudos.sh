@@ -82,7 +82,8 @@ fi
 
 connector=$(sed -n 's/^LULU_OUTPUT_CONNECTOR=//p' /etc/lulu/presentation.conf | tr -d '"' | tail -n 1)
 if [[ -n "$connector" ]]; then
-    [[ -f "/sys/class/drm/card0-$connector/status" && "$(<"/sys/class/drm/card0-$connector/status")" == connected ]] || fail "configured connector is not connected: $connector"
+    status_path=$(compgen -G "/sys/class/drm/card*-$connector/status" | head -n 1 || true)
+    [[ -n "$status_path" && "$(<"$status_path")" == connected ]] || fail "configured connector is not connected: $connector"
 else
     mapfile -t outputs < <(for status in /sys/class/drm/card*-*/status; do [[ -f "$status" && "$(<"$status")" == connected ]] && basename "$(dirname "$status")" | cut -d- -f2-; done | sort -u)
     ((${#outputs[@]} == 1)) || fail "expected one connected DRM output, found: ${outputs[*]:-none}"

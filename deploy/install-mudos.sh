@@ -141,7 +141,8 @@ verify_installed() {
     local connector
     connector="$(sed -n 's/^LULU_OUTPUT_CONNECTOR=//p' /etc/lulu/presentation.conf | tr -d '"' | tail -n 1)"
     if [[ -n "$connector" ]]; then
-        [[ -f "/sys/class/drm/card0-$connector/status" && "$(<"/sys/class/drm/card0-$connector/status")" == connected ]] || die "configured connector is not connected: $connector"
+        status_path="$(compgen -G "/sys/class/drm/card*-$connector/status" | head -n 1 || true)"
+        [[ -n "$status_path" && "$(<"$status_path")" == connected ]] || die "configured connector is not connected: $connector"
     else
         mapfile -t connectors < <(for status in /sys/class/drm/card*-*/status; do [[ -f "$status" && "$(<"$status")" == connected ]] && basename "$(dirname "$status")" | cut -d- -f2-; done | sort -u)
         ((${#connectors[@]} == 1)) || die "expected one connected DRM output, found: ${connectors[*]:-none}"
