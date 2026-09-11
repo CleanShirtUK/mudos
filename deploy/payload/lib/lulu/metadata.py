@@ -16,9 +16,10 @@ import urllib.request
 NOISE_WORDS = {
     "a", "b", "beta", "cart", "demo", "dump", "e", "en", "eng", "f", "fr",
     "fra", "g", "german", "i", "it", "j", "jpn", "japan", "k", "proto",
-    "rev", "revision", "sample", "spanish", "t", "translation", "u", "usa",
-    "v", "version", "world",
+    "base", "cart", "dlc", "game", "nsp", "rev", "revision", "sample", "spanish",
+    "t", "translation", "u", "usa", "v", "version", "world",
 }
+NOISE_REGION_WORDS = {"australia", "europe", "japan", "korea", "usa", "world"}
 PLATFORM_ALIASES = {
     "nes": {"nes", "famicom", "nintendo entertainment system"},
     "genesis": {"genesis", "mega drive", "sega genesis", "sega mega drive"},
@@ -33,6 +34,12 @@ def _is_noise_token(value: str) -> bool:
     value = value.casefold().strip()
     return (
         value in NOISE_WORDS
+        or value in NOISE_REGION_WORDS
+        or bool(re.fullmatch(r"[0-9a-f]{8,20}", value))
+        or bool(re.fullmatch(r"\d+(?:\.\d+)+", value))
+        or bool(re.fullmatch(r"\d{1,3}", value))
+        or bool(re.fullmatch(r"[a-z]{1,3}\d+(?:\.\d+)*", value))
+        or bool(re.fullmatch(r"[a-z]{2,3}", value) and value not in {"the", "and"})
         or bool(re.fullmatch(r"(?:rev|revision|v|version)\s*\d+[a-z]?", value))
         or bool(re.fullmatch(r"(?:disc|disk|cd|side)[ _-]*[0-9a-z]+", value))
         or bool(re.fullmatch(r"[a-z]{2,5}[0-9]{2,6}", value))
@@ -45,7 +52,8 @@ def clean_local_title(value: str) -> str:
     """Remove common ROM-set decoration while retaining meaningful punctuation."""
     title = Path(value).stem
     title = title.replace("_", " ")
-    title = re.sub(r"(?<!\d)\.(?!\d)", " ", title)
+    title = re.sub(r"(?<!\d)\.|\.(?!\d)", " ", title)
+    title = re.sub(r"\bDLC\b.*$", "", title, flags=re.IGNORECASE)
 
     def remove_group(match: re.Match[str]) -> str:
         contents = re.sub(r"\s+", " ", (match.group(1) or match.group(2) or "").strip())
@@ -58,8 +66,23 @@ def clean_local_title(value: str) -> str:
         title = re.sub(r"\(([^()]*)\)|\[([^\[\]]*)\]", lambda m: remove_group(m), title)
 
     title = re.sub(r"(?:\s|[-_.])+(?:[A-Z]{2,5}\d{2,6})$", "", title)
+    title = re.sub(r"\s+", " ", title)
+    tokens = title.split()
+    while tokens and _is_trailing_noise_token(tokens[-1]):
+        tokens.pop()
+    title = " ".join(tokens)
     title = re.sub(r"\s+", " ", title).strip(" ._-\t")
     return title
+
+
+def _is_trailing_noise_token(value: str) -> bool:
+    value = value.casefold().strip()
+    return (
+        value in NOISE_WORDS
+        or value in NOISE_REGION_WORDS
+        or bool(re.fullmatch(r"[0-9a-f]{8,20}", value))
+        or bool(re.fullmatch(r"[a-z]{1,3}\d+(?:\.\d+)*", value))
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -193,7 +216,20 @@ def _platform_match(platform: str, candidate: MetadataCandidate) -> bool | None:
 
 def _similarity(query: str, candidate: MetadataCandidate) -> float:
     values = (candidate.title, *candidate.aliases)
-    return max(difflib.SequenceMatcher(None, query.casefold(), value.casefold()).ratio() for value in values if value)
+    def token_sort(value: str) -> str:
+        return " ".join(sorted(re.findall(r"[a-z0-9]+", value.casefold())))
+
+    return max(
+        max(
+            difflib.SequenceMatcher(None, query.casefold(), value.casefold()).ratio(),
+            difflib.SequenceMatcher(None, token_sort(query), token_sort(value)).ratio(),
+        )
+        for value in values if value
+    )
+
+
+def _title_key(value: str) -> str:
+    return " ".join(sorted(re.findall(r"[a-z0-9]+", value.casefold())))
 
 
 class MetadataMatcher:
@@ -226,9 +262,14 @@ class MetadataMatcher:
         if score < self.minimum:
             status = "unmatched"
             method = "low-confidence"
-        elif len(ranked) > 1 and score - next_score < self.margin:
+        elif (
+            len(ranked) > 1
+            and score == next_score
+            and _title_key(query) == _title_key(candidate.title)
+            and _title_key(candidate.title) == _title_key(ranked[1][1].title)
+        ):
             status = "ambiguous"
-            method = "close-results"
+            method = "equal-title-results"
         else:
             status = "matched"
             method = "platform-exact" if _platform_match(platform, candidate) else "title"

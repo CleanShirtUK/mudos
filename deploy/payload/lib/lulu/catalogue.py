@@ -35,6 +35,8 @@ class CatalogueGame:
     match_confidence: float = 0.0
     match_locked: bool = False
     metadata_checked_at: int = 0
+    display_title_override: str = ""
+    artwork_suppressed: bool = False
 
     @classmethod
     def from_steam(cls, game: InstalledSteamGame) -> "CatalogueGame":
@@ -63,7 +65,7 @@ class CatalogueGame:
 IDENTITY_COLUMNS = (
     "source_title", "normalized_search_title", "metadata_provider", "metadata_game_id",
     "canonical_title", "match_status", "match_method", "match_confidence",
-    "match_locked", "metadata_checked_at",
+    "match_locked", "metadata_checked_at", "display_title_override", "artwork_suppressed",
 )
 TEMPORARY_METADATA_RETRY_SECONDS = 15 * 60
 NORMAL_METADATA_RETRY_SECONDS = 24 * 60 * 60
@@ -93,7 +95,8 @@ class CatalogueStore:
                       "metadata_provider": "TEXT NOT NULL DEFAULT ''", "metadata_game_id": "TEXT NOT NULL DEFAULT ''",
                       "canonical_title": "TEXT NOT NULL DEFAULT ''", "match_status": "TEXT NOT NULL DEFAULT ''",
                       "match_method": "TEXT NOT NULL DEFAULT ''", "match_confidence": "REAL NOT NULL DEFAULT 0",
-                      "match_locked": "INTEGER NOT NULL DEFAULT 0", "metadata_checked_at": "INTEGER NOT NULL DEFAULT 0"}
+                       "match_locked": "INTEGER NOT NULL DEFAULT 0", "metadata_checked_at": "INTEGER NOT NULL DEFAULT 0",
+                       "display_title_override": "TEXT NOT NULL DEFAULT ''", "artwork_suppressed": "INTEGER NOT NULL DEFAULT 0"}
         for name, definition in migrations.items():
             if name not in columns:
                 self.connection.execute(f"ALTER TABLE games ADD COLUMN {name} {definition}")
@@ -113,8 +116,9 @@ class CatalogueStore:
                 install_dir=excluded.install_dir, runtime=excluded.runtime,
                 platform_label=excluded.platform_label, source_title=excluded.source_title,
                 normalized_search_title=excluded.normalized_search_title,
-                title=CASE WHEN games.match_locked OR games.match_status='matched' OR games.match_status='manual'
-                           THEN games.title ELSE excluded.title END,
+                 title=CASE WHEN games.display_title_override != '' THEN games.display_title_override
+                            WHEN games.match_locked OR games.match_status='matched' OR games.match_status='manual'
+                            THEN games.title ELSE excluded.title END,
                 artwork_url=CASE WHEN games.metadata_game_id != excluded.metadata_game_id
                                  THEN games.artwork_url ELSE excluded.artwork_url END,
                 last_played=MAX(games.last_played, excluded.last_played), updated_at=excluded.updated_at""",
@@ -176,24 +180,25 @@ class CatalogueStore:
         return not row[4] or current - row[4] >= cooldown
 
     def apply_metadata_match(self, game_id: str, match: MetadataMatch) -> None:
-        row = self.connection.execute("SELECT match_locked FROM games WHERE game_id=?", (game_id,)).fetchone()
+        row = self.connection.execute("SELECT match_locked, display_title_override FROM games WHERE game_id=?", (game_id,)).fetchone()
         if row is None or row[0]:
             return
-        title = match.canonical_title if match.status == "matched" else match.normalized_search_title
+        title = row[1] or (match.canonical_title if match.status == "matched" else match.normalized_search_title)
         self.connection.execute(
             """UPDATE games SET title=?, normalized_search_title=?, metadata_provider=?, metadata_game_id=?,
                canonical_title=?, match_status=?, match_method=?, match_confidence=?, match_locked=0,
-               metadata_checked_at=?, artwork_url=artwork_url,
+                metadata_checked_at=?, artwork_url=artwork_url,
                updated_at=unixepoch() WHERE game_id=? AND match_locked=0""",
-            (title, match.normalized_search_title, match.provider, match.game_id, match.canonical_title,
-             match.status, match.method, match.confidence, int(time.time()), game_id),
+             (title, match.normalized_search_title, match.provider, match.game_id, match.canonical_title,
+              match.status, match.method, match.confidence, int(time.time()), game_id),
         )
         self.connection.commit()
 
     def set_metadata_match(self, game_id: str, provider: str, metadata_game_id: str,
                            canonical_title: str) -> None:
         self.connection.execute(
-            """UPDATE games SET title=?, metadata_provider=?, metadata_game_id=?, canonical_title=?,
+            """UPDATE games SET title=CASE WHEN display_title_override != '' THEN display_title_override ELSE ? END,
+               metadata_provider=?, metadata_game_id=?, canonical_title=?,
                match_status='manual', match_method='manual', match_confidence=1, match_locked=1,
                metadata_checked_at=unixepoch(), artwork_url='' WHERE game_id=?""",
             (canonical_title, provider, metadata_game_id, canonical_title, game_id),
@@ -204,11 +209,11 @@ class CatalogueStore:
         row = self.get_game(game_id)
         if row is None:
             return
-        title = row.normalized_search_title or clean_local_title(row.source_title or row.title)
+        title = row.display_title_override or row.normalized_search_title or clean_local_title(row.source_title or row.title)
         self.connection.execute(
             """UPDATE games SET title=?, metadata_provider='', metadata_game_id='', canonical_title='',
                match_status='', match_method='manual-cleared', match_confidence=0, match_locked=0,
-               metadata_checked_at=0, artwork_url='' WHERE game_id=?""", (title, game_id),
+               metadata_checked_at=0, artwork_url='', artwork_suppressed=0 WHERE game_id=?""", (title, game_id),
         )
         self.connection.commit()
 
@@ -218,4 +223,36 @@ class CatalogueStore:
 
     def set_artwork_url(self, game_id: str, artwork_url: str) -> None:
         self.connection.execute("UPDATE games SET artwork_url=?, updated_at=unixepoch() WHERE game_id=?", (artwork_url, game_id))
+        self.connection.commit()
+
+    def set_display_title_override(self, game_id: str, title: str) -> None:
+        self.connection.execute(
+            "UPDATE games SET title=?, display_title_override=?, updated_at=unixepoch() WHERE game_id=?",
+            (title, title, game_id),
+        )
+        self.connection.commit()
+
+    def clear_display_title_override(self, game_id: str) -> None:
+        row = self.get_game(game_id)
+        if row is None:
+            return
+        title = row.canonical_title or row.normalized_search_title or clean_local_title(row.source_title or row.title)
+        self.connection.execute(
+            "UPDATE games SET title=?, display_title_override='', updated_at=unixepoch() WHERE game_id=?",
+            (title, game_id),
+        )
+        self.connection.commit()
+
+    def suppress_artwork(self, game_id: str) -> None:
+        self.connection.execute(
+            "UPDATE games SET artwork_url='', artwork_suppressed=1, updated_at=unixepoch() WHERE game_id=?",
+            (game_id,),
+        )
+        self.connection.commit()
+
+    def restore_artwork(self, game_id: str) -> None:
+        self.connection.execute(
+            "UPDATE games SET artwork_suppressed=0, updated_at=unixepoch() WHERE game_id=?",
+            (game_id,),
+        )
         self.connection.commit()

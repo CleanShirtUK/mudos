@@ -30,6 +30,8 @@ class SteamGridDBArtwork:
             return {}
         resolved: dict[str, str] = {}
         for game in games:
+            if bool(getattr(game, "artwork_suppressed", False)):
+                continue
             game_id = str(getattr(game, "game_id"))
             artwork = self._resolve(
                 game_id, str(getattr(game, "provider")),
