@@ -80,6 +80,11 @@ def discover_presentation_output(drm_path: str = "/sys/class/drm") -> str:
     )
     if not connected:
         raise RuntimeError("no connected DRM presentation output found")
+    if len(connected) > 1:
+        raise RuntimeError(
+            "multiple connected DRM presentation outputs found; set LULU_OUTPUT_CONNECTOR: "
+            + ", ".join(connected)
+        )
     return connected[0]
 
 

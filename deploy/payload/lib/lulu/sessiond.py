@@ -48,6 +48,7 @@ class ConsoleSessionInterface(ServiceInterface):
         self._inputplumber_event: asyncio.Event | None = None
         self._initialized_composites: set[str] = set()
         self._presentation_watchdog_task: asyncio.Task[None] | None = None
+        self._shell_selection_task: asyncio.Task[None] | None = None
         self._bootstrap_output = os.environ.get("LULU_OUTPUT_CONNECTOR")
         self.supervisor = ProcessSupervisor(
             model,
@@ -88,8 +89,6 @@ class ConsoleSessionInterface(ServiceInterface):
 
     async def start_controller_monitor(self) -> None:
         composites = await asyncio.to_thread(self._inputplumber.runtime_composite_statuses)
-        if self._inputplumber.object_path not in composites:
-            raise RuntimeError("persistent InputPlumber composite is unavailable")
         self.controller_registry.observe_runtime_composites(composites)
         for object_path, (_, source_paths) in composites.items():
             if source_paths:
@@ -202,9 +201,34 @@ class ConsoleSessionInterface(ServiceInterface):
             nested_height=invocation.nested_height,
         )
         shell = str(Path(__file__).resolve().parents[2] / "scripts" / "console-ui.sh")
-        await self.supervisor.launch_shell(invocation.argv([shell]), 15000, select_shell=True)
+        await self.supervisor.launch_shell(invocation.argv([shell]), 15000, select_shell=False)
+        self._shell_selection_task = asyncio.create_task(self._select_ready_shell())
+
+    async def _select_ready_shell(self) -> None:
+        marker = Path(os.environ.get("LULU_SHELL_PID_FILE", "/run/user/958/mudos-shell.pid"))
+        try:
+            deadline = asyncio.get_running_loop().time() + 15
+            while asyncio.get_running_loop().time() < deadline:
+                try:
+                    pid = int(marker.read_text().strip())
+                except (FileNotFoundError, ValueError):
+                    await asyncio.sleep(0.05)
+                    continue
+                try:
+                    await asyncio.to_thread(self.supervisor._presentation.select_shell, pid)
+                    return
+                except (OSError, RuntimeError, TimeoutError, subprocess.SubprocessError) as error:
+                    logging.getLogger("lulu.sessiond").warning("shell window selection pending: %s", error)
+                    await asyncio.sleep(0.05)
+            logging.getLogger("lulu.sessiond").error("Mudos shell readiness window was not found")
+        except asyncio.CancelledError:
+            raise
 
     async def stop_controller_monitor(self) -> None:
+        if self._shell_selection_task is not None:
+            self._shell_selection_task.cancel()
+            await asyncio.gather(self._shell_selection_task, return_exceptions=True)
+            self._shell_selection_task = None
         if self._controller_monitor_task is not None:
             self._controller_monitor_task.cancel()
             await asyncio.gather(self._controller_monitor_task, return_exceptions=True)

@@ -289,6 +289,19 @@ class BoundaryTests(unittest.TestCase):
             (drm / "status").write_text("connected\n")
             self.assertEqual(discover_presentation_output(directory), "HDMI-A-1")
 
+    def test_gamescope_rejects_ambiguous_connected_connectors(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            for connector in ("HDMI-A-1", "DP-1"):
+                drm = Path(directory) / f"card0-{connector}"
+                drm.mkdir(parents=True)
+                (drm / "status").write_text("connected\n")
+            with self.assertRaisesRegex(RuntimeError, "multiple connected"):
+                discover_presentation_output(directory)
+
+    def test_session_can_start_without_a_controller_requirement(self) -> None:
+        source = (Path(__file__).parents[1] / "src/lulu/sessiond.py").read_text()
+        self.assertNotIn('raise RuntimeError("persistent InputPlumber composite is unavailable")', source)
+
 
 if __name__ == "__main__":
     unittest.main()

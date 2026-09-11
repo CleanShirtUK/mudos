@@ -260,7 +260,14 @@ async def main() -> None:
     qml = os.environ.get("LULU_UI_FILE", "/opt/lulu/ui/ConsoleShell.qml")
     shell = os.environ.get("LULU_SHELL_EXECUTABLE", "/opt/lulu/bin/lulu-shell")
     process = await asyncio.create_subprocess_exec(shell, qml, env=environment)
-    await process.wait()
+    marker = Path(os.environ.get("LULU_SHELL_PID_FILE", "/run/user/958/mudos-shell.pid"))
+    temporary_marker = marker.with_name(f".{marker.name}.{os.getpid()}")
+    temporary_marker.write_text(str(process.pid))
+    os.replace(temporary_marker, marker)
+    try:
+        await process.wait()
+    finally:
+        marker.unlink(missing_ok=True)
     server.shutdown()
     bus.disconnect()
 
