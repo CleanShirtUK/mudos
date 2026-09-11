@@ -63,7 +63,7 @@ def summarize(results: list[dict[str, object]], manifest: list[dict[str, str]]) 
     collisions: dict[str, list[dict[str, object]]] = defaultdict(list)
     for item in results:
         platform = str(item["platform"])
-        by_platform[platform][str(item["match_status"])] += 1
+        by_platform[platform][_outcome(item)] += 1
         game_id = str(item.get("metadata_game_id", ""))
         if game_id:
             collisions[game_id].append(item)
@@ -85,41 +85,70 @@ def summarize(results: list[dict[str, object]], manifest: list[dict[str, str]]) 
             "count": len(items),
             "source_titles": sorted(str(item["source_title"]) for item in items),
             "normalized_titles": titles,
-            "classification": "review",
+            "classification": "expected-collapse" if len(titles) == 1 else "suspicious-collision",
         })
 
     unsupported = Counter(str(item["platform"]) for item in manifest if str(item["platform"]) not in PLATFORMS)
     return {
         "total_audited": len(results),
         "platforms": {platform: rates(counter) for platform, counter in sorted(by_platform.items())},
-        "overall": rates(Counter(str(item["match_status"]) for item in results)),
+        "overall": rates(Counter(_outcome(item) for item in results)),
         "canonical_id_collisions": collision_report,
         "unsupported_platform_files": dict(sorted(unsupported.items())),
         "representative": {
-            "ambiguous": [item for item in results if item["match_status"] == "ambiguous"][:10],
-            "unmatched": [item for item in results if item["match_status"] == "unmatched"][:10],
-            "matched": [item for item in results if item["match_status"] == "matched"][:10],
+            "ambiguous": [item for item in results if _outcome(item) == "ambiguous"][:10],
+            "unmatched": [item for item in results if _outcome(item) == "unmatched"][:10],
+            "low-confidence": [item for item in results if _outcome(item) == "low-confidence"][:10],
+            "network-error": [item for item in results if _outcome(item) == "network-error"][:10],
+            "matched": [item for item in results if _outcome(item) == "matched"][:10],
+        },
+        "review_examples": {
+            "normalization_review": [item for item in results if any(marker in str(item["normalized_search_title"]) for marker in ("(", "["))][:10],
+            "likely_false_positives": [item for item in results if _outcome(item) == "matched" and (float(item.get("confidence", 0)) >= .99 and len(str(item["normalized_search_title"])) <= 5)][:10],
+            "likely_false_negatives": [item for item in results if _outcome(item) in {"ambiguous", "low-confidence"}][:10],
+            "punctuation_review": [item for item in results if any(mark in str(item["source_title"]) for mark in ("&", ":", "!", "'"))][:10],
         },
     }
 
 
+def _outcome(item: dict[str, object]) -> str:
+    status = str(item.get("match_status", ""))
+    method = str(item.get("match_method", ""))
+    if status == "matched":
+        return "matched"
+    if status == "ambiguous":
+        return "ambiguous"
+    if method == "network-error":
+        return "network-error"
+    if method == "low-confidence":
+        return "low-confidence"
+    return "unmatched"
+
+
 def write_report(summary: dict[str, object], path: Path) -> None:
     lines = ["# ROM Corpus Metadata Baseline", "", f"Audited files: {summary['total_audited']}", ""]
-    lines += ["## Platform Results", "", "| Platform | Total | Matched | Ambiguous | Unmatched | Network error |", "|---|---:|---:|---:|---:|---:|"]
+    lines += ["## Platform Results", "", "| Platform | Total | Matched | Ambiguous | Low confidence | Unmatched | Network error |", "|---|---:|---:|---:|---:|---:|---:|"]
     for platform, data in summary["platforms"].items():
         counts = data["counts"]
-        lines.append(f"| {platform} | {data['total']} | {counts.get('matched', 0)} | {counts.get('ambiguous', 0)} | {counts.get('unmatched', 0)} | {counts.get('network-error', 0)} |")
+        lines.append(f"| {platform} | {data['total']} | {counts.get('matched', 0)} | {counts.get('ambiguous', 0)} | {counts.get('low-confidence', 0)} | {counts.get('unmatched', 0)} | {counts.get('network-error', 0)} |")
     lines += ["", "## Canonical ID Collisions", ""]
     for collision in summary["canonical_id_collisions"]:
-        lines.append(f"- `{collision['metadata_game_id']}`: {collision['count']} files, {collision['canonical_title']}; classification remains `review`." )
+        lines.append(f"- `{collision['metadata_game_id']}`: {collision['count']} files, {collision['canonical_title']}; classification `{collision['classification']}`." )
     if not summary["canonical_id_collisions"]:
         lines.append("No canonical-ID collisions.")
     lines += ["", "## Unsupported Platform Files", "", json.dumps(summary["unsupported_platform_files"], sort_keys=True), "", "## Representative Items", ""]
-    for status in ("matched", "ambiguous", "unmatched"):
+    for status in ("matched", "ambiguous", "low-confidence", "network-error", "unmatched"):
         lines.append(f"### {status}")
         for item in summary["representative"][status]:
             lines.append(f"- `{item['platform']}` `{item['source_title']}` -> `{item['normalized_search_title']}` -> `{item.get('canonical_title', '')}` ({item.get('metadata_game_id', '')}, confidence {item.get('confidence', 0)})")
         if not summary["representative"][status]:
+            lines.append("- None")
+    lines += ["", "## Review Examples", ""]
+    for category, items in summary["review_examples"].items():
+        lines.append(f"### {category.replace('_', ' ').title()}")
+        for item in items:
+            lines.append(f"- `{item['platform']}` `{item['source_title']}` -> `{item['normalized_search_title']}` ({item.get('canonical_title', '')}, {item.get('metadata_game_id', '')}, confidence {item.get('confidence', 0)})")
+        if not items:
             lines.append("- None")
     path.write_text("\n".join(lines) + "\n")
 

@@ -1,0 +1,2283 @@
+{
+  "canonical_id_collisions": [],
+  "overall": {
+    "counts": {
+      "ambiguous": 16,
+      "low-confidence": 12,
+      "matched": 9
+    },
+    "percentages": {
+      "ambiguous": 43.24,
+      "low-confidence": 32.43,
+      "matched": 24.32
+    },
+    "total": 37
+  },
+  "platforms": {
+    "genesis": {
+      "counts": {
+        "ambiguous": 2
+      },
+      "percentages": {
+        "ambiguous": 100.0
+      },
+      "total": 2
+    },
+    "nes": {
+      "counts": {
+        "ambiguous": 2
+      },
+      "percentages": {
+        "ambiguous": 100.0
+      },
+      "total": 2
+    },
+    "ps2": {
+      "counts": {
+        "ambiguous": 12,
+        "low-confidence": 3,
+        "matched": 9
+      },
+      "percentages": {
+        "ambiguous": 50.0,
+        "low-confidence": 12.5,
+        "matched": 37.5
+      },
+      "total": 24
+    },
+    "switch": {
+      "counts": {
+        "low-confidence": 8
+      },
+      "percentages": {
+        "low-confidence": 100.0
+      },
+      "total": 8
+    },
+    "wii": {
+      "counts": {
+        "low-confidence": 1
+      },
+      "percentages": {
+        "low-confidence": 100.0
+      },
+      "total": 1
+    }
+  },
+  "representative": {
+    "ambiguous": [
+      {
+        "audited_at": 1789130769,
+        "candidates": [
+          {
+            "id": "21778",
+            "platforms": [],
+            "title": "Crazy Taxi"
+          },
+          {
+            "id": "35507",
+            "platforms": [],
+            "title": "Crazy Taxi 2"
+          },
+          {
+            "id": "5506695",
+            "platforms": [],
+            "title": "CrazyTaiji"
+          },
+          {
+            "id": "5434972",
+            "platforms": [],
+            "title": "Crazy Space Taxi"
+          },
+          {
+            "id": "5524263",
+            "platforms": [],
+            "title": "Crazy"
+          }
+        ],
+        "canonical_title": "",
+        "confidence": 1.0,
+        "match_method": "close-results",
+        "match_status": "ambiguous",
+        "metadata_game_id": "",
+        "normalized_search_title": "Crazy Taxi",
+        "path": "ps2/Crazy Taxi (USA).cue",
+        "platform": "ps2",
+        "source_title": "Crazy Taxi (USA).cue"
+      },
+      {
+        "audited_at": 1789130771,
+        "candidates": [
+          {
+            "id": "33990",
+            "platforms": [],
+            "title": "Dragon Ball Z: Budokai"
+          },
+          {
+            "id": "1701",
+            "platforms": [],
+            "title": "Dragon Ball Z: Budokai 3"
+          },
+          {
+            "id": "56",
+            "platforms": [],
+            "title": "Dragon Ball Z: Budokai 2"
+          },
+          {
+            "id": "5258718",
+            "platforms": [],
+            "title": "Dragon Ball Z: Shin Budokai"
+          },
+          {
+            "id": "33639",
+            "platforms": [],
+            "title": "Dragon Ball Z: Budokai Tenkaichi"
+          }
+        ],
+        "canonical_title": "",
+        "confidence": 0.9333,
+        "match_method": "close-results",
+        "match_status": "ambiguous",
+        "metadata_game_id": "",
+        "normalized_search_title": "Dragon Ball Z - Budokai",
+        "path": "ps2/Dragon Ball Z - Budokai (USA).iso",
+        "platform": "ps2",
+        "source_title": "Dragon Ball Z - Budokai (USA).iso"
+      },
+      {
+        "audited_at": 1789130771,
+        "candidates": [
+          {
+            "id": "56",
+            "platforms": [],
+            "title": "Dragon Ball Z: Budokai 2"
+          },
+          {
+            "id": "1701",
+            "platforms": [],
+            "title": "Dragon Ball Z: Budokai 3"
+          },
+          {
+            "id": "33990",
+            "platforms": [],
+            "title": "Dragon Ball Z: Budokai"
+          },
+          {
+            "id": "5258718",
+            "platforms": [],
+            "title": "Dragon Ball Z: Shin Budokai"
+          },
+          {
+            "id": "38271",
+            "platforms": [],
+            "title": "Dragon Ball Z: Budokai Tenkaichi 2"
+          }
+        ],
+        "canonical_title": "",
+        "confidence": 0.9388,
+        "match_method": "close-results",
+        "match_status": "ambiguous",
+        "metadata_game_id": "",
+        "normalized_search_title": "Dragon Ball Z - Budokai 2",
+        "path": "ps2/Dragon Ball Z - Budokai 2 (USA).iso",
+        "platform": "ps2",
+        "source_title": "Dragon Ball Z - Budokai 2 (USA).iso"
+      },
+      {
+        "audited_at": 1789130772,
+        "candidates": [
+          {
+            "id": "1701",
+            "platforms": [],
+            "title": "Dragon Ball Z: Budokai 3"
+          },
+          {
+            "id": "56",
+            "platforms": [],
+            "title": "Dragon Ball Z: Budokai 2"
+          },
+          {
+            "id": "33990",
+            "platforms": [],
+            "title": "Dragon Ball Z: Budokai"
+          },
+          {
+            "id": "5258718",
+            "platforms": [],
+            "title": "Dragon Ball Z: Shin Budokai"
+          },
+          {
+            "id": "33972",
+            "platforms": [],
+            "title": "Dragon Ball Z: Budokai Tenkaichi 3"
+          }
+        ],
+        "canonical_title": "",
+        "confidence": 0.9388,
+        "match_method": "close-results",
+        "match_status": "ambiguous",
+        "metadata_game_id": "",
+        "normalized_search_title": "Dragon Ball Z - Budokai 3",
+        "path": "ps2/Dragon Ball Z - Budokai 3 (USA) (Greatest Hits).iso",
+        "platform": "ps2",
+        "source_title": "Dragon Ball Z - Budokai 3 (USA) (Greatest Hits).iso"
+      },
+      {
+        "audited_at": 1789130772,
+        "candidates": [
+          {
+            "id": "1701",
+            "platforms": [],
+            "title": "Dragon Ball Z: Budokai 3"
+          },
+          {
+            "id": "56",
+            "platforms": [],
+            "title": "Dragon Ball Z: Budokai 2"
+          },
+          {
+            "id": "33990",
+            "platforms": [],
+            "title": "Dragon Ball Z: Budokai"
+          },
+          {
+            "id": "5258718",
+            "platforms": [],
+            "title": "Dragon Ball Z: Shin Budokai"
+          },
+          {
+            "id": "33972",
+            "platforms": [],
+            "title": "Dragon Ball Z: Budokai Tenkaichi 3"
+          }
+        ],
+        "canonical_title": "",
+        "confidence": 0.9388,
+        "match_method": "close-results",
+        "match_status": "ambiguous",
+        "metadata_game_id": "",
+        "normalized_search_title": "Dragon Ball Z - Budokai 3",
+        "path": "ps2/Dragon Ball Z - Budokai 3 (USA).iso",
+        "platform": "ps2",
+        "source_title": "Dragon Ball Z - Budokai 3 (USA).iso"
+      },
+      {
+        "audited_at": 1789130772,
+        "candidates": [
+          {
+            "id": "33972",
+            "platforms": [],
+            "title": "Dragon Ball Z: Budokai Tenkaichi 3"
+          },
+          {
+            "id": "38271",
+            "platforms": [],
+            "title": "Dragon Ball Z: Budokai Tenkaichi 2"
+          },
+          {
+            "id": "5254091",
+            "platforms": [],
+            "title": "Dragon Ball Z: Budokai Tenkaichi 4"
+          },
+          {
+            "id": "33639",
+            "platforms": [],
+            "title": "Dragon Ball Z: Budokai Tenkaichi"
+          },
+          {
+            "id": "1701",
+            "platforms": [],
+            "title": "Dragon Ball Z: Budokai 3"
+          }
+        ],
+        "canonical_title": "",
+        "confidence": 0.8571,
+        "match_method": "close-results",
+        "match_status": "ambiguous",
+        "metadata_game_id": "",
+        "normalized_search_title": "Dragon Ball Z - Budokai Tenkaichi 3 (En,Ja)",
+        "path": "ps2/Dragon Ball Z - Budokai Tenkaichi 3 (USA) (En,Ja).iso",
+        "platform": "ps2",
+        "source_title": "Dragon Ball Z - Budokai Tenkaichi 3 (USA) (En,Ja).iso"
+      },
+      {
+        "audited_at": 1789130782,
+        "candidates": [
+          {
+            "id": "34529",
+            "platforms": [],
+            "title": "Need for Speed: Underground"
+          },
+          {
+            "id": "29882",
+            "platforms": [],
+            "title": "Need for Speed: Underground 2"
+          },
+          {
+            "id": "5498969",
+            "platforms": [],
+            "title": "Need for Speed: Underground J"
+          },
+          {
+            "id": "5452817",
+            "platforms": [],
+            "title": "Need For Speed Underground RTX"
+          },
+          {
+            "id": "34622",
+            "platforms": [],
+            "title": "Need for Speed: Underground Rivals"
+          }
+        ],
+        "canonical_title": "",
+        "confidence": 0.9455,
+        "match_method": "close-results",
+        "match_status": "ambiguous",
+        "metadata_game_id": "",
+        "normalized_search_title": "Need for Speed - Underground",
+        "path": "ps2/Need for Speed - Underground (USA).iso",
+        "platform": "ps2",
+        "source_title": "Need for Speed - Underground (USA).iso"
+      },
+      {
+        "audited_at": 1789130783,
+        "candidates": [
+          {
+            "id": "29882",
+            "platforms": [],
+            "title": "Need for Speed: Underground 2"
+          },
+          {
+            "id": "5498969",
+            "platforms": [],
+            "title": "Need for Speed: Underground J"
+          },
+          {
+            "id": "34529",
+            "platforms": [],
+            "title": "Need for Speed: Underground"
+          },
+          {
+            "id": "5452817",
+            "platforms": [],
+            "title": "Need For Speed Underground RTX"
+          },
+          {
+            "id": "34622",
+            "platforms": [],
+            "title": "Need for Speed: Underground Rivals"
+          }
+        ],
+        "canonical_title": "",
+        "confidence": 0.9492,
+        "match_method": "close-results",
+        "match_status": "ambiguous",
+        "metadata_game_id": "",
+        "normalized_search_title": "Need for Speed - Underground 2",
+        "path": "ps2/Need for Speed - Underground 2 (USA).iso",
+        "platform": "ps2",
+        "source_title": "Need for Speed - Underground 2 (USA).iso"
+      },
+      {
+        "audited_at": 1789130786,
+        "candidates": [
+          {
+            "id": "5414306",
+            "platforms": [],
+            "title": "Shadow of the Colossus"
+          },
+          {
+            "id": "86",
+            "platforms": [],
+            "title": "Shadow of the Colossus"
+          },
+          {
+            "id": "22267",
+            "platforms": [],
+            "title": "Shadow of the Mask"
+          },
+          {
+            "id": "35228",
+            "platforms": [],
+            "title": "Shadow of the Beast"
+          },
+          {
+            "id": "153",
+            "platforms": [],
+            "title": "Shadow Of the Groundhog"
+          }
+        ],
+        "canonical_title": "",
+        "confidence": 1.0,
+        "match_method": "close-results",
+        "match_status": "ambiguous",
+        "metadata_game_id": "",
+        "normalized_search_title": "Shadow of the Colossus",
+        "path": "ps2/Shadow of the Colossus (USA).iso",
+        "platform": "ps2",
+        "source_title": "Shadow of the Colossus (USA).iso"
+      },
+      {
+        "audited_at": 1789130791,
+        "candidates": [
+          {
+            "id": "35898",
+            "platforms": [],
+            "title": "Tony Hawk's Pro Skater 2"
+          },
+          {
+            "id": "36189",
+            "platforms": [],
+            "title": "Tony Hawk's Pro Skater 4"
+          },
+          {
+            "id": "5261605",
+            "platforms": [],
+            "title": "Tony Hawk's Pro Skater 2x"
+          },
+          {
+            "id": "5260463",
+            "platforms": [],
+            "title": "Tony Hawk's Pro Skater 1 + 2"
+          },
+          {
+            "id": "33986",
+            "platforms": [],
+            "title": "Tony Hawk's Pro Skater 3"
+          }
+        ],
+        "canonical_title": "",
+        "confidence": 0.8571,
+        "match_method": "close-results",
+        "match_status": "ambiguous",
+        "metadata_game_id": "",
+        "normalized_search_title": "Tony Hawk's Pro Skater 4 (v2.01)",
+        "path": "ps2/Tony Hawk's Pro Skater 4 (USA) (v2.01).iso",
+        "platform": "ps2",
+        "source_title": "Tony Hawk's Pro Skater 4 (USA) (v2.01).iso"
+      }
+    ],
+    "low-confidence": [
+      {
+        "audited_at": 1789130757,
+        "candidates": [
+          {
+            "id": "5323566",
+            "platforms": [],
+            "title": "Mario Kart Wii Deluxe"
+          },
+          {
+            "id": "36054",
+            "platforms": [],
+            "title": "Mario Kart Wii"
+          },
+          {
+            "id": "5330592",
+            "platforms": [],
+            "title": "Mario Kart Wii Riibalanced"
+          },
+          {
+            "id": "25624",
+            "platforms": [],
+            "title": "Mario Kart DS"
+          },
+          {
+            "id": "5322166",
+            "platforms": [],
+            "title": "Mario Kart Wii Black"
+          }
+        ],
+        "canonical_title": "",
+        "confidence": 0.6923,
+        "match_method": "low-confidence",
+        "match_status": "unmatched",
+        "metadata_game_id": "",
+        "normalized_search_title": "Mario Kart Wii (En,Fr,De,Es,It)",
+        "path": "wii/Mario Kart Wii (Europe, Australia) (En,Fr,De,Es,It).rvz",
+        "platform": "wii",
+        "source_title": "Mario Kart Wii (Europe, Australia) (En,Fr,De,Es,It).rvz"
+      },
+      {
+        "audited_at": 1789130776,
+        "candidates": [
+          {
+            "id": "1352",
+            "platforms": [],
+            "title": "Grand Theft Auto: San Andreas"
+          },
+          {
+            "id": "5464348",
+            "platforms": [],
+            "title": "Grand Theft Auto: San Andreas Misterix Mod"
+          },
+          {
+            "id": "62",
+            "platforms": [],
+            "title": "Grand Theft Auto: Chinatown Wars"
+          },
+          {
+            "id": "5301278",
+            "platforms": [],
+            "title": "Grand Theft Auto: San Andreas \u2013 The Definitive Edition"
+          },
+          {
+            "id": "5514526",
+            "platforms": [],
+            "title": "Grand Theft Auto: San Andreas - The Nextgen Edition"
+          }
+        ],
+        "canonical_title": "",
+        "confidence": 0.8358,
+        "match_method": "low-confidence",
+        "match_status": "unmatched",
+        "metadata_game_id": "",
+        "normalized_search_title": "Grand Theft Auto - San Andreas (v3.00)",
+        "path": "ps2/Grand Theft Auto - San Andreas (USA) (v3.00).iso",
+        "platform": "ps2",
+        "source_title": "Grand Theft Auto - San Andreas (USA) (v3.00).iso"
+      },
+      {
+        "audited_at": 1789130777,
+        "candidates": [
+          {
+            "id": "1351",
+            "platforms": [],
+            "title": "Grand Theft Auto: Vice City"
+          },
+          {
+            "id": "34363",
+            "platforms": [],
+            "title": "Grand Theft Auto: Vice City Stories"
+          },
+          {
+            "id": "1350",
+            "platforms": [],
+            "title": "Grand Theft Auto III"
+          },
+          {
+            "id": "5292842",
+            "platforms": [],
+            "title": "Grand Theft Auto: Shine o' Vice"
+          },
+          {
+            "id": "5432071",
+            "platforms": [],
+            "title": "Grand Theft Auto: Tightened Vice"
+          }
+        ],
+        "canonical_title": "",
+        "confidence": 0.8254,
+        "match_method": "low-confidence",
+        "match_status": "unmatched",
+        "metadata_game_id": "",
+        "normalized_search_title": "Grand Theft Auto - Vice City (v4.00)",
+        "path": "ps2/Grand Theft Auto - Vice City (USA) (v4.00).iso",
+        "platform": "ps2",
+        "source_title": "Grand Theft Auto - Vice City (USA) (v4.00).iso"
+      },
+      {
+        "audited_at": 1789130789,
+        "candidates": [
+          {
+            "id": "34479",
+            "platforms": [],
+            "title": "The Simpsons: Hit & Run"
+          },
+          {
+            "id": "38458",
+            "platforms": [],
+            "title": "The Simpsons Wrestling"
+          },
+          {
+            "id": "1659",
+            "platforms": [],
+            "title": "The Simpsons: Bart vs. the Space Mutants"
+          },
+          {
+            "id": "29918",
+            "platforms": [],
+            "title": "The Simpsons: Bart vs. the World"
+          },
+          {
+            "id": "35540",
+            "platforms": [],
+            "title": "The Simpsons Game"
+          }
+        ],
+        "canonical_title": "",
+        "confidence": 0.75,
+        "match_method": "low-confidence",
+        "match_status": "unmatched",
+        "metadata_game_id": "",
+        "normalized_search_title": "Simpsons, The - Hit & Run",
+        "path": "ps2/Simpsons, The - Hit & Run (USA).iso",
+        "platform": "ps2",
+        "source_title": "Simpsons, The - Hit & Run (USA).iso"
+      },
+      {
+        "audited_at": 1789130795,
+        "candidates": [
+          {
+            "id": "5246172",
+            "platforms": [],
+            "title": "CTR: Crash Team Racing - Nitro-Fueled"
+          },
+          {
+            "id": "36474",
+            "platforms": [],
+            "title": "CTR (Crash Team Racing)"
+          },
+          {
+            "id": "39046",
+            "platforms": [],
+            "title": "Crash Tag Team Racing"
+          },
+          {
+            "id": "5486134",
+            "platforms": [],
+            "title": "Crash Team Rumble"
+          },
+          {
+            "id": "90",
+            "platforms": [],
+            "title": "Crash of the Titans"
+          }
+        ],
+        "canonical_title": "",
+        "confidence": 0.8219,
+        "match_method": "low-confidence",
+        "match_status": "unmatched",
+        "metadata_game_id": "",
+        "normalized_search_title": "Crash Team Racing Nitro-Fueled (NSP)",
+        "path": "switch/Crash Team Racing Nitro-Fueled (NSP)(Base Game).nsp",
+        "platform": "switch",
+        "source_title": "Crash Team Racing Nitro-Fueled (NSP)(Base Game).nsp"
+      },
+      {
+        "audited_at": 1789130796,
+        "candidates": [
+          {
+            "id": "5249545",
+            "platforms": [],
+            "title": "Mario Kart 8 Deluxe"
+          },
+          {
+            "id": "5459784",
+            "platforms": [],
+            "title": "Mario Kart 8 Deluxe: CTGP Deluxe"
+          },
+          {
+            "id": "34744",
+            "platforms": [],
+            "title": "Mario Kart 8"
+          },
+          {
+            "id": "36068",
+            "platforms": [],
+            "title": "Mario Kart: Double Dash!!"
+          },
+          {
+            "id": "25624",
+            "platforms": [],
+            "title": "Mario Kart DS"
+          }
+        ],
+        "canonical_title": "",
+        "confidence": 0.6667,
+        "match_method": "low-confidence",
+        "match_status": "unmatched",
+        "metadata_game_id": "",
+        "normalized_search_title": "Mario Kart 8 Deluxe [0100152000022000]",
+        "path": "switch/Mario Kart 8 Deluxe [0100152000022000][v0].nsp",
+        "platform": "switch",
+        "source_title": "Mario Kart 8 Deluxe [0100152000022000][v0].nsp"
+      },
+      {
+        "audited_at": 1789130796,
+        "candidates": [
+          {
+            "id": "5249545",
+            "platforms": [],
+            "title": "Mario Kart 8 Deluxe"
+          },
+          {
+            "id": "5459784",
+            "platforms": [],
+            "title": "Mario Kart 8 Deluxe: CTGP Deluxe"
+          },
+          {
+            "id": "36068",
+            "platforms": [],
+            "title": "Mario Kart: Double Dash!!"
+          },
+          {
+            "id": "25624",
+            "platforms": [],
+            "title": "Mario Kart DS"
+          },
+          {
+            "id": "34744",
+            "platforms": [],
+            "title": "Mario Kart 8"
+          }
+        ],
+        "canonical_title": "",
+        "confidence": 0.623,
+        "match_method": "low-confidence",
+        "match_status": "unmatched",
+        "metadata_game_id": "",
+        "normalized_search_title": "Mario Kart 8 Deluxe [0100152000022800][US]",
+        "path": "switch/Mario Kart 8 Deluxe [0100152000022800][v1245184][US].nsp",
+        "platform": "switch",
+        "source_title": "Mario Kart 8 Deluxe [0100152000022800][v1245184][US].nsp"
+      },
+      {
+        "audited_at": 1789130796,
+        "candidates": [
+          {
+            "id": "5459784",
+            "platforms": [],
+            "title": "Mario Kart 8 Deluxe: CTGP Deluxe"
+          },
+          {
+            "id": "5249545",
+            "platforms": [],
+            "title": "Mario Kart 8 Deluxe"
+          },
+          {
+            "id": "36068",
+            "platforms": [],
+            "title": "Mario Kart: Double Dash!!"
+          },
+          {
+            "id": "35520",
+            "platforms": [],
+            "title": "Mario Kart: Super Circuit"
+          },
+          {
+            "id": "25624",
+            "platforms": [],
+            "title": "Mario Kart DS"
+          }
+        ],
+        "canonical_title": "",
+        "confidence": 0.4242,
+        "match_method": "low-confidence",
+        "match_status": "unmatched",
+        "metadata_game_id": "",
+        "normalized_search_title": "Mario Kart.8.Deluxe DLC Booster Course Pass.0100152000023001.v65536",
+        "path": "switch/Mario.Kart.8.Deluxe.DLC.Booster.Course.Pass.0100152000023001.v65536.nsp",
+        "platform": "switch",
+        "source_title": "Mario.Kart.8.Deluxe.DLC.Booster.Course.Pass.0100152000023001.v65536.nsp"
+      },
+      {
+        "audited_at": 1789130799,
+        "candidates": [
+          {
+            "id": "5258717",
+            "platforms": [],
+            "title": "New Super Mario Bros. U Deluxe"
+          },
+          {
+            "id": "5357638",
+            "platforms": [],
+            "title": "New Super Mario Bros. Deluxe!"
+          },
+          {
+            "id": "5486959",
+            "platforms": [],
+            "title": "New Super Mario Bros U. DS"
+          },
+          {
+            "id": "36219",
+            "platforms": [],
+            "title": "New Super Mario Bros. U"
+          },
+          {
+            "id": "5245271",
+            "platforms": [],
+            "title": "New Super Mario Bros. 2"
+          }
+        ],
+        "canonical_title": "",
+        "confidence": 0.7436,
+        "match_method": "low-confidence",
+        "match_status": "unmatched",
+        "metadata_game_id": "",
+        "normalized_search_title": "New Super Mario Bros U Deluxe [0100EA80032EA000]",
+        "path": "switch/New Super Mario Bros U Deluxe [0100EA80032EA000][v0].nsp",
+        "platform": "switch",
+        "source_title": "New Super Mario Bros U Deluxe [0100EA80032EA000][v0].nsp"
+      },
+      {
+        "audited_at": 1789130801,
+        "candidates": [
+          {
+            "id": "5266417",
+            "platforms": [],
+            "title": "Super Mario 3D All-Stars"
+          },
+          {
+            "id": "5266526",
+            "platforms": [],
+            "title": "Super Mario 3D World + Bowser\u2019s Fury"
+          },
+          {
+            "id": "36776",
+            "platforms": [],
+            "title": "Super Mario 3D Land"
+          },
+          {
+            "id": "36415",
+            "platforms": [],
+            "title": "Super Mario 3D World"
+          },
+          {
+            "id": "1690",
+            "platforms": [],
+            "title": "Super Mario Galaxy 2"
+          }
+        ],
+        "canonical_title": "",
+        "confidence": 0.6857,
+        "match_method": "low-confidence",
+        "match_status": "unmatched",
+        "metadata_game_id": "",
+        "normalized_search_title": "Super Mario 3D All-Stars[010049900F546000][US]",
+        "path": "switch/Super Mario 3D All-Stars[010049900F546000][US][v0].nsp",
+        "platform": "switch",
+        "source_title": "Super Mario 3D All-Stars[010049900F546000][US][v0].nsp"
+      }
+    ],
+    "matched": [
+      {
+        "audited_at": 1789130759,
+        "candidates": [
+          {
+            "id": "12863",
+            "platforms": [],
+            "title": "007: Nightfire"
+          },
+          {
+            "id": "37559",
+            "platforms": [],
+            "title": "007: Agent Under Fire"
+          },
+          {
+            "id": "5257951",
+            "platforms": [],
+            "title": "007 Racing"
+          },
+          {
+            "id": "34459",
+            "platforms": [],
+            "title": "007 James Bond: The Stealth Affair"
+          },
+          {
+            "id": "4563",
+            "platforms": [],
+            "title": "007: Tomorrow Never Dies"
+          }
+        ],
+        "canonical_title": "007: Nightfire",
+        "confidence": 0.8966,
+        "match_method": "title",
+        "match_status": "matched",
+        "metadata_game_id": "12863",
+        "normalized_search_title": "007 - Nightfire",
+        "path": "ps2/007 - Nightfire (USA).iso",
+        "platform": "ps2",
+        "source_title": "007 - Nightfire (USA).iso"
+      },
+      {
+        "audited_at": 1789130762,
+        "candidates": [
+          {
+            "id": "5274456",
+            "platforms": [],
+            "title": "Athens 2004"
+          },
+          {
+            "id": "38051",
+            "platforms": [],
+            "title": "Athena"
+          },
+          {
+            "id": "5534371",
+            "platforms": [],
+            "title": "\u03a0\u039f\u039b\u0399\u03a3 \u2014 Athens"
+          },
+          {
+            "id": "5459222",
+            "platforms": [],
+            "title": "Plague of Athens VR"
+          },
+          {
+            "id": "5540150",
+            "platforms": [],
+            "title": "101 Cats in Athens"
+          }
+        ],
+        "canonical_title": "Athens 2004",
+        "confidence": 1.0,
+        "match_method": "title",
+        "match_status": "matched",
+        "metadata_game_id": "5274456",
+        "normalized_search_title": "Athens 2004",
+        "path": "ps2/Athens 2004 (USA).iso",
+        "platform": "ps2",
+        "source_title": "Athens 2004 (USA).iso"
+      },
+      {
+        "audited_at": 1789130764,
+        "candidates": [
+          {
+            "id": "35919",
+            "platforms": [],
+            "title": "Black"
+          },
+          {
+            "id": "4994",
+            "platforms": [],
+            "title": "Black Ice"
+          },
+          {
+            "id": "2963",
+            "platforms": [],
+            "title": "Black Annex"
+          },
+          {
+            "id": "4131",
+            "platforms": [],
+            "title": "Black Rainbow"
+          },
+          {
+            "id": "4302",
+            "platforms": [],
+            "title": "Black Mirror I"
+          }
+        ],
+        "canonical_title": "Black",
+        "confidence": 1.0,
+        "match_method": "title",
+        "match_status": "matched",
+        "metadata_game_id": "35919",
+        "normalized_search_title": "Black",
+        "path": "ps2/Black (USA).iso",
+        "platform": "ps2",
+        "source_title": "Black (USA).iso"
+      },
+      {
+        "audited_at": 1789130766,
+        "candidates": [
+          {
+            "id": "37348",
+            "platforms": [],
+            "title": "Burnout 3: Takedown"
+          },
+          {
+            "id": "38768",
+            "platforms": [],
+            "title": "Burnout Dominator"
+          },
+          {
+            "id": "21176",
+            "platforms": [],
+            "title": "Burnout Legends"
+          },
+          {
+            "id": "37108",
+            "platforms": [],
+            "title": "Burnout Revenge"
+          },
+          {
+            "id": "37894",
+            "platforms": [],
+            "title": "Burnout Paradise"
+          }
+        ],
+        "canonical_title": "Burnout 3: Takedown",
+        "confidence": 0.9231,
+        "match_method": "title",
+        "match_status": "matched",
+        "metadata_game_id": "37348",
+        "normalized_search_title": "Burnout 3 - Takedown",
+        "path": "ps2/Burnout 3 - Takedown (USA).iso",
+        "platform": "ps2",
+        "source_title": "Burnout 3 - Takedown (USA).iso"
+      },
+      {
+        "audited_at": 1789130766,
+        "candidates": [
+          {
+            "id": "37108",
+            "platforms": [],
+            "title": "Burnout Revenge"
+          },
+          {
+            "id": "21176",
+            "platforms": [],
+            "title": "Burnout Legends"
+          },
+          {
+            "id": "37894",
+            "platforms": [],
+            "title": "Burnout Paradise"
+          },
+          {
+            "id": "1051365",
+            "platforms": [],
+            "title": "Burnout Drift"
+          },
+          {
+            "id": "36141",
+            "platforms": [],
+            "title": "Burnout"
+          }
+        ],
+        "canonical_title": "Burnout Revenge",
+        "confidence": 1.0,
+        "match_method": "title",
+        "match_status": "matched",
+        "metadata_game_id": "37108",
+        "normalized_search_title": "Burnout Revenge",
+        "path": "ps2/Burnout Revenge (USA).iso",
+        "platform": "ps2",
+        "source_title": "Burnout Revenge (USA).iso"
+      },
+      {
+        "audited_at": 1789130774,
+        "candidates": [
+          {
+            "id": "37392",
+            "platforms": [],
+            "title": "Dragon Ball Z: Infinite World"
+          },
+          {
+            "id": "12901",
+            "platforms": [],
+            "title": "Dragon Ball Z: Supersonic Warriors 2"
+          },
+          {
+            "id": "38026",
+            "platforms": [],
+            "title": "Dragon Ball Z"
+          },
+          {
+            "id": "5356239",
+            "platforms": [],
+            "title": "Dragon Ball Z"
+          },
+          {
+            "id": "12915",
+            "platforms": [],
+            "title": "Dragon Ball Z: Shin Butouden"
+          }
+        ],
+        "canonical_title": "Dragon Ball Z: Infinite World",
+        "confidence": 0.9492,
+        "match_method": "title",
+        "match_status": "matched",
+        "metadata_game_id": "37392",
+        "normalized_search_title": "Dragon Ball Z - Infinite World",
+        "path": "ps2/Dragon Ball Z - Infinite World (USA).iso",
+        "platform": "ps2",
+        "source_title": "Dragon Ball Z - Infinite World (USA).iso"
+      },
+      {
+        "audited_at": 1789130778,
+        "candidates": [
+          {
+            "id": "1350",
+            "platforms": [],
+            "title": "Grand Theft Auto III"
+          },
+          {
+            "id": "1358",
+            "platforms": [],
+            "title": "Grand Theft Auto 2"
+          },
+          {
+            "id": "3674",
+            "platforms": [],
+            "title": "Grand Theft Auto V"
+          },
+          {
+            "id": "1357",
+            "platforms": [],
+            "title": "Grand Theft Auto"
+          },
+          {
+            "id": "1351",
+            "platforms": [],
+            "title": "Grand Theft Auto: Vice City"
+          }
+        ],
+        "canonical_title": "Grand Theft Auto III",
+        "confidence": 1.0,
+        "match_method": "title",
+        "match_status": "matched",
+        "metadata_game_id": "1350",
+        "normalized_search_title": "Grand Theft Auto III",
+        "path": "ps2/Grand Theft Auto III (USA).iso",
+        "platform": "ps2",
+        "source_title": "Grand Theft Auto III (USA).iso"
+      },
+      {
+        "audited_at": 1789130781,
+        "candidates": [
+          {
+            "id": "5265476",
+            "platforms": [],
+            "title": "Need for Speed: Most Wanted - Black Edition"
+          },
+          {
+            "id": "5335030",
+            "platforms": [],
+            "title": "Need for Speed: Most Wanted - Pepega Edition"
+          },
+          {
+            "id": "5518056",
+            "platforms": [],
+            "title": "Need For Speed: Most Wanted Redux"
+          },
+          {
+            "id": "5256025",
+            "platforms": [],
+            "title": "Need for Speed: Most Wanted U"
+          },
+          {
+            "id": "38250",
+            "platforms": [],
+            "title": "Need for Speed: Most Wanted"
+          }
+        ],
+        "canonical_title": "Need for Speed: Most Wanted - Black Edition",
+        "confidence": 0.9655,
+        "match_method": "title",
+        "match_status": "matched",
+        "metadata_game_id": "5265476",
+        "normalized_search_title": "Need for Speed - Most Wanted - Black Edition",
+        "path": "ps2/Need for Speed - Most Wanted - Black Edition (USA).iso",
+        "platform": "ps2",
+        "source_title": "Need for Speed - Most Wanted - Black Edition (USA).iso"
+      },
+      {
+        "audited_at": 1789130784,
+        "candidates": [
+          {
+            "id": "1638",
+            "platforms": [],
+            "title": "SSX Tricky"
+          },
+          {
+            "id": "5265472",
+            "platforms": [],
+            "title": "SSX on Tour"
+          },
+          {
+            "id": "37061",
+            "platforms": [],
+            "title": "SSX Blur"
+          },
+          {
+            "id": "34626",
+            "platforms": [],
+            "title": "SSX 3"
+          },
+          {
+            "id": "38268",
+            "platforms": [],
+            "title": "SSX"
+          }
+        ],
+        "canonical_title": "SSX Tricky",
+        "confidence": 1.0,
+        "match_method": "title",
+        "match_status": "matched",
+        "metadata_game_id": "1638",
+        "normalized_search_title": "SSX Tricky",
+        "path": "ps2/SSX Tricky (USA).iso",
+        "platform": "ps2",
+        "source_title": "SSX Tricky (USA).iso"
+      }
+    ],
+    "network-error": [],
+    "unmatched": []
+  },
+  "review_examples": {
+    "likely_false_negatives": [
+      {
+        "audited_at": 1789130757,
+        "candidates": [
+          {
+            "id": "5323566",
+            "platforms": [],
+            "title": "Mario Kart Wii Deluxe"
+          },
+          {
+            "id": "36054",
+            "platforms": [],
+            "title": "Mario Kart Wii"
+          },
+          {
+            "id": "5330592",
+            "platforms": [],
+            "title": "Mario Kart Wii Riibalanced"
+          },
+          {
+            "id": "25624",
+            "platforms": [],
+            "title": "Mario Kart DS"
+          },
+          {
+            "id": "5322166",
+            "platforms": [],
+            "title": "Mario Kart Wii Black"
+          }
+        ],
+        "canonical_title": "",
+        "confidence": 0.6923,
+        "match_method": "low-confidence",
+        "match_status": "unmatched",
+        "metadata_game_id": "",
+        "normalized_search_title": "Mario Kart Wii (En,Fr,De,Es,It)",
+        "path": "wii/Mario Kart Wii (Europe, Australia) (En,Fr,De,Es,It).rvz",
+        "platform": "wii",
+        "source_title": "Mario Kart Wii (Europe, Australia) (En,Fr,De,Es,It).rvz"
+      },
+      {
+        "audited_at": 1789130769,
+        "candidates": [
+          {
+            "id": "21778",
+            "platforms": [],
+            "title": "Crazy Taxi"
+          },
+          {
+            "id": "35507",
+            "platforms": [],
+            "title": "Crazy Taxi 2"
+          },
+          {
+            "id": "5506695",
+            "platforms": [],
+            "title": "CrazyTaiji"
+          },
+          {
+            "id": "5434972",
+            "platforms": [],
+            "title": "Crazy Space Taxi"
+          },
+          {
+            "id": "5524263",
+            "platforms": [],
+            "title": "Crazy"
+          }
+        ],
+        "canonical_title": "",
+        "confidence": 1.0,
+        "match_method": "close-results",
+        "match_status": "ambiguous",
+        "metadata_game_id": "",
+        "normalized_search_title": "Crazy Taxi",
+        "path": "ps2/Crazy Taxi (USA).cue",
+        "platform": "ps2",
+        "source_title": "Crazy Taxi (USA).cue"
+      },
+      {
+        "audited_at": 1789130771,
+        "candidates": [
+          {
+            "id": "33990",
+            "platforms": [],
+            "title": "Dragon Ball Z: Budokai"
+          },
+          {
+            "id": "1701",
+            "platforms": [],
+            "title": "Dragon Ball Z: Budokai 3"
+          },
+          {
+            "id": "56",
+            "platforms": [],
+            "title": "Dragon Ball Z: Budokai 2"
+          },
+          {
+            "id": "5258718",
+            "platforms": [],
+            "title": "Dragon Ball Z: Shin Budokai"
+          },
+          {
+            "id": "33639",
+            "platforms": [],
+            "title": "Dragon Ball Z: Budokai Tenkaichi"
+          }
+        ],
+        "canonical_title": "",
+        "confidence": 0.9333,
+        "match_method": "close-results",
+        "match_status": "ambiguous",
+        "metadata_game_id": "",
+        "normalized_search_title": "Dragon Ball Z - Budokai",
+        "path": "ps2/Dragon Ball Z - Budokai (USA).iso",
+        "platform": "ps2",
+        "source_title": "Dragon Ball Z - Budokai (USA).iso"
+      },
+      {
+        "audited_at": 1789130771,
+        "candidates": [
+          {
+            "id": "56",
+            "platforms": [],
+            "title": "Dragon Ball Z: Budokai 2"
+          },
+          {
+            "id": "1701",
+            "platforms": [],
+            "title": "Dragon Ball Z: Budokai 3"
+          },
+          {
+            "id": "33990",
+            "platforms": [],
+            "title": "Dragon Ball Z: Budokai"
+          },
+          {
+            "id": "5258718",
+            "platforms": [],
+            "title": "Dragon Ball Z: Shin Budokai"
+          },
+          {
+            "id": "38271",
+            "platforms": [],
+            "title": "Dragon Ball Z: Budokai Tenkaichi 2"
+          }
+        ],
+        "canonical_title": "",
+        "confidence": 0.9388,
+        "match_method": "close-results",
+        "match_status": "ambiguous",
+        "metadata_game_id": "",
+        "normalized_search_title": "Dragon Ball Z - Budokai 2",
+        "path": "ps2/Dragon Ball Z - Budokai 2 (USA).iso",
+        "platform": "ps2",
+        "source_title": "Dragon Ball Z - Budokai 2 (USA).iso"
+      },
+      {
+        "audited_at": 1789130772,
+        "candidates": [
+          {
+            "id": "1701",
+            "platforms": [],
+            "title": "Dragon Ball Z: Budokai 3"
+          },
+          {
+            "id": "56",
+            "platforms": [],
+            "title": "Dragon Ball Z: Budokai 2"
+          },
+          {
+            "id": "33990",
+            "platforms": [],
+            "title": "Dragon Ball Z: Budokai"
+          },
+          {
+            "id": "5258718",
+            "platforms": [],
+            "title": "Dragon Ball Z: Shin Budokai"
+          },
+          {
+            "id": "33972",
+            "platforms": [],
+            "title": "Dragon Ball Z: Budokai Tenkaichi 3"
+          }
+        ],
+        "canonical_title": "",
+        "confidence": 0.9388,
+        "match_method": "close-results",
+        "match_status": "ambiguous",
+        "metadata_game_id": "",
+        "normalized_search_title": "Dragon Ball Z - Budokai 3",
+        "path": "ps2/Dragon Ball Z - Budokai 3 (USA) (Greatest Hits).iso",
+        "platform": "ps2",
+        "source_title": "Dragon Ball Z - Budokai 3 (USA) (Greatest Hits).iso"
+      },
+      {
+        "audited_at": 1789130772,
+        "candidates": [
+          {
+            "id": "1701",
+            "platforms": [],
+            "title": "Dragon Ball Z: Budokai 3"
+          },
+          {
+            "id": "56",
+            "platforms": [],
+            "title": "Dragon Ball Z: Budokai 2"
+          },
+          {
+            "id": "33990",
+            "platforms": [],
+            "title": "Dragon Ball Z: Budokai"
+          },
+          {
+            "id": "5258718",
+            "platforms": [],
+            "title": "Dragon Ball Z: Shin Budokai"
+          },
+          {
+            "id": "33972",
+            "platforms": [],
+            "title": "Dragon Ball Z: Budokai Tenkaichi 3"
+          }
+        ],
+        "canonical_title": "",
+        "confidence": 0.9388,
+        "match_method": "close-results",
+        "match_status": "ambiguous",
+        "metadata_game_id": "",
+        "normalized_search_title": "Dragon Ball Z - Budokai 3",
+        "path": "ps2/Dragon Ball Z - Budokai 3 (USA).iso",
+        "platform": "ps2",
+        "source_title": "Dragon Ball Z - Budokai 3 (USA).iso"
+      },
+      {
+        "audited_at": 1789130772,
+        "candidates": [
+          {
+            "id": "33972",
+            "platforms": [],
+            "title": "Dragon Ball Z: Budokai Tenkaichi 3"
+          },
+          {
+            "id": "38271",
+            "platforms": [],
+            "title": "Dragon Ball Z: Budokai Tenkaichi 2"
+          },
+          {
+            "id": "5254091",
+            "platforms": [],
+            "title": "Dragon Ball Z: Budokai Tenkaichi 4"
+          },
+          {
+            "id": "33639",
+            "platforms": [],
+            "title": "Dragon Ball Z: Budokai Tenkaichi"
+          },
+          {
+            "id": "1701",
+            "platforms": [],
+            "title": "Dragon Ball Z: Budokai 3"
+          }
+        ],
+        "canonical_title": "",
+        "confidence": 0.8571,
+        "match_method": "close-results",
+        "match_status": "ambiguous",
+        "metadata_game_id": "",
+        "normalized_search_title": "Dragon Ball Z - Budokai Tenkaichi 3 (En,Ja)",
+        "path": "ps2/Dragon Ball Z - Budokai Tenkaichi 3 (USA) (En,Ja).iso",
+        "platform": "ps2",
+        "source_title": "Dragon Ball Z - Budokai Tenkaichi 3 (USA) (En,Ja).iso"
+      },
+      {
+        "audited_at": 1789130776,
+        "candidates": [
+          {
+            "id": "1352",
+            "platforms": [],
+            "title": "Grand Theft Auto: San Andreas"
+          },
+          {
+            "id": "5464348",
+            "platforms": [],
+            "title": "Grand Theft Auto: San Andreas Misterix Mod"
+          },
+          {
+            "id": "62",
+            "platforms": [],
+            "title": "Grand Theft Auto: Chinatown Wars"
+          },
+          {
+            "id": "5301278",
+            "platforms": [],
+            "title": "Grand Theft Auto: San Andreas \u2013 The Definitive Edition"
+          },
+          {
+            "id": "5514526",
+            "platforms": [],
+            "title": "Grand Theft Auto: San Andreas - The Nextgen Edition"
+          }
+        ],
+        "canonical_title": "",
+        "confidence": 0.8358,
+        "match_method": "low-confidence",
+        "match_status": "unmatched",
+        "metadata_game_id": "",
+        "normalized_search_title": "Grand Theft Auto - San Andreas (v3.00)",
+        "path": "ps2/Grand Theft Auto - San Andreas (USA) (v3.00).iso",
+        "platform": "ps2",
+        "source_title": "Grand Theft Auto - San Andreas (USA) (v3.00).iso"
+      },
+      {
+        "audited_at": 1789130777,
+        "candidates": [
+          {
+            "id": "1351",
+            "platforms": [],
+            "title": "Grand Theft Auto: Vice City"
+          },
+          {
+            "id": "34363",
+            "platforms": [],
+            "title": "Grand Theft Auto: Vice City Stories"
+          },
+          {
+            "id": "1350",
+            "platforms": [],
+            "title": "Grand Theft Auto III"
+          },
+          {
+            "id": "5292842",
+            "platforms": [],
+            "title": "Grand Theft Auto: Shine o' Vice"
+          },
+          {
+            "id": "5432071",
+            "platforms": [],
+            "title": "Grand Theft Auto: Tightened Vice"
+          }
+        ],
+        "canonical_title": "",
+        "confidence": 0.8254,
+        "match_method": "low-confidence",
+        "match_status": "unmatched",
+        "metadata_game_id": "",
+        "normalized_search_title": "Grand Theft Auto - Vice City (v4.00)",
+        "path": "ps2/Grand Theft Auto - Vice City (USA) (v4.00).iso",
+        "platform": "ps2",
+        "source_title": "Grand Theft Auto - Vice City (USA) (v4.00).iso"
+      },
+      {
+        "audited_at": 1789130782,
+        "candidates": [
+          {
+            "id": "34529",
+            "platforms": [],
+            "title": "Need for Speed: Underground"
+          },
+          {
+            "id": "29882",
+            "platforms": [],
+            "title": "Need for Speed: Underground 2"
+          },
+          {
+            "id": "5498969",
+            "platforms": [],
+            "title": "Need for Speed: Underground J"
+          },
+          {
+            "id": "5452817",
+            "platforms": [],
+            "title": "Need For Speed Underground RTX"
+          },
+          {
+            "id": "34622",
+            "platforms": [],
+            "title": "Need for Speed: Underground Rivals"
+          }
+        ],
+        "canonical_title": "",
+        "confidence": 0.9455,
+        "match_method": "close-results",
+        "match_status": "ambiguous",
+        "metadata_game_id": "",
+        "normalized_search_title": "Need for Speed - Underground",
+        "path": "ps2/Need for Speed - Underground (USA).iso",
+        "platform": "ps2",
+        "source_title": "Need for Speed - Underground (USA).iso"
+      }
+    ],
+    "likely_false_positives": [
+      {
+        "audited_at": 1789130764,
+        "candidates": [
+          {
+            "id": "35919",
+            "platforms": [],
+            "title": "Black"
+          },
+          {
+            "id": "4994",
+            "platforms": [],
+            "title": "Black Ice"
+          },
+          {
+            "id": "2963",
+            "platforms": [],
+            "title": "Black Annex"
+          },
+          {
+            "id": "4131",
+            "platforms": [],
+            "title": "Black Rainbow"
+          },
+          {
+            "id": "4302",
+            "platforms": [],
+            "title": "Black Mirror I"
+          }
+        ],
+        "canonical_title": "Black",
+        "confidence": 1.0,
+        "match_method": "title",
+        "match_status": "matched",
+        "metadata_game_id": "35919",
+        "normalized_search_title": "Black",
+        "path": "ps2/Black (USA).iso",
+        "platform": "ps2",
+        "source_title": "Black (USA).iso"
+      }
+    ],
+    "normalization_review": [
+      {
+        "audited_at": 1789130757,
+        "candidates": [
+          {
+            "id": "5323566",
+            "platforms": [],
+            "title": "Mario Kart Wii Deluxe"
+          },
+          {
+            "id": "36054",
+            "platforms": [],
+            "title": "Mario Kart Wii"
+          },
+          {
+            "id": "5330592",
+            "platforms": [],
+            "title": "Mario Kart Wii Riibalanced"
+          },
+          {
+            "id": "25624",
+            "platforms": [],
+            "title": "Mario Kart DS"
+          },
+          {
+            "id": "5322166",
+            "platforms": [],
+            "title": "Mario Kart Wii Black"
+          }
+        ],
+        "canonical_title": "",
+        "confidence": 0.6923,
+        "match_method": "low-confidence",
+        "match_status": "unmatched",
+        "metadata_game_id": "",
+        "normalized_search_title": "Mario Kart Wii (En,Fr,De,Es,It)",
+        "path": "wii/Mario Kart Wii (Europe, Australia) (En,Fr,De,Es,It).rvz",
+        "platform": "wii",
+        "source_title": "Mario Kart Wii (Europe, Australia) (En,Fr,De,Es,It).rvz"
+      },
+      {
+        "audited_at": 1789130772,
+        "candidates": [
+          {
+            "id": "33972",
+            "platforms": [],
+            "title": "Dragon Ball Z: Budokai Tenkaichi 3"
+          },
+          {
+            "id": "38271",
+            "platforms": [],
+            "title": "Dragon Ball Z: Budokai Tenkaichi 2"
+          },
+          {
+            "id": "5254091",
+            "platforms": [],
+            "title": "Dragon Ball Z: Budokai Tenkaichi 4"
+          },
+          {
+            "id": "33639",
+            "platforms": [],
+            "title": "Dragon Ball Z: Budokai Tenkaichi"
+          },
+          {
+            "id": "1701",
+            "platforms": [],
+            "title": "Dragon Ball Z: Budokai 3"
+          }
+        ],
+        "canonical_title": "",
+        "confidence": 0.8571,
+        "match_method": "close-results",
+        "match_status": "ambiguous",
+        "metadata_game_id": "",
+        "normalized_search_title": "Dragon Ball Z - Budokai Tenkaichi 3 (En,Ja)",
+        "path": "ps2/Dragon Ball Z - Budokai Tenkaichi 3 (USA) (En,Ja).iso",
+        "platform": "ps2",
+        "source_title": "Dragon Ball Z - Budokai Tenkaichi 3 (USA) (En,Ja).iso"
+      },
+      {
+        "audited_at": 1789130776,
+        "candidates": [
+          {
+            "id": "1352",
+            "platforms": [],
+            "title": "Grand Theft Auto: San Andreas"
+          },
+          {
+            "id": "5464348",
+            "platforms": [],
+            "title": "Grand Theft Auto: San Andreas Misterix Mod"
+          },
+          {
+            "id": "62",
+            "platforms": [],
+            "title": "Grand Theft Auto: Chinatown Wars"
+          },
+          {
+            "id": "5301278",
+            "platforms": [],
+            "title": "Grand Theft Auto: San Andreas \u2013 The Definitive Edition"
+          },
+          {
+            "id": "5514526",
+            "platforms": [],
+            "title": "Grand Theft Auto: San Andreas - The Nextgen Edition"
+          }
+        ],
+        "canonical_title": "",
+        "confidence": 0.8358,
+        "match_method": "low-confidence",
+        "match_status": "unmatched",
+        "metadata_game_id": "",
+        "normalized_search_title": "Grand Theft Auto - San Andreas (v3.00)",
+        "path": "ps2/Grand Theft Auto - San Andreas (USA) (v3.00).iso",
+        "platform": "ps2",
+        "source_title": "Grand Theft Auto - San Andreas (USA) (v3.00).iso"
+      },
+      {
+        "audited_at": 1789130777,
+        "candidates": [
+          {
+            "id": "1351",
+            "platforms": [],
+            "title": "Grand Theft Auto: Vice City"
+          },
+          {
+            "id": "34363",
+            "platforms": [],
+            "title": "Grand Theft Auto: Vice City Stories"
+          },
+          {
+            "id": "1350",
+            "platforms": [],
+            "title": "Grand Theft Auto III"
+          },
+          {
+            "id": "5292842",
+            "platforms": [],
+            "title": "Grand Theft Auto: Shine o' Vice"
+          },
+          {
+            "id": "5432071",
+            "platforms": [],
+            "title": "Grand Theft Auto: Tightened Vice"
+          }
+        ],
+        "canonical_title": "",
+        "confidence": 0.8254,
+        "match_method": "low-confidence",
+        "match_status": "unmatched",
+        "metadata_game_id": "",
+        "normalized_search_title": "Grand Theft Auto - Vice City (v4.00)",
+        "path": "ps2/Grand Theft Auto - Vice City (USA) (v4.00).iso",
+        "platform": "ps2",
+        "source_title": "Grand Theft Auto - Vice City (USA) (v4.00).iso"
+      },
+      {
+        "audited_at": 1789130791,
+        "candidates": [
+          {
+            "id": "35898",
+            "platforms": [],
+            "title": "Tony Hawk's Pro Skater 2"
+          },
+          {
+            "id": "36189",
+            "platforms": [],
+            "title": "Tony Hawk's Pro Skater 4"
+          },
+          {
+            "id": "5261605",
+            "platforms": [],
+            "title": "Tony Hawk's Pro Skater 2x"
+          },
+          {
+            "id": "5260463",
+            "platforms": [],
+            "title": "Tony Hawk's Pro Skater 1 + 2"
+          },
+          {
+            "id": "33986",
+            "platforms": [],
+            "title": "Tony Hawk's Pro Skater 3"
+          }
+        ],
+        "canonical_title": "",
+        "confidence": 0.8571,
+        "match_method": "close-results",
+        "match_status": "ambiguous",
+        "metadata_game_id": "",
+        "normalized_search_title": "Tony Hawk's Pro Skater 4 (v2.01)",
+        "path": "ps2/Tony Hawk's Pro Skater 4 (USA) (v2.01).iso",
+        "platform": "ps2",
+        "source_title": "Tony Hawk's Pro Skater 4 (USA) (v2.01).iso"
+      },
+      {
+        "audited_at": 1789130795,
+        "candidates": [
+          {
+            "id": "5246172",
+            "platforms": [],
+            "title": "CTR: Crash Team Racing - Nitro-Fueled"
+          },
+          {
+            "id": "36474",
+            "platforms": [],
+            "title": "CTR (Crash Team Racing)"
+          },
+          {
+            "id": "39046",
+            "platforms": [],
+            "title": "Crash Tag Team Racing"
+          },
+          {
+            "id": "5486134",
+            "platforms": [],
+            "title": "Crash Team Rumble"
+          },
+          {
+            "id": "90",
+            "platforms": [],
+            "title": "Crash of the Titans"
+          }
+        ],
+        "canonical_title": "",
+        "confidence": 0.8219,
+        "match_method": "low-confidence",
+        "match_status": "unmatched",
+        "metadata_game_id": "",
+        "normalized_search_title": "Crash Team Racing Nitro-Fueled (NSP)",
+        "path": "switch/Crash Team Racing Nitro-Fueled (NSP)(Base Game).nsp",
+        "platform": "switch",
+        "source_title": "Crash Team Racing Nitro-Fueled (NSP)(Base Game).nsp"
+      },
+      {
+        "audited_at": 1789130796,
+        "candidates": [
+          {
+            "id": "5249545",
+            "platforms": [],
+            "title": "Mario Kart 8 Deluxe"
+          },
+          {
+            "id": "5459784",
+            "platforms": [],
+            "title": "Mario Kart 8 Deluxe: CTGP Deluxe"
+          },
+          {
+            "id": "34744",
+            "platforms": [],
+            "title": "Mario Kart 8"
+          },
+          {
+            "id": "36068",
+            "platforms": [],
+            "title": "Mario Kart: Double Dash!!"
+          },
+          {
+            "id": "25624",
+            "platforms": [],
+            "title": "Mario Kart DS"
+          }
+        ],
+        "canonical_title": "",
+        "confidence": 0.6667,
+        "match_method": "low-confidence",
+        "match_status": "unmatched",
+        "metadata_game_id": "",
+        "normalized_search_title": "Mario Kart 8 Deluxe [0100152000022000]",
+        "path": "switch/Mario Kart 8 Deluxe [0100152000022000][v0].nsp",
+        "platform": "switch",
+        "source_title": "Mario Kart 8 Deluxe [0100152000022000][v0].nsp"
+      },
+      {
+        "audited_at": 1789130796,
+        "candidates": [
+          {
+            "id": "5249545",
+            "platforms": [],
+            "title": "Mario Kart 8 Deluxe"
+          },
+          {
+            "id": "5459784",
+            "platforms": [],
+            "title": "Mario Kart 8 Deluxe: CTGP Deluxe"
+          },
+          {
+            "id": "36068",
+            "platforms": [],
+            "title": "Mario Kart: Double Dash!!"
+          },
+          {
+            "id": "25624",
+            "platforms": [],
+            "title": "Mario Kart DS"
+          },
+          {
+            "id": "34744",
+            "platforms": [],
+            "title": "Mario Kart 8"
+          }
+        ],
+        "canonical_title": "",
+        "confidence": 0.623,
+        "match_method": "low-confidence",
+        "match_status": "unmatched",
+        "metadata_game_id": "",
+        "normalized_search_title": "Mario Kart 8 Deluxe [0100152000022800][US]",
+        "path": "switch/Mario Kart 8 Deluxe [0100152000022800][v1245184][US].nsp",
+        "platform": "switch",
+        "source_title": "Mario Kart 8 Deluxe [0100152000022800][v1245184][US].nsp"
+      },
+      {
+        "audited_at": 1789130799,
+        "candidates": [
+          {
+            "id": "5258717",
+            "platforms": [],
+            "title": "New Super Mario Bros. U Deluxe"
+          },
+          {
+            "id": "5357638",
+            "platforms": [],
+            "title": "New Super Mario Bros. Deluxe!"
+          },
+          {
+            "id": "5486959",
+            "platforms": [],
+            "title": "New Super Mario Bros U. DS"
+          },
+          {
+            "id": "36219",
+            "platforms": [],
+            "title": "New Super Mario Bros. U"
+          },
+          {
+            "id": "5245271",
+            "platforms": [],
+            "title": "New Super Mario Bros. 2"
+          }
+        ],
+        "canonical_title": "",
+        "confidence": 0.7436,
+        "match_method": "low-confidence",
+        "match_status": "unmatched",
+        "metadata_game_id": "",
+        "normalized_search_title": "New Super Mario Bros U Deluxe [0100EA80032EA000]",
+        "path": "switch/New Super Mario Bros U Deluxe [0100EA80032EA000][v0].nsp",
+        "platform": "switch",
+        "source_title": "New Super Mario Bros U Deluxe [0100EA80032EA000][v0].nsp"
+      },
+      {
+        "audited_at": 1789130801,
+        "candidates": [
+          {
+            "id": "5266417",
+            "platforms": [],
+            "title": "Super Mario 3D All-Stars"
+          },
+          {
+            "id": "5266526",
+            "platforms": [],
+            "title": "Super Mario 3D World + Bowser\u2019s Fury"
+          },
+          {
+            "id": "36776",
+            "platforms": [],
+            "title": "Super Mario 3D Land"
+          },
+          {
+            "id": "36415",
+            "platforms": [],
+            "title": "Super Mario 3D World"
+          },
+          {
+            "id": "1690",
+            "platforms": [],
+            "title": "Super Mario Galaxy 2"
+          }
+        ],
+        "canonical_title": "",
+        "confidence": 0.6857,
+        "match_method": "low-confidence",
+        "match_status": "unmatched",
+        "metadata_game_id": "",
+        "normalized_search_title": "Super Mario 3D All-Stars[010049900F546000][US]",
+        "path": "switch/Super Mario 3D All-Stars[010049900F546000][US][v0].nsp",
+        "platform": "switch",
+        "source_title": "Super Mario 3D All-Stars[010049900F546000][US][v0].nsp"
+      }
+    ],
+    "punctuation_review": [
+      {
+        "audited_at": 1789130789,
+        "candidates": [
+          {
+            "id": "34479",
+            "platforms": [],
+            "title": "The Simpsons: Hit & Run"
+          },
+          {
+            "id": "38458",
+            "platforms": [],
+            "title": "The Simpsons Wrestling"
+          },
+          {
+            "id": "1659",
+            "platforms": [],
+            "title": "The Simpsons: Bart vs. the Space Mutants"
+          },
+          {
+            "id": "29918",
+            "platforms": [],
+            "title": "The Simpsons: Bart vs. the World"
+          },
+          {
+            "id": "35540",
+            "platforms": [],
+            "title": "The Simpsons Game"
+          }
+        ],
+        "canonical_title": "",
+        "confidence": 0.75,
+        "match_method": "low-confidence",
+        "match_status": "unmatched",
+        "metadata_game_id": "",
+        "normalized_search_title": "Simpsons, The - Hit & Run",
+        "path": "ps2/Simpsons, The - Hit & Run (USA).iso",
+        "platform": "ps2",
+        "source_title": "Simpsons, The - Hit & Run (USA).iso"
+      },
+      {
+        "audited_at": 1789130791,
+        "candidates": [
+          {
+            "id": "35898",
+            "platforms": [],
+            "title": "Tony Hawk's Pro Skater 2"
+          },
+          {
+            "id": "36189",
+            "platforms": [],
+            "title": "Tony Hawk's Pro Skater 4"
+          },
+          {
+            "id": "5261605",
+            "platforms": [],
+            "title": "Tony Hawk's Pro Skater 2x"
+          },
+          {
+            "id": "5260463",
+            "platforms": [],
+            "title": "Tony Hawk's Pro Skater 1 + 2"
+          },
+          {
+            "id": "33986",
+            "platforms": [],
+            "title": "Tony Hawk's Pro Skater 3"
+          }
+        ],
+        "canonical_title": "",
+        "confidence": 0.8571,
+        "match_method": "close-results",
+        "match_status": "ambiguous",
+        "metadata_game_id": "",
+        "normalized_search_title": "Tony Hawk's Pro Skater 4 (v2.01)",
+        "path": "ps2/Tony Hawk's Pro Skater 4 (USA) (v2.01).iso",
+        "platform": "ps2",
+        "source_title": "Tony Hawk's Pro Skater 4 (USA) (v2.01).iso"
+      },
+      {
+        "audited_at": 1789130792,
+        "candidates": [
+          {
+            "id": "34677",
+            "platforms": [],
+            "title": "Tony Hawk's Underground"
+          },
+          {
+            "id": "34243",
+            "platforms": [],
+            "title": "Tony Hawk's Underground 2"
+          },
+          {
+            "id": "5254385",
+            "platforms": [],
+            "title": "Tony Hawk's Underground 2: Remix"
+          },
+          {
+            "id": "34809",
+            "platforms": [],
+            "title": "Tony Hawk's Project 8"
+          },
+          {
+            "id": "1905",
+            "platforms": [],
+            "title": "Tony Hawk's Pro Skater HD"
+          }
+        ],
+        "canonical_title": "",
+        "confidence": 1.0,
+        "match_method": "close-results",
+        "match_status": "ambiguous",
+        "metadata_game_id": "",
+        "normalized_search_title": "Tony Hawk's Underground",
+        "path": "ps2/Tony Hawk's Underground (USA).iso",
+        "platform": "ps2",
+        "source_title": "Tony Hawk's Underground (USA).iso"
+      },
+      {
+        "audited_at": 1789130792,
+        "candidates": [
+          {
+            "id": "34243",
+            "platforms": [],
+            "title": "Tony Hawk's Underground 2"
+          },
+          {
+            "id": "34677",
+            "platforms": [],
+            "title": "Tony Hawk's Underground"
+          },
+          {
+            "id": "5254385",
+            "platforms": [],
+            "title": "Tony Hawk's Underground 2: Remix"
+          },
+          {
+            "id": "35898",
+            "platforms": [],
+            "title": "Tony Hawk's Pro Skater 2"
+          },
+          {
+            "id": "34809",
+            "platforms": [],
+            "title": "Tony Hawk's Project 8"
+          }
+        ],
+        "canonical_title": "",
+        "confidence": 1.0,
+        "match_method": "close-results",
+        "match_status": "ambiguous",
+        "metadata_game_id": "",
+        "normalized_search_title": "Tony Hawk's Underground 2",
+        "path": "ps2/Tony Hawk's Underground 2 (USA).iso",
+        "platform": "ps2",
+        "source_title": "Tony Hawk's Underground 2 (USA).iso"
+      },
+      {
+        "audited_at": 1789130807,
+        "candidates": [
+          {
+            "id": "35189",
+            "platforms": [],
+            "title": "Sonic the Hedgehog 2"
+          },
+          {
+            "id": "37581",
+            "platforms": [],
+            "title": "Sonic the Hedgehog 3"
+          },
+          {
+            "id": "35571",
+            "platforms": [],
+            "title": "Sonic the Hedgehog"
+          },
+          {
+            "id": "5249681",
+            "platforms": [],
+            "title": "Sonic the Hedgehog"
+          },
+          {
+            "id": "37127",
+            "platforms": [],
+            "title": "Sonic the Hedgehog Genesis"
+          }
+        ],
+        "canonical_title": "",
+        "confidence": 0.8636,
+        "match_method": "close-results",
+        "match_status": "ambiguous",
+        "metadata_game_id": "",
+        "normalized_search_title": "Sonic the Hedgehog (JUE)",
+        "path": "genesis/Sonic the Hedgehog (JUE) [!].bin",
+        "platform": "genesis",
+        "source_title": "Sonic the Hedgehog (JUE) [!].bin"
+      },
+      {
+        "audited_at": 1789130809,
+        "candidates": [
+          {
+            "id": "37388",
+            "platforms": [],
+            "title": "Taz-Mania"
+          },
+          {
+            "id": "35595",
+            "platforms": [],
+            "title": "Taz-Mania 2"
+          },
+          {
+            "id": "5295499",
+            "platforms": [],
+            "title": "Taz: Wanted"
+          },
+          {
+            "id": "5357592",
+            "platforms": [],
+            "title": "Taz"
+          },
+          {
+            "id": "34375",
+            "platforms": [],
+            "title": "Tazmanian Devil: Munching Madness"
+          }
+        ],
+        "canonical_title": "",
+        "confidence": 1.0,
+        "match_method": "close-results",
+        "match_status": "ambiguous",
+        "metadata_game_id": "",
+        "normalized_search_title": "Taz-Mania",
+        "path": "genesis/Taz-Mania (U) [!].bin",
+        "platform": "genesis",
+        "source_title": "Taz-Mania (U) [!].bin"
+      }
+    ]
+  },
+  "total_audited": 37,
+  "unsupported_platform_files": {
+    ".": 3,
+    "gb": 3,
+    "gba": 69,
+    "gbc": 5,
+    "nds": 6,
+    "ngc": 4,
+    "ps": 100,
+    "ps3": 113,
+    "snes": 7
+  }
+}
