@@ -58,7 +58,11 @@ USB/
     └── manifest.sha256               # hashes for payload files
 ```
 
-`CHECKPOINT` contains the reference tag, commit, and payload generation date.
+`CHECKPOINT` contains canonical `key=value` fields for the reference tag,
+commit, and payload generation date. `scripts/refresh-payload.sh COMMIT TAG`
+regenerates the sorted payload manifest and checkpoint after the reviewed
+payload has been assembled; it rejects generated Python state and incomplete
+Steam bootstrap dependencies.
 The script validates `manifest.sha256` before changing the host. The USB does
 not contain ROMs, BIOS files, Steam content, credentials, or generated emulator
 state.
@@ -121,10 +125,11 @@ The ordered phases are:
    no custom Xbox-specific udev rule. Reload udev rules if a package install
    changed them. Do not invent a rule that bypasses seat/device ownership.
 9. **Gamescope/session configuration**: install the baseline
-   `/etc/lulu/presentation.conf`, with `DISPLAY=:0`, `WAYLAND_DISPLAY=gamescope-0`,
-   and the checkpoint session variables. Treat `HDMI-A-1` as a configurable
-   default, not a proven BC-250 connector. Do not overwrite a locally supplied
-   hardware-specific presentation file on rerun.
+    `/etc/lulu/presentation.conf`, with `DISPLAY=:0`, `WAYLAND_DISPLAY=gamescope-0`,
+    and the checkpoint session variables. An unset connector is discovered from
+    DRM; an explicit `LULU_OUTPUT_CONNECTOR` is honored. Multiple connected
+    outputs require an explicit choice. Do not overwrite a locally supplied
+    hardware-specific presentation file on rerun.
 10. **Emulator installation**: verify `dolphin-emu`, `pcsx2`, and `retroarch`
     executables resolve, and verify the required RetroArch cores. Do not copy
     emulator profiles from the checkpoint's generated home state.
@@ -211,6 +216,8 @@ probe it started. It must not kill unrelated emulator or Steam processes.
   another account.
 - Complete BC-250-specific GPU, Gamescope, firmware, thermal, seat/device,
   receiver, and reconnect validation. The script cannot infer these safely.
+- Complete Steam's first-run runtime initialization, updates, login, and
+  onboarding once. Credentials are never provisioned by this script.
 
 ## First-Boot Acceptance
 

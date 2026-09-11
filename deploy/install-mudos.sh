@@ -5,8 +5,8 @@ readonly SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 readonly PAYLOAD="${SCRIPT_DIR}/payload"
 readonly LOG_FILE=/var/log/mudos-install.log
 readonly LOCK_FILE=/run/lock/mudos-install.lock
-readonly VERSION=7c96e06
-readonly VERSION_TAG=known-good-test-environment-20260910
+VERSION=''
+VERSION_TAG=''
 
 STAGE="preflight"
 VERIFY_ONLY=0
@@ -18,8 +18,10 @@ PACKAGES=(
     inputplumber gamescope-git dolphin-emu retroarch
     libretro-nestopia libretro-genesis-plus-gx steam steam-devices
     seatd pipewire wireplumber qt6-base qt6-declarative sdl3 python
-    python-dbus-next python-rapidyaml rapidyaml
+    python-dbus-next
 )
+# These are deliberately absent from PACKAGES: each has an official-repository
+# attempt followed by the reviewed payload build when the repository lacks it.
 
 log() { printf '[mudos] %s\n' "$*"; }
 die() { log "ERROR: $*" >&2; exit 1; }
@@ -64,16 +66,31 @@ flock -n 9 || die 'another Mudos installer is already running'
 require_file() { [[ -f "$1" ]] || die "missing required file: $1"; }
 require_dir() { [[ -d "$1" ]] || die "missing required directory: $1"; }
 
+load_checkpoint() {
+    local key value
+    while IFS='=' read -r key value; do
+        case "$key" in
+            commit) VERSION=$value ;;
+            tag) VERSION_TAG=$value ;;
+        esac
+    done < "$SCRIPT_DIR/CHECKPOINT"
+    [[ "$VERSION" =~ ^[0-9a-fA-F]{7,40}$ ]] || die 'payload checkpoint has no valid commit'
+    [[ -n "$VERSION_TAG" && "$VERSION_TAG" != *$'\n'* ]] || die 'payload checkpoint has no valid tag'
+}
+
 verify_payload() {
     require_file "$SCRIPT_DIR/CHECKPOINT"
     require_dir "$PAYLOAD"
-    grep -Fxq "commit: ${VERSION}" "$SCRIPT_DIR/CHECKPOINT" || die 'payload checkpoint commit mismatch'
-    grep -Fxq "tag: ${VERSION_TAG}" "$SCRIPT_DIR/CHECKPOINT" || die 'payload checkpoint tag mismatch'
+    load_checkpoint
     require_file "$PAYLOAD/manifest.sha256"
     (cd "$PAYLOAD" && sha256sum --strict --check manifest.sha256)
-    for path in lib/lulu bin/lulu-shell bin/mudos-guide bin/lulu-vt bin/verify-mudos.sh ui config packaging; do
+    for path in lib/lulu bin/lulu-shell bin/mudos-guide bin/lulu-vt bin/verify-mudos.sh ui config packaging scripts/steam-session-bootstrap.sh scripts/steam-bootstrap.sh; do
         [[ -e "$PAYLOAD/$path" ]] || die "payload is incomplete: $path"
     done
+    for script in "$PAYLOAD/scripts/steam-session-bootstrap.sh" "$PAYLOAD/scripts/steam-bootstrap.sh"; do
+        [[ -x "$script" ]] || die "runtime script is not executable: $script"
+    done
+    (cd "$PAYLOAD" && while read -r _ path; do [[ "$path" == ./manifest.sha256 || -f "$path" ]] || exit 1; done < manifest.sha256) || die 'payload manifest references a missing file'
 }
 
 verify_packages() {
@@ -93,14 +110,20 @@ verify_packages() {
 verify_installed() {
     verify_packages
     [[ -L /opt/lulu/current && -f /opt/lulu/current/RELEASE ]] || die '/opt/lulu/current is not a versioned release'
+    [[ "$(readlink -f /opt/lulu/current)" == /opt/lulu/releases/* ]] || die '/opt/lulu/current does not resolve below /opt/lulu/releases'
     grep -Fxq "commit=${VERSION}" /opt/lulu/current/RELEASE || die 'installed release commit does not match checkpoint'
     grep -Fxq "tag=${VERSION_TAG}" /opt/lulu/current/RELEASE || die 'installed release tag does not match checkpoint'
-    for path in lib/lulu bin/lulu-shell bin/mudos-guide bin/lulu-vt ui config; do
+    [[ "$(sha256sum /opt/lulu/current/manifest.sha256 | cut -c1-12)" == "$(sed -n 's/^manifest=//p' /opt/lulu/current/RELEASE)" ]] || die 'installed manifest digest does not match release'
+    (cd /opt/lulu/current && sha256sum --strict --check manifest.sha256)
+    for path in lib/lulu bin/lulu-shell bin/mudos-guide bin/lulu-vt ui config scripts/steam-session-bootstrap.sh scripts/steam-bootstrap.sh; do
         [[ -e "/opt/lulu/current/$path" ]] || die "installed payload is incomplete: $path"
     done
     id lulu >/dev/null 2>&1 || die 'lulu user is missing'
     [[ "$(id -u lulu)" == 958 && "$(id -g lulu)" == 958 ]] || die 'lulu UID/GID is not 958'
     getent group seat >/dev/null || die 'seat group is missing'
+    getent group inputplumber >/dev/null || die 'inputplumber group is missing'
+    id -nG lulu | tr ' ' '\n' | grep -Fxq inputplumber || die 'lulu is not in inputplumber group'
+    ! id -nG lulu | tr ' ' '\n' | grep -Fxq wheel || die 'lulu must not be granted wheel access'
     for path in /var/lib/lulu/roms/nes /var/lib/lulu/roms/genesis /var/lib/lulu/roms/ps2 /var/lib/lulu/roms/wii /var/lib/lulu/bios/ps2; do
         [[ -d "$path" ]] || die "required data directory is missing: $path"
         [[ "$(stat -c '%U:%G' "$path")" == lulu:lulu ]] || die "wrong ownership: $path"
@@ -115,7 +138,27 @@ verify_installed() {
     systemctl is-active --quiet inputplumber.service || die 'inputplumber.service is not active'
     [[ -f /etc/inputplumber/devices.d/lulu-composite.yaml ]] || die 'InputPlumber device configuration is missing'
     [[ -f /etc/lulu/presentation.conf ]] || die 'presentation configuration is missing'
-    python -m compileall -q /opt/lulu/current/lib
+    local connector
+    connector="$(sed -n 's/^LULU_OUTPUT_CONNECTOR=//p' /etc/lulu/presentation.conf | tr -d '"' | tail -n 1)"
+    if [[ -n "$connector" ]]; then
+        [[ -f "/sys/class/drm/card0-$connector/status" && "$(<"/sys/class/drm/card0-$connector/status")" == connected ]] || die "configured connector is not connected: $connector"
+    else
+        mapfile -t connectors < <(for status in /sys/class/drm/card*-*/status; do [[ -f "$status" && "$(<"$status")" == connected ]] && basename "$(dirname "$status")" | cut -d- -f2-; done | sort -u)
+        ((${#connectors[@]} == 1)) || die "expected one connected DRM output, found: ${connectors[*]:-none}"
+        connector=${connectors[0]}
+    fi
+    log "presentation connector: $connector"
+    [[ -d /run/user/958 && -S /run/user/958/bus ]] || die 'lulu user runtime bus is unavailable'
+    runuser -u lulu -- env XDG_RUNTIME_DIR=/run/user/958 DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/958/bus busctl --user list >/dev/null || die 'lulu user D-Bus is unusable'
+    systemctl is-active --quiet lulu-consoled.service || die 'lulu-consoled.service is not active'
+    systemctl is-active --quiet lulu-session@2.service || die 'lulu-session@2.service is not active'
+    runuser -u lulu -- env XDG_RUNTIME_DIR=/run/user/958 systemctl --user is-active --quiet pipewire.service wireplumber.service || die 'PipeWire/WirePlumber user services are not active'
+    python - <<'PY'
+import ast
+from pathlib import Path
+for path in Path('/opt/lulu/current/lib').rglob('*.py'):
+    ast.parse(path.read_text(), filename=str(path))
+PY
     local binary
     for binary in /opt/lulu/current/bin/lulu-shell /opt/lulu/current/bin/mudos-guide; do
         ldd "$binary" | grep -q 'not found' && die "native dependency is missing: $binary"
@@ -194,8 +237,10 @@ ensure_user() {
         useradd --uid 958 --gid 958 --create-home --home-dir /var/lib/lulu --shell /usr/bin/nologin lulu
     fi
     getent group seat >/dev/null || groupadd seat
-    usermod --append --groups seat lulu
-    for group in lulu seat; do getent group "$group" >/dev/null || die "missing group: $group"; done
+    getent group inputplumber >/dev/null || groupadd --system inputplumber
+    usermod --append --groups seat,inputplumber lulu
+    loginctl enable-linger lulu
+    for group in lulu seat inputplumber; do getent group "$group" >/dev/null || die "missing group: $group"; done
 }
 
 install_tree() {
@@ -220,9 +265,9 @@ install_tree() {
         chmod -R u+rwX,go+rX "$tmp"
         mv "$tmp" "$release_dir"
     fi
-    if [[ "$(readlink /opt/lulu/current 2>/dev/null || true)" != "$release" ]]; then
+    if [[ "$(readlink /opt/lulu/current 2>/dev/null || true)" != "releases/$release" ]]; then
         link="/opt/lulu/current.new.$$"
-        ln -s "$release" "$link"
+        ln -s "releases/$release" "$link"
         mv -Tf "$link" /opt/lulu/current
         RELEASE_CHANGED=1
     fi
@@ -266,6 +311,7 @@ install_system_state() {
     install -d -o lulu -g lulu -m 0700 /var/lib/lulu/.config/pipewire/pipewire-pulse.conf.d
     if ! cmp -s "$PAYLOAD/packaging/pipewire/lulu-fallback-input.conf" /var/lib/lulu/.config/pipewire/pipewire-pulse.conf.d/lulu-fallback-input.conf 2>/dev/null; then
         install -o lulu -g lulu -m 0644 "$PAYLOAD/packaging/pipewire/lulu-fallback-input.conf" /var/lib/lulu/.config/pipewire/pipewire-pulse.conf.d/lulu-fallback-input.conf
+        SYSTEM_CHANGED=1
     fi
     if ! cmp -s "$PAYLOAD/bin/verify-mudos.sh" /opt/lulu/current/bin/verify-mudos.sh 2>/dev/null; then
         install -m 0755 "$PAYLOAD/bin/verify-mudos.sh" /opt/lulu/current/bin/verify-mudos.sh
@@ -279,7 +325,8 @@ enable_services() {
     systemctl enable seatd.service inputplumber.service
     mkdir -p /etc/systemd/system/multi-user.target.wants
     ln -sfn /etc/systemd/system/lulu.target /etc/systemd/system/multi-user.target.wants/lulu.target
-    systemctl start seatd.service inputplumber.service
+    systemctl start seatd.service inputplumber.service user-runtime-dir@958.service user@958.service
+    systemctl start lulu.target
     if (( RELEASE_CHANGED || SYSTEM_CHANGED )); then
         systemctl try-restart lulu-consoled.service lulu-session@2.service
     fi
@@ -287,6 +334,8 @@ enable_services() {
 
 if (( VERIFY_ONLY )); then
     step 'Checking installed host' 1
+    require_file "$SCRIPT_DIR/CHECKPOINT"
+    load_checkpoint
     verify_installed
     exit 0
 fi
