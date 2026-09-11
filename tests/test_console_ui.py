@@ -19,6 +19,13 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertIn("function moveDomain(delta)", QML)
         self.assertIn('message = "Store space is not implemented"', QML)
         self.assertIn('message = "System space is not implemented"', QML)
+        self.assertIn('function openGameOptions(game)', QML)
+        self.assertIn('event.key === Qt.Key_X', QML)
+        self.assertIn('action: "options"', QML)
+        self.assertIn('GameOptions {', QML)
+        self.assertIn('space === "library" && libraryFocus === "games"', QML)
+        self.assertIn('space === "home" && selectedCategoryIndex === 3', QML)
+        self.assertIn('if (gameOptionsView === "menu")', QML)
         self.assertIn("Math.max(0, Math.min(domains.length - 1", QML)
         self.assertIn("Math.max(0, Math.min(recentGames.length - 1", QML)
         self.assertNotIn("% domains.length", QML)
@@ -393,6 +400,18 @@ class ConsoleUiTests(unittest.TestCase):
         ):
             self.assertIn(f"button: {button}", SHELL_PROFILE)
             self.assertIn(f"keyboard: {key}", SHELL_PROFILE)
+        self.assertIn("button: North", SHELL_PROFILE)
+        self.assertIn("keyboard: KeyX", SHELL_PROFILE)
+
+    def test_game_options_preserves_contextual_two_level_structure(self) -> None:
+        options = (ROOT / "ui" / "GameOptions.qml").read_text()
+        for entry in ("Change Match", "Edit Metadata", "Edit Title", "Clear Title Override"):
+            self.assertIn(entry, options)
+        self.assertIn('"Remove Image"', options)
+        self.assertIn('"Restore Image"', options)
+        self.assertIn("metadataMutation", QML)
+        self.assertIn("/metadata/search?game_id=", QML)
+        self.assertIn("function back()", QML)
 
     def test_library_navigation_separates_grid_and_collection_controls(self) -> None:
         shell = (ROOT / "ui" / "ConsoleShell.qml").read_text()

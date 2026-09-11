@@ -21,7 +21,7 @@ from .emulator_runtime import EmulatorRuntimeAdapter
 from .emulation import PLATFORMS, ROM_ROOT, ensure_storage
 from .inputplumber import InputPlumberClient
 from .local_content import LocalContentProvider
-from .metadata import MetadataMatcher, SteamGridDBMetadata
+from .metadata import MetadataMatcher, SteamGridDBMetadata, clean_local_title
 from .steam_provider import SteamProvider
 from .system_settings import CATEGORIES as SYSTEM_CATEGORIES, SystemSettingsProvider
 
@@ -75,6 +75,47 @@ class ConsoleCatalog:
 
     def clear_metadata_match(self, game_id: str) -> None:
         self.store.clear_metadata_match(game_id)
+
+    def metadata_search(self, game_id: str, query: str) -> list[dict[str, object]]:
+        game = self.store.get_game(game_id)
+        if game is None:
+            raise ValueError("game does not exist")
+        search_title = query.strip() or game.canonical_title or game.normalized_search_title or clean_local_title(game.source_title or game.title)
+        candidates = self.metadata.search(search_title, game.platform)
+        if candidates is None:
+            return []
+        return [{
+            "id": candidate.game_id,
+            "title": candidate.title,
+            "aliases": list(candidate.aliases),
+            "platforms": list(candidate.platforms),
+        } for candidate in candidates]
+
+    def _refresh_game_artwork(self, game_id: str) -> None:
+        game = self.store.get_game(game_id)
+        if game is None:
+            raise ValueError("game does not exist")
+        for refreshed_id, artwork_url in self.artwork.enrich([game]).items():
+            if refreshed_id == game_id:
+                self.store.set_artwork_url(game_id, artwork_url)
+
+    def apply_metadata_match(self, game_id: str, provider: str, metadata_game_id: str,
+                             canonical_title: str) -> None:
+        self.store.set_metadata_match(game_id, provider, metadata_game_id, canonical_title)
+        self._refresh_game_artwork(game_id)
+
+    def set_title_override(self, game_id: str, title: str) -> None:
+        self.store.set_display_title_override(game_id, title)
+
+    def clear_title_override(self, game_id: str) -> None:
+        self.store.clear_display_title_override(game_id)
+
+    def suppress_artwork(self, game_id: str) -> None:
+        self.store.suppress_artwork(game_id)
+
+    def restore_artwork(self, game_id: str) -> None:
+        self.store.restore_artwork(game_id)
+        self._refresh_game_artwork(game_id)
 
     def platform_categories(self) -> list[dict[str, str]]:
         return [{"scope": f"platform:{platform}", "platform": platform, "label": label}
@@ -178,6 +219,41 @@ class ConsoleInterface(ServiceInterface):
     @method()
     def ListSystemCategories(self) -> "as":
         return list(SYSTEM_CATEGORIES)
+
+    @method()
+    def SearchMetadata(self, game_id: "s", query: "s") -> "aa{sv}":
+        return [self._variants(item) for item in self.catalogue.metadata_search(game_id, query)]
+
+    @method()
+    def SetMetadataMatch(self, game_id: "s", provider: "s", metadata_game_id: "s",
+                         canonical_title: "s") -> "":
+        self.catalogue.apply_metadata_match(game_id, provider, metadata_game_id, canonical_title)
+        self.CatalogueChanged()
+
+    @method()
+    def ClearMetadataMatch(self, game_id: "s") -> "":
+        self.catalogue.clear_metadata_match(game_id)
+        self.CatalogueChanged()
+
+    @method()
+    def SetTitleOverride(self, game_id: "s", title: "s") -> "":
+        self.catalogue.set_title_override(game_id, title)
+        self.CatalogueChanged()
+
+    @method()
+    def ClearTitleOverride(self, game_id: "s") -> "":
+        self.catalogue.clear_title_override(game_id)
+        self.CatalogueChanged()
+
+    @method()
+    def SuppressArtwork(self, game_id: "s") -> "":
+        self.catalogue.suppress_artwork(game_id)
+        self.CatalogueChanged()
+
+    @method()
+    def RestoreArtwork(self, game_id: "s") -> "":
+        self.catalogue.restore_artwork(game_id)
+        self.CatalogueChanged()
 
     @method()
     async def LaunchGame(self, game_id: "s", timeout_ms: "u") -> "s":

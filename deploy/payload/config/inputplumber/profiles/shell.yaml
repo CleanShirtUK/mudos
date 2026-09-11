@@ -69,6 +69,12 @@ mapping:
         button: South
     target_events:
       - keyboard: KeyEnter
+  - name: North opens game options
+    source_event:
+      gamepad:
+        button: North
+    target_events:
+      - keyboard: KeyX
   - name: Left bumper previous collection
     source_event:
       gamepad:

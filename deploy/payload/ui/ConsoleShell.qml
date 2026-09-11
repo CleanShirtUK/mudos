@@ -109,6 +109,16 @@ Window {
     property bool launchOverlayVisible: false
     property bool launchOverlayRetired: false
     property var launchLogLines: []
+    property bool gameOptionsOpen: false
+    property string gameOptionsView: "menu"
+    property int gameOptionsIndex: 0
+    property string gameOptionsGameId: ""
+    property var gameOptionsGame: null
+    property var metadataResults: []
+    property string metadataQuery: ""
+    property string metadataTitleDraft: ""
+    property string metadataError: ""
+    property bool metadataBusy: false
     property int launchGeneration: 0
     property int launchStateSerial: 0
     property int launchStateApplied: 0
@@ -116,6 +126,13 @@ Window {
     readonly property string apiUrl: "http://127.0.0.1:38123"
     readonly property var visibleRecentGame: recentGames.length ? recentGames[recentIndex] : null
     readonly property var visibleLibraryGame: libraryGames.length ? libraryGames[libraryIndex] : null
+    readonly property var selectedGameForOptions: {
+        if (space === "library" && libraryFocus === "games")
+            return visibleLibraryGame
+        if (space === "home" && selectedCategoryIndex === 3)
+            return visibleRecentGame
+        return null
+    }
     readonly property string libraryScope: libraryCollections.length > collectionIndex
         ? libraryCollections[collectionIndex].scope : "all"
 
@@ -153,6 +170,7 @@ Window {
                 recentIndex = selectedIndex
             else if (recentIndex >= recentGames.length)
                 recentIndex = Math.max(0, recentGames.length - 1)
+            syncGameOptionsGame()
         })
         refreshLibrary()
         request("/platforms", "GET", "", function(data) {
@@ -219,7 +237,127 @@ Window {
                 libraryIndex = Math.max(0, libraryGames.length - 1)
             libraryFirstVisibleRow = Math.min(libraryFirstVisibleRow,
                                               Math.max(0, Math.floor(Math.max(0, libraryGames.length - 1) / 7) - 1))
+            syncGameOptionsGame()
         })
+    }
+
+    function syncGameOptionsGame() {
+        if (!gameOptionsOpen || gameOptionsGameId === "")
+            return
+        var games = recentGames.concat(libraryGames)
+        for (var index = 0; index < games.length; index++) {
+            if (String(games[index].game_id) === gameOptionsGameId) {
+                gameOptionsGame = games[index]
+                return
+            }
+        }
+    }
+
+    function openGameOptions(game) {
+        if (!game)
+            return
+        gameOptionsGame = game
+        gameOptionsGameId = String(game.game_id)
+        gameOptionsView = "menu"
+        gameOptionsIndex = 0
+        metadataError = ""
+        gameOptionsOpen = true
+    }
+
+    function closeGameOptions() {
+        gameOptionsOpen = false
+        gameOptionsGame = null
+        gameOptionsGameId = ""
+        metadataResults = []
+        metadataError = ""
+    }
+
+    function metadataSearch() {
+        if (!gameOptionsGame)
+            return
+        metadataBusy = true
+        metadataError = ""
+        request("/metadata/search?game_id=" + encodeURIComponent(gameOptionsGameId)
+                + "&query=" + encodeURIComponent(metadataQuery), "GET", "", function(data) {
+            metadataBusy = false
+            metadataResults = data
+            gameOptionsIndex = 0
+            if (!data.length)
+                metadataError = "No metadata results"
+        }, "Metadata search unavailable")
+    }
+
+    function metadataMutation(path, body, callback) {
+        request(path, "POST", JSON.stringify(body || {}), function(data) {
+            refreshCatalogue()
+            if (callback)
+                callback(data)
+        }, "Metadata update failed")
+    }
+
+    function activateGameOptions() {
+        if (!gameOptionsGame)
+            return
+        if (gameOptionsView === "menu") {
+            if (gameOptionsIndex === 0) {
+                metadataQuery = gameOptionsGame.canonical_title || gameOptionsGame.normalized_search_title
+                    || gameOptionsGame.title
+                metadataResults = []
+                gameOptionsView = "search"
+                gameOptionsIndex = 0
+                metadataSearch()
+            } else {
+                metadataTitleDraft = gameOptionsGame.display_title_override || gameOptionsGame.title
+                gameOptionsView = "edit"
+                gameOptionsIndex = 0
+            }
+        } else if (gameOptionsView === "edit") {
+            if (gameOptionsIndex === 0) {
+                metadataTitleDraft = gameOptionsGame.display_title_override || gameOptionsGame.title
+                gameOptionsView = "title"
+            } else if (gameOptionsIndex === 1) {
+                metadataMutation("/metadata/title/clear/" + encodeURIComponent(gameOptionsGameId), {}, function() {
+                    gameOptionsView = "edit"
+                    gameOptionsIndex = 0
+                })
+            } else {
+                metadataMutation("/metadata/artwork/" + encodeURIComponent(gameOptionsGameId), {
+                    suppressed: !Boolean(gameOptionsGame.artwork_suppressed)
+                }, function() {
+                    gameOptionsView = "edit"
+                    gameOptionsIndex = 0
+                })
+            }
+        } else if (gameOptionsView === "title") {
+            var title = metadataTitleDraft.trim()
+            if (!title)
+                return
+            metadataMutation("/metadata/title/" + encodeURIComponent(gameOptionsGameId), {title: title}, function() {
+                gameOptionsView = "edit"
+                gameOptionsIndex = 0
+            })
+        } else if (gameOptionsView === "search") {
+            if (!metadataResults.length || !metadataResults[gameOptionsIndex])
+                return
+            var result = metadataResults[gameOptionsIndex]
+            metadataMutation("/metadata/match/" + encodeURIComponent(gameOptionsGameId), {
+                provider: "steamgriddb",
+                metadata_game_id: String(result.id),
+                canonical_title: String(result.title)
+            }, function() {
+                gameOptionsView = "menu"
+                gameOptionsIndex = 0
+            })
+        }
+    }
+
+    function moveGameOptions(delta) {
+        var count = gameOptionsView === "menu" ? 2
+            : gameOptionsView === "edit" ? 3 : metadataResults.length
+        if (gameOptionsView === "title")
+            return
+        if (count > 0)
+            gameOptionsIndex = Math.max(0, Math.min(count - 1, gameOptionsIndex + delta))
     }
 
     function refreshSystemSettings() {
@@ -377,6 +515,15 @@ Window {
         }, "Launch failed", generation)
     }
 
+    function openSteamStore() {
+        message = "Opening Steam Store"
+        request("/store/steam", "POST", "", function(data) {
+            launchToken = data.token
+            launchStatus = "running"
+            message = ""
+        }, "Steam Store launch failed")
+    }
+
     Connections {
         target: controllerBridge
         function onValueChanged(key, value) {
@@ -419,8 +566,9 @@ Window {
         } else if (selectedCategoryIndex === 0) {
             openSystemCategory(systemHomeRailRef ? systemHomeRailRef.selectedIndex : systemCategoryIndex)
         } else if (selectedCategoryIndex === 1) {
-            message = "Store space is not implemented"
+            openSteamStore()
         } else {
+            // Store space is not implemented for unknown future domains: message = "Store space is not implemented"
             message = "System space is not implemented"
         }
     }
@@ -446,6 +594,16 @@ Window {
     }
 
     function back() {
+        if (gameOptionsOpen) {
+            if (gameOptionsView === "menu")
+                closeGameOptions()
+            else {
+                gameOptionsView = "menu"
+                gameOptionsIndex = 0
+                metadataError = ""
+            }
+            return
+        }
         if (space === "system") {
             if (systemLanding)
                 space = "home"
@@ -587,7 +745,8 @@ Window {
     }
 
     function controllerUp() {
-            if (root.space === "home") root.moveDomain(-1)
+            if (root.gameOptionsOpen) root.moveGameOptions(-1)
+            else if (root.space === "home") root.moveDomain(-1)
             else if (root.space === "library") root.moveLibraryVertical(-1)
             else if (root.space === "system") {
                 if (root.systemLanding) root.moveSystemCategory(-4)
@@ -595,7 +754,8 @@ Window {
             }
     }
     function controllerDown() {
-            if (root.space === "home") root.moveDomain(1)
+            if (root.gameOptionsOpen) root.moveGameOptions(1)
+            else if (root.space === "home") root.moveDomain(1)
             else if (root.space === "library") root.moveLibraryVertical(1)
             else if (root.space === "system") {
                 if (root.systemLanding) root.moveSystemCategory(4)
@@ -603,7 +763,8 @@ Window {
             }
     }
     function controllerLeft() {
-            if (root.space === "home") {
+            if (root.gameOptionsOpen) root.moveGameOptions(-1)
+            else if (root.space === "home") {
                 if (root.selectedCategoryIndex === 3) root.moveRecent(-1)
                 else if (root.selectedCategoryIndex === 2) root.moveLibraryLanding(-1)
                 else if (root.selectedCategoryIndex === 0) root.moveSystemCategory(-1)
@@ -615,7 +776,8 @@ Window {
             }
     }
     function controllerRight() {
-            if (root.space === "home") {
+            if (root.gameOptionsOpen) root.moveGameOptions(1)
+            else if (root.space === "home") {
                 if (root.selectedCategoryIndex === 3) root.moveRecent(1)
                 else if (root.selectedCategoryIndex === 2) root.moveLibraryLanding(1)
                 else if (root.selectedCategoryIndex === 0) root.moveSystemCategory(1)
@@ -666,6 +828,28 @@ Window {
         focus: true
 
         Keys.onPressed: function(event) {
+            if (event.key === Qt.Key_X) {
+                if (selectedGameForOptions)
+                    openGameOptions(selectedGameForOptions)
+                event.accepted = true
+                return
+            }
+            if (gameOptionsOpen) {
+                if (event.key === Qt.Key_Up || event.key === Qt.Key_Left) {
+                    moveGameOptions(-1)
+                    event.accepted = true
+                } else if (event.key === Qt.Key_Down || event.key === Qt.Key_Right) {
+                    moveGameOptions(1)
+                    event.accepted = true
+                } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
+                    activateGameOptions()
+                    event.accepted = true
+                } else if (event.key === Qt.Key_Escape || event.key === Qt.Key_Backspace) {
+                    back()
+                    event.accepted = true
+                }
+                return
+            }
             if (space === "home") {
                 if (event.key === Qt.Key_Up) {
                     moveDomain(-1)
@@ -916,6 +1100,7 @@ Window {
                         canonicalTexture: orbitTexture
                         canonicalCoordinateRoot: orbitRenderSource
                         canonicalSize: Qt.size(root.width, root.height)
+                        onSteamStoreRequested: root.openSteamStore()
                     }
                 }
 
@@ -1018,6 +1203,24 @@ Window {
             luluPalette: luluPalette
         }
 
+        GameOptions {
+            game: root.gameOptionsGame
+            view: root.gameOptionsView
+            selectedIndex: root.gameOptionsIndex
+            results: root.metadataResults
+            query: root.metadataQuery
+            titleDraft: root.metadataTitleDraft
+            errorMessage: root.metadataError
+            busy: root.metadataBusy
+            uiScale: root.uiScale
+            typography: typography
+            luluPalette: luluPalette
+            onActivated: root.activateGameOptions()
+            onBacked: root.back()
+            onQueryEdited: root.metadataQuery = value
+            onTitleEdited: root.metadataTitleDraft = value
+        }
+
         Item {
             id: interactionRail
             anchors.left: parent.left
@@ -1062,6 +1265,14 @@ Window {
                     luluPalette: luluPalette
                 }
                 ControllerHint {
+                    visible: root.space === "library" && root.libraryFocus === "games" && root.visibleLibraryGame !== null
+                    action: "options"
+                    label: "Game Options"
+                    uiScale: root.uiScale
+                    typography: typography
+                    luluPalette: luluPalette
+                }
+                ControllerHint {
                     action: "back"
                     label: "Back"
                     uiScale: root.uiScale
@@ -1090,6 +1301,14 @@ Window {
                     action: "confirm"
                      label: root.selectedCategoryIndex === 3 ? "Launch"
                            : root.selectedCategoryIndex === 2 ? "Open Library" : "Select"
+                    uiScale: root.uiScale
+                    typography: typography
+                    luluPalette: luluPalette
+                }
+                ControllerHint {
+                    visible: root.selectedGameForOptions !== null
+                    action: "options"
+                    label: "Game Options"
                     uiScale: root.uiScale
                     typography: typography
                     luluPalette: luluPalette

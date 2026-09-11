@@ -19,6 +19,8 @@ Rectangle {
     property var typography
     property var luluPalette
     property string displayTitle: ""
+    // The normal artwork pipeline can bind the supplied fallback asset here later.
+    property url fallbackArtworkSource: ""
     property string presentationId: ""
     property string symbolicArtwork: ""
     property bool identitySampling: false
@@ -199,7 +201,8 @@ Rectangle {
         Image {
             id: artworkSource
             anchors.fill: parent
-            source: card.game ? card.game.artwork_url : ""
+            source: card.game && !card.game.artwork_suppressed && card.game.artwork_url
+                ? card.game.artwork_url : card.fallbackArtworkSource
             fillMode: Image.PreserveAspectFit
             asynchronous: true
             visible: !card.symbolicArtwork
@@ -250,7 +253,8 @@ Rectangle {
         Text {
             id: focalTitle
             width: parent.width
-            text: card.displayTitle || (card.game ? card.game.title : "")
+            text: card.displayTitle || (card.game
+                ? (card.game.display_title_override || card.game.canonical_title || card.game.title) : "")
             color: Qt.rgba(card.luluPalette.primaryText.r * card.focusBrightness,
                            card.luluPalette.primaryText.g * card.focusBrightness,
                            card.luluPalette.primaryText.b * card.focusBrightness,
@@ -332,7 +336,8 @@ Rectangle {
 
         Text {
             width: parent.width
-            text: card.displayTitle || (card.game ? card.game.title : "")
+            text: card.displayTitle || (card.game
+                ? (card.game.display_title_override || card.game.canonical_title || card.game.title) : "")
             color: card.focusedColor(card.luluPalette.primaryText)
             font.family: card.typography ? card.typography.interfaceFamily : "JetBrains Mono"
             font.pixelSize: card.typography
