@@ -201,23 +201,22 @@ Rectangle {
         radius: artworkRadius
         z: 2
         opacity: card.presentationContentOpacity
-            color: card.iconArtwork && !card.stackedGlass
-                ? luluPalette.artworkSurface : luluPalette.transparent
+            color: recentFocal || card.stackedGlass
+                ? luluPalette.transparent : luluPalette.artworkSurface
         clip: true
 
         Image {
             id: artworkSource
-            anchors.centerIn: parent
-            width: card.iconArtwork ? parent.width * 0.5 : parent.width
-            height: card.iconArtwork ? parent.height * 0.5 : parent.height
-            source: card.displayedArtworkSource
+            anchors.fill: parent
+            source: card.game && !card.game.artwork_suppressed && card.game.artwork_url
+                ? card.game.artwork_url : card.fallbackArtworkSource
             fillMode: Image.PreserveAspectFit
             asynchronous: true
-            visible: true
+            visible: !card.iconArtwork
         }
 
         ShaderEffectSource {
-            id: artworkTexture
+            id: rasterArtworkTexture
             anchors.fill: parent
             sourceItem: artworkSource
             hideSource: true
@@ -226,7 +225,7 @@ Rectangle {
 
         ShaderEffect {
             anchors.fill: parent
-            property var source: artworkTexture
+            property var source: rasterArtworkTexture
             property real cornerRadius: artworkFrame.artworkRadius / Math.min(width, height)
             property vector2d artworkSize: Qt.vector2d(width, height)
             property real borderWidthPx: card.uiScale
@@ -238,9 +237,20 @@ Rectangle {
             fragmentShader: "shaders/card-rounded.frag.qsb"
         }
 
+        Image {
+            id: iconArtworkSource
+            anchors.centerIn: parent
+            width: card.iconArtwork ? parent.width * 0.5 : parent.width
+            height: card.iconArtwork ? parent.height * 0.5 : parent.height
+            source: card.displayedArtworkSource
+            fillMode: Image.PreserveAspectFit
+            asynchronous: true
+            visible: card.iconArtwork
+        }
+
         MultiEffect {
-            anchors.fill: artworkSource
-            source: artworkSource
+            anchors.fill: iconArtworkSource
+            source: iconArtworkSource
             visible: card.iconArtwork
             z: 1
             colorization: 1.0
