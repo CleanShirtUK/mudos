@@ -28,7 +28,9 @@ Item {
     signal openRequested(int index)
 
     function platformArtwork(scope) {
-        return Qt.resolvedUrl("artwork/platform-" + scope + ".svg")
+        return scope === "steam"
+            ? Qt.resolvedUrl("artwork/platform-steam.png")
+            : Qt.resolvedUrl("artwork/platform-all.svg")
     }
 
     function railX(relativeIndex) {
@@ -96,6 +98,7 @@ Item {
                    - (libraryHome.selectionStart[index] || 0)) * libraryHome.selectionProgress
             displayTitle: modelData.label
             symbolicArtwork: ""
+            artworkRole: modelData.scope === "steam" ? "raster" : "icon"
             artworkSource: libraryHome.platformArtwork(modelData.scope)
             uiScale: libraryHome.uiScale
             typography: libraryHome.typography

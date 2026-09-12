@@ -4,8 +4,8 @@ Landing cards load the following replaceable 600x900 portrait assets from this
 directory. Keep the filenames unchanged when supplying artwork.
 
 - `platform-all.svg`
-- `platform-steam.svg`
-- `store.svg`
+- `platform-steam.png`
+- `store.png`
 - `system-display.svg`
 - `system-audio.svg`
 - `system-network.svg`

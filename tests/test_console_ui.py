@@ -166,7 +166,10 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertIn("captureSelection()", system)
         self.assertIn("onActivated: root.openRequested(index)", system)
         self.assertIn("property url artworkSource", navigation_card)
-        self.assertIn('artworkSource: Qt.resolvedUrl("artwork/store.svg")', store)
+        self.assertIn('property string artworkRole: "icon"', navigation_card)
+        self.assertIn("artworkRole: root.artworkRole", navigation_card)
+        self.assertIn('artworkSource: Qt.resolvedUrl("artwork/store.png")', store)
+        self.assertIn('artworkRole: "raster"', store)
         self.assertIn("function platformArtwork(scope)", (ROOT / "ui" / "LibraryHome.qml").read_text())
         self.assertIn("function categoryArtwork(category)", system)
         self.assertNotIn("border.width", (ROOT / "ui" / "NavigationCard.qml").read_text())
@@ -178,13 +181,13 @@ class ConsoleUiTests(unittest.TestCase):
     def test_non_game_portrait_artwork_assets_are_replaceable(self) -> None:
         artwork = ROOT / "ui" / "artwork"
         expected = {
-            "platform-all.svg", "platform-steam.svg", "store.svg",
+            "platform-all.svg", "platform-steam.png", "store.png",
             "system-display.svg", "system-audio.svg", "system-network.svg",
             "system-bluetooth.svg", "system-controllers.svg", "system-storage.svg",
-            "system-system.svg", "system-lulu.svg",
+            "system-system.svg", "system-lulu.svg", "README.md",
         }
-        self.assertEqual({path.name for path in artwork.glob("*.svg")}, expected)
-        for path in artwork.glob("*.svg"):
+        self.assertEqual({path.name for path in artwork.iterdir()}, expected)
+        for path in artwork.iterdir():
             self.assertGreater(path.stat().st_size, 0)
 
     def test_home_uses_one_fixed_content_stage_and_compact_library_object(self) -> None:
@@ -233,6 +236,9 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertIn("height: libraryHome.cardHeight", library_home)
         self.assertIn("width: libraryHome.compactCardWidth", library_home)
         self.assertIn('artworkSource: libraryHome.platformArtwork(modelData.scope)', library_home)
+        self.assertIn('Qt.resolvedUrl("artwork/platform-steam.png")', library_home)
+        self.assertIn('Qt.resolvedUrl("artwork/platform-all.svg")', library_home)
+        self.assertIn('artworkRole: modelData.scope === "steam" ? "raster" : "icon"', library_home)
         self.assertIn("canonicalCoordinateRoot", library_home)
         self.assertIn("interval: 16", library_home)
         self.assertIn("repeat: true", library_home)

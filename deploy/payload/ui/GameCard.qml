@@ -208,8 +208,7 @@ Rectangle {
         Image {
             id: artworkSource
             anchors.fill: parent
-            source: card.game && !card.game.artwork_suppressed && card.game.artwork_url
-                ? card.game.artwork_url : card.fallbackArtworkSource
+            source: card.displayedArtworkSource
             fillMode: Image.PreserveAspectFit
             asynchronous: true
             visible: !card.iconArtwork
