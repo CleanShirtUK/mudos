@@ -84,10 +84,10 @@ verify_payload() {
     load_checkpoint
     require_file "$PAYLOAD/manifest.sha256"
     (cd "$PAYLOAD" && sha256sum --strict --check manifest.sha256)
-    for path in lib/lulu bin/lulu-shell bin/mudos-guide bin/lulu-vt bin/verify-mudos.sh ui config packaging scripts/steam-session-bootstrap.sh scripts/steam-bootstrap.sh; do
+    for path in lib/lulu bin/lulu-shell bin/mudos-guide bin/lulu-vt bin/verify-mudos.sh ui config packaging scripts/steam-session-bootstrap.sh scripts/steam-bootstrap.sh scripts/file-browser-launch.sh; do
         [[ -e "$PAYLOAD/$path" ]] || die "payload is incomplete: $path"
     done
-    for script in "$PAYLOAD/scripts/steam-session-bootstrap.sh" "$PAYLOAD/scripts/steam-bootstrap.sh"; do
+    for script in "$PAYLOAD/scripts/steam-session-bootstrap.sh" "$PAYLOAD/scripts/steam-bootstrap.sh" "$PAYLOAD/scripts/file-browser-launch.sh"; do
         [[ -x "$script" ]] || die "runtime script is not executable: $script"
     done
     (cd "$PAYLOAD" && while read -r _ path; do [[ "$path" == ./manifest.sha256 || -f "$path" ]] || exit 1; done < manifest.sha256) || die 'payload manifest references a missing file'
@@ -102,7 +102,7 @@ verify_packages() {
     command -v python >/dev/null || die 'python executable is missing'
     command -v systemctl >/dev/null || die 'systemctl executable is missing'
     command -v busctl >/dev/null || die 'busctl executable is missing'
-    for executable in dolphin-emu pcsx2 pcsx2-qt retroarch gamescope; do
+    for executable in dolphin-emu pcsx2 pcsx2-qt retroarch gamescope dufs; do
         command -v "$executable" >/dev/null || die "required executable is missing: $executable"
     done
 }
@@ -115,7 +115,7 @@ verify_installed() {
     grep -Fxq "tag=${VERSION_TAG}" /opt/lulu/current/RELEASE || die 'installed release tag does not match checkpoint'
     [[ "$(sha256sum /opt/lulu/current/manifest.sha256 | cut -c1-12)" == "$(sed -n 's/^manifest=//p' /opt/lulu/current/RELEASE)" ]] || die 'installed manifest digest does not match release'
     (cd /opt/lulu/current && sha256sum --strict --check manifest.sha256)
-    for path in lib/lulu bin/lulu-shell bin/mudos-guide bin/lulu-vt ui config scripts/steam-session-bootstrap.sh scripts/steam-bootstrap.sh; do
+    for path in lib/lulu bin/lulu-shell bin/mudos-guide bin/lulu-vt ui config scripts/steam-session-bootstrap.sh scripts/steam-bootstrap.sh scripts/file-browser-launch.sh; do
         [[ -e "/opt/lulu/current/$path" ]] || die "installed payload is incomplete: $path"
     done
     id lulu >/dev/null 2>&1 || die 'lulu user is missing'
@@ -130,7 +130,7 @@ verify_installed() {
         [[ -d "$path" ]] || die "required data directory is missing: $path"
         [[ "$(stat -c '%U:%G' "$path")" == lulu:lulu ]] || die "wrong ownership: $path"
     done
-    for file in lulu.target lulu-session@.service lulu-consoled.service; do
+    for file in lulu.target lulu-session@.service lulu-consoled.service lulu-file-browser.service; do
         systemd-analyze verify "/etc/systemd/system/$file"
     done
     systemd-analyze verify /etc/systemd/system/inputplumber.service.d/restart.conf 2>/dev/null || true
@@ -140,6 +140,8 @@ verify_installed() {
     systemctl is-active --quiet inputplumber.service || die 'inputplumber.service is not active'
     [[ -f /etc/inputplumber/devices.d/lulu-composite.yaml ]] || die 'InputPlumber device configuration is missing'
     [[ -f /etc/lulu/presentation.conf ]] || die 'presentation configuration is missing'
+    [[ -f /etc/lulu/file-browser.env ]] || die 'file browser credentials are missing'
+    [[ "$(stat -c '%a' /etc/lulu/file-browser.env)" == 600 ]] || die 'file browser credentials are not mode 0600'
     local connector
     connector="$(sed -n 's/^LULU_OUTPUT_CONNECTOR=//p' /etc/lulu/presentation.conf | tr -d '"' | tail -n 1)"
     if [[ -n "$connector" ]]; then
@@ -154,6 +156,7 @@ verify_installed() {
     [[ -d /run/user/958 && -S /run/user/958/bus ]] || die 'lulu user runtime bus is unavailable'
     runuser -u lulu -- env XDG_RUNTIME_DIR=/run/user/958 DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/958/bus busctl --user list >/dev/null || die 'lulu user D-Bus is unusable'
     systemctl is-active --quiet lulu-consoled.service || die 'lulu-consoled.service is not active'
+    systemctl is-active --quiet lulu-file-browser.service || die 'lulu-file-browser.service is not active'
     systemctl is-active --quiet lulu-session@2.service || die 'lulu-session@2.service is not active'
     runuser -u lulu -- env XDG_RUNTIME_DIR=/run/user/958 systemctl --user is-active --quiet pipewire.service wireplumber.service || die 'PipeWire/WirePlumber user services are not active'
     python - <<'PY'
@@ -199,6 +202,13 @@ install_packages() {
             pacman -S --needed --noconfirm ttf-zalando-sans
         else
             build_payload_packages ttf-zalando-sans ttf-zalando-sans
+        fi
+    fi
+    if ! pacman -Q dufs >/dev/null 2>&1; then
+        if pacman -Si dufs >/dev/null 2>&1; then
+            pacman -S --needed --noconfirm dufs
+        else
+            build_payload_packages dufs dufs
         fi
     fi
 }
@@ -353,7 +363,7 @@ install_tree() {
 
 install_system_state() {
     local source destination
-    for source in lulu.target lulu-session@.service lulu-consoled.service; do
+    for source in lulu.target lulu-session@.service lulu-consoled.service lulu-file-browser.service; do
         destination="/etc/systemd/system/$source"
         if ! cmp -s "$PAYLOAD/packaging/$source" "$destination" 2>/dev/null; then
             install -m 0644 "$PAYLOAD/packaging/$source" "$destination"
@@ -365,6 +375,13 @@ install_system_state() {
         SYSTEM_CHANGED=1
     fi
     install -d -m 0755 /etc/systemd/system/inputplumber.service.d
+    install -m 0644 "$PAYLOAD/packaging/file-browser.env.example" /etc/lulu/file-browser.env.example
+    if [[ ! -e /etc/lulu/file-browser.env ]]; then
+        local password
+        password="$(od -An -N32 -tx1 /dev/urandom | tr -d ' \n')"
+        printf 'DUFS_BIND=0.0.0.0\nDUFS_PORT=8080\nDUFS_AUTH=admin:%s@/:rw\nDUFS_ALLOW_UPLOAD=true\nDUFS_ALLOW_DELETE=true\nDUFS_ALLOW_SEARCH=true\nDUFS_ALLOW_ARCHIVE=true\nDUFS_ALLOW_SYMLINK=false\nDUFS_HIDDEN=.*,*~\n' "$password" > /etc/lulu/file-browser.env
+    fi
+    chmod 0600 /etc/lulu/file-browser.env
     if ! cmp -s "$PAYLOAD/packaging/inputplumber-restart.conf" /etc/systemd/system/inputplumber.service.d/restart.conf 2>/dev/null; then
         install -m 0644 "$PAYLOAD/packaging/inputplumber-restart.conf" /etc/systemd/system/inputplumber.service.d/restart.conf
         SYSTEM_CHANGED=1
@@ -387,7 +404,7 @@ install_system_state() {
         RELEASE_CHANGED=1
     fi
     if (( SYSTEM_CHANGED || INPUT_CHANGED )); then systemctl daemon-reload; fi
-    systemd-analyze verify /etc/systemd/system/lulu.target /etc/systemd/system/lulu-session@.service /etc/systemd/system/lulu-consoled.service
+    systemd-analyze verify /etc/systemd/system/lulu.target /etc/systemd/system/lulu-session@.service /etc/systemd/system/lulu-consoled.service /etc/systemd/system/lulu-file-browser.service
 }
 
 enable_services() {
