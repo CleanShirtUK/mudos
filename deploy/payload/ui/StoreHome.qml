@@ -17,6 +17,7 @@ Item {
         height: root.cardHeight
         displayTitle: "Store"
         symbolicArtwork: ""
+        artworkRole: "raster"
         artworkSource: Qt.resolvedUrl("artwork/store.svg")
         uiScale: root.uiScale
         typography: root.typography

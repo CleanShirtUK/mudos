@@ -208,8 +208,10 @@ Rectangle {
         Image {
             id: artworkSource
             anchors.fill: parent
-            source: card.game && !card.game.artwork_suppressed && card.game.artwork_url
-                ? card.game.artwork_url : card.fallbackArtworkSource
+            source: card.artworkRole === "raster" && card.artworkSource
+                ? card.artworkSource
+                : (card.game && !card.game.artwork_suppressed && card.game.artwork_url
+                    ? card.game.artwork_url : card.fallbackArtworkSource)
             fillMode: Image.PreserveAspectFit
             asynchronous: true
             visible: !card.iconArtwork
