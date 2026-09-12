@@ -32,7 +32,7 @@ b85334fa084c397b9fb512a50cca910c1b26c3fb51cfce535bf9092ef80028e9  ./lib/lulu/pro
 ea04081e1c93cdab882c350071d086255809b19d380677aedef2caf036b1b3b8  ./lib/lulu/settings.py
 5629276492cc88ed04f2cf79f8da07d63fc1efc6ded4a4001083f841512dc2c5  ./lib/lulu/status.py
 50b6762c20d4b0e7e18385e0940040aaf030837f73ecaafb4d6fb5202faebd8b  ./lib/lulu/steam_provider.py
-9681dfe3cd511980374af393c41f5e2f3482963b09f2eb4b011040018ae81e56  ./lib/lulu/switch_provider.py
+b218819044dd898b76bd65cd994a56200f6ffd3deb3d13ee9deade51dc5206fa  ./lib/lulu/switch_provider.py
 580e27491fd293b44ede14fe63c7d7e0bd139c8f62d48465edaaad1ff864e18e  ./lib/lulu/system_settings.py
 8d74912fa648d8bf6042a2d764da221862da1302fa69c42727c08460757beb10  ./packages/dufs/PKGBUILD
 270a8bf35bd4b4a81aa1974dcd06ccb66e321f86fc09a5fd97e696082d35bb76  ./packages/pcsx2/pcsx2.install
