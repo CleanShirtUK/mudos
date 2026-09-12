@@ -16,7 +16,7 @@ b3022d5b7f1176c38474ad4b0d2e79236756c2814de689c0dc29cc9c1094b171  ./lib/lulu/con
 bf6eaf76a5c7499fdd239d0ae6d50a647f709225e2526d7cbeadf24954fa1ab9  ./lib/lulu/console_ui.py
 2426657b5e83bd5a2cf59674ecd4f1fb930e16840a7b20a26fa31302f431a89a  ./lib/lulu/contracts.py
 ec4dd764054a39ef16b245ab155eddeac77bf088e9b68aca15bd4cdab57fb22a  ./lib/lulu/controllerd.py
-218f43ac45d0d5e6c124cae54b470aad08f77143c92b91a98489717727404843  ./lib/lulu/controller_provisioning.py
+b9f6d63e8b561958079c05ae0877172e7e344703fe501ebe6c467117e966ebbf  ./lib/lulu/controller_provisioning.py
 640c2a36264ad61546198b9b7533d5b1fe59d751d0c327f4d8b4fc365e50a9a7  ./lib/lulu/emulation.py
 4ee9971de38b5726a859fb782aa0b6a34e684c63dee52253172079c44089c2c4  ./lib/lulu/emulator_runtime.py
 22eea93ebf4fdf4093a74b3fbb9673a87ba91861aa0dddefbdd70f57df58f81b  ./lib/lulu/gamescope.py
