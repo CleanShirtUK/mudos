@@ -1,0 +1,8 @@
+[Plymouth Theme]
+Name=Lulu
+Description=Mudos startup theme
+ModuleName=script
+
+[script]
+ImageDir=/usr/share/plymouth/themes/lulu
+ScriptFile=/usr/share/plymouth/themes/lulu/lulu.script

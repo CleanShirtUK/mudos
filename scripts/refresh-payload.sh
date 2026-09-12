@@ -15,6 +15,8 @@ tag=${2:?usage: refresh-payload.sh COMMIT TAG}
 
 # Keep component contracts in the payload identical to the authoritative UI.
 cp "$root"/ui/*.qml "$payload/ui/"
+cp -a "$root"/ui/assets "$payload/ui/"
+cp -a "$root"/ui/controllerglyphs "$payload/ui/"
 cp "$root"/src/lulu/consoled.py "$root"/src/lulu/console_sessiond.py "$root"/src/lulu/process_supervisor.py \
    "$root"/src/lulu/sessiond.py "$root"/src/lulu/steam_provider.py "$root"/src/lulu/system_settings.py "$root"/src/lulu/gamescope.py \
    "$root"/src/lulu/inputplumber.py "$root"/src/lulu/contracts.py "$root"/src/lulu/controllerd.py \
@@ -31,6 +33,7 @@ cp "$root"/scripts/console-ui-bridge.py "$payload/scripts/console-ui-bridge.py"
 cp "$root"/scripts/console-ui.sh "$payload/scripts/console-ui.sh"
 cp "$root"/scripts/steam-bootstrap.sh "$payload/scripts/steam-bootstrap.sh"
 cp "$root"/packaging/lulu-session@.service "$payload/packaging/lulu-session@.service"
+cp -a "$root"/packaging/plymouth "$payload/packaging/"
 cp "$root"/config/inputplumber/profiles/*.yaml "$payload/config/inputplumber/profiles/"
 cp "$root"/build/lulu-shell "$root"/build/mudos-guide "$payload/bin/"
 

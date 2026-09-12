@@ -1,0 +1,5 @@
+# Replaceable UI sound effects. Files must be PCM WAV for Qt/desktop playback.
+focus.wav
+activate.wav
+back.wav
+error.wav

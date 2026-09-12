@@ -19,8 +19,7 @@ Rectangle {
     property var typography
     property var luluPalette
     property string displayTitle: ""
-    // The supplied fallback asset belongs at this normal artwork-pipeline path.
-    property url fallbackArtworkSource: Qt.resolvedUrl("artwork/fallback.jpg")
+    property url fallbackArtworkSource: Qt.resolvedUrl("assets/portrait-artwork/portrait-placeholder.svg")
     property string presentationId: ""
     property string symbolicArtwork: ""
     property bool identitySampling: false

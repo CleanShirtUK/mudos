@@ -20,7 +20,7 @@ Item {
     Image {
         anchors.fill: parent
         visible: parent.action !== "options"
-        source: "controllerglyphs/" + (glyphFiles[parent.action] || glyphFiles.confirm)
+        source: Qt.resolvedUrl("controllerglyphs/" + (glyphFiles[parent.action] || glyphFiles.confirm))
         sourceSize: Qt.size(parent.glyphSize, parent.glyphSize)
         fillMode: Image.PreserveAspectFit
         smooth: true
