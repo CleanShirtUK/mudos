@@ -1,7 +1,7 @@
 da700353eabc210c28425f8884c91b5f24d1b9b225c7842b9de107e68e651f82  ./bin/lulu-shell
 6f14d3589b61fdd428b7579680a8733713038592c952844ae7fe9a420ffc9d27  ./bin/lulu-vt
 2b76f7740e5feb5c3a76612e51e6459f3a822600232523778bc5e79907083140  ./bin/mudos-guide
-ebd08a4e7771c475a438399884a67f242791fd64de8ef4fb6b895bfaabba4df6  ./bin/verify-mudos.sh
+debdf728d7f675ec977c8a0876ef0fdd8d40e8187135d4f30d21e9f036d28e35  ./bin/verify-mudos.sh
 d8eeda0ddbdd1d0e03ebf70856353fed6bc102d91f34b46bce64acdc4aba636c  ./config/inputplumber/devices/lulu-composite.yaml
 ad4ba03db2a2f1f8e4bf73e670d28fca3f728eb2d087434dbe7bc4febb74661b  ./config/inputplumber/profiles/compat.yaml
 cbb03e3cebfe44bd7e97f2a4d074e856fa242c3a6a9f53db7740c428f5944021  ./config/inputplumber/profiles/game.yaml
