@@ -17,8 +17,6 @@ git -C "$root" clean -fdx -- "$payload"
     exit 1
 }
 
-cmake --build "$root/build" --target lulu-shell mudos-guide
-
 # Keep component contracts in the payload identical to the authoritative UI.
 cp "$root"/ui/*.qml "$payload/ui/"
 mkdir -p "$payload/ui/artwork"
@@ -37,7 +35,7 @@ cp "$root"/scripts/steam-bootstrap.sh "$payload/scripts/steam-bootstrap.sh"
 cp "$root"/packaging/lulu-session@.service "$payload/packaging/lulu-session@.service"
 cp "$root"/packaging/lulu-consoled.service "$payload/packaging/lulu-consoled.service"
 cp "$root"/config/inputplumber/profiles/*.yaml "$payload/config/inputplumber/profiles/"
-cp "$root"/build/lulu-shell "$root"/build/mudos-guide "$payload/bin/"
+printf '[PAYLOAD] binaries=preserved-from-tracked-payload\n'
 
 while IFS= read -r -d '' path; do
     case "$path" in
