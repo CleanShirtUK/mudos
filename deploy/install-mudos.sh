@@ -306,15 +306,16 @@ normalize_legacy_paths() {
 install_tree() {
     install -d -m 0755 /opt/lulu/releases /etc/lulu /etc/inputplumber/devices.d
     for path in \
-        /var/lib/lulu /var/lib/lulu/roms /var/lib/lulu/roms/nes \
-        /var/lib/lulu/roms/genesis /var/lib/lulu/roms/ps2 /var/lib/lulu/roms/wii \
-        /var/lib/lulu/roms/switch /var/lib/lulu/bios /var/lib/lulu/bios/ps2 \
-        /var/lib/lulu/bios/switch /var/lib/lulu/bios/switch/keys \
-        /var/lib/lulu/bios/switch/firmware /var/lib/lulu/.config \
-        /var/lib/lulu/.cache /var/lib/lulu/.local/share; do
+        /home/lulu /home/lulu/Games/ROMs /home/lulu/Games/ROMs/nes \
+        /home/lulu/Games/ROMs/genesis /home/lulu/Games/ROMs/ps2 /home/lulu/Games/ROMs/wii \
+        /home/lulu/Games/ROMs/switch /home/lulu/Games/BIOS /home/lulu/Games/BIOS/ps2 \
+        /home/lulu/Games/BIOS/switch /home/lulu/Games/BIOS/switch/keys \
+        /home/lulu/Games/BIOS/switch/firmware /home/lulu/.config \
+        /home/lulu/.cache /home/lulu/.local/share /home/lulu/Recordings \
+        /home/lulu/Replays /home/lulu/Screenshots /run/lulu; do
         install -d -m 0755 "$path"
     done
-    chown -R lulu:lulu /var/lib/lulu
+    chown -R lulu:lulu /home/lulu /run/lulu
 
     local digest release release_dir tmp link
     digest="$(sha256sum "$PAYLOAD/manifest.sha256" | cut -c1-12)"
@@ -370,9 +371,9 @@ install_system_state() {
         install -m 0644 "$PAYLOAD/packaging/presentation.conf" /etc/lulu/presentation.conf
         SYSTEM_CHANGED=1
     fi
-    install -d -o lulu -g lulu -m 0700 /var/lib/lulu/.config/pipewire/pipewire-pulse.conf.d
-    if ! cmp -s "$PAYLOAD/packaging/pipewire/lulu-fallback-input.conf" /var/lib/lulu/.config/pipewire/pipewire-pulse.conf.d/lulu-fallback-input.conf 2>/dev/null; then
-        install -o lulu -g lulu -m 0644 "$PAYLOAD/packaging/pipewire/lulu-fallback-input.conf" /var/lib/lulu/.config/pipewire/pipewire-pulse.conf.d/lulu-fallback-input.conf
+    install -d -o lulu -g lulu -m 0700 /home/lulu/.config/pipewire/pipewire-pulse.conf.d
+    if ! cmp -s "$PAYLOAD/packaging/pipewire/lulu-fallback-input.conf" /home/lulu/.config/pipewire/pipewire-pulse.conf.d/lulu-fallback-input.conf 2>/dev/null; then
+        install -o lulu -g lulu -m 0644 "$PAYLOAD/packaging/pipewire/lulu-fallback-input.conf" /home/lulu/.config/pipewire/pipewire-pulse.conf.d/lulu-fallback-input.conf
         SYSTEM_CHANGED=1
     fi
     if ! cmp -s "$PAYLOAD/bin/verify-mudos.sh" /opt/lulu/current/bin/verify-mudos.sh 2>/dev/null; then
