@@ -61,17 +61,18 @@ class SwitchProvider:
         guid = os.environ.get("LULU_SWITCH_SDL_GUID", DEFAULT_XBOX360_GUID)
         sections = ["[Controls]"]
         for player in range(1, player_count + 1):
+            config_player = player - 1
             prefix = f'engine:sdl,guid:{guid},port:{device_indices.get(player, player - 1)}'
-            sections.append(f"player_{player}_type=1")
-            sections.append(f"player_{player}_connected=true")
+            sections.append(f"player_{config_player}_type=1")
+            sections.append(f"player_{config_player}_connected=true")
             for name, button in _BUTTONS.items():
                 key = name.replace("_", "")
-                sections.append(f'player_{player}_button_{key}="{prefix},button:{button}"')
+                sections.append(f'player_{config_player}_button_{key}="{prefix},button:{button}"')
             for name, axis in _AXES.items():
-                sections.append(f'player_{player}_button_{name}="{prefix},axis:{axis},threshold:0.5,invert:+"')
+                sections.append(f'player_{config_player}_button_{name}="{prefix},axis:{axis},threshold:0.5,invert:+"')
             sections.extend([
-                f'player_{player}_analog_left="{prefix},axis_x:0,axis_y:1,invert_x:+,invert_y:+"',
-                f'player_{player}_analog_right="{prefix},axis_x:2,axis_y:3,invert_x:+,invert_y:+"',
+                f'player_{config_player}_analog_left="{prefix},axis_x:0,axis_y:1,invert_x:+,invert_y:+"',
+                f'player_{config_player}_analog_right="{prefix},axis_x:2,axis_y:3,invert_x:+,invert_y:+"',
             ])
         content = "\n".join(sections) + "\n"
         self.config_path.parent.mkdir(parents=True, exist_ok=True)
