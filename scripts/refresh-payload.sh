@@ -20,20 +20,18 @@ cp -a "$root"/ui/controllerglyphs "$payload/ui/"
 cp "$root"/src/lulu/consoled.py "$root"/src/lulu/console_sessiond.py "$root"/src/lulu/process_supervisor.py \
    "$root"/src/lulu/sessiond.py "$root"/src/lulu/steam_provider.py "$root"/src/lulu/system_settings.py "$root"/src/lulu/gamescope.py \
    "$root"/src/lulu/inputplumber.py "$root"/src/lulu/contracts.py "$root"/src/lulu/controllerd.py \
-<<<<<<< HEAD
    "$root"/src/lulu/artwork.py "$root"/src/lulu/catalogue.py "$root"/src/lulu/emulation.py \
-   "$root"/src/lulu/metadata.py "$root"/src/lulu/paths.py "$payload/lib/lulu/"
+   "$root"/src/lulu/metadata.py "$root"/src/lulu/paths.py "$root"/src/lulu/emulator_runtime.py \
+   "$root"/src/lulu/local_content.py "$root"/src/lulu/controller_provisioning.py \
+   "$root"/src/lulu/switch_provider.py "$payload/lib/lulu/"
 
-for module in artwork.py catalogue.py emulation.py metadata.py paths.py steam_provider.py; do
+for module in artwork.py catalogue.py emulation.py metadata.py paths.py steam_provider.py \
+              emulator_runtime.py local_content.py controller_provisioning.py switch_provider.py; do
     cmp -s "$root/src/lulu/$module" "$payload/lib/lulu/$module" || {
         printf 'source/payload divergence: %s\n' "$module" >&2
         exit 1
     }
 done
-=======
-   "$root"/src/lulu/emulation.py "$root"/src/lulu/emulator_runtime.py "$root"/src/lulu/local_content.py \
-   "$root"/src/lulu/controller_provisioning.py "$root"/src/lulu/switch_provider.py "$payload/lib/lulu/"
->>>>>>> f92c7a7 (Add Eden Nintendo Switch provider)
 cp "$root"/scripts/console-ui-bridge.py "$payload/scripts/console-ui-bridge.py"
 cp "$root"/scripts/console-ui.sh "$payload/scripts/console-ui.sh"
 cp "$root"/scripts/steam-bootstrap.sh "$payload/scripts/steam-bootstrap.sh"
