@@ -43,7 +43,7 @@ ec29326547549371d1e127a52ea367011bd203b08a203c9dc7c35dfff1e6a059  ./lib/lulu/ste
 8da57e584421d6481859f3d8c3ca105f67391cc37eb82bfc02a98f829b449fe5  ./packaging/file-browser.env.example
 ab2023c176db0686e60d843807c053fa7dbca612474de98698bfd6995835dad4  ./packaging/inputplumber-restart.conf
 2c2904e7c33aa837baffbf56648b77f70b9e47d2dc6d21b8d08f88ad56219d7a  ./packaging/lulu-consoled.service
-86df55a4c5c799e31322977999c9753afe2a03a84d18173e6a624ee9e87162ea  ./packaging/lulu-file-browser.service
+b81486bc57a41f9d707c6099835dbc01c5723861a0e4f81d169bf6e99391d722  ./packaging/lulu-file-browser.service
 b26a148daa67396e77024eed69370a1b1075edc72e546b05df5facdd28b5eb41  ./packaging/lulu-session.pam
 c8814955fe9d8a77a98ad50f0e462f543a0b08adf01409b23fa55566c3df6ef5  ./packaging/lulu-session@.service
 1603ea563223550e1ee52e259132a66c1d16df1b0a7326d57390e06ce3de1303  ./packaging/lulu.target
