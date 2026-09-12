@@ -39,7 +39,7 @@ ea04081e1c93cdab882c350071d086255809b19d380677aedef2caf036b1b3b8  ./lib/lulu/set
 8f4b2369aaae2bcd828fdc5c37a05078d1ea54fa7669da7d998a25b439a965bb  ./packages/pcsx2/PKGBUILD
 548032c0c64d380c59a294d085791bb85680a94eb0fc3fbba850c997005246e5  ./packages/rapidyaml/PKGBUILD
 7c1d4faeedbbdc64777d9c0f8e1bb8864c019956cde1599bada481a85fe4e3d5  ./packages/ttf-zalando-sans/PKGBUILD
-8da57e584421d6481859f3d8c3ca105f67391cc37eb82bfc02a98f829b449fe5  ./packaging/file-browser.env.example
+d9714e83e2bbb8398c92dcf0ae98dab4f2c3d6913e315b2b9a9870804d557299  ./packaging/file-browser.env.example
 ab2023c176db0686e60d843807c053fa7dbca612474de98698bfd6995835dad4  ./packaging/inputplumber-restart.conf
 fd7aab6860b1ee1a103ca4a8fdd6b7c9dc8c7a15e690bd3bc864ae6d1e58d72d  ./packaging/lulu-consoled.service
 03985878b9dfd5dbaa7778fbfd757aa1f643b155702ba1663dc3c33506769763  ./packaging/lulu-file-browser.service

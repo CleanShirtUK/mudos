@@ -400,10 +400,12 @@ install_system_state() {
     fi
     install -d -m 0755 /etc/systemd/system/inputplumber.service.d
     install -m 0644 "$PAYLOAD/packaging/file-browser.env.example" /etc/lulu/file-browser.env.example
-    if [[ ! -e /etc/lulu/file-browser.env ]]; then
-        local password
-        password="$(od -An -N32 -tx1 /dev/urandom | tr -d ' \n')"
-        printf 'DUFS_BIND=0.0.0.0\nDUFS_PORT=8080\nDUFS_AUTH=admin:%s@/:rw\nDUFS_ALLOW_UPLOAD=true\nDUFS_ALLOW_DELETE=true\nDUFS_ALLOW_SEARCH=true\nDUFS_ALLOW_ARCHIVE=true\nDUFS_ALLOW_SYMLINK=false\nDUFS_HIDDEN=.*,*~\n' "$password" > /etc/lulu/file-browser.env
+    if cmp -s "$PAYLOAD/packaging/file-browser.env.example" /etc/lulu/file-browser.env 2>/dev/null; then
+        log 'file browser credentials already configured'
+    else
+        install -m 0600 "$PAYLOAD/packaging/file-browser.env.example" /etc/lulu/file-browser.env
+        SYSTEM_CHANGED=1
+        log 'file browser credentials configured deterministically'
     fi
     chmod 0600 /etc/lulu/file-browser.env
     if ! cmp -s "$PAYLOAD/packaging/inputplumber-restart.conf" /etc/systemd/system/inputplumber.service.d/restart.conf 2>/dev/null; then
@@ -439,7 +441,7 @@ enable_services() {
     systemctl try-restart user@958.service
     systemctl start lulu.target
     if (( RELEASE_CHANGED || SYSTEM_CHANGED )); then
-        systemctl try-restart lulu-consoled.service lulu-session@2.service
+        systemctl try-restart lulu-consoled.service lulu-file-browser.service lulu-session@2.service
     fi
 }
 
