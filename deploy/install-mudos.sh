@@ -318,6 +318,9 @@ install_tree() {
         /home/lulu/Replays /home/lulu/Screenshots /run/lulu; do
         install -d -m 0755 "$path"
     done
+    if [[ -x /usr/bin/eden && ! -e /home/user && ! -L /home/user ]]; then
+        ln -s /home/lulu /home/user
+    fi
     chown -R lulu:lulu /home/lulu /run/lulu
 
     local digest release release_dir tmp link

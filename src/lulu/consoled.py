@@ -12,7 +12,7 @@ import json
 
 from dbus_next import BusType, Variant
 from dbus_next.aio import MessageBus
-from dbus_next.service import ServiceInterface, method, signal
+from dbus_next.service import ServiceInterface, method, signal as dbus_signal
 
 from .catalogue import CatalogueStore
 from .artwork import SteamGridDBArtwork
@@ -410,7 +410,7 @@ class ConsoleInterface(ServiceInterface):
             pass
         await process.wait()
 
-    @signal()
+    @dbus_signal()
     def CatalogueChanged(self) -> "":
         return
 

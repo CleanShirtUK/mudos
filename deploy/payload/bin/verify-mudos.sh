@@ -42,6 +42,7 @@ for executable in python dolphin-emu pcsx2 pcsx2-qt retroarch gamescope busctl s
 done
 [[ "$(getent passwd lulu | cut -d: -f6)" == /home/lulu ]] || fail 'lulu home is not /home/lulu'
 [[ "$(getent passwd lulu | cut -d: -f7)" == /bin/bash ]] || fail 'lulu shell is not /bin/bash'
+[[ "$(readlink /home/user 2>/dev/null || true)" == /home/lulu ]] || fail 'Eden compatibility home link is missing'
 for package in inputplumber gamescope-git dolphin-emu retroarch libretro-nestopia libretro-genesis-plus-gx steam steam-devices seatd pipewire wireplumber qt6-base qt6-declarative sdl3 python python-dbus-next python-rapidyaml rapidyaml ttf-zalando-sans; do
     pacman -Q "$package" >/dev/null 2>&1 || fail "missing package: $package"
 done
