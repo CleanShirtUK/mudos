@@ -23,6 +23,7 @@ from .emulation import PLATFORMS, ROM_ROOT, ensure_storage
 from .inputplumber import InputPlumberClient
 from .local_content import LocalContentProvider
 from .metadata import MetadataMatcher, SteamGridDBMetadata, clean_local_title
+from .readiness import wait_for_dbus_service
 from .steam_provider import SteamProvider
 from .system_settings import CATEGORIES as SYSTEM_CATEGORIES, SystemSettingsProvider
 
@@ -422,7 +423,9 @@ async def serve() -> None:
         {platform: definition.core for platform, definition in PLATFORMS.items() if definition.core is not None},
     )
     bus = await MessageBus(bus_type=BusType.SESSION).connect()
-    session_introspection = await bus.introspect("org.lulu.ConsoleSessiond", "/org/lulu/ConsoleSession")
+    session_introspection = await wait_for_dbus_service(
+        bus, "org.lulu.ConsoleSessiond", "/org/lulu/ConsoleSession"
+    )
     session_proxy = bus.get_proxy_object(
         "org.lulu.ConsoleSessiond", "/org/lulu/ConsoleSession", session_introspection
     )

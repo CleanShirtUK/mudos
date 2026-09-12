@@ -152,7 +152,8 @@ class LaunchLogCapture:
 
 from dbus_next import BusType, Variant
 from dbus_next.aio import MessageBus
-from dbus_next.errors import DBusError
+
+from lulu.readiness import wait_for_dbus_service as _wait_for_dbus_service
 
 
 class ConsoleUiBridge:
@@ -356,25 +357,11 @@ class ApiHandler(BaseHTTPRequestHandler):
 
 
 async def wait_for_dbus_service(bus: object, name: str, path: str,
-                                timeout: float = 5.0, interval: float = 0.1) -> object:
-    """Wait for a service name and object path without masking daemon failure."""
-    loop = asyncio.get_running_loop()
-    deadline = loop.time() + timeout
-    while True:
-        try:
-            return await bus.introspect(name, path)
-        except DBusError as error:
-            if error.type not in {
-                "org.freedesktop.DBus.Error.ServiceUnknown",
-                "org.freedesktop.DBus.Error.NameHasNoOwner",
-            }:
-                raise
-            remaining = deadline - loop.time()
-            if remaining <= 0:
-                raise RuntimeError(
-                    f"D-Bus service unavailable after {timeout:.1f}s: {name}{path}"
-                ) from error
-            await asyncio.sleep(min(interval, remaining))
+                                 timeout: float = 5.0, interval: float = 0.1) -> object:
+    """Compatibility entry point for the bridge's startup dependency check."""
+    return await _wait_for_dbus_service(
+        bus, name, path, timeout=timeout, interval=interval
+    )
 
 
 async def main() -> None:

@@ -11,7 +11,7 @@ ec5d9c2c25e2bf0cc4f1f3bf0f4d93f5918b21c24ffcb8585018b8be882f27bb  ./config/input
 c34fa14402f02c230f0bf490c0875414cdabcdfb2b0273bb0b8d3af927c1631d  ./lib/lulu/artwork.py
 20c5af66e8ede83beccac5706534f47cc2bbd6a1804ccf9b50109103f8e2b45f  ./lib/lulu/capabilities.py
 d19da387d61ddb46fa428de6334bbe2b274172fb361c88c79aac27cfb5b22eb7  ./lib/lulu/catalogue.py
-fb125e7bdcd099eeda1058978e22a3404252876ecff91aff03d94f283327b7c7  ./lib/lulu/consoled.py
+cbc7e7518d3f3de7ec70b87e2f226e86a030d63e9e72a5c71c081cb4cf5ffde0  ./lib/lulu/consoled.py
 b3022d5b7f1176c38474ad4b0d2e79236756c2814de689c0dc29cc9c1094b171  ./lib/lulu/console_sessiond.py
 bf6eaf76a5c7499fdd239d0ae6d50a647f709225e2526d7cbeadf24954fa1ab9  ./lib/lulu/console_ui.py
 2426657b5e83bd5a2cf59674ecd4f1fb930e16840a7b20a26fa31302f431a89a  ./lib/lulu/contracts.py
@@ -28,7 +28,8 @@ af14039cfd54d82a89657dbfa402943fad835af2dc67bbc87bbd0b3631b480ff  ./lib/lulu/loc
 e444f04634a90d020558cb39bc5835270da7180785af7a0978310dbec2750326  ./lib/lulu/metadata.py
 fafdc5862c7ed869d7601ff909cd1c59ca2c2440c286e922387a53c0bce27a54  ./lib/lulu/paths.py
 b85334fa084c397b9fb512a50cca910c1b26c3fb51cfce535bf9092ef80028e9  ./lib/lulu/process_supervisor.py
-be99eb1a2fd376a4deb2a84aed6f92b988911477a759f8446040bdc8a1c36685  ./lib/lulu/sessiond.py
+9fb36b81bbf37034d81dd215d27ee3cccac21073f4412fa28ce084c53274adce  ./lib/lulu/readiness.py
+acdb0e5591f0c846b544caa8ea94944be8baecb735f3635151a90f6b2b525937  ./lib/lulu/sessiond.py
 ea04081e1c93cdab882c350071d086255809b19d380677aedef2caf036b1b3b8  ./lib/lulu/settings.py
 5629276492cc88ed04f2cf79f8da07d63fc1efc6ded4a4001083f841512dc2c5  ./lib/lulu/status.py
 ec29326547549371d1e127a52ea367011bd203b08a203c9dc7c35dfff1e6a059  ./lib/lulu/steam_provider.py
@@ -48,7 +49,7 @@ c8814955fe9d8a77a98ad50f0e462f543a0b08adf01409b23fa55566c3df6ef5  ./packaging/lu
 dfd5da8104faf3ab85173af79bd1f44131a2805822fc9566affabff87d536771  ./packaging/plymouth/lulu/lulu.script
 40e7eaf5e4e40b6a3eaf72961946821f79cfd3cfcfa2347946b30ccc27e290e7  ./packaging/plymouth/lulu/MANIFEST
 7806e0b076e46e2eaeca7d702852fceb7bf65c5f82a7fd72326a68e3efe7af36  ./packaging/presentation.conf
-8d1cf8e0d0c79910f50d6b20804d6da37e9dec7faa20d66e027bfce9a4efc6b0  ./scripts/console-ui-bridge.py
+e2ff918f6ac268850d6e9ce9ce7293b2e286b1b85b8ebe07c50e1b0071311031  ./scripts/console-ui-bridge.py
 828e1eb2c8ea4fad15b233d0f3ccb19327218045b308bbcf1c040f163a1ddc6f  ./scripts/console-ui.sh
 ba906bc73f10a5025773d4292896f3d043b0bceaf871127e8f727dde75738e8b  ./scripts/steam-bootstrap.sh
 559defbdfd363d48fb9ff286cf497a5e62bdca8cb8c3b0c42be5a706d9bc5b01  ./scripts/steam-session-bootstrap.sh

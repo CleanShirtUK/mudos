@@ -21,6 +21,7 @@ from .contracts import InputMode, Lifecycle
 from .launch_identity import LaunchIdentity
 from .process_supervisor import ProcessSupervisor
 from .process_supervisor import ProcessResult
+from .readiness import wait_for_dbus_service
 
 
 BUS_NAME = "org.lulu.ConsoleSessiond"
@@ -94,6 +95,12 @@ class ConsoleSessionInterface(ServiceInterface):
         self.StateChanged(self._state_json())
 
     async def start_controller_monitor(self) -> None:
+        self._inputplumber_bus = await MessageBus(bus_type=BusType.SYSTEM).connect()
+        introspection = await wait_for_dbus_service(
+            self._inputplumber_bus,
+            "org.shadowblip.InputPlumber",
+            "/org/shadowblip/InputPlumber/Manager",
+        )
         composites = await asyncio.to_thread(self._inputplumber.runtime_composite_statuses)
         self.controller_registry.observe_runtime_composites(composites)
         for object_path, composite in composites.items():
@@ -101,10 +108,6 @@ class ConsoleSessionInterface(ServiceInterface):
             if source_paths:
                 await self._initialize_composite(object_path, composite)
         self._inputplumber_event = asyncio.Event()
-        self._inputplumber_bus = await MessageBus(bus_type=BusType.SYSTEM).connect()
-        introspection = await self._inputplumber_bus.introspect(
-            "org.shadowblip.InputPlumber", "/org/shadowblip/InputPlumber/Manager"
-        )
         proxy = self._inputplumber_bus.get_proxy_object(
             "org.shadowblip.InputPlumber", "/org/shadowblip/InputPlumber/Manager", introspection
         )
