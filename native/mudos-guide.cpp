@@ -47,6 +47,12 @@ public:
         return setProperty("GAMESCOPE_EXTERNAL_OVERLAY", 1);
     }
 
+    void playAudio(const QString &event)
+    {
+        viewModel_->insert("audioEvent", event);
+        viewModel_->insert("audioEventSerial", viewModel_->value("audioEventSerial").toInt() + 1);
+    }
+
 private:
     void readInput()
     {
@@ -67,14 +73,18 @@ private:
 
     void handleCommand(const QString &command)
     {
-        if (command == QStringLiteral("ui_up"))
+        if (command == QStringLiteral("ui_up")) {
+            playAudio(QStringLiteral("navigate"));
             viewModel_->insert("selection", 0);
+        }
         else if (command == QStringLiteral("ui_down")) {
+            playAudio(QStringLiteral("navigate"));
             const int actionCount = actionCountForModel();
             viewModel_->insert("selection", qMin(viewModel_->value("selection").toInt() + 1, actionCount - 1));
         }
         else if (command == QStringLiteral("ui_accept"))
         {
+            playAudio(QStringLiteral("confirm"));
             if (viewModel_->value("confirmationPending").toBool()) {
                 if (viewModel_->value("confirmationAction").toString() == QStringLiteral("Reboot System"))
                     powerAction(QStringLiteral("Reboot"));
@@ -102,14 +112,17 @@ private:
             QCoreApplication::quit();
         }
         else if (command == QStringLiteral("ui_back")) {
+            playAudio(QStringLiteral("back"));
             if (viewModel_->value("confirmationPending").toBool()) {
                 viewModel_->insert("confirmationPending", false);
                 viewModel_->insert("selection", 0);
             } else {
                 QCoreApplication::quit();
             }
-        } else if (command == QStringLiteral("ui_guide"))
+        } else if (command == QStringLiteral("ui_guide")) {
+            playAudio(QStringLiteral("back"));
             QCoreApplication::quit();
+        }
     }
 
     int compatibilitySelection() const
@@ -294,6 +307,8 @@ int main(int argc, char **argv)
     viewModel.insert("shellContext", shellContext);
     viewModel.insert("confirmationPending", false);
     viewModel.insert("confirmationAction", QString());
+    viewModel.insert("audioEvent", QString());
+    viewModel.insert("audioEventSerial", 0);
     QQmlApplicationEngine engine;
     engine.rootContext()->setContextProperty("guideModel", &viewModel);
     engine.load(QUrl::fromLocalFile(qEnvironmentVariable("LULU_GUIDE_UI_FILE",

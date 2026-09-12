@@ -15,6 +15,8 @@ tag=${2:?usage: refresh-payload.sh COMMIT TAG}
 
 # Keep component contracts in the payload identical to the authoritative UI.
 cp "$root"/ui/*.qml "$payload/ui/"
+mkdir -p "$payload/ui/artwork"
+cp -a "$root"/ui/artwork/. "$payload/ui/artwork/"
 mkdir -p "$payload/ui/sounds"
 cp -a "$root"/ui/sounds/. "$payload/ui/sounds/"
 cp "$root"/src/lulu/consoled.py "$root"/src/lulu/console_sessiond.py "$root"/src/lulu/process_supervisor.py \
