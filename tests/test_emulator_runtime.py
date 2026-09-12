@@ -7,6 +7,7 @@ from lulu.controller_provisioning import ensure_provider_controller_config
 from lulu.consoled import _retroarch_child_config
 from lulu.local_content import LocalContentGame
 from lulu.switch_provider import SwitchProvider
+from lulu.paths import PATHS
 
 
 class EmulatorRuntimeTests(unittest.TestCase):
@@ -117,7 +118,7 @@ class EmulatorRuntimeTests(unittest.TestCase):
 
             self.assertEqual(path.read_text(), first)
             self.assertIn("[Pad1]", first)
-            self.assertIn("Bios = /home/lulu/Games/BIOS/ps2", first)
+            self.assertIn(f"Bios = {PATHS.bios_root / 'ps2'}", first)
             self.assertIn("Cross = SDL-0/FaceSouth", first)
             pad1 = first.split("[Pad2]", 1)[0]
             self.assertNotIn("SDL-1/", pad1)
