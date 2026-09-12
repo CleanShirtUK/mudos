@@ -86,7 +86,7 @@ class EmulatorRuntimeTests(unittest.TestCase):
             game = LocalContentGame("local:switch:id", "Game", "switch", "/fixture/game.nsp", True, "installed", "ready")
 
             intent = EmulatorRuntimeAdapter({"switch": executable}, switch_provider=provider).launch_intent(game)
-            config_path = root / "eden" / "lulu-switch.ini"
+            config_path = root / "eden" / "qt-config.ini"
             config = config_path.read_text()
             second = provider.ensure_controller_config()
             second_content = second.read_text()
@@ -98,6 +98,7 @@ class EmulatorRuntimeTests(unittest.TestCase):
         self.assertIn("player_0_connected=true", config)
         self.assertNotIn("player_0_connect=", config)
         self.assertEqual(config, second_content)
+        self.assertIn('player_0_lstick="engine:sdl,guid:030081b85e0400008e02000001000000,port:0,axis_x:0,axis_y:1,invert_x:+,invert_y:+"', config)
 
     def test_switch_profile_follows_assigned_controller_indices(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
