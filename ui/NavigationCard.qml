@@ -5,7 +5,6 @@ Item {
     property string displayTitle: ""
     property string symbolicArtwork: "[ ]"
     property url artworkSource: ""
-    property string artworkRole: "icon"
     property bool focused: false
     property real selectionProgress: focused ? 1 : 0
     property real uiScale: 1
@@ -35,7 +34,7 @@ Item {
         focusBrightness: 0.68 + 0.32 * root.selectionProgress
         displayTitle: root.displayTitle
         symbolicArtwork: root.symbolicArtwork
-        artworkRole: root.artworkRole
+        artworkRole: "icon"
         artworkSource: root.artworkSource
         uiScale: root.uiScale
         typography: root.typography

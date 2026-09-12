@@ -96,7 +96,6 @@ Item {
                    - (libraryHome.selectionStart[index] || 0)) * libraryHome.selectionProgress
             displayTitle: modelData.label
             symbolicArtwork: ""
-            artworkRole: modelData.scope === "steam" ? "raster" : "icon"
             artworkSource: libraryHome.platformArtwork(modelData.scope)
             uiScale: libraryHome.uiScale
             typography: libraryHome.typography
