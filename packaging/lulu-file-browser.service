@@ -1,0 +1,39 @@
+[Unit]
+Description=Lulu network file browser
+Documentation=https://github.com/sigoden/dufs
+RequiresMountsFor=/home/lulu/Games /home/lulu/Recordings /home/lulu/Replays /home/lulu/Screenshots
+ConditionPathExists=/etc/lulu/file-browser.env
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=lulu
+Group=lulu
+EnvironmentFile=/etc/lulu/file-browser.env
+ExecStart=/opt/lulu/current/scripts/file-browser-launch.sh
+Restart=on-failure
+RestartSec=2s
+
+# The namespace exposes only the intentional Mudos user-data roots under /srv.
+BindPaths=/home/lulu/Games:/srv/Games
+BindPaths=/home/lulu/Recordings:/srv/Recordings
+BindPaths=/home/lulu/Replays:/srv/Replays
+BindPaths=/home/lulu/Screenshots:/srv/Screenshots
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+NoNewPrivileges=true
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_INET AF_INET6 AF_NETLINK AF_PACKET
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+ProtectProc=invisible
+ProcSubset=pid
+LockPersonality=true
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=lulu.target

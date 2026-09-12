@@ -32,6 +32,8 @@ class SystemSetting:
 
 
 CATEGORIES = ("Display", "Audio", "Network", "Bluetooth", "Controllers", "Storage", "System", "Lulu")
+FILE_BROWSER_SERVICE = "lulu-file-browser.service"
+FILE_BROWSER_PORT = int(os.environ.get("LULU_FILE_BROWSER_PORT", "8080"))
 
 
 def _command(*args: str) -> str:
@@ -75,11 +77,19 @@ class SystemSettingsProvider:
         state = _command("nmcli", "-t", "-f", "STATE", "general") or "unavailable"
         wifi = _command("nmcli", "radio", "wifi") or "unavailable"
         address = _command("hostname", "-I") or "unknown"
+        file_browser_state = _command("systemctl", "is-active", FILE_BROWSER_SERVICE) or "unavailable"
+        file_browser_address = (
+            f"http://{address.split()[0]}:{FILE_BROWSER_PORT}/"
+            if address not in {"", "unknown"} and address.split()
+            else "unavailable"
+        )
         return [
             _status("network.state", "Connection", state),
             _status("network.wifi", "Wi-Fi", wifi, "Mutation path is TO PROVE"),
             _status("network.address", "IP address", address),
             _status("network.scan", "Wi-Fi networks", "available", "Scan/connect/password flow is TO PROVE"),
+            _status("network.file_browser", "File browser", file_browser_state, "dufs; ROM and BIOS roots only"),
+            _status("network.file_browser_address", "File browser address", file_browser_address, "Local network; authentication required"),
         ]
 
     def _bluetooth_settings(self) -> list[SystemSetting]:

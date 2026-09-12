@@ -1,9 +1,11 @@
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from lulu.settings import SettingsStore
 from lulu.status import Readiness, RuntimeStatus, SystemStatus
+from lulu.system_settings import SystemSettingsProvider
 
 
 class SettingsStatusTests(unittest.TestCase):
@@ -36,6 +38,21 @@ class SettingsStatusTests(unittest.TestCase):
         )
         self.assertEqual(status.runtimes[0].readiness, Readiness.READY)
         self.assertIsNone(status.network_connected)
+
+    def test_network_settings_expose_file_browser_status_and_address(self) -> None:
+        def command(*args: str) -> str:
+            if args[:2] == ("hostname", "-I"):
+                return "192.168.1.42"
+            if args[:2] == ("systemctl", "is-active"):
+                return "active"
+            return ""
+
+        with patch("lulu.system_settings._command", side_effect=command):
+            settings = SystemSettingsProvider().list_settings("Network")
+
+        values = {item["key"]: item["value"] for item in settings}
+        self.assertEqual(values["network.file_browser"], "active")
+        self.assertEqual(values["network.file_browser_address"], "http://192.168.1.42:8080/")
 
 
 if __name__ == "__main__":
