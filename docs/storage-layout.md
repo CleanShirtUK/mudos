@@ -25,7 +25,8 @@ No normal Lulu user or provider configuration belongs in `/etc/lulu`.
 
 ## Compatibility Symlinks
 
-The migration creates no compatibility symlinks. All in-tree consumers are
-converted to the canonical layout; `/var/lib/lulu` is removed after successful
-state migration. If an external application later requires a temporary link,
-it must be added explicitly here with its consumer and removal condition.
+The migration creates no compatibility symlinks. All in-tree consumers and
+migrated Steam symlink targets are converted to the canonical layout;
+`/var/lib/lulu` is removed after successful state migration. If an external
+application later requires a temporary link, it must be added explicitly here
+with its consumer and removal condition.
