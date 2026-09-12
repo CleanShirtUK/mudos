@@ -92,14 +92,14 @@ class EmulatorRuntimeTests(unittest.TestCase):
             second_content = second.read_text()
 
         self.assertEqual(intent.arguments, ("--appimage-extract-and-run", "--config", str(second), "--fullscreen", "--game", "/fixture/game.nsp"))
-        self.assertIn('player_0_button_a="engine:sdl,guid:030081b85e0400008e02000001000000,port:0,button:1"', config)
-        self.assertIn('player_0_button_zl="engine:sdl,guid:030081b85e0400008e02000001000000,port:0,axis:4,threshold:0.5,invert:+"', config)
+        self.assertIn('player_0_button_a="engine:sdl,guid:030000005e0400008e02000001000000,port:0,button:1"', config)
+        self.assertIn('player_0_button_zl="engine:sdl,guid:030000005e0400008e02000001000000,port:0,axis:2,threshold:0.5,invert:+"', config)
         self.assertIn("player_0_type=0", config)
         self.assertIn("player_0_connected=true", config)
         self.assertIn("player_0_connected\\default=false", config)
         self.assertNotIn("player_0_connect=", config)
         self.assertEqual(config, second_content)
-        self.assertIn('player_0_lstick="engine:sdl,guid:030081b85e0400008e02000001000000,port:0,axis_x:0,axis_y:1,invert_x:+,invert_y:+"', config)
+        self.assertIn('player_0_lstick="engine:sdl,guid:030000005e0400008e02000001000000,port:0,axis_x:0,axis_y:1,offset_x:-0.000000,offset_y:0.000000,invert_x:+,invert_y:+,deadzone:0.150000"', config)
 
     def test_switch_profile_follows_assigned_controller_indices(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -108,9 +108,9 @@ class EmulatorRuntimeTests(unittest.TestCase):
             config = provider.ensure_controller_config(device_indices={1: 0, 2: 2, 3: 1})
             content = config.read_text()
 
-        self.assertIn("player_0_button_a=\"engine:sdl,guid:030081b85e0400008e02000001000000,port:0,button:1\"", content)
-        self.assertIn("player_1_button_a=\"engine:sdl,guid:030081b85e0400008e02000001000000,port:2,button:1\"", content)
-        self.assertIn("player_2_button_a=\"engine:sdl,guid:030081b85e0400008e02000001000000,port:1,button:1\"", content)
+        self.assertIn("player_0_button_a=\"engine:sdl,guid:030000005e0400008e02000001000000,port:0,button:1\"", content)
+        self.assertIn("player_1_button_a=\"engine:sdl,guid:030000005e0400008e02000001000000,port:2,button:1\"", content)
+        self.assertIn("player_2_button_a=\"engine:sdl,guid:030000005e0400008e02000001000000,port:1,button:1\"", content)
         self.assertNotIn("player_3_", content)
 
     def test_pcsx2_intent_uses_controller_first_direct_boot(self) -> None:
