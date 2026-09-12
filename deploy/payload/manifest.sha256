@@ -35,7 +35,7 @@ ea04081e1c93cdab882c350071d086255809b19d380677aedef2caf036b1b3b8  ./lib/lulu/set
 ec29326547549371d1e127a52ea367011bd203b08a203c9dc7c35dfff1e6a059  ./lib/lulu/steam_provider.py
 36c46adea759cf88752a7c82b08c2098602dbff94ccf1aeec2c2bcb5877bafd1  ./lib/lulu/switch_provider.py
 21bb1f36a60b379b3e2467fd77875e4ae01551038abbf443c6b6e9ab1655be2c  ./lib/lulu/system_settings.py
-13f29b201eeade2abdf3920411e3b57a5429c8b7928816b481b127b5f540287c  ./packages/dufs/PKGBUILD
+8d74912fa648d8bf6042a2d764da221862da1302fa69c42727c08460757beb10  ./packages/dufs/PKGBUILD
 270a8bf35bd4b4a81aa1974dcd06ccb66e321f86fc09a5fd97e696082d35bb76  ./packages/pcsx2/pcsx2.install
 8f4b2369aaae2bcd828fdc5c37a05078d1ea54fa7669da7d998a25b439a965bb  ./packages/pcsx2/PKGBUILD
 548032c0c64d380c59a294d085791bb85680a94eb0fc3fbba850c997005246e5  ./packages/rapidyaml/PKGBUILD
