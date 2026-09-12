@@ -266,7 +266,7 @@ migrate_user_state() {
         fi
     done
     for item in .bashrc .bash_profile .bash_logout .zshrc .pki .steam .pulse-cookie .Xauthority; do
-        if [[ -e "$source/$item" ]]; then
+        if [[ -e "$source/$item" || -L "$source/$item" ]]; then
             cp -a "$source/$item" /home/lulu/
             rm -rf "$source/$item"
         fi

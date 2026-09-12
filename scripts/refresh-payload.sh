@@ -25,6 +25,7 @@ cp "$root"/scripts/console-ui-bridge.py "$payload/scripts/console-ui-bridge.py"
 cp "$root"/scripts/console-ui.sh "$payload/scripts/console-ui.sh"
 cp "$root"/scripts/steam-bootstrap.sh "$payload/scripts/steam-bootstrap.sh"
 cp "$root"/packaging/lulu-session@.service "$payload/packaging/lulu-session@.service"
+cp "$root"/packaging/lulu-consoled.service "$payload/packaging/lulu-consoled.service"
 cp "$root"/config/inputplumber/profiles/*.yaml "$payload/config/inputplumber/profiles/"
 cp "$root"/build/lulu-shell "$root"/build/mudos-guide "$payload/bin/"
 
