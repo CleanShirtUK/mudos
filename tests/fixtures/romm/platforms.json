@@ -1,0 +1,19 @@
+[
+  {
+    "id": 1,
+    "slug": "snes",
+    "fs_slug": "snes",
+    "rom_count": 1,
+    "name": "Nintendo - Super Nintendo Entertainment System",
+    "display_name": "SNES",
+    "custom_name": null,
+    "created_at": "2026-01-01T00:00:00",
+    "updated_at": "2026-01-01T00:00:00",
+    "fs_size_bytes": 4,
+    "is_unidentified": false,
+    "is_identified": true,
+    "missing_from_fs": false,
+    "firmware_count": 0,
+    "firmware": []
+  }
+]

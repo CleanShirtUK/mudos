@@ -1,0 +1,33 @@
+{
+  "items": [
+    {
+      "id": 42,
+      "platform_id": 1,
+      "platform_slug": "snes",
+      "platform_fs_slug": "snes",
+      "platform_display_name": "SNES",
+      "fs_name": "Super Mario World.sfc",
+      "fs_extension": ".sfc",
+      "fs_size_bytes": 4,
+      "name": "Super Mario World",
+      "url_cover": null,
+      "missing_from_fs": false,
+      "has_multiple_files": false,
+      "has_simple_single_file": true,
+      "has_nested_single_file": false,
+      "full_path": "/roms/snes/Super Mario World.sfc",
+      "is_identified": true,
+      "is_unidentified": false,
+      "files": [],
+      "regions": [],
+      "languages": [],
+      "tags": []
+    }
+  ],
+  "total": 1,
+  "limit": 50,
+  "offset": 0,
+  "char_index": {"S": 1},
+  "rom_id_index": [42],
+  "filter_values": {}
+}
