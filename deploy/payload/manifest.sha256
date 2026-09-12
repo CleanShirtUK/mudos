@@ -62,7 +62,7 @@ fe5a375fafec61bc5b59e70a0cc96dcac71c3ba0a34126653c46b715cf447732  ./ui/artwork/s
 7e5cb5b33d92686304fd973a96421a82554c516079ed05f4c742c319d1971c18  ./ui/artwork/system-network.svg
 bb2fa2b7a04ed31ed9bb2a4eddb21fab97a0fbf03e780f67f3af0b649319a812  ./ui/artwork/system-storage.svg
 b4958ddcf92c44829398edfa132a87d881898dfd94a73b245ed661df862cbdc2  ./ui/artwork/system-system.svg
-349c80c5377c0b53bf5703a8c7cf600ab75f674b71ece4c867cd9c9128b6597b  ./ui/ConsoleShell.qml
+d82a375833b09081a58ee3acbbe5d5fee5b6921599c36f5dfaa7b0897653af60  ./ui/ConsoleShell.qml
 c147b5955bb1f2f7c65a9e07fe85afca2f9f9693aa090b5bd6fc45da9189045b  ./ui/ControllerGlyph.qml
 b48f2af29670ce222cfa759a22ca7d789a10cd8a7a15a6e9c2897fb1df7ed936  ./ui/controllerglyphs/SteamDeck_A.png
 63c72d44c4cce55d6ec5e1368938533f9a4ed440f9d1ce7f7e42eb6d9fd77db5  ./ui/controllerglyphs/SteamDeck_B.png
