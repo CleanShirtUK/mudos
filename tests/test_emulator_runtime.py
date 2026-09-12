@@ -16,7 +16,9 @@ class EmulatorRuntimeTests(unittest.TestCase):
         finally:
             config_path.unlink()
 
-        self.assertIn('input_player1_joypad_index = "1"', content)
+        self.assertIn('input_player1_joypad_index = "0"', content)
+        self.assertIn('input_player2_joypad_index = "1"', content)
+        self.assertIn('input_player3_joypad_index = "2"', content)
         self.assertNotIn("-1", content)
         self.assertNotIn("input_player4_joypad_index", content)
 
