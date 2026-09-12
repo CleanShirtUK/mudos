@@ -951,6 +951,7 @@ Window {
     OrbitRenderSource {
         id: orbitRenderSource
         anchors.fill: parent
+        palette: luluPalette
         visible: false
     }
 

@@ -1,16 +1,28 @@
 import QtQuick
 
 QtObject {
-    readonly property color primaryText: "#ffffff"
-    readonly property color secondaryText: "#c5cee2"
-    readonly property color mutedText: "#9aa8c2"
-    readonly property color selectedText: "#ffffff"
+    // Base roles are the single source for both interface and backdrop colors.
+    readonly property color background: "#060b16"
+    readonly property color foreground: "#ffffff"
+    readonly property color muted: "#9aa8c2"
+    readonly property color selected: "#ffffff"
     readonly property color accent: "#e0c5ff"
-    readonly property color focusIndicator: "#e0c5ff"
-    readonly property color warning: "#e0c5ff"
-    readonly property color glassTint: "#1d2a49"
+    readonly property color glass: "#1d2a49"
+    readonly property color error: "#f7788e"
+    readonly property vector3d accentVector: Qt.vector3d(accent.r, accent.g, accent.b)
+    readonly property vector3d headingAccentVector: Qt.vector3d(headingAccent.r, headingAccent.g, headingAccent.b)
+    readonly property vector3d glassVector: Qt.vector3d(glass.r, glass.g, glass.b)
+    readonly property vector3d errorVector: Qt.vector3d(error.r, error.g, error.b)
+
+    readonly property color primaryText: foreground
+    readonly property color secondaryText: "#c5cee2"
+    readonly property color mutedText: muted
+    readonly property color selectedText: selected
+    readonly property color focusIndicator: accent
+    readonly property color warning: accent
+    readonly property color glassTint: glass
     readonly property color glassBorder: "#455274"
-    readonly property color backdrop: "#060b16"
+    readonly property color backdrop: background
     readonly property color navigationText: "#8492ad"
     readonly property color headingAccent: "#eadcff"
     readonly property color cardSurface: "#182540"

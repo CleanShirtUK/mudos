@@ -7,10 +7,11 @@ Item {
     property real shaderTime: 0
     property vector2d shaderOrigin: Qt.vector2d(0, 0)
     property vector2d shaderCanvas: Qt.vector2d(width, height)
-    property vector3d primaryColor: Qt.vector3d(0.478, 0.635, 0.969)
-    property vector3d secondaryColor: Qt.vector3d(0.733, 0.604, 0.969)
-    property vector3d surfaceColor: Qt.vector3d(0.141, 0.165, 0.231)
-    property vector3d errorColor: Qt.vector3d(0.969, 0.463, 0.557)
+    required property var palette
+    readonly property vector3d primaryColor: palette.accentVector
+    readonly property vector3d secondaryColor: palette.headingAccentVector
+    readonly property vector3d surfaceColor: palette.glassVector
+    readonly property vector3d errorColor: palette.errorVector
 
     ShaderEffect {
         anchors.fill: parent

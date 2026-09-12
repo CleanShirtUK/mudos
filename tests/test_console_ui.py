@@ -113,13 +113,28 @@ class ConsoleUiTests(unittest.TestCase):
 
     def test_ui_palette_is_semantic_and_centralized(self) -> None:
         palette = (ROOT / "ui" / "LuluPalette.qml").read_text()
-        for role in ("primaryText", "secondaryText", "mutedText", "selectedText", "accent",
-                     "focusIndicator", "warning", "glassTint", "glassBorder", "backdrop"):
+        for role in ("background", "foreground", "muted", "selected", "accent", "glass", "error",
+                     "primaryText", "secondaryText", "mutedText", "selectedText", "glassTint", "backdrop"):
             self.assertIn("property color " + role, palette)
         for filename in ("ConsoleShell.qml", "GameCard.qml", "RecentHome.qml", "LibraryHome.qml", "LibrarySpace.qml", "PlaceholderHome.qml"):
             component = (ROOT / "ui" / filename).read_text()
             self.assertIn("luluPalette", component)
             self.assertNotRegex(component, r'(?m)^\s*(?:border\.)?color:\s*"#')
+
+    def test_backdrop_shader_consumes_the_ui_palette(self) -> None:
+        palette = (ROOT / "ui" / "LuluPalette.qml").read_text()
+        render_source = (ROOT / "ui" / "OrbitRenderSource.qml").read_text()
+        backdrop = (ROOT / "ui" / "OrbitBackdrop.qml").read_text()
+        shell = (ROOT / "ui" / "ConsoleShell.qml").read_text()
+        self.assertIn("required property var palette", render_source)
+        self.assertIn("palette.accentVector", render_source)
+        self.assertIn("palette.headingAccentVector", render_source)
+        self.assertIn("palette.glassVector", render_source)
+        self.assertIn("palette.errorVector", render_source)
+        self.assertIn("required property var palette", backdrop)
+        self.assertIn("root.palette.background", backdrop)
+        self.assertIn("palette: luluPalette", shell)
+        self.assertIn("accentVector", palette)
 
     def test_system_settings_is_controller_first_and_backend_driven(self) -> None:
         system_home = (ROOT / "ui" / "SystemHome.qml").read_text()
@@ -341,7 +356,7 @@ class ConsoleUiTests(unittest.TestCase):
         shader_builder = (ROOT / "scripts" / "build-orbit-shader.sh").read_text()
         adapter = (ROOT / "scripts" / "build-orbit-qsb.py").read_text()
         self.assertIn('fragmentShader: "shaders/orbit-wave.frag.qsb"', backdrop)
-        self.assertIn('color: "#060b16"', backdrop)
+        self.assertIn("color: root.palette.background", backdrop)
         self.assertIn("ShaderEffect.Compiled", backdrop)
         self.assertIn("--qt6", shader_builder)
         self.assertIn("wave.frag", shader_builder)
