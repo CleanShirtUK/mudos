@@ -17,7 +17,16 @@ tag=${2:?usage: refresh-payload.sh COMMIT TAG}
 cp "$root"/ui/*.qml "$payload/ui/"
 cp "$root"/src/lulu/consoled.py "$root"/src/lulu/console_sessiond.py "$root"/src/lulu/process_supervisor.py \
    "$root"/src/lulu/sessiond.py "$root"/src/lulu/steam_provider.py "$root"/src/lulu/system_settings.py "$root"/src/lulu/gamescope.py \
-   "$root"/src/lulu/inputplumber.py "$root"/src/lulu/contracts.py "$root"/src/lulu/controllerd.py "$payload/lib/lulu/"
+   "$root"/src/lulu/inputplumber.py "$root"/src/lulu/contracts.py "$root"/src/lulu/controllerd.py \
+   "$root"/src/lulu/artwork.py "$root"/src/lulu/catalogue.py "$root"/src/lulu/emulation.py \
+   "$root"/src/lulu/metadata.py "$root"/src/lulu/paths.py "$payload/lib/lulu/"
+
+for module in artwork.py catalogue.py emulation.py metadata.py paths.py steam_provider.py; do
+    cmp -s "$root/src/lulu/$module" "$payload/lib/lulu/$module" || {
+        printf 'source/payload divergence: %s\n' "$module" >&2
+        exit 1
+    }
+done
 cp "$root"/scripts/console-ui-bridge.py "$payload/scripts/console-ui-bridge.py"
 cp "$root"/scripts/console-ui.sh "$payload/scripts/console-ui.sh"
 cp "$root"/scripts/steam-bootstrap.sh "$payload/scripts/steam-bootstrap.sh"

@@ -4,9 +4,12 @@ from dataclasses import dataclass
 import os
 from pathlib import Path
 
+from .paths import mudos_paths
 
-ROM_ROOT = Path(os.environ.get("LULU_ROM_ROOT", "/var/lib/lulu/roms")).expanduser()
-BIOS_ROOT = Path(os.environ.get("LULU_BIOS_ROOT", "/var/lib/lulu/bios")).expanduser()
+
+_PATHS = mudos_paths()
+ROM_ROOT = _PATHS.roms
+BIOS_ROOT = _PATHS.bios
 
 
 @dataclass(frozen=True, slots=True)

@@ -249,8 +249,10 @@ install_tree() {
     for path in \
         /var/lib/lulu /var/lib/lulu/roms /var/lib/lulu/roms/nes \
         /var/lib/lulu/roms/genesis /var/lib/lulu/roms/ps2 /var/lib/lulu/roms/wii \
-        /var/lib/lulu/bios /var/lib/lulu/bios/ps2 /var/lib/lulu/.config \
-        /var/lib/lulu/.cache /var/lib/lulu/.local/share; do
+        /var/lib/lulu/bios /var/lib/lulu/bios/ps2 /var/lib/lulu/assets/artwork \
+        /var/lib/lulu/recordings /var/lib/lulu/captures /var/lib/lulu/providers \
+        /var/lib/lulu/state /var/lib/lulu/cache /var/lib/lulu/.config \
+        /var/lib/lulu/.local/share; do
         install -d -m 0755 "$path"
     done
     chown -R lulu:lulu /var/lib/lulu

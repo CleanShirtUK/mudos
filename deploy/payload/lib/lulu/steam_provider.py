@@ -4,11 +4,13 @@ from dataclasses import dataclass
 import asyncio
 import logging
 import os
-from pathlib import Path
 import re
 import signal
 import subprocess
+from pathlib import Path
+
 from .launch_identity import LaunchIdentity
+from .paths import mudos_paths
 
 
 @dataclass(frozen=True, slots=True)
@@ -159,7 +161,7 @@ class SteamProvider:
         configured = os.environ.get("LULU_STEAM_ROOTS", "")
         if configured:
             return tuple(Path(item).expanduser() for item in configured.split(":"))
-        return (Path.home() / ".local" / "share" / "Steam",)
+        return (mudos_paths().steam,)
 
     @staticmethod
     def _is_launchable_app(app: dict[str, object]) -> bool:
