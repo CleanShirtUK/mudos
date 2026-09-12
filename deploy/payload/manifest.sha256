@@ -1,6 +1,6 @@
-fd51115fd230cd9c1d078de67b339cb4692d7e6a4ec1f8877b846baa21256557  ./bin/lulu-shell
+9d7fb1ecfa054cd2862e4a9e6e0d35fde9f3011500462684610cbb0a9e97d135  ./bin/lulu-shell
 6f14d3589b61fdd428b7579680a8733713038592c952844ae7fe9a420ffc9d27  ./bin/lulu-vt
-335af370aa520dbfa1ce7cf023942b3bd2989f6acb44b0cfdf65e988c5cc122a  ./bin/mudos-guide
+cc6d94477c684ccf2e08618125c4d4061419bcba52dacba456fae3ab84513a74  ./bin/mudos-guide
 2d077df086e81899b65eb22cb7296c966dc4c93a1e447a7196301e9b22898fec  ./bin/verify-mudos.sh
 d8eeda0ddbdd1d0e03ebf70856353fed6bc102d91f34b46bce64acdc4aba636c  ./config/inputplumber/devices/lulu-composite.yaml
 ad4ba03db2a2f1f8e4bf73e670d28fca3f728eb2d087434dbe7bc4febb74661b  ./config/inputplumber/profiles/compat.yaml
@@ -11,12 +11,12 @@ ec5d9c2c25e2bf0cc4f1f3bf0f4d93f5918b21c24ffcb8585018b8be882f27bb  ./config/input
 e15eec29416881ec4eea300c3c2d318bb526b1ce2c613c3ed83e2ed218b1ad44  ./lib/lulu/artwork.py
 20c5af66e8ede83beccac5706534f47cc2bbd6a1804ccf9b50109103f8e2b45f  ./lib/lulu/capabilities.py
 acae5643c39b7aa967a8ecc602ff54504aaeaf905595eb4f6a647dada5be761e  ./lib/lulu/catalogue.py
-ee59d3b9eb82f95633587a05be912f41b18872ad360637e44713e1baa3bbd989  ./lib/lulu/consoled.py
+fb125e7bdcd099eeda1058978e22a3404252876ecff91aff03d94f283327b7c7  ./lib/lulu/consoled.py
 b3022d5b7f1176c38474ad4b0d2e79236756c2814de689c0dc29cc9c1094b171  ./lib/lulu/console_sessiond.py
 bf6eaf76a5c7499fdd239d0ae6d50a647f709225e2526d7cbeadf24954fa1ab9  ./lib/lulu/console_ui.py
 2426657b5e83bd5a2cf59674ecd4f1fb930e16840a7b20a26fa31302f431a89a  ./lib/lulu/contracts.py
 ec4dd764054a39ef16b245ab155eddeac77bf088e9b68aca15bd4cdab57fb22a  ./lib/lulu/controllerd.py
-addaa3d303cda701d8698253dc720afa06541ece8035762bef1de3288e4d28e1  ./lib/lulu/controller_provisioning.py
+10b80b1820c4a3cd2ee7ea7e2edff92f7887a9a29657b2ffd07d66f5f130fd8a  ./lib/lulu/controller_provisioning.py
 6064449cb9242c01be673c4b50f8aecbad67f6c334c8a7a0e9e9b21377478c84  ./lib/lulu/emulation.py
 b93219f6cb5b66cd0ad522d6ba30f0e18e4fb988f754a1afb84d02d9b3dbc9a6  ./lib/lulu/emulator_runtime.py
 22eea93ebf4fdf4093a74b3fbb9673a87ba91861aa0dddefbdd70f57df58f81b  ./lib/lulu/gamescope.py
@@ -44,11 +44,11 @@ c8814955fe9d8a77a98ad50f0e462f543a0b08adf01409b23fa55566c3df6ef5  ./packaging/lu
 6f14d3589b61fdd428b7579680a8733713038592c952844ae7fe9a420ffc9d27  ./packaging/lulu-vt
 0573ef0f102cc3a58281e07b3f99ec6d4bd643f2da486fb5035fbfccf1d93793  ./packaging/pipewire/lulu-fallback-input.conf
 7806e0b076e46e2eaeca7d702852fceb7bf65c5f82a7fd72326a68e3efe7af36  ./packaging/presentation.conf
-0f365b2bafbce1ba126a39774a2c5207163b7c4abccc159bd3f432a691c08d96  ./scripts/console-ui-bridge.py
+8d1cf8e0d0c79910f50d6b20804d6da37e9dec7faa20d66e027bfce9a4efc6b0  ./scripts/console-ui-bridge.py
 828e1eb2c8ea4fad15b233d0f3ccb19327218045b308bbcf1c040f163a1ddc6f  ./scripts/console-ui.sh
 ba906bc73f10a5025773d4292896f3d043b0bceaf871127e8f727dde75738e8b  ./scripts/steam-bootstrap.sh
 559defbdfd363d48fb9ff286cf497a5e62bdca8cb8c3b0c42be5a706d9bc5b01  ./scripts/steam-session-bootstrap.sh
-5e02e200513b30739433d167fbf901f1184b7953d34946af99c63730e9c88a90  ./ui/ConsoleShell.qml
+2fe40efc2ba7f290297cd97747a4e2c48349b6c6c60393eca14d06f3301b0390  ./ui/ConsoleShell.qml
 c147b5955bb1f2f7c65a9e07fe85afca2f9f9693aa090b5bd6fc45da9189045b  ./ui/ControllerGlyph.qml
 b48f2af29670ce222cfa759a22ca7d789a10cd8a7a15a6e9c2897fb1df7ed936  ./ui/controllerglyphs/SteamDeck_A.png
 63c72d44c4cce55d6ec5e1368938533f9a4ed440f9d1ce7f7e42eb6d9fd77db5  ./ui/controllerglyphs/SteamDeck_B.png
