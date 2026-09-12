@@ -19,6 +19,10 @@ Item {
     property bool suppressSelectionCompletion: false
     signal openRequested(int index)
 
+    function categoryArtwork(category) {
+        return Qt.resolvedUrl("artwork/system-" + category.toLowerCase() + ".svg")
+    }
+
     function railX(relativeIndex) {
         return relativeIndex * (cardWidth + railGap)
     }
@@ -83,7 +87,8 @@ Item {
                 + ((index === root.selectedIndex ? 1 : 0)
                    - (root.selectionStart[index] || 0)) * root.selectionProgress
             displayTitle: modelData
-            symbolicArtwork: "[ ]"
+            symbolicArtwork: ""
+            artworkSource: root.categoryArtwork(modelData)
             uiScale: root.uiScale
             typography: root.typography
             luluPalette: root.luluPalette

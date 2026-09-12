@@ -165,11 +165,27 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertIn("presentationStartX", system)
         self.assertIn("captureSelection()", system)
         self.assertIn("onActivated: root.openRequested(index)", system)
+        self.assertIn("property url artworkSource", navigation_card)
+        self.assertIn('artworkSource: Qt.resolvedUrl("artwork/store.svg")', store)
+        self.assertIn("function platformArtwork(scope)", (ROOT / "ui" / "LibraryHome.qml").read_text())
+        self.assertIn("function categoryArtwork(category)", system)
         self.assertNotIn("border.width", (ROOT / "ui" / "NavigationCard.qml").read_text())
         self.assertNotIn("anchors.margins: -8", (ROOT / "ui" / "NavigationCard.qml").read_text())
         self.assertIn("onOpenRequested: root.openSystemCategory(index)", QML)
         self.assertIn("function openSystemCategory(index)", QML)
         self.assertNotIn("root.activate()\n            }", QML)
+
+    def test_non_game_portrait_artwork_assets_are_replaceable(self) -> None:
+        artwork = ROOT / "ui" / "artwork"
+        expected = {
+            "platform-all.svg", "platform-steam.svg", "store.svg",
+            "system-display.svg", "system-audio.svg", "system-network.svg",
+            "system-bluetooth.svg", "system-controllers.svg", "system-storage.svg",
+            "system-system.svg", "system-lulu.svg",
+        }
+        self.assertEqual({path.name for path in artwork.glob("*.svg")}, expected)
+        for path in artwork.glob("*.svg"):
+            self.assertIn('width="600" height="900"', path.read_text())
 
     def test_home_uses_one_fixed_content_stage_and_compact_library_object(self) -> None:
         self.assertIn("readonly property real headingCardGap: design(21)", QML)
@@ -216,7 +232,7 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertIn("property real cardHeight", library_home)
         self.assertIn("height: libraryHome.cardHeight", library_home)
         self.assertIn("width: libraryHome.compactCardWidth", library_home)
-        self.assertIn('symbolicArtwork: "[ ]"', library_home)
+        self.assertIn('artworkSource: libraryHome.platformArtwork(modelData.scope)', library_home)
         self.assertIn("canonicalCoordinateRoot", library_home)
         self.assertIn("interval: 16", library_home)
         self.assertIn("repeat: true", library_home)

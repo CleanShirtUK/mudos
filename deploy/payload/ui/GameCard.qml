@@ -19,6 +19,7 @@ Rectangle {
     property var typography
     property var luluPalette
     property string displayTitle: ""
+    property url artworkSource: ""
     // The supplied fallback asset belongs at this normal artwork-pipeline path.
     property url fallbackArtworkSource: Qt.resolvedUrl("artwork/fallback.jpg")
     property string presentationId: ""
@@ -201,8 +202,9 @@ Rectangle {
         Image {
             id: artworkSource
             anchors.fill: parent
-            source: card.game && !card.game.artwork_suppressed && card.game.artwork_url
-                ? card.game.artwork_url : card.fallbackArtworkSource
+            source: card.artworkSource ? card.artworkSource
+                : (card.game && !card.game.artwork_suppressed && card.game.artwork_url
+                    ? card.game.artwork_url : card.fallbackArtworkSource)
             fillMode: Image.PreserveAspectFit
             asynchronous: true
             visible: !card.symbolicArtwork

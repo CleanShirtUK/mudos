@@ -27,6 +27,10 @@ Item {
     readonly property string navigationObject: "library"
     signal openRequested(int index)
 
+    function platformArtwork(scope) {
+        return Qt.resolvedUrl("artwork/platform-" + scope + ".svg")
+    }
+
     function railX(relativeIndex) {
         return relativeIndex * (compactCardWidth + 18 * uiScale)
     }
@@ -91,7 +95,8 @@ Item {
                 + ((index === libraryHome.selectedIndex ? 1 : 0)
                    - (libraryHome.selectionStart[index] || 0)) * libraryHome.selectionProgress
             displayTitle: modelData.label
-            symbolicArtwork: "[ ]"
+            symbolicArtwork: ""
+            artworkSource: libraryHome.platformArtwork(modelData.scope)
             uiScale: libraryHome.uiScale
             typography: libraryHome.typography
             luluPalette: libraryHome.luluPalette

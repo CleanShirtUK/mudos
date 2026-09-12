@@ -16,7 +16,8 @@ Item {
         width: root.cardWidth
         height: root.cardHeight
         displayTitle: "Store"
-        symbolicArtwork: "[ + ]"
+        symbolicArtwork: ""
+        artworkSource: Qt.resolvedUrl("artwork/store.svg")
         uiScale: root.uiScale
         typography: root.typography
         luluPalette: root.luluPalette
