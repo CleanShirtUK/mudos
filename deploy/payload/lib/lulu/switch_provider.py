@@ -4,7 +4,8 @@ from pathlib import Path
 import os
 
 
-DEFAULT_XBOX360_GUID = "030000005e0400008e02000014010000"
+# InputPlumber's virtual Xbox 360 target as reported by SDL2.
+DEFAULT_XBOX360_GUID = "030081b85e0400008e02000001000000"
 
 # SDL's standard gamepad order. Eden's SDL backend consumes these values in
 # the serialized input parameter packages.

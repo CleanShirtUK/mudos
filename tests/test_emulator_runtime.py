@@ -92,8 +92,8 @@ class EmulatorRuntimeTests(unittest.TestCase):
             second_content = second.read_text()
 
         self.assertEqual(intent.arguments, ("--appimage-extract-and-run", "--config", str(second), "--fullscreen", "--game", "/fixture/game.nsp"))
-        self.assertIn('player_1_button_a="engine:sdl,guid:030000005e0400008e02000014010000,port:0,button:1"', config)
-        self.assertIn('player_1_button_zl="engine:sdl,guid:030000005e0400008e02000014010000,port:0,axis:4,threshold:0.5,invert:+"', config)
+        self.assertIn('player_1_button_a="engine:sdl,guid:030081b85e0400008e02000001000000,port:0,button:1"', config)
+        self.assertIn('player_1_button_zl="engine:sdl,guid:030081b85e0400008e02000001000000,port:0,axis:4,threshold:0.5,invert:+"', config)
         self.assertEqual(config, second_content)
 
     def test_pcsx2_intent_uses_controller_first_direct_boot(self) -> None:
