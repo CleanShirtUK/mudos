@@ -26,6 +26,7 @@ _BUTTONS = {
     "dpad_right": 14,
 }
 _AXES = {"zl": 4, "zr": 5}
+_BUTTON_KEYS = {"dpad_up": "ddup", "dpad_down": "ddown", "dpad_left": "dleft", "dpad_right": "dright"}
 
 
 def _config_root() -> Path:
@@ -45,6 +46,10 @@ class SwitchProvider:
     @property
     def config_path(self) -> Path:
         return self.config_root / "lulu-switch.ini"
+
+    @property
+    def active_config_path(self) -> Path:
+        return self.config_root / "qt-config.ini"
 
     def ensure_controller_config(
         self,
@@ -66,19 +71,41 @@ class SwitchProvider:
             sections.append(f"player_{config_player}_type=1")
             sections.append(f"player_{config_player}_connected=true")
             for name, button in _BUTTONS.items():
-                key = name.replace("_", "")
+                key = _BUTTON_KEYS.get(name, name)
                 sections.append(f'player_{config_player}_button_{key}="{prefix},button:{button}"')
             for name, axis in _AXES.items():
                 sections.append(f'player_{config_player}_button_{name}="{prefix},axis:{axis},threshold:0.5,invert:+"')
             sections.extend([
-                f'player_{config_player}_analog_left="{prefix},axis_x:0,axis_y:1,invert_x:+,invert_y:+"',
-                f'player_{config_player}_analog_right="{prefix},axis_x:2,axis_y:3,invert_x:+,invert_y:+"',
+                f'player_{config_player}_lstick="{prefix},axis_x:0,axis_y:1,invert_x:+,invert_y:+"',
+                f'player_{config_player}_rstick="{prefix},axis_x:2,axis_y:3,invert_x:+,invert_y:+"',
             ])
         content = "\n".join(sections) + "\n"
         self.config_path.parent.mkdir(parents=True, exist_ok=True)
         if not self.config_path.exists() or self.config_path.read_text(encoding="utf-8") != content:
             self.config_path.write_text(content, encoding="utf-8")
-        return self.config_path
+        self._update_active_config(content)
+        return self.active_config_path
+
+    def _update_active_config(self, profile: str) -> None:
+        path = self.active_config_path
+        source = path.read_text(encoding="utf-8") if path.exists() else "[Controls]\n"
+        updates = {
+            line.split("=", 1)[0]: line for line in profile.splitlines()[1:] if "=" in line
+        }
+        lines = source.splitlines()
+        start = next((index for index, line in enumerate(lines) if line == "[Controls]"), None)
+        if start is None:
+            lines.extend(["", "[Controls]"])
+            start = len(lines) - 1
+        end = next((index for index in range(start + 1, len(lines)) if lines[index].startswith("[")), len(lines))
+        seen = set()
+        for index in range(start + 1, end):
+            key = lines[index].split("=", 1)[0] if "=" in lines[index] else ""
+            if key in updates:
+                lines[index] = updates[key]
+                seen.add(key)
+        lines[end:end] = [updates[key] for key in updates if key not in seen]
+        path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
     def launch_arguments(
         self,
