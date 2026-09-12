@@ -292,7 +292,8 @@ normalize_legacy_paths() {
         if grep -Ilq '/var/lib/lulu' "$file"; then
             sed -i 's#/var/lib/lulu#/home/lulu#g' "$file"
         fi
-    done < <(find /home/lulu/.config /home/lulu/.local/share/lulu -type f -size -50M -print0 2>/dev/null)
+    done < <(find /home/lulu/.config /home/lulu/.local/share/lulu /home/lulu/.local/share/Steam -type f \
+        \( -name '*.vdf' -o -name '*.acf' -o -name '*.ini' -o -name '*.json' \) -size -50M -print0 2>/dev/null)
     while IFS= read -r -d '' link; do
         target="$(readlink "$link")"
         if [[ "$target" == *'/var/lib/lulu'* ]]; then

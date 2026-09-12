@@ -13,6 +13,10 @@ Environment=LOGNAME=lulu
 Environment=XDG_CONFIG_HOME=/home/lulu/.config
 Environment=XDG_DATA_HOME=/home/lulu/.local/share
 Environment=XDG_CACHE_HOME=/home/lulu/.cache
+Environment=REAL_HOME=/home/lulu
+Environment=REAL_XDG_CONFIG_HOME=/home/lulu/.config
+Environment=REAL_XDG_DATA_HOME=/home/lulu/.local/share
+Environment=REAL_XDG_CACHE_HOME=/home/lulu/.cache
 Environment=XDG_RUNTIME_DIR=/run/user/958
 Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/958/bus
 Environment=DISPLAY=:0

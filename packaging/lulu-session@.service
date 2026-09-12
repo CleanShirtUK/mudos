@@ -28,6 +28,10 @@ Environment=LOGNAME=lulu
 Environment=XDG_CONFIG_HOME=/home/lulu/.config
 Environment=XDG_DATA_HOME=/home/lulu/.local/share
 Environment=XDG_CACHE_HOME=/home/lulu/.cache
+Environment=REAL_HOME=/home/lulu
+Environment=REAL_XDG_CONFIG_HOME=/home/lulu/.config
+Environment=REAL_XDG_DATA_HOME=/home/lulu/.local/share
+Environment=REAL_XDG_CACHE_HOME=/home/lulu/.cache
 Environment=LULU_NATIVE_CONTROLLER=1
 EnvironmentFile=-/etc/lulu/presentation.conf
 ExecStartPre=+/opt/lulu/bin/lulu-vt activate %i
