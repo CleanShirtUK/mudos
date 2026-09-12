@@ -1,6 +1,6 @@
-9d7fb1ecfa054cd2862e4a9e6e0d35fde9f3011500462684610cbb0a9e97d135  ./bin/lulu-shell
+a5f3b5c22019df18a6acfe02a67a9a4af007ec0ec7e60e999b5eb267b0a9c3fd  ./bin/lulu-shell
 6f14d3589b61fdd428b7579680a8733713038592c952844ae7fe9a420ffc9d27  ./bin/lulu-vt
-cc6d94477c684ccf2e08618125c4d4061419bcba52dacba456fae3ab84513a74  ./bin/mudos-guide
+b2400516c43b1071c3620239c6b9c3b5fb8b25d48c84988edd4d5874742aa111  ./bin/mudos-guide
 2d077df086e81899b65eb22cb7296c966dc4c93a1e447a7196301e9b22898fec  ./bin/verify-mudos.sh
 d8eeda0ddbdd1d0e03ebf70856353fed6bc102d91f34b46bce64acdc4aba636c  ./config/inputplumber/devices/lulu-composite.yaml
 ad4ba03db2a2f1f8e4bf73e670d28fca3f728eb2d087434dbe7bc4febb74661b  ./config/inputplumber/profiles/compat.yaml
@@ -49,7 +49,7 @@ c8814955fe9d8a77a98ad50f0e462f543a0b08adf01409b23fa55566c3df6ef5  ./packaging/lu
 dfd5da8104faf3ab85173af79bd1f44131a2805822fc9566affabff87d536771  ./packaging/plymouth/lulu/lulu.script
 40e7eaf5e4e40b6a3eaf72961946821f79cfd3cfcfa2347946b30ccc27e290e7  ./packaging/plymouth/lulu/MANIFEST
 7806e0b076e46e2eaeca7d702852fceb7bf65c5f82a7fd72326a68e3efe7af36  ./packaging/presentation.conf
-b9f3e3532ab19c9e9ed4fc3c2bc2a1e16f664b77af403731a9af9783513ae16b  ./scripts/console-ui-bridge.py
+484507c1714acbb4a84da77fa7aedbd6168e110ee19bf2baa3f14af95fb3d8c4  ./scripts/console-ui-bridge.py
 828e1eb2c8ea4fad15b233d0f3ccb19327218045b308bbcf1c040f163a1ddc6f  ./scripts/console-ui.sh
 ba906bc73f10a5025773d4292896f3d043b0bceaf871127e8f727dde75738e8b  ./scripts/steam-bootstrap.sh
 559defbdfd363d48fb9ff286cf497a5e62bdca8cb8c3b0c42be5a706d9bc5b01  ./scripts/steam-session-bootstrap.sh

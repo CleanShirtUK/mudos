@@ -13,10 +13,16 @@ import re
 import select
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from threading import Lock, Thread
+import errno
+import time
 from urllib.parse import parse_qs, unquote, urlparse
 
 
 LOGGER = logging.getLogger("lulu.console-ui-bridge")
+
+BRIDGE_ADDRESS = ("127.0.0.1", 38123)
+BRIDGE_BIND_TIMEOUT = 5.0
+BRIDGE_BIND_INTERVAL = 0.2
 
 
 def normalize_launch_token(value: object) -> str:
@@ -398,7 +404,7 @@ async def main() -> None:
     loop = asyncio.get_running_loop()
     bridge = ConsoleUiBridge(loop, consoled, sessiond)
     ApiHandler.bridge = bridge
-    server = ThreadingHTTPServer(("127.0.0.1", 38123), ApiHandler)
+    server = bind_bridge_server()
     Thread(target=server.serve_forever, daemon=True).start()
 
     environment = os.environ.copy()
@@ -415,6 +421,25 @@ async def main() -> None:
         marker.unlink(missing_ok=True)
     server.shutdown()
     bus.disconnect()
+
+
+def bind_bridge_server() -> ThreadingHTTPServer:
+    """Bind the fixed bridge port, tolerating a short previous-session teardown."""
+    deadline = time.monotonic() + BRIDGE_BIND_TIMEOUT
+    logged_wait = False
+    while True:
+        try:
+            return ThreadingHTTPServer(BRIDGE_ADDRESS, ApiHandler)
+        except OSError as error:
+            if error.errno != errno.EADDRINUSE:
+                raise
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise
+            if not logged_wait:
+                LOGGER.warning("Bridge port %d still in use; waiting for previous session teardown", BRIDGE_ADDRESS[1])
+                logged_wait = True
+            time.sleep(min(BRIDGE_BIND_INTERVAL, remaining))
 
 
 if __name__ == "__main__":

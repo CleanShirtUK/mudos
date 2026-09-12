@@ -4,6 +4,7 @@ import http.client
 import json
 from pathlib import Path
 import unittest
+from unittest.mock import patch
 
 
 ROOT = Path(__file__).parents[1]
@@ -14,6 +15,38 @@ SPEC.loader.exec_module(BRIDGE)
 
 
 class ConsoleBridgeTests(unittest.TestCase):
+    def test_bridge_bind_succeeds_immediately(self) -> None:
+        server = object()
+        with patch.object(BRIDGE, "ThreadingHTTPServer", return_value=server) as bind:
+            self.assertIs(BRIDGE.bind_bridge_server(), server)
+        bind.assert_called_once_with(("127.0.0.1", 38123), BRIDGE.ApiHandler)
+
+    def test_bridge_bind_retries_after_transient_address_collision(self) -> None:
+        server = object()
+        collision = OSError(98, "Address already in use")
+        with patch.object(BRIDGE, "ThreadingHTTPServer", side_effect=[collision, server]), \
+             patch.object(BRIDGE.time, "sleep") as sleep:
+            self.assertIs(BRIDGE.bind_bridge_server(), server)
+        sleep.assert_called_once()
+
+    def test_bridge_bind_times_out_on_persistent_address_collision(self) -> None:
+        collision = OSError(98, "Address already in use")
+        with patch.object(BRIDGE, "ThreadingHTTPServer", side_effect=collision), \
+             patch.object(BRIDGE, "time") as clock:
+            clock.monotonic.side_effect = [0.0, 0.0, 5.0]
+            with self.assertRaises(OSError) as raised:
+                BRIDGE.bind_bridge_server()
+        self.assertEqual(raised.exception.errno, BRIDGE.errno.EADDRINUSE)
+
+    def test_bridge_bind_fails_immediately_on_unrelated_socket_error(self) -> None:
+        failure = OSError(13, "Permission denied")
+        with patch.object(BRIDGE, "ThreadingHTTPServer", side_effect=failure), \
+             patch.object(BRIDGE.time, "sleep") as sleep:
+            with self.assertRaises(OSError) as raised:
+                BRIDGE.bind_bridge_server()
+        self.assertIs(raised.exception, failure)
+        sleep.assert_not_called()
+
     def test_startup_waits_for_dbus_service_to_become_available(self) -> None:
         from dbus_next.errors import DBusError
 
