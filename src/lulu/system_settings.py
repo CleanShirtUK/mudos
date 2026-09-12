@@ -10,6 +10,8 @@ import socket
 import subprocess
 from typing import Any
 
+from .settings import SettingSpec, SettingsStore
+
 
 @dataclass(frozen=True, slots=True)
 class SystemSetting:
@@ -19,6 +21,7 @@ class SystemSetting:
     value: Any
     detail: str = ""
     writable: bool = False
+    options: tuple[str, ...] = ()
 
     def as_dict(self) -> dict[str, object]:
         return {
@@ -28,10 +31,11 @@ class SystemSetting:
             "value": self.value,
             "detail": self.detail,
             "writable": self.writable,
+            "options": list(self.options),
         }
 
 
-CATEGORIES = ("Display", "Audio", "Network", "Bluetooth", "Controllers", "Storage", "System", "Lulu")
+CATEGORIES = ("Display", "Audio", "Network", "Bluetooth", "Controllers", "Storage", "Applications", "Power", "System", "Lulu")
 
 
 def _command(*args: str) -> str:
@@ -51,17 +55,27 @@ class SystemSettingsProvider:
 
     categories = CATEGORIES
 
+    def __init__(self, store: SettingsStore | None = None) -> None:
+        self.store = store
+
     def list_settings(self, category: str) -> list[dict[str, object]]:
         if category not in CATEGORIES:
             raise ValueError(f"unknown system settings category: {category}")
-        return [setting.as_dict() for setting in getattr(self, f"_{category.lower()}_settings")()]
+        rows = [setting.as_dict() for setting in getattr(self, f"_{category.lower()}_settings")()]
+        if self.store:
+            rows = [self._registered_row(spec) for spec in self.store.specs_for(category)] + rows
+        return rows
+
+    def _registered_row(self, spec: SettingSpec) -> dict[str, object]:
+        return SystemSetting(spec.key, spec.display_label, spec.kind, self.store.get(spec.key),
+                             writable=spec.writable, options=spec.options).as_dict()
 
     def _display_settings(self) -> list[SystemSetting]:
         output = os.environ.get("LULU_OUTPUT_CONNECTOR", "auto")
         mode = os.environ.get("LULU_OUTPUT_MODE", "deployment")
         return [
-            _status("display.output", "Presentation output", output, "Deployment configured"),
-            _status("display.mode", "Active mode", mode, "Mode changes are TO PROVE"),
+            _status("display.output.status", "Detected output", output, "Deployment configured"),
+            _status("display.mode.status", "Active mode", mode, "Host mode status"),
             _status("display.hdr", "HDR", "unknown", "Capability detection is TO PROVE"),
             _status("display.vrr", "VRR", "unknown", "Capability detection is TO PROVE"),
         ]
@@ -69,7 +83,7 @@ class SystemSettingsProvider:
     def _audio_settings(self) -> list[SystemSetting]:
         server = _command("pactl", "info")
         default = next((line.split(":", 1)[1].strip() for line in server.splitlines() if line.startswith("Default Sink:")), "unknown")
-        return [_status("audio.output", "Default output", default, "PipeWire/Pulse compatibility status")]
+        return [_status("audio.output.status", "Default output", default, "PipeWire/Pulse compatibility status")]
 
     def _network_settings(self) -> list[SystemSetting]:
         state = _command("nmcli", "-t", "-f", "STATE", "general") or "unavailable"
@@ -98,6 +112,12 @@ class SystemSettingsProvider:
             _status("storage.library", "Game storage", "managed", "Per-provider usage is TO PROVE"),
         ]
 
+    def _applications_settings(self) -> list[SystemSetting]:
+        return [_status("applications.state", "Runtime readiness", "available")]
+
+    def _power_settings(self) -> list[SystemSetting]:
+        return [_status("system.power", "Power controls", "available", "Controller confirmation required")]
+
     def _system_settings(self) -> list[SystemSetting]:
         return [
             SystemSetting("lulu.reset", "Reset Mudos", "action", "restart session", "Restarts the Lulu graphical session", True),
@@ -106,7 +126,6 @@ class SystemSettingsProvider:
             _status("system.kernel", "Kernel", platform.release()),
             _status("system.cpu", "CPU", platform.processor() or "unknown"),
             _status("system.memory", "Memory", "available", "Detailed memory model is TO PROVE"),
-            _status("system.power", "Power controls", "available", "Controller confirmation required"),
         ]
 
     def _lulu_settings(self) -> list[SystemSetting]:

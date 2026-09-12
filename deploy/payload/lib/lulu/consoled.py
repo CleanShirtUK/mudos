@@ -23,6 +23,7 @@ from .emulation import PLATFORMS, ROM_ROOT, ensure_storage
 from .inputplumber import InputPlumberClient
 from .local_content import LocalContentProvider
 from .metadata import MetadataMatcher, SteamGridDBMetadata, clean_local_title
+from .settings import SettingsStore
 from .steam_provider import SteamProvider
 from .system_settings import CATEGORIES as SYSTEM_CATEGORIES, SystemSettingsProvider
 
@@ -242,6 +243,12 @@ class ConsoleInterface(ServiceInterface):
         return [self._variants(item) for item in self.system_settings.list_settings(category)]
 
     @method()
+    def SetSystemSetting(self, key: "s", value: "v") -> "":
+        if self.system_settings.store is None:
+            raise ValueError("settings store is unavailable")
+        self.system_settings.store.set(key, value.value)
+
+    @method()
     def ListSystemCategories(self) -> "as":
         return list(SYSTEM_CATEGORIES)
 
@@ -427,7 +434,10 @@ async def serve() -> None:
         "org.lulu.ConsoleSessiond", "/org/lulu/ConsoleSession", session_introspection
     )
     sessiond = session_proxy.get_interface("org.lulu.ConsoleSession")
-    bus.export(OBJECT_PATH, ConsoleInterface(catalogue, runtime, sessiond=sessiond))
+    settings_path = Path(os.environ.get("LULU_SETTINGS_DB", "~/.config/lulu/settings.sqlite3")).expanduser()
+    bus.export(OBJECT_PATH, ConsoleInterface(
+        catalogue, runtime, system_settings=SystemSettingsProvider(SettingsStore(settings_path)), sessiond=sessiond
+    ))
     await bus.request_name(BUS_NAME)
     await asyncio.Event().wait()
 

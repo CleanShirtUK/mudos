@@ -70,6 +70,12 @@ class ConsoleBridgeTests(unittest.TestCase):
                             "call_clear_title_override", "call_suppress_artwork", "call_restore_artwork"):
             self.assertIn(method_name, source)
 
+    def test_settings_mutation_path_uses_typed_dbus_variants(self) -> None:
+        source = (ROOT / "scripts" / "console-ui-bridge.py").read_text()
+        self.assertIn('path.startswith("/settings/")', source)
+        self.assertIn('Variant("b", value)', source)
+        self.assertIn("call_set_system_setting", source)
+
 
     def test_launch_endpoint_returns_bridge_result_without_double_wrap(self) -> None:
         class Logs:

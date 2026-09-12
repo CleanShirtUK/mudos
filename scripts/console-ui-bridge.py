@@ -221,6 +221,15 @@ class ConsoleUiBridge:
         rows = await self.consoled.call_list_system_settings(category)
         return [{key: value.value for key, value in row.items()} for row in rows]
 
+    async def set_system_setting(self, key: str, value: object) -> None:
+        if isinstance(value, bool):
+            variant = Variant("b", value)
+        elif isinstance(value, str):
+            variant = Variant("s", value)
+        else:
+            raise TypeError("settings only accept boolean or string values")
+        await self.consoled.call_set_system_setting(key, variant)
+
     async def search_metadata(self, game_id: str, query: str) -> list[dict[str, object]]:
         rows = await self.consoled.call_search_metadata(game_id, query)
         return [{key: value.value for key, value in row.items()} for row in rows]
@@ -327,6 +336,16 @@ class ApiHandler(BaseHTTPRequestHandler):
                 self._respond(200, self.bridge.call(self.bridge.reset_mudos(), timeout=5))
             except Exception as error:  # pragma: no cover - session restart may close IPC
                 self._respond(202, {"status": "reset-requested", "error": str(error)})
+            return
+        if path.startswith("/settings/"):
+            try:
+                key = unquote(path.removeprefix("/settings/"))
+                length = int(self.headers.get("Content-Length", "0"))
+                payload = json.loads(self.rfile.read(length) or b"{}")
+                self.bridge.call(self.bridge.set_system_setting(key, payload["value"]))
+                self._respond(200, {"ok": True})
+            except Exception as error:  # pragma: no cover - live IPC failure path
+                self._respond(409, {"error": str(error) or type(error).__name__})
             return
         if path == "/store/steam":
             try:

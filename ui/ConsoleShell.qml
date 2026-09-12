@@ -56,7 +56,7 @@ Window {
     property var systemHomeRailRef: null
     property int systemRowIndex: 0
     property bool systemLanding: true
-    property var systemCategories: ["Display", "Audio", "Network", "Bluetooth", "Controllers", "Storage", "System", "Lulu"]
+    property var systemCategories: ["Display", "Audio", "Network", "Bluetooth", "Controllers", "Storage", "Applications", "Power", "System", "Lulu"]
     property var systemSettings: []
     property string libraryFocus: "games"
     property int libraryFirstVisibleRow: 0
@@ -121,6 +121,8 @@ Window {
     property string metadataTitleDraft: ""
     property string metadataError: ""
     property bool metadataBusy: false
+    property var systemEditorSetting: null
+    property int systemEditorIndex: 0
     property int launchGeneration: 0
     property int launchStateSerial: 0
     property int launchStateApplied: 0
@@ -464,6 +466,40 @@ Window {
                 })
     }
 
+    function editSystemSetting(setting) {
+        if (!setting || setting.writable !== true)
+            return
+        if (setting.kind === "toggle") {
+            request("/settings/" + encodeURIComponent(setting.key), "POST",
+                    JSON.stringify({value: !Boolean(setting.value)}), function() {
+                refreshSystemSettings()
+            }, "Setting update failed")
+            return
+        }
+        if (setting.kind === "select" && setting.options && setting.options.length) {
+            systemEditorSetting = setting
+            systemEditorIndex = Math.max(0, setting.options.indexOf(String(setting.value)))
+        }
+    }
+
+    function activateSystemEditor() {
+        if (!systemEditorSetting || !systemEditorSetting.options[systemEditorIndex])
+            return
+        var value = systemEditorSetting.options[systemEditorIndex]
+        request("/settings/" + encodeURIComponent(systemEditorSetting.key), "POST",
+                JSON.stringify({value: value}), function() {
+            systemEditorSetting = null
+            refreshSystemSettings()
+        }, "Setting update failed")
+    }
+
+    function moveSystemEditor(delta) {
+        if (!systemEditorSetting)
+            return
+        systemEditorIndex = Math.max(0, Math.min(systemEditorSetting.options.length - 1,
+                                                 systemEditorIndex + delta))
+    }
+
     function startNextHomeCategoryHop(chained) {
         if (selectedCategoryIndex === desiredCategoryIndex)
             return
@@ -679,6 +715,10 @@ Window {
             activateGameOptions()
             return
         }
+        if (systemEditorSetting) {
+            activateSystemEditor()
+            return
+        }
         if (space === "system") {
             if (!systemLanding && systemSettings[systemRowIndex]
                     && systemSettings[systemRowIndex].key === "lulu.reset")
@@ -753,6 +793,10 @@ Window {
                 gameOptionsIndex = 0
                 metadataError = ""
             }
+            return
+        }
+        if (systemEditorSetting) {
+            systemEditorSetting = null
             return
         }
         if (space === "system") {
@@ -896,7 +940,8 @@ Window {
     }
 
     function controllerUp() {
-            if (root.gameOptionsOpen) root.moveGameOptions(-1)
+            if (root.systemEditorSetting) root.moveSystemEditor(-1)
+            else if (root.gameOptionsOpen) root.moveGameOptions(-1)
             else if (root.space === "home") root.moveDomain(-1)
             else if (root.space === "library") root.moveLibraryVertical(-1)
             else if (root.space === "system") {
@@ -905,7 +950,8 @@ Window {
             }
     }
     function controllerDown() {
-            if (root.gameOptionsOpen) root.moveGameOptions(1)
+            if (root.systemEditorSetting) root.moveSystemEditor(1)
+            else if (root.gameOptionsOpen) root.moveGameOptions(1)
             else if (root.space === "home") root.moveDomain(1)
             else if (root.space === "library") root.moveLibraryVertical(1)
             else if (root.space === "system") {
@@ -914,7 +960,8 @@ Window {
             }
     }
     function controllerLeft() {
-            if (root.gameOptionsOpen) root.moveGameOptions(-1)
+            if (root.systemEditorSetting) root.moveSystemEditor(-1)
+            else if (root.gameOptionsOpen) root.moveGameOptions(-1)
             else if (root.space === "home") {
                 if (root.selectedCategoryIndex === 3) root.moveRecent(-1)
                 else if (root.selectedCategoryIndex === 2) root.moveLibraryLanding(-1)
@@ -927,7 +974,8 @@ Window {
             }
     }
     function controllerRight() {
-            if (root.gameOptionsOpen) root.moveGameOptions(1)
+            if (root.systemEditorSetting) root.moveSystemEditor(1)
+            else if (root.gameOptionsOpen) root.moveGameOptions(1)
             else if (root.space === "home") {
                 if (root.selectedCategoryIndex === 3) root.moveRecent(1)
                 else if (root.selectedCategoryIndex === 2) root.moveLibraryLanding(1)
@@ -994,6 +1042,22 @@ Window {
                     event.accepted = true
                 } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
                     activateGameOptions()
+                    event.accepted = true
+                } else if (event.key === Qt.Key_Escape || event.key === Qt.Key_Backspace) {
+                    back()
+                    event.accepted = true
+                }
+                return
+            }
+            if (systemEditorSetting) {
+                if (event.key === Qt.Key_Up || event.key === Qt.Key_Left) {
+                    moveSystemEditor(-1)
+                    event.accepted = true
+                } else if (event.key === Qt.Key_Down || event.key === Qt.Key_Right) {
+                    moveSystemEditor(1)
+                    event.accepted = true
+                } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
+                    activateSystemEditor()
                     event.accepted = true
                 } else if (event.key === Qt.Key_Escape || event.key === Qt.Key_Backspace) {
                     back()
@@ -1352,7 +1416,64 @@ Window {
             uiScale: root.uiScale
             typography: typography
             luluPalette: luluPalette
-            onActionRequested: if (key === "lulu.reset") root.resetMudos()
+            onSettingRequested: root.editSystemSetting(setting)
+        }
+
+        Rectangle {
+            visible: root.systemEditorSetting !== null
+            anchors.fill: parent
+            z: 90
+            color: Qt.rgba(0.01, 0.02, 0.04, 0.72)
+            Rectangle {
+                anchors.centerIn: parent
+                width: Math.min(parent.width * 0.72, 560 * root.uiScale)
+                height: Math.min(parent.height * 0.72, 420 * root.uiScale)
+                color: Qt.rgba(0.035, 0.05, 0.09, 0.98)
+                border.color: luluPalette.focusIndicator
+                border.width: root.uiScale
+                Column {
+                    anchors.fill: parent
+                    anchors.margins: 32 * root.uiScale
+                    spacing: 18 * root.uiScale
+                    Text {
+                        text: root.systemEditorSetting ? root.systemEditorSetting.label : ""
+                        color: luluPalette.accent
+                        font.family: typography.interfaceFamily
+                        font.pixelSize: typography.size("hint", 14)
+                    }
+                    ListView {
+                        id: systemEditorList
+                        width: parent.width
+                        height: Math.min(contentHeight, 300 * root.uiScale)
+                        spacing: 8 * root.uiScale
+                        model: root.systemEditorSetting ? root.systemEditorSetting.options : []
+                        delegate: Rectangle {
+                            required property int index
+                            required property string modelData
+                            width: systemEditorList.width
+                            height: 54 * root.uiScale
+                            color: index === root.systemEditorIndex ? luluPalette.focusIndicator : luluPalette.cardSurface
+                            border.color: index === root.systemEditorIndex ? luluPalette.accent : luluPalette.glassBorder
+                            border.width: root.uiScale
+                            Text {
+                                anchors.fill: parent
+                                anchors.leftMargin: 18 * root.uiScale
+                                text: modelData
+                                color: luluPalette.primaryText
+                                font.family: typography.interfaceFamily
+                                font.pixelSize: typography.size("body", 18)
+                                verticalAlignment: Text.AlignVCenter
+                            }
+                        }
+                    }
+                    Text {
+                        text: "A  Select    B  Back"
+                        color: luluPalette.secondaryText
+                        font.family: typography.interfaceFamily
+                        font.pixelSize: typography.size("hint", 14)
+                    }
+                }
+            }
         }
 
         GameOptions {
