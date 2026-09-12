@@ -23,6 +23,7 @@ and conditions that were true when they were captured.
 - [Emulation library convention](emulation-library.md)
 - [Provider menu reconnaissance](provider-menu-reconnaissance.md): external-first research; no implementation yet
 - [Emulator controller provisioning](emulator-controller-provisioning.md): native PCSX2 and Dolphin profile contract
+- [Nintendo Switch provider](switch-provider.md): Eden launch, controller profile, and user-owned prerequisites
 - [Known-good test environment](known-good-test-environment-20260910.md): complete CachyOS milestone audit and reproduction boundary
 - [USB provisioning plan](usb-provisioning-plan.md): single-script fresh CachyOS deployment design
 

@@ -6,6 +6,7 @@ from lulu.emulator_runtime import EmulatorRuntimeAdapter
 from lulu.controller_provisioning import ensure_provider_controller_config
 from lulu.consoled import _retroarch_child_config
 from lulu.local_content import LocalContentGame
+from lulu.switch_provider import SwitchProvider
 
 
 class EmulatorRuntimeTests(unittest.TestCase):
@@ -74,6 +75,25 @@ class EmulatorRuntimeTests(unittest.TestCase):
             intent = EmulatorRuntimeAdapter({"wii": executable}).launch_intent(game)
 
         self.assertEqual(intent.arguments, ("-e", "/fixture/game.rvz"))
+
+    def test_switch_intent_uses_eden_direct_launch_and_deterministic_profile(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            executable = root / "eden-cli"
+            executable.write_bytes(b"fixture")
+            provider = SwitchProvider(executable, root / "eden")
+            game = LocalContentGame("local:switch:id", "Game", "switch", "/fixture/game.nsp", True, "installed", "ready")
+
+            intent = EmulatorRuntimeAdapter({"switch": executable}, switch_provider=provider).launch_intent(game)
+            config_path = root / "eden" / "lulu-switch.ini"
+            config = config_path.read_text()
+            second = provider.ensure_controller_config()
+            second_content = second.read_text()
+
+        self.assertEqual(intent.arguments, ("--config", str(second), "--fullscreen", "--game", "/fixture/game.nsp"))
+        self.assertIn('player_1_button_a="engine:sdl,guid:030000005e0400008e02000014010000,port:0,button:1"', config)
+        self.assertIn('player_1_button_zl="engine:sdl,guid:030000005e0400008e02000014010000,port:0,axis:4,threshold:0.5,invert:+"', config)
+        self.assertEqual(config, second_content)
 
     def test_pcsx2_intent_uses_controller_first_direct_boot(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
