@@ -17,7 +17,7 @@ RELEASE_CHANGED=0
 PACKAGES=(
     inputplumber gamescope-git dolphin-emu retroarch
     libretro-nestopia libretro-genesis-plus-gx steam steam-devices
-    seatd pipewire wireplumber qt6-base qt6-declarative qt6-multimedia sdl3 python
+    seatd pipewire wireplumber qt6-base qt6-declarative qt6-multimedia sdl3 python ufw
     python-dbus-next
 )
 # These are deliberately absent from PACKAGES: each has an official-repository
@@ -27,7 +27,7 @@ log() { printf '[mudos] %s\n' "$*"; }
 die() { log "ERROR: $*" >&2; exit 1; }
 step() {
     STAGE="$1"
-    log "[$2/10] $1"
+    log "[$2/11] $1"
 }
 on_error() {
     local status=$?
@@ -102,9 +102,32 @@ verify_packages() {
     command -v python >/dev/null || die 'python executable is missing'
     command -v systemctl >/dev/null || die 'systemctl executable is missing'
     command -v busctl >/dev/null || die 'busctl executable is missing'
+    command -v ufw >/dev/null || die 'ufw executable is missing'
     for executable in dolphin-emu pcsx2 pcsx2-qt retroarch gamescope dufs; do
         command -v "$executable" >/dev/null || die "required executable is missing: $executable"
     done
+}
+
+ensure_file_browser_firewall() {
+    local rule='ufw allow in on enp4s0 from 192.168.0.0/24 to any port 8080 proto tcp'
+    command -v ufw >/dev/null || die 'ufw executable is missing'
+    if ufw show added | grep -Fqx "$rule"; then
+        log "firewall rule already present: ${rule}"
+    else
+        log "adding firewall rule: ${rule}"
+        ufw allow in on enp4s0 from 192.168.0.0/24 to any port 8080 proto tcp
+    fi
+    verify_file_browser_firewall
+}
+
+verify_file_browser_firewall() {
+    local rule='ufw allow in on enp4s0 from 192.168.0.0/24 to any port 8080 proto tcp'
+    command -v ufw >/dev/null || die 'ufw executable is missing'
+    if ! ufw show added | grep -Fqx "$rule"; then
+        log "ERROR: firewall rule verification failure: ${rule}" >&2
+        return 1
+    fi
+    log "firewall rule verified: ${rule}"
 }
 
 verify_installed() {
@@ -142,6 +165,7 @@ verify_installed() {
     [[ -f /etc/lulu/presentation.conf ]] || die 'presentation configuration is missing'
     [[ -f /etc/lulu/file-browser.env ]] || die 'file browser credentials are missing'
     [[ "$(stat -c '%a' /etc/lulu/file-browser.env)" == 600 ]] || die 'file browser credentials are not mode 0600'
+    verify_file_browser_firewall
     local connector
     connector="$(sed -n 's/^LULU_OUTPUT_CONNECTOR=//p' /etc/lulu/presentation.conf | tr -d '"' | tail -n 1)"
     if [[ -n "$connector" ]]; then
@@ -450,14 +474,17 @@ step 'Deploying complete Mudos release' 5
 step 'Installing systemd and session state' 6
 install_system_state
 
-step 'Installing InputPlumber configuration' 7
+step 'Configuring file browser firewall' 7
+ensure_file_browser_firewall
+
+step 'Installing InputPlumber configuration' 8
 if (( INPUT_CHANGED )); then
     systemctl restart inputplumber.service
 else
     systemctl start inputplumber.service
 fi
 
-step 'Verifying udev and permissions' 8
+step 'Verifying udev and permissions' 9
 if pacman -Ql steam-devices | grep -Eq '/(udev/rules.d|modprobe.d)/'; then
     udevadm control --reload-rules
     if (( INPUT_CHANGED )); then udevadm trigger --subsystem-match=input; fi
@@ -466,13 +493,13 @@ else
 fi
 getent group seat >/dev/null
 
-step 'Installing Gamescope and provider prerequisites' 9
+step 'Installing Gamescope and provider prerequisites' 10
 python -m compileall -q /opt/lulu/current/lib
 command -v dolphin-emu >/dev/null
 command -v pcsx2 >/dev/null
 command -v retroarch >/dev/null
 
-step 'Enabling services and final verification' 10
+step 'Enabling services and final verification' 11
 enable_services
 verify_installed
 log "installation complete: ${VERSION_TAG} (${VERSION})"
