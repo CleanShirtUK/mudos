@@ -14,6 +14,40 @@ SPEC.loader.exec_module(BRIDGE)
 
 
 class ConsoleBridgeTests(unittest.TestCase):
+    def test_startup_waits_for_dbus_service_to_become_available(self) -> None:
+        from dbus_next.errors import DBusError
+
+        class DelayedBus:
+            def __init__(self) -> None:
+                self.calls = 0
+
+            async def introspect(self, _name: str, _path: str) -> object:
+                self.calls += 1
+                if self.calls < 3:
+                    raise DBusError("org.freedesktop.DBus.Error.ServiceUnknown", "name is not activatable")
+                return object()
+
+        bus = DelayedBus()
+        result = asyncio.run(BRIDGE.wait_for_dbus_service(
+            bus, "org.lulu.ConsoleSessiond", "/org/lulu/ConsoleSession", interval=0
+        ))
+
+        self.assertIsNotNone(result)
+        self.assertEqual(bus.calls, 3)
+
+    def test_startup_fails_after_bounded_dbus_readiness_timeout(self) -> None:
+        from dbus_next.errors import DBusError
+
+        class UnavailableBus:
+            async def introspect(self, _name: str, _path: str) -> object:
+                raise DBusError("org.freedesktop.DBus.Error.ServiceUnknown", "name is not activatable")
+
+        with self.assertRaisesRegex(RuntimeError, "D-Bus service unavailable"):
+            asyncio.run(BRIDGE.wait_for_dbus_service(
+                UnavailableBus(), "org.lulu.ConsoleSessiond", "/org/lulu/ConsoleSession",
+                timeout=0, interval=0,
+            ))
+
     def test_launch_path_decodes_qml_encoded_game_id(self) -> None:
         path = "/launch/steam%3A220780"
         self.assertEqual(BRIDGE.unquote(path.removeprefix("/launch/")), "steam:220780")
