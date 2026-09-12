@@ -298,7 +298,10 @@ class ConsoleInterface(ServiceInterface):
             )
             return details_uri
         if game.provider == "local" and self.local_runtime is not None:
-            intent = self.local_runtime.launch_intent(game)
+            device_indices = None
+            if game.platform == "switch":
+                device_indices = await asyncio.to_thread(_mudos_provider_device_indices)
+            intent = self.local_runtime.launch_intent(game, device_indices=device_indices)
             command = [intent.executable, *intent.arguments]
             child_config_path: str | None = None
             if intent.platform in {"ps2", "wii"}:

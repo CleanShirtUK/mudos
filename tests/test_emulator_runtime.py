@@ -97,6 +97,18 @@ class EmulatorRuntimeTests(unittest.TestCase):
         self.assertIn("player_1_type=1", config)
         self.assertEqual(config, second_content)
 
+    def test_switch_profile_follows_assigned_controller_indices(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            provider = SwitchProvider(root / "eden-cli", root / "eden")
+            config = provider.ensure_controller_config(device_indices={1: 0, 2: 2, 3: 1})
+            content = config.read_text()
+
+        self.assertIn("player_1_button_a=\"engine:sdl,guid:030081b85e0400008e02000001000000,port:0,button:1\"", content)
+        self.assertIn("player_2_button_a=\"engine:sdl,guid:030081b85e0400008e02000001000000,port:2,button:1\"", content)
+        self.assertIn("player_3_button_a=\"engine:sdl,guid:030081b85e0400008e02000001000000,port:1,button:1\"", content)
+        self.assertNotIn("player_4_", content)
+
     def test_pcsx2_intent_uses_controller_first_direct_boot(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             executable = Path(directory) / "pcsx2-qt"

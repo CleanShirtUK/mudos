@@ -46,13 +46,22 @@ class SwitchProvider:
     def config_path(self) -> Path:
         return self.config_root / "lulu-switch.ini"
 
-    def ensure_controller_config(self, player_count: int = 4) -> Path:
+    def ensure_controller_config(
+        self,
+        player_count: int | None = None,
+        device_indices: dict[int, int] | None = None,
+    ) -> Path:
+        if player_count is None:
+            player_count = max(device_indices, default=4) if device_indices else 4
         if player_count not in range(1, 5):
             raise ValueError("player_count must be between 1 and 4")
+        device_indices = device_indices or {
+            player: player - 1 for player in range(1, player_count + 1)
+        }
         guid = os.environ.get("LULU_SWITCH_SDL_GUID", DEFAULT_XBOX360_GUID)
         sections = ["[Controls]"]
         for player in range(1, player_count + 1):
-            prefix = f'engine:sdl,guid:{guid},port:{player - 1}'
+            prefix = f'engine:sdl,guid:{guid},port:{device_indices.get(player, player - 1)}'
             sections.append(f"player_{player}_type=1")
             sections.append(f"player_{player}_connect=1")
             for name, button in _BUTTONS.items():
@@ -70,8 +79,13 @@ class SwitchProvider:
             self.config_path.write_text(content, encoding="utf-8")
         return self.config_path
 
-    def launch_arguments(self, content_path: str, player_count: int = 4) -> tuple[str, ...]:
-        config = self.ensure_controller_config(player_count)
+    def launch_arguments(
+        self,
+        content_path: str,
+        player_count: int | None = None,
+        device_indices: dict[int, int] | None = None,
+    ) -> tuple[str, ...]:
+        config = self.ensure_controller_config(player_count, device_indices)
         return (
             "--appimage-extract-and-run",
             "--config", str(config), "--fullscreen", "--game", content_path,
