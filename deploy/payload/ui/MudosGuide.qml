@@ -14,6 +14,17 @@ Window {
     property bool confirmationPending: guideModel.confirmationPending
     property string confirmationAction: guideModel.confirmationAction
 
+    UiAudioEngine {
+        id: uiAudioEngine
+    }
+
+    Connections {
+        target: guideModel
+        function onAudioEventSerialChanged() {
+            uiAudioEngine.play(guideModel.audioEvent)
+        }
+    }
+
     Rectangle {
         anchors.centerIn: parent
         width: 520

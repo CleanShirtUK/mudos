@@ -25,6 +25,22 @@ Window {
         id: luluPalette
     }
 
+    UiAudioEngine {
+        id: uiAudioEngine
+    }
+
+    function audioEventForAction(action) {
+        if (action === "up" || action === "down" || action === "left"
+                || action === "right" || action === "leftShoulder"
+                || action === "rightShoulder")
+            return "navigate"
+        if (action === "confirm" || action === "options")
+            return "confirm"
+        if (action === "back")
+            return "back"
+        return ""
+    }
+
     // The engine is available to future event wiring without coupling this
     // proposal to the complete navigation event matrix.
     UiAudioEngine {
@@ -670,6 +686,8 @@ Window {
             }
             if (key === "action" && value === "back" && root.launchOverlayVisible)
                 root.cancelLaunch()
+            if (key === "action")
+                uiAudioEngine.play(root.audioEventForAction(value))
         }
     }
 
