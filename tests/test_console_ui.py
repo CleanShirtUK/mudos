@@ -170,7 +170,7 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertIn("artworkRole: root.artworkRole", navigation_card)
         self.assertIn('artworkSource: Qt.resolvedUrl("artwork/store.png")', store)
         self.assertIn('artworkRole: "raster"', store)
-        self.assertIn("function platformArtwork(scope)", (ROOT / "ui" / "LibraryHome.qml").read_text())
+        self.assertIn("function categoryArtwork(category)", (ROOT / "ui" / "LibraryHome.qml").read_text())
         self.assertIn("function categoryArtwork(category)", system)
         self.assertNotIn("border.width", (ROOT / "ui" / "NavigationCard.qml").read_text())
         self.assertNotIn("anchors.margins: -8", (ROOT / "ui" / "NavigationCard.qml").read_text())
@@ -181,7 +181,12 @@ class ConsoleUiTests(unittest.TestCase):
     def test_non_game_portrait_artwork_assets_are_replaceable(self) -> None:
         artwork = ROOT / "ui" / "artwork"
         expected = {
-            "platform-all.svg", "platform-steam.png", "store.png",
+            "platform-all.svg", "platform-pc.png", "store.png",
+            "platform-nes.png", "platform-snes.png", "platform-genesis.png",
+            "platform-gb.png", "platform-gbc.png", "platform-gba.png",
+            "platform-nds.png", "platform-gamecube.png", "platform-wii.png",
+            "platform-switch.png", "platform-ps1.png", "platform-ps2.png",
+            "platform-ps3.png",
             "system-display.svg", "system-audio.svg", "system-network.svg",
             "system-bluetooth.svg", "system-controllers.svg", "system-storage.svg",
             "system-system.svg", "system-lulu.svg", "README.md",
@@ -225,7 +230,7 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertNotIn("homeCategoryOpacityAnimation", QML)
         self.assertNotIn("root.domainIndex * 40", QML)
         library_home = (ROOT / "ui" / "LibraryHome.qml").read_text()
-        self.assertIn('model: ["All Games", "Steam"]', library_home)
+        self.assertIn('"PC Games", "scope": "pc"', library_home)
         self.assertIn("NavigationCard", library_home)
         self.assertIn("presentationStartX", library_home)
         self.assertIn("function railX(relativeIndex)", library_home)
@@ -235,10 +240,10 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertIn("property real cardHeight", library_home)
         self.assertIn("height: libraryHome.cardHeight", library_home)
         self.assertIn("width: libraryHome.compactCardWidth", library_home)
-        self.assertIn('artworkSource: libraryHome.platformArtwork(modelData.scope)', library_home)
-        self.assertIn('Qt.resolvedUrl("artwork/platform-steam.png")', library_home)
-        self.assertIn('Qt.resolvedUrl("artwork/platform-all.svg")', library_home)
-        self.assertIn('artworkRole: modelData.scope === "steam" ? "raster" : "icon"', library_home)
+        self.assertIn('artworkSource: Qt.resolvedUrl("artwork/" + libraryHome.categoryArtwork(modelData.scope)[0])', library_home)
+        self.assertIn('"platform:nes": ["platform-nes.png", "raster"]', library_home)
+        self.assertIn('"all": ["platform-all.svg", "icon"]', library_home)
+        self.assertIn('artworkRole: libraryHome.categoryArtwork(modelData.scope)[1]', library_home)
         self.assertIn("canonicalCoordinateRoot", library_home)
         self.assertIn("interval: 16", library_home)
         self.assertIn("repeat: true", library_home)

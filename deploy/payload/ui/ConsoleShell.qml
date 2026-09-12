@@ -90,7 +90,7 @@ Window {
     property int recentIndex: 0
     property int libraryIndex: 0
     property int collectionIndex: 0
-    property var libraryCollections: [{"label": "All Games", "scope": "all"}, {"label": "Steam", "scope": "steam"}]
+    property var libraryCollections: [{"label": "All Games", "scope": "all"}, {"label": "PC Games", "scope": "pc"}]
     property string space: "home"
     property int systemCategoryIndex: 0
     property var systemHomeRailRef: null
@@ -241,7 +241,7 @@ Window {
         })
         refreshLibrary()
         request("/platforms", "GET", "", function(data) {
-            var collections = [{"label": "All Games", "scope": "all"}, {"label": "Steam", "scope": "steam"}]
+            var collections = [{"label": "All Games", "scope": "all"}, {"label": "PC Games", "scope": "pc"}]
             for (var index = 0; index < data.length; index++)
                 collections.push(data[index])
             libraryCollections = collections

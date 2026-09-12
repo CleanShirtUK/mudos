@@ -15,7 +15,7 @@ Item {
     property bool transitionExpanding: true
     property real contentOpacity: 1
     property int selectedIndex: 0
-    property var categories: [{"label": "All Games", "scope": "all"}, {"label": "Steam", "scope": "steam"}]
+    property var categories: [{"label": "All Games", "scope": "all"}, {"label": "PC Games", "scope": "pc"}]
     property var selectionStart: [1, 0]
     property real selectionProgress: 1
     property var presentationStartX: [0, 178]
@@ -27,10 +27,25 @@ Item {
     readonly property string navigationObject: "library"
     signal openRequested(int index)
 
-    function platformArtwork(scope) {
-        return scope === "steam"
-            ? Qt.resolvedUrl("artwork/platform-steam.png")
-            : Qt.resolvedUrl("artwork/platform-all.svg")
+    function categoryArtwork(category) {
+        var artwork = {
+            "all": ["platform-all.svg", "icon"],
+            "pc": ["platform-pc.png", "raster"],
+            "platform:nes": ["platform-nes.png", "raster"],
+            "platform:snes": ["platform-snes.png", "raster"],
+            "platform:genesis": ["platform-genesis.png", "raster"],
+            "platform:gb": ["platform-gb.png", "raster"],
+            "platform:gbc": ["platform-gbc.png", "raster"],
+            "platform:gba": ["platform-gba.png", "raster"],
+            "platform:nds": ["platform-nds.png", "raster"],
+            "platform:gamecube": ["platform-gamecube.png", "raster"],
+            "platform:wii": ["platform-wii.png", "raster"],
+            "platform:switch": ["platform-switch.png", "raster"],
+            "platform:ps1": ["platform-ps1.png", "raster"],
+            "platform:ps2": ["platform-ps2.png", "raster"],
+            "platform:ps3": ["platform-ps3.png", "raster"]
+        }
+        return artwork[category] || artwork.all
     }
 
     function railX(relativeIndex) {
@@ -82,7 +97,7 @@ Item {
 
     Repeater {
         id: cardRepeater
-        model: libraryHome.categories // model: ["All Games", "Steam"]
+        model: libraryHome.categories
         delegate: NavigationCard {
             required property int index
             required property var modelData
@@ -98,8 +113,8 @@ Item {
                    - (libraryHome.selectionStart[index] || 0)) * libraryHome.selectionProgress
             displayTitle: modelData.label
             symbolicArtwork: ""
-            artworkRole: modelData.scope === "steam" ? "raster" : "icon"
-            artworkSource: libraryHome.platformArtwork(modelData.scope)
+            artworkRole: libraryHome.categoryArtwork(modelData.scope)[1]
+            artworkSource: Qt.resolvedUrl("artwork/" + libraryHome.categoryArtwork(modelData.scope)[0])
             uiScale: libraryHome.uiScale
             typography: libraryHome.typography
             luluPalette: libraryHome.luluPalette

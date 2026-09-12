@@ -6,7 +6,7 @@ Item {
     property int selectedIndex: 0
     property int firstVisibleRow: 0
     property int collectionIndex: 0
-    property var collections: [{"label": "All Games", "scope": "all"}, {"label": "Steam", "scope": "steam"}]
+    property var collections: [{"label": "All Games", "scope": "all"}, {"label": "PC Games", "scope": "pc"}]
     property bool collectionFocus: false
     property string transitionState: "RESTING"
     property string returnState: "RESTING"

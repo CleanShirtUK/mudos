@@ -148,7 +148,9 @@ class CatalogueStore:
     def list_games(self, scope: str = "all") -> list[CatalogueGame]:
         query = f"SELECT {SELECT_COLUMNS} FROM games WHERE install_state='installed'"
         parameters: tuple[object, ...] = ()
-        if scope == "steam":
+        if scope == "pc":
+            query += " AND provider!='local'"
+        elif scope == "steam":
             query += " AND provider=?"; parameters = ("steam",)
         elif scope.startswith("platform:"):
             query += " AND provider='local' AND platform=?"; parameters = (scope.removeprefix("platform:"),)
