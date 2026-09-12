@@ -69,6 +69,7 @@ class SwitchProvider:
             config_player = player - 1
             prefix = f'engine:sdl,guid:{guid},port:{device_indices.get(player, player - 1)}'
             sections.append(f"player_{config_player}_type=0")
+            sections.append(f"player_{config_player}_connected\\default=false")
             sections.append(f"player_{config_player}_connected=true")
             for name, button in _BUTTONS.items():
                 key = _BUTTON_KEYS.get(name, name)

@@ -96,6 +96,7 @@ class EmulatorRuntimeTests(unittest.TestCase):
         self.assertIn('player_0_button_zl="engine:sdl,guid:030081b85e0400008e02000001000000,port:0,axis:4,threshold:0.5,invert:+"', config)
         self.assertIn("player_0_type=0", config)
         self.assertIn("player_0_connected=true", config)
+        self.assertIn("player_0_connected\\default=false", config)
         self.assertNotIn("player_0_connect=", config)
         self.assertEqual(config, second_content)
         self.assertIn('player_0_lstick="engine:sdl,guid:030081b85e0400008e02000001000000,port:0,axis_x:0,axis_y:1,invert_x:+,invert_y:+"', config)
