@@ -342,6 +342,11 @@ Window {
         }
     }
 
+    function openSelectedGameOptions() {
+        if (selectedGameForOptions)
+            openGameOptions(selectedGameForOptions)
+    }
+
     function openGameOptions(game) {
         if (!game)
             return
