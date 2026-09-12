@@ -30,3 +30,7 @@ directory. Keep the filenames unchanged when supplying artwork.
 
 The checked-in SVGs are harmless placeholders. They can be replaced directly
 with artwork in the same filenames and do not require a source-code change.
+
+Tintable monochrome SVG assets must use white foregrounds on a transparent
+background. Runtime icon color is supplied by `LuluPalette` through the shared
+`MultiEffect` path.

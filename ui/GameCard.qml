@@ -248,6 +248,15 @@ Rectangle {
             visible: card.iconArtwork
         }
 
+        MultiEffect {
+            anchors.fill: iconArtworkSource
+            source: iconArtworkSource
+            visible: card.iconArtwork
+            z: 1
+            colorization: 1.0
+            colorizationColor: card.focusedColor(card.luluPalette.primaryText)
+        }
+
         Text {
             anchors.centerIn: parent
             visible: !!card.symbolicArtwork

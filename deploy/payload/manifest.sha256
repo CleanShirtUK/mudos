@@ -65,7 +65,7 @@ d8f584a3994d21ec40555f745803b921a59c3c4d3c40a99e502512b25391eccf  ./ui/artwork/p
 8f03dbfb612c8f67d89f71b536c67bc1437cd338f15d72b9b0124a97bf9f4dad  ./ui/artwork/platform-snes.png
 10e1ee2e21a924acadba7f401892151bdb94dd4dd2abc3f512382900cb27f2d6  ./ui/artwork/platform-switch.png
 5c9fc2c96be8c1f68520c01777bdcff2e4686f5698fe480d84655b110d01d9d2  ./ui/artwork/platform-wii.png
-201b71a960d28a38ce02f8cc6cf21d97f10af386671a3923dc058da61dd4d4f9  ./ui/artwork/README.md
+bc95c6d170b00a50cde2b489db5a605f2b50098e29e5cc38e4a9937ec1494e67  ./ui/artwork/README.md
 66ae0dff6e53abf7711ff391b7dcad80eb719b5fcf95cefd9eaae8fda7fc9ca6  ./ui/artwork/store.png
 ceeffc045017315f461a4bfc727e07b8fc2f593b70e3c5cd558a636d0d92468b  ./ui/artwork/system-audio.svg
 fcf4eb1cb50a893b4d33b9f91e879c50cb5063ddc6e013654eeb65188aed3f37  ./ui/artwork/system-bluetooth.svg
@@ -87,7 +87,7 @@ e83c2844afc051dcd9eaf4b04812490b4787a162f4b7d3c93a037db402c657f2  ./ui/controlle
 c2525c8cb3ca2123283b49ddbdb4c1440cd6467c92859124cc7e89ed65b88ef3  ./ui/controllerglyphs/SteamDeck_L1.png
 57bd1669d1ab589185cf981faf7f8a2e6ecc4107b9914cb2332f9abe95bac0da  ./ui/controllerglyphs/SteamDeck_R1.png
 2a10bd2390e263805a7c37d73f81c74793b093208163f94766b14284d6f2f282  ./ui/ControllerHint.qml
-bbe38159afb5fd43a07896599f1e8f69f1b6aede2bbb53b642f978dfd2443236  ./ui/GameCard.qml
+3a7694c90bfaed975023d8bcdb673c27a1a6958ce788acebdfdc58c48f75121e  ./ui/GameCard.qml
 cd7a7484f64fc3ed4042f4f0159504e7170392539bbc04ce5e421fb57f411bc6  ./ui/GameOptions.qml
 96d373ca18a3527023538424a62206fdd36c178d5e3aa7406d45dd8649a0b2a6  ./ui/GlassSurface.qml
 6e48b3dad6290b9cd545c79fa8146c8d518ac8f7dbd94bd376ea5bf7a7d695ca  ./ui/LibraryHome.qml
