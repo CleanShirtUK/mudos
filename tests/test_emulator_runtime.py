@@ -90,7 +90,7 @@ class EmulatorRuntimeTests(unittest.TestCase):
             second = provider.ensure_controller_config()
             second_content = second.read_text()
 
-        self.assertEqual(intent.arguments, ("--config", str(second), "--fullscreen", "--game", "/fixture/game.nsp"))
+        self.assertEqual(intent.arguments, ("--appimage-extract-and-run", "--config", str(second), "--fullscreen", "--game", "/fixture/game.nsp"))
         self.assertIn('player_1_button_a="engine:sdl,guid:030000005e0400008e02000014010000,port:0,button:1"', config)
         self.assertIn('player_1_button_zl="engine:sdl,guid:030000005e0400008e02000014010000,port:0,axis:4,threshold:0.5,invert:+"', config)
         self.assertEqual(config, second_content)

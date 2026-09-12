@@ -71,4 +71,7 @@ class SwitchProvider:
 
     def launch_arguments(self, content_path: str, player_count: int = 4) -> tuple[str, ...]:
         config = self.ensure_controller_config(player_count)
-        return ("--config", str(config), "--fullscreen", "--game", content_path)
+        return (
+            "--appimage-extract-and-run",
+            "--config", str(config), "--fullscreen", "--game", content_path,
+        )
