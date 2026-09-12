@@ -85,6 +85,13 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertIn("call_reset_mudos", bridge)
         self.assertIn('path == "/reset"', bridge)
 
+    def test_retroarch_provider_menu_fallback_is_native_and_platform_scoped(self) -> None:
+        native_guide = (ROOT / "native" / "mudos-guide.cpp").read_text()
+        self.assertIn('primaryId.startsWith(QStringLiteral("local:nes:"))', native_guide)
+        self.assertIn('primaryId.startsWith(QStringLiteral("local:genesis:"))', native_guide)
+        self.assertIn('QStringLiteral("/usr/bin/retroarch --command MENU_TOGGLE")', native_guide)
+        self.assertNotIn('primaryId.startsWith(QStringLiteral("local:ps2:"))', native_guide)
+
     def test_extracted_ui_primitives_preserve_real_game_card_data(self) -> None:
         for filename in ("GameCard.qml", "RecentHome.qml", "LibraryHome.qml", "LibrarySpace.qml", "PlaceholderHome.qml"):
             self.assertTrue((ROOT / "ui" / filename).exists())

@@ -233,10 +233,14 @@ int main(int argc, char **argv)
         compatibilityModeAvailable = state.value("lifecycle").toString() != QStringLiteral("shell")
             && targetPid > 1;
         compatibilityMode = state.value("input_mode").toString() == QStringLiteral("compat");
-        if (state.value("primary_id").toString() == QStringLiteral("steam-store")) {
+        const auto primaryId = state.value("primary_id").toString();
+        if (primaryId == QStringLiteral("steam-store")) {
             effectiveProviderCommand = QStringLiteral("steam");
             providerMenuLabel = state.value("delegated_surface").toString() == QStringLiteral("downloads")
                 ? QStringLiteral("Go to Store") : QStringLiteral("View Download Queue");
+        } else if (primaryId.startsWith(QStringLiteral("local:nes:"))
+                   || primaryId.startsWith(QStringLiteral("local:genesis:"))) {
+            effectiveProviderCommand = QStringLiteral("/usr/bin/retroarch --command MENU_TOGGLE");
         }
     }
 
