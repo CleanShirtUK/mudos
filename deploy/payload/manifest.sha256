@@ -1,7 +1,7 @@
 da700353eabc210c28425f8884c91b5f24d1b9b225c7842b9de107e68e651f82  ./bin/lulu-shell
 6f14d3589b61fdd428b7579680a8733713038592c952844ae7fe9a420ffc9d27  ./bin/lulu-vt
 2b76f7740e5feb5c3a76612e51e6459f3a822600232523778bc5e79907083140  ./bin/mudos-guide
-6f3133c6795fa19908d725e8d4cb30b634a3adc433063cb3d20e70b162c8478e  ./bin/verify-mudos.sh
+ebd08a4e7771c475a438399884a67f242791fd64de8ef4fb6b895bfaabba4df6  ./bin/verify-mudos.sh
 d8eeda0ddbdd1d0e03ebf70856353fed6bc102d91f34b46bce64acdc4aba636c  ./config/inputplumber/devices/lulu-composite.yaml
 ad4ba03db2a2f1f8e4bf73e670d28fca3f728eb2d087434dbe7bc4febb74661b  ./config/inputplumber/profiles/compat.yaml
 cbb03e3cebfe44bd7e97f2a4d074e856fa242c3a6a9f53db7740c428f5944021  ./config/inputplumber/profiles/game.yaml
@@ -11,7 +11,7 @@ ec5d9c2c25e2bf0cc4f1f3bf0f4d93f5918b21c24ffcb8585018b8be882f27bb  ./config/input
 ec39e530f45dfae7f2a8d7c369a5b91767261fd00b70d2fe13a9760b24da20ac  ./lib/lulu/artwork.py
 20c5af66e8ede83beccac5706534f47cc2bbd6a1804ccf9b50109103f8e2b45f  ./lib/lulu/capabilities.py
 ce798581d1f4f3587044c3d31ce86bb7e565b3d55421cf8c93f426ca1c7d94c3  ./lib/lulu/catalogue.py
-fb125e7bdcd099eeda1058978e22a3404252876ecff91aff03d94f283327b7c7  ./lib/lulu/consoled.py
+f26a06fa654f6f3ac4c0e833de282787bf31f66edff290f64ca6c3061903c8a4  ./lib/lulu/consoled.py
 b3022d5b7f1176c38474ad4b0d2e79236756c2814de689c0dc29cc9c1094b171  ./lib/lulu/console_sessiond.py
 bf6eaf76a5c7499fdd239d0ae6d50a647f709225e2526d7cbeadf24954fa1ab9  ./lib/lulu/console_ui.py
 2426657b5e83bd5a2cf59674ecd4f1fb930e16840a7b20a26fa31302f431a89a  ./lib/lulu/contracts.py
@@ -32,16 +32,16 @@ b85334fa084c397b9fb512a50cca910c1b26c3fb51cfce535bf9092ef80028e9  ./lib/lulu/pro
 ea04081e1c93cdab882c350071d086255809b19d380677aedef2caf036b1b3b8  ./lib/lulu/settings.py
 5629276492cc88ed04f2cf79f8da07d63fc1efc6ded4a4001083f841512dc2c5  ./lib/lulu/status.py
 50b6762c20d4b0e7e18385e0940040aaf030837f73ecaafb4d6fb5202faebd8b  ./lib/lulu/steam_provider.py
-f382193c156f611d285cccbb3d01eaee5c6e772482562dcc1fbb29b8f7b22d10  ./lib/lulu/switch_provider.py
+701465cf4cf0a908e36d862370ea939e7fce42098c8f9df42c51e81225dc06b5  ./lib/lulu/switch_provider.py
 2b5788153f9bc99771e9a41f65d2b3e1182c107610318202a24f77cc58f1a973  ./lib/lulu/system_settings.py
 270a8bf35bd4b4a81aa1974dcd06ccb66e321f86fc09a5fd97e696082d35bb76  ./packages/pcsx2/pcsx2.install
 8f4b2369aaae2bcd828fdc5c37a05078d1ea54fa7669da7d998a25b439a965bb  ./packages/pcsx2/PKGBUILD
 548032c0c64d380c59a294d085791bb85680a94eb0fc3fbba850c997005246e5  ./packages/rapidyaml/PKGBUILD
 7c1d4faeedbbdc64777d9c0f8e1bb8864c019956cde1599bada481a85fe4e3d5  ./packages/ttf-zalando-sans/PKGBUILD
 ab2023c176db0686e60d843807c053fa7dbca612474de98698bfd6995835dad4  ./packaging/inputplumber-restart.conf
-523f9fe6f9898058e1ec8e1857db9a1edc0d1d5d54e5cd6538c762d2174c9fbb  ./packaging/lulu-consoled.service
+fd7aab6860b1ee1a103ca4a8fdd6b7c9dc8c7a15e690bd3bc864ae6d1e58d72d  ./packaging/lulu-consoled.service
 b26a148daa67396e77024eed69370a1b1075edc72e546b05df5facdd28b5eb41  ./packaging/lulu-session.pam
-844d0435a02a067bf7485e8d14d450560ca7960167c2361fe84831869724f2c8  ./packaging/lulu-session@.service
+f55061962eb1928cbd410213f75f56de0c2a44cc47f52ac697d3504213c7962b  ./packaging/lulu-session@.service
 33f6a36d4a6ed6f1d96bcd5ac73eeaeb103f17ce6081ef50408f4c5525387016  ./packaging/lulu.target
 6f14d3589b61fdd428b7579680a8733713038592c952844ae7fe9a420ffc9d27  ./packaging/lulu-vt
 0573ef0f102cc3a58281e07b3f99ec6d4bd643f2da486fb5035fbfccf1d93793  ./packaging/pipewire/lulu-fallback-input.conf

@@ -2,8 +2,8 @@
 set -Eeuo pipefail
 
 readonly INSTALL_ROOT=/opt/lulu/current
-readonly VERSION=7c96e06
-readonly VERSION_TAG=known-good-test-environment-20260910
+readonly VERSION=$(sed -n 's/^commit=//p' "$INSTALL_ROOT/RELEASE")
+readonly VERSION_TAG=$(sed -n 's/^tag=//p' "$INSTALL_ROOT/RELEASE")
 HARDWARE=0
 PAYLOAD=''
 
