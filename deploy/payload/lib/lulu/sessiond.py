@@ -21,6 +21,7 @@ from .contracts import InputMode, Lifecycle
 from .launch_identity import LaunchIdentity
 from .process_supervisor import ProcessSupervisor
 from .process_supervisor import ProcessResult
+from .paths import PATHS
 
 
 BUS_NAME = "org.lulu.ConsoleSessiond"
@@ -229,7 +230,7 @@ class ConsoleSessionInterface(ServiceInterface):
         self._shell_selection_task = asyncio.create_task(self._select_ready_shell())
 
     async def _select_ready_shell(self) -> None:
-        marker = Path(os.environ.get("LULU_SHELL_PID_FILE", "/run/user/958/mudos-shell.pid"))
+        marker = PATHS.runtime_root / "mudos-shell.pid"
         try:
             deadline = asyncio.get_running_loop().time() + 15
             while asyncio.get_running_loop().time() < deadline:

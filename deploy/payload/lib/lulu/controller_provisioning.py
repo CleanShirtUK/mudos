@@ -152,7 +152,7 @@ def _dolphin_values(device: str, sdl_index: int) -> dict[str, str]:
 
 
 def _config_root() -> Path:
-    return Path(os.environ.get("XDG_CONFIG_HOME", "~/.config")).expanduser()
+    return Path(os.environ.get("XDG_CONFIG_HOME", str(Path.home() / ".config"))).expanduser()
 
 
 def ensure_provider_controller_config(

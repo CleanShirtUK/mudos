@@ -20,8 +20,14 @@ StandardError=journal
 TTYReset=yes
 TTYVHangup=yes
 TTYVTDisallocate=yes
-WorkingDirectory=/var/lib/lulu
+WorkingDirectory=/home/lulu
 Environment=PYTHONPATH=/opt/lulu/lib
+Environment=HOME=/home/lulu
+Environment=USER=lulu
+Environment=LOGNAME=lulu
+Environment=XDG_CONFIG_HOME=/home/lulu/.config
+Environment=XDG_DATA_HOME=/home/lulu/.local/share
+Environment=XDG_CACHE_HOME=/home/lulu/.cache
 Environment=LULU_NATIVE_CONTROLLER=1
 EnvironmentFile=-/etc/lulu/presentation.conf
 ExecStartPre=+/opt/lulu/bin/lulu-vt activate %i

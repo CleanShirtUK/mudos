@@ -10,6 +10,8 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
+from .paths import PATHS
+
 
 @dataclass(slots=True)
 class SteamGridDBArtwork:
@@ -20,9 +22,7 @@ class SteamGridDBArtwork:
 
     def __post_init__(self) -> None:
         self.api_key = self.api_key or os.environ.get("LULU_STEAMGRIDDB_API_KEY")
-        self.cache_dir = self.cache_dir or Path(os.environ.get(
-            "LULU_ARTWORK_CACHE", "~/.cache/lulu/steamgriddb"
-        )).expanduser()
+        self.cache_dir = self.cache_dir or PATHS.artwork_cache
         self._logger = logging.getLogger("lulu.artwork")
 
     def enrich(self, games: list[object]) -> dict[str, str]:

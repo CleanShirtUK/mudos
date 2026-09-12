@@ -12,6 +12,8 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
+from .paths import PATHS
+
 
 NOISE_WORDS = {
     "a", "b", "beta", "cart", "demo", "dump", "e", "en", "eng", "f", "fr",
@@ -113,11 +115,8 @@ class SteamGridDBMetadata:
 
     def __init__(self, api_key: str | None = None, cache_dir: Path | None = None,
                  timeout: float = 4.0, now: callable = time.time) -> None:
-        import os
         self.api_key = api_key or os.environ.get("LULU_STEAMGRIDDB_API_KEY")
-        self.cache_dir = cache_dir or Path(os.environ.get(
-            "LULU_METADATA_CACHE", "~/.cache/lulu/steamgriddb/metadata"
-        )).expanduser()
+        self.cache_dir = cache_dir or PATHS.metadata_cache
         self.timeout = timeout
         self.now = now
         self._logger = logging.getLogger("lulu.metadata")
