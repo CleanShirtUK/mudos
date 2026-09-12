@@ -10,10 +10,14 @@ Window {
     width: 1920
     height: 1080
 
+    property bool shellContext: guideModel.shellContext
+    property bool confirmationPending: guideModel.confirmationPending
+    property string confirmationAction: guideModel.confirmationAction
+
     Rectangle {
         anchors.centerIn: parent
         width: 520
-        height: 310
+        height: confirmationPending ? 250 : shellContext ? 250 : 310
         color: "#f70b1018"
         border.color: "#ff7e87ff"
         border.width: 2
@@ -21,7 +25,7 @@ Window {
         Text {
             x: 24
             y: 18
-            text: "Guide"
+            text: confirmationPending ? "Confirm" : "Guide"
             color: "#ffffffff"
             font.pixelSize: 28
         }
@@ -32,6 +36,10 @@ Window {
             spacing: 12
             Repeater {
                 model: {
+                    if (confirmationPending)
+                        return ["Cancel", confirmationAction]
+                    if (shellContext)
+                        return ["Restart Mudos", "Reboot System", "Shut Down System"]
                     var actions = ["Reset Mudos"]
                     if (guideModel.providerMenuAvailable)
                         actions.push(guideModel.providerMenuLabel)

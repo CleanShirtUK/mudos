@@ -48,8 +48,8 @@ PLATFORMS: dict[str, PlatformDefinition] = {
         _path("LULU_DOLPHIN", "/usr/bin/dolphin-emu"),
     ),
     "switch": PlatformDefinition(
-        "switch", "Nintendo Switch", (".nsp",), "yuzu",
-        _path("LULU_YUZU", "/usr/bin/yuzu"),
+        "switch", "Nintendo Switch", (".nsp", ".xci"), "eden",
+        _path("LULU_EDEN", "/usr/bin/eden"),
     ),
 }
 
@@ -61,3 +61,5 @@ def ensure_storage() -> None:
     for definition in PLATFORMS.values():
         (ROM_ROOT / definition.platform_id).mkdir(exist_ok=True)
         definition.bios_root.mkdir(parents=True, exist_ok=True)
+    (BIOS_ROOT / "switch" / "keys").mkdir(parents=True, exist_ok=True)
+    (BIOS_ROOT / "switch" / "firmware").mkdir(parents=True, exist_ok=True)

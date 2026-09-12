@@ -176,17 +176,12 @@ private:
 
     bool startGuide()
     {
-        if (guideProcess_ || !presentationConnection_ || !focusedWindow_ || !window_
-            || focusedWindow_ == window_->winId()) {
+        if (guideProcess_ || !presentationConnection_ || !focusedWindow_ || !window_) {
             restoreInput();
             return false;
         }
         targetWindow_ = focusedWindow_;
         targetPid_ = windowProperty(targetWindow_, "_NET_WM_PID");
-        if (targetPid_ <= 1) {
-            restoreInput();
-            return false;
-        }
         guideProcess_ = new QProcess(this);
         const auto menuCommand = providerMenuCommand(targetPid_);
         const auto menuLabel = providerMenuLabel(targetPid_);

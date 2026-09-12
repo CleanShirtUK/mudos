@@ -10,6 +10,7 @@
 #include <QDBusInterface>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QVariant>
 
 #include <xcb/xcb.h>
 
@@ -74,8 +75,23 @@ private:
         }
         else if (command == QStringLiteral("ui_accept"))
         {
+            if (viewModel_->value("confirmationPending").toBool()) {
+                if (viewModel_->value("confirmationAction").toString() == QStringLiteral("Reboot System"))
+                    powerAction(QStringLiteral("Reboot"));
+                else if (viewModel_->value("confirmationAction").toString() == QStringLiteral("Shut Down System"))
+                    powerAction(QStringLiteral("PowerOff"));
+                return;
+            }
             const int selection = viewModel_->value("selection").toInt();
-            if (selection == 0)
+            if (viewModel_->value("shellContext").toBool() && selection == 0)
+                resetMudos();
+            else if (viewModel_->value("shellContext").toBool() && (selection == 1 || selection == 2)) {
+                viewModel_->insert("confirmationAction", selection == 1
+                                   ? QStringLiteral("Reboot System") : QStringLiteral("Shut Down System"));
+                viewModel_->insert("confirmationPending", true);
+                viewModel_->insert("selection", 1);
+                return;
+            } else if (selection == 0)
                 resetMudos();
             else if (viewModel_->value("providerMenuAvailable").toBool() && selection == 1)
                 openProviderMenu();
@@ -85,7 +101,14 @@ private:
                 sendDelete();
             QCoreApplication::quit();
         }
-        else if (command == QStringLiteral("ui_back") || command == QStringLiteral("ui_guide"))
+        else if (command == QStringLiteral("ui_back")) {
+            if (viewModel_->value("confirmationPending").toBool()) {
+                viewModel_->insert("confirmationPending", false);
+                viewModel_->insert("selection", 0);
+            } else {
+                QCoreApplication::quit();
+            }
+        } else if (command == QStringLiteral("ui_guide"))
             QCoreApplication::quit();
     }
 
@@ -98,6 +121,10 @@ private:
 
     int actionCountForModel() const
     {
+        if (viewModel_->value("confirmationPending").toBool())
+            return 2;
+        if (viewModel_->value("shellContext").toBool())
+            return 3;
         return 2 + (viewModel_->value("providerMenuAvailable").toBool() ? 1 : 0)
             + (viewModel_->value("compatibilityModeAvailable").toBool() ? 1 : 0);
     }
@@ -176,6 +203,17 @@ private:
         sessiond.call("ResetMudos");
     }
 
+    void powerAction(const QString &method)
+    {
+        QDBusInterface logind("org.freedesktop.login1", "/org/freedesktop/login1",
+                              "org.freedesktop.login1.Manager", QDBusConnection::systemBus());
+        const auto reply = logind.call(method, false);
+        if (reply.type() == QDBusMessage::ErrorMessage)
+            qWarning() << method << "failed" << reply.errorMessage();
+        else
+            QCoreApplication::quit();
+    }
+
     void openProviderMenu()
     {
         if (providerMenuLabel_ == QStringLiteral("View Download Queue")) {
@@ -223,6 +261,7 @@ int main(int argc, char **argv)
     auto providerMenuLabel = argc == 5 ? QString::fromLocal8Bit(argv[4]) : QStringLiteral("Provider Menu");
     auto effectiveProviderCommand = providerMenuCommand;
     bool compatibilityMode = false;
+    bool shellContext = false;
     bool compatibilityModeAvailable = targetPid > 1;
     QDBusInterface sessiond("org.lulu.ConsoleSessiond", "/org/lulu/ConsoleSession",
                             "org.lulu.ConsoleSession", QDBusConnection::sessionBus());
@@ -232,6 +271,7 @@ int main(int argc, char **argv)
             stateReply.arguments().constFirst().toString().toUtf8()).object();
         compatibilityModeAvailable = state.value("lifecycle").toString() != QStringLiteral("shell")
             && targetPid > 1;
+        shellContext = state.value("lifecycle").toString() != QStringLiteral("game");
         compatibilityMode = state.value("input_mode").toString() == QStringLiteral("compat");
         const auto primaryId = state.value("primary_id").toString();
         if (primaryId == QStringLiteral("steam-store")) {
@@ -251,6 +291,9 @@ int main(int argc, char **argv)
     viewModel.insert("providerMenuLabel", providerMenuLabel);
     viewModel.insert("compatibilityModeAvailable", compatibilityModeAvailable);
     viewModel.insert("compatibilityMode", compatibilityMode);
+    viewModel.insert("shellContext", shellContext);
+    viewModel.insert("confirmationPending", false);
+    viewModel.insert("confirmationAction", QString());
     QQmlApplicationEngine engine;
     engine.rootContext()->setContextProperty("guideModel", &viewModel);
     engine.load(QUrl::fromLocalFile(qEnvironmentVariable("LULU_GUIDE_UI_FILE",

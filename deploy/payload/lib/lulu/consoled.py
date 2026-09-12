@@ -173,7 +173,7 @@ def _retroarch_child_config(device_indices: dict[int, int]) -> str:
     ) as config:
         config.write(
             "".join(
-                f'input_player{player}_joypad_index = "{device_indices[player] + 1}"\n'
+                f'input_player{player}_joypad_index = "{device_indices[player]}"\n'
                 for player in range(1, 5)
                 if player in device_indices
             ) + 'network_cmd_enable = "true"\n'

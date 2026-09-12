@@ -85,6 +85,20 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertIn("call_reset_mudos", bridge)
         self.assertIn('path == "/reset"', bridge)
 
+    def test_shell_guide_is_limited_and_confirms_power_actions_natively(self) -> None:
+        guide = (ROOT / "ui" / "MudosGuide.qml").read_text()
+        native_guide = (ROOT / "native" / "mudos-guide.cpp").read_text()
+        native_shell = (ROOT / "native" / "lulu-shell.cpp").read_text()
+        self.assertIn('return ["Restart Mudos", "Reboot System", "Shut Down System"]', guide)
+        self.assertIn('state.value("lifecycle").toString() != QStringLiteral("game")', native_guide)
+        self.assertIn('viewModel_->value("confirmationPending").toBool()', native_guide)
+        self.assertIn('logind.call(method, false)', native_guide)
+        self.assertIn('QStringLiteral("Reboot")', native_guide)
+        self.assertIn('QStringLiteral("PowerOff")', native_guide)
+        self.assertNotIn('"Quit Application"', guide)
+        self.assertNotIn('systemctl', guide)
+        self.assertNotIn('focusedWindow_ == window_->winId()', native_shell)
+
     def test_retroarch_provider_menu_fallback_is_native_and_platform_scoped(self) -> None:
         native_guide = (ROOT / "native" / "mudos-guide.cpp").read_text()
         self.assertIn('primaryId.startsWith(QStringLiteral("local:nes:"))', native_guide)

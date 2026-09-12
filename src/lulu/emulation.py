@@ -49,7 +49,7 @@ PLATFORMS: dict[str, PlatformDefinition] = {
     ),
     "switch": PlatformDefinition(
         "switch", "Nintendo Switch", (".nsp", ".xci"), "eden",
-        _path("LULU_EDEN", "/usr/bin/eden-cli"),
+        _path("LULU_EDEN", "/usr/bin/eden"),
     ),
 }
 
