@@ -15,39 +15,90 @@ QtObject {
     property int debounceInterval: 55
     property int maxVoices: 3
     property var lastPlayedAt: ({})
+    property string pendingSemantic: ""
 
-    readonly property SoundEffect navigateVoice: SoundEffect {
-        source: root.navigateSource
-        volume: root.volume
+    Component {
+        id: navigateVoiceComponent
+        SoundEffect { source: root.navigateSource; volume: root.volume }
     }
-    readonly property SoundEffect confirmVoice: SoundEffect {
-        source: root.confirmSource
-        volume: root.volume
+    Component {
+        id: confirmVoiceComponent
+        SoundEffect { source: root.confirmSource; volume: root.volume }
     }
-    readonly property SoundEffect backVoice: SoundEffect {
-        source: root.backSource
-        volume: root.volume
+    Component {
+        id: backVoiceComponent
+        SoundEffect { source: root.backSource; volume: root.volume }
     }
-    readonly property SoundEffect errorVoice: SoundEffect {
-        source: root.errorSource
-        volume: root.volume
+    Component {
+        id: errorVoiceComponent
+        SoundEffect { source: root.errorSource; volume: root.volume }
+    }
+
+    Loader {
+        id: navigateVoiceLoader
+        sourceComponent: navigateVoiceComponent
+        active: false
+        onLoaded: root.tryPlayPending()
+    }
+    Loader {
+        id: confirmVoiceLoader
+        sourceComponent: confirmVoiceComponent
+        active: false
+        onLoaded: root.tryPlayPending()
+    }
+    Loader {
+        id: backVoiceLoader
+        sourceComponent: backVoiceComponent
+        active: false
+        onLoaded: root.tryPlayPending()
+    }
+    Loader {
+        id: errorVoiceLoader
+        sourceComponent: errorVoiceComponent
+        active: false
+        onLoaded: root.tryPlayPending()
+    }
+
+    Connections {
+        target: navigateVoiceLoader.item
+        function onStatusChanged() {
+            root.tryPlayPending()
+        }
+    }
+    Connections {
+        target: confirmVoiceLoader.item
+        function onStatusChanged() { root.tryPlayPending() }
+    }
+    Connections {
+        target: backVoiceLoader.item
+        function onStatusChanged() { root.tryPlayPending() }
+    }
+    Connections {
+        target: errorVoiceLoader.item
+        function onStatusChanged() { root.tryPlayPending() }
+    }
+
+    function loaderFor(semantic) {
+        if (semantic === "navigate")
+            return navigateVoiceLoader
+        if (semantic === "confirm")
+            return confirmVoiceLoader
+        if (semantic === "back")
+            return backVoiceLoader
+        if (semantic === "error")
+            return errorVoiceLoader
+        return null
     }
 
     function voiceFor(semantic) {
-        if (semantic === "navigate")
-            return navigateVoice
-        if (semantic === "confirm")
-            return confirmVoice
-        if (semantic === "back")
-            return backVoice
-        if (semantic === "error")
-            return errorVoice
-        return null
+        var loader = loaderFor(semantic)
+        return loader ? loader.item : null
     }
 
     function activeVoiceCount() {
         var count = 0
-        var voices = [navigateVoice, confirmVoice, backVoice, errorVoice]
+        var voices = [navigateVoiceLoader.item, confirmVoiceLoader.item,
+                      backVoiceLoader.item, errorVoiceLoader.item]
         for (var index = 0; index < voices.length; index++) {
             var voice = voices[index]
             if (voice.playing)
@@ -60,9 +111,19 @@ QtObject {
     function play(semantic) {
         if (!enabled)
             return false
-        var voice = voiceFor(semantic)
-        if (!voice || voice.status !== SoundEffect.Ready)
+        var loader = loaderFor(semantic)
+        if (!loader)
             return false
+        var voice = loader.item
+        if (!voice) {
+            pendingSemantic = semantic
+            loader.active = true
+            return false
+        }
+        if (voice.status !== SoundEffect.Ready) {
+            pendingSemantic = semantic
+            return false
+        }
 
         var now = Date.now()
         var previous = lastPlayedAt[semantic] || 0
@@ -77,10 +138,19 @@ QtObject {
         return true
     }
 
+    function tryPlayPending() {
+        if (!pendingSemantic)
+            return
+        var semantic = pendingSemantic
+        pendingSemantic = ""
+        play(semantic)
+    }
+
     function stopAll() {
-        navigateVoice.stop()
-        confirmVoice.stop()
-        backVoice.stop()
-        errorVoice.stop()
+        var voices = [navigateVoiceLoader.item, confirmVoiceLoader.item,
+                      backVoiceLoader.item, errorVoiceLoader.item]
+        for (var index = 0; index < voices.length; index++)
+            if (voices[index])
+                voices[index].stop()
     }
 }

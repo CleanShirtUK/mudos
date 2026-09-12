@@ -25,8 +25,18 @@ Window {
         id: luluPalette
     }
 
-    UiAudioEngine {
-        id: uiAudioEngine
+    Loader {
+        id: uiAudioLoader
+        active: false
+        source: "UiAudioEngine.qml"
+        property string pendingEvent: ""
+        onLoaded: {
+            if (pendingEvent) {
+                var event = pendingEvent
+                pendingEvent = ""
+                item.play(event)
+            }
+        }
     }
 
     function audioEventForAction(action) {
@@ -39,6 +49,19 @@ Window {
         if (action === "back")
             return "back"
         return ""
+    }
+
+    function playAudioEvent(event) {
+        if (!event)
+            return
+        if (!uiAudioLoader.active) {
+            uiAudioLoader.pendingEvent = event
+            uiAudioLoader.active = true
+        } else if (uiAudioLoader.item) {
+            uiAudioLoader.item.play(event)
+        } else {
+            uiAudioLoader.pendingEvent = event
+        }
     }
 
     readonly property real activeHeadingHeight: design(37)
@@ -55,9 +78,10 @@ Window {
     readonly property real homeFocalCardHeight: Math.min(design(500), (height - design(248 + 88)) * 0.82)
     readonly property real homeContentRailX: design(52)
     readonly property real homeFocalCardWidth: Math.min(design(900), width - homeContentRailX - design(40), homeFocalCardHeight * 1.9)
-    readonly property real homeCompactCardWidth: Math.min(design(220), homeFocalCardHeight * 0.62)
+    readonly property real homeCompactCardWidth: compactCardWidth
     readonly property real homeInterCardGap: design(24)
-    readonly property real compactCardWidth: Math.min(design(160), acceptedRecentCardHeight * 0.62)
+    readonly property real compactCardWidth: Math.min(design(220), acceptedRecentCardHeight * 0.62)
+    readonly property real compactCardHeight: acceptedRecentCardHeight
     readonly property real homeContentOriginY: homeHintTopY - acceptedRecentCardHeight - headingCardGap
     readonly property real homeActiveContentOriginY: homeHintTopY - homeFocalCardHeight
         - headingCardGap + homeHeadingCardClearance + homeCompositionOffsetY
@@ -681,7 +705,7 @@ Window {
             if (key === "action" && value === "back" && root.launchOverlayVisible)
                 root.cancelLaunch()
             if (key === "action")
-                uiAudioEngine.play(root.audioEventForAction(value))
+                root.playAudioEvent(root.audioEventForAction(value))
         }
     }
 
@@ -1226,7 +1250,7 @@ Window {
                         width: libraryReveal.width - root.homeContentRailX
                         height: root.homeFocalCardHeight
                         scale: libraryReveal.visible ? 1 : 0.94
-                        cardHeight: root.homeFocalCardHeight
+                         cardHeight: root.compactCardHeight
                         uiScale: root.uiScale
                         typography: typography
                         luluPalette: luluPalette
@@ -1262,7 +1286,7 @@ Window {
                         width: storeReveal.width
                         height: root.homeFocalCardHeight
                         cardWidth: root.compactCardWidth
-                        cardHeight: root.homeFocalCardHeight
+                        cardHeight: root.compactCardHeight
                         uiScale: root.uiScale
                         typography: typography
                         luluPalette: luluPalette
@@ -1291,7 +1315,7 @@ Window {
                         height: root.homeFocalCardHeight
                         y: 0
                         cardWidth: root.compactCardWidth
-                        cardHeight: root.homeFocalCardHeight
+                        cardHeight: root.compactCardHeight
                         categories: root.systemCategories
                         selectedIndex: root.systemCategoryIndex
                         uiScale: root.uiScale

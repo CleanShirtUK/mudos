@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Effects
 
 Rectangle {
     id: card
@@ -20,6 +21,7 @@ Rectangle {
     property var luluPalette
     property string displayTitle: ""
     property url artworkSource: ""
+    property string artworkRole: "raster"
     // The supplied fallback asset belongs at this normal artwork-pipeline path.
     property url fallbackArtworkSource: Qt.resolvedUrl("artwork/fallback.jpg")
     property string presentationId: ""
@@ -58,6 +60,10 @@ Rectangle {
     property real stackedPlayEdgeLightStrength: 0
     readonly property bool recentFocal: homeCard && focused
     readonly property string presentationGameId: presentationId || (game ? String(game.game_id) : "")
+    readonly property url displayedArtworkSource: card.artworkSource ? card.artworkSource
+        : (card.game && !card.game.artwork_suppressed && card.game.artwork_url
+            ? card.game.artwork_url : card.fallbackArtworkSource)
+    readonly property bool iconArtwork: card.artworkRole === "icon" || !!card.symbolicArtwork
     readonly property real focalMargin: 30 * focalScale * uiScale
     readonly property real compactMargin: 14 * uiScale
     readonly property real artworkHeight: height - 2 * focalMargin
@@ -195,19 +201,19 @@ Rectangle {
         radius: artworkRadius
         z: 2
         opacity: card.presentationContentOpacity
-            color: recentFocal || card.symbolicArtwork || card.stackedGlass
-                ? luluPalette.transparent : luluPalette.artworkSurface
+            color: card.iconArtwork && !card.stackedGlass
+                ? luluPalette.artworkSurface : luluPalette.transparent
         clip: true
 
         Image {
             id: artworkSource
-            anchors.fill: parent
-            source: card.artworkSource ? card.artworkSource
-                : (card.game && !card.game.artwork_suppressed && card.game.artwork_url
-                    ? card.game.artwork_url : card.fallbackArtworkSource)
+            anchors.centerIn: parent
+            width: card.iconArtwork ? parent.width * 0.5 : parent.width
+            height: card.iconArtwork ? parent.height * 0.5 : parent.height
+            source: card.displayedArtworkSource
             fillMode: Image.PreserveAspectFit
             asynchronous: true
-            visible: !card.symbolicArtwork
+            visible: true
         }
 
         ShaderEffectSource {
@@ -228,8 +234,17 @@ Rectangle {
             property real focusBrightness: card.focusBrightness
             property int diagnosticMode: 0
             opacity: card.stackedGlass ? 1 : (card.focused ? 1 : 0.68)
-            visible: !card.symbolicArtwork
+            visible: !card.iconArtwork
             fragmentShader: "shaders/card-rounded.frag.qsb"
+        }
+
+        MultiEffect {
+            anchors.fill: artworkSource
+            source: artworkSource
+            visible: card.iconArtwork
+            z: 1
+            colorization: 1.0
+            colorizationColor: card.focusedColor(card.luluPalette.primaryText)
         }
 
         Text {

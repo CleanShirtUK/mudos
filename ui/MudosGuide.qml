@@ -14,14 +14,31 @@ Window {
     property bool confirmationPending: guideModel.confirmationPending
     property string confirmationAction: guideModel.confirmationAction
 
-    UiAudioEngine {
-        id: uiAudioEngine
+    Loader {
+        id: uiAudioLoader
+        active: false
+        source: "UiAudioEngine.qml"
+        property string pendingEvent: ""
+        onLoaded: {
+            if (pendingEvent) {
+                var event = pendingEvent
+                pendingEvent = ""
+                item.play(event)
+            }
+        }
     }
 
     Connections {
         target: guideModel
         function onAudioEventSerialChanged() {
-            uiAudioEngine.play(guideModel.audioEvent)
+            if (!uiAudioLoader.active) {
+                uiAudioLoader.pendingEvent = guideModel.audioEvent
+                uiAudioLoader.active = true
+            } else if (uiAudioLoader.item) {
+                uiAudioLoader.item.play(guideModel.audioEvent)
+            } else {
+                uiAudioLoader.pendingEvent = guideModel.audioEvent
+            }
         }
     }
 

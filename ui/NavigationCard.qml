@@ -34,6 +34,7 @@ Item {
         focusBrightness: 0.68 + 0.32 * root.selectionProgress
         displayTitle: root.displayTitle
         symbolicArtwork: root.symbolicArtwork
+        artworkRole: "icon"
         artworkSource: root.artworkSource
         uiScale: root.uiScale
         typography: root.typography

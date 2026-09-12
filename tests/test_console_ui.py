@@ -562,7 +562,7 @@ class ConsoleUiTests(unittest.TestCase):
         engine = (ROOT / "ui" / "UiAudioEngine.qml").read_text()
         for semantic in ("navigate", "confirm", "back", "error"):
             self.assertIn(f'{semantic}Source: "sounds/ui-{semantic}.wav"', engine)
-            self.assertIn(f'{semantic}Voice: SoundEffect', engine)
+            self.assertIn(f'id: {semantic}VoiceComponent', engine)
         self.assertIn("function play(semantic)", engine)
         self.assertIn("function voiceFor(semantic)", engine)
         self.assertIn("debounceInterval: 55", engine)
@@ -571,7 +571,11 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertIn("activeVoiceCount() >= maxVoices", engine)
         self.assertIn("voice.stop()", engine)
         self.assertIn("function stopAll()", engine)
-        self.assertIn("UiAudioEngine {", QML)
+        self.assertIn("function loaderFor(semantic)", engine)
+        self.assertIn("property string pendingSemantic", engine)
+        self.assertIn("onLoaded: root.tryPlayPending()", engine)
+        self.assertIn('source: "UiAudioEngine.qml"', QML)
+        self.assertIn("active: false", QML)
         self.assertNotIn("onValueChanged", engine)
 
     def test_ui_audio_assets_are_canonical_and_replaceable(self) -> None:
