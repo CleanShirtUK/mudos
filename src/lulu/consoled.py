@@ -337,6 +337,13 @@ class ConsoleInterface(ServiceInterface):
                 command,
             )
             child_environment = os.environ.copy()
+            if intent.platform == "switch":
+                child_environment.update({
+                    "HOME": "/var/lib/lulu",
+                    "XDG_DATA_HOME": "/var/lib/lulu/.local/share",
+                    "XDG_CONFIG_HOME": "/var/lib/lulu/.config",
+                    "XDG_CACHE_HOME": "/var/lib/lulu/.cache",
+                })
             if intent.platform in {"nes", "genesis", "ps2"}:
                 child_environment.pop("WAYLAND_DISPLAY", None)
             if intent.platform in {"nes", "genesis"}:
