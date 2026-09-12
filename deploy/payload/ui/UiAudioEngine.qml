@@ -38,7 +38,10 @@ QtObject {
         id: navigateVoiceLoader
         sourceComponent: navigateVoiceComponent
         active: false
-        onLoaded: root.tryPlayPending()
+        onLoaded: {
+            console.log("UI_AUDIO_SOUND_CREATED", "navigate", item.source)
+            root.tryPlayPending()
+        }
     }
     Loader {
         id: confirmVoiceLoader
@@ -62,6 +65,9 @@ QtObject {
     Connections {
         target: navigateVoiceLoader.item
         function onStatusChanged() {
+            console.log("UI_AUDIO_STATUS", "navigate", navigateVoiceLoader.item.status,
+                        navigateVoiceLoader.item.source, navigateVoiceLoader.item.volume,
+                        navigateVoiceLoader.item.muted, navigateVoiceLoader.item.playing)
             root.tryPlayPending()
         }
     }
@@ -109,6 +115,7 @@ QtObject {
 
     // Returns false for unknown, unavailable, muted, debounced, or capped sounds.
     function play(semantic) {
+        console.log("UI_AUDIO_HANDLER", semantic)
         if (!enabled)
             return false
         var loader = loaderFor(semantic)
@@ -116,11 +123,14 @@ QtObject {
             return false
         var voice = loader.item
         if (!voice) {
+            console.log("UI_AUDIO_ACTIVATE", semantic)
             pendingSemantic = semantic
             loader.active = true
             return false
         }
         if (voice.status !== SoundEffect.Ready) {
+            console.log("UI_AUDIO_NOT_READY", semantic, voice.status, voice.source,
+                        voice.volume, voice.muted, voice.playing)
             pendingSemantic = semantic
             return false
         }
@@ -134,6 +144,8 @@ QtObject {
 
         lastPlayedAt[semantic] = now
         voice.stop()
+        console.log("UI_AUDIO_PLAY", semantic, voice.source, voice.volume, voice.muted,
+                    voice.playing)
         voice.play()
         return true
     }

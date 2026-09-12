@@ -31,6 +31,7 @@ Window {
         source: "UiAudioEngine.qml"
         property string pendingEvent: ""
         onLoaded: {
+            console.log("UI_AUDIO_LOADER_LOADED", pendingEvent)
             if (pendingEvent) {
                 var event = pendingEvent
                 pendingEvent = ""
@@ -54,6 +55,7 @@ Window {
     function playAudioEvent(event) {
         if (!event)
             return
+        console.log("UI_AUDIO_EVENT", event)
         if (!uiAudioLoader.active) {
             uiAudioLoader.pendingEvent = event
             uiAudioLoader.active = true
@@ -691,6 +693,8 @@ Window {
     Connections {
         target: controllerBridge
         function onValueChanged(key, value) {
+            if (key === "action")
+                console.log("CONTROLLER_ACTION", value)
             if (key === "luluPresented") {
                 traceLaunchEvent(value ? "SHELL_PRESENTED" : "GAME_PRESENTED", {luluPresented: value})
                 if (root.launchGameId.indexOf("steam:") === 0) {

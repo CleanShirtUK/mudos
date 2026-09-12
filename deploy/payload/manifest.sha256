@@ -75,7 +75,7 @@ f6dd2ae216837c63e7de7429791d0bac903b98353ac58572bb92a81e207158ca  ./ui/artwork/s
 9129240fb672e8820d5d259a33949bc22acc51e32a7837c48d414d84a1e7f58d  ./ui/artwork/system-network.svg
 abdc96a0808cf3b52a09b044d47950299c374c0fd7109cb1c584094646e342a7  ./ui/artwork/system-storage.svg
 72e0199379684170b956f274525299d67c2395e9bd44b4352d7b48c4d1533000  ./ui/artwork/system-system.svg
-9fb0263d5c6c8e0215e19bd18a9006f7440f536481b7a84bc6e8302ba4b83e44  ./ui/ConsoleShell.qml
+aa0770a5d6de3580d8b4a2ffc0952b4f8fa1667120c936fd8faa3eb2e2ce410d  ./ui/ConsoleShell.qml
 c147b5955bb1f2f7c65a9e07fe85afca2f9f9693aa090b5bd6fc45da9189045b  ./ui/ControllerGlyph.qml
 b48f2af29670ce222cfa759a22ca7d789a10cd8a7a15a6e9c2897fb1df7ed936  ./ui/controllerglyphs/SteamDeck_A.png
 63c72d44c4cce55d6ec5e1368938533f9a4ed440f9d1ce7f7e42eb6d9fd77db5  ./ui/controllerglyphs/SteamDeck_B.png
@@ -126,4 +126,4 @@ a8ea4aaf2aa8bec1bc839c296e30562a49e4574edb422588e88ce42e93ba9dd9  ./ui/StoreHome
 420ef0464e943bd59e42aa668e502518c027ff57e6faa5cf94447532fd648770  ./ui/SystemHome.qml
 41f2dd93760de12dd2b290a2441ed1cf9e05386c356996c3178645d8640b52a6  ./ui/SystemSpace.qml
 9d678d2bda8f02ee8087dca28cbd719563750e29cda21c3450947d0bfcce5822  ./ui/Typography.qml
-3be28792ed7224534a3e159b45b0a9b3eaf485c81ac24ca7460a76350bb7e508  ./ui/UiAudioEngine.qml
+ef1ec94e6ab3d84dde0e2af89c6582de7d64700a56a915d1a582aef74cbdc91a  ./ui/UiAudioEngine.qml
