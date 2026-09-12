@@ -94,7 +94,7 @@ class EmulatorRuntimeTests(unittest.TestCase):
         self.assertEqual(intent.arguments, ("--appimage-extract-and-run", "--config", str(second), "--fullscreen", "--game", "/fixture/game.nsp"))
         self.assertIn('player_0_button_a="engine:sdl,guid:030081b85e0400008e02000001000000,port:0,button:1"', config)
         self.assertIn('player_0_button_zl="engine:sdl,guid:030081b85e0400008e02000001000000,port:0,axis:4,threshold:0.5,invert:+"', config)
-        self.assertIn("player_0_type=1", config)
+        self.assertIn("player_0_type=0", config)
         self.assertIn("player_0_connected=true", config)
         self.assertNotIn("player_0_connect=", config)
         self.assertEqual(config, second_content)
