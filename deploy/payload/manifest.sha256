@@ -46,7 +46,7 @@ f55061962eb1928cbd410213f75f56de0c2a44cc47f52ac697d3504213c7962b  ./packaging/lu
 6f14d3589b61fdd428b7579680a8733713038592c952844ae7fe9a420ffc9d27  ./packaging/lulu-vt
 0573ef0f102cc3a58281e07b3f99ec6d4bd643f2da486fb5035fbfccf1d93793  ./packaging/pipewire/lulu-fallback-input.conf
 7806e0b076e46e2eaeca7d702852fceb7bf65c5f82a7fd72326a68e3efe7af36  ./packaging/presentation.conf
-b05eaf3bdcfcd5f3a15f9b355af4cba3e2da6e31d2108faa6a9c8998bc44b51b  ./scripts/console-ui-bridge.py
+1deb7c4afd7bfda5bb595b17c6dbe324eaf43202bcc9de1722652cc12e1a9765  ./scripts/console-ui-bridge.py
 828e1eb2c8ea4fad15b233d0f3ccb19327218045b308bbcf1c040f163a1ddc6f  ./scripts/console-ui.sh
 ce51b3310b134333cf34bb445155c223fed78d20644ae62d71b53f539dc58ab0  ./scripts/steam-bootstrap.sh
 559defbdfd363d48fb9ff286cf497a5e62bdca8cb8c3b0c42be5a706d9bc5b01  ./scripts/steam-session-bootstrap.sh
