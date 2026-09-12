@@ -1,6 +1,6 @@
-a5f3b5c22019df18a6acfe02a67a9a4af007ec0ec7e60e999b5eb267b0a9c3fd  ./bin/lulu-shell
+d89840959287e20c60934a09f14beda1a510b579cefaac535619498ca8d2501a  ./bin/lulu-shell
 6f14d3589b61fdd428b7579680a8733713038592c952844ae7fe9a420ffc9d27  ./bin/lulu-vt
-b2400516c43b1071c3620239c6b9c3b5fb8b25d48c84988edd4d5874742aa111  ./bin/mudos-guide
+3bbf8f4cc3f8291d42b17323eda0b825f21d8cce528da342c0933ed49cc9e3e0  ./bin/mudos-guide
 2d077df086e81899b65eb22cb7296c966dc4c93a1e447a7196301e9b22898fec  ./bin/verify-mudos.sh
 d8eeda0ddbdd1d0e03ebf70856353fed6bc102d91f34b46bce64acdc4aba636c  ./config/inputplumber/devices/lulu-composite.yaml
 ad4ba03db2a2f1f8e4bf73e670d28fca3f728eb2d087434dbe7bc4febb74661b  ./config/inputplumber/profiles/compat.yaml
@@ -17,8 +17,8 @@ bf6eaf76a5c7499fdd239d0ae6d50a647f709225e2526d7cbeadf24954fa1ab9  ./lib/lulu/con
 2426657b5e83bd5a2cf59674ecd4f1fb930e16840a7b20a26fa31302f431a89a  ./lib/lulu/contracts.py
 ec4dd764054a39ef16b245ab155eddeac77bf088e9b68aca15bd4cdab57fb22a  ./lib/lulu/controllerd.py
 10b80b1820c4a3cd2ee7ea7e2edff92f7887a9a29657b2ffd07d66f5f130fd8a  ./lib/lulu/controller_provisioning.py
-33b979d2169ec498b3717cc2d59bdcf121551cb4603b95583bacfa50f2a80bde  ./lib/lulu/emulation.py
-b93219f6cb5b66cd0ad522d6ba30f0e18e4fb988f754a1afb84d02d9b3dbc9a6  ./lib/lulu/emulator_runtime.py
+26f4638b03144f7bc2cc97253ba18382413ca252b5afc89c91779090db79f48f  ./lib/lulu/emulation.py
+4ee9971de38b5726a859fb782aa0b6a34e684c63dee52253172079c44089c2c4  ./lib/lulu/emulator_runtime.py
 22eea93ebf4fdf4093a74b3fbb9673a87ba91861aa0dddefbdd70f57df58f81b  ./lib/lulu/gamescope.py
 6dee4565d6f07c1faf8ef9c1be954c25d9826c4a4aeb5da6e5ad06b8670edb01  ./lib/lulu/__init__.py
 902c53e6d0041b6c9c08f5075a46763993d01616aa496ac445ccedaac7e7b0ea  ./lib/lulu/inputplumber.py
@@ -33,6 +33,7 @@ acdb0e5591f0c846b544caa8ea94944be8baecb735f3635151a90f6b2b525937  ./lib/lulu/ses
 ea04081e1c93cdab882c350071d086255809b19d380677aedef2caf036b1b3b8  ./lib/lulu/settings.py
 5629276492cc88ed04f2cf79f8da07d63fc1efc6ded4a4001083f841512dc2c5  ./lib/lulu/status.py
 ec29326547549371d1e127a52ea367011bd203b08a203c9dc7c35dfff1e6a059  ./lib/lulu/steam_provider.py
+36c46adea759cf88752a7c82b08c2098602dbff94ccf1aeec2c2bcb5877bafd1  ./lib/lulu/switch_provider.py
 b76def87fc2110f34bc369eca2d0ded33c677526f0fb003915f215653cf23772  ./lib/lulu/system_settings.py
 270a8bf35bd4b4a81aa1974dcd06ccb66e321f86fc09a5fd97e696082d35bb76  ./packages/pcsx2/pcsx2.install
 8f4b2369aaae2bcd828fdc5c37a05078d1ea54fa7669da7d998a25b439a965bb  ./packages/pcsx2/PKGBUILD
