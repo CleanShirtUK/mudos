@@ -3,6 +3,8 @@
 from pathlib import Path
 import os
 
+from .paths import PATHS
+
 
 DOLPHIN_CONTROLLER_NAME = "Xbox 360 Controller"
 
@@ -171,6 +173,11 @@ def ensure_provider_controller_config(
     if provider == "pcsx2":
         path = root / "PCSX2" / "inis" / "PCSX2.ini"
         source = path.read_text(encoding="utf-8") if path.exists() else ""
+        source = _update_section_values(
+            source,
+            "Folders",
+            {"Bios": str(PATHS.bios_root / "ps2")},
+        )
         for player in range(1, min(player_count, 2) + 1):
             source = _replace_section(
                 source,

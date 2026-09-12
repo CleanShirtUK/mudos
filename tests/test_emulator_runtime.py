@@ -117,6 +117,7 @@ class EmulatorRuntimeTests(unittest.TestCase):
 
             self.assertEqual(path.read_text(), first)
             self.assertIn("[Pad1]", first)
+            self.assertIn("Bios = /home/lulu/Games/BIOS/ps2", first)
             self.assertIn("Cross = SDL-0/FaceSouth", first)
             pad1 = first.split("[Pad2]", 1)[0]
             self.assertNotIn("SDL-1/", pad1)
