@@ -1,6 +1,6 @@
-394919afdc24e5ac367560b9c526d34950b7cb9e05ff6626aa947bee5e0960fe  ./bin/lulu-shell
+5f1a29c608ca1baec4fc2d74f5c2f2fda37c466ed32fdd117c1966dfe748b323  ./bin/lulu-shell
 6f14d3589b61fdd428b7579680a8733713038592c952844ae7fe9a420ffc9d27  ./bin/lulu-vt
-479a90f1b238d7d7c96d8ea86e14bbac344ae9956b5284ba64a5f40909769b69  ./bin/mudos-guide
+029b37c6b3f706f01a3efc700f9cd016ae38f9482dc7f9c2387a02078a7ee16b  ./bin/mudos-guide
 debdf728d7f675ec977c8a0876ef0fdd8d40e8187135d4f30d21e9f036d28e35  ./bin/verify-mudos.sh
 d8eeda0ddbdd1d0e03ebf70856353fed6bc102d91f34b46bce64acdc4aba636c  ./config/inputplumber/devices/lulu-composite.yaml
 ad4ba03db2a2f1f8e4bf73e670d28fca3f728eb2d087434dbe7bc4febb74661b  ./config/inputplumber/profiles/compat.yaml
