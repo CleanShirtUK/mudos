@@ -175,7 +175,7 @@ def ensure_provider_controller_config(
             source = _replace_section(
                 source,
                 f"Pad{player}",
-                _pcsx2_values(device_indices.get(player, player - 1) + 1),
+                _pcsx2_values(device_indices.get(player, player - 1)),
             )
         _write_if_changed(path, source)
         return path

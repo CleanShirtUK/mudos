@@ -97,12 +97,14 @@ class EmulatorRuntimeTests(unittest.TestCase):
 
             self.assertEqual(path.read_text(), first)
             self.assertIn("[Pad1]", first)
-            self.assertIn("Cross = SDL-1/FaceSouth", first)
-            self.assertIn("Up = SDL-1/DPadDown", first)
-            self.assertIn("L2 = SDL-1/+LeftTrigger", first)
+            self.assertIn("Cross = SDL-0/FaceSouth", first)
+            pad1 = first.split("[Pad2]", 1)[0]
+            self.assertNotIn("SDL-1/", pad1)
+            self.assertIn("Up = SDL-0/DPadDown", first)
+            self.assertIn("L2 = SDL-0/+LeftTrigger", first)
             self.assertNotIn("Keyboard/", first)
             self.assertIn("[Pad2]", first)
-            self.assertIn("Cross = SDL-2/FaceSouth", first)
+            self.assertIn("Cross = SDL-1/FaceSouth", first)
 
     def test_dolphin_controller_profile_uses_inputplumber_virtual_name(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -137,7 +139,7 @@ class EmulatorRuntimeTests(unittest.TestCase):
             ).read_text()
 
         self.assertIn("[Pad2]", pcsx2)
-        self.assertIn("Cross = SDL-3/FaceSouth", pcsx2)
+        self.assertIn("Cross = SDL-2/FaceSouth", pcsx2)
         self.assertIn("[GCPad2]", dolphin)
         self.assertIn("Device = SDL/2/Xbox 360 Controller", dolphin)
         self.assertIn("[GCPad3]", dolphin)
