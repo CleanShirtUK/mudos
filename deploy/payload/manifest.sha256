@@ -25,7 +25,7 @@ ec4dd764054a39ef16b245ab155eddeac77bf088e9b68aca15bd4cdab57fb22a  ./lib/lulu/con
 230c348a2553ed3d069f0042a82253c1baaeca130a3f5e21d1d6d8dcbace5514  ./lib/lulu/jobs.py
 6dc5acb7971d29073274d6efacfba5d85de11b0a2b5139958f30814475af5747  ./lib/lulu/launch_identity.py
 af14039cfd54d82a89657dbfa402943fad835af2dc67bbc87bbd0b3631b480ff  ./lib/lulu/local_content.py
-5c32a6e0ff6301c74cae07bbbfc53bff217575351c96bb265363db18372cb844  ./lib/lulu/metadata.py
+5bd0fed00ff1f177c7c67bc38fa05f80470bae6ca8ad6da6620da40f689b5a03  ./lib/lulu/metadata.py
 27b6df1fa08b7bf42967661de10d1ac6d63b79d0bc949141da9772ee7e4262b7  ./lib/lulu/paths.py
 b85334fa084c397b9fb512a50cca910c1b26c3fb51cfce535bf9092ef80028e9  ./lib/lulu/process_supervisor.py
 6edc0d392062f77cd008cd2a3473c305ac8ba9ff478b1a8fd2547058ce6d7fd1  ./lib/lulu/sessiond.py
@@ -39,7 +39,7 @@ f382193c156f611d285cccbb3d01eaee5c6e772482562dcc1fbb29b8f7b22d10  ./lib/lulu/swi
 548032c0c64d380c59a294d085791bb85680a94eb0fc3fbba850c997005246e5  ./packages/rapidyaml/PKGBUILD
 7c1d4faeedbbdc64777d9c0f8e1bb8864c019956cde1599bada481a85fe4e3d5  ./packages/ttf-zalando-sans/PKGBUILD
 ab2023c176db0686e60d843807c053fa7dbca612474de98698bfd6995835dad4  ./packaging/inputplumber-restart.conf
-2310a66b289e99f011e8c07a11ed8b56f653e1a2be713e6f7e578a41e107ced3  ./packaging/lulu-consoled.service
+523f9fe6f9898058e1ec8e1857db9a1edc0d1d5d54e5cd6538c762d2174c9fbb  ./packaging/lulu-consoled.service
 b26a148daa67396e77024eed69370a1b1075edc72e546b05df5facdd28b5eb41  ./packaging/lulu-session.pam
 844d0435a02a067bf7485e8d14d450560ca7960167c2361fe84831869724f2c8  ./packaging/lulu-session@.service
 33f6a36d4a6ed6f1d96bcd5ac73eeaeb103f17ce6081ef50408f4c5525387016  ./packaging/lulu.target

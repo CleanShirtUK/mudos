@@ -7,17 +7,19 @@ After=user@958.service
 Type=simple
 User=lulu
 Environment=PYTHONPATH=/opt/lulu/lib
+Environment=HOME=/home/lulu
+Environment=USER=lulu
+Environment=LOGNAME=lulu
+Environment=XDG_CONFIG_HOME=/home/lulu/.config
+Environment=XDG_DATA_HOME=/home/lulu/.local/share
+Environment=XDG_CACHE_HOME=/home/lulu/.cache
 Environment=XDG_RUNTIME_DIR=/run/user/958
 Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/958/bus
-Environment=LULU_STEAM_ROOTS=/var/lib/lulu/.local/share/Steam
-Environment=LULU_ROM_ROOT=/var/lib/lulu/roms
-Environment=LULU_BIOS_ROOT=/var/lib/lulu/bios
 Environment=DISPLAY=:0
-Environment=XAUTHORITY=/var/lib/lulu/.Xauthority
+Environment=XAUTHORITY=/home/lulu/.Xauthority
 Environment=WAYLAND_DISPLAY=gamescope-0
 Environment=PULSE_SERVER=unix:/run/user/958/pulse/native
 # Optional secret is supplied by a systemd drop-in, never in this unit.
-Environment=LULU_ARTWORK_CACHE=/var/lib/lulu/.cache/lulu/steamgriddb
 EnvironmentFile=-/etc/lulu/steamgriddb.env
 ExecStart=/usr/bin/python -m lulu.consoled
 Restart=on-failure
