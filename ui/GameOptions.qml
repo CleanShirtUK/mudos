@@ -18,6 +18,7 @@ Item {
     signal backed()
     signal queryEdited(string value)
     signal titleEdited(string value)
+    signal titleEntryFocused(string value)
 
     readonly property var menuEntries: ["Change Match", "Edit Metadata"]
     readonly property var editEntries: ["Edit Title", "Clear Title Override",
@@ -110,6 +111,7 @@ Item {
                 width: parent.width
                 focus: options.view === "title"
                 onTextChanged: options.titleEdited(text)
+                onActiveFocusChanged: if (activeFocus) options.titleEntryFocused(text)
                 onAccepted: options.activated()
                 Keys.onPressed: function(event) {
                     if (event.key === Qt.Key_Escape || event.key === Qt.Key_Backspace) {

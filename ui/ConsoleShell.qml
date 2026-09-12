@@ -112,6 +112,7 @@ Window {
     property bool gamePresentationObserved: false
     property var launchLogLines: []
     property bool gameOptionsOpen: false
+    property bool oskOpen: false
     property string gameOptionsView: "menu"
     property int gameOptionsIndex: 0
     property string gameOptionsGameId: ""
@@ -456,6 +457,20 @@ Window {
             gameOptionsIndex = Math.max(0, Math.min(count - 1, gameOptionsIndex + delta))
     }
 
+    function openKeyboard(label, initialValue, maximumLength) {
+        oskOpen = true
+        onScreenKeyboard.open(initialValue, label, maximumLength)
+    }
+
+    function closeKeyboard() {
+        oskOpen = false
+        onScreenKeyboard.close()
+    }
+
+    function controllerKeyboardMove(rowDelta, columnDelta) {
+        onScreenKeyboard.move(rowDelta, columnDelta)
+    }
+
     function refreshSystemSettings() {
         request("/settings?category=" + encodeURIComponent(systemCategories[systemCategoryIndex]),
                 "GET", "", function(data) {
@@ -741,6 +756,12 @@ Window {
     }
 
     function back() {
+        if (oskOpen) {
+            closeKeyboard()
+            gameOptionsView = "edit"
+            gameOptionsIndex = 0
+            return
+        }
         if (launchOverlayVisible) {
             cancelLaunch()
             return
@@ -896,7 +917,8 @@ Window {
     }
 
     function controllerUp() {
-            if (root.gameOptionsOpen) root.moveGameOptions(-1)
+            if (root.oskOpen) root.controllerKeyboardMove(-1, 0)
+            else if (root.gameOptionsOpen) root.moveGameOptions(-1)
             else if (root.space === "home") root.moveDomain(-1)
             else if (root.space === "library") root.moveLibraryVertical(-1)
             else if (root.space === "system") {
@@ -905,7 +927,8 @@ Window {
             }
     }
     function controllerDown() {
-            if (root.gameOptionsOpen) root.moveGameOptions(1)
+            if (root.oskOpen) root.controllerKeyboardMove(1, 0)
+            else if (root.gameOptionsOpen) root.moveGameOptions(1)
             else if (root.space === "home") root.moveDomain(1)
             else if (root.space === "library") root.moveLibraryVertical(1)
             else if (root.space === "system") {
@@ -914,7 +937,8 @@ Window {
             }
     }
     function controllerLeft() {
-            if (root.gameOptionsOpen) root.moveGameOptions(-1)
+            if (root.oskOpen) root.controllerKeyboardMove(0, -1)
+            else if (root.gameOptionsOpen) root.moveGameOptions(-1)
             else if (root.space === "home") {
                 if (root.selectedCategoryIndex === 3) root.moveRecent(-1)
                 else if (root.selectedCategoryIndex === 2) root.moveLibraryLanding(-1)
@@ -927,7 +951,8 @@ Window {
             }
     }
     function controllerRight() {
-            if (root.gameOptionsOpen) root.moveGameOptions(1)
+            if (root.oskOpen) root.controllerKeyboardMove(0, 1)
+            else if (root.gameOptionsOpen) root.moveGameOptions(1)
             else if (root.space === "home") {
                 if (root.selectedCategoryIndex === 3) root.moveRecent(1)
                 else if (root.selectedCategoryIndex === 2) root.moveLibraryLanding(1)
@@ -979,6 +1004,22 @@ Window {
         focus: true
 
         Keys.onPressed: function(event) {
+            if (oskOpen) {
+                if (event.key === Qt.Key_Up)
+                    controllerKeyboardMove(-1, 0)
+                else if (event.key === Qt.Key_Down)
+                    controllerKeyboardMove(1, 0)
+                else if (event.key === Qt.Key_Left)
+                    controllerKeyboardMove(0, -1)
+                else if (event.key === Qt.Key_Right)
+                    controllerKeyboardMove(0, 1)
+                else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter)
+                    onScreenKeyboard.activate(onScreenKeyboard.selectedRow, onScreenKeyboard.selectedColumn)
+                else if (event.key === Qt.Key_Escape || event.key === Qt.Key_Backspace)
+                    back()
+                event.accepted = true
+                return
+            }
             if (event.key === Qt.Key_X) {
                 if (selectedGameForOptions)
                     openGameOptions(selectedGameForOptions)
@@ -1371,6 +1412,30 @@ Window {
             onBacked: root.back()
             onQueryEdited: root.metadataQuery = value
             onTitleEdited: root.metadataTitleDraft = value
+            onTitleEntryFocused: root.openKeyboard("Edit Title", value, 80)
+        }
+
+        OnScreenKeyboard {
+            id: onScreenKeyboard
+            uiScale: root.uiScale
+            typography: typography
+            luluPalette: luluPalette
+            onVisibleChanged: root.oskOpen = visible
+            onAccepted: {
+                var title = text.trim()
+                root.gameOptionsView = "edit"
+                root.gameOptionsIndex = 0
+                if (!title)
+                    return
+                root.metadataTitleDraft = title
+                root.metadataMutation("/metadata/title/" + encodeURIComponent(root.gameOptionsGameId),
+                    {title: title})
+            }
+            onCancelled: {
+                root.closeKeyboard()
+                root.gameOptionsView = "edit"
+                root.gameOptionsIndex = 0
+            }
         }
 
         Item {

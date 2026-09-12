@@ -48,7 +48,7 @@ c8814955fe9d8a77a98ad50f0e462f543a0b08adf01409b23fa55566c3df6ef5  ./packaging/lu
 828e1eb2c8ea4fad15b233d0f3ccb19327218045b308bbcf1c040f163a1ddc6f  ./scripts/console-ui.sh
 ba906bc73f10a5025773d4292896f3d043b0bceaf871127e8f727dde75738e8b  ./scripts/steam-bootstrap.sh
 559defbdfd363d48fb9ff286cf497a5e62bdca8cb8c3b0c42be5a706d9bc5b01  ./scripts/steam-session-bootstrap.sh
-5e02e200513b30739433d167fbf901f1184b7953d34946af99c63730e9c88a90  ./ui/ConsoleShell.qml
+407bab64d56270de4b9ab09ca733af660f9aae6d495235914f9775c6f7e69e60  ./ui/ConsoleShell.qml
 c147b5955bb1f2f7c65a9e07fe85afca2f9f9693aa090b5bd6fc45da9189045b  ./ui/ControllerGlyph.qml
 b48f2af29670ce222cfa759a22ca7d789a10cd8a7a15a6e9c2897fb1df7ed936  ./ui/controllerglyphs/SteamDeck_A.png
 63c72d44c4cce55d6ec5e1368938533f9a4ed440f9d1ce7f7e42eb6d9fd77db5  ./ui/controllerglyphs/SteamDeck_B.png
@@ -61,7 +61,8 @@ c2525c8cb3ca2123283b49ddbdb4c1440cd6467c92859124cc7e89ed65b88ef3  ./ui/controlle
 57bd1669d1ab589185cf981faf7f8a2e6ecc4107b9914cb2332f9abe95bac0da  ./ui/controllerglyphs/SteamDeck_R1.png
 2a10bd2390e263805a7c37d73f81c74793b093208163f94766b14284d6f2f282  ./ui/ControllerHint.qml
 9fb65f10726a820ab3deafe22fde24385680c9e8b0ebdc25abb6033e28d9ca59  ./ui/GameCard.qml
-cd7a7484f64fc3ed4042f4f0159504e7170392539bbc04ce5e421fb57f411bc6  ./ui/GameOptions.qml
+1a3e81321e526362092164e6bb12d567499fe9c858ac869e8ff99b92400dd232  ./ui/GameOptions.qml
+7923dbd168e0e5e7e8576390946e3447a91457b9e92102545419b84fea6575c5  ./ui/OnScreenKeyboard.qml
 96d373ca18a3527023538424a62206fdd36c178d5e3aa7406d45dd8649a0b2a6  ./ui/GlassSurface.qml
 939a8d33274bbe41e92bf6875b7a52aeb6cbd5236e894e99258f21a7e7957a34  ./ui/LibraryHome.qml
 656dcc8dfcbb485a32ab1b669857462c769d290fd356723b04c5f584ef80b319  ./ui/LibrarySpace.qml

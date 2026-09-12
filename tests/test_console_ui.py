@@ -451,6 +451,24 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertIn("/metadata/search?game_id=", QML)
         self.assertIn("function back()", QML)
 
+    def test_on_screen_keyboard_is_local_and_has_a_signal_caller_contract(self) -> None:
+        keyboard = (ROOT / "ui" / "OnScreenKeyboard.qml").read_text()
+        options = (ROOT / "ui" / "GameOptions.qml").read_text()
+        self.assertTrue((ROOT / "ui" / "OnScreenKeyboard.qml").exists())
+        self.assertIn('signal accepted(string text)', keyboard)
+        self.assertIn('signal cancelled()', keyboard)
+        self.assertIn('function open(initialValue, label, limit)', keyboard)
+        self.assertIn('function activate(row, column)', keyboard)
+        self.assertIn('"BACKSPACE"', keyboard)
+        self.assertIn('"ACCEPT"', keyboard)
+        self.assertIn('"CANCEL"', keyboard)
+        self.assertIn('signal titleEntryFocused(string value)', options)
+        self.assertIn('onTitleEntryFocused: root.openKeyboard("Edit Title", value, 80)', QML)
+        self.assertIn('if (root.oskOpen)', QML)
+        self.assertIn('controllerKeyboardMove(-1, 0)', QML)
+        self.assertIn('onAccepted:', QML)
+        self.assertNotIn('Steam', keyboard)
+
     def test_library_navigation_separates_grid_and_collection_controls(self) -> None:
         shell = (ROOT / "ui" / "ConsoleShell.qml").read_text()
         self.assertIn("function moveLibraryVertical(delta)", shell)
