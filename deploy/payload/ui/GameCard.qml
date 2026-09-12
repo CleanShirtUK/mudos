@@ -254,7 +254,7 @@ Rectangle {
             visible: card.iconArtwork
             z: 1
             colorization: 1.0
-            colorizationColor: card.focusedColor(card.luluPalette.primaryText)
+            colorizationColor: "magenta"
         }
 
         Text {
