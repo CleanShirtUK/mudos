@@ -352,6 +352,7 @@ class ConsoleInterface(ServiceInterface):
                 stdout=asyncio.subprocess.DEVNULL,
                 stderr=asyncio.subprocess.DEVNULL,
                 env=child_environment,
+                cwd="/home/lulu" if intent.platform == "switch" else None,
                 start_new_session=True,
             )
             try:
