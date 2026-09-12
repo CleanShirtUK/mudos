@@ -289,8 +289,10 @@ migrate_user_state() {
 normalize_legacy_paths() {
     local link target file
     while IFS= read -r -d '' file; do
-        sed -i 's#/var/lib/lulu#/home/lulu#g' "$file"
-    done < <(find /home/lulu/.config /home/lulu/.local/share/lulu -type f -size -50M -print0 2>/dev/null | xargs -0 -r grep -IlZ '/var/lib/lulu')
+        if grep -Ilq '/var/lib/lulu' "$file"; then
+            sed -i 's#/var/lib/lulu#/home/lulu#g' "$file"
+        fi
+    done < <(find /home/lulu/.config /home/lulu/.local/share/lulu -type f -size -50M -print0 2>/dev/null)
     while IFS= read -r -d '' link; do
         target="$(readlink "$link")"
         if [[ "$target" == *'/var/lib/lulu'* ]]; then
