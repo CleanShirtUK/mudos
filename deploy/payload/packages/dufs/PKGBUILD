@@ -6,22 +6,19 @@ arch=('x86_64' 'aarch64')
 url='https://github.com/sigoden/dufs'
 license=('MIT' 'Apache')
 makedepends=('cargo')
-source=("https://crates.io/api/v1/crates/${pkgname}/${pkgver}/download")
-sha256sums=('fcd9d9cf7dd2a04d4b01b87a021ab3bec693f81d6d66484dbca15a3bac593177')
+source=("https://github.com/sigoden/dufs/releases/download/v${pkgver}/dufs-v${pkgver}-x86_64-unknown-linux-musl.tar.gz")
+sha256sums=('817769f726613194bcff9d0e3e481eaccc86ac11208857614f36a8c02f410977')
 
 prepare() {
-    cd "$pkgname-$pkgver"
-    cargo fetch --locked
+    mkdir -p "$pkgname-$pkgver"
+    tar -xzf "$srcdir/dufs-v${pkgver}-x86_64-unknown-linux-musl.tar.gz" -C "$pkgname-$pkgver"
 }
 
 build() {
-    cd "$pkgname-$pkgver"
-    cargo build --release --locked
+    :
 }
 
 package() {
     cd "$pkgname-$pkgver"
-    install -Dm755 "target/release/dufs" "$pkgdir/usr/bin/dufs"
-    install -Dm644 LICENSE-MIT "$pkgdir/usr/share/licenses/$pkgname/LICENSE-MIT"
-    install -Dm644 LICENSE-APACHE "$pkgdir/usr/share/licenses/$pkgname/LICENSE-APACHE"
+    install -Dm755 "$pkgname-$pkgver/dufs" "$pkgdir/usr/bin/dufs"
 }
