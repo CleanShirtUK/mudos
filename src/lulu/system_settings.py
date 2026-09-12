@@ -111,6 +111,7 @@ class SystemSettingsProvider:
 
     def _lulu_settings(self) -> list[SystemSetting]:
         return [
+            SystemSetting("lulu.refresh_library", "Refresh Library", "action", "scan now", "Rescan Steam and local game providers", True),
             _status("lulu.startup", "Startup category", "Recent", "Persistence integration is TO PROVE"),
             _status("lulu.motion", "Reduced motion", "off", "Policy integration is TO PROVE"),
             _status("lulu.hints", "Controller hints", "on"),

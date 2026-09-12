@@ -171,6 +171,10 @@ class ConsoleUiBridge:
         rows = await self.consoled.call_list_games(scope)
         return [{key: value.value for key, value in row.items()} for row in rows]
 
+    async def refresh_library(self) -> dict[str, int]:
+        count = await self.consoled.call_refresh()
+        return {"count": count}
+
     async def list_platforms(self) -> list[dict[str, object]]:
         rows = await self.consoled.call_list_platform_categories()
         return [{key: value.value for key, value in row.items()} for row in rows]
@@ -279,6 +283,12 @@ class ApiHandler(BaseHTTPRequestHandler):
             except Exception as error:  # pragma: no cover - live IPC failure path
                 self._respond(503, {"error": str(error)})
             return
+        if urlparse(self.path).path == "/refresh":
+            try:
+                self._respond(200, self.bridge.call(self.bridge.refresh_library()))
+            except Exception as error:  # pragma: no cover - live IPC failure path
+                self._respond(503, {"error": str(error)})
+            return
         if urlparse(self.path).path == "/metadata/search":
             query = parse_qs(urlparse(self.path).query)
             game_id = query.get("game_id", [""])[0]
@@ -296,6 +306,12 @@ class ApiHandler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:
         path = urlparse(self.path).path
+        if path == "/refresh":
+            try:
+                self._respond(200, self.bridge.call(self.bridge.refresh_library()))
+            except Exception as error:  # pragma: no cover - live IPC failure path
+                self._respond(409, {"error": str(error) or type(error).__name__})
+            return
         if path.startswith("/metadata/"):
             try:
                 game_id = unquote(path.split("/", 3)[3])

@@ -14,7 +14,7 @@ class SystemSettingsProviderTests(unittest.TestCase):
             self.assertTrue(rows)
             for row in rows:
                 self.assertEqual(set(row), {"key", "label", "kind", "value", "detail", "writable"})
-                if row["key"] == "lulu.reset":
+                if row["key"] in {"lulu.reset", "lulu.refresh_library"}:
                     self.assertTrue(row["writable"])
                     self.assertEqual(row["kind"], "action")
                 else:
@@ -31,6 +31,13 @@ class SystemSettingsProviderTests(unittest.TestCase):
     def test_unknown_category_is_rejected(self) -> None:
         with self.assertRaises(ValueError):
             SystemSettingsProvider().list_settings("Unknown")
+
+    def test_refresh_library_action_is_visible(self) -> None:
+        rows = SystemSettingsProvider().list_settings("Lulu")
+        refresh = next(row for row in rows if row["key"] == "lulu.refresh_library")
+        self.assertEqual(refresh["label"], "Refresh Library")
+        self.assertEqual(refresh["kind"], "action")
+        self.assertTrue(refresh["writable"])
 
 
 if __name__ == "__main__":

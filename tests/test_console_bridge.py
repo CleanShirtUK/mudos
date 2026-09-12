@@ -62,6 +62,11 @@ class ConsoleBridgeTests(unittest.TestCase):
         self.assertIn('if urlparse(self.path).path == "/state":', source)
         self.assertIn("call_get_state()", source)
 
+    def test_refresh_endpoint_uses_consoled_refresh_boundary(self) -> None:
+        source = (ROOT / "scripts" / "console-ui-bridge.py").read_text()
+        self.assertIn('path == "/refresh"', source)
+        self.assertIn("call_refresh()", source)
+
     def test_metadata_options_paths_use_the_service_boundary(self) -> None:
         source = (ROOT / "scripts" / "console-ui-bridge.py").read_text()
         for path in ("/metadata/search", "/metadata/match/", "/metadata/title/", "/metadata/artwork/"):

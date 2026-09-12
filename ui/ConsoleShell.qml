@@ -183,22 +183,32 @@ Window {
     }
 
     function refreshCatalogue() {
-        request("/?scope=recent", "GET", "", function(data) {
-            var selectedId = visibleRecentGame ? visibleRecentGame.game_id : ""
-            recentGames = data
-            var selectedIndex = -1
-            for (var index = 0; index < recentGames.length; index++) {
-                if (recentGames[index].game_id === selectedId) {
-                    selectedIndex = index
-                    break
+        refreshLibraryProviders()
+    }
+
+    function refreshLibraryProviders() {
+        request("/refresh", "POST", "", function() {
+            request("/?scope=recent", "GET", "", function(data) {
+                var selectedId = visibleRecentGame ? visibleRecentGame.game_id : ""
+                recentGames = data
+                var selectedIndex = -1
+                for (var index = 0; index < recentGames.length; index++) {
+                    if (recentGames[index].game_id === selectedId) {
+                        selectedIndex = index
+                        break
+                    }
                 }
-            }
-            if (selectedIndex >= 0)
-                recentIndex = selectedIndex
-            else if (recentIndex >= recentGames.length)
-                recentIndex = Math.max(0, recentGames.length - 1)
-            syncGameOptionsGame()
+                if (selectedIndex >= 0)
+                    recentIndex = selectedIndex
+                else if (recentIndex >= recentGames.length)
+                    recentIndex = Math.max(0, recentGames.length - 1)
+                syncGameOptionsGame()
+            })
+            refreshLibraryViews()
         })
+    }
+
+    function refreshLibraryViews() {
         refreshLibrary()
         request("/platforms", "GET", "", function(data) {
             var collections = [{"label": "All Games", "scope": "all"}, {"label": "Steam", "scope": "steam"}]
@@ -328,6 +338,11 @@ Window {
                                               Math.max(0, Math.floor(Math.max(0, libraryGames.length - 1) / 7) - 1))
             syncGameOptionsGame()
         })
+    }
+
+    function refreshLibraryNow() {
+        message = "Refreshing Library"
+        refreshCatalogue()
     }
 
     function syncGameOptionsGame() {
@@ -680,14 +695,17 @@ Window {
             return
         }
         if (space === "system") {
-            if (!systemLanding && systemSettings[systemRowIndex]
-                    && systemSettings[systemRowIndex].key === "lulu.reset")
-                resetMudos()
+            if (!systemLanding && systemSettings[systemRowIndex]) {
+                if (systemSettings[systemRowIndex].key === "lulu.reset")
+                    resetMudos()
+                else if (systemSettings[systemRowIndex].key === "lulu.refresh_library")
+                    refreshLibraryNow()
+            }
             return
         }
         if (space === "library") {
             if (libraryFocus === "collection") {
-                refreshLibrary()
+                refreshLibraryProviders()
                 libraryFocus = "games"
             } else {
                 launchGame(visibleLibraryGame)
@@ -703,7 +721,7 @@ Window {
             libraryTransitionExpanding = true
             libraryTransitionProgress = 0
             libraryTransitionAnimation.restart()
-            refreshLibrary()
+            refreshLibraryProviders()
             libraryContentFadeOut.stop()
             libraryContentFadeIn.restart()
             homeFadeIn.stop()
@@ -856,6 +874,14 @@ Window {
             root.libraryTransitionState = "RESTING"
             root.libraryHandoffPending = false
         }
+    }
+
+    Timer {
+        id: libraryRefreshTimer
+        interval: 30000
+        running: root.visible
+        repeat: true
+        onTriggered: root.refreshCatalogue()
     }
 
     SequentialAnimation {
@@ -1353,7 +1379,12 @@ Window {
             uiScale: root.uiScale
             typography: typography
             luluPalette: luluPalette
-            onActionRequested: if (key === "lulu.reset") root.resetMudos()
+            onActionRequested: {
+                if (key === "lulu.reset")
+                    root.resetMudos()
+                else if (key === "lulu.refresh_library")
+                    root.refreshLibraryNow()
+            }
         }
 
         GameOptions {
