@@ -35,7 +35,11 @@ class EmulatorRuntimeAdapter:
             raise ValueError(f"provider menu is unsupported: {platform}")
         return ("/usr/bin/retroarch", "--command", "MENU_TOGGLE")
 
-    def launch_intent(self, game: LocalContentGame) -> EmulatorLaunchIntent:
+    def launch_intent(
+        self,
+        game: LocalContentGame,
+        device_indices: dict[int, int] | None = None,
+    ) -> EmulatorLaunchIntent:
         if not game.launchable:
             raise ValueError(f"content is not launchable: {game.reason}")
         executable = self.runtime_paths.get(game.platform)
@@ -54,7 +58,7 @@ class EmulatorRuntimeAdapter:
             )
         elif game.platform == "switch":
             content_path = getattr(game, "content_path", getattr(game, "install_dir", ""))
-            arguments = self.switch_provider.launch_arguments(content_path)
+            arguments = self.switch_provider.launch_arguments(content_path, device_indices=device_indices)
         else:
             raise ValueError(f"unsupported-runtime: {game.platform}")
         return EmulatorLaunchIntent(game.platform, str(executable), arguments)
