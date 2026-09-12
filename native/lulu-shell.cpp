@@ -16,6 +16,8 @@
 #include <QUrl>
 #include <QHash>
 #include <QSet>
+#include <QJsonDocument>
+#include <QJsonObject>
 
 #include <SDL3/SDL.h>
 #include <xcb/xcb.h>
@@ -186,6 +188,10 @@ private:
             return false;
         }
         guideProcess_ = new QProcess(this);
+        const auto menuCommand = providerMenuCommand(targetPid_);
+        const auto menuLabel = providerMenuLabel(targetPid_);
+        qInfo() << "Guide context" << "pid=" << targetPid_
+                << "command=" << menuCommand << "label=" << menuLabel;
         connect(guideProcess_, &QProcess::readyReadStandardOutput, this, [this]() {
             qInfo().noquote() << guideProcess_->readAllStandardOutput().trimmed();
         });
@@ -195,7 +201,7 @@ private:
         connect(guideProcess_, &QProcess::finished, this,
                 [this](int, QProcess::ExitStatus) { finishGuide(); });
         guideProcess_->start("/opt/lulu/bin/mudos-guide", {
-            QString::number(targetWindow_), QString::number(targetPid_), providerMenuCommand(targetPid_)
+            QString::number(targetWindow_), QString::number(targetPid_), menuCommand, menuLabel
         });
         if (!guideProcess_->waitForStarted(1000)) {
             finishGuide();
@@ -245,15 +251,39 @@ private:
     QString providerMenuCommand(uint32_t pid) const
     {
         QFile environment(QStringLiteral("/proc/%1/environ").arg(pid));
-        if (!environment.open(QIODevice::ReadOnly))
-            return {};
-        const auto entries = environment.readAll().split('\0');
-        for (const auto &entry : entries) {
-            const QByteArray prefix("MUDOS_PROVIDER_MENU_COMMAND=");
-            if (entry.startsWith(prefix))
-                return QString::fromUtf8(entry.mid(prefix.size()));
+        if (environment.open(QIODevice::ReadOnly)) {
+            const auto entries = environment.readAll().split('\0');
+            for (const auto &entry : entries) {
+                const QByteArray prefix("MUDOS_PROVIDER_MENU_COMMAND=");
+                if (entry.startsWith(prefix))
+                    return QString::fromUtf8(entry.mid(prefix.size()));
+            }
+        }
+        QDBusInterface sessiond("org.lulu.ConsoleSessiond", "/org/lulu/ConsoleSession",
+                                "org.lulu.ConsoleSession", QDBusConnection::sessionBus());
+        const auto reply = sessiond.call("GetState");
+        if (reply.type() != QDBusMessage::ErrorMessage && !reply.arguments().isEmpty()) {
+            const auto state = QJsonDocument::fromJson(
+                reply.arguments().constFirst().toString().toUtf8()).object();
+            if (state.value("primary_id").toString() == QStringLiteral("steam-store"))
+                return QStringLiteral("steam");
         }
         return {};
+    }
+
+    QString providerMenuLabel(uint32_t pid) const
+    {
+        QDBusInterface sessiond("org.lulu.ConsoleSessiond", "/org/lulu/ConsoleSession",
+                                "org.lulu.ConsoleSession", QDBusConnection::sessionBus());
+        const auto reply = sessiond.call("GetState");
+        if (reply.type() != QDBusMessage::ErrorMessage && !reply.arguments().isEmpty()) {
+            const auto state = QJsonDocument::fromJson(
+                reply.arguments().constFirst().toString().toUtf8()).object();
+            if (state.value("primary_id").toString() == QStringLiteral("steam-store"))
+                return state.value("delegated_surface").toString() == QStringLiteral("downloads")
+                    ? QStringLiteral("Go to Store") : QStringLiteral("View Download Queue");
+        }
+        return QStringLiteral("Provider Menu");
     }
 
     void scanGamepads()

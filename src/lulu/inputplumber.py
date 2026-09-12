@@ -8,6 +8,9 @@ import subprocess
 from .contracts import InputMode
 
 
+DEFAULT_PROFILE_PATH = "/usr/share/inputplumber/profiles/default.yaml"
+
+
 @dataclass(frozen=True, slots=True)
 class InputPlumberClient:
     """controllerd-side client; InputPlumber remains runtime authority."""
@@ -69,6 +72,37 @@ class InputPlumberClient:
         if execute:
             subprocess.run(command, check=True)
         return command
+
+    def ensure_default_intercept(
+        self, object_path: str | None = None, *, execute: bool = True
+    ) -> list[list[str]]:
+        """Restore the controller baseline for one live composite."""
+        object_path = object_path or self.object_path
+        load_command = [
+            self.busctl, "call", "org.shadowblip.InputPlumber", object_path,
+            "org.shadowblip.Input.CompositeDevice", "LoadProfilePath", "s",
+            DEFAULT_PROFILE_PATH,
+        ]
+        mode_command = self.set_intercept_mode(1, object_path, execute=False)
+        if not execute:
+            return [load_command, mode_command]
+        subprocess.run(load_command, check=True)
+        subprocess.run(mode_command, check=True)
+        profile = subprocess.run(
+            [self.busctl, "get-property", "org.shadowblip.InputPlumber", object_path,
+             "org.shadowblip.Input.CompositeDevice", "ProfileName"],
+            check=True, capture_output=True, text=True,
+        ).stdout.strip()
+        intercept = subprocess.run(
+            [self.busctl, "get-property", "org.shadowblip.InputPlumber", object_path,
+             "org.shadowblip.Input.CompositeDevice", "InterceptMode"],
+            check=True, capture_output=True, text=True,
+        ).stdout.strip()
+        if profile != 's "Default"' or intercept != "u 1":
+            raise RuntimeError(
+                f"InputPlumber baseline verification failed: profile={profile!r} mode={intercept!r}"
+            )
+        return [load_command, mode_command]
 
     def composite_status(
         self, object_path: str | None = None, *, execute: bool = True

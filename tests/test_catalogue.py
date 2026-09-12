@@ -2,6 +2,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from lulu.consoled import ConsoleInterface
 from lulu.catalogue import CatalogueStore
 from lulu.steam_provider import InstalledSteamGame
 from lulu.local_content import LocalContentProvider
@@ -112,3 +113,20 @@ class CatalogueTests(unittest.TestCase):
         self.assertEqual(record.title, "My Mario")
         self.assertEqual(record.display_title_override, "My Mario")
         self.assertTrue(record.artwork_suppressed)
+
+    def test_dbus_variants_preserve_real_catalogue_types(self) -> None:
+        from lulu.catalogue import CatalogueGame
+
+        game = CatalogueGame(
+            game_id="steam:40800", provider="steam", provider_id="40800",
+            title="Super Meat Boy", platform="Steam", install_state="installed",
+            launchable=True, install_dir="/games", artwork_url="", last_played=0,
+            match_confidence=0.875,
+        )
+
+        variants = ConsoleInterface._variants(game.as_dict())
+
+        self.assertEqual(variants["match_confidence"].signature, "d")
+        self.assertEqual(variants["match_confidence"].value, 0.875)
+        self.assertEqual(variants["launchable"].signature, "b")
+        self.assertEqual(variants["last_played"].signature, "x")

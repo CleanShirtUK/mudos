@@ -14,7 +14,19 @@ class SystemSettingsProviderTests(unittest.TestCase):
             self.assertTrue(rows)
             for row in rows:
                 self.assertEqual(set(row), {"key", "label", "kind", "value", "detail", "writable"})
-                self.assertFalse(row["writable"])
+                if row["key"] == "lulu.reset":
+                    self.assertTrue(row["writable"])
+                    self.assertEqual(row["kind"], "action")
+                else:
+                    self.assertFalse(row["writable"])
+
+    def test_reset_mudos_is_in_the_visible_system_settings_cards(self) -> None:
+        rows = SystemSettingsProvider().list_settings("System")
+        reset = next((row for row in rows if row["key"] == "lulu.reset"), None)
+        self.assertIsNotNone(reset)
+        self.assertEqual(reset["label"], "Reset Mudos")
+        self.assertEqual(reset["kind"], "action")
+        self.assertTrue(reset["writable"])
 
     def test_unknown_category_is_rejected(self) -> None:
         with self.assertRaises(ValueError):

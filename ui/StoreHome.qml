@@ -10,6 +10,7 @@ Item {
     property var canonicalTexture
     property var canonicalCoordinateRoot
     property size canonicalSize: Qt.size(1280, 720)
+    signal steamStoreRequested()
 
     NavigationCard {
         width: root.cardWidth
@@ -22,5 +23,6 @@ Item {
         canonicalTexture: root.canonicalTexture
         canonicalCoordinateRoot: root.canonicalCoordinateRoot
         canonicalSize: root.canonicalSize
+        onActivated: root.steamStoreRequested()
     }
 }

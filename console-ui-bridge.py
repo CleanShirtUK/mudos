@@ -19,22 +19,6 @@ from urllib.parse import parse_qs, unquote, urlparse
 LOGGER = logging.getLogger("lulu.console-ui-bridge")
 
 
-def normalize_launch_token(value: object) -> str:
-    LOGGER.info("launch token raw type=%s value=%r", type(value).__name__, value)
-    if isinstance(value, Variant):
-        value = value.value
-    elif isinstance(value, dict) and set(value) == {"value"}:
-        value = value["value"]
-    elif isinstance(value, dict) and set(value) == {"token"}:
-        value = value["token"]
-    elif isinstance(value, (tuple, list)) and len(value) == 1:
-        value = value[0]
-    if not isinstance(value, str) or not value:
-        raise TypeError(f"launch token must be a non-empty string, got {type(value).__name__}: {value!r}")
-    LOGGER.info("launch token normalized type=%s value=%s", type(value).__name__, value)
-    return value
-
-
 class LaunchLogCapture:
     """Event-driven tail of the current Steam launch logs for developer feedback."""
 
@@ -102,12 +86,6 @@ class LaunchLogCapture:
             if self._active:
                 self._append(source, line)
 
-    def note_cancellation(self) -> None:
-        with self._lock:
-            if not self._active or any("Cancelling launch" in line for line in self._lines):
-                return
-            self._append("Lulu", "Cancelling launch…")
-
     def _watch(self) -> None:
         while True:
             if self._fd is None:
@@ -150,7 +128,7 @@ class LaunchLogCapture:
             timestamp = datetime.now().strftime("%H:%M:%S")
         self._lines.append(f"{timestamp} [{source}] {line}")
 
-from dbus_next import BusType, Variant
+from dbus_next import BusType
 from dbus_next.aio import MessageBus
 
 
@@ -160,7 +138,6 @@ class ConsoleUiBridge:
         self.consoled = consoled
         self.sessiond = sessiond
         self.launch_logs = LaunchLogCapture()
-        self.local_token: str | None = None
 
     def call(self, operation: asyncio.Future, timeout: float | None = 15) -> object:
         return asyncio.run_coroutine_threadsafe(operation, self.loop).result(timeout=timeout)
@@ -180,14 +157,10 @@ class ConsoleUiBridge:
         LOGGER.info("launch request game_id=%s", game_id)
         appid = game_id.removeprefix("steam:")
         self.launch_logs.note("Lulu", f"HTTP launch request started game_id={game_id}")
+        token = await self.consoled.call_launch_game(game_id, 15000)
+        self.launch_logs.note("Lulu", f"launch boundary reached game_id={game_id} appid={appid}")
         if game_id.startswith("steam:"):
-            token = normalize_launch_token(await self.sessiond.call_request_steam_launch(appid, 15000))
-            self.launch_logs.note("Lulu", f"session launch boundary reached game_id={game_id} appid={appid} token={token}")
             self.launch_logs.note("Steam", f"steam://rungameid/{appid}")
-        else:
-            token = await self.consoled.call_launch_game(game_id, 15000)
-            self.local_token = token
-            self.launch_logs.note("Lulu", f"launch boundary reached game_id={game_id} appid={appid}")
         LOGGER.info("launch accepted game_id=%s token=%s", game_id, token)
         return {
             "token": token,
@@ -198,49 +171,12 @@ class ConsoleUiBridge:
         return json.loads(await self.sessiond.call_get_state())
 
     async def open_steam_store(self) -> dict[str, str]:
-        self.launch_logs.start("steam-store")
-        self.launch_logs.note("Lulu", "Steam Store launch requested")
         token = await self.sessiond.call_request_steam_store(15000)
         return {"token": token}
-
-    async def cancel_launch(self) -> dict[str, str]:
-        self.launch_logs.note_cancellation()
-        if self.local_token is not None:
-            await self.consoled.call_cancel_local_launch()
-            self.local_token = None
-        else:
-            await self.sessiond.call_cancel_launch()
-        return {"status": "cancelled"}
-
-    async def reset_mudos(self) -> dict[str, str]:
-        result = await self.sessiond.call_reset_mudos()
-        return {"status": result}
 
     async def list_system_settings(self, category: str) -> list[dict[str, object]]:
         rows = await self.consoled.call_list_system_settings(category)
         return [{key: value.value for key, value in row.items()} for row in rows]
-
-    async def search_metadata(self, game_id: str, query: str) -> list[dict[str, object]]:
-        rows = await self.consoled.call_search_metadata(game_id, query)
-        return [{key: value.value for key, value in row.items()} for row in rows]
-
-    async def set_metadata_match(self, game_id: str, payload: dict[str, object]) -> None:
-        await self.consoled.call_set_metadata_match(
-            game_id, str(payload.get("provider", "steamgriddb")),
-            str(payload.get("metadata_game_id", "")), str(payload.get("canonical_title", "")),
-        )
-
-    async def set_title_override(self, game_id: str, title: str) -> None:
-        await self.consoled.call_set_title_override(game_id, title)
-
-    async def clear_title_override(self, game_id: str) -> None:
-        await self.consoled.call_clear_title_override(game_id)
-
-    async def set_artwork_suppressed(self, game_id: str, suppressed: bool) -> None:
-        if suppressed:
-            await self.consoled.call_suppress_artwork(game_id)
-        else:
-            await self.consoled.call_restore_artwork(game_id)
 
 
 class ApiHandler(BaseHTTPRequestHandler):
@@ -277,15 +213,6 @@ class ApiHandler(BaseHTTPRequestHandler):
             except Exception as error:  # pragma: no cover - live IPC failure path
                 self._respond(503, {"error": str(error)})
             return
-        if urlparse(self.path).path == "/metadata/search":
-            query = parse_qs(urlparse(self.path).query)
-            game_id = query.get("game_id", [""])[0]
-            search = query.get("query", [""])[0]
-            try:
-                self._respond(200, self.bridge.call(self.bridge.search_metadata(game_id, search)))
-            except Exception as error:  # pragma: no cover - live IPC failure path
-                self._respond(503, {"error": str(error)})
-            return
         scope = parse_qs(urlparse(self.path).query).get("scope", ["recent"])[0]
         try:
             self._respond(200, self.bridge.call(self.bridge.list_games(scope)))
@@ -294,39 +221,6 @@ class ApiHandler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:
         path = urlparse(self.path).path
-        if path.startswith("/metadata/"):
-            try:
-                game_id = unquote(path.split("/", 3)[3])
-                length = int(self.headers.get("Content-Length", "0"))
-                payload = json.loads(self.rfile.read(length) or b"{}")
-                if path.startswith("/metadata/title/clear/"):
-                    game_id = unquote(path.removeprefix("/metadata/title/clear/"))
-                    self.bridge.call(self.bridge.clear_title_override(game_id))
-                elif path.startswith("/metadata/match/"):
-                    self.bridge.call(self.bridge.set_metadata_match(game_id, payload))
-                elif path.startswith("/metadata/title/"):
-                    self.bridge.call(self.bridge.set_title_override(game_id, str(payload.get("title", ""))))
-                elif path.startswith("/metadata/artwork/"):
-                    self.bridge.call(self.bridge.set_artwork_suppressed(game_id, bool(payload.get("suppressed", False))))
-                else:
-                    self._respond(404, {"error": "not found"})
-                    return
-                self._respond(200, {"ok": True})
-            except Exception as error:  # pragma: no cover - live IPC failure path
-                self._respond(409, {"error": str(error) or type(error).__name__})
-            return
-        if path == "/cancel":
-            try:
-                self._respond(200, self.bridge.call(self.bridge.cancel_launch(), timeout=10))
-            except Exception as error:
-                self._respond(409, {"error": str(error) or type(error).__name__})
-            return
-        if path == "/reset":
-            try:
-                self._respond(200, self.bridge.call(self.bridge.reset_mudos(), timeout=5))
-            except Exception as error:  # pragma: no cover - session restart may close IPC
-                self._respond(202, {"status": "reset-requested", "error": str(error)})
-            return
         if path == "/store/steam":
             try:
                 self._respond(200, self.bridge.call(self.bridge.open_steam_store(), timeout=20))
@@ -341,11 +235,8 @@ class ApiHandler(BaseHTTPRequestHandler):
             LOGGER.info("http launch game_id=%s", game_id)
             self.bridge.launch_logs.start(game_id)
             timeout = None if game_id.startswith("steam:") else 15
-            result = self.bridge.call(
-                self.bridge.launch_game(game_id),
-                timeout=timeout,
-            )
-            self._respond(200, result)
+            token = self.bridge.call(self.bridge.launch_game(game_id), timeout=timeout)
+            self._respond(200, {"token": token})
         except Exception as error:  # pragma: no cover - live IPC failure path
             self.bridge.launch_logs.note("Lulu", f"HTTP launch failed: {error}")
             self._respond(409, {"error": str(error) or type(error).__name__})

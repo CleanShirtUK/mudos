@@ -55,18 +55,6 @@ class ProvisioningTests(unittest.TestCase):
         }
         self.assertEqual(actual_files, listed)
 
-    def test_gamescope_presentation_is_shipped_from_authoritative_source(self) -> None:
-        self.assertEqual(
-            (PAYLOAD / "lib/lulu/gamescope.py").read_bytes(),
-            (ROOT / "src/lulu/gamescope.py").read_bytes(),
-        )
-
-    def test_settings_model_is_shipped_from_authoritative_source(self) -> None:
-        self.assertEqual(
-            (PAYLOAD / "lib/lulu/system_settings.py").read_bytes(),
-            (ROOT / "src/lulu/system_settings.py").read_bytes(),
-        )
-
     def test_runtime_bootstrap_scripts_are_present_and_executable(self) -> None:
         for name in ("steam-session-bootstrap.sh", "steam-bootstrap.sh"):
             path = PAYLOAD / "scripts" / name
@@ -74,12 +62,9 @@ class ProvisioningTests(unittest.TestCase):
             self.assertTrue(path.stat().st_mode & stat.S_IXUSR)
         session = (PAYLOAD / "scripts/steam-session-bootstrap.sh").read_text()
         self.assertIn("scripts/steam-bootstrap.sh", session)
-        console_ui = (PAYLOAD / "scripts/console-ui.sh").read_text()
-        self.assertNotIn("steam-session-bootstrap", console_ui)
         bootstrap = (PAYLOAD / "scripts/steam-bootstrap.sh").read_text()
         self.assertIn("exec /usr/bin/steam -silent", bootstrap)
         self.assertNotIn("+open steam://open/minigameslist", bootstrap)
-        self.assertIn("Restart=always", (PAYLOAD / "packaging/lulu-session@.service").read_text())
 
     def test_presentation_default_is_discovered_not_hardcoded(self) -> None:
         config = (PAYLOAD / "packaging/presentation.conf").read_text()

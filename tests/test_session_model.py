@@ -1,10 +1,11 @@
 import unittest
 import asyncio
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 from lulu.console_sessiond import SessionStateModel
 from lulu.contracts import InputMode, Lifecycle, Presentation
 from lulu.process_supervisor import ProcessSupervisor
+from lulu.sessiond import ConsoleSessionInterface
 
 
 class SessionModelTests(unittest.TestCase):
@@ -66,6 +67,30 @@ class SessionModelTests(unittest.TestCase):
         session.primary_started(token)
         self.assertEqual(session.state.lifecycle, Lifecycle.GAME)
 
+    def test_steam_store_downloads_is_one_delegated_application(self) -> None:
+        session = SessionStateModel()
+        token = session.request_launch("steam-store")
+        session.launch_starting(token)
+        session.primary_started(token, presentation=Presentation.FOREIGN_UI, input_mode=InputMode.GAME)
+        self.assertEqual(session.state.delegated_surface, "store")
+        session.set_delegated_surface("downloads")
+        self.assertEqual(session.state.primary_id, "steam-store")
+        self.assertEqual(session.state.delegated_surface, "downloads")
+        session.set_delegated_surface("store")
+        self.assertEqual(session.state.delegated_surface, "store")
+
+    def test_reset_tears_down_session_and_requests_service_restart(self) -> None:
+        async def exercise() -> None:
+            interface = ConsoleSessionInterface.__new__(ConsoleSessionInterface)
+            interface.stop_controller_monitor = AsyncMock()
+            interface.supervisor = type("Supervisor", (), {"stop": AsyncMock()})()
+            with patch("lulu.sessiond.os.kill") as kill:
+                await interface._reset_mudos()
+            interface.stop_controller_monitor.assert_awaited_once()
+            interface.supervisor.stop.assert_awaited_once()
+            kill.assert_called_once()
+
+        asyncio.run(exercise())
     def test_empty_primary_id_is_rejected_and_new_launch_clears_failure(self) -> None:
         session = SessionStateModel()
         with self.assertRaises(ValueError):
@@ -86,6 +111,19 @@ class SessionModelTests(unittest.TestCase):
             self.assertEqual(session.state.presentation, Presentation.SHELL)
             self.assertEqual(session.state.input_mode, InputMode.SHELL)
             self.assertEqual(session.last_result.token, token)
+
+        asyncio.run(exercise())
+
+    def test_application_exit_restores_shell_input_mode(self) -> None:
+        async def exercise() -> None:
+            session = SessionStateModel()
+            modes = []
+            supervisor = ProcessSupervisor(session, input_mode_changed=modes.append)
+            await supervisor.launch(["/bin/sh", "-c", "sleep 0.05"], 1000)
+            session.set_input_mode(InputMode.COMPAT)
+            await supervisor._watch_task
+            self.assertEqual(modes[-1], InputMode.SHELL)
+            self.assertEqual(session.state.input_mode, InputMode.SHELL)
 
         asyncio.run(exercise())
 

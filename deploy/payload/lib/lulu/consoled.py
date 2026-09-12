@@ -4,6 +4,7 @@ import asyncio
 import logging
 import os
 from pathlib import Path
+import signal
 import subprocess
 import tempfile
 import shlex
@@ -172,8 +173,9 @@ def _retroarch_child_config(device_indices: dict[int, int]) -> str:
     ) as config:
         config.write(
             "".join(
-                f'input_player{player}_joypad_index = "{device_indices[player] + 1 if player in device_indices else -1}"\n'
+                f'input_player{player}_joypad_index = "{device_indices[player] + 1}"\n'
                 for player in range(1, 5)
+                if player in device_indices
             ) + 'network_cmd_enable = "true"\n'
             'network_cmd_port = "55355"\n'
             'quit_on_close_content = "true"\n'
@@ -184,15 +186,38 @@ def _retroarch_child_config(device_indices: dict[int, int]) -> str:
 
 class ConsoleInterface(ServiceInterface):
     def __init__(self, catalogue: ConsoleCatalog, local_runtime: EmulatorRuntimeAdapter | None = None,
-                 system_settings: SystemSettingsProvider | None = None) -> None:
+                 system_settings: SystemSettingsProvider | None = None,
+                 sessiond: object | None = None) -> None:
         super().__init__(INTERFACE_NAME)
         self.catalogue = catalogue
         self.local_runtime = local_runtime
         self.system_settings = system_settings or SystemSettingsProvider()
+        self.sessiond = sessiond
+        self._local_process: asyncio.subprocess.Process | None = None
+        self._local_token: str | None = None
 
+    
     @staticmethod
-    def _variants(game: dict[str, object]) -> dict[str, Variant]:
-        return {key: Variant("s" if isinstance(value, str) else "b" if isinstance(value, bool) else "x", value) for key, value in game.items()}
+    def _variant(key: str, value: object) -> Variant:
+        if isinstance(value, bool):
+            return Variant("b", value)
+        if isinstance(value, str):
+            return Variant("s", value)
+        if isinstance(value, int):
+            return Variant("x", value)
+        if isinstance(value, float):
+            return Variant("d", value)
+        if isinstance(value, list) and all(isinstance(item, str) for item in value):
+            return Variant("as", value)
+        if value is None:
+            raise TypeError(f"catalogue field {key!r} cannot be None in D-Bus output")
+        raise TypeError(f"unsupported catalogue field {key!r} type: {type(value).__name__}")
+
+    
+    @classmethod
+    def _variants(cls, game: dict[str, object]) -> dict[str, Variant]:
+        return {key: cls._variant(key, value) for key, value in game.items()}
+
 
     @method()
     def Refresh(self) -> "u":
@@ -329,6 +354,23 @@ class ConsoleInterface(ServiceInterface):
                 env=child_environment,
                 start_new_session=True,
             )
+            try:
+                if self.sessiond is not None:
+                    self._local_token = await self.sessiond.call_begin_local_session(
+                        game_id,
+                        process.pid,
+                        os.getpgid(process.pid),
+                        os.path.realpath(f"/proc/{process.pid}/exe"),
+                        command,
+                    )
+                self._local_process = process
+            except Exception:
+                try:
+                    os.killpg(os.getpgid(process.pid), signal.SIGTERM)
+                except (ProcessLookupError, OSError):
+                    pass
+                await process.wait()
+                raise
 
             async def reap() -> None:
                 exit_code = await process.wait()
@@ -337,10 +379,17 @@ class ConsoleInterface(ServiceInterface):
                         os.unlink(child_config_path)
                     except FileNotFoundError:
                         pass
+                if self.sessiond is not None and self._local_token is not None:
+                    try:
+                        await self.sessiond.call_end_local_session(self._local_token, exit_code)
+                    except Exception as error:
+                        LOGGER.error("local session end failed game_id=%s token=%s error=%s", game_id, self._local_token, error)
+                self._local_process = None
+                self._local_token = None
                 LOGGER.info("local runtime exit game_id=%s pid=%s exit_code=%s", game_id, process.pid, exit_code)
 
             asyncio.create_task(reap())
-            token = f"local:{process.pid}"
+            token = self._local_token or f"local:{process.pid}"
             LOGGER.info("local runtime started game_id=%s pid=%s token=%s", game_id, process.pid, token)
         else:
             raise ValueError(f"provider launch is unavailable: {game.provider}")
@@ -348,6 +397,17 @@ class ConsoleInterface(ServiceInterface):
         LOGGER.info("launch returned game_id=%s token=%s", game_id, token)
         self.CatalogueChanged()
         return token
+
+    @method()
+    async def CancelLocalLaunch(self) -> "":
+        process = self._local_process
+        if process is None:
+            return
+        try:
+            os.killpg(os.getpgid(process.pid), signal.SIGTERM)
+        except (ProcessLookupError, OSError):
+            pass
+        await process.wait()
 
     @signal()
     def CatalogueChanged(self) -> "":
@@ -362,7 +422,12 @@ async def serve() -> None:
         {platform: definition.core for platform, definition in PLATFORMS.items() if definition.core is not None},
     )
     bus = await MessageBus(bus_type=BusType.SESSION).connect()
-    bus.export(OBJECT_PATH, ConsoleInterface(catalogue, runtime))
+    session_introspection = await bus.introspect("org.lulu.ConsoleSessiond", "/org/lulu/ConsoleSession")
+    session_proxy = bus.get_proxy_object(
+        "org.lulu.ConsoleSessiond", "/org/lulu/ConsoleSession", session_introspection
+    )
+    sessiond = session_proxy.get_interface("org.lulu.ConsoleSession")
+    bus.export(OBJECT_PATH, ConsoleInterface(catalogue, runtime, sessiond=sessiond))
     await bus.request_name(BUS_NAME)
     await asyncio.Event().wait()
 

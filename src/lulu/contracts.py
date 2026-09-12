@@ -39,7 +39,7 @@ class Overlay(StrEnum):
 
 class InputMode(StrEnum):
     SHELL = "shell"
-    GAME = "game"
+    GAME = "gamepad"
     COMPAT = "compat"
 
 

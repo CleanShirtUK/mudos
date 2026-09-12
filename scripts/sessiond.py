@@ -17,16 +17,13 @@ from dbus_next.service import ServiceInterface, method, signal
 from .console_sessiond import SessionStateModel
 from .controllerd import ControllerRegistry, default_inputplumber_client
 from .gamescope import GamescopeInvocation, GamescopePresentation, discover_presentation_output
-from .contracts import InputMode, Lifecycle
-from .launch_identity import LaunchIdentity
+from .contracts import InputMode
 from .process_supervisor import ProcessSupervisor
-from .process_supervisor import ProcessResult
 
 
 BUS_NAME = "org.lulu.ConsoleSessiond"
 OBJECT_PATH = "/org/lulu/ConsoleSession"
 INTERFACE_NAME = "org.lulu.ConsoleSession"
-LOGGER = logging.getLogger("lulu.sessiond")
 
 
 class ConsoleSessionInterface(ServiceInterface):
@@ -44,13 +41,12 @@ class ConsoleSessionInterface(ServiceInterface):
         self._inputplumber = inputplumber
         self._native_controller = os.environ.get("LULU_NATIVE_CONTROLLER", "0") == "1"
         self._applied_input_modes: dict[str, InputMode] = {}
-        self._local_identity: LaunchIdentity | None = None
         self._controller_monitor_task: asyncio.Task[None] | None = None
         self._inputplumber_bus: MessageBus | None = None
         self._inputplumber_proxy: object | None = None
         self._inputplumber_properties: object | None = None
         self._inputplumber_event: asyncio.Event | None = None
-        self._initialized_composites: dict[str, tuple[str, tuple[str, ...]]] = {}
+        self._initialized_composites: set[str] = set()
         self._presentation_watchdog_task: asyncio.Task[None] | None = None
         self._shell_selection_task: asyncio.Task[None] | None = None
         self._bootstrap_output = os.environ.get("LULU_OUTPUT_CONNECTOR")
@@ -83,8 +79,6 @@ class ConsoleSessionInterface(ServiceInterface):
                 **self.supervisor.state_details(),
             }
         )
-        if self._local_identity is not None:
-            state["active_identity"] = asdict(self._local_identity)
         return json.dumps(state, sort_keys=True)
 
     def _error(self, error: ValueError) -> DBusError:
@@ -96,10 +90,9 @@ class ConsoleSessionInterface(ServiceInterface):
     async def start_controller_monitor(self) -> None:
         composites = await asyncio.to_thread(self._inputplumber.runtime_composite_statuses)
         self.controller_registry.observe_runtime_composites(composites)
-        for object_path, composite in composites.items():
-            _, source_paths = composite
+        for object_path, (_, source_paths) in composites.items():
             if source_paths:
-                await self._initialize_composite(object_path, composite)
+                await self._initialize_composite(object_path)
         self._inputplumber_event = asyncio.Event()
         self._inputplumber_bus = await MessageBus(bus_type=BusType.SYSTEM).connect()
         introspection = await self._inputplumber_bus.introspect(
@@ -119,32 +112,23 @@ class ConsoleSessionInterface(ServiceInterface):
         if self._presentation_watchdog_enabled:
             self._presentation_watchdog_task = asyncio.create_task(self._monitor_presentation())
 
-    async def _initialize_composite(
-        self, object_path: str, composite: tuple[str, tuple[str, ...]] | None = None
-    ) -> None:
-        if composite is None:
-            composite = await asyncio.to_thread(self._inputplumber.composite_status, object_path)
-        if not composite[1] or self._initialized_composites.get(object_path) == composite:
+    async def _initialize_composite(self, object_path: str) -> None:
+        if object_path in self._initialized_composites:
             return
         await asyncio.to_thread(
-            self._inputplumber.ensure_default_intercept,
+            self._inputplumber.set_intercept_mode,
+            1,
             object_path,
         )
-        # A recreated composite always starts from the safe gamepad baseline;
-        # Compatibility Mode must never survive a device rebuild.
-        reset_mode = InputMode.SHELL if self.model.state.lifecycle.value == "shell" else InputMode.GAME
-        self._apply_input_mode(reset_mode)
-        self.model.set_input_mode(reset_mode)
-        self._initialized_composites[object_path] = composite
+        self._initialized_composites.add(object_path)
         logging.getLogger("lulu.sessiond").info(
-            "initialized InputPlumber profile=Default InterceptMode=1 composite=%s", object_path
+            "initialized InputPlumber InterceptMode=1 composite=%s", object_path
         )
 
     async def _monitor_presentation(self) -> None:
         while True:
             try:
-                if self.model.state.lifecycle.value != "game":
-                    self.supervisor.ensure_shell_presentation()
+                self.supervisor.ensure_shell_presentation()
             except (OSError, RuntimeError, TimeoutError, subprocess.SubprocessError) as error:
                 logging.getLogger("lulu.sessiond").warning("shell presentation check failed: %s", error)
             await asyncio.sleep(0.5)
@@ -154,6 +138,8 @@ class ConsoleSessionInterface(ServiceInterface):
         composites: dict[str, tuple[str, tuple[str, ...]]],
         mode: InputMode,
     ) -> None:
+        if getattr(self, "_native_controller", False):
+            return
         connected_paths = {
             runtime_path
             for runtime_path, (_, source_paths) in composites.items()
@@ -165,10 +151,7 @@ class ConsoleSessionInterface(ServiceInterface):
         for runtime_path in sorted(connected_paths):
             if self._applied_input_modes.get(runtime_path) is mode:
                 continue
-            if getattr(self, "_native_controller", False) and mode is not InputMode.COMPAT:
-                self._inputplumber.ensure_default_intercept(runtime_path)
-            else:
-                self._inputplumber.load_mode(mode, runtime_path)
+            self._inputplumber.load_mode(mode, runtime_path)
             self._applied_input_modes[runtime_path] = mode
 
     def _apply_input_mode(self, mode: InputMode) -> None:
@@ -178,10 +161,7 @@ class ConsoleSessionInterface(ServiceInterface):
         else:
             # Preserve the no-controller path; a future composite will converge
             # through the monitor when it appears.
-            if getattr(self, "_native_controller", False) and mode is not InputMode.COMPAT:
-                self._inputplumber.ensure_default_intercept()
-            else:
-                self._inputplumber.load_mode(mode)
+            self._inputplumber.load_mode(mode)
 
     async def _monitor_controller_events(self) -> None:
         if self._inputplumber_event is None:
@@ -191,20 +171,16 @@ class ConsoleSessionInterface(ServiceInterface):
             self._inputplumber_event.clear()
             try:
                 composites = await asyncio.to_thread(self._inputplumber.runtime_composite_statuses)
-            except (OSError, RuntimeError, ValueError, subprocess.SubprocessError):
+            except (OSError, RuntimeError, ValueError):
                 continue
-            self._initialized_composites = {
-                path: signature
-                for path, signature in self._initialized_composites.items()
-                if path in composites and composites[path] == signature
-            }
+            self._initialized_composites.intersection_update(composites)
             before = self.controller_registry.navigation_controller_id, tuple(
                 (key, value.connected) for key, value in self.controller_registry.controllers.items()
             )
             self.controller_registry.observe_runtime_composites(composites)
-            for object_path, composite in composites.items():
-                if composite[1]:
-                    await self._initialize_composite(object_path, composite)
+            for object_path, (_, source_paths) in composites.items():
+                if source_paths and object_path not in self._initialized_composites:
+                    await self._initialize_composite(object_path)
             after = self.controller_registry.navigation_controller_id, tuple(
                 (key, value.connected) for key, value in self.controller_registry.controllers.items()
             )
@@ -291,50 +267,6 @@ class ConsoleSessionInterface(ServiceInterface):
         return self._state_json()
 
     @method()
-    def BeginLocalSession(self, game_id: "s", pid: "u", pgid: "u", executable: "s", argv: "as") -> "s":
-        if self._local_identity is not None:
-            raise self._error(ValueError("another local session owns the session"))
-        token: str | None = None
-        try:
-            token = self.model.request_launch(game_id)
-            self.model.launch_starting(token)
-            self._local_identity = LaunchIdentity(token, pid, pgid, executable, tuple(argv))
-            self._apply_input_mode(InputMode.GAME)
-            self.model.primary_started(token, input_mode=InputMode.GAME)
-        except (OSError, ValueError, TimeoutError) as error:
-            self._local_identity = None
-            if token is not None and self.model.state.lifecycle is not Lifecycle.SHELL:
-                self.model.fail(token, f"local launch failed: {error}")
-                self.model.return_complete(token)
-            raise self._error(ValueError(str(error))) from error
-        self.StateChanged(self._state_json())
-        return token
-
-    @method()
-    def EndLocalSession(self, token: "s", exit_code: "i") -> "":
-        if self._local_identity is None or self._local_identity.token != token:
-            return
-        identity = self._local_identity
-        if self.model.state.lifecycle is Lifecycle.GAME:
-            self.model.primary_exited(token, success=exit_code == 0)
-            self.model.record_result(ProcessResult(
-                token=token,
-                pid=identity.pid,
-                pgid=identity.pgid,
-                executable=identity.executable,
-                argv=identity.argv,
-                exit_code=exit_code if exit_code >= 0 else None,
-                signal=-exit_code if exit_code < 0 else None,
-                outcome="success" if exit_code == 0 else "failed",
-                error=None if exit_code == 0 else f"process exited with status {exit_code}",
-            ))
-            self._apply_input_mode(InputMode.SHELL)
-            self.model.set_input_mode(InputMode.SHELL)
-            self.model.return_complete(token)
-        self._local_identity = None
-        self.StateChanged(self._state_json())
-
-    @method()
     async def RequestLaunch(self, command: "as", startup_timeout_ms: "u") -> "s":
         try:
             token = await self.supervisor.launch(list(command), startup_timeout_ms)
@@ -355,17 +287,6 @@ class ConsoleSessionInterface(ServiceInterface):
             return self.supervisor.queue_steam_launch(app_id, startup_timeout_ms)
         except ValueError as error:
             raise self._error(error) from error
-
-    @method()
-    async def CancelLaunch(self) -> "":
-        task = asyncio.current_task()
-        LOGGER.info("CANCEL_DBUS_ENTER task=%s task_id=%s", task.get_name() if task is not None else "none", id(task) if task is not None else None)
-        try:
-            await self.supervisor.cancel_launch()
-        except ValueError as error:
-            raise self._error(error) from error
-        finally:
-            LOGGER.info("CANCEL_DBUS_FINALLY task=%s task_id=%s", task.get_name() if task is not None else "none", id(task) if task is not None else None)
 
     @method()
     async def RequestSteamStore(self, startup_timeout_ms: "u") -> "s":
@@ -396,36 +317,16 @@ class ConsoleSessionInterface(ServiceInterface):
             raise self._error(error) from error
 
     @method()
-    async def ResetMudos(self) -> "s":
-        asyncio.create_task(self._reset_mudos())
-        return "reset-requested"
-
-    async def _reset_mudos(self) -> None:
-        await self.stop_controller_monitor()
-        await self.supervisor.stop()
-        os.kill(os.getpid(), os_signal.SIGTERM)
-
-    @method()
     def SetInputMode(self, mode: "s") -> "":
         try:
-            requested = InputMode(mode)
-            if requested is InputMode.COMPAT and self.model.state.lifecycle.value != "game":
-                raise ValueError("Compatibility Mode requires an active application")
-            self._apply_input_mode(requested)
-            self.model.set_input_mode(requested)
+            self.model.set_input_mode(InputMode(mode))
         except (ValueError, KeyError) as error:
-            raise self._error(ValueError(str(error))) from error
+            raise self._error(ValueError(f"invalid input mode: {mode}")) from error
         self.StateChanged(self._state_json())
 
     @signal()
     def StateChanged(self, state: "s") -> "s":
         return state
-
-
-async def _wait_for_stop(stop_event: asyncio.Event) -> None:
-    LOGGER.info("sessiond idle; waiting for stop signal")
-    await stop_event.wait()
-    LOGGER.info("sessiond stop requested; beginning shutdown")
 
 
 async def serve(bus_type: BusType = BusType.SESSION, bootstrap_shell: bool = False) -> None:
@@ -439,13 +340,9 @@ async def serve(bus_type: BusType = BusType.SESSION, bootstrap_shell: bool = Fal
         await interface.bootstrap_shell()
     stop_event = asyncio.Event()
     loop = asyncio.get_running_loop()
-    def request_stop(stop_signal: os_signal.Signals) -> None:
-        LOGGER.info("sessiond received stop signal=%s", stop_signal.name)
-        stop_event.set()
-
     for stop_signal in (os_signal.SIGINT, os_signal.SIGTERM):
-        loop.add_signal_handler(stop_signal, request_stop, stop_signal)
-    await _wait_for_stop(stop_event)
+        loop.add_signal_handler(stop_signal, stop_event.set)
+    await stop_event.wait()
     await interface.stop_controller_monitor()
     await interface.supervisor.stop()
     bus.disconnect()

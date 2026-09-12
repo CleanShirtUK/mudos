@@ -1,4 +1,4 @@
-"""Small Steam client adapter for resident-client AppID launches."""
+"""Small Steam client adapter for on-demand and resident AppID launches."""
 
 from dataclasses import dataclass
 import asyncio
@@ -8,7 +8,6 @@ from pathlib import Path
 import re
 import signal
 import subprocess
-
 from .launch_identity import LaunchIdentity
 
 
@@ -16,6 +15,8 @@ from .launch_identity import LaunchIdentity
 class SteamLaunchRequest:
     app_id: str
     launcher: asyncio.subprocess.Process
+    existing_pids: tuple[int, ...] = ()
+    submitted_at: float = 0.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -46,9 +47,11 @@ class SteamProvider:
         self.executable = executable
         self.poll_interval = poll_interval
         self._logger = logging.getLogger("lulu.steam-provider")
+        self._owned_client_pids: set[int] = set()
+        self._owned_client_pgid: int | None = None
 
     def open_game_details(self, app_id: str) -> str:
-        """Navigate the existing Steam client without taking lifecycle ownership."""
+        """Navigate the Steam client without taking lifecycle ownership."""
         if not app_id.isdecimal() or int(app_id) < 1:
             raise ValueError("Steam AppID must be a positive integer")
         uri = f"steam://nav/games/details/{app_id}"
@@ -66,7 +69,7 @@ class SteamProvider:
         return uri
 
     def launch_gamepad_title(self, app_id: str) -> str:
-        """Ask the resident Steam client to launch an AppID after navigation."""
+        """Ask the Steam client to launch an AppID after navigation."""
         if not app_id.isdecimal() or int(app_id) < 1:
             raise ValueError("Steam AppID must be a positive integer")
         uri = f"steam://rungameid/{app_id}"
@@ -83,6 +86,46 @@ class SteamProvider:
         )
         self._logger.info("requested Steam launch app_id=%s uri=%s", app_id, uri)
         return uri
+
+    def _dispatch_uri(self, uri: str) -> str:
+        environment = os.environ.copy()
+        environment.setdefault("DISPLAY", ":0")
+        subprocess.Popen([self.executable, uri], stdin=subprocess.DEVNULL,
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                         start_new_session=True, env=environment)
+        return uri
+
+    def open_gamepadui(self) -> str:
+        return self._dispatch_uri("steam://open/gamepadui")
+
+    def open_store(self) -> str:
+        return self._dispatch_uri("steam://open/store")
+
+    def open_downloads(self) -> str:
+        uri = "steam://open/downloads"
+        environment = os.environ.copy()
+        environment.setdefault("DISPLAY", ":0")
+        subprocess.Popen([self.executable, uri], stdin=subprocess.DEVNULL,
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                         start_new_session=True, env=environment)
+        return uri
+
+    def gamepadui_pids(self) -> list[int]:
+        pids: list[int] = []
+        for entry in Path("/proc").iterdir():
+            if not entry.name.isdecimal():
+                continue
+            try:
+                if entry.stat().st_uid != os.getuid():
+                    continue
+                executable = os.path.realpath(f"/proc/{entry.name}/exe")
+                argv = self._argv(int(entry.name))
+            except (FileNotFoundError, PermissionError, OSError):
+                continue
+            text = f"{executable} {' '.join(argv)}".lower()
+            if "-uimode=7" in text or "gamepadui" in text:
+                pids.append(int(entry.name))
+        return pids
 
     def list_installed(self, roots: tuple[Path, ...] | None = None) -> list[InstalledSteamGame]:
         roots = roots or self._library_roots()
@@ -159,6 +202,88 @@ class SteamProvider:
 
         return parse_object()
 
+    async def ensure_client(self, existing: set[int] | None = None) -> None:
+        existing = set(self._steam_client_pids()) if existing is None else existing
+        if existing:
+            return
+        environment = os.environ.copy()
+        environment.setdefault("DISPLAY", ":0")
+        launcher = await asyncio.create_subprocess_exec(
+            self.executable, "-silent",
+            stdin=asyncio.subprocess.DEVNULL,
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.DEVNULL,
+            start_new_session=True,
+            env=environment,
+        )
+        self._owned_client_pids.add(launcher.pid)
+        self._owned_client_pgid = os.getpgid(launcher.pid)
+        try:
+            ready = await self._wait_for_steam_client()
+        except asyncio.CancelledError:
+            await self.stop_owned_client()
+            raise
+        self._owned_client_pids.update(set(ready) - existing)
+
+    def _process_tree(self, roots: set[int]) -> set[int]:
+        owned = set(roots)
+        changed = True
+        while changed:
+            changed = False
+            for entry in Path("/proc").iterdir():
+                if not entry.name.isdecimal():
+                    continue
+                try:
+                    status = entry.joinpath("status").read_text()
+                except (FileNotFoundError, PermissionError, OSError):
+                    continue
+                parent = re.search(r"^PPid:\s+(\d+)$", status, re.MULTILINE)
+                if parent is not None and int(parent.group(1)) in owned and int(entry.name) not in owned:
+                    owned.add(int(entry.name))
+                    changed = True
+        return owned
+
+    def _process_group_members(self, pgid: int) -> set[int]:
+        members: set[int] = set()
+        for entry in Path("/proc").iterdir():
+            if not entry.name.isdecimal():
+                continue
+            try:
+                pid = int(entry.name)
+                if os.getpgid(pid) == pgid:
+                    members.add(pid)
+            except (FileNotFoundError, PermissionError, ProcessLookupError, OSError):
+                continue
+        return members
+
+    async def stop_owned_client(self) -> None:
+        if not self._owned_client_pids and self._owned_client_pgid is None:
+            return
+        owned = set(self._owned_client_pids)
+        if self._owned_client_pgid is not None:
+            owned.update(self._process_group_members(self._owned_client_pgid))
+        owned = self._process_tree(owned)
+        if self._owned_client_pgid is not None:
+            owned.update(self._process_group_members(self._owned_client_pgid))
+            owned = self._process_tree(owned)
+        for pid in sorted(owned, reverse=True):
+            try:
+                os.kill(pid, signal.SIGTERM)
+            except ProcessLookupError:
+                pass
+        deadline = asyncio.get_running_loop().time() + 5.0
+        while asyncio.get_running_loop().time() < deadline:
+            if not any(Path(f"/proc/{pid}").exists() for pid in owned):
+                break
+            await asyncio.sleep(self.poll_interval)
+        for pid in sorted(owned, reverse=True):
+            try:
+                os.kill(pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+        self._owned_client_pids.clear()
+        self._owned_client_pgid = None
+
     async def request_launch(self, app_id: str) -> SteamLaunchRequest:
         if not app_id.isdecimal() or int(app_id) < 1:
             raise ValueError("Steam AppID must be a positive integer")
@@ -170,16 +295,7 @@ class SteamProvider:
         steam_pids = self._steam_client_pids()
         self._logger.info("launch request app_id=%s steam_pids=%s", app_id, steam_pids)
         if not steam_pids:
-            await asyncio.create_subprocess_exec(
-                self.executable,
-                "-silent",
-                stdin=asyncio.subprocess.DEVNULL,
-                stdout=asyncio.subprocess.DEVNULL,
-                stderr=asyncio.subprocess.DEVNULL,
-                start_new_session=True,
-                env=environment,
-            )
-            await self._wait_for_steam_client()
+            await self.ensure_client(set(steam_pids))
         process = await asyncio.create_subprocess_exec(
             self.executable,
             "-silent",
@@ -192,14 +308,137 @@ class SteamProvider:
             env=environment,
         )
         self._logger.info("launch submitted app_id=%s launcher_pid=%s", app_id, process.pid)
-        return SteamLaunchRequest(app_id, process)
+        return SteamLaunchRequest(app_id, process, tuple(existing), asyncio.get_running_loop().time())
 
-    async def _wait_for_steam_client(self, timeout: float = 15.0) -> None:
+    async def stop_request(self, request: SteamLaunchRequest) -> None:
+        task = asyncio.current_task()
+        task_name = task.get_name() if task is not None else "none"
+        task_id = id(task) if task is not None else None
+        self._logger.info("CANCEL_STOP_REQUEST_ENTER request_id=%s task=%s task_id=%s", id(request), task_name, task_id)
+        try:
+            await self._stop_request_impl(request)
+        except asyncio.CancelledError:
+            self._logger.exception("CANCEL_STOP_REQUEST_CANCELLED request_id=%s task=%s task_id=%s cancelling=%s", id(request), task_name, task_id, task.cancelling() if task is not None else None)
+            raise
+        finally:
+            self._logger.info("CANCEL_STOP_REQUEST_FINALLY request_id=%s task=%s task_id=%s", id(request), task_name, task_id)
+
+    async def _stop_request_impl(self, request: SteamLaunchRequest) -> None:
+        """Stop a pending launch and only targets created after its request."""
+        loop = asyncio.get_running_loop()
+        cancel_started = loop.time()
+        request_id = f"{request.app_id}:{id(request)}"
+        existing_pids = set(request.existing_pids)
+        pids: set[int] = set()
+        groups: set[int] = set()
+        group_pids: dict[int, set[int]] = {}
+        seen_evidence: set[int] = set()
+        if request.launcher.returncode is None:
+            try:
+                group = os.getpgid(request.launcher.pid)
+                groups.add(group)
+                group_pids.setdefault(group, set()).add(request.launcher.pid)
+            except ProcessLookupError:
+                pass
+        for group in groups:
+            try:
+                os.killpg(group, signal.SIGTERM)
+                self._logger.info("CANCEL_KILL request_id=%s pid=%s pgid=%s reason=launcher signal=SIGTERM result=sent", request_id, request.launcher.pid, group)
+            except ProcessLookupError:
+                self._logger.info("CANCEL_KILL request_id=%s pid=%s pgid=%s reason=launcher signal=SIGTERM result=gone", request_id, request.launcher.pid, group)
+        deadline = loop.time() + 5.0
+        iteration = 0
+        while loop.time() < deadline:
+            iteration += 1
+            scan_started = loop.time()
+            self._logger.info(
+                "CANCEL_SCAN_BEGIN request_id=%s appid=%s iteration=%s elapsed_since_cancel=%.6f elapsed_since_applaunch=%.6f",
+                request_id,
+                request.app_id,
+                iteration,
+                scan_started - cancel_started,
+                scan_started - request.submitted_at if request.submitted_at else -1.0,
+            )
+            markers = self._steam_launch_markers(request.app_id)
+            candidates = self._candidate_pids(request.app_id)
+            self._logger.info("CANCEL_SCAN_EVIDENCE request_id=%s appid=%s markers=%s candidates=%s", request_id, request.app_id, markers, candidates)
+            evidence = set(markers) | set(candidates)
+            for pid in evidence - seen_evidence:
+                try:
+                    details = self._cancel_process_details(pid)
+                except (AttributeError, FileNotFoundError, PermissionError, ProcessLookupError, OSError):
+                    continue
+                self._logger.info("CANCEL_PROCESS_APPEAR request_id=%s appid=%s pid=%s details=%r", request_id, request.app_id, pid, details)
+            seen_evidence.update(evidence)
+            for pid in set(candidates) - existing_pids - pids:
+                pids.add(pid)
+                try:
+                    group = os.getpgid(pid)
+                except ProcessLookupError:
+                    continue
+                groups.add(group)
+                group_pids.setdefault(group, set()).add(pid)
+                try:
+                    os.killpg(group, signal.SIGTERM)
+                    self._logger.info("CANCEL_KILL request_id=%s pid=%s pgid=%s reason=new AppID candidate signal=SIGTERM result=sent", request_id, pid, group)
+                except ProcessLookupError:
+                    self._logger.info("CANCEL_KILL request_id=%s pid=%s pgid=%s reason=new AppID candidate signal=SIGTERM result=gone", request_id, pid, group)
+            await asyncio.sleep(self.poll_interval)
+        for group in groups:
+            try:
+                os.killpg(group, signal.SIGKILL)
+                for pid in group_pids.get(group, {request.launcher.pid}):
+                    self._logger.info("CANCEL_KILL request_id=%s pid=%s pgid=%s reason=cleanup deadline signal=SIGKILL result=sent", request_id, pid, group)
+            except ProcessLookupError:
+                for pid in group_pids.get(group, {request.launcher.pid}):
+                    self._logger.info("CANCEL_KILL request_id=%s pid=%s pgid=%s reason=cleanup deadline signal=SIGKILL result=gone", request_id, pid, group)
+        remaining = self._candidate_pids(request.app_id)
+        total_elapsed = loop.time() - cancel_started
+        self._logger.info("CANCEL_CLEANUP_END request_id=%s appid=%s total_elapsed=%.6f scans=%s remaining_matching_pids=%s", request_id, request.app_id, total_elapsed, iteration, remaining)
+        asyncio.create_task(self._observe_cancel_aftercare(request, request_id, cancel_started, seen_evidence))
+
+    async def _observe_cancel_aftercare(
+        self,
+        request: SteamLaunchRequest,
+        request_id: str,
+        cancel_started: float,
+        seen_evidence: set[int],
+    ) -> None:
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + 2.0
+        while loop.time() < deadline:
+            evidence = set(self._steam_launch_markers(request.app_id)) | set(self._candidate_pids(request.app_id))
+            for pid in evidence - seen_evidence:
+                try:
+                    details = self._cancel_process_details(pid)
+                except (AttributeError, FileNotFoundError, PermissionError, ProcessLookupError, OSError):
+                    continue
+                self._logger.info("CANCEL_AFTERCARE_APPEAR request_id=%s appid=%s pid=%s elapsed_since_cancel=%.6f details=%r", request_id, request.app_id, pid, loop.time() - cancel_started, details)
+            seen_evidence.update(evidence)
+            await asyncio.sleep(self.poll_interval)
+
+    def _cancel_process_details(self, pid: int) -> dict[str, object]:
+        status = Path(f"/proc/{pid}/status").read_text()
+        parent = re.search(r"^PPid:\s+(\d+)$", status, re.MULTILINE)
+        environment = self._environment(pid)
+        return {
+            "ppid": int(parent.group(1)) if parent else None,
+            "pgid": os.getpgid(pid),
+            "executable": os.path.realpath(f"/proc/{pid}/exe"),
+            "argv": self._argv(pid),
+            "SteamAppId": environment.get("SteamAppId"),
+            "SteamGameId": environment.get("SteamGameId"),
+        }
+
+    async def _wait_for_steam_client(self, timeout: float = 15.0) -> list[int]:
         deadline = asyncio.get_running_loop().time() + timeout
-        while not self._steam_client_pids():
+        pids = self._steam_client_pids()
+        while not pids:
             if asyncio.get_running_loop().time() >= deadline:
                 raise TimeoutError("Steam client did not become ready")
             await asyncio.sleep(self.poll_interval)
+            pids = self._steam_client_pids()
+        return pids
 
     async def observe_launch(
         self, request: SteamLaunchRequest, token: str, orphan_watchdog: float = 300.0

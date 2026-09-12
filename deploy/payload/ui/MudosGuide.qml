@@ -13,7 +13,7 @@ Window {
     Rectangle {
         anchors.centerIn: parent
         width: 520
-        height: 220
+        height: 310
         color: "#f70b1018"
         border.color: "#ff7e87ff"
         border.width: 2
@@ -31,9 +31,16 @@ Window {
             y: 76
             spacing: 12
             Repeater {
-                model: guideModel.providerMenuAvailable
-                    ? ["Provider Menu", "Quit Current Application"]
-                    : ["Quit Current Application"]
+                model: {
+                    var actions = ["Reset Mudos"]
+                    if (guideModel.providerMenuAvailable)
+                        actions.push(guideModel.providerMenuLabel)
+                    if (guideModel.compatibilityModeAvailable)
+                        actions.push(guideModel.compatibilityMode
+                            ? "Switch to Gamepad Mode" : "Switch to Compatibility Mode")
+                    actions.push("Quit Current Application")
+                    return actions
+                }
                 delegate: Rectangle {
                     width: 472
                     height: 48

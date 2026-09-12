@@ -17,7 +17,7 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertIn('readonly property string apiUrl:', QML)
         self.assertIn("function activate()", QML)
         self.assertIn("function moveDomain(delta)", QML)
-        self.assertIn('message = "Store space is not implemented"', QML)
+        self.assertIn("function openSteamStore()", QML)
         self.assertIn('message = "System space is not implemented"', QML)
         self.assertIn('function openGameOptions(game)', QML)
         self.assertIn('event.key === Qt.Key_X', QML)
@@ -69,6 +69,21 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertIn('readonly property string libraryScope:', QML)
         self.assertNotIn("/dev/input", QML)
         self.assertNotIn("Social", QML)
+
+    def test_reset_mudos_uses_the_shared_session_boundary(self) -> None:
+        guide = (ROOT / "ui" / "MudosGuide.qml").read_text()
+        system_space = (ROOT / "ui" / "SystemSpace.qml").read_text()
+        bridge = (ROOT / "scripts" / "console-ui-bridge.py").read_text()
+        native_guide = (ROOT / "native" / "mudos-guide.cpp").read_text()
+        self.assertIn('"Reset Mudos"', guide)
+        self.assertIn('"Switch to Compatibility Mode"', guide)
+        self.assertIn('"Switch to Gamepad Mode"', guide)
+        self.assertIn('call("SetInputMode"', native_guide)
+        self.assertIn('state.value("lifecycle").toString() != QStringLiteral("shell")', native_guide)
+        self.assertIn('key === "lulu.reset"', system_space + QML)
+        self.assertIn('request("/reset", "POST"', QML)
+        self.assertIn("call_reset_mudos", bridge)
+        self.assertIn('path == "/reset"', bridge)
 
     def test_extracted_ui_primitives_preserve_real_game_card_data(self) -> None:
         for filename in ("GameCard.qml", "RecentHome.qml", "LibraryHome.qml", "LibrarySpace.qml", "PlaceholderHome.qml"):
@@ -464,7 +479,31 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertIn("if (stateRank < launchStateRank)", QML)
         self.assertIn('state.lifecycle === "presentation_pending"', QML)
         self.assertNotIn('launchStatus === "launching" || launchStatus === "running"', QML)
+        self.assertIn("anchors.fill: parent", QML)
+        self.assertIn("launchOverlayRetired = true", QML)
+        self.assertIn("visible: root.launchOverlayVisible && !root.launchOverlayRetired", QML)
+        self.assertIn("launchToken = data.token", QML)
 
+        self.assertIn("refreshLaunchLog(root.launchGeneration)", QML)
+        self.assertLess(QML.index("launchToken = data.token"), QML.index("            refreshLaunchState(generation)"))
+        self.assertLess(QML.index("retireLaunchOverlay(generation)"), QML.index("function refreshLaunchLog(generation)"))
+        self.assertIn('request("/cancel", "POST"', QML)
+        self.assertIn('value === "back"', QML)
+        self.assertIn('launchTitle = "Steam Store"', QML)
+        bridge = (ROOT / "scripts" / "console-ui-bridge.py").read_text()
+        self.assertIn('self.launch_logs.start("steam-store")', bridge)
+
+
+    def test_steam_overlay_has_game_presentation_shell_return_failsafe(self) -> None:
+        self.assertIn("property bool shellWasLeft: false", QML)
+        self.assertIn("function finishLaunchOnShellReturn()", QML)
+        self.assertIn("root.shellWasLeft = true", QML)
+        self.assertIn("root.shellWasLeft = true", QML)
+        self.assertIn("if (root.shellWasLeft && root.gamePresentationObserved)", QML)
+        self.assertIn("launchLogTimer.stop()", QML)
+        self.assertIn("launchLogLines = []", QML)
+        self.assertIn("launchGeneration++", QML)
+        self.assertIn('root.launchGameId.indexOf("steam:") === 0', QML)
 
 if __name__ == "__main__":
     unittest.main()

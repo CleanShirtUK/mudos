@@ -4,10 +4,22 @@ from pathlib import Path
 
 from lulu.emulator_runtime import EmulatorRuntimeAdapter
 from lulu.controller_provisioning import ensure_provider_controller_config
+from lulu.consoled import _retroarch_child_config
 from lulu.local_content import LocalContentGame
 
 
 class EmulatorRuntimeTests(unittest.TestCase):
+    def test_retroarch_child_config_does_not_emit_invalid_negative_joypad_index(self) -> None:
+        config_path = Path(_retroarch_child_config({1: 0, 2: 1, 3: 2}))
+        try:
+            content = config_path.read_text()
+        finally:
+            config_path.unlink()
+
+        self.assertIn('input_player1_joypad_index = "1"', content)
+        self.assertNotIn("-1", content)
+        self.assertNotIn("input_player4_joypad_index", content)
+
     def test_retroarch_provider_menu_capability_and_command(self) -> None:
         self.assertTrue(EmulatorRuntimeAdapter.supports_provider_menu("nes"))
         self.assertEqual(

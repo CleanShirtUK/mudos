@@ -100,6 +100,7 @@ class SystemSettingsProvider:
 
     def _system_settings(self) -> list[SystemSetting]:
         return [
+            SystemSetting("lulu.reset", "Reset Mudos", "action", "restart session", "Restarts the Lulu graphical session", True),
             _status("system.hostname", "Device name", socket.gethostname()),
             _status("system.os", "Operating system", platform.platform()),
             _status("system.kernel", "Kernel", platform.release()),

@@ -131,7 +131,8 @@ def default_inputplumber_client(config_root: Path) -> InputPlumberClient:
     return InputPlumberClient(
         object_path="/org/shadowblip/InputPlumber/CompositeDevice0",
         profile_paths={
-            mode: config_root / "profiles" / f"{mode.value}.yaml"
-            for mode in InputMode
+            InputMode.SHELL: config_root / "profiles" / "shell.yaml",
+            InputMode.GAME: config_root / "profiles" / "game.yaml",
+            InputMode.COMPAT: config_root / "profiles" / "compat.yaml",
         },
     )

@@ -1,4 +1,88 @@
 version: 1
 kind: DeviceProfile
 name: Lulu COMPAT
-mapping: []
+description: Temporary controller to keyboard and mouse mapping for external UI recovery
+mapping:
+  - name: Guide
+    source_event:
+      gamepad:
+        button: Guide
+    target_events:
+      - dbus: ui_guide
+  - name: D-pad up
+    source_event:
+      gamepad:
+        button: DPadUp
+    target_events:
+      - keyboard: KeyUp
+      - dbus: ui_up
+  - name: D-pad down
+    source_event:
+      gamepad:
+        button: DPadDown
+    target_events:
+      - keyboard: KeyDown
+      - dbus: ui_down
+  - name: D-pad left
+    source_event:
+      gamepad:
+        button: DPadLeft
+    target_events:
+      - keyboard: KeyLeft
+      - dbus: ui_left
+  - name: D-pad right
+    source_event:
+      gamepad:
+        button: DPadRight
+    target_events:
+      - keyboard: KeyRight
+      - dbus: ui_right
+  - name: Left stick mouse
+    source_event:
+      gamepad:
+        axis:
+          name: LeftStick
+    target_events:
+      - mouse:
+          motion:
+            speed_pps: 800
+  - name: A primary activation
+    source_event:
+      gamepad:
+        button: South
+    target_events:
+      - mouse:
+          button: Left
+      - dbus: ui_accept
+  - name: B escape
+    source_event:
+      gamepad:
+        button: East
+    target_events:
+      - keyboard: KeyEsc
+      - dbus: ui_back
+  - name: Menu enter
+    source_event:
+      gamepad:
+        button: Start
+    target_events:
+      - keyboard: KeyEnter
+      - dbus: ui_accept
+  - name: View tab
+    source_event:
+      gamepad:
+        button: Select
+    target_events:
+      - keyboard: KeyTab
+  - name: LB shift tab
+    source_event:
+      gamepad:
+        button: LeftBumper
+    target_events:
+      - keyboard: KeyPageUp
+  - name: RB tab
+    source_event:
+      gamepad:
+        button: RightBumper
+    target_events:
+      - keyboard: KeyTab

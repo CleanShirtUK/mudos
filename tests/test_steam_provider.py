@@ -4,6 +4,8 @@ from pathlib import Path
 import tempfile
 from unittest.mock import AsyncMock, Mock
 from unittest.mock import patch
+import signal
+from unittest.mock import call
 
 from lulu.console_sessiond import SessionStateModel
 from lulu.contracts import InputMode, Presentation
@@ -17,6 +19,9 @@ class FakeSteamProvider:
         self.exited = asyncio.Event()
         self.started = asyncio.Event()
         self.started.set()
+
+    async def stop_owned_client(self) -> None:
+        return
 
     async def request_launch(self, app_id: str) -> SteamLaunchRequest:
         return SteamLaunchRequest(app_id, Mock())
@@ -81,12 +86,12 @@ class SteamProviderTests(unittest.TestCase):
             launch_task = asyncio.create_task(supervisor.launch_steam("40800", 1))
             await asyncio.sleep(0)
             self.assertEqual(session.state.lifecycle.value, "starting")
-            self.assertEqual(presentation.events, [("clear", None)])
+            self.assertEqual(presentation.events, [])
 
             provider.started.set()
             token = await launch_task
             self.assertEqual(session.state.lifecycle.value, "game")
-            self.assertEqual(presentation.events, [("clear", None), ("game", 42)])
+            self.assertEqual(presentation.events, [("game", 42)])
 
             provider.exited.set()
             await supervisor._watch_task
@@ -97,10 +102,11 @@ class SteamProviderTests(unittest.TestCase):
     def test_request_launch_starts_steam_infrastructure_before_applaunch(self) -> None:
         async def exercise() -> None:
             provider = SteamProvider(executable="steam", poll_interval=0)
-            launcher = Mock()
+            launcher = Mock(pid=1446)
             with patch.object(provider, "_steam_client_pids", side_effect=[[], [123]]) as clients:
-                with patch("asyncio.create_subprocess_exec", new_callable=AsyncMock, return_value=launcher) as create:
-                    request = await provider.request_launch("220780")
+                with patch("lulu.steam_provider.os.getpgid", return_value=1446):
+                    with patch("asyncio.create_subprocess_exec", new_callable=AsyncMock, return_value=launcher) as create:
+                        request = await provider.request_launch("220780")
 
             self.assertEqual(request.app_id, "220780")
             self.assertEqual(create.call_count, 2)
@@ -109,6 +115,166 @@ class SteamProviderTests(unittest.TestCase):
             self.assertEqual(create.call_args_list[0].kwargs["env"]["DISPLAY"], ":0")
             self.assertEqual(create.call_args_list[1].kwargs["env"]["DISPLAY"], ":0")
             self.assertGreaterEqual(clients.call_count, 2)
+            self.assertEqual(provider._owned_client_pids, {123, 1446})
+
+        asyncio.run(exercise())
+
+    def test_owned_group_includes_launcher_ancestor_and_members(self) -> None:
+        async def exercise() -> None:
+            provider = SteamProvider(poll_interval=0)
+            provider._owned_client_pids = {1563}
+            provider._owned_client_pgid = 1446
+            provider._process_group_members = Mock(return_value={1446, 1563, 1794})
+            provider._process_tree = Mock(side_effect=[{1446, 1563, 1697, 1794}, {1446, 1563, 1697, 1794}])
+            with patch("lulu.steam_provider.os.kill") as kill:
+                with patch("lulu.steam_provider.Path.exists", return_value=False):
+                    await provider.stop_owned_client()
+            self.assertIn(call(1446, signal.SIGTERM), kill.call_args_list)
+            self.assertIn(call(1563, signal.SIGTERM), kill.call_args_list)
+            self.assertEqual(provider._owned_client_pids, set())
+            self.assertIsNone(provider._owned_client_pgid)
+
+        asyncio.run(exercise())
+
+    def test_stop_request_catches_appid_process_created_during_cleanup(self) -> None:
+        async def exercise() -> None:
+            provider = SteamProvider(poll_interval=0)
+            launcher = Mock(pid=1446, returncode=0)
+            request = SteamLaunchRequest("40800", launcher, ())
+            now = 0
+
+            def time() -> int:
+                nonlocal now
+                now += 1
+                return now
+
+            clock = Mock(time=time)
+            candidates = Mock(side_effect=lambda _app_id: [] if candidates.call_count == 1 else [25878])
+
+            with patch.object(provider, "_candidate_pids", candidates):
+                with patch("lulu.steam_provider.asyncio.get_running_loop", return_value=clock):
+                    with patch("lulu.steam_provider.os.getpgid", return_value=25843):
+                        with patch("lulu.steam_provider.os.killpg") as killpg:
+                            await provider.stop_request(request)
+
+            self.assertGreaterEqual(candidates.call_count, 2)
+            self.assertIn(call(25843, signal.SIGTERM), killpg.call_args_list)
+            self.assertIn(call(25843, signal.SIGKILL), killpg.call_args_list)
+
+        asyncio.run(exercise())
+
+    def test_duplicate_cancel_launches_join_without_incrementing_cancellation(self) -> None:
+        class Provider(FakeSteamProvider):
+            def __init__(self) -> None:
+                super().__init__()
+                self.started.clear()
+                self.observing = asyncio.Event()
+                self.cleanup_started = asyncio.Event()
+                self.cleanup_release = asyncio.Event()
+
+            async def observe_launch(
+                self, request: SteamLaunchRequest, token: str, orphan_watchdog: float = 300.0
+            ) -> SteamLaunch:
+                self.observing.set()
+                await self.started.wait()
+                return await super().observe_launch(request, token, orphan_watchdog)
+
+            async def stop_request(self, request: SteamLaunchRequest) -> None:
+                self.cleanup_started.set()
+                await self.cleanup_release.wait()
+
+        async def exercise() -> None:
+            session = SessionStateModel()
+            provider = Provider()
+            supervisor = ProcessSupervisor(session, steam_provider=provider)
+            supervisor.queue_steam_launch("40800", 1000)
+            await provider.observing.wait()
+            target = supervisor._steam_launch_task
+            self.assertIsNotNone(target)
+
+            cancellations = [asyncio.create_task(supervisor.cancel_launch())]
+            await provider.cleanup_started.wait()
+            cancellations.extend(asyncio.create_task(supervisor.cancel_launch()) for _ in range(2))
+            await asyncio.sleep(0)
+            self.assertEqual(target.cancelling(), 1)
+
+            provider.cleanup_release.set()
+            results = await asyncio.gather(*cancellations, return_exceptions=True)
+            self.assertEqual(results, [None, None, None])
+            self.assertEqual(target.cancelling(), 1)
+            self.assertTrue(target.done())
+
+        asyncio.run(exercise())
+
+    def test_phase_b_cancellation_stops_owned_steam_before_pending_cleanup(self) -> None:
+        class Provider(FakeSteamProvider):
+            def __init__(self, owns_steam: bool) -> None:
+                super().__init__()
+                self.started.clear()
+                self.observing = asyncio.Event()
+                self.cleanup_started = asyncio.Event()
+                self.cleanup_release = asyncio.Event()
+                self.owns_steam = owns_steam
+                self.events: list[str] = []
+
+            async def observe_launch(
+                self, request: SteamLaunchRequest, token: str, orphan_watchdog: float = 300.0
+            ) -> SteamLaunch:
+                self.observing.set()
+                await self.started.wait()
+                return await super().observe_launch(request, token, orphan_watchdog)
+
+            async def stop_owned_client(self) -> None:
+                if self.owns_steam:
+                    self.events.append("owned-steam-stopped")
+                    self.owns_steam = False
+                else:
+                    self.events.append("pre-existing-steam-preserved")
+
+            async def stop_request(self, request: SteamLaunchRequest) -> None:
+                self.events.append("pending-request-cleanup")
+                self.assert_owned_steam_stopped = getattr(self, "assert_owned_steam_stopped", None)
+                if self.assert_owned_steam_stopped is not None:
+                    self.assert_owned_steam_stopped()
+                self.cleanup_started.set()
+                await self.cleanup_release.wait()
+
+        async def exercise() -> None:
+            owned = Provider(True)
+            supervisor = ProcessSupervisor(SessionStateModel(), steam_provider=owned)
+            supervisor.queue_steam_launch("40800", 1000)
+            await owned.observing.wait()
+            owned.assert_owned_steam_stopped = lambda: self.assertFalse(owned.owns_steam)
+            cancel = asyncio.create_task(supervisor.cancel_launch())
+            await owned.cleanup_started.wait()
+            self.assertEqual(owned.events, ["owned-steam-stopped", "pending-request-cleanup"])
+            owned.cleanup_release.set()
+            await cancel
+
+            pre_existing = Provider(False)
+            supervisor = ProcessSupervisor(SessionStateModel(), steam_provider=pre_existing)
+            supervisor.queue_steam_launch("40800", 1000)
+            await pre_existing.observing.wait()
+            pre_existing.assert_owned_steam_stopped = lambda: self.assertTrue(not pre_existing.owns_steam)
+            cancel = asyncio.create_task(supervisor.cancel_launch())
+            await pre_existing.cleanup_started.wait()
+            self.assertEqual(pre_existing.events, ["pre-existing-steam-preserved", "pending-request-cleanup"])
+            pre_existing.cleanup_release.set()
+            await cancel
+
+        asyncio.run(exercise())
+
+    def test_preexisting_steam_is_not_claimed_or_stopped(self) -> None:
+        async def exercise() -> None:
+            provider = SteamProvider(poll_interval=0)
+            with patch.object(provider, "_steam_client_pids", return_value=[1563]):
+                with patch("asyncio.create_subprocess_exec", new_callable=AsyncMock) as create:
+                    await provider.ensure_client()
+            create.assert_not_awaited()
+            self.assertEqual(provider._owned_client_pids, set())
+            with patch("lulu.steam_provider.os.kill") as kill:
+                await provider.stop_owned_client()
+            kill.assert_not_called()
 
         asyncio.run(exercise())
 
@@ -132,6 +298,17 @@ class SteamProviderTests(unittest.TestCase):
         popen.assert_called_once()
         self.assertEqual(popen.call_args.args[0], ["steam", uri])
         self.assertTrue(popen.call_args.kwargs["start_new_session"])
+
+    def test_store_uses_on_demand_gamepad_uri_control_without_fixed_sleep(self) -> None:
+        provider = SteamProvider(executable="steam")
+        with patch("lulu.steam_provider.subprocess.Popen") as popen:
+            self.assertEqual(provider.open_gamepadui(), "steam://open/gamepadui")
+            self.assertEqual(provider.open_store(), "steam://open/store")
+        self.assertEqual([call.args[0] for call in popen.call_args_list], [
+            ["steam", "steam://open/gamepadui"],
+            ["steam", "steam://open/store"],
+        ])
+        self.assertNotIn("-gamepadui", popen.call_args_list[0].args[0])
 
     def test_request_launch_rejects_existing_target_before_duplicate_submission(self) -> None:
         async def exercise() -> None:
@@ -282,7 +459,7 @@ class SteamProviderTests(unittest.TestCase):
             self.assertEqual(modes, [InputMode.GAME, InputMode.SHELL])
             self.assertIsNone(supervisor.active_identity)
             self.assertEqual(session.last_result.token, token)
-            self.assertEqual(presentation.events, [("clear", None), ("game", 42), ("shell", 7)])
+            self.assertEqual(presentation.events, [("game", 42), ("shell", 7)])
             self.assertEqual(session.last_result.pid, 42)
 
         asyncio.run(exercise())
@@ -302,6 +479,69 @@ class SteamProviderTests(unittest.TestCase):
             self.assertEqual(presentation.events[-1], ("shell", 7))
             self.assertIsNone(supervisor.active_identity)
             self.assertEqual(session.last_result.token, token)
+
+        asyncio.run(exercise())
+
+    def test_steam_store_transitions_gamepad_ui_to_shell_and_can_repeat(self) -> None:
+        class Provider:
+            def __init__(self) -> None:
+                self.uris: list[str] = []
+                self.pids = [99]
+                self.stops = 0
+
+            async def ensure_client(self) -> None:
+                return
+
+            async def stop_owned_client(self) -> None:
+                self.stops += 1
+
+            def open_gamepadui(self) -> str:
+                self.uris.append("steam://open/gamepadui")
+                return self.uris[-1]
+
+            def open_store(self) -> str:
+                self.uris.append("steam://open/store")
+                return self.uris[-1]
+
+            def gamepadui_pids(self) -> list[int]:
+                return self.pids
+
+        class StorePresentation(RecordingPresentation):
+            def __init__(self) -> None:
+                super().__init__()
+                self.presented = True
+
+            def select_pids(self, pids, timeout: float) -> int:
+                self.events.append(("game", pids()[0]))
+                return pids()[0]
+
+            def window_is_focusable(self, window: int) -> bool:
+                return self.presented
+
+        async def exercise() -> None:
+            session = SessionStateModel()
+            provider = Provider()
+            presentation = StorePresentation()
+            supervisor = ProcessSupervisor(session, steam_provider=provider, presentation=presentation)
+            supervisor._shell_process = Mock(pid=7)
+
+            first = await supervisor.launch_steam_store(1000)
+            self.assertEqual(session.state.presentation, Presentation.FOREIGN_UI)
+            self.assertEqual(presentation.events, [("game", 99)])
+            presentation.presented = False
+            await supervisor._steam_store_watch_task
+            self.assertEqual(session.state.lifecycle.value, "shell")
+            self.assertEqual(presentation.events[-1], ("shell", 7))
+
+            presentation.presented = True
+            second = await supervisor.launch_steam_store(1000)
+            self.assertNotEqual(first, second)
+            presentation.presented = False
+            await supervisor._steam_store_watch_task
+            self.assertEqual(session.state.lifecycle.value, "shell")
+            self.assertEqual(provider.uris, ["steam://open/gamepadui", "steam://open/store"] * 2)
+            self.assertEqual(provider.stops, 2)
+            self.assertEqual(presentation.events, [("game", 99), ("shell", 7), ("game", 99), ("shell", 7)])
 
         asyncio.run(exercise())
 

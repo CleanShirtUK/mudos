@@ -61,10 +61,13 @@ class ProcessSupervisor:
         self._shell_identity: LaunchIdentity | None = None
         self._shell_watch_task: asyncio.Task[None] | None = None
         self._steam_launch_task: asyncio.Task[str] | None = None
+        self._steam_store_watch_task: asyncio.Task[None] | None = None
+        self._steam_store_window: int | None = None
         self._shell_output_tasks: list[asyncio.Task[None]] = []
         self._process_output_tasks: list[asyncio.Task[None]] = []
         self._logger = logging.getLogger("lulu.process-supervisor")
         self._presentation_watchdog = 10.0
+        self._active_launch_task: asyncio.Task[object] | None = None
 
     async def _drain_output(
         self, stream: asyncio.StreamReader, role: str, pid: int, channel: str
@@ -121,6 +124,7 @@ class ProcessSupervisor:
                 raise ValueError("another launch owns the session")
             token = self.model.request_launch(command[0])
             await self._notify()
+            self._active_launch_task = asyncio.current_task()
             try:
                 process = await asyncio.wait_for(
                     asyncio.create_subprocess_exec(
@@ -135,21 +139,40 @@ class ProcessSupervisor:
                 identity = LaunchIdentity(
                     token=token,
                     pid=process.pid,
-                    pgid=os.getpgid(process.pid),
+                    pgid=self._pgid_or_pid(process.pid),
                     executable=os.path.realpath(f"/proc/{process.pid}/exe"),
                     argv=tuple(command),
                 )
                 self._process = process
                 self._process_output_tasks = self._capture_output(process, command, "game")
                 self.active_identity = identity
+                self.model.launch_starting(token)
+                await self._notify()
                 if presentation_controller is not None:
-                    presentation_controller.clear_selection()
+                    if hasattr(presentation_controller, "select_pids"):
+                        await asyncio.to_thread(
+                            presentation_controller.select_pids, [process.pid], self._presentation_watchdog
+                        )
+                    else:
+                        await asyncio.to_thread(
+                            presentation_controller.select_pid, process.pid
+                        )
                 self._set_input_mode(input_mode)
                 self.model.primary_started(token, presentation=presentation, input_mode=input_mode)
                 await self._notify()
                 self._watch_task = asyncio.create_task(self._watch(identity, process))
+                self._active_launch_task = None
                 return token
-            except (OSError, asyncio.TimeoutError) as error:
+            except asyncio.CancelledError:
+                if "process" in locals():
+                    await self._terminate_group(os.getpgid(process.pid))
+                if self.model.state.lifecycle.value != "shell":
+                    self.model.fail(token, "launch cancelled")
+                    self.model.return_complete(token)
+                    await self._notify()
+                self._active_launch_task = None
+                raise
+            except (OSError, asyncio.TimeoutError, TimeoutError) as error:
                 reason = f"launch failed: {error}"
                 self.model.fail(token, reason)
                 self.model.record_result(
@@ -167,7 +190,15 @@ class ProcessSupervisor:
                 )
                 self.model.return_complete(token)
                 await self._notify()
+                self._active_launch_task = None
                 raise ValueError(reason) from error
+
+    
+    def _pgid_or_pid(self, pid: int) -> int:
+        try:
+            return os.getpgid(pid)
+        except ProcessLookupError:
+            return pid
 
     async def launch_shell(
         self,
@@ -197,7 +228,7 @@ class ProcessSupervisor:
                 identity = LaunchIdentity(
                     token=uuid4().hex,
                     pid=process.pid,
-                    pgid=os.getpgid(process.pid),
+                    pgid=self._pgid_or_pid(process.pid),
                     executable=os.path.realpath(f"/proc/{process.pid}/exe"),
                     argv=tuple(command),
                 )
@@ -212,7 +243,12 @@ class ProcessSupervisor:
                 return identity.token
             except (OSError, subprocess.SubprocessError, asyncio.TimeoutError, TimeoutError) as error:
                 if "process" in locals():
-                    await self._terminate_group(os.getpgid(process.pid))
+                    try:
+                        pgid = os.getpgid(process.pid)
+                    except ProcessLookupError:
+                        pgid = None
+                    if pgid is not None:
+                        await self._terminate_group(pgid)
                 self._shell_process = None
                 self._shell_identity = None
                 raise ValueError(f"shell launch failed: {error}") from error
@@ -276,8 +312,139 @@ class ProcessSupervisor:
         self._set_input_mode(InputMode.SHELL)
         await self._notify()
 
+    async def cancel_launch(self) -> None:
+        task = self._active_launch_task or self._steam_launch_task
+        if task is None:
+            return
+        if task is asyncio.current_task():
+            raise ValueError("no launch is active")
+        current = asyncio.current_task()
+        self._logger.info(
+            "CANCEL_LAUNCH_ENTER caller=%s caller_id=%s target=%s target_id=%s target_cancelling=%s",
+            current.get_name() if current is not None else "none",
+            id(current) if current is not None else None,
+            task.get_name(),
+            id(task),
+            task.cancelling(),
+        )
+        if task.cancelling() == 0:
+            self._logger.info("CANCEL_LAUNCH_CANCEL_CALL target=%s target_id=%s", task.get_name(), id(task))
+            task.cancel()
+            self._logger.info("CANCEL_LAUNCH_CANCEL_RETURN target=%s target_id=%s target_cancelling=%s", task.get_name(), id(task), task.cancelling())
+        else:
+            self._logger.info("CANCEL_LAUNCH_JOIN target=%s target_id=%s target_cancelling=%s", task.get_name(), id(task), task.cancelling())
+        try:
+            await asyncio.gather(task, return_exceptions=True)
+        except asyncio.CancelledError:
+            self._logger.exception("CANCEL_LAUNCH_GATHER_CANCELLED caller=%s caller_id=%s target=%s target_id=%s", current.get_name() if current is not None else "none", id(current) if current is not None else None, task.get_name(), id(task))
+            raise
+        finally:
+            self._logger.info("CANCEL_LAUNCH_GATHER_FINALLY target=%s target_id=%s done=%s cancelled=%s", task.get_name(), id(task), task.done(), task.cancelled())
+        if self._process is not None:
+            try:
+                await self._terminate_group(os.getpgid(self._process.pid))
+            except ProcessLookupError:
+                pass
+            self._process = None
+        provider = self._steam_provider or SteamProvider()
+        if self._steam_launch is not None:
+            await provider.stop(self._steam_launch)
+            self._steam_launch = None
+        await provider.stop_owned_client()
+        if self.model.state.lifecycle.value != "shell":
+            self.model.fail(self.model.state.launch_token, "launch cancelled")
+            self._set_input_mode(InputMode.SHELL)
+            if self._presentation is not None and self._shell_process is not None:
+                self._presentation.select_shell(self._shell_process.pid)
+            self.model.return_complete(self.model.state.launch_token)
+        self.active_identity = None
+        self._steam_store_window = None
+        self._active_launch_task = None
+        self._steam_launch_task = None
+        await self._notify()
+
     async def launch_steam(self, app_id: str, startup_timeout_ms: int) -> str:
         return await self._launch_steam(app_id, startup_timeout_ms)
+
+    async def launch_steam_store(self, startup_timeout_ms: int) -> str:
+        async with self._launch_lock:
+            if startup_timeout_ms < 1 or self.active_identity is not None or self.model.state.lifecycle.value != "shell":
+                raise ValueError("another launch owns the session")
+            token = self.model.request_launch("steam-store")
+            await self._notify()
+            self._active_launch_task = asyncio.current_task()
+            provider = self._steam_provider or SteamProvider()
+            try:
+                await provider.ensure_client()
+                self.model.launch_starting(token)
+                await asyncio.to_thread(provider.open_gamepadui)
+                if self._presentation is not None:
+                    self._steam_store_window = await asyncio.to_thread(
+                        self._presentation.select_pids, provider.gamepadui_pids, startup_timeout_ms / 1000
+                    )
+                await asyncio.to_thread(provider.open_store)
+                self._set_input_mode(InputMode.GAME)
+                self.model.primary_started(token, presentation=Presentation.FOREIGN_UI, input_mode=InputMode.GAME)
+                await self._notify()
+                self._steam_store_watch_task = asyncio.create_task(
+                    self._watch_steam_store(token, self._steam_store_window)
+                )
+                self._active_launch_task = None
+                return token
+            except (OSError, TimeoutError, ValueError) as error:
+                self.model.fail(token, f"Steam Store launch failed: {error}")
+                self._set_input_mode(InputMode.SHELL)
+                if self._presentation is not None and self._shell_process is not None:
+                    self._presentation.select_shell(self._shell_process.pid)
+                self._steam_store_window = None
+                self.model.return_complete(token)
+                await self._notify()
+                self._active_launch_task = None
+                raise ValueError(str(error)) from error
+
+    async def _watch_steam_store(self, token: str, window: int | None) -> None:
+        while self.model.state.lifecycle.value == "game" and self.model.state.launch_token == token:
+            if (window is not None and self._presentation is not None
+                    and not self._presentation.window_is_focusable(window)):
+                break
+            await asyncio.sleep(0.1)
+        if self.model.state.lifecycle.value == "game" and self.model.state.launch_token == token:
+            await self._return_steam_store(token)
+
+    async def _return_steam_store(self, token: str) -> None:
+        await (self._steam_provider or SteamProvider()).stop_owned_client()
+        self.model.primary_exited(token)
+        self._set_input_mode(InputMode.SHELL)
+        if self._presentation is not None and self._shell_process is not None:
+            self._presentation.select_shell(self._shell_process.pid)
+        self.model.return_complete(token)
+        self._steam_store_window = None
+        await self._notify()
+
+    async def open_steam_downloads(self) -> str:
+        if self.model.state.primary_id != "steam-store" or self.model.state.lifecycle.value != "game":
+            raise ValueError("Steam Store delegated surface is not active")
+        uri = await asyncio.to_thread((self._steam_provider or SteamProvider()).open_downloads)
+        self.model.set_delegated_surface("downloads")
+        await self._notify()
+        return uri
+
+    async def open_steam_store_surface(self) -> str:
+        if self.model.state.primary_id != "steam-store" or self.model.state.lifecycle.value != "game":
+            raise ValueError("Steam Store delegated surface is not active")
+        uri = await asyncio.to_thread((self._steam_provider or SteamProvider()).open_store)
+        self.model.set_delegated_surface("store")
+        await self._notify()
+        return uri
+
+    async def quit_delegated(self) -> None:
+        if self.model.state.primary_id != "steam-store" or self.model.state.lifecycle.value != "game":
+            raise ValueError("Steam delegated surface is not active")
+        if self._steam_store_watch_task is not None:
+            self._steam_store_watch_task.cancel()
+            await asyncio.gather(self._steam_store_watch_task, return_exceptions=True)
+            self._steam_store_watch_task = None
+        await self._return_steam_store(self.model.state.launch_token)
 
     def queue_steam_launch(self, app_id: str, startup_timeout_ms: int) -> str:
         if startup_timeout_ms < 1:
@@ -286,7 +453,8 @@ class ProcessSupervisor:
             raise ValueError("another launch owns the session")
         token = self.model.request_launch(f"steam:{app_id}")
         self._logger.info("queued steam app_id=%s token=%s timeout_ms=%s", app_id, token, startup_timeout_ms)
-        self._steam_launch_task = asyncio.create_task(self._launch_steam(app_id, startup_timeout_ms, token))
+        self._steam_launch_task = asyncio.create_task(self._launch_steam(app_id, startup_timeout_ms, token), name=f"steam-launch-{token}")
+        self._logger.info("CANCEL_TASK_CREATE task=%s task_id=%s token=%s caller=queue_steam_launch", self._steam_launch_task.get_name(), id(self._steam_launch_task), token)
         return token
 
     async def _launch_steam(
@@ -301,15 +469,14 @@ class ProcessSupervisor:
                 raise ValueError("another launch owns the session")
             token = token or self.model.request_launch(f"steam:{app_id}")
             await self._notify()
+            self._active_launch_task = asyncio.current_task()
             provider = self._steam_provider or SteamProvider()
             launch: SteamLaunch | None = None
+            request: SteamLaunchRequest | None = None
             try:
-                request: SteamLaunchRequest = await provider.request_launch(app_id)
+                request = await provider.request_launch(app_id)
                 self._logger.info("steam request ready app_id=%s token=%s", app_id, token)
                 self.model.launch_starting(token)
-                self._set_input_mode(InputMode.GAME)
-                if self._presentation is not None:
-                    self._presentation.clear_selection()
                 await self._notify()
                 launch = await provider.observe_launch(
                     request, token
@@ -325,12 +492,34 @@ class ProcessSupervisor:
                         )
                     else:
                         self._presentation.select_pid(launch.title.pid)
+                self._set_input_mode(InputMode.GAME)
                 self.model.primary_started(token, presentation=Presentation.GAME, input_mode=InputMode.GAME)
                 self._steam_launch = launch
                 self.active_identity = launch.title
                 await self._notify()
                 self._watch_task = asyncio.create_task(self._watch_steam(provider, launch))
+                self._active_launch_task = None
                 return token
+            except asyncio.CancelledError:
+                self._logger.exception(
+                    "CANCEL_LAUNCH_TASK_CANCELLED task=%s task_id=%s token=%s request=%s provider=%s",
+                    asyncio.current_task().get_name() if asyncio.current_task() is not None else "none",
+                    id(asyncio.current_task()) if asyncio.current_task() is not None else None,
+                    token,
+                    id(request) if request is not None else None,
+                    type(provider).__name__,
+                )
+                if launch is not None:
+                    await provider.stop(launch)
+                elif request is not None:
+                    try:
+                        await provider.stop_owned_client()
+                        await provider.stop_request(request)
+                    except asyncio.CancelledError:
+                        self._logger.exception("CANCEL_PROVIDER_STOP_CANCELLED task=%s task_id=%s request=%s token=%s", asyncio.current_task().get_name(), id(asyncio.current_task()), id(request), token)
+                        raise
+                    self._logger.info("CANCEL_PROVIDER_STOP_RETURN task=%s task_id=%s request=%s token=%s", asyncio.current_task().get_name(), id(asyncio.current_task()), id(request), token)
+                raise
             except (OSError, TimeoutError, ValueError) as error:
                 if launch is not None:
                     await provider.stop(launch)
@@ -343,6 +532,7 @@ class ProcessSupervisor:
                 self._set_input_mode(InputMode.SHELL)
                 self.model.return_complete(token)
                 await self._notify()
+                self._active_launch_task = None
                 raise ValueError(reason) from error
 
     async def _watch_steam(self, provider: SteamProvider, launch: SteamLaunch) -> None:
@@ -361,6 +551,7 @@ class ProcessSupervisor:
         )
         self.model.primary_exited(identity.token)
         self.model.record_result(result)
+        await provider.stop_owned_client()
         try:
             self._set_input_mode(InputMode.SHELL)
             if self._presentation is not None and self._shell_process is not None:
@@ -387,6 +578,10 @@ class ProcessSupervisor:
             pass
 
     async def stop(self) -> None:
+        if self._steam_store_watch_task is not None:
+            self._steam_store_watch_task.cancel()
+            await asyncio.gather(self._steam_store_watch_task, return_exceptions=True)
+            self._steam_store_watch_task = None
         if self._steam_launch is not None:
             await (self._steam_provider or SteamProvider()).stop(self._steam_launch)
             if self._watch_task is not None:

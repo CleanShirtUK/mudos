@@ -8,6 +8,7 @@ Item {
     property real uiScale: 1
     property var typography
     property var luluPalette
+    signal actionRequested(string key)
 
     Text {
         x: 76 * root.uiScale
@@ -54,6 +55,11 @@ Item {
                     color: luluPalette.secondaryText
                     font.family: typography.interfaceFamily
                     font.pixelSize: typography.size("body", 16)
+                }
+                MouseArea {
+                    anchors.fill: parent
+                    enabled: modelData.writable === true && modelData.kind === "action"
+                    onClicked: root.actionRequested(modelData.key)
                 }
             }
         }

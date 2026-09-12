@@ -1,8 +1,9 @@
 import unittest
 import asyncio
+import subprocess
 from pathlib import Path
 import tempfile
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 from dbus_next import MessageType
 
 from lulu.applicationd import ApplicationCatalog
@@ -23,6 +24,7 @@ class RecordingInputPlumber:
         self.composites = composites
         self.loads: list[tuple[InputMode, str | None]] = []
         self.intercepts: list[tuple[int, str | None]] = []
+        self.baselines: list[str | None] = []
 
     def runtime_composite_statuses(self) -> dict[str, tuple[str, tuple[str, ...]]]:
         return self.composites
@@ -39,6 +41,14 @@ class RecordingInputPlumber:
         self.intercepts.append((mode, object_path))
         return []
 
+    def composite_status(self, object_path: str) -> tuple[str, tuple[str, ...]]:
+        return self.composites[object_path]
+
+    def ensure_default_intercept(self, object_path: str | None = None, *, execute: bool = True) -> list[list[str]]:
+        self.baselines.append(object_path)
+        self.intercepts.append((1, object_path))
+        return []
+
 
 def input_mode_interface(
     client: RecordingInputPlumber,
@@ -46,6 +56,11 @@ def input_mode_interface(
     interface = ConsoleSessionInterface.__new__(ConsoleSessionInterface)
     interface._inputplumber = client
     interface._applied_input_modes = {}
+    interface._local_identity = None
+    interface.model = SessionStateModel()
+    interface.controller_registry = ControllerRegistry()
+    interface.supervisor = type("Supervisor", (), {"state_details": lambda self: {}})()
+    interface.StateChanged = lambda state: None
     return interface
 
 
@@ -155,6 +170,74 @@ class BoundaryTests(unittest.TestCase):
         command = client.load_mode(InputMode.COMPAT, execute=False)
         self.assertEqual(command[-1], "config/inputplumber/profiles/compat.yaml")
         self.assertNotIn("SetTargetDevices", command)
+
+    def test_compatibility_mode_round_trip_applies_profiles(self) -> None:
+        path = "/org/shadowblip/InputPlumber/CompositeDevice0"
+        client = RecordingInputPlumber({path: ("045e_0291", ("/dev/input/event13",))})
+        interface = input_mode_interface(client)
+        token = interface.model.request_launch("game-1")
+        interface.model.launch_starting(token)
+        interface.model.primary_started(token)
+
+        interface.SetInputMode("compat")
+        interface.SetInputMode("gamepad")
+
+        self.assertEqual(
+            client.loads[-2:],
+            [(InputMode.COMPAT, path), (InputMode.GAME, path)],
+        )
+        self.assertEqual(interface.model.state.input_mode, InputMode.GAME)
+
+    def test_local_session_enters_and_leaves_authoritative_game_state(self) -> None:
+        path = "/org/shadowblip/InputPlumber/CompositeDevice0"
+        client = RecordingInputPlumber({path: ("045e_0291", ("/dev/input/event13",))})
+        interface = input_mode_interface(client)
+        interface.BeginLocalSession("local:wii:game", 123, 123, "/usr/bin/dolphin-emu", ["dolphin-emu", "-e", "game.rvz"])
+
+        state = interface.model.state
+        self.assertEqual(state.lifecycle, Lifecycle.GAME)
+        self.assertEqual(state.primary_id, "local:wii:game")
+        self.assertEqual(state.input_mode, InputMode.GAME)
+        self.assertEqual(interface._local_identity.executable, "/usr/bin/dolphin-emu")
+
+        interface.EndLocalSession(interface._local_identity.token, 0)
+
+        self.assertEqual(interface.model.state.lifecycle, Lifecycle.SHELL)
+        self.assertIsNone(interface._local_identity)
+        self.assertEqual(interface.model.state.input_mode, InputMode.SHELL)
+
+    def test_failed_local_session_does_not_leave_state_owned(self) -> None:
+        class FailingInputPlumber(RecordingInputPlumber):
+            def load_mode(self, mode, object_path=None, *, execute=True):
+                raise OSError("profile unavailable")
+
+        interface = input_mode_interface(FailingInputPlumber({}))
+        with self.assertRaises(Exception):
+            interface.BeginLocalSession("local:wii:game", 123, 123, "/usr/bin/dolphin-emu", ["dolphin-emu"])
+        self.assertEqual(interface.model.state.lifecycle, Lifecycle.SHELL)
+        self.assertIsNone(interface._local_identity)
+
+    def test_compatibility_mode_is_rejected_in_shell(self) -> None:
+        interface = input_mode_interface(RecordingInputPlumber({}))
+        with self.assertRaisesRegex(Exception, "Compatibility Mode"):
+            interface.SetInputMode("compat")
+
+    def test_compatibility_profile_keeps_guide_intercepted_and_required_bindings(self) -> None:
+        profile = (Path(__file__).parents[1] / "config/inputplumber/profiles/compat.yaml").read_text()
+        self.assertIn("dbus: ui_guide", profile)
+        self.assertIn("button: South", profile)
+        self.assertIn("button: East", profile)
+        self.assertIn("axis:\n          name: LeftStick", profile)
+        self.assertIn("keyboard: KeyEnter", profile)
+        for event in ("ui_up", "ui_down", "ui_accept", "ui_back", "ui_guide"):
+            self.assertIn(f"dbus: {event}", profile)
+
+    def test_guide_consumes_semantic_navigation_from_both_input_profiles(self) -> None:
+        native_shell = (Path(__file__).parents[1] / "native/lulu-shell.cpp").read_text()
+        compat = (Path(__file__).parents[1] / "config/inputplumber/profiles/compat.yaml").read_text()
+        for event in ("ui_guide", "ui_up", "ui_down", "ui_accept", "ui_back"):
+            self.assertIn(f'QStringLiteral("{event}")', native_shell)
+            self.assertIn(f"dbus: {event}", compat)
 
     def test_controller_loss_releases_navigation_and_same_identity_reconnects(self) -> None:
         registry = ControllerRegistry()
@@ -284,17 +367,75 @@ class BoundaryTests(unittest.TestCase):
         path = "/org/shadowblip/InputPlumber/CompositeDevice0"
         client = RecordingInputPlumber({path: ("045e_0291", ("/dev/input/event13",))})
         interface = input_mode_interface(client)
-        interface._initialized_composites = set()
+        interface._initialized_composites = {}
 
         asyncio.run(interface._initialize_composite(path))
         asyncio.run(interface._initialize_composite(path))
 
-        self.assertEqual(client.intercepts, [(1, path)])
+        self.assertEqual(client.baselines, [path])
+
+    def test_recreated_composite_reapplies_default_baseline(self) -> None:
+        path = "/org/shadowblip/InputPlumber/CompositeDevice0"
+        first = ("045e_0291", ("/dev/input/event13",))
+        replacement = ("045e_0291", ("/dev/input/event14",))
+        client = RecordingInputPlumber({path: first})
+        interface = input_mode_interface(client)
+        interface._initialized_composites = {}
+
+        asyncio.run(interface._initialize_composite(path, first))
+        interface._initialized_composites.clear()
+        client.composites = {path: replacement}
+        asyncio.run(interface._initialize_composite(path, replacement))
+
+        self.assertEqual(client.baselines, [path, path])
+
+    def test_recreated_composite_resets_compatibility_to_gamepad(self) -> None:
+        path = "/org/shadowblip/InputPlumber/CompositeDevice0"
+        client = RecordingInputPlumber({path: ("045e_0291", ("/dev/input/event13",))})
+        interface = input_mode_interface(client)
+        token = interface.model.request_launch("game-1")
+        interface.model.launch_starting(token)
+        interface.model.primary_started(token)
+        interface.model.set_input_mode(InputMode.COMPAT)
+        interface._initialized_composites = {}
+
+        asyncio.run(interface._initialize_composite(path, client.composites[path]))
+
+        self.assertEqual(interface.model.state.input_mode, InputMode.GAME)
+        self.assertEqual(client.baselines, [path])
+
+    def test_shell_bootstrap_does_not_require_a_controller_then_initializes_late_composite(self) -> None:
+        class ShellSupervisor:
+            def __init__(self) -> None:
+                self.commands = []
+
+            async def launch_shell(self, command, timeout, select_shell=False):
+                self.commands.append((command, timeout, select_shell))
+
+        client = RecordingInputPlumber({})
+        interface = input_mode_interface(client)
+        interface._initialized_composites = {}
+        interface._bootstrap_output = "HDMI-A-1"
+        interface.supervisor = ShellSupervisor()
+        interface._select_ready_shell = AsyncMock()
+
+        async def exercise() -> None:
+            await interface.bootstrap_shell()
+            await asyncio.sleep(0)
+            self.assertEqual(len(interface.supervisor.commands), 1)
+            self.assertFalse(interface.supervisor.commands[0][2])
+            path = "/org/shadowblip/InputPlumber/CompositeDevice0"
+            composite = ("045e_0291", ("/dev/input/event13",))
+            client.composites = {path: composite}
+            await interface._initialize_composite(path, composite)
+            self.assertEqual(client.baselines, [path])
+
+        asyncio.run(exercise())
 
     def test_empty_gamepad_order_clears_recreated_composite_lifetime_state(self) -> None:
         path = "/org/shadowblip/InputPlumber/CompositeDevice0"
         interface = input_mode_interface(RecordingInputPlumber({path: ("045e_0291", ("/dev/input/event13",))}))
-        interface._initialized_composites = {path}
+        interface._initialized_composites = {path: ("045e_0291", ("/dev/input/event13",))}
         interface._inputplumber_event = asyncio.Event()
 
         message = type(
@@ -311,8 +452,37 @@ class BoundaryTests(unittest.TestCase):
 
         interface._handle_inputplumber_signal(message)
 
-        self.assertEqual(interface._initialized_composites, set())
+        self.assertEqual(interface._initialized_composites, {})
         self.assertTrue(interface._inputplumber_event.is_set())
+
+    def test_controller_monitor_survives_transient_composite_query_failure(self) -> None:
+        path = "/org/shadowblip/InputPlumber/CompositeDevice0"
+
+        class FlakyInputPlumber(RecordingInputPlumber):
+            attempts = 0
+
+            def runtime_composite_statuses(self):
+                self.attempts += 1
+                if self.attempts == 1:
+                    raise subprocess.CalledProcessError(1, "busctl")
+                return {path: ("045e_0291", ("/dev/input/event20",))}
+
+        interface = input_mode_interface(FlakyInputPlumber({}))
+        interface._inputplumber_event = asyncio.Event()
+        interface._initialized_composites = {}
+        interface._inputplumber_event.set()
+
+        async def exercise() -> None:
+            task = asyncio.create_task(interface._monitor_controller_events())
+            await asyncio.sleep(0.05)
+            interface._inputplumber_event.set()
+            await asyncio.sleep(0.1)
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+
+        asyncio.run(exercise())
+        self.assertIn(path, interface._initialized_composites)
+        self.assertEqual(interface._inputplumber.intercepts, [(1, path)])
 
     def test_reconciliation_preserves_registry_ownership_and_player_assignment(self) -> None:
         path = "/org/shadowblip/InputPlumber/CompositeDevice0"

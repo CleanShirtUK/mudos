@@ -23,4 +23,6 @@ export DISPLAY=${DISPLAY:-:0}
 export DBUS_SESSION_BUS_ADDRESS=${DBUS_SESSION_BUS_ADDRESS:-unix:path=/run/user/958/bus}
 export XDG_CURRENT_DESKTOP=gamescope
 
-exec /usr/bin/steam +open steam://open/minigameslist
+# Steam is a provider here, not the initial presentation. Navigation is
+# requested explicitly by a delegated surface after startup.
+exec /usr/bin/steam -silent

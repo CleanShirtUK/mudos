@@ -26,6 +26,7 @@ class SessionState:
     input_mode: InputMode = InputMode.SHELL
     primary_id: str | None = None
     launch_token: str | None = None
+    delegated_surface: str | None = None
 
 
 class SessionStateModel:
@@ -74,6 +75,15 @@ class SessionStateModel:
         self.state.lifecycle = Lifecycle.GAME
         self.state.presentation = presentation
         self.state.input_mode = input_mode
+        if self.state.primary_id == "steam-store":
+            self.state.delegated_surface = "store"
+
+    def set_delegated_surface(self, surface: str) -> None:
+        if self.state.primary_id != "steam-store" or self.state.lifecycle is not Lifecycle.GAME:
+            raise ValueError("Steam Store delegated surface is not active")
+        if surface not in ("store", "downloads"):
+            raise ValueError("invalid delegated Steam surface")
+        self.state.delegated_surface = surface
 
     def primary_observed(self, token: str) -> None:
         if self.state.lifecycle is not Lifecycle.STARTING:

@@ -167,6 +167,9 @@ class GamescopePresentation:
                 raise TimeoutError(f"Gamescope window for process set {sorted(wanted)} was not found")
             time.sleep(self.poll_interval)
 
+    def window_is_focusable(self, window: int) -> bool:
+        return any(candidate == window for candidate, _app_id, _pid in self._focusable_windows())
+
     def select_pids(self, pids: list[int] | Callable[[], list[int]], timeout: float = 10.0) -> int:
         window = self.window_for_pids(pids, timeout)
         self._logger.info("select process set=%s window=%s", pids() if callable(pids) else pids, window)

@@ -21,5 +21,5 @@ g++ -std=c++17 -O2 -fPIC -Wall -Wextra -I"$repo_build" \
 g++ -std=c++17 -O2 -fPIC -Wall -Wextra \
     "$repo_root/native/mudos-guide.cpp" \
     -o "$repo_build/mudos-guide" \
-    $(pkg-config --cflags --libs Qt6Gui Qt6Qml Qt6Quick xcb) \
+    $(pkg-config --cflags --libs Qt6DBus Qt6Gui Qt6Qml Qt6Quick xcb) \
     -no-pie

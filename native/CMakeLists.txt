@@ -12,6 +12,6 @@ add_executable(lulu-shell lulu-shell.cpp)
 target_link_libraries(lulu-shell PRIVATE Qt6::DBus Qt6::Gui Qt6::Qml Qt6::Quick PkgConfig::XCB PkgConfig::SDL3)
 
 add_executable(mudos-guide mudos-guide.cpp)
-target_link_libraries(mudos-guide PRIVATE Qt6::Gui Qt6::Qml Qt6::Quick PkgConfig::XCB)
+target_link_libraries(mudos-guide PRIVATE Qt6::DBus Qt6::Gui Qt6::Qml Qt6::Quick PkgConfig::XCB)
 
 install(TARGETS lulu-shell mudos-guide RUNTIME DESTINATION bin)

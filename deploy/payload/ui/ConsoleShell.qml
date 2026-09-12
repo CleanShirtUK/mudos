@@ -108,6 +108,8 @@ Window {
     property string launchToken: ""
     property bool launchOverlayVisible: false
     property bool launchOverlayRetired: false
+    property bool shellWasLeft: false
+    property bool gamePresentationObserved: false
     property var launchLogLines: []
     property bool gameOptionsOpen: false
     property string gameOptionsView: "menu"
@@ -123,6 +125,31 @@ Window {
     property int launchStateSerial: 0
     property int launchStateApplied: 0
     property int launchStateRank: 0
+    property var launchTracePrevious: ({})
+
+    function traceLaunchMutation(name, value, reason) {
+        var oldValue = launchTracePrevious[name]
+        console.log("LAUNCH_TRACE", JSON.stringify({event: "MUTATION", name: name, old: oldValue, new: value, generation: launchGeneration, token: launchToken, reason: reason || "property-change"}))
+        launchTracePrevious[name] = value
+    }
+
+    function traceLaunchEvent(event, details) {
+        console.log("LAUNCH_TRACE", JSON.stringify({event: event, generation: launchGeneration, token: launchToken, details: details || {}}))
+    }
+
+    function traceLaunchResponse(endpoint, response, responseGeneration, responseToken, accepted, reason) {
+        console.log("LAUNCH_TRACE", JSON.stringify({event: "RESPONSE", endpoint: endpoint, current_generation: launchGeneration, response_generation: responseGeneration, current_token: launchToken, response_token: responseToken || "", lifecycle: response.lifecycle || "", presentation: response.presentation || "", active: response.active === undefined ? null : response.active, game_id: response.game_id || "", appid: response.appid || "", provider: response.provider || "", active_identity: response.active_identity || null, accepted: accepted, reason: reason}))
+    }
+
+    onLaunchOverlayVisibleChanged: traceLaunchMutation("launchOverlayVisible", launchOverlayVisible)
+    onLaunchOverlayRetiredChanged: traceLaunchMutation("launchOverlayRetired", launchOverlayRetired)
+    onLaunchStatusChanged: traceLaunchMutation("launchStatus", launchStatus)
+    onLaunchTokenChanged: traceLaunchMutation("launchToken", launchToken)
+    onLaunchGenerationChanged: traceLaunchMutation("launchGeneration", launchGeneration)
+    onLaunchStateSerialChanged: traceLaunchMutation("launchStateSerial", launchStateSerial)
+    onLaunchStateAppliedChanged: traceLaunchMutation("launchStateApplied", launchStateApplied)
+    onLaunchLogLinesChanged: traceLaunchMutation("launchLogLines", {length: launchLogLines.length}, "property-change")
+
     readonly property string apiUrl: "http://127.0.0.1:38123"
     readonly property var visibleRecentGame: recentGames.length ? recentGames[recentIndex] : null
     readonly property var visibleLibraryGame: libraryGames.length ? libraryGames[libraryIndex] : null
@@ -187,47 +214,109 @@ Window {
         if (generation !== launchGeneration)
             return
         var stateToken = state.launch_token || (state.last_result ? state.last_result.token : "")
-        if (launchToken && stateToken && stateToken !== launchToken)
+        if (launchToken && stateToken !== launchToken)
             return
         var stateRank = state.lifecycle === "launch_requested" || state.lifecycle === "starting" ? 1
                       : state.lifecycle === "game" ? 2
                       : state.lifecycle === "returning" ? 3
                       : 4
-        if (stateRank < launchStateRank)
+        if (stateRank < launchStateRank) {
+            traceLaunchEvent("STATE_DISCARDED", {lifecycle: state.lifecycle, state_rank: stateRank, current_rank: launchStateRank})
             return
+        }
         launchStateRank = stateRank
         if (state.lifecycle === "launch_requested" || state.lifecycle === "starting"
                 || state.lifecycle === "presentation_pending") {
             launchStatus = "launching"
             message = "Launching " + launchTitle
         } else if (state.lifecycle === "game") {
+            traceLaunchEvent("TARGET_READY", {lifecycle: state.lifecycle, presentation: state.presentation || ""})
             launchStatus = "running"
             message = "Running " + launchTitle
+            retireLaunchOverlay(generation)
         } else if (state.lifecycle === "returning") {
+            traceLaunchEvent("GAME_EXITED", {lifecycle: state.lifecycle, presentation: state.presentation || ""})
+            traceLaunchEvent("SHELL_RETURN_STARTED", {})
             launchStatus = "returning"
             message = "Returning"
         } else if (state.lifecycle === "shell") {
             launchStatus = state.last_failure_reason && stateToken === launchToken ? "failed" : "idle"
             message = launchStatus === "failed" ? "Launch failed" : ""
             launchStatusTimer.stop()
+            if (launchOverlayRetired)
+                launchOverlayVisible = false
+        }
+    }
+
+    function retireLaunchOverlay(generation) {
+        if (generation !== launchGeneration)
+            return
+        traceLaunchEvent("OVERLAY_RETIRED", {})
+        launchOverlayRetired = true
+        launchOverlayVisible = false
+        launchStatusTimer.stop()
+        launchLogTimer.stop()
+    }
+
+    function finishLaunchOnShellReturn() {
+        traceLaunchEvent("RETURN_FAILSAFE_FIRED", {luluPresented: controllerBridge.luluPresented, gamePresentationObserved: gamePresentationObserved, launchOverlayVisible: launchOverlayVisible, launchOverlayRetired: launchOverlayRetired})
+        launchStatusTimer.stop()
+        launchLogTimer.stop()
+        launchOverlayRetired = true
+        launchOverlayVisible = false
+        launchStatus = "idle"
+        launchToken = ""
+        launchGameId = ""
+        launchLogLines = []
+        shellWasLeft = false
+        gamePresentationObserved = false
+        launchGeneration++
+    }
+
+    function observeGamePresentation(state, generation) {
+        if (generation !== launchGeneration || launchGameId.indexOf("steam:") !== 0)
+            return
+        if (state.lifecycle === "game" && state.presentation === "game") {
+            gamePresentationObserved = true
+            traceLaunchEvent("GAME_PRESENTATION_OBSERVED", {lifecycle: state.lifecycle, presentation: state.presentation, shellWasLeft: shellWasLeft})
+            if (shellWasLeft && controllerBridge.luluPresented)
+                finishLaunchOnShellReturn()
         }
     }
 
     function refreshLaunchState(generation) {
         var serial = ++launchStateSerial
         request("/state", "GET", "", function(state) {
-            if (serial < launchStateApplied)
+            if (generation !== launchGeneration) {
+                traceLaunchResponse("/state", state, generation, state.launch_token || (state.last_result ? state.last_result.token : ""), false, "generation-mismatch")
                 return
+            }
+            if (serial < launchStateApplied) {
+                traceLaunchResponse("/state", state, generation, state.launch_token || (state.last_result ? state.last_result.token : ""), false, "serial-regression")
+                return
+            }
+            var responseToken = state.launch_token || (state.last_result ? state.last_result.token : "")
+            observeGamePresentation(state, generation)
+            if (launchToken && responseToken !== launchToken) {
+                traceLaunchResponse("/state", state, generation, responseToken, false, "token-mismatch")
+                return
+            }
             launchStateApplied = serial
+            traceLaunchResponse("/state", state, generation, responseToken, true, "apply")
             applyLaunchState(state, generation)
         }, "", generation)
     }
 
-    function refreshLaunchLog() {
+    function refreshLaunchLog(generation) {
         request("/launch-log", "GET", "", function(data) {
+            var accepted = generation === launchGeneration && !launchOverlayRetired && data.active && data.game_id === launchGameId
+            traceLaunchResponse("/launch-log", data, generation, data.token || "", accepted, accepted ? "apply" : "ignored")
+
+            if (generation !== launchGeneration || launchOverlayRetired)
+                return
             if (data.active && data.game_id === launchGameId)
                 launchLogLines = data.lines
-        })
+        }, "", generation)
     }
 
     function refreshLibrary() {
@@ -489,11 +578,15 @@ Window {
         if (!game)
             return
         var generation = ++launchGeneration
+        traceLaunchEvent("LAUNCH_REQUESTED", {game_id: String(game.game_id), title: game.title})
         launchTitle = game.title
         launchGameId = String(game.game_id)
         launchToken = ""
         launchOverlayVisible = true
+        traceLaunchEvent("OVERLAY_SHOWN", {game_id: launchGameId})
         launchOverlayRetired = false
+        shellWasLeft = false
+        gamePresentationObserved = false
         launchLogLines = ["[Lulu] Play requested: " + game.title + " / " + game.game_id]
         launchLogTimer.start()
         launchStatus = "launching"
@@ -516,26 +609,69 @@ Window {
     }
 
     function openSteamStore() {
-        message = "Opening Steam Store"
+        var generation = ++launchGeneration
+        launchTitle = "Steam Store"
+        launchGameId = "steam-store"
+        launchToken = ""
+        launchOverlayVisible = true
+        launchOverlayRetired = false
+        launchLogLines = ["[Lulu] Store requested"]
+        launchLogTimer.start()
+        launchStatusTimer.start()
+        launchStatus = "launching"
+        launchStateRank = 1
+        message = "Launching Steam Store"
         request("/store/steam", "POST", "", function(data) {
+            if (generation !== launchGeneration)
+                return
             launchToken = data.token
-            launchStatus = "running"
+            refreshLaunchState(generation)
+        }, "Steam Store launch failed", generation)
+    }
+
+    function cancelLaunch() {
+        if (!launchOverlayVisible)
+            return
+        request("/cancel", "POST", "", function(data) {
+            launchStatusTimer.stop()
+            launchLogLines.push("[Lulu] Launch cancelled")
+            launchOverlayRetired = true
+            launchOverlayVisible = false
             message = ""
-        }, "Steam Store launch failed")
+        }, "Launch cancellation failed", launchGeneration)
     }
 
     Connections {
         target: controllerBridge
         function onValueChanged(key, value) {
-            if (key === "luluPresented" && !value)
-                root.launchOverlayRetired = true
-            if (key === "luluPresented" && !value)
-                root.launchOverlayVisible = false
+            if (key === "luluPresented") {
+                traceLaunchEvent(value ? "SHELL_PRESENTED" : "GAME_PRESENTED", {luluPresented: value})
+                if (root.launchGameId.indexOf("steam:") === 0) {
+                    if (!value) {
+                        root.shellWasLeft = true
+                        root.traceLaunchEvent("SHELL_LEFT_OBSERVED", {luluPresented: value})
+                    } else if (root.shellWasLeft && root.gamePresentationObserved) {
+                        root.finishLaunchOnShellReturn()
+                    }
+                }
+            }
+            if (key === "action" && value === "back" && root.launchOverlayVisible)
+                root.cancelLaunch()
         }
+    }
+
+    function resetMudos() {
+        message = "Resetting Mudos"
+        request("/reset", "POST", "", function(data) {
+            message = ""
+        }, "Mudos reset failed")
     }
 
     function activate() {
         if (space === "system") {
+            if (!systemLanding && systemSettings[systemRowIndex]
+                    && systemSettings[systemRowIndex].key === "lulu.reset")
+                resetMudos()
             return
         }
         if (space === "library") {
@@ -594,6 +730,10 @@ Window {
     }
 
     function back() {
+        if (launchOverlayVisible) {
+            cancelLaunch()
+            return
+        }
         if (gameOptionsOpen) {
             if (gameOptionsView === "menu")
                 closeGameOptions()
@@ -1201,6 +1341,7 @@ Window {
             uiScale: root.uiScale
             typography: typography
             luluPalette: luluPalette
+            onActionRequested: if (key === "lulu.reset") root.resetMudos()
         }
 
         GameOptions {
@@ -1341,18 +1482,14 @@ Window {
         id: launchLogTimer
         interval: 500
         repeat: true
-        onTriggered: root.refreshLaunchLog()
+        onTriggered: root.refreshLaunchLog(root.launchGeneration)
     }
 
     Rectangle {
         id: launchLogOverlay
         visible: root.launchOverlayVisible && !root.launchOverlayRetired
-                 && controllerBridge && controllerBridge.luluPresented
         z: 100
-        x: root.width - width - root.design(28)
-        y: root.design(28)
-        width: Math.min(root.width * 0.45, root.design(680))
-        height: Math.min(root.height * 0.48, root.design(430))
+        anchors.fill: parent
         clip: true
         color: Qt.rgba(0.03, 0.04, 0.07, 0.96)
         border.color: luluPalette.accent
@@ -1361,7 +1498,7 @@ Window {
             x: root.design(12)
             y: root.design(8)
             width: parent.width - root.design(24)
-            text: "Launching " + root.launchTitle + " (" + root.launchGameId + ")"
+            text: "Launching " + root.launchTitle + " (" + root.launchGameId + ")\n\nB  Cancel"
             color: luluPalette.primaryText
             font.family: typography.interfaceFamily
             font.pixelSize: typography.size("secondary", 16)
@@ -1372,8 +1509,8 @@ Window {
             anchors.right: parent.right
             anchors.top: parent.top
             anchors.bottom: parent.bottom
-            anchors.margins: root.design(12)
-            anchors.topMargin: root.design(38)
+            anchors.margins: root.design(32)
+            anchors.topMargin: root.design(72)
             model: root.launchLogLines
             interactive: false
             clip: true
