@@ -271,6 +271,15 @@ migrate_user_state() {
             rm -rf "$source/$item"
         fi
     done
+    ln -sfn /home/lulu/.local/share/Steam/ubuntu12_32 /home/lulu/.steam/bin32
+    ln -sfn /home/lulu/.local/share/Steam/ubuntu12_64 /home/lulu/.steam/bin64
+    ln -sfn /home/lulu/.steam/bin32 /home/lulu/.steam/bin
+    ln -sfn /home/lulu/.local/share/Steam /home/lulu/.steam/root
+    ln -sfn /home/lulu/.local/share/Steam/linux32 /home/lulu/.steam/sdk32
+    ln -sfn /home/lulu/.local/share/Steam/linux64 /home/lulu/.steam/sdk64
+    ln -sfn /home/lulu/.local/share/Steam /home/lulu/.steam/steam
+    ln -sfn /home/lulu/.steam/sdk32/steam /home/lulu/.steampath
+    ln -sfn /home/lulu/.steam/steam.pid /home/lulu/.steampid
     find "$source" -depth -type d -empty -delete
     if [[ -d "$source" ]] && [[ -z "$(find "$source" -mindepth 1 -print -quit)" ]]; then
         rmdir "$source"
