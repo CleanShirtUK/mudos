@@ -55,7 +55,7 @@ dfd5da8104faf3ab85173af79bd1f44131a2805822fc9566affabff87d536771  ./packaging/pl
 7806e0b076e46e2eaeca7d702852fceb7bf65c5f82a7fd72326a68e3efe7af36  ./packaging/presentation.conf
 484507c1714acbb4a84da77fa7aedbd6168e110ee19bf2baa3f14af95fb3d8c4  ./scripts/console-ui-bridge.py
 828e1eb2c8ea4fad15b233d0f3ccb19327218045b308bbcf1c040f163a1ddc6f  ./scripts/console-ui.sh
-6674b4fd19a8c626e21587db29eb57b188d278acd52de723d1d6f51cc617c4dd  ./scripts/file-browser-launch.sh
+add0689e48eafa2fe2174adb9b3aba2d5494f46a9654d02b41210b7d92194bae  ./scripts/file-browser-launch.sh
 ba906bc73f10a5025773d4292896f3d043b0bceaf871127e8f727dde75738e8b  ./scripts/steam-bootstrap.sh
 559defbdfd363d48fb9ff286cf497a5e62bdca8cb8c3b0c42be5a706d9bc5b01  ./scripts/steam-session-bootstrap.sh
 b548bf6cc2383d176ee779f9404f7edd8ec81a2f3ef43abadedb064ce492d307  ./ui/assets/portrait-artwork/portrait-placeholder.svg
