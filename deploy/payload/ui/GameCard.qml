@@ -60,7 +60,8 @@ Rectangle {
     property real stackedPlayEdgeLightStrength: 0
     readonly property bool recentFocal: homeCard && focused
     readonly property string presentationGameId: presentationId || (game ? String(game.game_id) : "")
-    readonly property url displayedArtworkSource: card.artworkSource ? card.artworkSource
+    readonly property url displayedArtworkSource: String(card.artworkSource).length > 0
+        ? card.artworkSource
         : (card.game && !card.game.artwork_suppressed && card.game.artwork_url
             ? card.game.artwork_url : card.fallbackArtworkSource)
     readonly property bool iconArtwork: card.artworkRole === "icon" || !!card.symbolicArtwork
