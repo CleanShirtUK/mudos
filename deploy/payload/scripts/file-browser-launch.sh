@@ -7,7 +7,7 @@ log "starting uid=$(id -u) bind=${DUFS_BIND:-unset} port=${DUFS_PORT:-unset} roo
 /usr/bin/dufs /srv &
 child=$!
 trap 'log "stopping pid=${child}"; kill -TERM "$child" 2>/dev/null || true' TERM INT
-wait "$child"
-status=$?
+status=0
+wait "$child" || status=$?
 log "exited status=${status}"
 exit "$status"
