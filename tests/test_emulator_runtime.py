@@ -95,6 +95,8 @@ class EmulatorRuntimeTests(unittest.TestCase):
         self.assertIn('player_1_button_a="engine:sdl,guid:030081b85e0400008e02000001000000,port:0,button:1"', config)
         self.assertIn('player_1_button_zl="engine:sdl,guid:030081b85e0400008e02000001000000,port:0,axis:4,threshold:0.5,invert:+"', config)
         self.assertIn("player_1_type=1", config)
+        self.assertIn("player_1_connected=true", config)
+        self.assertNotIn("player_1_connect=", config)
         self.assertEqual(config, second_content)
 
     def test_switch_profile_follows_assigned_controller_indices(self) -> None:
