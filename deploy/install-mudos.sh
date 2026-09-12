@@ -17,7 +17,7 @@ RELEASE_CHANGED=0
 PACKAGES=(
     inputplumber gamescope-git dolphin-emu retroarch
     libretro-nestopia libretro-genesis-plus-gx steam steam-devices
-    seatd pipewire wireplumber qt6-base qt6-declarative sdl3 python
+    seatd pipewire wireplumber qt6-base qt6-declarative qt6-multimedia sdl3 python
     python-dbus-next
 )
 # These are deliberately absent from PACKAGES: each has an official-repository

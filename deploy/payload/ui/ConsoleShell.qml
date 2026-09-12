@@ -25,6 +25,12 @@ Window {
         id: luluPalette
     }
 
+    // The engine is available to future event wiring without coupling this
+    // proposal to the complete navigation event matrix.
+    UiAudioEngine {
+        id: uiAudioEngine
+    }
+
     readonly property real activeHeadingHeight: design(37)
     readonly property real headingCardGap: design(21)
     readonly property real homeCategoryRailX: design(52)

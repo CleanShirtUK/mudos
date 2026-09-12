@@ -28,6 +28,17 @@ class ProvisioningTests(unittest.TestCase):
             capture_output=True, text=True,
         )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_shipped_ui_audio_contract_matches_authoritative_source(self) -> None:
+        source = ROOT / "ui/sounds"
+        shipped = PAYLOAD / "ui/sounds"
+        self.assertEqual(
+            {path.name for path in shipped.iterdir()},
+            {path.name for path in source.iterdir()},
+        )
+        for path in source.iterdir():
+            self.assertEqual((shipped / path.name).read_bytes(), path.read_bytes(), path.name)
+
     def test_checkpoint_has_canonical_key_value_format(self) -> None:
         values = {}
         for line in (ROOT / "deploy/CHECKPOINT").read_text().splitlines():

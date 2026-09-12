@@ -4,8 +4,8 @@ set -eu
 repo_root=${LULU_INSTALL_ROOT:-$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)}
 output=${1:-"$repo_root/build/lulu-shell"}
 
-if ! pkg-config --exists Qt6DBus Qt6Gui Qt6Qml Qt6Quick xcb sdl3; then
-    printf '%s\n' 'lulu-shell build requires Qt6 DBus/Gui/Qml/Quick, xcb, and sdl3 pkg-config files' >&2
+if ! pkg-config --exists Qt6DBus Qt6Gui Qt6Multimedia Qt6Qml Qt6Quick xcb sdl3; then
+    printf '%s\n' 'lulu-shell build requires Qt6 DBus/Gui/Multimedia/Qml/Quick, xcb, and sdl3 pkg-config files' >&2
     exit 1
 fi
 
@@ -15,7 +15,7 @@ repo_build=$(dirname -- "$output")
 g++ -std=c++17 -O2 -fPIC -Wall -Wextra -I"$repo_build" \
     "$repo_root/native/lulu-shell.cpp" \
     -o "$output" \
-    $(pkg-config --cflags --libs Qt6DBus Qt6Gui Qt6Qml Qt6Quick xcb sdl3) \
+    $(pkg-config --cflags --libs Qt6DBus Qt6Gui Qt6Multimedia Qt6Qml Qt6Quick xcb sdl3) \
     -no-pie
 
 g++ -std=c++17 -O2 -fPIC -Wall -Wextra \

@@ -558,5 +558,27 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertIn("launchGeneration++", QML)
         self.assertIn('root.launchGameId.indexOf("steam:") === 0', QML)
 
+    def test_ui_audio_engine_has_semantic_voices_and_safety_rules(self) -> None:
+        engine = (ROOT / "ui" / "UiAudioEngine.qml").read_text()
+        for semantic in ("navigate", "confirm", "back", "error"):
+            self.assertIn(f'{semantic}Source: "sounds/ui-{semantic}.wav"', engine)
+            self.assertIn(f'{semantic}Voice: SoundEffect', engine)
+        self.assertIn("function play(semantic)", engine)
+        self.assertIn("function voiceFor(semantic)", engine)
+        self.assertIn("debounceInterval: 55", engine)
+        self.assertIn("maxVoices: 3", engine)
+        self.assertIn("voice.status !== SoundEffect.Ready", engine)
+        self.assertIn("activeVoiceCount() >= maxVoices", engine)
+        self.assertIn("voice.stop()", engine)
+        self.assertIn("function stopAll()", engine)
+        self.assertIn("UiAudioEngine {", QML)
+        self.assertNotIn("onValueChanged", engine)
+
+    def test_ui_audio_assets_are_canonical_and_replaceable(self) -> None:
+        manifest = (ROOT / "ui" / "sounds" / "README.md").read_text()
+        for filename in ("ui-navigate.wav", "ui-confirm.wav", "ui-back.wav", "ui-error.wav"):
+            self.assertIn(f"`{filename}`", manifest)
+        self.assertIn("does not\nrequire a", manifest)
+
 if __name__ == "__main__":
     unittest.main()
