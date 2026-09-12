@@ -14,7 +14,7 @@ if [ ! -S "$wayland_socket" ]; then
     exit 1
 fi
 
-export HOME=/var/lib/lulu
+export HOME=/home/lulu
 export USER=lulu
 export LOGNAME=lulu
 export XDG_RUNTIME_DIR="$runtime_dir"

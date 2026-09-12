@@ -35,7 +35,7 @@ class LaunchLogCapture:
     IN_CREATE = 0x00000100
 
     def __init__(self) -> None:
-        self.directory = Path(os.environ.get("LULU_STEAM_LOG_DIR", "/var/lib/lulu/.local/share/Steam/logs"))
+        self.directory = Path.home() / ".local/share/Steam/logs"
         self._lock = Lock()
         self._lines: deque[str] = deque(maxlen=12)
         self._appid = ""

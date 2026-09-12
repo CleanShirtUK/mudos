@@ -9,6 +9,7 @@ import re
 import signal
 import subprocess
 from .launch_identity import LaunchIdentity
+from .paths import PATHS
 
 
 @dataclass(frozen=True, slots=True)
@@ -156,10 +157,7 @@ class SteamProvider:
         return sorted({game.app_id: game for game in games}.values(), key=lambda game: game.title.casefold())
 
     def _library_roots(self) -> tuple[Path, ...]:
-        configured = os.environ.get("LULU_STEAM_ROOTS", "")
-        if configured:
-            return tuple(Path(item).expanduser() for item in configured.split(":"))
-        return (Path.home() / ".local" / "share" / "Steam",)
+        return (PATHS.data_home / "Steam",)
 
     @staticmethod
     def _is_launchable_app(app: dict[str, object]) -> bool:

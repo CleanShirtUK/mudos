@@ -2,7 +2,7 @@
 set -eu
 
 config_root="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)/packaging/pipewire"
-target_root=/var/lib/lulu/.config/pipewire/pipewire-pulse.conf.d
+target_root=/home/lulu/.config/pipewire/pipewire-pulse.conf.d
 
 sudo install -d -o lulu -g lulu -m 0700 "$target_root"
 sudo install -o lulu -g lulu -m 0644 \

@@ -8,6 +8,7 @@ import time
 
 from .local_content import LocalContentGame, LocalContentProvider
 from .metadata import MetadataMatch, clean_local_title
+from .paths import PATHS
 from .steam_provider import InstalledSteamGame, SteamProvider
 
 
@@ -77,7 +78,7 @@ SELECT_COLUMNS = (
 
 class CatalogueStore:
     def __init__(self, path: Path | None = None) -> None:
-        self.path = path or Path(os.environ.get("LULU_CATALOGUE_DB", "~/.local/share/lulu/catalogue.sqlite3")).expanduser()
+        self.path = path or PATHS.catalogue_db
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self.connection = sqlite3.connect(self.path)
         self.connection.execute(

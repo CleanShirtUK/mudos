@@ -40,6 +40,8 @@ grep -Fxq "tag=${VERSION_TAG}" "$INSTALL_ROOT/RELEASE" || fail 'release tag mism
 for executable in python dolphin-emu pcsx2 pcsx2-qt retroarch gamescope busctl systemctl; do
     command -v "$executable" >/dev/null || fail "missing executable: $executable"
 done
+[[ "$(getent passwd lulu | cut -d: -f6)" == /home/lulu ]] || fail 'lulu home is not /home/lulu'
+[[ "$(getent passwd lulu | cut -d: -f7)" == /bin/bash ]] || fail 'lulu shell is not /bin/bash'
 for package in inputplumber gamescope-git dolphin-emu retroarch libretro-nestopia libretro-genesis-plus-gx steam steam-devices seatd pipewire wireplumber qt6-base qt6-declarative sdl3 python python-dbus-next python-rapidyaml rapidyaml ttf-zalando-sans; do
     pacman -Q "$package" >/dev/null 2>&1 || fail "missing package: $package"
 done
@@ -57,8 +59,8 @@ runuser -u lulu -- env XDG_RUNTIME_DIR=/run/user/958 DBUS_SESSION_BUS_ADDRESS=un
 systemctl is-active --quiet lulu-consoled.service || fail 'lulu-consoled is not active'
 systemctl is-active --quiet lulu-session@2.service || fail 'lulu-session@2 is not active'
 pacman -Ql steam-devices | grep -Eq '/(udev/rules.d|modprobe.d)/' || fail 'steam-devices rules are missing'
-[[ -f /var/lib/lulu/.config/pipewire/pipewire-pulse.conf.d/lulu-fallback-input.conf ]] || fail 'PipeWire fallback configuration is missing'
-for path in /var/lib/lulu/roms/{nes,genesis,ps2,wii} /var/lib/lulu/bios/ps2; do
+[[ -f /home/lulu/.config/pipewire/pipewire-pulse.conf.d/lulu-fallback-input.conf ]] || fail 'PipeWire fallback configuration is missing'
+for path in /home/lulu/Games/ROMs/{nes,genesis,ps2,wii} /home/lulu/Games/BIOS/ps2; do
     [[ -d "$path" ]] || fail "missing data directory: $path"
     [[ "$(stat -c '%U:%G' "$path")" == lulu:lulu ]] || fail "wrong ownership: $path"
 done

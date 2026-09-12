@@ -120,11 +120,13 @@ verify_installed() {
     done
     id lulu >/dev/null 2>&1 || die 'lulu user is missing'
     [[ "$(id -u lulu)" == 958 && "$(id -g lulu)" == 958 ]] || die 'lulu UID/GID is not 958'
+    [[ "$(getent passwd lulu | cut -d: -f6)" == /home/lulu ]] || die 'lulu home is not /home/lulu'
+    [[ "$(getent passwd lulu | cut -d: -f7)" == /bin/bash ]] || die 'lulu shell is not /bin/bash'
     getent group seat >/dev/null || die 'seat group is missing'
     getent group inputplumber >/dev/null || die 'inputplumber group is missing'
     id -nG lulu | tr ' ' '\n' | grep -Fxq inputplumber || die 'lulu is not in inputplumber group'
     ! id -nG lulu | tr ' ' '\n' | grep -Fxq wheel || die 'lulu must not be granted wheel access'
-    for path in /var/lib/lulu/roms/nes /var/lib/lulu/roms/genesis /var/lib/lulu/roms/ps2 /var/lib/lulu/roms/wii /var/lib/lulu/bios/ps2; do
+    for path in /home/lulu/Games/ROMs/nes /home/lulu/Games/ROMs/genesis /home/lulu/Games/ROMs/ps2 /home/lulu/Games/ROMs/wii /home/lulu/Games/BIOS/ps2; do
         [[ -d "$path" ]] || die "required data directory is missing: $path"
         [[ "$(stat -c '%U:%G' "$path")" == lulu:lulu ]] || die "wrong ownership: $path"
     done
@@ -235,13 +237,44 @@ ensure_user() {
         getent passwd 958 >/dev/null && die 'UID 958 is already assigned to another user'
         getent group 958 >/dev/null && die 'GID 958 is already assigned to another group'
         groupadd --gid 958 lulu
-        useradd --uid 958 --gid 958 --create-home --home-dir /var/lib/lulu --shell /usr/bin/nologin lulu
+        useradd --uid 958 --gid 958 --create-home --home-dir /home/lulu --shell /bin/bash lulu
     fi
+    install -d -o lulu -g lulu -m 0755 /home/lulu
+    usermod --home /home/lulu --shell /bin/bash lulu
     getent group seat >/dev/null || groupadd seat
     getent group inputplumber >/dev/null || groupadd --system inputplumber
     usermod --append --groups seat,inputplumber lulu
     loginctl enable-linger lulu
     for group in lulu seat inputplumber; do getent group "$group" >/dev/null || die "missing group: $group"; done
+}
+
+migrate_user_state() {
+    local source=/var/lib/lulu destination mapping relative
+    [[ -e "$source" && ! -L "$source" ]] || return 0
+    for mapping in ".config:/home/lulu/.config" ".local:/home/lulu/.local" ".cache:/home/lulu/.cache" \
+        "roms:/home/lulu/Games/ROMs" "bios:/home/lulu/Games/BIOS" \
+        "recordings:/home/lulu/Recordings" "captures:/home/lulu/Screenshots" \
+        "assets:/home/lulu/.local/share/lulu/assets" "providers:/home/lulu/.config/lulu/providers" \
+        "state:/home/lulu/.local/share/lulu/state" "runtime:/home/lulu/.local/share/lulu/runtime" \
+        "cache:/home/lulu/.cache/lulu"; do
+        relative="${mapping%%:*}"
+        destination="${mapping#*:}"
+        if [[ -e "$source/$relative" ]]; then
+            install -d -o lulu -g lulu -m 0755 "$destination"
+            cp -a "$source/$relative/." "$destination/"
+            rm -rf "$source/$relative"
+        fi
+    done
+    for item in .bashrc .bash_profile .bash_logout .zshrc .pki .steam .pulse-cookie .Xauthority; do
+        if [[ -e "$source/$item" ]]; then
+            cp -a "$source/$item" /home/lulu/
+            rm -rf "$source/$item"
+        fi
+    done
+    find "$source" -depth -type d -empty -delete
+    if [[ -d "$source" ]] && [[ -z "$(find "$source" -mindepth 1 -print -quit)" ]]; then
+        rmdir "$source"
+    fi
 }
 
 install_tree() {
@@ -329,6 +362,7 @@ enable_services() {
     mkdir -p /etc/systemd/system/multi-user.target.wants
     ln -sfn /etc/systemd/system/lulu.target /etc/systemd/system/multi-user.target.wants/lulu.target
     systemctl start seatd.service inputplumber.service user-runtime-dir@958.service user@958.service
+    systemctl try-restart user@958.service
     systemctl start lulu.target
     if (( RELEASE_CHANGED || SYSTEM_CHANGED )); then
         systemctl try-restart lulu-consoled.service lulu-session@2.service
@@ -354,6 +388,7 @@ install_packages
 
 step 'Creating users and groups' 3
 ensure_user
+migrate_user_state
 
 step 'Creating filesystem state' 4
 install_tree

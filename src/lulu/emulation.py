@@ -1,12 +1,14 @@
 """Canonical emulation storage and platform/runtime configuration."""
 
-from dataclasses import dataclass
 import os
+from dataclasses import dataclass
 from pathlib import Path
 
+from .paths import PATHS
 
-ROM_ROOT = Path(os.environ.get("LULU_ROM_ROOT", "/var/lib/lulu/roms")).expanduser()
-BIOS_ROOT = Path(os.environ.get("LULU_BIOS_ROOT", "/var/lib/lulu/bios")).expanduser()
+
+ROM_ROOT = PATHS.rom_root
+BIOS_ROOT = PATHS.bios_root
 
 
 @dataclass(frozen=True, slots=True)
