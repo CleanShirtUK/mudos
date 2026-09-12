@@ -343,6 +343,8 @@ Window {
     }
 
     function openSelectedGameOptions() {
+        if (gameOptionsOpen)
+            return
         if (selectedGameForOptions)
             openGameOptions(selectedGameForOptions)
     }
@@ -673,6 +675,10 @@ Window {
     }
 
     function activate() {
+        if (gameOptionsOpen) {
+            activateGameOptions()
+            return
+        }
         if (space === "system") {
             if (!systemLanding && systemSettings[systemRowIndex]
                     && systemSettings[systemRowIndex].key === "lulu.reset")

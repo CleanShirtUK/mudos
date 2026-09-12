@@ -411,10 +411,19 @@ class ConsoleUiTests(unittest.TestCase):
 
     def test_controller_x_routes_to_shared_game_options_action(self) -> None:
         native_shell = (ROOT / "native" / "lulu-shell.cpp").read_text()
-        self.assertIn('{SDL_GAMEPAD_BUTTON_NORTH, "options"}', native_shell)
+        self.assertIn('{SDL_GAMEPAD_BUTTON_WEST, "options"}', native_shell)
+        self.assertNotIn('{SDL_GAMEPAD_BUTTON_NORTH, "options"}', native_shell)
         self.assertIn('{"options", "openSelectedGameOptions"}', native_shell)
         self.assertIn("function openSelectedGameOptions()", QML)
         self.assertIn("openGameOptions(selectedGameForOptions)", QML)
+
+    def test_game_options_owns_confirm_and_ignores_reopen(self) -> None:
+        native_shell = (ROOT / "native" / "lulu-shell.cpp").read_text()
+        self.assertIn('{SDL_GAMEPAD_BUTTON_SOUTH, "confirm"}', native_shell)
+        self.assertIn("if (gameOptionsOpen) {\n            activateGameOptions()", QML)
+        self.assertIn("if (gameOptionsOpen)\n            return\n        if (selectedGameForOptions)", QML)
+        self.assertIn('if (gameOptionsOpen) {\n            if (gameOptionsView === "menu")', QML)
+        self.assertIn('closeGameOptions()\n            else', QML)
 
     def test_shell_profile_routes_semantic_events_to_qt_keys(self) -> None:
         for button, key in (

@@ -335,7 +335,7 @@ private:
                     {SDL_GAMEPAD_BUTTON_DPAD_UP, "up"}, {SDL_GAMEPAD_BUTTON_DPAD_DOWN, "down"},
                     {SDL_GAMEPAD_BUTTON_DPAD_LEFT, "left"}, {SDL_GAMEPAD_BUTTON_DPAD_RIGHT, "right"},
                     {SDL_GAMEPAD_BUTTON_SOUTH, "confirm"}, {SDL_GAMEPAD_BUTTON_EAST, "back"},
-                    {SDL_GAMEPAD_BUTTON_NORTH, "options"},
+                    {SDL_GAMEPAD_BUTTON_WEST, "options"},
                     {SDL_GAMEPAD_BUTTON_LEFT_SHOULDER, "leftShoulder"},
                     {SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER, "rightShoulder"},
                 };
