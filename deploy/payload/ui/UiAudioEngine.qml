@@ -22,23 +22,15 @@ QtObject {
         QtObject {
             property url source: root.navigateSource
             property real volume: root.volume
-            property bool muted: output.muted
-            readonly property bool playing: player.playbackState === MediaPlayer.PlayingState
-            readonly property int status: player.mediaStatus === MediaPlayer.LoadedMedia
-                ? SoundEffect.Ready : SoundEffect.Loading
-            function play() { player.stop(); player.play() }
-            function stop() { player.stop() }
-
-            AudioOutput {
-                id: output
-                volume: root.volume
+            property bool muted: false
+            readonly property bool playing: false
+            readonly property int status: SoundEffect.Ready
+            function play() {
+                var request = new XMLHttpRequest()
+                request.open("POST", "http://127.0.0.1:38123/ui-audio/navigate")
+                request.send()
             }
-            MediaPlayer {
-                id: player
-                source: root.navigateSource
-                audioOutput: output
-                onMediaStatusChanged: root.tryPlayPending()
-            }
+            function stop() {}
         }
     }
     Component {

@@ -46,7 +46,7 @@ f55061962eb1928cbd410213f75f56de0c2a44cc47f52ac697d3504213c7962b  ./packaging/lu
 6f14d3589b61fdd428b7579680a8733713038592c952844ae7fe9a420ffc9d27  ./packaging/lulu-vt
 0573ef0f102cc3a58281e07b3f99ec6d4bd643f2da486fb5035fbfccf1d93793  ./packaging/pipewire/lulu-fallback-input.conf
 7806e0b076e46e2eaeca7d702852fceb7bf65c5f82a7fd72326a68e3efe7af36  ./packaging/presentation.conf
-b05eaf3bdcfcd5f3a15f9b355af4cba3e2da6e31d2108faa6a9c8998bc44b51b  ./scripts/console-ui-bridge.py
+be406ec725382224fd32c909db084b7c8822a4eb46fce1b745d6477d3f450067  ./scripts/console-ui-bridge.py
 828e1eb2c8ea4fad15b233d0f3ccb19327218045b308bbcf1c040f163a1ddc6f  ./scripts/console-ui.sh
 ce51b3310b134333cf34bb445155c223fed78d20644ae62d71b53f539dc58ab0  ./scripts/steam-bootstrap.sh
 559defbdfd363d48fb9ff286cf497a5e62bdca8cb8c3b0c42be5a706d9bc5b01  ./scripts/steam-session-bootstrap.sh
@@ -126,4 +126,4 @@ a8ea4aaf2aa8bec1bc839c296e30562a49e4574edb422588e88ce42e93ba9dd9  ./ui/StoreHome
 420ef0464e943bd59e42aa668e502518c027ff57e6faa5cf94447532fd648770  ./ui/SystemHome.qml
 41f2dd93760de12dd2b290a2441ed1cf9e05386c356996c3178645d8640b52a6  ./ui/SystemSpace.qml
 9d678d2bda8f02ee8087dca28cbd719563750e29cda21c3450947d0bfcce5822  ./ui/Typography.qml
-918039938885be5ede7dfed8ad63798984348eba74636685b57291cf65591281  ./ui/UiAudioEngine.qml
+11a74ffe8a237c8330c59d5a42da83dce6ebb12e71ef5f9b1f314e248a660f5a  ./ui/UiAudioEngine.qml
