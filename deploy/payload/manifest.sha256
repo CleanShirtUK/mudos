@@ -1,4 +1,4 @@
-5f1a29c608ca1baec4fc2d74f5c2f2fda37c466ed32fdd117c1966dfe748b323  ./bin/lulu-shell
+d00bfb3a30287d36a98d75a6a40aa82d8de7ce317e6275bd0e632d355378d0a1  ./bin/lulu-shell
 6f14d3589b61fdd428b7579680a8733713038592c952844ae7fe9a420ffc9d27  ./bin/lulu-vt
 029b37c6b3f706f01a3efc700f9cd016ae38f9482dc7f9c2387a02078a7ee16b  ./bin/mudos-guide
 debdf728d7f675ec977c8a0876ef0fdd8d40e8187135d4f30d21e9f036d28e35  ./bin/verify-mudos.sh
@@ -46,7 +46,7 @@ f55061962eb1928cbd410213f75f56de0c2a44cc47f52ac697d3504213c7962b  ./packaging/lu
 6f14d3589b61fdd428b7579680a8733713038592c952844ae7fe9a420ffc9d27  ./packaging/lulu-vt
 0573ef0f102cc3a58281e07b3f99ec6d4bd643f2da486fb5035fbfccf1d93793  ./packaging/pipewire/lulu-fallback-input.conf
 7806e0b076e46e2eaeca7d702852fceb7bf65c5f82a7fd72326a68e3efe7af36  ./packaging/presentation.conf
-be406ec725382224fd32c909db084b7c8822a4eb46fce1b745d6477d3f450067  ./scripts/console-ui-bridge.py
+b05eaf3bdcfcd5f3a15f9b355af4cba3e2da6e31d2108faa6a9c8998bc44b51b  ./scripts/console-ui-bridge.py
 828e1eb2c8ea4fad15b233d0f3ccb19327218045b308bbcf1c040f163a1ddc6f  ./scripts/console-ui.sh
 ce51b3310b134333cf34bb445155c223fed78d20644ae62d71b53f539dc58ab0  ./scripts/steam-bootstrap.sh
 559defbdfd363d48fb9ff286cf497a5e62bdca8cb8c3b0c42be5a706d9bc5b01  ./scripts/steam-session-bootstrap.sh
@@ -75,7 +75,7 @@ f6dd2ae216837c63e7de7429791d0bac903b98353ac58572bb92a81e207158ca  ./ui/artwork/s
 9129240fb672e8820d5d259a33949bc22acc51e32a7837c48d414d84a1e7f58d  ./ui/artwork/system-network.svg
 abdc96a0808cf3b52a09b044d47950299c374c0fd7109cb1c584094646e342a7  ./ui/artwork/system-storage.svg
 72e0199379684170b956f274525299d67c2395e9bd44b4352d7b48c4d1533000  ./ui/artwork/system-system.svg
-9fb0263d5c6c8e0215e19bd18a9006f7440f536481b7a84bc6e8302ba4b83e44  ./ui/ConsoleShell.qml
+c2900c83d033b8f565c70fba208f8d33316da4e7feb8866805dfd0eb4466523e  ./ui/ConsoleShell.qml
 c147b5955bb1f2f7c65a9e07fe85afca2f9f9693aa090b5bd6fc45da9189045b  ./ui/ControllerGlyph.qml
 b48f2af29670ce222cfa759a22ca7d789a10cd8a7a15a6e9c2897fb1df7ed936  ./ui/controllerglyphs/SteamDeck_A.png
 63c72d44c4cce55d6ec5e1368938533f9a4ed440f9d1ce7f7e42eb6d9fd77db5  ./ui/controllerglyphs/SteamDeck_B.png
@@ -126,4 +126,4 @@ a8ea4aaf2aa8bec1bc839c296e30562a49e4574edb422588e88ce42e93ba9dd9  ./ui/StoreHome
 420ef0464e943bd59e42aa668e502518c027ff57e6faa5cf94447532fd648770  ./ui/SystemHome.qml
 41f2dd93760de12dd2b290a2441ed1cf9e05386c356996c3178645d8640b52a6  ./ui/SystemSpace.qml
 9d678d2bda8f02ee8087dca28cbd719563750e29cda21c3450947d0bfcce5822  ./ui/Typography.qml
-11a74ffe8a237c8330c59d5a42da83dce6ebb12e71ef5f9b1f314e248a660f5a  ./ui/UiAudioEngine.qml
+3be28792ed7224534a3e159b45b0a9b3eaf485c81ac24ca7460a76350bb7e508  ./ui/UiAudioEngine.qml

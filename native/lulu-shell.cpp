@@ -350,6 +350,16 @@ private:
         qInfo() << "SDL semantic navigation dispatch" << action;
         insert("action", QString::fromLatin1(action));
         insert("actionSerial", value("actionSerial").toInt() + 1);
+        if (qstrcmp(action, "up") == 0 || qstrcmp(action, "down") == 0
+                || qstrcmp(action, "left") == 0 || qstrcmp(action, "right") == 0
+                || qstrcmp(action, "leftShoulder") == 0
+                || qstrcmp(action, "rightShoulder") == 0) {
+            if (navigationAudio_.state() == QProcess::NotRunning) {
+                navigationAudio_.start(
+                    "/usr/bin/pw-play",
+                    {"/opt/lulu/current/ui/sounds/ui-navigate.wav"});
+            }
+        }
         if (guideProcess_)
             return;
         static const std::pair<const char *, const char *> routes[] = {
@@ -506,6 +516,7 @@ private:
     uint32_t targetPid_ = 0;
     QProcess *guideProcess_ = nullptr;
     QTimer dbusDiscoveryTimer_;
+    QProcess navigationAudio_;
     QHash<QString, DbusInputRelay *> dbusRelays_;
     QString guideOwnerComposite_;
     SDL_Gamepad *gamepad_ = nullptr;

@@ -11,14 +11,12 @@ import os
 from pathlib import Path
 import re
 import select
-import subprocess
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from threading import Lock, Thread
 from urllib.parse import parse_qs, unquote, urlparse
 
 
 LOGGER = logging.getLogger("lulu.console-ui-bridge")
-NAVIGATION_AUDIO_PROCESSES: list[subprocess.Popen] = []
 
 
 def normalize_launch_token(value: object) -> str:
@@ -297,26 +295,6 @@ class ApiHandler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:
         path = urlparse(self.path).path
-        if path == "/ui-audio/navigate":
-            global NAVIGATION_AUDIO_PROCESSES
-            NAVIGATION_AUDIO_PROCESSES = [
-                process for process in NAVIGATION_AUDIO_PROCESSES
-                if process.poll() is None
-            ]
-            if len(NAVIGATION_AUDIO_PROCESSES) >= 3:
-                self._respond(429, {"error": "navigation audio voice cap reached"})
-                return
-            try:
-                NAVIGATION_AUDIO_PROCESSES.append(
-                    subprocess.Popen(
-                        ["/usr/bin/pw-play", "/opt/lulu/current/ui/sounds/ui-navigate.wav"],
-                        start_new_session=True,
-                    )
-                )
-                self._respond(200, {"ok": True})
-            except OSError as error:
-                self._respond(503, {"error": str(error)})
-            return
         if path.startswith("/metadata/"):
             try:
                 game_id = unquote(path.split("/", 3)[3])

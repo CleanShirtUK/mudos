@@ -19,19 +19,7 @@ QtObject {
 
     Component {
         id: navigateVoiceComponent
-        QtObject {
-            property url source: root.navigateSource
-            property real volume: root.volume
-            property bool muted: false
-            readonly property bool playing: false
-            readonly property int status: SoundEffect.Ready
-            function play() {
-                var request = new XMLHttpRequest()
-                request.open("POST", "http://127.0.0.1:38123/ui-audio/navigate")
-                request.send()
-            }
-            function stop() {}
-        }
+        SoundEffect { source: root.navigateSource; volume: root.volume }
     }
     Component {
         id: confirmVoiceComponent

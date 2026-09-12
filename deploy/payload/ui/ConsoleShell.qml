@@ -704,7 +704,7 @@ Window {
             }
             if (key === "action" && value === "back" && root.launchOverlayVisible)
                 root.cancelLaunch()
-            if (key === "action")
+            if (key === "action" && root.audioEventForAction(value) !== "navigate")
                 root.playAudioEvent(root.audioEventForAction(value))
         }
     }
