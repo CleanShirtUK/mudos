@@ -59,10 +59,10 @@ The registry maps the current fixtures as follows:
 | Genesis | RetroArch + Genesis Plus GX | `retroarch -L <core> <rom>` |
 | PS2 | PCSX2 | `pcsx2-qt <disc>` |
 | Wii | Dolphin | `dolphin-emu -e <disc>` |
-| Switch | Yuzu | `yuzu <package>` |
+| Switch | Eden | `eden-cli --config <generated-config> --fullscreen --game <package>` |
 
 Paths are configurable with `LULU_RETROARCH`, `LULU_NES_CORE`,
-`LULU_GENESIS_CORE`, `LULU_PCSX2`, `LULU_DOLPHIN`, and `LULU_YUZU`. Missing
+`LULU_GENESIS_CORE`, `LULU_PCSX2`, `LULU_DOLPHIN`, and `LULU_EDEN`. Missing
 runtime, core, or BIOS prerequisites leave a discovered game visible but not
 launchable. The runtime adapter builds an intent and does not start a process;
 session ownership remains with the existing ConsoleSessiond boundary.

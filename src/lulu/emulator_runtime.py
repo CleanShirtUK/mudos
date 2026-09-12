@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .local_content import LocalContentGame
+from .switch_provider import SwitchProvider
 
 
 @dataclass(frozen=True, slots=True)
@@ -18,9 +19,11 @@ class EmulatorRuntimeAdapter:
 
     _retroarch_platforms = {"nes", "genesis"}
 
-    def __init__(self, runtime_paths: dict[str, Path], core_paths: dict[str, Path] | None = None) -> None:
+    def __init__(self, runtime_paths: dict[str, Path], core_paths: dict[str, Path] | None = None,
+                 switch_provider: SwitchProvider | None = None) -> None:
         self.runtime_paths = runtime_paths
         self.core_paths = core_paths or {}
+        self.switch_provider = switch_provider or SwitchProvider()
 
     @staticmethod
     def supports_provider_menu(platform: str) -> bool:
@@ -51,7 +54,7 @@ class EmulatorRuntimeAdapter:
             )
         elif game.platform == "switch":
             content_path = getattr(game, "content_path", getattr(game, "install_dir", ""))
-            arguments = (content_path,)
+            arguments = self.switch_provider.launch_arguments(content_path)
         else:
             raise ValueError(f"unsupported-runtime: {game.platform}")
         return EmulatorLaunchIntent(game.platform, str(executable), arguments)

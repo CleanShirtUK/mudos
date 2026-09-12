@@ -17,7 +17,9 @@ tag=${2:?usage: refresh-payload.sh COMMIT TAG}
 cp "$root"/ui/*.qml "$payload/ui/"
 cp "$root"/src/lulu/consoled.py "$root"/src/lulu/console_sessiond.py "$root"/src/lulu/process_supervisor.py \
    "$root"/src/lulu/sessiond.py "$root"/src/lulu/steam_provider.py "$root"/src/lulu/system_settings.py "$root"/src/lulu/gamescope.py \
-   "$root"/src/lulu/inputplumber.py "$root"/src/lulu/contracts.py "$root"/src/lulu/controllerd.py "$payload/lib/lulu/"
+   "$root"/src/lulu/inputplumber.py "$root"/src/lulu/contracts.py "$root"/src/lulu/controllerd.py \
+   "$root"/src/lulu/emulation.py "$root"/src/lulu/emulator_runtime.py "$root"/src/lulu/local_content.py \
+   "$root"/src/lulu/controller_provisioning.py "$root"/src/lulu/switch_provider.py "$payload/lib/lulu/"
 cp "$root"/scripts/console-ui-bridge.py "$payload/scripts/console-ui-bridge.py"
 cp "$root"/scripts/console-ui.sh "$payload/scripts/console-ui.sh"
 cp "$root"/scripts/steam-bootstrap.sh "$payload/scripts/steam-bootstrap.sh"
