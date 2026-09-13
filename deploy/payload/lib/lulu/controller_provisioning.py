@@ -185,6 +185,7 @@ def ensure_provider_controller_config(
                 "ConfirmShutdown": "false",
                 "StartFullscreen": "true",
                 "StartBigPictureMode": "false",
+                "OpenPauseMenu": "Keyboard/F12",
             },
         )
         for player in range(1, min(player_count, 2) + 1):
