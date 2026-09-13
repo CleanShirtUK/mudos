@@ -31,9 +31,10 @@ class GuideWindow final : public QObject
 public:
     GuideWindow(QQuickWindow *window, uint32_t targetXid, uint32_t targetPid,
                 const QString &providerMenuCommand, const QString &providerMenuLabel,
+                bool edenProvider,
                 QQmlPropertyMap *viewModel)
         : window_(window), targetXid_(targetXid), targetPid_(targetPid),
-          providerMenuCommand_(providerMenuCommand), providerMenuLabel_(providerMenuLabel), viewModel_(viewModel)
+          providerMenuCommand_(providerMenuCommand), providerMenuLabel_(providerMenuLabel), edenProvider_(edenProvider), viewModel_(viewModel)
     {
     }
 
@@ -111,7 +112,10 @@ private:
             else if (selection == compatibilitySelection())
                 switchCompatibilityMode();
             else
-                sendDelete();
+                if (edenProvider_)
+                    terminateEden();
+                else
+                    sendDelete();
             QCoreApplication::quit();
         }
         else if (command == QStringLiteral("ui_back")) {
@@ -174,6 +178,18 @@ private:
         xcb_flush(x11->connection());
         return true;
     }
+    void terminateEden()
+    {
+        const auto group = ::getpgid(static_cast<pid_t>(targetPid_));
+        if (group <= 1)
+            return;
+        if (::kill(-group, SIGTERM) < 0)
+            return;
+        ::usleep(100000);
+        if (::kill(-group, 0) == 0)
+            ::kill(-group, SIGKILL);
+    }
+
 
     void sendDelete()
     {
@@ -295,6 +311,7 @@ private:
     uint32_t targetPid_;
     QString providerMenuCommand_;
     QString providerMenuLabel_;
+    bool edenProvider_;
     QQmlPropertyMap *viewModel_;
     QSocketNotifier *inputNotifier_ = nullptr;
     QByteArray inputBuffer_;
@@ -310,6 +327,7 @@ int main(int argc, char **argv)
     const auto targetPid = static_cast<uint32_t>(std::strtoul(argv[2], nullptr, 0));
     const auto providerMenuCommand = argc == 4 ? QString::fromLocal8Bit(argv[3]) : QString();
     auto providerMenuLabel = argc == 5 ? QString::fromLocal8Bit(argv[4]) : QStringLiteral("Provider Menu");
+    bool edenProvider = false;
     auto effectiveProviderCommand = providerMenuCommand;
     bool compatibilityMode = false;
     bool shellContext = false;
@@ -335,6 +353,8 @@ int main(int argc, char **argv)
         } else if (primaryId.startsWith(QStringLiteral("local:nes:"))
                    || primaryId.startsWith(QStringLiteral("local:genesis:"))) {
             effectiveProviderCommand = QStringLiteral("/usr/bin/retroarch --command MENU_TOGGLE");
+        } else if (primaryId.startsWith(QStringLiteral("local:switch:"))) {
+            edenProvider = true;
         }
     }
 
@@ -359,7 +379,7 @@ int main(int argc, char **argv)
     auto *window = qobject_cast<QQuickWindow *>(engine.rootObjects().constFirst());
     if (!window)
         return EXIT_FAILURE;
-    GuideWindow guide(window, targetXid, targetPid, effectiveProviderCommand, providerMenuLabel, &viewModel);
+    GuideWindow guide(window, targetXid, targetPid, effectiveProviderCommand, providerMenuLabel, edenProvider, &viewModel);
     if (!guide.prepare())
         return EXIT_FAILURE;
     window->show();
