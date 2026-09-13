@@ -303,6 +303,10 @@ class ConsoleInterface(ServiceInterface):
                 device_indices = await asyncio.to_thread(_mudos_provider_device_indices)
             intent = self.local_runtime.launch_intent(game, device_indices=device_indices)
             command = [intent.executable, *intent.arguments]
+            is_pcsx2 = intent.platform == "ps2"
+            if is_pcsx2:
+                LOGGER.info("[PCSX2] selected game=%s path=%s", game_id, game.install_dir)
+                LOGGER.info("[PCSX2] resolved executable=%s", intent.executable)
             child_config_path: str | None = None
             if intent.platform in {"ps2", "wii"}:
                 controller_provider = {"ps2": "pcsx2", "wii": "dolphin"}[intent.platform]
@@ -339,6 +343,8 @@ class ConsoleInterface(ServiceInterface):
                 intent.arguments[-1],
                 command,
             )
+            if is_pcsx2:
+                LOGGER.info("[PCSX2] command line=%s", shlex.join(command))
             child_environment = os.environ.copy()
             if intent.platform in {"nes", "genesis", "ps2"}:
                 child_environment.pop("WAYLAND_DISPLAY", None)
@@ -358,6 +364,8 @@ class ConsoleInterface(ServiceInterface):
                 cwd="/home/lulu" if intent.platform == "switch" else None,
                 start_new_session=True,
             )
+            if is_pcsx2:
+                LOGGER.info("[PCSX2] process PID=%s", process.pid)
             try:
                 if self.sessiond is not None:
                     self._local_token = await self.sessiond.call_begin_local_session(
@@ -391,6 +399,9 @@ class ConsoleInterface(ServiceInterface):
                 self._local_process = None
                 self._local_token = None
                 LOGGER.info("local runtime exit game_id=%s pid=%s exit_code=%s", game_id, process.pid, exit_code)
+                if is_pcsx2:
+                    LOGGER.info("[PCSX2] process exit pid=%s exit_code=%s", process.pid, exit_code)
+                    LOGGER.info("[PCSX2] lifecycle return game_id=%s", game_id)
 
             asyncio.create_task(reap())
             token = self._local_token or f"local:{process.pid}"

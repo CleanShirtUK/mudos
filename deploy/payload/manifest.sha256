@@ -11,14 +11,14 @@ ec5d9c2c25e2bf0cc4f1f3bf0f4d93f5918b21c24ffcb8585018b8be882f27bb  ./config/input
 ec39e530f45dfae7f2a8d7c369a5b91767261fd00b70d2fe13a9760b24da20ac  ./lib/lulu/artwork.py
 20c5af66e8ede83beccac5706534f47cc2bbd6a1804ccf9b50109103f8e2b45f  ./lib/lulu/capabilities.py
 67605979a614c2ace87894068e406e8189ee390abcc9d7caca0c476a8f5ef75f  ./lib/lulu/catalogue.py
-dfd009ae2ced27d286ee9b6af74fe3dc974888ae510154aeae3d6d7eba36bb3a  ./lib/lulu/consoled.py
+b7a88f4cb132de21c6c1e516a487ef354d39b0b0002aa6bdcbc86426a8618907  ./lib/lulu/consoled.py
 b3022d5b7f1176c38474ad4b0d2e79236756c2814de689c0dc29cc9c1094b171  ./lib/lulu/console_sessiond.py
 bf6eaf76a5c7499fdd239d0ae6d50a647f709225e2526d7cbeadf24954fa1ab9  ./lib/lulu/console_ui.py
 2426657b5e83bd5a2cf59674ecd4f1fb930e16840a7b20a26fa31302f431a89a  ./lib/lulu/contracts.py
 ec4dd764054a39ef16b245ab155eddeac77bf088e9b68aca15bd4cdab57fb22a  ./lib/lulu/controllerd.py
-b9f6d63e8b561958079c05ae0877172e7e344703fe501ebe6c467117e966ebbf  ./lib/lulu/controller_provisioning.py
+97476d25ef533e86030aff1da3c3726f051b4606f2c0c0751cf054ef3bad74c0  ./lib/lulu/controller_provisioning.py
 640c2a36264ad61546198b9b7533d5b1fe59d751d0c327f4d8b4fc365e50a9a7  ./lib/lulu/emulation.py
-aaa7cddd7c909d280de17243974d0e148f80bbf351b27ea205ec9a2be07e0b8b  ./lib/lulu/emulator_runtime.py
+149beeee52f1fed6abd8c29410cf71192a246a1f18ff7cdd42e7e9df5afc9749  ./lib/lulu/emulator_runtime.py
 22eea93ebf4fdf4093a74b3fbb9673a87ba91861aa0dddefbdd70f57df58f81b  ./lib/lulu/gamescope.py
 6dee4565d6f07c1faf8ef9c1be954c25d9826c4a4aeb5da6e5ad06b8670edb01  ./lib/lulu/__init__.py
 f4457584f10ebf9fb6138e089750f80ed0ad1a81866a6eb54a3b9746abbc424a  ./lib/lulu/inputplumber.py

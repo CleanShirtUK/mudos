@@ -178,6 +178,15 @@ def ensure_provider_controller_config(
             "Folders",
             {"Bios": str(PATHS.bios_root / "ps2")},
         )
+        source = _update_section_values(
+            source,
+            "UI",
+            {
+                "ConfirmShutdown": "false",
+                "StartFullscreen": "true",
+                "StartBigPictureMode": "false",
+            },
+        )
         for player in range(1, min(player_count, 2) + 1):
             source = _replace_section(
                 source,
