@@ -141,7 +141,7 @@ class EmulatorRuntimeTests(unittest.TestCase):
             self.assertNotIn("SDL-1/", pad1)
             self.assertIn("Up = SDL-0/DPadDown", first)
             self.assertIn("L2 = SDL-0/+LeftTrigger", first)
-            self.assertNotIn("Keyboard/", first)
+            self.assertIn("OpenPauseMenu = Keyboard/F12", first)
             self.assertIn("ConfirmShutdown = false", first)
             self.assertIn("StartFullscreen = true", first)
             self.assertIn("StartBigPictureMode = false", first)

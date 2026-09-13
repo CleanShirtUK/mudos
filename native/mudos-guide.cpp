@@ -13,6 +13,9 @@
 #include <QVariant>
 
 #include <xcb/xcb.h>
+#include <xcb/xtest.h>
+#include <xcb/xcb_keysyms.h>
+#include <X11/keysym.h>
 
 #include <csignal>
 #include <cstdlib>
@@ -226,6 +229,34 @@ private:
         else
             QCoreApplication::quit();
     }
+    bool sendPcsx2Hotkey()
+    {
+        auto *x11 = qGuiApp->nativeInterface<QNativeInterface::QX11Application>();
+        if (!x11 || !x11->connection())
+            return false;
+        auto *connection = x11->connection();
+        auto *keySymbols = xcb_key_symbols_alloc(connection);
+        if (!keySymbols)
+            return false;
+        const auto keycodes = xcb_key_symbols_get_keycode(keySymbols, XK_F12);
+        if (!keycodes || keycodes[0] == XCB_NO_SYMBOL)
+        {
+            free(keycodes);
+            xcb_key_symbols_free(keySymbols);
+            return false;
+        }
+        const auto setup = xcb_get_setup(connection);
+        const auto screen = xcb_setup_roots_iterator(setup).data;
+        xcb_set_input_focus(connection, XCB_INPUT_FOCUS_NONE, targetXid_, XCB_CURRENT_TIME);
+        xcb_test_fake_input(connection, XCB_KEY_PRESS, keycodes[0], XCB_CURRENT_TIME,
+                            screen->root, 0, 0, 0);
+        xcb_test_fake_input(connection, XCB_KEY_RELEASE, keycodes[0], XCB_CURRENT_TIME,
+                            screen->root, 0, 0, 0);
+        xcb_flush(connection);
+        free(keycodes);
+        xcb_key_symbols_free(keySymbols);
+        return true;
+    }
 
     void openProviderMenu()
     {
@@ -241,6 +272,12 @@ private:
             sessiond.call("RequestSteamStoreSurface");
             return;
         }
+        if (providerMenuLabel_ == QStringLiteral("Open PCSX2 Menu")) {
+            if (!sendPcsx2Hotkey())
+                qWarning() << "PCSX2 provider menu hotkey failed";
+            return;
+        }
+
         const auto command = QProcess::splitCommand(providerMenuCommand_);
         if (command.isEmpty())
             return;
@@ -254,6 +291,7 @@ private:
 
     QQuickWindow *window_;
     uint32_t targetXid_;
+
     uint32_t targetPid_;
     QString providerMenuCommand_;
     QString providerMenuLabel_;
@@ -291,6 +329,9 @@ int main(int argc, char **argv)
             effectiveProviderCommand = QStringLiteral("steam");
             providerMenuLabel = state.value("delegated_surface").toString() == QStringLiteral("downloads")
                 ? QStringLiteral("Go to Store") : QStringLiteral("View Download Queue");
+        } else if (primaryId.startsWith(QStringLiteral("local:ps2:"))) {
+            effectiveProviderCommand = QStringLiteral("PCSX2_OPEN_PAUSE_MENU");
+            providerMenuLabel = QStringLiteral("Open PCSX2 Menu");
         } else if (primaryId.startsWith(QStringLiteral("local:nes:"))
                    || primaryId.startsWith(QStringLiteral("local:genesis:"))) {
             effectiveProviderCommand = QStringLiteral("/usr/bin/retroarch --command MENU_TOGGLE");

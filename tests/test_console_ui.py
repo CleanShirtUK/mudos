@@ -104,7 +104,10 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertIn('primaryId.startsWith(QStringLiteral("local:nes:"))', native_guide)
         self.assertIn('primaryId.startsWith(QStringLiteral("local:genesis:"))', native_guide)
         self.assertIn('QStringLiteral("/usr/bin/retroarch --command MENU_TOGGLE")', native_guide)
-        self.assertNotIn('primaryId.startsWith(QStringLiteral("local:ps2:"))', native_guide)
+        self.assertIn('primaryId.startsWith(QStringLiteral("local:ps2:"))', native_guide)
+        self.assertIn('QStringLiteral("Open PCSX2 Menu")', native_guide)
+        self.assertIn('xcb_test_fake_input', native_guide)
+        self.assertIn('XK_F12', native_guide)
 
     def test_extracted_ui_primitives_preserve_real_game_card_data(self) -> None:
         for filename in ("GameCard.qml", "RecentHome.qml", "LibraryHome.qml", "LibrarySpace.qml", "PlaceholderHome.qml"):
