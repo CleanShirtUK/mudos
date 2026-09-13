@@ -10,10 +10,10 @@ DEFAULT_XBOX360_GUID = "030000005e0400008e02000001000000"
 # SDL's standard gamepad order. Eden's SDL backend consumes these values in
 # the serialized input parameter packages.
 _BUTTONS = {
-    "a": 1,
-    "b": 0,
-    "x": 3,
-    "y": 2,
+    "a": 0,
+    "b": 1,
+    "x": 2,
+    "y": 3,
     "l": 4,
     "r": 5,
     "minus": 6,
