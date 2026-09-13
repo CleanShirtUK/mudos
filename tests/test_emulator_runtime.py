@@ -123,7 +123,7 @@ class EmulatorRuntimeTests(unittest.TestCase):
 
         self.assertEqual(
             intent.arguments,
-            ("-batch", "-fullscreen", "-bigpicture", "--", "/fixture/game.cue"),
+            ("-batch", "-fullscreen", "--", "/fixture/game.cue"),
         )
 
     def test_pcsx2_controller_profile_is_native_and_idempotent(self) -> None:
@@ -142,6 +142,9 @@ class EmulatorRuntimeTests(unittest.TestCase):
             self.assertIn("Up = SDL-0/DPadDown", first)
             self.assertIn("L2 = SDL-0/+LeftTrigger", first)
             self.assertNotIn("Keyboard/", first)
+            self.assertIn("ConfirmShutdown = false", first)
+            self.assertIn("StartFullscreen = true", first)
+            self.assertIn("StartBigPictureMode = false", first)
             self.assertIn("[Pad2]", first)
             self.assertIn("Cross = SDL-1/FaceSouth", first)
 
