@@ -10,10 +10,10 @@ DEFAULT_XBOX360_GUID = "030000005e0400008e02000001000000"
 # SDL's standard gamepad order. Eden's SDL backend consumes these values in
 # the serialized input parameter packages.
 _BUTTONS = {
-    "a": 1,
-    "b": 0,
-    "x": 3,
-    "y": 2,
+    "a": 0,
+    "b": 1,
+    "x": 2,
+    "y": 3,
     "l": 4,
     "r": 5,
     "minus": 6,
@@ -83,21 +83,6 @@ class SwitchProvider:
         if not self.config_path.exists() or self.config_path.read_text(encoding="utf-8") != content:
             self.config_path.write_text(content, encoding="utf-8")
         self._update_active_config(content)
-        active_source = self.active_config_path.read_text(encoding="utf-8")
-        lines = active_source.splitlines()
-        ui_start = next((index for index, line in enumerate(lines) if line == "[UI]"), None)
-        if ui_start is None:
-            lines.extend(["", "[UI]", "fullscreen=true", "confirmStop=0"])
-        if ui_start is not None:
-            ui_end = next(
-                (index for index in range(ui_start + 1, len(lines)) if lines[index].startswith("[")),
-                len(lines),
-            )
-            for index in range(ui_start + 1, ui_end):
-                for key, value in (("fullscreen", "true"), ("confirmStop", "0")):
-                    if lines[index].startswith(f"{key}="):
-                        lines[index] = f"{key}={value}"
-        self.active_config_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
         return self.active_config_path
 
     def _update_active_config(self, profile: str) -> None:
@@ -130,5 +115,5 @@ class SwitchProvider:
         config = self.ensure_controller_config(player_count, device_indices)
         return (
             "--appimage-extract-and-run",
-            "--config", str(config), "--fullscreen", "--game", content_path,
+            "--config", str(config), "-f", "--fullscreen", "--game", content_path,
         )
