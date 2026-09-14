@@ -468,7 +468,6 @@ class ConsoleInterface(ServiceInterface):
 
 async def serve() -> None:
     catalogue = ConsoleCatalog()
-    catalogue.refresh()
     runtime = EmulatorRuntimeAdapter(
         {platform: definition.executable for platform, definition in PLATFORMS.items()},
         {platform: definition.core for platform, definition in PLATFORMS.items() if definition.core is not None},
@@ -481,6 +480,10 @@ async def serve() -> None:
     sessiond = session_proxy.get_interface("org.lulu.ConsoleSession")
     bus.export(OBJECT_PATH, ConsoleInterface(catalogue, runtime, sessiond=sessiond))
     await bus.request_name(BUS_NAME)
+    # Publish the D-Bus boundary before the potentially slow provider refresh.
+    # sessiond starts the shell during bootstrap, and the bridge must be able to
+    # discover Consoled while the catalogue is being populated.
+    catalogue.refresh()
     await asyncio.Event().wait()
 
 
