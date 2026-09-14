@@ -181,6 +181,25 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertIn("function openSystemCategory(index)", QML)
         self.assertNotIn("root.activate()\n            }", QML)
 
+    def test_store_consumes_normalized_availability_without_install_behavior(self) -> None:
+        store = (ROOT / "ui" / "StoreHome.qml").read_text()
+        bridge = (ROOT / "scripts" / "console-ui-bridge.py").read_text()
+        self.assertIn('request.open("GET", apiUrl + "/available?provider=romm")', QML)
+        self.assertIn('property var storeAvailableGames: []', QML)
+        self.assertIn('property var storeCategories:', QML)
+        self.assertIn('availability_state !== "available"', QML)
+        self.assertIn('install_state !== "available"', QML)
+        self.assertIn('categories.push({"label": label, "scope": scope})', QML)
+        self.assertIn('text: root.errorMessage !== "" ? root.errorMessage : "No games available"', store)
+        self.assertIn('displayGames.length > 0 && root.cardWidth === 0', store)
+        self.assertIn('String(game.game_id) === "steam-store"', store)
+        self.assertIn('availableGameSelected(game)', store)
+        self.assertNotIn('steam://install', QML + store)
+        self.assertNotIn('romm', store.lower())
+        self.assertIn('call_list_available_games', bridge)
+        self.assertIn('actionLabel: modelData.install_state === "available"', (ROOT / "ui" / "RecentHome.qml").read_text())
+        self.assertIn('text: card.actionLabel', (ROOT / "ui" / "GameCard.qml").read_text())
+
     def test_non_game_portrait_artwork_assets_are_replaceable(self) -> None:
         artwork = ROOT / "ui" / "artwork"
         expected = {

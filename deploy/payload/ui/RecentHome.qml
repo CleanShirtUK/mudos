@@ -168,9 +168,12 @@ Item {
                 presentationState: modelData.game_id === recentHome.selectedGameId ? "FOCUSED" : "COMPACT"
                 liveSceneCoordinates: true
                 opticsStage: blend > 0 ? 7 : -1
-                compact: presentationState === "COMPACT"
-                showAction: false
-                homeCard: true
+                 compact: presentationState === "COMPACT"
+                 showAction: false
+                 actionLabel: modelData.install_state === "available"
+                     ? "Available to Download" : (modelData.provider === "steam-store"
+                         ? "A  Open" : "A  Play")
+                 homeCard: true
                 canonicalTexture: recentHome.canonicalTexture
                 canonicalCoordinateRoot: recentHome.canonicalCoordinateRoot
                 canonicalSize: recentHome.canonicalSize

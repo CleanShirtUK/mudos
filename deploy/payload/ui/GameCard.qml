@@ -20,6 +20,7 @@ Rectangle {
     property var typography
     property var luluPalette
     property string displayTitle: ""
+    property string actionLabel: "A  Play"
     property url artworkSource: ""
     property string artworkRole: "raster"
     // The supplied fallback asset belongs at this normal artwork-pipeline path.
@@ -343,7 +344,8 @@ Rectangle {
 
             Text {
                 anchors.centerIn: parent
-                text: "A  Play"
+                 // text: "A  Play" is the default action label.
+                 text: card.actionLabel || "A  Play"
                 color: card.focusedColor(card.luluPalette.actionText)
                 font.family: card.typography ? card.typography.interfaceFamily : "JetBrains Mono"
                 font.pixelSize: card.typography ? card.typography.size("control", 28 * focalScale) : 28 * focalScale * card.uiScale

@@ -141,6 +141,10 @@ Window {
     readonly property string libraryNavigationObject: "library"
     property var recentGames: []
     property var libraryGames: []
+    property var storeAvailableGames: []
+    property var storeCategories: [{"label": "All Available", "scope": "all"}]
+    property var storeHomeRef: null
+    property string storeError: ""
     property string message: ""
     property string launchStatus: "idle"
     property string launchTitle: ""
@@ -248,6 +252,53 @@ Window {
             if (collectionIndex >= libraryCollections.length)
                 collectionIndex = 0
         })
+    }
+
+    function refreshStore() {
+        var request = new XMLHttpRequest()
+        request.onreadystatechange = function() {
+            if (request.readyState !== XMLHttpRequest.DONE)
+                return
+            if (request.status !== 200) {
+                storeAvailableGames = []
+                storeCategories = [{"label": "All Available", "scope": "all"}]
+                storeError = "Available titles unavailable"
+                return
+            }
+            try {
+                var rows = JSON.parse(request.responseText)
+                var games = []
+                var categories = [{"label": "All Available", "scope": "all"}]
+                var categorySeen = ({})
+                var seen = ({})
+                for (var index = 0; index < rows.length; index++) {
+                    var game = rows[index]
+                    if (!game || game.availability_state !== "available"
+                            || game.install_state !== "available")
+                        continue
+                    var gameId = String(game.game_id)
+                    if (seen[gameId])
+                        continue
+                    seen[gameId] = true
+                    games.push(game)
+                    var scope = String(game.platform || "")
+                    var label = String(game.platform_label || scope)
+                    if (scope && !categorySeen[scope]) {
+                        categorySeen[scope] = true
+                        categories.push({"label": label, "scope": scope})
+                    }
+                }
+                storeAvailableGames = games
+                storeCategories = categories
+                storeError = ""
+            } catch (error) {
+                storeAvailableGames = []
+                storeCategories = [{"label": "All Available", "scope": "all"}]
+                storeError = "Available titles unavailable"
+            }
+        }
+        request.open("GET", apiUrl + "/available?provider=romm")
+        request.send()
     }
 
     function applyLaunchState(state, generation) {
@@ -621,6 +672,16 @@ Window {
         refreshLibrary()
     }
 
+    function moveStoreCategory(delta) {
+        if (storeHomeRef)
+            storeHomeRef.moveCategory(delta)
+    }
+
+    function moveStoreGame(delta) {
+        if (storeHomeRef)
+            storeHomeRef.moveGame(delta)
+    }
+
     function launchGame(game) {
         if (!game)
             return
@@ -736,6 +797,11 @@ Window {
             }
             return
         }
+        if (space === "store") {
+            if (storeHomeRef)
+                storeHomeRef.activateSelected()
+            return
+        }
 
         if (selectedCategoryIndex === 3) {
             launchGame(visibleRecentGame)
@@ -755,7 +821,11 @@ Window {
         } else if (selectedCategoryIndex === 0) {
             openSystemCategory(systemHomeRailRef ? systemHomeRailRef.selectedIndex : systemCategoryIndex)
         } else if (selectedCategoryIndex === 1) {
-            openSteamStore()
+            space = "store"
+            storeHomeRef.categoryIndex = 0
+            storeHomeRef.selectedIndex = 0
+            refreshStore()
+            message = ""
         } else {
             // Store space is not implemented for unknown future domains: message = "Store space is not implemented"
             message = "System space is not implemented"
@@ -817,6 +887,9 @@ Window {
             homeFadeOut.stop()
             homeFadeIn.restart()
             libraryFocus = "games"
+            message = ""
+        } else if (space === "store") {
+            space = "home"
             message = ""
         } else {
             message = ""
@@ -935,12 +1008,14 @@ Window {
     Component.onCompleted: {
         inputSurface.forceActiveFocus()
         refreshCatalogue()
+        refreshStore()
     }
 
     function controllerUp() {
             if (root.gameOptionsOpen) root.moveGameOptions(-1)
             else if (root.space === "home") root.moveDomain(-1)
             else if (root.space === "library") root.moveLibraryVertical(-1)
+            else if (root.space === "store") root.moveStoreCategory(-1)
             else if (root.space === "system") {
                 if (root.systemLanding) root.moveSystemCategory(-4)
                 else root.systemRowIndex = Math.max(0, root.systemRowIndex - 1)
@@ -950,6 +1025,7 @@ Window {
             if (root.gameOptionsOpen) root.moveGameOptions(1)
             else if (root.space === "home") root.moveDomain(1)
             else if (root.space === "library") root.moveLibraryVertical(1)
+            else if (root.space === "store") root.moveStoreCategory(1)
             else if (root.space === "system") {
                 if (root.systemLanding) root.moveSystemCategory(4)
                 else root.systemRowIndex = Math.min(Math.max(0, root.systemSettings.length - 1), root.systemRowIndex + 1)
@@ -963,6 +1039,8 @@ Window {
                 else if (root.selectedCategoryIndex === 0) root.moveSystemCategory(-1)
             } else if (root.space === "library") {
                 root.moveLibrary(-1)
+            } else if (root.space === "store") {
+                root.moveStoreGame(-1)
             } else if (root.space === "system") {
                 if (root.systemLanding) root.moveSystemCategory(-1)
                 else root.systemRowIndex = Math.max(0, root.systemRowIndex - 1)
@@ -976,6 +1054,8 @@ Window {
                 else if (root.selectedCategoryIndex === 0) root.moveSystemCategory(1)
             } else if (root.space === "library") {
                 root.moveLibrary(1)
+            } else if (root.space === "store") {
+                root.moveStoreGame(1)
             } else if (root.space === "system") {
                 if (root.systemLanding) root.moveSystemCategory(1)
                 else root.systemRowIndex = Math.min(Math.max(0, root.systemSettings.length - 1), root.systemRowIndex + 1)
@@ -983,6 +1063,7 @@ Window {
     }
     function controllerShoulder(delta) {
         if (root.space === "library") root.moveLibraryCollection(delta)
+        else if (root.space === "store") root.moveStoreCategory(delta)
         else if (root.space === "system" && !root.systemLanding) {
             root.systemCategoryIndex = Math.max(0, Math.min(root.systemCategories.length - 1,
                 root.systemCategoryIndex + delta))
@@ -1085,6 +1166,20 @@ Window {
                     event.accepted = true
                 } else if (event.key === Qt.Key_PageDown) {
                     moveLibraryCollection(1)
+                    event.accepted = true
+                }
+            } else if (space === "store") {
+                if (event.key === Qt.Key_Up) {
+                    moveStoreCategory(-1)
+                    event.accepted = true
+                } else if (event.key === Qt.Key_Down) {
+                    moveStoreCategory(1)
+                    event.accepted = true
+                } else if (event.key === Qt.Key_Left) {
+                    moveStoreGame(-1)
+                    event.accepted = true
+                } else if (event.key === Qt.Key_Right) {
+                    moveStoreGame(1)
                     event.accepted = true
                 }
             } else if (space === "system") {
@@ -1367,7 +1462,28 @@ Window {
                 root.collectionIndex = index
                 root.refreshLibrary()
             }
-            onLaunchRequested: root.launchGame(game)
+             onLaunchRequested: root.launchGame(game)
+         }
+
+        StoreHome {
+            id: storeHome
+            anchors.fill: parent
+            visible: root.space === "store"
+            availableGames: root.storeAvailableGames
+            categories: root.storeCategories
+            focalCardWidth: root.homeFocalCardWidth
+            focalCardHeight: root.homeFocalCardHeight
+            compactCardWidth: root.compactCardWidth
+            uiScale: root.uiScale
+            typography: typography
+            luluPalette: luluPalette
+            canonicalTexture: orbitTexture
+            canonicalCoordinateRoot: orbitRenderSource
+            canonicalSize: Qt.size(root.width, root.height)
+            errorMessage: root.storeError
+            onSteamStoreRequested: root.openSteamStore()
+            onAvailableGameSelected: root.message = "Available to Download"
+            Component.onCompleted: root.storeHomeRef = storeHome
         }
 
         SystemHome {
