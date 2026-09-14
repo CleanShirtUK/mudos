@@ -3,6 +3,7 @@
 from dataclasses import dataclass
 from dataclasses import field
 import difflib
+from datetime import datetime, timezone
 import hashlib
 import json
 import logging
@@ -323,7 +324,13 @@ def presentation_metadata(candidate: MetadataCandidate) -> dict[str, object]:
     else:
         genres = []
     release_date = raw.get("release_date", raw.get("first_release_date"))
-    release_date = str(release_date).strip() if release_date else None
+    numeric_release = release_date
+    if isinstance(release_date, str) and release_date.strip().isdigit():
+        numeric_release = int(release_date.strip())
+    if isinstance(numeric_release, (int, float)) and numeric_release > 0:
+        release_date = datetime.fromtimestamp(numeric_release, timezone.utc).date().isoformat()
+    else:
+        release_date = str(release_date).strip() if release_date else None
     year = raw.get("release_year", raw.get("year"))
     try:
         release_year = int(year) if year is not None else (int(release_date[:4]) if release_date and release_date[:4].isdigit() else None)

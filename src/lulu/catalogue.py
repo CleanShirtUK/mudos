@@ -56,6 +56,7 @@ class CatalogueGame:
     last_seen_at: int | None = None
     last_synced_at: int | None = None
     artwork_source_url: str = ""
+    metadata_resolver_version: int = 0
 
     @classmethod
     def from_steam(cls, game: InstalledSteamGame) -> "CatalogueGame":
@@ -126,12 +127,14 @@ IDENTITY_COLUMNS = (
 )
 TEMPORARY_METADATA_RETRY_SECONDS = 15 * 60
 NORMAL_METADATA_RETRY_SECONDS = 24 * 60 * 60
+METADATA_RESOLVER_VERSION = 2
 SELECT_COLUMNS = (
     "game_id, provider, provider_id, title, platform, install_state, launchable, install_dir, "
     "artwork_url, last_played, runtime, platform_label, " + ", ".join(IDENTITY_COLUMNS)
     + ", availability_state, provider_record_id, content_identity, catalogue_source, genres, "
       "release_date, release_year, total_playtime, local_multiplayer, online_multiplayer, "
       "game_mode, protondb_rating, last_seen_at, last_synced_at, artwork_source_url"
+      ", metadata_resolver_version"
 )
 
 
@@ -164,7 +167,7 @@ class CatalogueStore:
                        "release_date": "TEXT", "release_year": "INTEGER", "total_playtime": "INTEGER",
                        "local_multiplayer": "INTEGER", "online_multiplayer": "INTEGER", "game_mode": "TEXT",
                        "protondb_rating": "TEXT", "last_seen_at": "INTEGER", "last_synced_at": "INTEGER",
-                       "artwork_source_url": "TEXT NOT NULL DEFAULT ''"}
+                       "artwork_source_url": "TEXT NOT NULL DEFAULT ''", "metadata_resolver_version": "INTEGER NOT NULL DEFAULT 0"}
         for name, definition in migrations.items():
             if name not in columns:
                 self.connection.execute(f"ALTER TABLE games ADD COLUMN {name} {definition}")
@@ -182,7 +185,8 @@ class CatalogueStore:
                    "platform_label", *IDENTITY_COLUMNS, "availability_state", "provider_record_id",
                    "content_identity", "catalogue_source", "genres", "release_date", "release_year",
                    "total_playtime", "local_multiplayer", "online_multiplayer", "game_mode",
-                   "protondb_rating", "last_seen_at", "last_synced_at", "artwork_source_url")
+                   "protondb_rating", "last_seen_at", "last_synced_at", "artwork_source_url",
+                   "metadata_resolver_version")
         placeholders = ", ".join("?" for _ in columns)
         self.connection.execute(
             f"""INSERT INTO games ({', '.join(columns)}, updated_at) VALUES ({placeholders}, unixepoch())
@@ -209,6 +213,9 @@ class CatalogueStore:
                 protondb_rating=CASE WHEN games.metadata_provider != '' THEN games.protondb_rating ELSE excluded.protondb_rating END,
                 last_seen_at=excluded.last_seen_at,
                 last_synced_at=excluded.last_synced_at, artwork_source_url=excluded.artwork_source_url,
+                metadata_resolver_version=CASE WHEN games.metadata_provider != ''
+                                               THEN games.metadata_resolver_version
+                                               ELSE excluded.metadata_resolver_version END,
                 normalized_search_title=excluded.normalized_search_title,
                  title=CASE WHEN games.display_title_override != '' THEN games.display_title_override
                             WHEN games.match_locked OR games.match_status='matched' OR games.match_status='manual'
@@ -316,10 +323,20 @@ class CatalogueStore:
 
     def needs_metadata_match(self, game_id: str, now: int | None = None) -> bool:
         row = self.connection.execute(
-            "SELECT match_locked, metadata_game_id, match_status, match_method, metadata_checked_at "
+            "SELECT match_locked, metadata_game_id, match_status, match_method, metadata_checked_at, "
+            "catalogue_source, platform, metadata_resolver_version "
             "FROM games WHERE game_id=?", (game_id,)
         ).fetchone()
-        if row is None or row[0] or row[1]:
+        if row is None or row[0]:
+            return False
+        # Existing native Steam matches predate the RomM AppID handoff and
+        # must be migrated even though they have a metadata provider ID.
+        appid_migration = row[5] == "romm" and row[6] == "Steam" and (
+            row[3] != "steam-appid" or row[7] != METADATA_RESOLVER_VERSION
+        )
+        if appid_migration and row[3] == "steam-appid":
+            return True
+        if row[1] and not appid_migration:
             return False
         current = int(time.time()) if now is None else now
         cooldown = (
@@ -343,6 +360,7 @@ class CatalogueStore:
                    release_year=COALESCE(?, release_year), total_playtime=COALESCE(?, total_playtime),
                    local_multiplayer=COALESCE(?, local_multiplayer), online_multiplayer=COALESCE(?, online_multiplayer),
                    game_mode=COALESCE(?, game_mode), protondb_rating=COALESCE(?, protondb_rating),
+                   metadata_resolver_version=?,
                    updated_at=unixepoch() WHERE game_id=? AND match_locked=0""",
                 (title, match.normalized_search_title, match.provider, match.game_id, match.canonical_title,
                  match.status, match.method, match.confidence, int(time.time()),
@@ -350,7 +368,7 @@ class CatalogueStore:
                  presentation.get("release_date"), presentation.get("release_year"),
                  presentation.get("total_playtime"), presentation.get("local_multiplayer"),
                  presentation.get("online_multiplayer"), presentation.get("game_mode"),
-                 presentation.get("protondb_rating"), game_id),
+                 presentation.get("protondb_rating"), METADATA_RESOLVER_VERSION, game_id),
             )
             self.connection.commit()
 

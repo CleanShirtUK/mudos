@@ -76,6 +76,19 @@ class CatalogueTests(unittest.TestCase):
         self.assertEqual([game.game_id for game in available], ["steam:104200"])
         self.assertEqual(available[0].install_state, "available")
 
+    def test_romm_steam_title_match_is_migrated_to_appid_path(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = CatalogueStore(Path(directory) / "catalogue.sqlite3")
+            store.connection.execute(
+                "INSERT INTO games (game_id, provider, provider_id, title, platform, install_state, "
+                "launchable, install_dir, artwork_url, availability_state, provider_record_id, "
+                "catalogue_source, metadata_provider, metadata_game_id, match_status, match_method) "
+                "VALUES ('steam:104200', 'steam', '104200', 'BEEP', 'Steam', 'available', 0, '', '', "
+                "'available', '272', 'romm', 'steamgriddb', 'old-id', 'matched', 'title')"
+            )
+            store.connection.commit()
+            self.assertTrue(store.needs_metadata_match("steam:104200"))
+
     def test_romm_metadata_and_local_record_survive_reopen(self) -> None:
         romm = RommGame(272, "BEEP", 7, "steam", "Steam", "104200-beep.json", ".json", 10, "", False,
                         genres=("Action", "Puzzle"), release_date="2001-04-20", release_year=2001)

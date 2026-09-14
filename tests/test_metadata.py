@@ -53,7 +53,7 @@ class MetadataTests(unittest.TestCase):
         candidate = MetadataCandidate(
             "sgdb-104200", "Canonical BEEP", raw={
                 "id": "sgdb-104200", "name": "Canonical BEEP", "genres": ["Action"],
-                "release_year": 2001,
+                "release_date": 1304701380,
             }
         )
 
@@ -69,6 +69,7 @@ class MetadataTests(unittest.TestCase):
         self.assertEqual(provider.app_id, "104200")
         self.assertEqual((result.method, result.canonical_title), ("steam-appid", "Canonical BEEP"))
         self.assertEqual(result.presentation["genres"], ["Action"])
+        self.assertEqual(result.presentation["release_date"], "2011-05-06")
 
     def test_strongest_credible_title_wins_close_sequel_results(self):
         result = MetadataMatcher(FakeMetadata([
