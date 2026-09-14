@@ -96,9 +96,6 @@ class SteamProvider:
                          start_new_session=True, env=environment)
         return uri
 
-    def open_gamepadui(self) -> str:
-        return self._dispatch_uri("steam://open/gamepadui")
-
     def open_store(self) -> str:
         return self._dispatch_uri("steam://open/store")
 
@@ -121,22 +118,9 @@ class SteamProvider:
         if not isinstance(app_id, str) or not app_id.isdecimal() or int(app_id) < 1:
             raise ValueError("Steam AppID must be a positive integer")
 
-    def gamepadui_pids(self) -> list[int]:
-        pids: list[int] = []
-        for entry in Path("/proc").iterdir():
-            if not entry.name.isdecimal():
-                continue
-            try:
-                if entry.stat().st_uid != os.getuid():
-                    continue
-                executable = os.path.realpath(f"/proc/{entry.name}/exe")
-                argv = self._argv(int(entry.name))
-            except (FileNotFoundError, PermissionError, OSError):
-                continue
-            text = f"{executable} {' '.join(argv)}".lower()
-            if "-uimode=7" in text or "gamepadui" in text:
-                pids.append(int(entry.name))
-        return pids
+    def desktop_pids(self) -> list[int]:
+        """Return standard desktop Steam client processes for presentation selection."""
+        return self._steam_client_pids()
 
     def list_installed(self, roots: tuple[Path, ...] | None = None) -> list[InstalledSteamGame]:
         roots = roots or self._library_roots()

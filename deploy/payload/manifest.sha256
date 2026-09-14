@@ -27,11 +27,11 @@ f4457584f10ebf9fb6138e089750f80ed0ad1a81866a6eb54a3b9746abbc424a  ./lib/lulu/inp
 af14039cfd54d82a89657dbfa402943fad835af2dc67bbc87bbd0b3631b480ff  ./lib/lulu/local_content.py
 5bd0fed00ff1f177c7c67bc38fa05f80470bae6ca8ad6da6620da40f689b5a03  ./lib/lulu/metadata.py
 27b6df1fa08b7bf42967661de10d1ac6d63b79d0bc949141da9772ee7e4262b7  ./lib/lulu/paths.py
-c33833a9ca27aa7f57f41a01cff9c45dd5871a3a7c5d0a4839eb8d06d172d0e2  ./lib/lulu/process_supervisor.py
+ccadfba02877d943570c5a48b660f56fff33202b0729bd36a25fe0c89e803e31  ./lib/lulu/process_supervisor.py
 b21d44e4a3742753a7195480bee988b2162e0d9611da5e6a8bc40be9361a229c  ./lib/lulu/sessiond.py
 ea04081e1c93cdab882c350071d086255809b19d380677aedef2caf036b1b3b8  ./lib/lulu/settings.py
 5629276492cc88ed04f2cf79f8da07d63fc1efc6ded4a4001083f841512dc2c5  ./lib/lulu/status.py
-6336d60e98a1a41687691d4a84799a7537eb64f3d55f88f8893ebd113a376e69  ./lib/lulu/steam_provider.py
+a144304d243af2f900a6bc9460a1efb93c7fb9843ae3ae3c18ea5dcf7c44d88f  ./lib/lulu/steam_provider.py
 88d885a7ec1b1848a2894120442b46902524d02b1d9ce74464270175d9d5c746  ./lib/lulu/switch_provider.py
 580e27491fd293b44ede14fe63c7d7e0bd139c8f62d48465edaaad1ff864e18e  ./lib/lulu/system_settings.py
 8d74912fa648d8bf6042a2d764da221862da1302fa69c42727c08460757beb10  ./packages/dufs/PKGBUILD

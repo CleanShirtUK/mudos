@@ -378,10 +378,9 @@ class ProcessSupervisor:
             try:
                 await provider.ensure_client()
                 self.model.launch_starting(token)
-                await asyncio.to_thread(provider.open_gamepadui)
                 if self._presentation is not None:
                     self._steam_store_window = await asyncio.to_thread(
-                        self._presentation.select_pids, provider.gamepadui_pids, startup_timeout_ms / 1000
+                        self._presentation.select_pids, provider.desktop_pids, startup_timeout_ms / 1000
                     )
                 await asyncio.to_thread(provider.open_store)
                 self._set_input_mode(InputMode.GAME)
@@ -419,10 +418,9 @@ class ProcessSupervisor:
             try:
                 await provider.ensure_client()
                 self.model.launch_starting(token)
-                await asyncio.to_thread(provider.open_gamepadui)
                 if self._presentation is not None:
                     self._steam_store_window = await asyncio.to_thread(
-                        self._presentation.select_pids, provider.gamepadui_pids, startup_timeout_ms / 1000
+                        self._presentation.select_pids, provider.desktop_pids, startup_timeout_ms / 1000
                     )
                 await asyncio.to_thread(provider.install, app_id)
                 self._set_input_mode(InputMode.COMPAT)

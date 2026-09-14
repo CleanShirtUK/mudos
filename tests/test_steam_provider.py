@@ -299,16 +299,12 @@ class SteamProviderTests(unittest.TestCase):
         self.assertEqual(popen.call_args.args[0], ["steam", uri])
         self.assertTrue(popen.call_args.kwargs["start_new_session"])
 
-    def test_store_uses_on_demand_gamepad_uri_control_without_fixed_sleep(self) -> None:
+    def test_store_uses_standard_desktop_uri_control_without_gamepadui(self) -> None:
         provider = SteamProvider(executable="steam")
         with patch("lulu.steam_provider.subprocess.Popen") as popen:
-            self.assertEqual(provider.open_gamepadui(), "steam://open/gamepadui")
             self.assertEqual(provider.open_store(), "steam://open/store")
-        self.assertEqual([call.args[0] for call in popen.call_args_list], [
-            ["steam", "steam://open/gamepadui"],
-            ["steam", "steam://open/store"],
-        ])
-        self.assertNotIn("-gamepadui", popen.call_args_list[0].args[0])
+        self.assertEqual([call.args[0] for call in popen.call_args_list], [["steam", "steam://open/store"]])
+        self.assertNotIn("gamepadui", popen.call_args.args[0])
 
     def test_install_dispatches_validated_steam_uri(self) -> None:
         provider = SteamProvider(executable="steam")
@@ -498,7 +494,7 @@ class SteamProviderTests(unittest.TestCase):
 
         asyncio.run(exercise())
 
-    def test_steam_store_transitions_gamepad_ui_to_shell_and_can_repeat(self) -> None:
+    def test_steam_store_transitions_desktop_client_to_shell_and_can_repeat(self) -> None:
         class Provider:
             def __init__(self) -> None:
                 self.uris: list[str] = []
@@ -511,15 +507,11 @@ class SteamProviderTests(unittest.TestCase):
             async def stop_owned_client(self) -> None:
                 self.stops += 1
 
-            def open_gamepadui(self) -> str:
-                self.uris.append("steam://open/gamepadui")
-                return self.uris[-1]
-
             def open_store(self) -> str:
                 self.uris.append("steam://open/store")
                 return self.uris[-1]
 
-            def gamepadui_pids(self) -> list[int]:
+            def desktop_pids(self) -> list[int]:
                 return self.pids
 
         class StorePresentation(RecordingPresentation):
@@ -555,7 +547,7 @@ class SteamProviderTests(unittest.TestCase):
             presentation.presented = False
             await supervisor._steam_store_watch_task
             self.assertEqual(session.state.lifecycle.value, "shell")
-            self.assertEqual(provider.uris, ["steam://open/gamepadui", "steam://open/store"] * 2)
+            self.assertEqual(provider.uris, ["steam://open/store"] * 2)
             self.assertEqual(provider.stops, 2)
             self.assertEqual(presentation.events, [("game", 99), ("shell", 7), ("game", 99), ("shell", 7)])
 
