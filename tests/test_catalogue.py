@@ -74,6 +74,14 @@ class CatalogueTests(unittest.TestCase):
             available = store.list_available_games("romm")
         self.assertEqual(available, [])
 
+    def test_unresolved_romm_steam_record_keeps_canonical_platform(self) -> None:
+        romm = RommGame(327, "Mortal Kombat X", 7, "steam", "Steam", "307780-mortal-kombat-x", "", 10, "", False)
+        record = CatalogueGame.from_romm(romm)
+        self.assertEqual(record.platform, "Steam")
+        self.assertEqual(record.platform_label, "Steam")
+        self.assertEqual(record.provider, "romm")
+        self.assertFalse(record.launchable)
+
     def test_romm_snapshot_failure_can_leave_previous_snapshot_untouched(self) -> None:
         romm = RommGame(43, "F-Zero", 1, "snes", "SNES", "F-Zero.sfc", ".sfc", 10, "", False)
         with tempfile.TemporaryDirectory() as directory:

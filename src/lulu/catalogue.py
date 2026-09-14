@@ -78,9 +78,10 @@ class CatalogueGame:
                 provider_record_id=str(game.rom_id),
                 content_identity=game.files[0].name if game.files else game.file_name,
             )
+        platform = "Steam" if game.platform_slug.casefold() == "steam" else game.platform_slug
         return cls(
             game_id=f"romm:{game.rom_id}", provider="romm", provider_id=str(game.rom_id),
-            title=game.title, platform=game.platform_slug, install_state="available", launchable=False,
+            title=game.title, platform=platform, install_state="available", launchable=False,
             install_dir="", artwork_url=game.artwork_url, last_played=0, runtime="",
             platform_label=game.platform_label, source_title=game.title,
             normalized_search_title=clean_local_title(game.title), availability_state="available",

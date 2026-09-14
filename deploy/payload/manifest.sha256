@@ -10,7 +10,7 @@ ec5d9c2c25e2bf0cc4f1f3bf0f4d93f5918b21c24ffcb8585018b8be882f27bb  ./config/input
 4ae4fb64cd11bc79599ee7f8e25e2d18818fde794563ce772594de661b69d4ae  ./lib/lulu/applicationd.py
 ec39e530f45dfae7f2a8d7c369a5b91767261fd00b70d2fe13a9760b24da20ac  ./lib/lulu/artwork.py
 20c5af66e8ede83beccac5706534f47cc2bbd6a1804ccf9b50109103f8e2b45f  ./lib/lulu/capabilities.py
-a4dfa2ad8d7251ba9a5f4a3ac98f434a67076a09e2c67d399a4fc79362739a1b  ./lib/lulu/catalogue.py
+39ca4c204bd0117dcce64a8c0ee5158f59b0a1720bb250c6e24a783f60f7041e  ./lib/lulu/catalogue.py
 8e4cf12870608b5d332f58a925f7460ff7bdd9f2ee4da18ca3306b75042d3585  ./lib/lulu/consoled.py
 971b1ddab9d2e360d554426f9b61b181f1083689c5cb78a092b2ccde23beb39e  ./lib/lulu/console_sessiond.py
 bf6eaf76a5c7499fdd239d0ae6d50a647f709225e2526d7cbeadf24954fa1ab9  ./lib/lulu/console_ui.py
