@@ -92,7 +92,7 @@ Item {
     Row {
         x: 120 * uiScale
         opacity: librarySpace.contentOpacity
-        y: (librarySpace.sectionTitle !== "" ? 112 : 136) * uiScale
+        y: 136 * uiScale
         width: parent.width - 240 * uiScale
         spacing: 46 * uiScale
 
