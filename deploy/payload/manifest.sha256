@@ -79,7 +79,7 @@ f6dd2ae216837c63e7de7429791d0bac903b98353ac58572bb92a81e207158ca  ./ui/artwork/s
 9129240fb672e8820d5d259a33949bc22acc51e32a7837c48d414d84a1e7f58d  ./ui/artwork/system-network.svg
 abdc96a0808cf3b52a09b044d47950299c374c0fd7109cb1c584094646e342a7  ./ui/artwork/system-storage.svg
 72e0199379684170b956f274525299d67c2395e9bd44b4352d7b48c4d1533000  ./ui/artwork/system-system.svg
-034ec1c42f5d7900161d21f87512ba34f9015baba5b13f130ebc38dd3fdee92b  ./ui/ConsoleShell.qml
+cd55f67e59214c09db0550d6d84e8797cb7904cabd5b6a8f3065d5f9ee6435f1  ./ui/ConsoleShell.qml
 c147b5955bb1f2f7c65a9e07fe85afca2f9f9693aa090b5bd6fc45da9189045b  ./ui/ControllerGlyph.qml
 b48f2af29670ce222cfa759a22ca7d789a10cd8a7a15a6e9c2897fb1df7ed936  ./ui/controllerglyphs/SteamDeck_A.png
 63c72d44c4cce55d6ec5e1368938533f9a4ed440f9d1ce7f7e42eb6d9fd77db5  ./ui/controllerglyphs/SteamDeck_B.png
@@ -95,7 +95,7 @@ c2525c8cb3ca2123283b49ddbdb4c1440cd6467c92859124cc7e89ed65b88ef3  ./ui/controlle
 cd7a7484f64fc3ed4042f4f0159504e7170392539bbc04ce5e421fb57f411bc6  ./ui/GameOptions.qml
 96d373ca18a3527023538424a62206fdd36c178d5e3aa7406d45dd8649a0b2a6  ./ui/GlassSurface.qml
 6e48b3dad6290b9cd545c79fa8146c8d518ac8f7dbd94bd376ea5bf7a7d695ca  ./ui/LibraryHome.qml
-8dab90f35c639211f93e1c51cdf5d8bfc6ada037f6f717a924267e424bdfa8cb  ./ui/LibrarySpace.qml
+60ff26b9e590f2f9994d49aba4280f120f3d119ac276d445ec4caddfeb225401  ./ui/LibrarySpace.qml
 a61dd1956a9eb96f1d2436a9229a2a17948aae8dcb94d10290e55e27353cccc2  ./ui/LibrarySpatialSurface.qml
 4c4cb8b96062f3e139a68c038b889c913f46bd65da9db9635b932c35d759b01f  ./ui/LuluPalette.qml
 622c5b0098b6b260b85ebfe5644bd8e86b8b75852af730ead689cc2d58e957fc  ./ui/MudosGuide.qml
@@ -126,7 +126,7 @@ e18671924f0e96ac45e303f57ecd374e93ee72209224e7d0235947e740eba44f  ./ui/sounds/ui
 9fa1eff6b93d663db937526cd079c03d2b463275c276f6923b8fd52d1ed65602  ./ui/sounds/ui-confirm.wav
 0457838de53a1027569871234c9b0e5b521a37106a4c741ccb103af6e9f8941e  ./ui/sounds/ui-error.wav
 66d2b7054740b4ac9d8918bc3849674be60fd1effb86ca4a7f982a86978835d2  ./ui/sounds/ui-navigate.wav
-55aaefa2d488b42b9039def00264dc72c9bbbbd7f15757fb97f0b357a4a6c79c  ./ui/StoreHome.qml
+07bf22f38421d07cb4637fec088f65c30e3b7ff8cd4f30c0a5edd497910c7eff  ./ui/StoreHome.qml
 420ef0464e943bd59e42aa668e502518c027ff57e6faa5cf94447532fd648770  ./ui/SystemHome.qml
 41f2dd93760de12dd2b290a2441ed1cf9e05386c356996c3178645d8640b52a6  ./ui/SystemSpace.qml
 9d678d2bda8f02ee8087dca28cbd719563750e29cda21c3450947d0bfcce5822  ./ui/Typography.qml

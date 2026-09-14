@@ -17,6 +17,11 @@ Item {
     property var canonicalTexture
     property var canonicalCoordinateRoot
     property size canonicalSize: Qt.size(1280, 720)
+    property string headingText: "LIBRARY"
+    property string sectionTitle: ""
+    property string emptyText: "No installed games"
+    property string specialCardId: ""
+    property string actionLabel: "A  Play"
     readonly property string navigationObject: "library"
     readonly property real surfaceMargin: 44 * uiScale
     readonly property real gridGap: 14 * uiScale
@@ -60,6 +65,7 @@ Item {
         : 0
     signal collectionChanged(int index)
     signal launchRequested(var game)
+    signal specialActivated(var game)
 
     // Keeps stacked-card shader coordinates aligned with the persistent shell surface.
     Item {
@@ -75,7 +81,7 @@ Item {
         x: 76 * uiScale + surfaceMargin
         opacity: librarySpace.contentOpacity
         y: 96 * uiScale
-        text: "LIBRARY"
+        text: librarySpace.headingText
         color: luluPalette.headingAccent
         font.family: typography ? typography.displayFamily : "Zalando Sans Condensed Black"
         font.weight: typography ? typography.displayWeight : Font.Black
@@ -86,7 +92,7 @@ Item {
     Row {
         x: 120 * uiScale
         opacity: librarySpace.contentOpacity
-        y: 136 * uiScale
+        y: (librarySpace.sectionTitle !== "" ? 112 : 136) * uiScale
         width: parent.width - 240 * uiScale
         spacing: 46 * uiScale
 
@@ -123,9 +129,21 @@ Item {
     Text {
         x: 120 * uiScale
         opacity: librarySpace.contentOpacity
+        y: 154 * uiScale
+        visible: librarySpace.sectionTitle !== ""
+        text: librarySpace.sectionTitle
+        color: luluPalette.primaryText
+        font.family: typography ? typography.displayFamily : "Zalando Sans Condensed Black"
+        font.weight: typography ? typography.displayWeight : Font.Black
+        font.pixelSize: typography ? typography.size("heading", 26) : 26 * uiScale
+    }
+
+    Text {
+        x: 120 * uiScale
+        opacity: librarySpace.contentOpacity
         y: 206 * uiScale
         visible: libraryGames.length === 0
-        text: "No installed games"
+        text: librarySpace.emptyText
         color: luluPalette.mutedText
         font.family: typography ? typography.interfaceFamily : "JetBrains Mono"
         font.pixelSize: typography ? typography.size("secondary", 24) : 24 * uiScale
@@ -161,6 +179,8 @@ Item {
 
                     GameCard {
                         anchors.fill: parent
+                        visible: !librarySpace.specialCardId
+                            || String(gameData.game_id) !== librarySpace.specialCardId
                         game: gameData
                         focused: index === selectedIndex && !collectionFocus
                         compact: true
@@ -171,6 +191,7 @@ Item {
                         canonicalCoordinateRoot: librarySpace.canonicalCoordinateRoot
                         canonicalSize: librarySpace.canonicalSize
                         showAction: false
+                        actionLabel: librarySpace.actionLabel
                         stackedGlass: true
                         stackedCardBevelWidth: 3 * librarySpace.uiScale
                         stackedPlayBevelWidth: 3 * librarySpace.uiScale
@@ -194,6 +215,24 @@ Item {
                             anchors.fill: parent
                             onClicked: launchRequested(gameData)
                         }
+                    }
+
+                    NavigationCard {
+                        anchors.fill: parent
+                        visible: librarySpace.specialCardId !== ""
+                            && String(gameData.game_id) === librarySpace.specialCardId
+                        displayTitle: gameData.title
+                        symbolicArtwork: ""
+                        artworkRole: "raster"
+                        artworkSource: gameData.artwork_url || Qt.resolvedUrl("artwork/store.png")
+                        focused: index === selectedIndex && !collectionFocus
+                        uiScale: librarySpace.uiScale
+                        typography: librarySpace.typography
+                        luluPalette: librarySpace.luluPalette
+                        canonicalTexture: librarySpace.canonicalTexture
+                        canonicalCoordinateRoot: librarySpace.canonicalCoordinateRoot
+                        canonicalSize: librarySpace.canonicalSize
+                        onActivated: specialActivated(gameData)
                     }
                 }
             }

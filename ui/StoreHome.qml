@@ -9,6 +9,7 @@ Item {
     property string errorMessage: ""
     property int categoryIndex: 0
     property int selectedIndex: 0
+    property int firstVisibleRow: 0
     property real focalCardWidth: 760
     property real focalCardHeight: 500
     property real compactCardWidth: 160 * uiScale
@@ -55,12 +56,27 @@ Item {
     function moveCategory(delta) {
         categoryIndex = Math.max(0, Math.min(categories.length - 1, categoryIndex + delta))
         selectedIndex = 0
+        firstVisibleRow = 0
     }
 
     function moveGame(delta) {
         if (!displayGames.length)
             return
         selectedIndex = Math.max(0, Math.min(displayGames.length - 1, selectedIndex + delta))
+    }
+
+    function moveVertical(delta) {
+        if (!displayGames.length)
+            return
+        var column = selectedIndex % 7
+        var row = Math.floor(selectedIndex / 7) + delta
+        if (row < 0 || row * 7 >= displayGames.length)
+            return
+        selectedIndex = Math.min(row * 7 + column, displayGames.length - 1)
+        if (row >= firstVisibleRow + 2)
+            firstVisibleRow = row - 1
+        else if (row < firstVisibleRow)
+            firstVisibleRow = row
     }
 
     function activateSelected() {
@@ -81,90 +97,29 @@ Item {
     onAvailableGamesChanged: selectedIndex = Math.min(selectedIndex, Math.max(0, displayGames.length - 1))
     onCategoriesChanged: categoryIndex = Math.min(categoryIndex, Math.max(0, categories.length - 1))
 
-    Text {
-        x: 76 * root.uiScale
-        y: 72 * root.uiScale
-        text: "STORE"
+    LibrarySpace {
+        anchors.fill: parent
         visible: root.cardWidth === 0
-        color: root.luluPalette.headingAccent
-        font.family: root.typography.displayFamily
-        font.weight: root.typography.displayWeight
-        font.pixelSize: root.typography.size("section", 30)
-        font.letterSpacing: 5 * root.uiScale
-    }
-
-    Row {
-        x: 120 * root.uiScale
-        y: 112 * root.uiScale
-        spacing: 38 * root.uiScale
-        visible: root.cardWidth === 0
-        Repeater {
-            model: root.categories
-            delegate: Text {
-                required property int index
-                required property var modelData
-                text: modelData.label
-                color: index === root.categoryIndex ? root.luluPalette.selectedText
-                                                    : root.luluPalette.navigationText
-                font.family: root.typography.interfaceFamily
-                font.pixelSize: root.typography.size("secondary", 14)
-                font.bold: index === root.categoryIndex
-                Rectangle {
-                    visible: index === root.categoryIndex
-                    anchors.left: parent.left
-                    anchors.right: parent.right
-                    anchors.top: parent.bottom
-                    anchors.topMargin: 6 * root.uiScale
-                    height: 2 * root.uiScale
-                    color: root.luluPalette.libraryHighlight
-                }
-            }
-        }
-    }
-
-    Text {
-        x: 120 * root.uiScale
-        y: 154 * root.uiScale
-        visible: root.cardWidth === 0
-        text: "Available to Download"
-        color: root.luluPalette.primaryText
-        font.family: root.typography.displayFamily
-        font.weight: root.typography.displayWeight
-        font.pixelSize: root.typography.size("heading", 26)
-    }
-
-    Text {
-        x: 120 * root.uiScale
-        y: 204 * root.uiScale
-        visible: root.availableGames.length === 0
-            && root.cardWidth === 0
-        text: root.errorMessage !== "" ? root.errorMessage : "No games available"
-        color: root.luluPalette.mutedText
-        font.family: root.typography.interfaceFamily
-        font.pixelSize: root.typography.size("body", 24)
-    }
-
-    RecentHome {
-        x: 120 * root.uiScale
-        y: 184 * root.uiScale
-        width: parent.width - 160 * root.uiScale
-        height: root.focalCardHeight
-        visible: root.displayGames.length > 0 && root.cardWidth === 0
-        // The landing card remains the delegated Steam commerce entry point.
-        recentGames: root.displayGames
+        libraryGames: root.displayGames
         selectedIndex: root.selectedIndex
-        focalCardWidth: root.focalCardWidth
-        focalCardHeight: root.focalCardHeight
-        compactCardWidth: root.compactCardWidth
-        railGap: 18 * root.uiScale
-        focalScale: 0.67
+        firstVisibleRow: root.firstVisibleRow
+        collectionIndex: root.categoryIndex
+        collections: root.categories
+        collectionFocus: false
+        headingText: "STORE"
+        sectionTitle: "Available to Download"
+        emptyText: root.errorMessage !== "" ? root.errorMessage : "No games available"
+        specialCardId: "steam-store"
+        actionLabel: "Available to Download"
         uiScale: root.uiScale
         typography: root.typography
         luluPalette: root.luluPalette
         canonicalTexture: root.canonicalTexture
         canonicalCoordinateRoot: root.canonicalCoordinateRoot
         canonicalSize: root.canonicalSize
+        onCollectionChanged: root.categoryIndex = index
         onLaunchRequested: root.activateGame(game)
+        onSpecialActivated: root.steamStoreRequested()
     }
 
     NavigationCard {

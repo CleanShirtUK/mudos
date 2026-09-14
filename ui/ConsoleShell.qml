@@ -682,6 +682,11 @@ Window {
             storeHomeRef.moveGame(delta)
     }
 
+    function moveStoreGameVertical(delta) {
+        if (storeHomeRef)
+            storeHomeRef.moveVertical(delta)
+    }
+
     function launchGame(game) {
         if (!game)
             return
@@ -1015,7 +1020,7 @@ Window {
             if (root.gameOptionsOpen) root.moveGameOptions(-1)
             else if (root.space === "home") root.moveDomain(-1)
             else if (root.space === "library") root.moveLibraryVertical(-1)
-            else if (root.space === "store") root.moveStoreCategory(-1)
+            else if (root.space === "store") root.moveStoreGameVertical(-1)
             else if (root.space === "system") {
                 if (root.systemLanding) root.moveSystemCategory(-4)
                 else root.systemRowIndex = Math.max(0, root.systemRowIndex - 1)
@@ -1025,7 +1030,7 @@ Window {
             if (root.gameOptionsOpen) root.moveGameOptions(1)
             else if (root.space === "home") root.moveDomain(1)
             else if (root.space === "library") root.moveLibraryVertical(1)
-            else if (root.space === "store") root.moveStoreCategory(1)
+            else if (root.space === "store") root.moveStoreGameVertical(1)
             else if (root.space === "system") {
                 if (root.systemLanding) root.moveSystemCategory(4)
                 else root.systemRowIndex = Math.min(Math.max(0, root.systemSettings.length - 1), root.systemRowIndex + 1)
@@ -1170,10 +1175,10 @@ Window {
                 }
             } else if (space === "store") {
                 if (event.key === Qt.Key_Up) {
-                    moveStoreCategory(-1)
+                    moveStoreGameVertical(-1)
                     event.accepted = true
                 } else if (event.key === Qt.Key_Down) {
-                    moveStoreCategory(1)
+                    moveStoreGameVertical(1)
                     event.accepted = true
                 } else if (event.key === Qt.Key_Left) {
                     moveStoreGame(-1)
