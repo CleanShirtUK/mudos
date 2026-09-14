@@ -36,6 +36,8 @@ class ReleaseToolTests(unittest.TestCase):
     def test_manifest_and_tamper_detection(self):
         root = Path(tempfile.mkdtemp())
         (root / "payload.txt").write_text("payload\n")
+        (root / "bin").mkdir()
+        (root / "bin" / "tool").write_text("tool\n")
         release.write_manifest(root)
         release.verify_manifest(root)
         (root / "payload.txt").write_text("tampered\n")

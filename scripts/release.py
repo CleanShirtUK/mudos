@@ -171,7 +171,12 @@ def verify_manifest(release: Path) -> None:
             continue
         digest, relative = line.split("  ", 1)
         candidate = release / relative
-        if candidate.is_symlink() or candidate.resolve().parent != release:
+        resolved = candidate.resolve()
+        try:
+            resolved.relative_to(release)
+        except ValueError as error:
+            raise ReleaseError(f"manifest path is unsafe: {relative}") from error
+        if candidate.is_symlink():
             raise ReleaseError(f"manifest path is unsafe: {relative}")
         if not candidate.is_file() or hashlib.sha256(candidate.read_bytes()).hexdigest() != digest:
             raise ReleaseError(f"checksum mismatch: {relative}")
