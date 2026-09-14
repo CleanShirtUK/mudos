@@ -51,8 +51,10 @@ class ReleaseToolTests(unittest.TestCase):
         info = release.ReleaseInfo(root, revision, branch, output, output / "candidate", output / "current")
         original = release.build_payload
         original_validate = release.validate_payload
+        original_guard = release.ensure_canonical_source
         release.build_payload = lambda _root, payload: (payload.mkdir(), (payload / "payload.txt").write_text("x\n"))
         release.validate_payload = lambda _payload: None
+        release.ensure_canonical_source = lambda _root: None
         try:
             built = release.build_release(info)
             release.verify_manifest(built)
@@ -65,6 +67,7 @@ class ReleaseToolTests(unittest.TestCase):
         finally:
             release.build_payload = original
             release.validate_payload = original_validate
+            release.ensure_canonical_source = original_guard
 
     def test_activation_replaces_symlink_atomically(self):
         root = Path(tempfile.mkdtemp())

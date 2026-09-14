@@ -10,6 +10,7 @@ import hashlib
 import os
 from pathlib import Path
 import shutil
+import socket
 import stat
 import subprocess
 import sys
@@ -32,6 +33,10 @@ REQUIRED_FILES = (
     "config/inputplumber/devices/lulu-composite.yaml",
 )
 FORBIDDEN_SYMBOLS = (b"MudosWifi", b"MudosBluetooth", b"WifiBackend", b"BluetoothBackend")
+CANONICAL_HOSTNAME = "lulu"
+CANONICAL_SOURCE = Path("/home/josh/src/lulu")
+CANONICAL_MARKER = ".mudos-canonical-source"
+CANONICAL_MARKER_CONTENT = "mudos-canonical-source-v1\n"
 
 
 class ReleaseError(RuntimeError):
@@ -71,6 +76,17 @@ def ensure_clean_source(repo_root: Path) -> None:
     status = command_output(["git", "status", "--porcelain", "--untracked-files=all"], repo_root)
     if status:
         raise ReleaseError("source tree is dirty; commit or remove changes before building")
+
+
+def ensure_canonical_source(repo_root: Path) -> None:
+    root = repo_root.resolve()
+    if socket.gethostname() != CANONICAL_HOSTNAME:
+        raise ReleaseError(f"promotable Mudos builds must run on {CANONICAL_HOSTNAME}")
+    if root != CANONICAL_SOURCE:
+        raise ReleaseError(f"promotable Mudos source must be {CANONICAL_SOURCE}")
+    marker = root / CANONICAL_MARKER
+    if not marker.is_file() or marker.read_text() != CANONICAL_MARKER_CONTENT:
+        raise ReleaseError(f"canonical source marker is missing or invalid: {marker}")
 
 
 def release_name(revision: str) -> str:
@@ -202,6 +218,7 @@ def write_release_metadata(release: Path, info: ReleaseInfo) -> None:
 
 
 def build_release(info: ReleaseInfo, dry_run: bool = False) -> Path:
+    ensure_canonical_source(info.repo_root)
     revision, branch = source_info(info.repo_root)
     if revision != info.revision or branch != info.branch:
         raise ReleaseError("source changed while preparing build")
