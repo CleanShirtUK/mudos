@@ -10,7 +10,12 @@ class ConsoledStartupTests(unittest.TestCase):
         source = (ROOT / "src/lulu/consoled.py").read_text()
         serve = source[source.index("async def serve()") :]
         self.assertLess(serve.index("await bus.request_name(BUS_NAME)"),
-                        serve.index("catalogue.refresh()"))
+                         serve.index("asyncio.to_thread(catalogue.refresh)"))
+
+    def test_provider_refresh_is_background_work(self) -> None:
+        source = (ROOT / "src/lulu/consoled.py").read_text()
+        self.assertIn('asyncio.to_thread(catalogue.refresh)', source)
+        self.assertIn('ROMM_SYNC_INTERVAL = 15 * 60', source)
 
 
 if __name__ == "__main__":

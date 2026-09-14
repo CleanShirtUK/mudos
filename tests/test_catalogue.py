@@ -65,6 +65,34 @@ class CatalogueTests(unittest.TestCase):
         self.assertEqual(available[0].platform_label, "Steam")
         self.assertIn(available[0].provider_record_id, {"272", "273"})
 
+    def test_steam_reconcile_does_not_hide_romm_steam_titles(self) -> None:
+        romm = RommGame(272, "BEEP", 7, "steam", "Steam", "104200-beep.json", ".json", 10, "", False)
+        with tempfile.TemporaryDirectory() as directory:
+            store = CatalogueStore(Path(directory) / "catalogue.sqlite3")
+            store.reconcile_romm([CatalogueGame.from_romm(romm, app_id="104200")])
+            store.reconcile_steam(FakeSteamProvider([]))
+            available = store.list_available_games("romm")
+
+        self.assertEqual([game.game_id for game in available], ["steam:104200"])
+        self.assertEqual(available[0].install_state, "available")
+
+    def test_romm_metadata_and_local_record_survive_reopen(self) -> None:
+        romm = RommGame(272, "BEEP", 7, "steam", "Steam", "104200-beep.json", ".json", 10, "", False,
+                        genres=("Action", "Puzzle"), release_date="2001-04-20", release_year=2001)
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "catalogue.sqlite3"
+            store = CatalogueStore(path)
+            store.reconcile_romm([CatalogueGame.from_romm(romm, app_id="104200")])
+            store.connection.close()
+            reopened = CatalogueStore(path)
+            record = reopened.get_game("steam:104200")
+
+        self.assertEqual(record.catalogue_source, "romm")
+        self.assertEqual(record.platform, "Steam")
+        self.assertEqual(record.provider, "steam")
+        self.assertEqual(record.genres, ("Action", "Puzzle"))
+        self.assertEqual(record.release_year, 2001)
+
     def test_installed_romm_steam_title_is_not_available(self) -> None:
         romm = RommGame(272, "BEEP", 7, "steam", "Steam", "104200-beep.json", ".json", 10, "", False)
         installed = InstalledSteamGame("104200", "BEEP", "/games/BEEP", "/games", 1, 0)

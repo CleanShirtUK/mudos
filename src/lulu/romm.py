@@ -112,6 +112,14 @@ class RommGame:
     artwork_url: str
     missing_from_fs: bool
     files: tuple[RommFile, ...] = ()
+    genres: tuple[str, ...] = ()
+    release_date: str | None = None
+    release_year: int | None = None
+    total_playtime: int | None = None
+    local_multiplayer: bool | None = None
+    online_multiplayer: bool | None = None
+    game_mode: str | None = None
+    protondb_rating: str | None = None
 
     @classmethod
     def from_json(cls, value: object, platforms: dict[int, RommPlatform]) -> "RommGame":
@@ -142,12 +150,23 @@ class RommGame:
                 file_name = files[0].name
             if not file_name or not platform_slug:
                 raise ValueError
+            genres_value = value.get("genres", [])
+            if not isinstance(genres_value, list):
+                genres_value = []
+            genres = tuple(
+                str(item.get("name", "")).strip() if isinstance(item, dict) else str(item).strip()
+                for item in genres_value if str(item).strip()
+            )
+            release_date = value.get("first_release_date", value.get("release_date"))
+            release_date = str(release_date).strip() if release_date else None
+            release_year = value.get("release_year", value.get("year"))
+            release_year = int(release_year) if release_year is not None else None
             return cls(
                 rom_id, str(value.get("name") or Path(file_name).stem), platform_id,
                 platform_slug, platform_label, file_name,
                 str(value.get("fs_extension") or Path(file_name).suffix),
                 int(value.get("fs_size_bytes", 0)), str(value.get("url_cover") or ""),
-                bool(value.get("missing_from_fs", False)), files,
+                bool(value.get("missing_from_fs", False)), files, genres, release_date, release_year,
             )
         except (KeyError, TypeError, ValueError) as error:
             raise RommApiError("malformed RomM ROM entry") from error

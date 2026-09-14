@@ -14,6 +14,43 @@ from .paths import PATHS
 
 
 @dataclass(slots=True)
+class LocalArtworkCache:
+    """Persistent, best-effort cache for provider artwork assets."""
+
+    cache_dir: Path | None = None
+    timeout: float = 8.0
+    downloader: object | None = None
+
+    def __post_init__(self) -> None:
+        self.cache_dir = self.cache_dir or PATHS.romm_artwork_cache
+
+    def cache_remote(self, identity: str, url: str) -> str:
+        if not url:
+            return ""
+        digest = hashlib.sha256(identity.encode()).hexdigest()
+        image = self.cache_dir / f"{digest}.img"
+        state = self.cache_dir / f"{digest}.json"
+        try:
+            previous = json.loads(state.read_text()) if state.exists() else {}
+            if image.exists() and previous.get("url") == url:
+                return image.as_uri()
+            if self.downloader is not None:
+                payload = self.downloader(url)
+            else:
+                request = urllib.request.Request(url, headers={"User-Agent": "Mudos/romm"})
+                with urllib.request.urlopen(request, timeout=self.timeout) as response:
+                    payload = response.read()
+            self.cache_dir.mkdir(parents=True, exist_ok=True)
+            temporary = image.with_suffix(".tmp")
+            temporary.write_bytes(payload)
+            temporary.replace(image)
+            state.write_text(json.dumps({"url": url}, sort_keys=True))
+            return image.as_uri()
+        except (OSError, ValueError, urllib.error.URLError, TimeoutError):
+            return image.as_uri() if image.exists() else ""
+
+
+@dataclass(slots=True)
 class SteamGridDBArtwork:
     api_key: str | None = None
     cache_dir: Path | None = None

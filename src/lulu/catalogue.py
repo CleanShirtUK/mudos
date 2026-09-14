@@ -1,9 +1,11 @@
 """Consoled-owned normalized catalogue and provider boundary."""
 
 from dataclasses import asdict, dataclass
+import json
 import os
 from pathlib import Path
 import sqlite3
+import threading
 import time
 
 from .local_content import LocalContentGame, LocalContentProvider
@@ -42,6 +44,18 @@ class CatalogueGame:
     availability_state: str = "installed"
     provider_record_id: str = ""
     content_identity: str = ""
+    catalogue_source: str = ""
+    genres: tuple[str, ...] = ()
+    release_date: str | None = None
+    release_year: int | None = None
+    total_playtime: int | None = None
+    local_multiplayer: bool | None = None
+    online_multiplayer: bool | None = None
+    game_mode: str | None = None
+    protondb_rating: str | None = None
+    last_seen_at: int | None = None
+    last_synced_at: int | None = None
+    artwork_source_url: str = ""
 
     @classmethod
     def from_steam(cls, game: InstalledSteamGame) -> "CatalogueGame":
@@ -50,6 +64,7 @@ class CatalogueGame:
             title=game.title, platform="Steam", install_state="installed", launchable=True,
             install_dir=game.install_dir, artwork_url=game.artwork_url, last_played=game.last_played,
             source_title=game.title, normalized_search_title=clean_local_title(game.title),
+            catalogue_source="steam",
         )
 
     @classmethod
@@ -61,6 +76,7 @@ class CatalogueGame:
             launchable=game.launchable, install_dir=game.content_path, artwork_url="",
             last_played=0, runtime=game.runtime, platform_label=game.platform_label,
             source_title=source_title, normalized_search_title=clean_local_title(source_title),
+            catalogue_source="local",
         )
 
     @classmethod
@@ -75,8 +91,12 @@ class CatalogueGame:
                 last_played=installed.last_played if installed else 0, source_title=game.title,
                 normalized_search_title=clean_local_title(game.title),
                 availability_state="installed" if installed else "available",
-                provider_record_id=str(game.rom_id),
+                provider_record_id=str(game.rom_id), catalogue_source="romm",
                 content_identity=game.files[0].name if game.files else game.file_name,
+                genres=game.genres, release_date=game.release_date, release_year=game.release_year,
+                total_playtime=game.total_playtime, local_multiplayer=game.local_multiplayer,
+                online_multiplayer=game.online_multiplayer, game_mode=game.game_mode,
+                protondb_rating=game.protondb_rating, artwork_source_url=game.artwork_url,
             )
         platform = "Steam" if game.platform_slug.casefold() == "steam" else game.platform_slug
         return cls(
@@ -86,10 +106,17 @@ class CatalogueGame:
             platform_label=game.platform_label, source_title=game.title,
             normalized_search_title=clean_local_title(game.title), availability_state="available",
             provider_record_id=str(game.rom_id), content_identity=game.file_name,
+            catalogue_source="romm", genres=game.genres, release_date=game.release_date,
+            release_year=game.release_year, total_playtime=game.total_playtime,
+            local_multiplayer=game.local_multiplayer, online_multiplayer=game.online_multiplayer,
+            game_mode=game.game_mode, protondb_rating=game.protondb_rating,
+            artwork_source_url=game.artwork_url,
         )
 
     def as_dict(self) -> dict[str, object]:
-        return asdict(self)
+        value = asdict(self)
+        value["genres"] = list(self.genres)
+        return value
 
 
 IDENTITY_COLUMNS = (
@@ -102,7 +129,9 @@ NORMAL_METADATA_RETRY_SECONDS = 24 * 60 * 60
 SELECT_COLUMNS = (
     "game_id, provider, provider_id, title, platform, install_state, launchable, install_dir, "
     "artwork_url, last_played, runtime, platform_label, " + ", ".join(IDENTITY_COLUMNS)
-    + ", availability_state, provider_record_id, content_identity"
+    + ", availability_state, provider_record_id, content_identity, catalogue_source, genres, "
+      "release_date, release_year, total_playtime, local_multiplayer, online_multiplayer, "
+      "game_mode, protondb_rating, last_seen_at, last_synced_at, artwork_source_url"
 )
 
 
@@ -110,7 +139,8 @@ class CatalogueStore:
     def __init__(self, path: Path | None = None) -> None:
         self.path = path or PATHS.catalogue_db
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        self.connection = sqlite3.connect(self.path)
+        self.connection = sqlite3.connect(self.path, check_same_thread=False)
+        self.lock = threading.RLock()
         self.connection.execute(
             """CREATE TABLE IF NOT EXISTS games (
                 game_id TEXT PRIMARY KEY, provider TEXT NOT NULL, provider_id TEXT NOT NULL,
@@ -129,18 +159,30 @@ class CatalogueStore:
                        "match_locked": "INTEGER NOT NULL DEFAULT 0", "metadata_checked_at": "INTEGER NOT NULL DEFAULT 0",
                        "display_title_override": "TEXT NOT NULL DEFAULT ''", "artwork_suppressed": "INTEGER NOT NULL DEFAULT 0",
                        "availability_state": "TEXT NOT NULL DEFAULT 'installed'",
-                       "provider_record_id": "TEXT NOT NULL DEFAULT ''", "content_identity": "TEXT NOT NULL DEFAULT ''"}
+                       "provider_record_id": "TEXT NOT NULL DEFAULT ''", "content_identity": "TEXT NOT NULL DEFAULT ''",
+                       "catalogue_source": "TEXT NOT NULL DEFAULT ''", "genres": "TEXT NOT NULL DEFAULT '[]'",
+                       "release_date": "TEXT", "release_year": "INTEGER", "total_playtime": "INTEGER",
+                       "local_multiplayer": "INTEGER", "online_multiplayer": "INTEGER", "game_mode": "TEXT",
+                       "protondb_rating": "TEXT", "last_seen_at": "INTEGER", "last_synced_at": "INTEGER",
+                       "artwork_source_url": "TEXT NOT NULL DEFAULT ''"}
         for name, definition in migrations.items():
             if name not in columns:
                 self.connection.execute(f"ALTER TABLE games ADD COLUMN {name} {definition}")
         self.connection.commit()
 
     def _upsert(self, game: CatalogueGame) -> None:
+        with self.lock:
+            self._upsert_locked(game)
+
+    def _upsert_locked(self, game: CatalogueGame) -> None:
         values = game.as_dict()
+        values["genres"] = json.dumps(values["genres"], sort_keys=True)
         columns = ("game_id", "provider", "provider_id", "title", "platform", "install_state",
                    "launchable", "install_dir", "artwork_url", "last_played", "runtime",
                    "platform_label", *IDENTITY_COLUMNS, "availability_state", "provider_record_id",
-                   "content_identity")
+                   "content_identity", "catalogue_source", "genres", "release_date", "release_year",
+                   "total_playtime", "local_multiplayer", "online_multiplayer", "game_mode",
+                   "protondb_rating", "last_seen_at", "last_synced_at", "artwork_source_url")
         placeholders = ", ".join("?" for _ in columns)
         self.connection.execute(
             f"""INSERT INTO games ({', '.join(columns)}, updated_at) VALUES ({placeholders}, unixepoch())
@@ -156,6 +198,12 @@ class CatalogueStore:
                 availability_state=CASE WHEN games.install_state='installed' THEN 'installed'
                                        ELSE excluded.availability_state END,
                 provider_record_id=excluded.provider_record_id, content_identity=excluded.content_identity,
+                catalogue_source=excluded.catalogue_source, genres=excluded.genres,
+                release_date=excluded.release_date, release_year=excluded.release_year,
+                total_playtime=excluded.total_playtime, local_multiplayer=excluded.local_multiplayer,
+                online_multiplayer=excluded.online_multiplayer, game_mode=excluded.game_mode,
+                protondb_rating=excluded.protondb_rating, last_seen_at=excluded.last_seen_at,
+                last_synced_at=excluded.last_synced_at, artwork_source_url=excluded.artwork_source_url,
                 normalized_search_title=excluded.normalized_search_title,
                  title=CASE WHEN games.display_title_override != '' THEN games.display_title_override
                             WHEN games.match_locked OR games.match_status='matched' OR games.match_status='manual'
@@ -168,43 +216,60 @@ class CatalogueStore:
 
     def reconcile_steam(self, provider: SteamProvider) -> list[CatalogueGame]:
         games = [CatalogueGame.from_steam(game) for game in provider.list_installed()]
-        self.connection.execute("UPDATE games SET install_state='missing', launchable=0, updated_at=unixepoch() WHERE provider='steam'")
-        for game in games:
-            self._upsert(game)
-        self.connection.commit()
+        with self.lock:
+            # RomM-backed Steam entries also use provider=steam for stable
+            # Steam identity, but their availability is owned by RomM.
+            self.connection.execute(
+                "UPDATE games SET install_state='missing', launchable=0, updated_at=unixepoch() "
+                "WHERE provider='steam' AND provider_record_id=''"
+            )
+            for game in games:
+                self._upsert_locked(game)
+            self.connection.commit()
         return games
 
     def reconcile_local(self, provider: LocalContentProvider, root: Path) -> list[CatalogueGame]:
         games = [CatalogueGame.from_local(game) for game in provider.list_installed(root)]
-        self.connection.execute("UPDATE games SET install_state='missing', launchable=0, updated_at=unixepoch() WHERE provider='local'")
-        for game in games:
-            self._upsert(game)
-        self.connection.commit()
+        with self.lock:
+            self.connection.execute("UPDATE games SET install_state='missing', launchable=0, updated_at=unixepoch() WHERE provider='local'")
+            for game in games:
+                self._upsert_locked(game)
+            self.connection.commit()
         return games
 
     def reconcile_romm(self, games: list[CatalogueGame]) -> list[CatalogueGame]:
         """Apply a complete, already-fetched RomM snapshot atomically."""
         games = list({game.game_id: game for game in games}.values())
-        self.connection.execute("BEGIN")
-        try:
-            self.connection.execute(
+        with self.lock:
+            self.connection.execute("BEGIN")
+            try:
+                self.connection.execute(
                 "UPDATE games SET install_state='missing', launchable=0, availability_state='unavailable', "
                 "updated_at=unixepoch() WHERE provider='romm'"
             )
-            self.connection.execute(
+                self.connection.execute(
                 "UPDATE games SET install_state='missing', launchable=0, availability_state='unavailable' "
                 "WHERE provider='steam' AND provider_record_id != '' AND install_state != 'installed'"
             )
-            for game in games:
-                self._upsert(game)
-            self.connection.commit()
-        except Exception:
-            self.connection.rollback()
-            raise
+                for game in games:
+                    self._upsert_locked(game)
+                self.connection.commit()
+            except Exception:
+                self.connection.rollback()
+                raise
         return games
 
     def _rows(self, query: str, parameters: tuple[object, ...] = ()) -> list[CatalogueGame]:
-        return [CatalogueGame(*row) for row in self.connection.execute(query, parameters)]
+        with self.lock:
+            games = []
+            for row in self.connection.execute(query, parameters):
+                values = list(row)
+                try:
+                    values[28] = tuple(json.loads(values[28] or "[]"))
+                except (TypeError, ValueError, json.JSONDecodeError):
+                    values[28] = ()
+                games.append(CatalogueGame(*values))
+            return games
 
     def list_games(self, scope: str = "all") -> list[CatalogueGame]:
         query = f"SELECT {SELECT_COLUMNS} FROM games WHERE install_state='installed'"

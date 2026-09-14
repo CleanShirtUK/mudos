@@ -7,6 +7,8 @@ third-party application conventions are authoritative:
 - `/home/lulu/.config/<application>`: third-party application configuration.
 - `/home/lulu/.local/share/<application>`: third-party application data.
 - `/home/lulu/.cache`: rebuildable caches.
+- `/home/lulu/.cache/lulu/romm/artwork`: locally synchronized RomM artwork.
+- `/home/lulu/.local/share/lulu/catalogue.sqlite3`: persistent normalized Mudos catalogue.
 - `/home/lulu/Games/ROMs`: platform ROM directories.
 - `/home/lulu/Games/BIOS`: BIOS, Switch keys, and Switch firmware.
 - `/home/lulu/Recordings`, `/home/lulu/Replays`, and `/home/lulu/Screenshots`: user media.

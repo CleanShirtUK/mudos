@@ -44,3 +44,26 @@ by the existing `steam:<appid>` row and remains `installed` and launchable.
 Rows previously supplied by RomM become unavailable when a successful fresh
 snapshot no longer contains them. Installation is deliberately not part of
 this boundary.
+
+## Local catalogue and artwork cache
+
+RomM is a synchronization source, not a runtime presentation dependency. The
+normalized catalogue is persisted in
+`$XDG_DATA_HOME/lulu/catalogue.sqlite3`; the UI reads this local database via
+Consoled and does not contact RomM while browsing. A complete successful
+enumeration is reconciled transactionally. Failed or partial requests leave
+the prior snapshot available, including during startup and service restart.
+
+RomM cover URLs are synchronized into the rebuildable local cache at
+`$XDG_CACHE_HOME/lulu/romm/artwork`. Assets use a stable hash of the Mudos game
+identity and a URL sidecar, so unchanged covers are not downloaded again. New
+assets are written atomically; download failures retain an existing asset.
+Consoled publishes its D-Bus boundary immediately and runs synchronization in
+the background, with a 15-minute periodic interval. A manual `Refresh` remains
+available for diagnostics.
+
+RomM fields are normalized into the canonical catalogue model. The model
+supports genres, release date/year, playtime, multiplayer flags, game mode,
+and ProtonDB rating as nullable optional values, alongside identity, artwork,
+availability, launch/runtime, and provenance fields. Unknown provider values
+remain unknown rather than being fabricated.

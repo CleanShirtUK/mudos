@@ -1,6 +1,7 @@
 """Unified game catalogue and game/content intent boundary."""
 
 import asyncio
+from dataclasses import replace
 import logging
 import os
 from pathlib import Path
@@ -9,13 +10,14 @@ import subprocess
 import tempfile
 import shlex
 import json
+import time
 
 from dbus_next import BusType, Variant
 from dbus_next.aio import MessageBus
 from dbus_next.service import ServiceInterface, method, signal as dbus_signal
 
 from .catalogue import CatalogueGame, CatalogueStore
-from .artwork import SteamGridDBArtwork
+from .artwork import LocalArtworkCache, SteamGridDBArtwork
 from .contracts import ServiceDescriptor, ServiceName
 from .controller_provisioning import ensure_provider_controller_config
 from .emulator_runtime import EmulatorRuntimeAdapter
@@ -55,6 +57,7 @@ class ConsoleCatalog:
         self.provider = provider or SteamProvider()
         self.local_provider = local_provider or LocalContentProvider()
         self.artwork = SteamGridDBArtwork()
+        self.romm_artwork = LocalArtworkCache()
         self.metadata = metadata or SteamGridDBMetadata()
         self.matcher = MetadataMatcher(self.metadata)
         config = RommConfig.from_file()
@@ -73,6 +76,11 @@ class ConsoleCatalog:
                     app_id = self._steam_manifest_app_id(game)
                     entry = CatalogueGame.from_romm(
                         game, installed.get(app_id) if app_id else None, app_id
+                    )
+                    artwork = self.romm_artwork.cache_remote(entry.game_id, game.artwork_url)
+                    entry = replace(
+                        entry, artwork_url=artwork, last_seen_at=int(time.time()),
+                        last_synced_at=int(time.time())
                     )
                     normalized[entry.game_id] = entry
                 self.store.reconcile_romm(list(normalized.values()))
@@ -259,7 +267,9 @@ class ConsoleInterface(ServiceInterface):
     
     @classmethod
     def _variants(cls, game: dict[str, object]) -> dict[str, Variant]:
-        return {key: cls._variant(key, value) for key, value in game.items()}
+        # D-Bus has no nullable primitive signature; omission represents an
+        # unknown optional metadata field while SQLite/JSON retain NULL.
+        return {key: cls._variant(key, value) for key, value in game.items() if value is not None}
 
 
     @method()
@@ -483,6 +493,9 @@ class ConsoleInterface(ServiceInterface):
         return
 
 
+ROMM_SYNC_INTERVAL = 15 * 60
+
+
 async def serve() -> None:
     catalogue = ConsoleCatalog()
     runtime = EmulatorRuntimeAdapter(
@@ -500,7 +513,17 @@ async def serve() -> None:
     # Publish the D-Bus boundary before the potentially slow provider refresh.
     # sessiond starts the shell during bootstrap, and the bridge must be able to
     # discover Consoled while the catalogue is being populated.
-    catalogue.refresh()
+    # Publish the boundary and cached catalogue immediately. Provider sync is
+    # deliberately background work so RomM cannot delay shell startup.
+    async def synchronize() -> None:
+        while True:
+            try:
+                await asyncio.to_thread(catalogue.refresh)
+            except Exception:
+                LOGGER.exception("background catalogue synchronization failed")
+            await asyncio.sleep(ROMM_SYNC_INTERVAL)
+
+    asyncio.create_task(synchronize(), name="catalogue-sync")
     await asyncio.Event().wait()
 
 

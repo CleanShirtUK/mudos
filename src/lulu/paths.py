@@ -68,6 +68,10 @@ class MudosPaths:
         return self.cache_home / "lulu/steamgriddb"
 
     @property
+    def romm_artwork_cache(self) -> Path:
+        return self.cache_home / "lulu/romm/artwork"
+
+    @property
     def metadata_cache(self) -> Path:
         return self.cache_home / "lulu/steamgriddb/metadata"
 

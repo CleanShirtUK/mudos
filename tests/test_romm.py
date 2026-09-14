@@ -3,7 +3,7 @@ from pathlib import Path
 import unittest
 from urllib.parse import parse_qs, urlparse
 
-from lulu.romm import RommApiError, RommClient, RommConfig, SteamManifest
+from lulu.romm import RommApiError, RommClient, RommConfig, RommGame, RommPlatform, SteamManifest
 
 
 FIXTURES = Path(__file__).parent / "fixtures" / "romm"
@@ -41,6 +41,18 @@ class RommTests(unittest.TestCase):
         client = RommClient(RommConfig("https://romm.test"), transport)
         self.assertEqual(client.list_games(), [])
         self.assertEqual(client.list_games(platform_slug="nes"), [])
+
+    def test_normalizes_optional_presentation_metadata(self):
+        value = {
+            "id": 44, "name": "Metadata Game", "platform_id": 1,
+            "platform_slug": "snes", "fs_name": "metadata.sfc",
+            "genres": [{"name": "Action"}, "Puzzle"],
+            "release_date": "1994-01-01", "release_year": 1994,
+        }
+        game = RommGame.from_json(value, {1: RommPlatform(1, "snes", "SNES")})
+        self.assertEqual(game.genres, ("Action", "Puzzle"))
+        self.assertEqual(game.release_date, "1994-01-01")
+        self.assertEqual(game.release_year, 1994)
 
     def test_malformed_response_and_failure_are_errors(self):
         transport = Transport()
