@@ -121,6 +121,9 @@ The ordered phases are:
    PAM file to `/etc/systemd/system` and `/etc/pam.d`, with paths adjusted to
    `/opt/lulu/current`. Install the InputPlumber restart drop-in. Run
    `systemctl daemon-reload` after file changes.
+   Install `packaging/logind.conf.d/lulu.conf` to
+   `/etc/systemd/logind.conf.d/lulu.conf`; this disables automatic extra VT
+   gettys so VT2 remains exclusively owned by `lulu-session@2`.
 7. **InputPlumber**: copy the device definition to
    `/etc/inputplumber/devices.d/lulu-composite.yaml`, preserving the validated
    one-source-per-composite topology. Do not persist runtime composite names,
@@ -168,6 +171,7 @@ The ordered phases are:
 | Application release | USB payload at reference commit | atomic release under `/opt/lulu`, update `current` | replace only repo-owned release |
 | Python/native/static files | payload manifest | install root-owned files into release | deterministic replacement |
 | Systemd target/units | `payload/packaging` | `/etc/systemd/system` | overwrite only these named files |
+| logind VT policy | `packaging/logind.conf.d/lulu.conf` | `/etc/systemd/logind.conf.d/lulu.conf` | deterministic replacement |
 | PAM session file | `payload/packaging/lulu-session.pam` | `/etc/pam.d/lulu-session` | deterministic replacement |
 | InputPlumber device | payload YAML | `/etc/inputplumber/devices.d` | deterministic replacement; no runtime IDs |
 | InputPlumber restart drop-in | payload config | `/etc/systemd/system/inputplumber.service.d` | deterministic replacement |
@@ -196,6 +200,8 @@ verification phase without changing packages or files. Required checks are:
 - `seatd.service` and `inputplumber.service` are enabled, and the
   `multi-user.target.wants/lulu.target` boot link exists;
 - `inputplumber.service` is active;
+- the logind drop-in sets `NAutoVTs=0`, preventing an automatic getty from
+   claiming the console session VT;
 - the InputPlumber manager exposes at least one composite and each discovered
   composite has one D-Bus target and `InterceptMode=1`;
 - all ROM/BIOS directories exist and are writable by `lulu` without checking

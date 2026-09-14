@@ -92,6 +92,12 @@ class ProvisioningTests(unittest.TestCase):
         self.assertNotIn("+open steam://open/minigameslist", bootstrap)
         self.assertIn("Restart=always", (PAYLOAD / "packaging/lulu-session@.service").read_text())
 
+    def test_logind_policy_reserves_console_session_vt(self) -> None:
+        policy = (ROOT / "packaging/logind.conf.d/lulu.conf").read_text()
+        self.assertIn("[Login]", policy)
+        self.assertIn("NAutoVTs=0", policy)
+        self.assertIn("ReserveVT=0", policy)
+
     def test_presentation_default_is_discovered_not_hardcoded(self) -> None:
         config = (PAYLOAD / "packaging/presentation.conf").read_text()
         self.assertNotIn("\nLULU_OUTPUT_CONNECTOR=HDMI-A-1\n", config)
