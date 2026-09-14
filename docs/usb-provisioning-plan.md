@@ -15,7 +15,7 @@ hardware.
 The production mechanism is one repository-owned script at the USB root:
 
 ```text
-sudo ./install-mudos.sh
+legacy `install-mudos.sh` (removed; do not run)
 ```
 
 The script is run locally from removable media. It may use the network for
@@ -36,7 +36,7 @@ reference commit:
 
 ```text
 USB/
-├── install-mudos.sh
+├── install-mudos.sh (removed legacy artifact)
 ├── CHECKPOINT
 └── payload/
     ├── lib/                         # src/lulu Python package, installed as-is
@@ -64,7 +64,8 @@ USB/
 ```
 
 `CHECKPOINT` contains canonical `key=value` fields for the reference tag,
-commit, and payload generation date. `scripts/refresh-payload.sh COMMIT TAG`
+commit, and payload generation date. The removed legacy payload-refresh helper
+was previously named `scripts/refresh-payload.sh COMMIT TAG`.
 regenerates the sorted payload manifest and checkpoint after the reviewed
 payload has been assembled; it rejects generated Python state and incomplete
 Steam bootstrap dependencies.
@@ -79,7 +80,7 @@ the script verifies that both executables are present and runnable.
 
 ## Script Responsibilities
 
-`install-mudos.sh` should use `#!/usr/bin/env bash`, `set -Eeuo pipefail`, a
+The removed legacy installer used `#!/usr/bin/env bash`, `set -Eeuo pipefail`, a
 trap that reports the failed step, and a `step()` wrapper that prints the
 current numbered phase. It should resolve its own directory rather than the
 current working directory, require root, acquire a lock, and tee all output to
@@ -184,7 +185,7 @@ inputs. They are regenerated or created at runtime.
 
 ## Verification Mode
 
-The script should support `sudo ./install-mudos.sh --verify` and invoke the same
+The removed legacy script supported `sudo ./install-mudos.sh --verify` and invoked the same
 verification phase without changing packages or files. Required checks are:
 
 - every required package is installed and each executable resolves with
@@ -228,7 +229,7 @@ probe it started. It must not kill unrelated emulator or Steam processes.
 
 1. Boot the fresh CachyOS system with the USB removed and confirm the system
    reaches `lulu.target` and the Mudos session appears on the intended VT.
-2. Rerun the USB script with `sudo ./install-mudos.sh --verify`.
+2. Do not rerun the removed USB script; use the canonical release builder and verifier.
 3. With controllers connected, run `sudo /opt/lulu/current/bin/verify-mudos.sh --hardware` and confirm the composite and `InterceptMode=1` checks pass.
 4. Confirm `systemctl --failed` is empty for the Mudos-related services and
    inspect `journalctl -b -u inputplumber -u lulu-consoled -u lulu-session@2`.
