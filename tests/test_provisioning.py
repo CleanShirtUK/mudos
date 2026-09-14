@@ -97,6 +97,9 @@ class ProvisioningTests(unittest.TestCase):
         self.assertIn("[Login]", policy)
         self.assertIn("NAutoVTs=0", policy)
         self.assertIn("ReserveVT=0", policy)
+        service = (ROOT / "packaging/lulu-consoled.service").read_text()
+        self.assertIn("After=user@958.service lulu-session@2.service", service)
+
 
     def test_presentation_default_is_discovered_not_hardcoded(self) -> None:
         config = (PAYLOAD / "packaging/presentation.conf").read_text()

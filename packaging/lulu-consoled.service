@@ -1,7 +1,7 @@
 [Unit]
 Description=Lulu game catalogue service
 Requires=user@958.service
-After=user@958.service
+After=user@958.service lulu-session@2.service
 
 [Service]
 Type=simple
