@@ -45,6 +45,9 @@ Rectangle {
     property vector2d livePlayOrigin: Qt.vector2d(0, 0)
     property alias actualGlassSurface: glassSurface
     property bool stackedGlass: false
+    // Catalogue cards share the same glass-backed visual surface as navigation cards.
+    // Interaction remains owned by the containing delegate.
+    property bool catalogueCard: false
     property var stackedCoordinateRoot
     property vector2d stackedCardOrigin: Qt.vector2d(0, 0)
     property vector2d stackedCardSize: Qt.vector2d(0, 0)
@@ -111,6 +114,15 @@ Rectangle {
             + (luluPalette.focusIndicator.a - luluPalette.glassBorder.a) * card.selectionProgress)
     border.width: card.librarySurfaceMaterial ? 0 : (1 + 2 * card.selectionProgress) * uiScale
     clip: true
+
+    NavigationCardSurface {
+        anchors.fill: parent
+        visible: card.catalogueCard
+        canonicalTexture: card.canonicalTexture
+        canonicalSize: card.canonicalSize
+        canonicalCoordinateRoot: card.canonicalCoordinateRoot
+        uiScale: card.uiScale
+    }
 
     GlassSurface {
         id: glassSurface

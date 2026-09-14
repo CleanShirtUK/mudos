@@ -192,7 +192,9 @@ Item {
                         canonicalSize: librarySpace.canonicalSize
                         showAction: false
                         actionLabel: librarySpace.actionLabel
-                        stackedGlass: true
+                        catalogueCard: true
+                        librarySurfaceMaterial: true
+                        stackedGlass: false
                         stackedCardBevelWidth: 3 * librarySpace.uiScale
                         stackedPlayBevelWidth: 3 * librarySpace.uiScale
                         stackedPlayEdgeLightStrength: 0.18
