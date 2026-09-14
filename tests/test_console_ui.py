@@ -194,6 +194,7 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertIn('libraryGames: root.displayGames', store)
         self.assertIn('specialCardId: "steam-store"', store)
         self.assertIn('actionLabel: "Available to Download"', store)
+        self.assertIn('root.space === "store" ? "Available to Download"', QML)
         self.assertNotIn('RecentHome {', store)
         self.assertIn('LibrarySpace {', store)
         self.assertIn('function moveVertical(delta)', store)

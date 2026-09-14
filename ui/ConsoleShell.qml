@@ -1614,7 +1614,8 @@ Window {
                 }
                 ControllerHint {
                     action: "confirm"
-                     label: root.selectedCategoryIndex === 3 ? "Launch"
+                     label: root.space === "store" ? "Available to Download"
+                           : root.selectedCategoryIndex === 3 ? "Launch"
                            : root.selectedCategoryIndex === 2 ? "Open Library" : "Select"
                     uiScale: root.uiScale
                     typography: typography
