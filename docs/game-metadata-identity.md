@@ -15,6 +15,9 @@ metadata:
 - `match_status` is `matched`, `ambiguous`, `unmatched`, or `manual`.
 - `match_method` and `match_confidence` explain automatic selection.
 - `match_locked` makes a manual selection authoritative across rescans.
+- `catalogue_source` records discovery provenance separately from the runtime
+  `provider`; RomM Steam rows therefore remain `catalogue_source=romm` while
+  retaining `provider=steam` and `steam:<appid>` identity.
 
 The card uses `title`: canonical title for a confirmed match, otherwise the
 cleaned local title or native Steam title. A failed metadata request never
@@ -33,6 +36,12 @@ SteamGridDB search responses are cached on disk. Game details are fetched only
 for the bounded candidate set when platform data is absent, and are cached by
 stable provider ID. Normal catalogue rendering reads SQLite and cached artwork;
 network access is enrichment, not a launch prerequisite.
+
+Steam catalogue rows use the AppID-keyed SteamGridDB details path rather than
+title matching. RomM-discovered emulated rows use the existing title/platform
+matcher. A successful Mudos match is persisted and takes precedence over
+later RomM fallback fields; unresolved rows retain usable RomM presentation
+metadata and their unmatched state for retry.
 
 ## Future Change Match Flow
 

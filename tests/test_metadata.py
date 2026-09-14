@@ -17,6 +17,9 @@ class FakeMetadata:
     def search(self, query, platform):
         return self.candidates
 
+    def search_steam_app(self, app_id):
+        return None
+
 
 class MetadataTests(unittest.TestCase):
     def test_filename_cleanup_removes_rom_noise_but_keeps_title_punctuation(self):
@@ -44,6 +47,28 @@ class MetadataTests(unittest.TestCase):
             MetadataCandidate("2", "Zelda", platforms=("NES",)),
         ])).match("Zelda.nes", "nes")
         self.assertEqual(ambiguous.status, "ambiguous")
+
+    def test_steam_catalogue_matching_uses_appid_and_presentation_metadata(self):
+        from lulu.catalogue import CatalogueGame
+        candidate = MetadataCandidate(
+            "sgdb-104200", "Canonical BEEP", raw={
+                "id": "sgdb-104200", "name": "Canonical BEEP", "genres": ["Action"],
+                "release_year": 2001,
+            }
+        )
+
+        class SteamMetadata(FakeMetadata):
+            def search_steam_app(self, app_id):
+                self.app_id = app_id
+                return candidate
+
+        provider = SteamMetadata()
+        game = CatalogueGame("steam:104200", "steam", "104200", "RomM BEEP", "Steam",
+                             "available", False, "", "", 0)
+        result = MetadataMatcher(provider).match_game(game)
+        self.assertEqual(provider.app_id, "104200")
+        self.assertEqual((result.method, result.canonical_title), ("steam-appid", "Canonical BEEP"))
+        self.assertEqual(result.presentation["genres"], ["Action"])
 
     def test_strongest_credible_title_wins_close_sequel_results(self):
         result = MetadataMatcher(FakeMetadata([

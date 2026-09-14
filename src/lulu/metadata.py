@@ -1,6 +1,7 @@
 """Canonical game identity and deterministic metadata matching."""
 
 from dataclasses import dataclass
+from dataclasses import field
 import difflib
 import hashlib
 import json
@@ -107,6 +108,7 @@ class MetadataMatch:
     confidence: float = 0.0
     normalized_search_title: str = ""
     candidates: tuple[MetadataCandidate, ...] = ()
+    presentation: dict[str, object] = field(default_factory=dict)
 
 
 class SteamGridDBMetadata:
@@ -149,6 +151,22 @@ class SteamGridDBMetadata:
             else:
                 hydrated.append(candidate)
         return hydrated + candidates[10:]
+
+    def search_steam_app(self, app_id: str) -> MetadataCandidate | None:
+        """Resolve Steam presentation metadata by its canonical AppID."""
+        if not self.api_key or not app_id.isdecimal() or int(app_id) < 1:
+            return None
+        key = hashlib.sha256(f"steam-app:{app_id}".encode()).hexdigest()
+        payload = self._cached(key)
+        if payload is None:
+            try:
+                payload = self._request_json(f"/v2/games/steam/{app_id}")
+                self._write_cache(key, payload)
+            except (OSError, ValueError, urllib.error.URLError, TimeoutError) as error:
+                self._logger.warning("Steam metadata failed for %s: %s", app_id, error)
+                return None
+        data = payload.get("data") if isinstance(payload, dict) else None
+        return self._candidate(data) if isinstance(data, dict) else None
 
     def _game(self, game_id: str) -> dict[str, object] | None:
         key = hashlib.sha256(f"game:{game_id}".encode()).hexdigest()
@@ -277,4 +295,42 @@ class MetadataMatcher:
             status, self.provider.provider_name if status == "matched" else "", 
             candidate.game_id if status == "matched" else "", candidate.title if status == "matched" else "",
             method, round(score, 4), query, tuple(item[1] for item in ranked[:5]),
+            presentation_metadata(candidate) if status == "matched" else {},
         )
+
+    def match_game(self, game: object) -> MetadataMatch:
+        provider = str(getattr(game, "provider", ""))
+        app_id = str(getattr(game, "provider_id", ""))
+        if provider == "steam" and app_id.isdecimal():
+            candidate = self.provider.search_steam_app(app_id)
+            if candidate is not None and candidate.game_id and candidate.title:
+                return MetadataMatch(
+                    "matched", self.provider.provider_name, candidate.game_id, candidate.title,
+                    "steam-appid", 1.0, str(getattr(game, "normalized_search_title", "")),
+                    (candidate,), presentation_metadata(candidate),
+                )
+        return self.match(str(getattr(game, "source_title", "") or getattr(game, "title", "")),
+                          str(getattr(game, "platform", "")))
+
+
+def presentation_metadata(candidate: MetadataCandidate) -> dict[str, object]:
+    """Extract only unambiguous canonical presentation fields from provider data."""
+    raw = candidate.raw or {}
+    genres = raw.get("genres", [])
+    if isinstance(genres, list):
+        genres = [str(item.get("name", "")).strip() if isinstance(item, dict) else str(item).strip()
+                  for item in genres if str(item).strip()]
+    else:
+        genres = []
+    release_date = raw.get("release_date", raw.get("first_release_date"))
+    release_date = str(release_date).strip() if release_date else None
+    year = raw.get("release_year", raw.get("year"))
+    try:
+        release_year = int(year) if year is not None else (int(release_date[:4]) if release_date and release_date[:4].isdigit() else None)
+    except (TypeError, ValueError):
+        release_year = None
+    result: dict[str, object] = {"genres": genres, "release_date": release_date, "release_year": release_year}
+    for key in ("total_playtime", "local_multiplayer", "online_multiplayer", "game_mode", "protondb_rating"):
+        if key in raw and raw[key] is not None:
+            result[key] = raw[key]
+    return result

@@ -198,11 +198,16 @@ class CatalogueStore:
                 availability_state=CASE WHEN games.install_state='installed' THEN 'installed'
                                        ELSE excluded.availability_state END,
                 provider_record_id=excluded.provider_record_id, content_identity=excluded.content_identity,
-                catalogue_source=excluded.catalogue_source, genres=excluded.genres,
-                release_date=excluded.release_date, release_year=excluded.release_year,
-                total_playtime=excluded.total_playtime, local_multiplayer=excluded.local_multiplayer,
-                online_multiplayer=excluded.online_multiplayer, game_mode=excluded.game_mode,
-                protondb_rating=excluded.protondb_rating, last_seen_at=excluded.last_seen_at,
+                catalogue_source=excluded.catalogue_source,
+                genres=CASE WHEN games.metadata_provider != '' THEN games.genres ELSE excluded.genres END,
+                release_date=CASE WHEN games.metadata_provider != '' THEN games.release_date ELSE excluded.release_date END,
+                release_year=CASE WHEN games.metadata_provider != '' THEN games.release_year ELSE excluded.release_year END,
+                total_playtime=CASE WHEN games.metadata_provider != '' THEN games.total_playtime ELSE excluded.total_playtime END,
+                local_multiplayer=CASE WHEN games.metadata_provider != '' THEN games.local_multiplayer ELSE excluded.local_multiplayer END,
+                online_multiplayer=CASE WHEN games.metadata_provider != '' THEN games.online_multiplayer ELSE excluded.online_multiplayer END,
+                game_mode=CASE WHEN games.metadata_provider != '' THEN games.game_mode ELSE excluded.game_mode END,
+                protondb_rating=CASE WHEN games.metadata_provider != '' THEN games.protondb_rating ELSE excluded.protondb_rating END,
+                last_seen_at=excluded.last_seen_at,
                 last_synced_at=excluded.last_synced_at, artwork_source_url=excluded.artwork_source_url,
                 normalized_search_title=excluded.normalized_search_title,
                  title=CASE WHEN games.display_title_override != '' THEN games.display_title_override
@@ -282,6 +287,9 @@ class CatalogueStore:
             query += " AND provider='local' AND platform=?"; parameters = (scope.removeprefix("platform:"),)
         return self._rows(query + " ORDER BY title COLLATE NOCASE", parameters)
 
+    def list_catalogue_games(self) -> list[CatalogueGame]:
+        return self._rows(f"SELECT {SELECT_COLUMNS} FROM games ORDER BY title COLLATE NOCASE")
+
     def list_recent(self) -> list[CatalogueGame]:
         return self._rows(f"SELECT {SELECT_COLUMNS} FROM games WHERE install_state='installed' AND last_played>0 ORDER BY last_played DESC")
 
@@ -326,15 +334,25 @@ class CatalogueStore:
         if row is None or row[0]:
             return
         title = row[1] or (match.canonical_title if match.status == "matched" else match.normalized_search_title)
-        self.connection.execute(
-            """UPDATE games SET title=?, normalized_search_title=?, metadata_provider=?, metadata_game_id=?,
-               canonical_title=?, match_status=?, match_method=?, match_confidence=?, match_locked=0,
-                metadata_checked_at=?, artwork_url=artwork_url,
-               updated_at=unixepoch() WHERE game_id=? AND match_locked=0""",
-             (title, match.normalized_search_title, match.provider, match.game_id, match.canonical_title,
-              match.status, match.method, match.confidence, int(time.time()), game_id),
-        )
-        self.connection.commit()
+        presentation = match.presentation
+        with self.lock:
+            self.connection.execute(
+                """UPDATE games SET title=?, normalized_search_title=?, metadata_provider=?, metadata_game_id=?,
+                   canonical_title=?, match_status=?, match_method=?, match_confidence=?, match_locked=0,
+                   metadata_checked_at=?, genres=COALESCE(?, genres), release_date=COALESCE(?, release_date),
+                   release_year=COALESCE(?, release_year), total_playtime=COALESCE(?, total_playtime),
+                   local_multiplayer=COALESCE(?, local_multiplayer), online_multiplayer=COALESCE(?, online_multiplayer),
+                   game_mode=COALESCE(?, game_mode), protondb_rating=COALESCE(?, protondb_rating),
+                   updated_at=unixepoch() WHERE game_id=? AND match_locked=0""",
+                (title, match.normalized_search_title, match.provider, match.game_id, match.canonical_title,
+                 match.status, match.method, match.confidence, int(time.time()),
+                 json.dumps(presentation["genres"]) if presentation.get("genres") else None,
+                 presentation.get("release_date"), presentation.get("release_year"),
+                 presentation.get("total_playtime"), presentation.get("local_multiplayer"),
+                 presentation.get("online_multiplayer"), presentation.get("game_mode"),
+                 presentation.get("protondb_rating"), game_id),
+            )
+            self.connection.commit()
 
     def set_metadata_match(self, game_id: str, provider: str, metadata_game_id: str,
                            canonical_title: str) -> None:

@@ -86,12 +86,12 @@ class ConsoleCatalog:
                 self.store.reconcile_romm(list(normalized.values()))
             except RommApiError as error:
                 LOGGER.warning("RomM refresh failed; retaining previous snapshot: %s", error)
-        for game in self.store.list_games():
+        for game in self.store.list_catalogue_games():
             if self.store.needs_metadata_match(game.game_id):
                 self.store.apply_metadata_match(
-                    game.game_id, self.matcher.match(game.source_title or game.title, game.platform)
+                    game.game_id, self.matcher.match_game(game)
                 )
-        games = self.store.list_games()
+        games = self.store.list_catalogue_games()
         for game_id, artwork_url in self.artwork.enrich(games).items():
             self.store.set_artwork_url(game_id, artwork_url)
         return [game.as_dict() for game in self.store.list_games()]
