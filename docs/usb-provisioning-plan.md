@@ -5,6 +5,11 @@ mechanism for a fresh CachyOS installation. The implementation is under
 `deploy/`; it does not deploy to, or make assumptions about, the BC-250
 hardware.
 
+> **Historical USB workflow.** This document is retained for installation
+> evidence only. Current Mudos development and promotable releases use only
+> `lulu:/home/josh/src/lulu` and its canonical `scripts/release.py` builder.
+> Do not run the legacy payload refresh or installer for current deployment.
+
 ## Scope
 
 The production mechanism is one repository-owned script at the USB root:

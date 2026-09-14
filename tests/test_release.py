@@ -33,6 +33,16 @@ class ReleaseToolTests(unittest.TestCase):
         with self.assertRaises(release.ReleaseError):
             release.ensure_clean_source(root)
 
+    def test_canonical_guard_rejects_noncanonical_source_or_host(self):
+        root = self.git_repo()
+        original_host = release.socket.gethostname
+        release.socket.gethostname = lambda: release.CANONICAL_HOSTNAME
+        try:
+            with self.assertRaises(release.ReleaseError):
+                release.ensure_canonical_source(root)
+        finally:
+            release.socket.gethostname = original_host
+
     def test_manifest_and_tamper_detection(self):
         root = Path(tempfile.mkdtemp())
         (root / "payload.txt").write_text("payload\n")

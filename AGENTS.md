@@ -14,3 +14,5 @@ Never build or deploy from Phleg, `/tmp`, a recovery or reconstructed tree, a
 copied builder, `refresh-payload.sh`, an old installer, or an existing release.
 Never copy individual files into `/opt/lulu`; never mutate a release directory.
 Recovered code must be integrated here and committed before release construction.
+
+`deploy/payload` is installation compatibility material only. It is not source.
