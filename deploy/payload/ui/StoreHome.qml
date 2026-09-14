@@ -40,10 +40,12 @@ Item {
             result.push(game)
         }
         // Keep the delegated commerce surface in every expanded category.
-        if (root.cardWidth === 0)
-            result.push({game_id: "steam-store", title: "Steam Store",
-                         artwork_url: Qt.resolvedUrl("artwork/store.png"),
-                         artwork_suppressed: false, provider: "steam-store"})
+        if (root.cardWidth === 0) {
+            if (scope === "all")
+                result.push({game_id: "steam-store", title: "Steam Store",
+                             artwork_url: Qt.resolvedUrl("artwork/store.png"),
+                             artwork_suppressed: false, provider: "steam-store"})
+        }
         return result
     }
 

@@ -10,7 +10,7 @@ ec5d9c2c25e2bf0cc4f1f3bf0f4d93f5918b21c24ffcb8585018b8be882f27bb  ./config/input
 4ae4fb64cd11bc79599ee7f8e25e2d18818fde794563ce772594de661b69d4ae  ./lib/lulu/applicationd.py
 ec39e530f45dfae7f2a8d7c369a5b91767261fd00b70d2fe13a9760b24da20ac  ./lib/lulu/artwork.py
 20c5af66e8ede83beccac5706534f47cc2bbd6a1804ccf9b50109103f8e2b45f  ./lib/lulu/capabilities.py
-67605979a614c2ace87894068e406e8189ee390abcc9d7caca0c476a8f5ef75f  ./lib/lulu/catalogue.py
+a4dfa2ad8d7251ba9a5f4a3ac98f434a67076a09e2c67d399a4fc79362739a1b  ./lib/lulu/catalogue.py
 8e4cf12870608b5d332f58a925f7460ff7bdd9f2ee4da18ca3306b75042d3585  ./lib/lulu/consoled.py
 971b1ddab9d2e360d554426f9b61b181f1083689c5cb78a092b2ccde23beb39e  ./lib/lulu/console_sessiond.py
 bf6eaf76a5c7499fdd239d0ae6d50a647f709225e2526d7cbeadf24954fa1ab9  ./lib/lulu/console_ui.py
@@ -126,7 +126,7 @@ e18671924f0e96ac45e303f57ecd374e93ee72209224e7d0235947e740eba44f  ./ui/sounds/ui
 9fa1eff6b93d663db937526cd079c03d2b463275c276f6923b8fd52d1ed65602  ./ui/sounds/ui-confirm.wav
 0457838de53a1027569871234c9b0e5b521a37106a4c741ccb103af6e9f8941e  ./ui/sounds/ui-error.wav
 66d2b7054740b4ac9d8918bc3849674be60fd1effb86ca4a7f982a86978835d2  ./ui/sounds/ui-navigate.wav
-38da1a74fe763def0b4c5dffff6d15bb52afe553ab7005724d432f81fa438ca6  ./ui/StoreHome.qml
+7c4f5ea06f5f50b85a717c23aae62e168d9694221412e6bc7d11ec68564d4264  ./ui/StoreHome.qml
 420ef0464e943bd59e42aa668e502518c027ff57e6faa5cf94447532fd648770  ./ui/SystemHome.qml
 41f2dd93760de12dd2b290a2441ed1cf9e05386c356996c3178645d8640b52a6  ./ui/SystemSpace.qml
 9d678d2bda8f02ee8087dca28cbd719563750e29cda21c3450947d0bfcce5822  ./ui/Typography.qml

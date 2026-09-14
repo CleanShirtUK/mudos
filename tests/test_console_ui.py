@@ -202,6 +202,8 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertIn('function moveVertical(delta)', store)
         self.assertIn('availableGames.length + categories.length + categoryIndex >= 0', store)
         self.assertIn('String(game.game_id) === "steam-store"', store)
+        self.assertIn('scope === "all"', store)
+        self.assertIn('if (scope === "all")', store)
         self.assertIn('installGameRequested(game)', store)
         self.assertIn('game.provider === "steam"', store)
         self.assertIn('onInstallGameRequested: root.installGame(game)', QML)

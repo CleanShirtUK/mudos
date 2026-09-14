@@ -44,6 +44,36 @@ class CatalogueTests(unittest.TestCase):
 
         self.assertEqual([game.game_id for game in available], ["romm:43"])
 
+    def test_romm_steam_platform_survives_runtime_identity_and_available_query(self) -> None:
+        first = RommGame(272, "BEEP", 7, "steam", "Steam", "104200-beep.json", ".json", 10, "", False,
+                         (RommFile(2720, "104200-beep.json"),))
+        duplicate = RommGame(273, "BEEP legacy", 7, "steam", "Steam", "104200-old.json", ".json", 10, "", False,
+                             (RommFile(2730, "104200-old.json"),))
+        with tempfile.TemporaryDirectory() as directory:
+            store = CatalogueStore(Path(directory) / "catalogue.sqlite3")
+            store.reconcile_romm([
+                CatalogueGame.from_romm(first, app_id="104200"),
+                CatalogueGame.from_romm(duplicate, app_id="104200"),
+            ])
+            available = store.list_available_games("romm")
+
+        self.assertEqual(len(available), 1)
+        self.assertEqual(available[0].game_id, "steam:104200")
+        self.assertEqual(available[0].provider, "steam")
+        self.assertEqual(available[0].provider_id, "104200")
+        self.assertEqual(available[0].platform, "Steam")
+        self.assertEqual(available[0].platform_label, "Steam")
+        self.assertIn(available[0].provider_record_id, {"272", "273"})
+
+    def test_installed_romm_steam_title_is_not_available(self) -> None:
+        romm = RommGame(272, "BEEP", 7, "steam", "Steam", "104200-beep.json", ".json", 10, "", False)
+        installed = InstalledSteamGame("104200", "BEEP", "/games/BEEP", "/games", 1, 0)
+        with tempfile.TemporaryDirectory() as directory:
+            store = CatalogueStore(Path(directory) / "catalogue.sqlite3")
+            store.reconcile_romm([CatalogueGame.from_romm(romm, installed, "104200")])
+            available = store.list_available_games("romm")
+        self.assertEqual(available, [])
+
     def test_romm_snapshot_failure_can_leave_previous_snapshot_untouched(self) -> None:
         romm = RommGame(43, "F-Zero", 1, "snes", "SNES", "F-Zero.sfc", ".sfc", 10, "", False)
         with tempfile.TemporaryDirectory() as directory:

@@ -69,7 +69,7 @@ class CatalogueGame:
         if app_id is not None:
             return cls(
                 game_id=f"steam:{app_id}", provider="steam", provider_id=app_id,
-                title=installed.title if installed else game.title, platform="Steam",
+                title=installed.title if installed else game.title, platform="Steam", platform_label="Steam",
                 install_state="installed" if installed else "available", launchable=installed is not None,
                 install_dir=installed.install_dir if installed else "", artwork_url=game.artwork_url,
                 last_played=installed.last_played if installed else 0, source_title=game.title,
@@ -223,8 +223,13 @@ class CatalogueStore:
         query = f"SELECT {SELECT_COLUMNS} FROM games WHERE availability_state='available'"
         parameters: tuple[object, ...] = ()
         if provider is not None:
-            query += " AND provider=?"
-            parameters = (provider,)
+            if provider == "romm":
+                # Steam-backed RomM records retain runtime provider=steam; their
+                # non-empty provider_record_id is the authoritative RomM source.
+                query += " AND (provider='romm' OR (provider='steam' AND provider_record_id != ''))"
+            else:
+                query += " AND provider=?"
+                parameters = (provider,)
         return self._rows(query + " ORDER BY title COLLATE NOCASE", parameters)
 
     def get_game(self, game_id: str) -> CatalogueGame | None:
