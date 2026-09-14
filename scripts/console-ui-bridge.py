@@ -174,6 +174,10 @@ class ConsoleUiBridge:
         rows = await self.consoled.call_list_platform_categories()
         return [{key: value.value for key, value in row.items()} for row in rows]
 
+    async def list_available_games(self, provider: str) -> list[dict[str, object]]:
+        rows = await self.consoled.call_list_available_games(provider)
+        return [{key: value.value for key, value in row.items()} for row in rows]
+
     def launch_log(self) -> dict[str, object]:
         return self.launch_logs.snapshot()
 
@@ -275,6 +279,13 @@ class ApiHandler(BaseHTTPRequestHandler):
         if urlparse(self.path).path == "/platforms":
             try:
                 self._respond(200, self.bridge.call(self.bridge.list_platforms()))
+            except Exception as error:  # pragma: no cover - live IPC failure path
+                self._respond(503, {"error": str(error)})
+            return
+        if urlparse(self.path).path == "/available":
+            provider = parse_qs(urlparse(self.path).query).get("provider", ["romm"])[0]
+            try:
+                self._respond(200, self.bridge.call(self.bridge.list_available_games(provider)))
             except Exception as error:  # pragma: no cover - live IPC failure path
                 self._respond(503, {"error": str(error)})
             return

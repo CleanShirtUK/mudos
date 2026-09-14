@@ -1,0 +1,5 @@
+{"items": [{"id": 43, "name": "F-Zero", "platform_id": 1,
+  "platform_slug": "snes", "platform_display_name": "SNES", "fs_name": "F-Zero.sfc",
+  "fs_extension": ".sfc", "fs_size_bytes": 10, "missing_from_fs": false,
+  "files": [{"id": 430, "file_name": "F-Zero.sfc", "file_size_bytes": 10}]}],
+ "total": 2, "limit": 1, "offset": 1}

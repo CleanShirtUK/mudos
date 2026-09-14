@@ -9,6 +9,7 @@ import time
 from .local_content import LocalContentGame, LocalContentProvider
 from .metadata import MetadataMatch, clean_local_title
 from .paths import PATHS
+from .romm import RommGame
 from .steam_provider import InstalledSteamGame, SteamProvider
 
 
@@ -38,6 +39,9 @@ class CatalogueGame:
     metadata_checked_at: int = 0
     display_title_override: str = ""
     artwork_suppressed: bool = False
+    availability_state: str = "installed"
+    provider_record_id: str = ""
+    content_identity: str = ""
 
     @classmethod
     def from_steam(cls, game: InstalledSteamGame) -> "CatalogueGame":
@@ -59,6 +63,30 @@ class CatalogueGame:
             source_title=source_title, normalized_search_title=clean_local_title(source_title),
         )
 
+    @classmethod
+    def from_romm(cls, game: RommGame, installed: InstalledSteamGame | None = None,
+                  app_id: str | None = None) -> "CatalogueGame":
+        if app_id is not None:
+            return cls(
+                game_id=f"steam:{app_id}", provider="steam", provider_id=app_id,
+                title=installed.title if installed else game.title, platform="Steam",
+                install_state="installed" if installed else "available", launchable=installed is not None,
+                install_dir=installed.install_dir if installed else "", artwork_url=game.artwork_url,
+                last_played=installed.last_played if installed else 0, source_title=game.title,
+                normalized_search_title=clean_local_title(game.title),
+                availability_state="installed" if installed else "available",
+                provider_record_id=str(game.rom_id),
+                content_identity=game.files[0].name if game.files else game.file_name,
+            )
+        return cls(
+            game_id=f"romm:{game.rom_id}", provider="romm", provider_id=str(game.rom_id),
+            title=game.title, platform=game.platform_slug, install_state="available", launchable=False,
+            install_dir="", artwork_url=game.artwork_url, last_played=0, runtime="",
+            platform_label=game.platform_label, source_title=game.title,
+            normalized_search_title=clean_local_title(game.title), availability_state="available",
+            provider_record_id=str(game.rom_id), content_identity=game.file_name,
+        )
+
     def as_dict(self) -> dict[str, object]:
         return asdict(self)
 
@@ -73,6 +101,7 @@ NORMAL_METADATA_RETRY_SECONDS = 24 * 60 * 60
 SELECT_COLUMNS = (
     "game_id, provider, provider_id, title, platform, install_state, launchable, install_dir, "
     "artwork_url, last_played, runtime, platform_label, " + ", ".join(IDENTITY_COLUMNS)
+    + ", availability_state, provider_record_id, content_identity"
 )
 
 
@@ -97,7 +126,9 @@ class CatalogueStore:
                       "canonical_title": "TEXT NOT NULL DEFAULT ''", "match_status": "TEXT NOT NULL DEFAULT ''",
                       "match_method": "TEXT NOT NULL DEFAULT ''", "match_confidence": "REAL NOT NULL DEFAULT 0",
                        "match_locked": "INTEGER NOT NULL DEFAULT 0", "metadata_checked_at": "INTEGER NOT NULL DEFAULT 0",
-                       "display_title_override": "TEXT NOT NULL DEFAULT ''", "artwork_suppressed": "INTEGER NOT NULL DEFAULT 0"}
+                       "display_title_override": "TEXT NOT NULL DEFAULT ''", "artwork_suppressed": "INTEGER NOT NULL DEFAULT 0",
+                       "availability_state": "TEXT NOT NULL DEFAULT 'installed'",
+                       "provider_record_id": "TEXT NOT NULL DEFAULT ''", "content_identity": "TEXT NOT NULL DEFAULT ''"}
         for name, definition in migrations.items():
             if name not in columns:
                 self.connection.execute(f"ALTER TABLE games ADD COLUMN {name} {definition}")
@@ -107,15 +138,23 @@ class CatalogueStore:
         values = game.as_dict()
         columns = ("game_id", "provider", "provider_id", "title", "platform", "install_state",
                    "launchable", "install_dir", "artwork_url", "last_played", "runtime",
-                   "platform_label", *IDENTITY_COLUMNS)
+                   "platform_label", *IDENTITY_COLUMNS, "availability_state", "provider_record_id",
+                   "content_identity")
         placeholders = ", ".join("?" for _ in columns)
         self.connection.execute(
             f"""INSERT INTO games ({', '.join(columns)}, updated_at) VALUES ({placeholders}, unixepoch())
                 ON CONFLICT(game_id) DO UPDATE SET
                 provider_id=excluded.provider_id, platform=excluded.platform,
-                install_state=excluded.install_state, launchable=excluded.launchable,
-                install_dir=excluded.install_dir, runtime=excluded.runtime,
+                install_state=CASE WHEN games.install_state='installed' THEN 'installed'
+                                   ELSE excluded.install_state END,
+                launchable=CASE WHEN games.install_state='installed' THEN games.launchable
+                                ELSE excluded.launchable END,
+                install_dir=CASE WHEN games.install_state='installed' THEN games.install_dir
+                                 ELSE excluded.install_dir END,
                 platform_label=excluded.platform_label, source_title=excluded.source_title,
+                availability_state=CASE WHEN games.install_state='installed' THEN 'installed'
+                                       ELSE excluded.availability_state END,
+                provider_record_id=excluded.provider_record_id, content_identity=excluded.content_identity,
                 normalized_search_title=excluded.normalized_search_title,
                  title=CASE WHEN games.display_title_override != '' THEN games.display_title_override
                             WHEN games.match_locked OR games.match_status='matched' OR games.match_status='manual'
@@ -142,6 +181,27 @@ class CatalogueStore:
         self.connection.commit()
         return games
 
+    def reconcile_romm(self, games: list[CatalogueGame]) -> list[CatalogueGame]:
+        """Apply a complete, already-fetched RomM snapshot atomically."""
+        games = list({game.game_id: game for game in games}.values())
+        self.connection.execute("BEGIN")
+        try:
+            self.connection.execute(
+                "UPDATE games SET install_state='missing', launchable=0, availability_state='unavailable', "
+                "updated_at=unixepoch() WHERE provider='romm'"
+            )
+            self.connection.execute(
+                "UPDATE games SET install_state='missing', launchable=0, availability_state='unavailable' "
+                "WHERE provider='steam' AND provider_record_id != '' AND install_state != 'installed'"
+            )
+            for game in games:
+                self._upsert(game)
+            self.connection.commit()
+        except Exception:
+            self.connection.rollback()
+            raise
+        return games
+
     def _rows(self, query: str, parameters: tuple[object, ...] = ()) -> list[CatalogueGame]:
         return [CatalogueGame(*row) for row in self.connection.execute(query, parameters)]
 
@@ -158,6 +218,14 @@ class CatalogueStore:
 
     def list_recent(self) -> list[CatalogueGame]:
         return self._rows(f"SELECT {SELECT_COLUMNS} FROM games WHERE install_state='installed' AND last_played>0 ORDER BY last_played DESC")
+
+    def list_available_games(self, provider: str | None = None) -> list[CatalogueGame]:
+        query = f"SELECT {SELECT_COLUMNS} FROM games WHERE availability_state='available'"
+        parameters: tuple[object, ...] = ()
+        if provider is not None:
+            query += " AND provider=?"
+            parameters = (provider,)
+        return self._rows(query + " ORDER BY title COLLATE NOCASE", parameters)
 
     def get_game(self, game_id: str) -> CatalogueGame | None:
         rows = self._rows(f"SELECT {SELECT_COLUMNS} FROM games WHERE game_id=?", (game_id,))

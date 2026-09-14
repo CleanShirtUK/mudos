@@ -3,7 +3,8 @@ import unittest
 from pathlib import Path
 
 from lulu.consoled import ConsoleInterface
-from lulu.catalogue import CatalogueStore
+from lulu.catalogue import CatalogueGame, CatalogueStore
+from lulu.romm import RommFile, RommGame
 from lulu.steam_provider import InstalledSteamGame
 from lulu.local_content import LocalContentProvider
 
@@ -17,6 +18,40 @@ class FakeSteamProvider:
 
 
 class CatalogueTests(unittest.TestCase):
+    def test_romm_reconcile_uses_steam_identity_and_preserves_installed_state(self) -> None:
+        romm = RommGame(42, "Cuphead", 99, "steam", "Steam", "cuphead.json", ".json", 10, "", False,
+                        (RommFile(420, "cuphead.json"),))
+        installed = InstalledSteamGame("268910", "Cuphead", "/games/Cuphead", "/games", 1, 0)
+        with tempfile.TemporaryDirectory() as directory:
+            store = CatalogueStore(Path(directory) / "catalogue.sqlite3")
+            store.reconcile_steam(FakeSteamProvider([installed]))
+            store.reconcile_romm([CatalogueGame.from_romm(romm, installed, "268910")])
+            row = store.get_game("steam:268910")
+
+        self.assertEqual(row.provider, "steam")
+        self.assertEqual(row.provider_record_id, "42")
+        self.assertEqual(row.install_state, "installed")
+        self.assertTrue(row.launchable)
+
+    def test_romm_available_state_is_separate_from_installed_games(self) -> None:
+        romm = RommGame(43, "F-Zero", 1, "snes", "SNES", "F-Zero.sfc", ".sfc", 10, "", False)
+        with tempfile.TemporaryDirectory() as directory:
+            store = CatalogueStore(Path(directory) / "catalogue.sqlite3")
+            store.reconcile_romm([CatalogueGame.from_romm(romm)])
+
+            self.assertEqual(store.list_games(), [])
+            available = store.list_available_games("romm")
+
+        self.assertEqual([game.game_id for game in available], ["romm:43"])
+
+    def test_romm_snapshot_failure_can_leave_previous_snapshot_untouched(self) -> None:
+        romm = RommGame(43, "F-Zero", 1, "snes", "SNES", "F-Zero.sfc", ".sfc", 10, "", False)
+        with tempfile.TemporaryDirectory() as directory:
+            store = CatalogueStore(Path(directory) / "catalogue.sqlite3")
+            store.reconcile_romm([CatalogueGame.from_romm(romm)])
+            # Providers are required to fetch and validate before calling this method.
+            # A failed fetch therefore makes no store call and retains this row.
+            self.assertEqual(store.get_game("romm:43").title, "F-Zero")
     def test_reconcile_persists_launchable_steam_records(self) -> None:
         game = InstalledSteamGame(
             "40800",

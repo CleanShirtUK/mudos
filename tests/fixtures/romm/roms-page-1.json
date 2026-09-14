@@ -1,0 +1,5 @@
+{"items": [{"id": 42, "name": "Super Mario World", "platform_id": 1,
+  "platform_slug": "snes", "platform_display_name": "SNES", "fs_name": "Super Mario World.sfc",
+  "fs_extension": ".sfc", "fs_size_bytes": 10, "url_cover": "https://cover.test/mario.jpg",
+  "missing_from_fs": false, "files": [{"id": 420, "file_name": "Super Mario World.sfc", "file_size_bytes": 10}]}],
+ "total": 2, "limit": 1, "offset": 0}

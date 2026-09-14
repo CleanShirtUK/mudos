@@ -14,7 +14,7 @@ from dbus_next import BusType, Variant
 from dbus_next.aio import MessageBus
 from dbus_next.service import ServiceInterface, method, signal as dbus_signal
 
-from .catalogue import CatalogueStore
+from .catalogue import CatalogueGame, CatalogueStore
 from .artwork import SteamGridDBArtwork
 from .contracts import ServiceDescriptor, ServiceName
 from .controller_provisioning import ensure_provider_controller_config
@@ -23,6 +23,7 @@ from .emulation import PLATFORMS, ROM_ROOT, ensure_storage
 from .inputplumber import InputPlumberClient
 from .local_content import LocalContentProvider
 from .metadata import MetadataMatcher, SteamGridDBMetadata, clean_local_title
+from .romm import RommApiError, RommClient, RommConfig, RommGame
 from .steam_provider import SteamProvider
 from .system_settings import CATEGORIES as SYSTEM_CATEGORIES, SystemSettingsProvider
 
@@ -48,18 +49,35 @@ class ConsoleCatalog:
 
     def __init__(self, store: CatalogueStore | None = None, provider: SteamProvider | None = None,
                  local_provider: LocalContentProvider | None = None,
-                 metadata: SteamGridDBMetadata | None = None) -> None:
+                 metadata: SteamGridDBMetadata | None = None,
+                 romm: RommClient | None = None) -> None:
         self.store = store or CatalogueStore()
         self.provider = provider or SteamProvider()
         self.local_provider = local_provider or LocalContentProvider()
         self.artwork = SteamGridDBArtwork()
         self.metadata = metadata or SteamGridDBMetadata()
         self.matcher = MetadataMatcher(self.metadata)
+        config = RommConfig.from_file()
+        self.romm = romm or (RommClient(config) if config else None)
 
     def refresh(self) -> list[dict[str, object]]:
         self.store.reconcile_steam(self.provider)
         ensure_storage()
         self.store.reconcile_local(self.local_provider, ROM_ROOT)
+        if self.romm is not None:
+            try:
+                romm_games = self.romm.list_games()
+                installed = {game.app_id: game for game in self.provider.list_installed()}
+                normalized: dict[str, object] = {}
+                for game in romm_games:
+                    app_id = self._steam_manifest_app_id(game)
+                    entry = CatalogueGame.from_romm(
+                        game, installed.get(app_id) if app_id else None, app_id
+                    )
+                    normalized[entry.game_id] = entry
+                self.store.reconcile_romm(list(normalized.values()))
+            except RommApiError as error:
+                LOGGER.warning("RomM refresh failed; retaining previous snapshot: %s", error)
         for game in self.store.list_games():
             if self.store.needs_metadata_match(game.game_id):
                 self.store.apply_metadata_match(
@@ -69,6 +87,18 @@ class ConsoleCatalog:
         for game_id, artwork_url in self.artwork.enrich(games).items():
             self.store.set_artwork_url(game_id, artwork_url)
         return [game.as_dict() for game in self.store.list_games()]
+
+    def _steam_manifest_app_id(self, game: object) -> str | None:
+        if not isinstance(game, RommGame) or game.platform_slug.casefold() != "steam":
+            return None
+        manifest_files = [item for item in game.files if item.name.casefold().endswith(".json")]
+        if not manifest_files or self.romm is None:
+            return None
+        try:
+            return self.romm.read_steam_manifest(manifest_files[0]).app_id
+        except RommApiError as error:
+            LOGGER.warning("Ignoring invalid RomM Steam manifest rom_id=%s: %s", game.rom_id, error)
+            return None
 
     def set_metadata_match(self, game_id: str, provider: str, metadata_game_id: str,
                            canonical_title: str) -> None:
@@ -120,7 +150,10 @@ class ConsoleCatalog:
 
     def platform_categories(self) -> list[dict[str, str]]:
         return [{"scope": f"platform:{platform}", "platform": platform, "label": label}
-                for platform, label in self.store.list_platforms()]
+                 for platform, label in self.store.list_platforms()]
+
+    def available_games(self, provider: str | None = None) -> list[dict[str, object]]:
+        return [game.as_dict() for game in self.store.list_available_games(provider)]
 
 
 BUS_NAME = "org.lulu.Consoled"
@@ -236,6 +269,10 @@ class ConsoleInterface(ServiceInterface):
     @method()
     def ListPlatformCategories(self) -> "aa{sv}":
         return [self._variants(category) for category in self.catalogue.platform_categories()]
+
+    @method()
+    def ListAvailableGames(self, provider: "s") -> "aa{sv}":
+        return [self._variants(game) for game in self.catalogue.available_games(provider or None)]
 
     @method()
     def ListSystemSettings(self, category: "s") -> "aa{sv}":
