@@ -246,6 +246,7 @@ class ConsoleInterface(ServiceInterface):
         self.sessiond = sessiond
         self._local_process: asyncio.subprocess.Process | None = None
         self._local_token: str | None = None
+        self._refresh_task: asyncio.Task[list[dict[str, object]]] | None = None
 
     
     @staticmethod
@@ -273,10 +274,25 @@ class ConsoleInterface(ServiceInterface):
 
 
     @method()
-    def Refresh(self) -> "u":
-        count = len(self.catalogue.refresh())
-        self.CatalogueChanged()
+    async def Refresh(self) -> "u":
+        count = await self.refresh_catalogue()
         return count
+
+    async def refresh_catalogue(self) -> int:
+        """Run one refresh at a time and share it across callers."""
+        if self._refresh_task is None or self._refresh_task.done():
+            self._refresh_task = asyncio.create_task(
+                asyncio.to_thread(self.catalogue.refresh),
+                name="catalogue-refresh",
+            )
+        refresh_task = self._refresh_task
+        try:
+            result = await asyncio.shield(refresh_task)
+        finally:
+            if self._refresh_task is refresh_task and refresh_task.done():
+                self._refresh_task = None
+        self.CatalogueChanged()
+        return len(result)
 
     @method()
     def ListGames(self, scope: "s") -> "aa{sv}":
@@ -508,7 +524,8 @@ async def serve() -> None:
         "org.lulu.ConsoleSessiond", "/org/lulu/ConsoleSession", session_introspection
     )
     sessiond = session_proxy.get_interface("org.lulu.ConsoleSession")
-    bus.export(OBJECT_PATH, ConsoleInterface(catalogue, runtime, sessiond=sessiond))
+    interface = ConsoleInterface(catalogue, runtime, sessiond=sessiond)
+    bus.export(OBJECT_PATH, interface)
     await bus.request_name(BUS_NAME)
     # Publish the D-Bus boundary before the potentially slow provider refresh.
     # sessiond starts the shell during bootstrap, and the bridge must be able to
@@ -518,7 +535,7 @@ async def serve() -> None:
     async def synchronize() -> None:
         while True:
             try:
-                await asyncio.to_thread(catalogue.refresh)
+                await interface.refresh_catalogue()
             except Exception:
                 LOGGER.exception("background catalogue synchronization failed")
             await asyncio.sleep(ROMM_SYNC_INTERVAL)

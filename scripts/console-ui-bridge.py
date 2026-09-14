@@ -428,8 +428,6 @@ async def main() -> None:
         "org.lulu.ConsoleSessiond", "/org/lulu/ConsoleSession", session_introspection
     )
     sessiond = session_proxy.get_interface("org.lulu.ConsoleSession")
-    await consoled.call_refresh()
-
     loop = asyncio.get_running_loop()
     bridge = ConsoleUiBridge(loop, consoled, sessiond)
     ApiHandler.bridge = bridge
