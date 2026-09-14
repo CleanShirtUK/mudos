@@ -23,6 +23,7 @@ REQUIRED_FILES = (
     "bin/lulu-shell",
     "bin/mudos-guide",
     "bin/lulu-vt",
+    "bin/verify-mudos.sh",
     "lib/lulu/sessiond.py",
     "lib/lulu/consoled.py",
     "ui/ConsoleShell.qml",
@@ -116,6 +117,7 @@ def build_payload(repo_root: Path, payload: Path) -> None:
         check=True,
     )
     shutil.copy2(source / "packaging" / "lulu-vt", payload / "bin" / "lulu-vt")
+    shutil.copy2(source / "deploy" / "payload" / "bin" / "verify-mudos.sh", payload / "bin" / "verify-mudos.sh")
     for path in payload.joinpath("bin").iterdir():
         make_executable(path)
     for path in payload.joinpath("scripts").rglob("*"):
