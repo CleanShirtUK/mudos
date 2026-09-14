@@ -46,7 +46,11 @@ Item {
         return result
     }
 
-    readonly property var displayGames: filteredGames()
+    // Keep the binding dependent on the async model/category assignments;
+    // dependencies hidden inside filteredGames() are not reliably tracked by
+    // the QML binding compiler.
+    readonly property var displayGames: availableGames.length + categories.length + categoryIndex >= 0
+        ? filteredGames() : []
 
     function moveCategory(delta) {
         categoryIndex = Math.max(0, Math.min(categories.length - 1, categoryIndex + delta))

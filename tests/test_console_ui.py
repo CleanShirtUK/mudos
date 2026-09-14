@@ -192,6 +192,7 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertIn('categories.push({"label": label, "scope": scope})', QML)
         self.assertIn('text: root.errorMessage !== "" ? root.errorMessage : "No games available"', store)
         self.assertIn('displayGames.length > 0 && root.cardWidth === 0', store)
+        self.assertIn('availableGames.length + categories.length + categoryIndex >= 0', store)
         self.assertIn('String(game.game_id) === "steam-store"', store)
         self.assertIn('availableGameSelected(game)', store)
         self.assertNotIn('steam://install', QML + store)
