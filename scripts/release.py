@@ -195,7 +195,8 @@ def make_immutable(release: Path) -> None:
 
 def write_release_metadata(release: Path, info: ReleaseInfo) -> None:
     (release / "RELEASE").write_text(
-        f"revision={info.revision}\nbranch={info.branch}\nsource={info.repo_root.resolve()}\n"
+        f"revision={info.revision}\ncommit={info.revision}\ntag={info.release_dir.name}\n"
+        f"branch={info.branch}\nsource={info.repo_root.resolve()}\n"
         f"status=clean\ncreated={datetime.now(timezone.utc).isoformat()}\nimmutable=true\n"
     )
 
