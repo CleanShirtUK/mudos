@@ -310,6 +310,22 @@ class SteamProviderTests(unittest.TestCase):
         ])
         self.assertNotIn("-gamepadui", popen.call_args_list[0].args[0])
 
+    def test_install_dispatches_validated_steam_uri(self) -> None:
+        provider = SteamProvider(executable="steam")
+        with patch("lulu.steam_provider.subprocess.Popen") as popen:
+            uri = provider.install("268910")
+        self.assertEqual(uri, "steam://install/268910")
+        popen.assert_called_once()
+        self.assertEqual(popen.call_args.args[0], ["steam", uri])
+
+    def test_install_rejects_invalid_app_id_before_dispatch(self) -> None:
+        provider = SteamProvider(executable="steam")
+        with patch("lulu.steam_provider.subprocess.Popen") as popen:
+            for app_id in ("", "0", "-1", "268910x", "steam://install/268910"):
+                with self.assertRaises(ValueError):
+                    provider.install(app_id)
+        popen.assert_not_called()
+
     def test_request_launch_rejects_existing_target_before_duplicate_submission(self) -> None:
         async def exercise() -> None:
             provider = SteamProvider(executable="steam")

@@ -111,6 +111,16 @@ class SteamProvider:
                          start_new_session=True, env=environment)
         return uri
 
+    def install(self, app_id: str) -> str:
+        """Open Steam's normal install confirmation for a validated AppID."""
+        self._validate_app_id(app_id)
+        return self._dispatch_uri(f"steam://install/{app_id}")
+
+    @staticmethod
+    def _validate_app_id(app_id: str) -> None:
+        if not isinstance(app_id, str) or not app_id.isdecimal() or int(app_id) < 1:
+            raise ValueError("Steam AppID must be a positive integer")
+
     def gamepadui_pids(self) -> list[int]:
         pids: list[int] = []
         for entry in Path("/proc").iterdir():

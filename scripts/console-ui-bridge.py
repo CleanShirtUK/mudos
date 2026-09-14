@@ -208,13 +208,30 @@ class ConsoleUiBridge:
         token = await self.sessiond.call_request_steam_store(15000)
         return {"token": token}
 
+    async def install_game(self, game_id: str) -> dict[str, str]:
+        appid = await self.consoled.call_resolve_steam_install(game_id)
+        state = await self.state()
+        if state.get("lifecycle") != "shell":
+            raise RuntimeError("another launch owns the session")
+        token = await self.sessiond.call_request_steam_install(appid, 15000)
+        self.launch_logs.note("Lulu", f"Steam install requested appid={appid} token={token}")
+        return {"token": normalize_launch_token(token)}
+
     async def cancel_launch(self) -> dict[str, str]:
         self.launch_logs.note_cancellation()
         if self.local_token is not None:
             await self.consoled.call_cancel_local_launch()
             self.local_token = None
         else:
-            await self.sessiond.call_cancel_launch()
+            if hasattr(self.sessiond, "call_get_state"):
+                state = await self.state()
+                primary_id = str(state.get("primary_id") or "")
+                if state.get("lifecycle") == "game" and primary_id.startswith("steam-install:"):
+                    await self.sessiond.call_quit_delegated()
+                else:
+                    await self.sessiond.call_cancel_launch()
+            else:
+                await self.sessiond.call_cancel_launch()
         return {"status": "cancelled"}
 
     async def reset_mudos(self) -> dict[str, str]:
@@ -343,6 +360,16 @@ class ApiHandler(BaseHTTPRequestHandler):
             try:
                 self._respond(200, self.bridge.call(self.bridge.open_steam_store(), timeout=20))
             except Exception as error:  # pragma: no cover - live IPC failure path
+                self._respond(409, {"error": str(error) or type(error).__name__})
+            return
+        if path.startswith("/install/"):
+            try:
+                game_id = unquote(path.removeprefix("/install/"))
+                self.bridge.launch_logs.start(game_id)
+                result = self.bridge.call(self.bridge.install_game(game_id), timeout=20)
+                self._respond(200, result)
+            except Exception as error:
+                self.bridge.launch_logs.note("Lulu", f"HTTP install failed: {error}")
                 self._respond(409, {"error": str(error) or type(error).__name__})
             return
         if not path.startswith("/launch/"):

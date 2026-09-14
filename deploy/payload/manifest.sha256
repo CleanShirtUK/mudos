@@ -11,8 +11,8 @@ ec5d9c2c25e2bf0cc4f1f3bf0f4d93f5918b21c24ffcb8585018b8be882f27bb  ./config/input
 ec39e530f45dfae7f2a8d7c369a5b91767261fd00b70d2fe13a9760b24da20ac  ./lib/lulu/artwork.py
 20c5af66e8ede83beccac5706534f47cc2bbd6a1804ccf9b50109103f8e2b45f  ./lib/lulu/capabilities.py
 67605979a614c2ace87894068e406e8189ee390abcc9d7caca0c476a8f5ef75f  ./lib/lulu/catalogue.py
-b7a88f4cb132de21c6c1e516a487ef354d39b0b0002aa6bdcbc86426a8618907  ./lib/lulu/consoled.py
-b3022d5b7f1176c38474ad4b0d2e79236756c2814de689c0dc29cc9c1094b171  ./lib/lulu/console_sessiond.py
+8e4cf12870608b5d332f58a925f7460ff7bdd9f2ee4da18ca3306b75042d3585  ./lib/lulu/consoled.py
+971b1ddab9d2e360d554426f9b61b181f1083689c5cb78a092b2ccde23beb39e  ./lib/lulu/console_sessiond.py
 bf6eaf76a5c7499fdd239d0ae6d50a647f709225e2526d7cbeadf24954fa1ab9  ./lib/lulu/console_ui.py
 2426657b5e83bd5a2cf59674ecd4f1fb930e16840a7b20a26fa31302f431a89a  ./lib/lulu/contracts.py
 ec4dd764054a39ef16b245ab155eddeac77bf088e9b68aca15bd4cdab57fb22a  ./lib/lulu/controllerd.py
@@ -27,11 +27,11 @@ f4457584f10ebf9fb6138e089750f80ed0ad1a81866a6eb54a3b9746abbc424a  ./lib/lulu/inp
 af14039cfd54d82a89657dbfa402943fad835af2dc67bbc87bbd0b3631b480ff  ./lib/lulu/local_content.py
 5bd0fed00ff1f177c7c67bc38fa05f80470bae6ca8ad6da6620da40f689b5a03  ./lib/lulu/metadata.py
 27b6df1fa08b7bf42967661de10d1ac6d63b79d0bc949141da9772ee7e4262b7  ./lib/lulu/paths.py
-b85334fa084c397b9fb512a50cca910c1b26c3fb51cfce535bf9092ef80028e9  ./lib/lulu/process_supervisor.py
-6edc0d392062f77cd008cd2a3473c305ac8ba9ff478b1a8fd2547058ce6d7fd1  ./lib/lulu/sessiond.py
+c33833a9ca27aa7f57f41a01cff9c45dd5871a3a7c5d0a4839eb8d06d172d0e2  ./lib/lulu/process_supervisor.py
+b21d44e4a3742753a7195480bee988b2162e0d9611da5e6a8bc40be9361a229c  ./lib/lulu/sessiond.py
 ea04081e1c93cdab882c350071d086255809b19d380677aedef2caf036b1b3b8  ./lib/lulu/settings.py
 5629276492cc88ed04f2cf79f8da07d63fc1efc6ded4a4001083f841512dc2c5  ./lib/lulu/status.py
-50b6762c20d4b0e7e18385e0940040aaf030837f73ecaafb4d6fb5202faebd8b  ./lib/lulu/steam_provider.py
+6336d60e98a1a41687691d4a84799a7537eb64f3d55f88f8893ebd113a376e69  ./lib/lulu/steam_provider.py
 88d885a7ec1b1848a2894120442b46902524d02b1d9ce74464270175d9d5c746  ./lib/lulu/switch_provider.py
 580e27491fd293b44ede14fe63c7d7e0bd139c8f62d48465edaaad1ff864e18e  ./lib/lulu/system_settings.py
 8d74912fa648d8bf6042a2d764da221862da1302fa69c42727c08460757beb10  ./packages/dufs/PKGBUILD
@@ -49,7 +49,7 @@ f55061962eb1928cbd410213f75f56de0c2a44cc47f52ac697d3504213c7962b  ./packaging/lu
 6f14d3589b61fdd428b7579680a8733713038592c952844ae7fe9a420ffc9d27  ./packaging/lulu-vt
 0573ef0f102cc3a58281e07b3f99ec6d4bd643f2da486fb5035fbfccf1d93793  ./packaging/pipewire/lulu-fallback-input.conf
 7806e0b076e46e2eaeca7d702852fceb7bf65c5f82a7fd72326a68e3efe7af36  ./packaging/presentation.conf
-b05eaf3bdcfcd5f3a15f9b355af4cba3e2da6e31d2108faa6a9c8998bc44b51b  ./scripts/console-ui-bridge.py
+3885fc11ed0fb85b803827dfab78cc9433f9aa1254df58e73349f27dfabdaf07  ./scripts/console-ui-bridge.py
 828e1eb2c8ea4fad15b233d0f3ccb19327218045b308bbcf1c040f163a1ddc6f  ./scripts/console-ui.sh
 add0689e48eafa2fe2174adb9b3aba2d5494f46a9654d02b41210b7d92194bae  ./scripts/file-browser-launch.sh
 ce51b3310b134333cf34bb445155c223fed78d20644ae62d71b53f539dc58ab0  ./scripts/steam-bootstrap.sh
@@ -79,7 +79,7 @@ f6dd2ae216837c63e7de7429791d0bac903b98353ac58572bb92a81e207158ca  ./ui/artwork/s
 9129240fb672e8820d5d259a33949bc22acc51e32a7837c48d414d84a1e7f58d  ./ui/artwork/system-network.svg
 abdc96a0808cf3b52a09b044d47950299c374c0fd7109cb1c584094646e342a7  ./ui/artwork/system-storage.svg
 72e0199379684170b956f274525299d67c2395e9bd44b4352d7b48c4d1533000  ./ui/artwork/system-system.svg
-607385caad035fbd25a680c28be05a2c3a65f36fc1d553a20c9fefced08cbe04  ./ui/ConsoleShell.qml
+5f0bce1719a832ea3c603fcd10d32fa9bb38f560ffc73e10995ce5fcd51f76dc  ./ui/ConsoleShell.qml
 c147b5955bb1f2f7c65a9e07fe85afca2f9f9693aa090b5bd6fc45da9189045b  ./ui/ControllerGlyph.qml
 b48f2af29670ce222cfa759a22ca7d789a10cd8a7a15a6e9c2897fb1df7ed936  ./ui/controllerglyphs/SteamDeck_A.png
 63c72d44c4cce55d6ec5e1368938533f9a4ed440f9d1ce7f7e42eb6d9fd77db5  ./ui/controllerglyphs/SteamDeck_B.png
@@ -126,7 +126,7 @@ e18671924f0e96ac45e303f57ecd374e93ee72209224e7d0235947e740eba44f  ./ui/sounds/ui
 9fa1eff6b93d663db937526cd079c03d2b463275c276f6923b8fd52d1ed65602  ./ui/sounds/ui-confirm.wav
 0457838de53a1027569871234c9b0e5b521a37106a4c741ccb103af6e9f8941e  ./ui/sounds/ui-error.wav
 66d2b7054740b4ac9d8918bc3849674be60fd1effb86ca4a7f982a86978835d2  ./ui/sounds/ui-navigate.wav
-07bf22f38421d07cb4637fec088f65c30e3b7ff8cd4f30c0a5edd497910c7eff  ./ui/StoreHome.qml
+38da1a74fe763def0b4c5dffff6d15bb52afe553ab7005724d432f81fa438ca6  ./ui/StoreHome.qml
 420ef0464e943bd59e42aa668e502518c027ff57e6faa5cf94447532fd648770  ./ui/SystemHome.qml
 41f2dd93760de12dd2b290a2441ed1cf9e05386c356996c3178645d8640b52a6  ./ui/SystemSpace.qml
 9d678d2bda8f02ee8087dca28cbd719563750e29cda21c3450947d0bfcce5822  ./ui/Typography.qml

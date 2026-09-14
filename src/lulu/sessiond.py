@@ -376,6 +376,13 @@ class ConsoleSessionInterface(ServiceInterface):
             raise self._error(ValueError(str(error))) from error
 
     @method()
+    async def RequestSteamInstall(self, app_id: "s", startup_timeout_ms: "u") -> "s":
+        try:
+            return await self.supervisor.launch_steam_install(app_id, startup_timeout_ms)
+        except (OSError, TimeoutError, ValueError) as error:
+            raise self._error(ValueError(str(error))) from error
+
+    @method()
     async def RequestSteamDownloads(self) -> "s":
         try:
             return await self.supervisor.open_steam_downloads()

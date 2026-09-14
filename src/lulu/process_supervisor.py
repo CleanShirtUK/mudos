@@ -374,6 +374,7 @@ class ProcessSupervisor:
             await self._notify()
             self._active_launch_task = asyncio.current_task()
             provider = self._steam_provider or SteamProvider()
+            self._steam_provider = provider
             try:
                 await provider.ensure_client()
                 self.model.launch_starting(token)
@@ -402,6 +403,44 @@ class ProcessSupervisor:
                 self._active_launch_task = None
                 raise ValueError(str(error)) from error
 
+    async def launch_steam_install(self, app_id: str, startup_timeout_ms: int) -> str:
+        """Hand Steam's install confirmation to the delegated Compat surface."""
+        if startup_timeout_ms < 1:
+            raise ValueError("startup timeout must be positive")
+        async with self._launch_lock:
+            if self.active_identity is not None or self.model.state.lifecycle.value != "shell":
+                raise ValueError("another launch owns the session")
+            provider = self._steam_provider or SteamProvider()
+            self._steam_provider = provider
+            provider._validate_app_id(app_id)
+            token = self.model.request_launch(f"steam-install:{app_id}")
+            await self._notify()
+            self._active_launch_task = asyncio.current_task()
+            try:
+                await provider.ensure_client()
+                self.model.launch_starting(token)
+                await asyncio.to_thread(provider.open_gamepadui)
+                if self._presentation is not None:
+                    self._steam_store_window = await asyncio.to_thread(
+                        self._presentation.select_pids, provider.gamepadui_pids, startup_timeout_ms / 1000
+                    )
+                await asyncio.to_thread(provider.install, app_id)
+                self._set_input_mode(InputMode.COMPAT)
+                self.model.primary_started(token, presentation=Presentation.FOREIGN_UI, input_mode=InputMode.COMPAT)
+                await self._notify()
+                self._active_launch_task = None
+                return token
+            except (OSError, TimeoutError, ValueError) as error:
+                self.model.fail(token, f"Steam install launch failed: {error}")
+                self._set_input_mode(InputMode.SHELL)
+                if self._presentation is not None and self._shell_process is not None:
+                    self._presentation.select_shell(self._shell_process.pid)
+                self._steam_store_window = None
+                self.model.return_complete(token)
+                await self._notify()
+                self._active_launch_task = None
+                raise ValueError(str(error)) from error
+
     async def _watch_steam_store(self, token: str, window: int | None) -> None:
         while self.model.state.lifecycle.value == "game" and self.model.state.launch_token == token:
             if (window is not None and self._presentation is not None
@@ -411,7 +450,18 @@ class ProcessSupervisor:
         if self.model.state.lifecycle.value == "game" and self.model.state.launch_token == token:
             await self._return_steam_store(token)
 
+    async def _watch_delegated(self, token: str, window: int | None) -> None:
+        while self.model.state.lifecycle.value == "game" and self.model.state.launch_token == token:
+            if window is not None and self._presentation is not None and not self._presentation.window_is_focusable(window):
+                break
+            await asyncio.sleep(0.1)
+        if self.model.state.lifecycle.value == "game" and self.model.state.launch_token == token:
+            await self._return_delegated(token)
+
     async def _return_steam_store(self, token: str) -> None:
+        await self._return_delegated(token)
+
+    async def _return_delegated(self, token: str) -> None:
         await (self._steam_provider or SteamProvider()).stop_owned_client()
         self.model.primary_exited(token)
         self._set_input_mode(InputMode.SHELL)
@@ -438,7 +488,9 @@ class ProcessSupervisor:
         return uri
 
     async def quit_delegated(self) -> None:
-        if self.model.state.primary_id != "steam-store" or self.model.state.lifecycle.value != "game":
+        if self.model.state.primary_id not in ("steam-store",) and not str(self.model.state.primary_id or "").startswith("steam-install:"):
+            raise ValueError("Steam delegated surface is not active")
+        if self.model.state.lifecycle.value != "game":
             raise ValueError("Steam delegated surface is not active")
         if self._steam_store_watch_task is not None:
             self._steam_store_watch_task.cancel()

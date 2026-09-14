@@ -77,6 +77,8 @@ class SessionStateModel:
         self.state.input_mode = input_mode
         if self.state.primary_id == "steam-store":
             self.state.delegated_surface = "store"
+        elif str(self.state.primary_id or "").startswith("steam-install:"):
+            self.state.delegated_surface = "steam-install"
 
     def set_delegated_surface(self, surface: str) -> None:
         if self.state.primary_id != "steam-store" or self.state.lifecycle is not Lifecycle.GAME:

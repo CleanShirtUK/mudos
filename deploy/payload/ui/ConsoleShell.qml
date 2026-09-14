@@ -721,6 +721,30 @@ Window {
         }, "Launch failed", generation)
     }
 
+    function installGame(game) {
+        if (!game || launchOverlayVisible)
+            return
+        var generation = ++launchGeneration
+        launchTitle = game.title
+        launchGameId = String(game.game_id)
+        launchToken = ""
+        launchOverlayVisible = true
+        launchOverlayRetired = false
+        shellWasLeft = false
+        gamePresentationObserved = false
+        launchLogLines = ["[Lulu] Download requested: " + game.title + " / " + game.game_id]
+        launchLogTimer.start()
+        launchStatus = "installing"
+        launchStateRank = 1
+        message = "Opening Steam install"
+        request("/install/" + encodeURIComponent(launchGameId), "POST", "", function(data) {
+            if (generation !== launchGeneration)
+                return
+            launchToken = data.token
+            refreshLaunchState(generation)
+        }, "Install failed", generation)
+    }
+
     function openSteamStore() {
         var generation = ++launchGeneration
         launchTitle = "Steam Store"
@@ -1487,7 +1511,7 @@ Window {
             canonicalSize: Qt.size(root.width, root.height)
             errorMessage: root.storeError
             onSteamStoreRequested: root.openSteamStore()
-            onAvailableGameSelected: root.message = "Available to Download"
+            onInstallGameRequested: root.installGame(game)
             Component.onCompleted: root.storeHomeRef = storeHome
         }
 
@@ -1614,7 +1638,7 @@ Window {
                 }
                 ControllerHint {
                     action: "confirm"
-                     label: root.space === "store" ? "Available to Download"
+                     label: root.space === "store" ? "Download"
                            : root.selectedCategoryIndex === 3 ? "Launch"
                            : root.selectedCategoryIndex === 2 ? "Open Library" : "Select"
                     uiScale: root.uiScale

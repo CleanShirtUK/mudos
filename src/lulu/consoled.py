@@ -155,6 +155,16 @@ class ConsoleCatalog:
     def available_games(self, provider: str | None = None) -> list[dict[str, object]]:
         return [game.as_dict() for game in self.store.list_available_games(provider)]
 
+    def resolve_steam_install(self, game_id: str) -> str:
+        game = self.store.get_game(game_id)
+        if game is None or game.provider != "steam":
+            raise ValueError("game is not a Steam catalogue entry")
+        if game.install_state != "available" or game.availability_state != "available":
+            raise ValueError("game is not available to install")
+        if not game.provider_id.isdecimal() or int(game.provider_id) < 1:
+            raise ValueError("Steam AppID is invalid")
+        return game.provider_id
+
 
 BUS_NAME = "org.lulu.Consoled"
 OBJECT_PATH = "/org/lulu/Console"
@@ -273,6 +283,13 @@ class ConsoleInterface(ServiceInterface):
     @method()
     def ListAvailableGames(self, provider: "s") -> "aa{sv}":
         return [self._variants(game) for game in self.catalogue.available_games(provider or None)]
+
+    @method()
+    def ResolveSteamInstall(self, game_id: "s") -> "s":
+        try:
+            return self.catalogue.resolve_steam_install(game_id)
+        except ValueError as error:
+            raise self._error(error) from error
 
     @method()
     def ListSystemSettings(self, category: "s") -> "aa{sv}":

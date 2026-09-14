@@ -20,7 +20,7 @@ Item {
     property var canonicalCoordinateRoot
     property size canonicalSize: Qt.size(1280, 720)
     signal steamStoreRequested()
-    signal availableGameSelected(var game)
+    signal installGameRequested(var game)
 
     function filteredGames() {
         var scope = categories.length > categoryIndex ? categories[categoryIndex].scope : "all"
@@ -90,8 +90,8 @@ Item {
             return
         if (String(game.game_id) === "steam-store")
             steamStoreRequested()
-        else
-            availableGameSelected(game)
+        else if (game.provider === "steam" && String(game.provider_id).match(/^[1-9][0-9]*$/))
+            installGameRequested(game)
     }
 
     onAvailableGamesChanged: selectedIndex = Math.min(selectedIndex, Math.max(0, displayGames.length - 1))
@@ -110,7 +110,7 @@ Item {
         sectionTitle: "Available to Download"
         emptyText: root.errorMessage !== "" ? root.errorMessage : "No games available"
         specialCardId: "steam-store"
-        actionLabel: "Available to Download"
+        actionLabel: "Download"
         uiScale: root.uiScale
         typography: root.typography
         luluPalette: root.luluPalette
