@@ -3,6 +3,7 @@ import QtQuick
 Item {
     property string action: "confirm"
     property real glyphSize: 22
+    property var luluPalette
     readonly property var glyphFiles: ({
         confirm: "SteamDeck_A.png",
         back: "SteamDeck_B.png",
@@ -30,7 +31,7 @@ Item {
         anchors.fill: parent
         visible: parent.action === "options"
         text: "X"
-        color: "white"
+        color: parent.luluPalette.primaryText
         font.family: "JetBrains Mono"
         font.bold: true
         font.pixelSize: parent.glyphSize * 0.8

@@ -54,6 +54,28 @@ class RommTests(unittest.TestCase):
         self.assertEqual(game.release_date, "1994-01-01")
         self.assertEqual(game.release_year, 1994)
 
+    def test_reads_nested_romm_metadata_and_multiplayer_modes(self):
+        value = {
+            "id": 45, "name": "Nested Metadata Game", "platform_id": 1,
+            "platform_slug": "snes", "fs_name": "nested.sfc",
+            "metadatum": {
+                "genres": ["Action", "Puzzle"],
+                "game_modes": ["Multiplayer", "Single player"],
+            },
+            "igdb_metadata": {
+                "multiplayer_modes": [{
+                    "offlinecoop": True, "offlinecoopmax": 4,
+                    "onlinecoop": False, "onlinemax": 0,
+                }],
+            },
+        }
+        game = RommGame.from_json(value, {1: RommPlatform(1, "snes", "SNES")})
+        self.assertEqual(game.genres, ("Action", "Puzzle"))
+        self.assertEqual(game.game_mode, "Multiplayer, Single player")
+        self.assertTrue(game.local_multiplayer)
+        self.assertFalse(game.online_multiplayer)
+        self.assertIsNone(game.total_playtime)
+
     def test_malformed_response_and_failure_are_errors(self):
         transport = Transport()
         transport.request = lambda *args: (200, b"not-json")

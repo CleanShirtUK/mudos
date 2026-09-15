@@ -13,9 +13,13 @@ Item {
     property vector3d errorColor: Qt.vector3d(0.969, 0.463, 0.557)
     property bool shaderAvailable: orbitShader.status === ShaderEffect.Compiled
 
+    LuluPalette {
+        id: luluPalette
+    }
+
     Rectangle {
         anchors.fill: parent
-        color: "#060b16"
+        color: luluPalette.backdrop
         visible: !root.shaderAvailable
     }
 

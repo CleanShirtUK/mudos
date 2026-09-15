@@ -14,6 +14,10 @@ Window {
     property bool confirmationPending: guideModel.confirmationPending
     property string confirmationAction: guideModel.confirmationAction
 
+    LuluPalette {
+        id: luluPalette
+    }
+
     Loader {
         id: uiAudioLoader
         active: false
@@ -46,15 +50,15 @@ Window {
         anchors.centerIn: parent
         width: 520
         height: confirmationPending ? 250 : shellContext ? 250 : 310
-        color: "#f70b1018"
-        border.color: "#ff7e87ff"
+        color: luluPalette.guideSurface
+        border.color: luluPalette.guideBorder
         border.width: 2
 
         Text {
             x: 24
             y: 18
             text: confirmationPending ? "Confirm" : "Guide"
-            color: "#ffffffff"
+            color: luluPalette.primaryText
             font.pixelSize: 28
         }
 
@@ -80,12 +84,12 @@ Window {
                 delegate: Rectangle {
                     width: 472
                     height: 48
-                    color: index === guideModel.selection ? "#ff7e87ff" : "#1affffff"
+                    color: index === guideModel.selection ? luluPalette.guideBorder : luluPalette.guideItemSurface
                     Text {
                         anchors.fill: parent
                         anchors.leftMargin: 14
                         text: modelData
-                        color: index === guideModel.selection ? "#ff0b1018" : "#ffffffff"
+                        color: index === guideModel.selection ? luluPalette.guideSelectedText : luluPalette.primaryText
                         font.pixelSize: 18
                         verticalAlignment: Text.AlignVCenter
                     }

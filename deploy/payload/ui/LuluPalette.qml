@@ -22,6 +22,13 @@ QtObject {
     readonly property color libraryCardSurface: "#1b2a4a"
     readonly property color libraryBorder: "#6675ac"
     readonly property color libraryHighlight: "#7884c6"
+    readonly property color guideSurface: "#f70b1018"
+    readonly property color guideBorder: "#ff7e87ff"
+    readonly property color guideItemSurface: "#1affffff"
+    readonly property color guideSelectedText: "#ff0b1018"
+    readonly property color overlayBackdrop: Qt.rgba(0.01, 0.02, 0.04, 0.72)
+    readonly property color overlaySurface: Qt.rgba(0.035, 0.05, 0.09, 0.98)
+    readonly property color launchOverlaySurface: Qt.rgba(0.03, 0.04, 0.07, 0.96)
     readonly property color transparent: "transparent"
     readonly property color scrollFadeStart: "#0014213b"
     readonly property color scrollFadeEnd: "#e614213b"

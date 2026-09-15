@@ -150,23 +150,80 @@ class RommGame:
                 file_name = files[0].name
             if not file_name or not platform_slug:
                 raise ValueError
-            genres_value = value.get("genres", [])
+            # RomM's current response keeps identified IGDB presentation data in
+            # ``metadatum`` (and mirrors much of it in ``igdb_metadata``), rather
+            # than promoting it to the ROM object.  Prefer the direct ROM fields
+            # when present, then use the nested metadata as a presentation fallback.
+            metadatum = value.get("metadatum")
+            metadatum = metadatum if isinstance(metadatum, dict) else {}
+            igdb_metadata = value.get("igdb_metadata")
+            igdb_metadata = igdb_metadata if isinstance(igdb_metadata, dict) else {}
+
+            def metadata_value(key: str) -> object:
+                if value.get(key) not in (None, "", []):
+                    return value[key]
+                if metadatum.get(key) not in (None, "", []):
+                    return metadatum[key]
+                return igdb_metadata.get(key)
+
+            genres_value = metadata_value("genres") or []
             if not isinstance(genres_value, list):
                 genres_value = []
             genres = tuple(
                 str(item.get("name", "")).strip() if isinstance(item, dict) else str(item).strip()
                 for item in genres_value if str(item).strip()
             )
-            release_date = value.get("first_release_date", value.get("release_date"))
+            release_date = metadata_value("first_release_date") or metadata_value("release_date")
             release_date = str(release_date).strip() if release_date else None
-            release_year = value.get("release_year", value.get("year"))
+            release_year = metadata_value("release_year") or metadata_value("year")
             release_year = int(release_year) if release_year is not None else None
+
+            game_modes = metadata_value("game_modes")
+            game_modes = game_modes if isinstance(game_modes, list) else []
+            game_mode = ", ".join(str(item).strip() for item in game_modes if str(item).strip()) or None
+
+            # IGDB's multiplayer_modes is the only sampled source that separates
+            # offline and online capabilities. A positive max/player value or an
+            # explicit cooperative/split-screen flag is sufficient for a boolean;
+            # player_count is intentionally not collapsed into this contract.
+            multiplayer_modes = igdb_metadata.get("multiplayer_modes", [])
+            multiplayer_modes = multiplayer_modes if isinstance(multiplayer_modes, list) else []
+
+            def mode_flag(keys: tuple[str, ...], positive_keys: tuple[str, ...]) -> bool | None:
+                observed = False
+                for mode in multiplayer_modes:
+                    if not isinstance(mode, dict):
+                        continue
+                    for key in keys:
+                        if key in mode and mode[key] is not None:
+                            observed = True
+                            if bool(mode[key]):
+                                return True
+                    for key in positive_keys:
+                        if key in mode and mode[key] is not None:
+                            observed = True
+                            try:
+                                if int(mode[key]) > 1:
+                                    return True
+                            except (TypeError, ValueError):
+                                pass
+                return False if observed else None
+
+            local_multiplayer = mode_flag(
+                ("offlinecoop", "splitscreen", "lancoop"),
+                ("offlinecoopmax", "offlinemax"),
+            )
+            online_multiplayer = mode_flag(
+                ("onlinecoop", "splitscreenonline"),
+                ("onlinecoopmax", "onlinemax"),
+            )
             return cls(
                 rom_id, str(value.get("name") or Path(file_name).stem), platform_id,
                 platform_slug, platform_label, file_name,
                 str(value.get("fs_extension") or Path(file_name).suffix),
                 int(value.get("fs_size_bytes", 0)), str(value.get("url_cover") or ""),
                 bool(value.get("missing_from_fs", False)), files, genres, release_date, release_year,
+                None, local_multiplayer, online_multiplayer, game_mode,
             )
         except (KeyError, TypeError, ValueError) as error:
             raise RommApiError("malformed RomM ROM entry") from error

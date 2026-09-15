@@ -11,6 +11,7 @@ Row {
     ControllerGlyph {
         action: parent.action
         glyphSize: 20 * parent.uiScale
+        luluPalette: parent.luluPalette
         anchors.verticalCenter: parent.verticalCenter
     }
 

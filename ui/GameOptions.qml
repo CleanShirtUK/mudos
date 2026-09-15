@@ -29,7 +29,7 @@ Item {
 
     Rectangle {
         anchors.fill: parent
-        color: Qt.rgba(0.01, 0.02, 0.04, 0.72)
+        color: options.luluPalette.overlayBackdrop
     }
 
     Rectangle {
@@ -38,7 +38,7 @@ Item {
         anchors.top: parent.top
         anchors.bottom: parent.bottom
         width: Math.min(parent.width * 0.48, 560 * options.uiScale)
-        color: Qt.rgba(0.035, 0.05, 0.09, 0.98)
+        color: options.luluPalette.overlaySurface
         border.color: options.luluPalette.focusIndicator
         border.width: options.uiScale
         clip: true

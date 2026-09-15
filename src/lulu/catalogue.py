@@ -203,14 +203,14 @@ class CatalogueStore:
                                        ELSE excluded.availability_state END,
                 provider_record_id=excluded.provider_record_id, content_identity=excluded.content_identity,
                 catalogue_source=excluded.catalogue_source,
-                genres=CASE WHEN games.metadata_provider != '' THEN games.genres ELSE excluded.genres END,
-                release_date=CASE WHEN games.metadata_provider != '' THEN games.release_date ELSE excluded.release_date END,
-                release_year=CASE WHEN games.metadata_provider != '' THEN games.release_year ELSE excluded.release_year END,
-                total_playtime=CASE WHEN games.metadata_provider != '' THEN games.total_playtime ELSE excluded.total_playtime END,
-                local_multiplayer=CASE WHEN games.metadata_provider != '' THEN games.local_multiplayer ELSE excluded.local_multiplayer END,
-                online_multiplayer=CASE WHEN games.metadata_provider != '' THEN games.online_multiplayer ELSE excluded.online_multiplayer END,
-                game_mode=CASE WHEN games.metadata_provider != '' THEN games.game_mode ELSE excluded.game_mode END,
-                protondb_rating=CASE WHEN games.metadata_provider != '' THEN games.protondb_rating ELSE excluded.protondb_rating END,
+                 genres=CASE WHEN games.genres != '[]' THEN games.genres ELSE excluded.genres END,
+                 release_date=COALESCE(games.release_date, excluded.release_date),
+                 release_year=COALESCE(games.release_year, excluded.release_year),
+                 total_playtime=COALESCE(games.total_playtime, excluded.total_playtime),
+                 local_multiplayer=COALESCE(games.local_multiplayer, excluded.local_multiplayer),
+                 online_multiplayer=COALESCE(games.online_multiplayer, excluded.online_multiplayer),
+                 game_mode=COALESCE(games.game_mode, excluded.game_mode),
+                 protondb_rating=COALESCE(games.protondb_rating, excluded.protondb_rating),
                 last_seen_at=excluded.last_seen_at,
                 last_synced_at=excluded.last_synced_at, artwork_source_url=excluded.artwork_source_url,
                 metadata_resolver_version=CASE WHEN games.metadata_provider != ''
@@ -369,6 +369,24 @@ class CatalogueStore:
                  presentation.get("total_playtime"), presentation.get("local_multiplayer"),
                  presentation.get("online_multiplayer"), presentation.get("game_mode"),
                  presentation.get("protondb_rating"), METADATA_RESOLVER_VERSION, game_id),
+            )
+            self.connection.commit()
+
+    def apply_romm_presentation(self, game_id: str, source: "CatalogueGame") -> None:
+        """Fill only missing presentation fields from a matching RomM record."""
+        with self.lock:
+            self.connection.execute(
+                """UPDATE games SET
+                   genres=CASE WHEN games.genres='[]' THEN ? ELSE games.genres END,
+                   release_date=COALESCE(release_date, ?), release_year=COALESCE(release_year, ?),
+                   total_playtime=COALESCE(total_playtime, ?),
+                   local_multiplayer=COALESCE(local_multiplayer, ?),
+                   online_multiplayer=COALESCE(online_multiplayer, ?),
+                   game_mode=COALESCE(game_mode, ?), protondb_rating=COALESCE(protondb_rating, ?),
+                   updated_at=unixepoch() WHERE game_id=?""",
+                (json.dumps(list(source.genres)), source.release_date, source.release_year,
+                 source.total_playtime, source.local_multiplayer, source.online_multiplayer,
+                 source.game_mode, source.protondb_rating, game_id),
             )
             self.connection.commit()
 

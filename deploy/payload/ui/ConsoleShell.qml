@@ -1712,7 +1712,7 @@ Window {
         z: 100
         anchors.fill: parent
         clip: true
-        color: Qt.rgba(0.03, 0.04, 0.07, 0.96)
+        color: luluPalette.launchOverlaySurface
         border.color: luluPalette.accent
         border.width: 1
         Text {

@@ -84,6 +84,22 @@ class ConsoleCatalog:
                     )
                     normalized[entry.game_id] = entry
                 self.store.reconcile_romm(list(normalized.values()))
+                # Non-Steam local ROMs have their own stable content IDs and
+                # cannot be joined by manifest. Use RomM's platform/title pair
+                # only as a fallback for missing presentation fields.
+                romm_by_title_platform = {}
+                for entry in normalized.values():
+                    romm_by_title_platform.setdefault(
+                        (clean_local_title(entry.title), entry.platform), entry
+                    )
+                for existing in self.store.list_games():
+                    if existing.provider != "local":
+                        continue
+                    source = romm_by_title_platform.get(
+                        (clean_local_title(existing.title), existing.platform)
+                    )
+                    if source is not None:
+                        self.store.apply_romm_presentation(existing.game_id, source)
             except RommApiError as error:
                 LOGGER.warning("RomM refresh failed; retaining previous snapshot: %s", error)
         for game in self.store.list_catalogue_games():

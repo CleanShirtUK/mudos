@@ -82,6 +82,27 @@ Rectangle {
     }
     readonly property bool recentFocal: homeCard && focused
     readonly property string presentationGameId: presentationId || (game ? String(game.game_id) : "")
+    readonly property var focalMetadataRows: {
+        var rows = []
+        if (!card.game)
+            return rows
+        var genres = card.game.genres || []
+        var usefulGenres = []
+        for (var genreIndex = 0; genreIndex < genres.length; genreIndex++) {
+            if (String(genres[genreIndex]).trim().length > 0)
+                usefulGenres.push(String(genres[genreIndex]).trim())
+        }
+        if (usefulGenres.length)
+            rows.push("Genres  " + usefulGenres.join(" · "))
+        if (Number(card.game.last_played) > 0)
+            rows.push("Last Played  " + Qt.formatDateTime(
+                new Date(Number(card.game.last_played) * 1000), "d MMM yyyy"))
+        if (card.game.local_multiplayer === true || Number(card.game.local_multiplayer) === 1)
+            rows.push("Local Multiplayer")
+        if (card.game.online_multiplayer === true || Number(card.game.online_multiplayer) === 1)
+            rows.push("Online Multiplayer")
+        return rows
+    }
     readonly property url displayedArtworkSource: String(card.artworkSource).length > 0
         ? card.artworkSource
         : (card.game && !card.game.artwork_suppressed && card.game.artwork_url
@@ -327,16 +348,24 @@ Rectangle {
             elide: Text.ElideRight
         }
 
-        Text {
-            id: focalHistory
-            visible: card.game && Number(card.game.last_played) > 0
+        Column {
+            id: focalMetadata
             width: parent.width
             y: focalTitle.height + 22 * focalScale * card.uiScale
-            text: card.game ? "Last played " + Qt.formatDateTime(new Date(Number(card.game.last_played) * 1000), "d MMM yyyy") : ""
-            color: card.focusedColor(card.luluPalette.secondaryText)
-            font.family: card.typography ? card.typography.interfaceFamily : "JetBrains Mono"
-            font.pixelSize: card.typography ? card.typography.size("secondary", 17 * focalScale) : 17 * focalScale * card.uiScale
-            elide: Text.ElideRight
+            spacing: 8 * focalScale * card.uiScale
+
+            Repeater {
+                model: card.focalMetadataRows
+                delegate: Text {
+                    required property string modelData
+                    width: focalMetadata.width
+                    text: modelData
+                    color: card.focusedColor(card.luluPalette.secondaryText)
+                    font.family: card.typography ? card.typography.interfaceFamily : "JetBrains Mono"
+                    font.pixelSize: card.typography ? card.typography.size("secondary", 17 * focalScale) : 17 * focalScale * card.uiScale
+                    elide: Text.ElideRight
+                }
+            }
         }
 
         Rectangle {
