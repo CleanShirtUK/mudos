@@ -31,6 +31,31 @@ class NativeBuildTests(unittest.TestCase):
         self.assertIn("game: gameRecord", recent)
         self.assertIn("recentHome.itemCount - 1", (root / "ui" / "ConsoleShell.qml").read_text())
 
+    def test_startup_recent_motion_is_one_rigid_row(self) -> None:
+        root = Path(__file__).parents[1]
+        recent = (root / "ui" / "RecentHome.qml").read_text()
+        coordinator = (root / "ui" / "PresentationCoordinator.qml").read_text()
+        self.assertIn("readonly property real rowRightEdge", recent)
+        self.assertIn("readonly property real recentRowStartupX", recent)
+        self.assertIn("readonly property real presentationX", recent)
+        self.assertIn("id: recentRow", recent)
+        self.assertIn("x: recentHome.presentationX", recent)
+        self.assertNotIn("cardOffset(index)", recent)
+        self.assertIn("function recentRowStartupX", coordinator)
+        self.assertIn("function recentRowPresentationX", coordinator)
+        self.assertNotIn("recentRowFastPhase", coordinator)
+        self.assertNotIn("recentRowFastProgress", coordinator)
+        self.assertNotIn("recentRowSettlePower", coordinator)
+
+    def test_title_animation_viewport_is_separate_from_final_rail(self) -> None:
+        root = Path(__file__).parents[1]
+        shell = (root / "ui" / "ConsoleShell.qml").read_text()
+        self.assertIn("id: titlePresentationViewport", shell)
+        self.assertIn("x: 0\n            y: 0\n            width: root.width", shell)
+        self.assertIn("width: root.width\n            height: parent.height\n            z: 20\n            clip: true", shell)
+        self.assertIn("x: root.homeCategoryRailX", shell)
+        self.assertIn("presentationCoordinator.titleOffset(index,", shell)
+
 
 if __name__ == "__main__":
     unittest.main()

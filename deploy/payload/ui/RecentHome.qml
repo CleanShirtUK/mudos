@@ -21,6 +21,7 @@ Item {
     property real uiScale: 1
     property var typography
     property var luluPalette
+    property var presentationCoordinator
     property real compactCardWidth: Math.min(160 * uiScale, focalCardHeight * 0.62)
     property real railGap: 18 * uiScale
     property int visibleRailRadius: 3
@@ -35,6 +36,19 @@ Item {
     signal selectionIndexRequested(int index)
     signal selectionGameChanged(string gameId)
     readonly property int itemCount: recentRepeater.count
+    readonly property real rowRightEdge: {
+        var rightEdge = 0
+        for (var index = 0; index < recentRepeater.count; index++) {
+            var relativeIndex = index - selectedIndex
+            rightEdge = Math.max(rightEdge,
+                                 railX(relativeIndex) + railWidth(relativeIndex))
+        }
+        return rightEdge
+    }
+    readonly property real recentRowStartupX: presentationCoordinator
+        ? presentationCoordinator.recentRowStartupX(rowRightEdge) : 0
+    readonly property real presentationX: presentationCoordinator
+        ? presentationCoordinator.recentRowPresentationX(rowRightEdge, width) : 0
 
     onSelectedIndexChanged: {
         if (recentModel && selectedIndex >= 0 && selectedIndex < recentRepeater.count
@@ -167,12 +181,13 @@ Item {
         font.pixelSize: typography ? typography.size("body", 24) : 24 * uiScale
     }
 
-    Item {
-        x: 0
-        y: 0
-        width: parent.width
-        height: parent.height
-        visible: recentModel && recentRepeater.count > 0
+        Item {
+            id: recentRow
+            y: 0
+            width: parent.width
+            height: parent.height
+            x: recentHome.presentationX
+            visible: recentModel && recentRepeater.count > 0
 
         Repeater {
             id: recentRepeater

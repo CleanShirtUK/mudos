@@ -178,6 +178,11 @@ Window {
     readonly property bool launchOverlayEffectiveVisible: launchOverlayVisible
         && launchOverlayEnabled && !launchOverlayRetired
 
+    PresentationCoordinator {
+        id: presentationCoordinator
+        titleCount: root.domains.length
+    }
+
     function traceLaunchMutation(name, value, reason) {
         var oldValue = launchTracePrevious[name]
         console.log("LAUNCH_TRACE", JSON.stringify({event: "MUTATION", name: name, old: oldValue, new: value, generation: launchGeneration, token: launchToken, reason: reason || "property-change"}))
@@ -1095,6 +1100,7 @@ Window {
         inputSurface.forceActiveFocus()
         refreshCatalogue()
         refreshStore()
+        presentationCoordinator.beginStartup()
     }
 
     function controllerUp() {
@@ -1331,41 +1337,9 @@ Window {
         Item {
             id: homeScene
             anchors.fill: parent
-            visible: root.space === "home" || root.libraryTransitioning || root.storeTransitioning
+            visible: presentationCoordinator.contentVisible
+                && (root.space === "home" || root.libraryTransitioning || root.storeTransitioning)
             opacity: root.homeContentOpacity
-            Item {
-                x: root.homeCategoryRailX
-                y: 0
-                width: root.design(250)
-                height: parent.height
-                clip: true
-                Item {
-                    id: titleRail
-                    y: root.titleRailY
-                    width: parent.width
-                    height: parent.height
-
-                    Repeater {
-                        id: homeCategoryTitles
-                        model: root.domains
-                        delegate: Text {
-                            required property int index
-                            y: root.titleRailChildY(index)
-                            visible: true
-                            text: root.domains[index].toUpperCase()
-                            color: luluPalette.headingAccent
-                            font.family: typography.displayFamily
-                            font.weight: typography.displayWeight
-                            font.pixelSize: root.homeCategoryFontSize
-                            font.letterSpacing: 5 * root.uiScale
-                            opacity: 1
-                            scale: 1
-                        }
-                    }
-                }
-            }
-
-
             Item {
                 id: homeCardViewport
                 x: 0
@@ -1400,6 +1374,7 @@ Window {
                         width: recentReveal.width
                         height: root.homeFocalCardHeight
                         recentModel: root.catalogueRecentModel
+                        presentationCoordinator: presentationCoordinator
                         selectedIndex: root.recentIndex
                         playActivationSerial: root.playActivationSerial
                         focalCardWidth: root.homeFocalCardWidth
@@ -1520,6 +1495,50 @@ Window {
             }
         }
 
+        // Title choreography has its own screen-space viewport. It is a
+        // direct child of the input surface so Home content clips cannot
+        // shorten the animated travel envelope.
+        Item {
+            id: titlePresentationViewport
+            x: 0
+            y: 0
+            width: root.width
+            height: parent.height
+            z: 20
+            clip: true
+            visible: presentationCoordinator.contentVisible
+                && (root.space === "home" || root.libraryTransitioning || root.storeTransitioning)
+            opacity: root.homeContentOpacity
+
+            Item {
+                id: titleRail
+                x: root.homeCategoryRailX
+                y: root.titleRailY
+                width: parent.width
+                height: parent.height
+
+                Repeater {
+                    id: homeCategoryTitles
+                    model: root.domains
+                    delegate: Text {
+                        required property int index
+                        x: presentationCoordinator.titleOffset(index,
+                            root.homeCategoryRailX, width)
+                        y: root.titleRailChildY(index)
+                        visible: true
+                        text: root.domains[index].toUpperCase()
+                        color: luluPalette.headingAccent
+                        font.family: typography.displayFamily
+                        font.weight: typography.displayWeight
+                        font.pixelSize: root.homeCategoryFontSize
+                        font.letterSpacing: 5 * root.uiScale
+                        opacity: 1
+                        scale: 1
+                    }
+                }
+            }
+        }
+
         Text {
             x: root.homeCategoryRailX
             y: root.homeBottomBandCenterY - height * 0.5
@@ -1636,7 +1655,8 @@ Window {
                 x: root.design(76)
                 width: parent.width * 0.54
                 anchors.verticalCenter: parent.verticalCenter
-                visible: root.space === "library" || root.libraryTransitioning
+                visible: presentationCoordinator.contentVisible
+                    && (root.space === "library" || root.libraryTransitioning)
                 opacity: root.libraryContentOpacity
                 spacing: root.design(14)
 
@@ -1690,8 +1710,9 @@ Window {
                 anchors.right: parent.right
                 anchors.rightMargin: root.design(76)
                 anchors.verticalCenter: parent.verticalCenter
-                visible: root.space !== "library"
-                opacity: root.homeContentOpacity
+                visible: presentationCoordinator.contentVisible && root.space !== "library"
+                y: presentationCoordinator.hintsOffset()
+                opacity: root.homeContentOpacity * presentationCoordinator.hintsOpacity()
                 spacing: root.design(14)
 
                 ControllerHint {
