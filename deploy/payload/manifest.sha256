@@ -79,7 +79,7 @@ f6dd2ae216837c63e7de7429791d0bac903b98353ac58572bb92a81e207158ca  ./ui/artwork/s
 9129240fb672e8820d5d259a33949bc22acc51e32a7837c48d414d84a1e7f58d  ./ui/artwork/system-network.svg
 abdc96a0808cf3b52a09b044d47950299c374c0fd7109cb1c584094646e342a7  ./ui/artwork/system-storage.svg
 72e0199379684170b956f274525299d67c2395e9bd44b4352d7b48c4d1533000  ./ui/artwork/system-system.svg
-506deebd0d079282853bc68e52a6d2f8fb2e8a3fe3d2c99f237eccdb0725429a  ./ui/ConsoleShell.qml
+9af12864aac86422af06b00f387b968af10d27db34e26dc563dc659e6f962d78  ./ui/ConsoleShell.qml
 c147b5955bb1f2f7c65a9e07fe85afca2f9f9693aa090b5bd6fc45da9189045b  ./ui/ControllerGlyph.qml
 b48f2af29670ce222cfa759a22ca7d789a10cd8a7a15a6e9c2897fb1df7ed936  ./ui/controllerglyphs/SteamDeck_A.png
 63c72d44c4cce55d6ec5e1368938533f9a4ed440f9d1ce7f7e42eb6d9fd77db5  ./ui/controllerglyphs/SteamDeck_B.png
@@ -91,11 +91,11 @@ e83c2844afc051dcd9eaf4b04812490b4787a162f4b7d3c93a037db402c657f2  ./ui/controlle
 c2525c8cb3ca2123283b49ddbdb4c1440cd6467c92859124cc7e89ed65b88ef3  ./ui/controllerglyphs/SteamDeck_L1.png
 57bd1669d1ab589185cf981faf7f8a2e6ecc4107b9914cb2332f9abe95bac0da  ./ui/controllerglyphs/SteamDeck_R1.png
 2a10bd2390e263805a7c37d73f81c74793b093208163f94766b14284d6f2f282  ./ui/ControllerHint.qml
-ac95ac2a81758a0cae5aaaf403b86805367d63aba128d1560094d1cdd805a847  ./ui/GameCard.qml
+25bb1b49b20885e3719da509f86439e3a25ce0098113253f4f75df3f62566f30  ./ui/GameCard.qml
 cd7a7484f64fc3ed4042f4f0159504e7170392539bbc04ce5e421fb57f411bc6  ./ui/GameOptions.qml
 804a6b18a40f6040cc71738da6880aedbb6c16f64c10b5b04b6abbde3526428b  ./ui/GlassSurface.qml
 6e48b3dad6290b9cd545c79fa8146c8d518ac8f7dbd94bd376ea5bf7a7d695ca  ./ui/LibraryHome.qml
-9789d5962fe9e6c0b2ea6730dde2cc52a4aa9957b19fc1f813a3fc9b14ca393f  ./ui/LibrarySpace.qml
+31e4858fa0d0b8dd15eaa67bda026ab85e334558ae1aacca248af04dca23826f  ./ui/LibrarySpace.qml
 a61dd1956a9eb96f1d2436a9229a2a17948aae8dcb94d10290e55e27353cccc2  ./ui/LibrarySpatialSurface.qml
 4c4cb8b96062f3e139a68c038b889c913f46bd65da9db9635b932c35d759b01f  ./ui/LuluPalette.qml
 622c5b0098b6b260b85ebfe5644bd8e86b8b75852af730ead689cc2d58e957fc  ./ui/MudosGuide.qml
@@ -104,7 +104,7 @@ eca5013473b2b84a433729135b4884022bba6e36ae5f7a0ed73c6fbe9f67ef61  ./ui/Navigatio
 d7d4b729dc2bd843bc9ff1e4b41e323519486879238ea26d77ab9bf94ab99f67  ./ui/OrbitBackdrop.qml
 1f2ee009b8c5b3e40b203fc0fd5d50402792aca7e6a734b3b99c0d20055f71ed  ./ui/OrbitBackdropView.qml
 a582ad95f5e1f8d035db58bc7d618801c5d88de970e2b5070671c39e33885163  ./ui/OrbitRenderSource.qml
-273fb90892e2b82a9030fa3a6d1ea549a667f44bb5fd04ec544e6a2d04d72ba9  ./ui/PlaceholderHome.qml
+bd1901efbb41caef0484d8edd83dcd339cfbd6410a202b2cede9e56f6dd5343f  ./ui/PlaceholderHome.qml
 602c8aa5fadda18c644346c8f65653789783f2ac6d003bcab4632d27087f0b66  ./ui/PlayGlassSurface.qml
 bf421d7c53571c700311497234ece40000d214d620c643d0482624a4c1dede85  ./ui/RecentHome.qml
 0ec0fc14395b93c608ee9fb20f4d6c656516eac5d07e89fce55a2f7c9eabafe2  ./ui/shaders/canonical-identity.frag
@@ -128,6 +128,6 @@ e18671924f0e96ac45e303f57ecd374e93ee72209224e7d0235947e740eba44f  ./ui/sounds/ui
 66d2b7054740b4ac9d8918bc3849674be60fd1effb86ca4a7f982a86978835d2  ./ui/sounds/ui-navigate.wav
 f32d6cd651bdcc608f3ece4406403cf396499297c9044e523c67a8016cc5ee13  ./ui/StoreHome.qml
 420ef0464e943bd59e42aa668e502518c027ff57e6faa5cf94447532fd648770  ./ui/SystemHome.qml
-41f2dd93760de12dd2b290a2441ed1cf9e05386c356996c3178645d8640b52a6  ./ui/SystemSpace.qml
-9d678d2bda8f02ee8087dca28cbd719563750e29cda21c3450947d0bfcce5822  ./ui/Typography.qml
+30d31c8927c2c3a36f704aa85fa86b2897227443d1276d858e517a93300c46a3  ./ui/SystemSpace.qml
+8d285ce2e4ba63c4f3b069d91d86566fadd3c9447663fcdc9c325f1203d8411e  ./ui/Typography.qml
 3be28792ed7224534a3e159b45b0a9b3eaf485c81ac24ca7460a76350bb7e508  ./ui/UiAudioEngine.qml

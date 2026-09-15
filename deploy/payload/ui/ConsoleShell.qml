@@ -1315,12 +1315,12 @@ Window {
                             required property int index
                             y: root.titleRailChildY(index)
                             visible: true
-                            text: root.domains[index]
-                            color: luluPalette.selectedText
+                            text: root.domains[index].toUpperCase()
+                            color: luluPalette.headingAccent
                             font.family: typography.displayFamily
                             font.weight: typography.displayWeight
                             font.pixelSize: root.homeCategoryFontSize
-                            font.letterSpacing: 0
+                            font.letterSpacing: 5 * root.uiScale
                             opacity: 1
                             scale: 1
                         }

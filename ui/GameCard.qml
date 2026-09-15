@@ -319,7 +319,7 @@ Rectangle {
                            card.luluPalette.primaryText.g * card.focusBrightness,
                            card.luluPalette.primaryText.b * card.focusBrightness,
                            card.luluPalette.primaryText.a)
-            font.family: card.typography ? card.typography.displayFamily : "Zalando Sans Condensed Black"
+            font.family: card.typography ? card.typography.displayFamily : "JetBrains Mono"
             font.weight: card.typography ? card.typography.displayWeight : Font.Black
             font.pixelSize: card.typography ? card.typography.size("display", 34 * focalScale) : 34 * focalScale * card.uiScale
             wrapMode: Text.WordWrap
@@ -401,11 +401,20 @@ Rectangle {
                 ? (card.game.display_title_override || card.game.canonical_title || card.game.title) : "")
             color: card.focusedColor(card.luluPalette.primaryText)
             font.family: card.typography ? card.typography.interfaceFamily : "JetBrains Mono"
+            font.weight: card.compact || card.compactEndpointWidth > 0 ? Font.Bold : Font.Normal
+            layer.enabled: card.librarySurfaceMaterial
+            layer.effect: MultiEffect {
+                shadowEnabled: true
+                shadowColor: "#000000"
+                shadowOpacity: 0.35
+                shadowBlur: 0.2
+                shadowVerticalOffset: 1 * card.uiScale
+            }
             font.pixelSize: card.typography
-                ? card.typography.size("body", card.compactEndpointWidth > 0 ? 14 * 0.8
-                    : (card.compact ? 14 * 0.8 : 16))
-                : (card.compactEndpointWidth > 0 ? 14 * 0.8
-                    : (card.compact ? 14 * 0.8 : 16)) * card.uiScale
+                ? card.typography.size("body", card.compactEndpointWidth > 0 ? 13 * 0.8
+                    : (card.compact ? 13 * 0.8 : 16))
+                : (card.compactEndpointWidth > 0 ? 13 * 0.8
+                    : (card.compact ? 13 * 0.8 : 16)) * card.uiScale
             wrapMode: Text.WordWrap
             maximumLineCount: 2
             elide: Text.ElideRight

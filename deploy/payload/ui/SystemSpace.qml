@@ -15,8 +15,8 @@ Item {
         y: 76 * root.uiScale
         text: root.category.toUpperCase()
         color: luluPalette.headingAccent
-        font.family: typography.displayFamily
-        font.weight: typography.displayWeight
+        font.family: typography.majorHeadingFamily
+        font.weight: typography.majorHeadingWeight
         font.pixelSize: typography.size("section", 30)
         font.letterSpacing: 5 * root.uiScale
     }

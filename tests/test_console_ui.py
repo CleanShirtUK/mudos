@@ -122,8 +122,10 @@ class ConsoleUiTests(unittest.TestCase):
 
     def test_typography_uses_central_semantic_families(self) -> None:
         typography = (ROOT / "ui" / "Typography.qml").read_text()
-        self.assertIn('displayFamily: "Zalando Sans Condensed Black"', typography)
+        self.assertIn('displayFamily: "JetBrains Mono"', typography)
         self.assertIn("displayWeight: Font.Black", typography)
+        self.assertIn('majorHeadingFamily: "JetBrains Mono"', typography)
+        self.assertIn("majorHeadingWeight: Font.Black", typography)
         self.assertIn('interfaceFamily: "JetBrains Mono"', typography)
         self.assertIn("function size(role, value)", typography)
         for filename in ("ConsoleShell.qml", "GameCard.qml", "LibraryHome.qml", "LibrarySpace.qml", "PlaceholderHome.qml", "RecentHome.qml"):
@@ -337,6 +339,7 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertIn("cacheBuffer: 2 * gridRowStep", library_space)
         self.assertIn("contentY: librarySpace.firstVisibleRow * librarySpace.gridRowStep", library_space)
         self.assertIn("highlightRangeMode: GridView.NoHighlightRange", library_space)
+        self.assertIn("highlightFollowsCurrentItem: false", library_space)
         self.assertIn("parent.height - 16 * uiScale - gridBottomInset", library_space)
         self.assertIn("gridRegionHeight: requiredTwoRowHeight", library_space)
         self.assertIn("fullscreenHeight: root.height - 48 * root.uiScale", shell)
@@ -354,6 +357,10 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertIn("horizontalAlignment: Text.AlignHCenter", game_card)
         self.assertIn("verticalAlignment: Text.AlignVCenter", game_card)
         self.assertIn("elide: Text.ElideRight", game_card)
+        self.assertIn("font.weight: card.compact || card.compactEndpointWidth > 0 ? Font.Bold : Font.Normal", game_card)
+        self.assertIn("card.compact ? 13 * 0.8 : 16", game_card)
+        self.assertIn("layer.enabled: card.librarySurfaceMaterial", game_card)
+        self.assertIn("shadowOpacity: 0.35", game_card)
 
     def test_recent_has_distinct_focal_and_compact_geometry(self) -> None:
         recent = (ROOT / "ui" / "RecentHome.qml").read_text()
@@ -393,7 +400,7 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertIn("float pixelWidth = borderWidthPx / min(artworkSize.x, artworkSize.y)", artwork_shader)
         self.assertIn("float border = smoothstep", artwork_shader)
         self.assertIn("luluPalette.artworkSurface", game_card)
-        self.assertIn('card.compact ? 14 * 0.8 : 16', game_card)
+        self.assertIn('card.compact ? 13 * 0.8 : 16', game_card)
         self.assertIn("sourceItem: artworkSource", game_card)
         self.assertIn("hideSource: true", game_card)
         self.assertIn("sourceItem: artworkSource\n            hideSource: true\n            visible: false", game_card)
@@ -601,6 +608,9 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertIn("LibrarySpace {", (ROOT / "ui" / "StoreHome.qml").read_text())
         self.assertNotIn('sectionTitle: "Available to Download"', (ROOT / "ui" / "StoreHome.qml").read_text())
         self.assertIn('root.space === "store"', QML)
+        self.assertIn("text: root.domains[index].toUpperCase()", QML)
+        self.assertIn("font.letterSpacing: 5 * root.uiScale", QML)
+        self.assertIn("color: luluPalette.headingAccent", QML)
         self.assertIn('progress: root.libraryTransitionProgress', QML)
         self.assertIn('property bool storeTransitioning: false', QML)
         self.assertIn('presentationTarget = "store"', QML)

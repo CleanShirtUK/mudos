@@ -125,8 +125,8 @@ Item {
         y: 76 * uiScale
         text: librarySpace.headingText
         color: luluPalette.headingAccent
-        font.family: typography ? typography.displayFamily : "Zalando Sans Condensed Black"
-        font.weight: typography ? typography.displayWeight : Font.Black
+        font.family: typography ? typography.majorHeadingFamily : "JetBrains Mono"
+        font.weight: typography ? typography.majorHeadingWeight : Font.Black
         font.pixelSize: typography ? typography.size("section", 30) : 30 * uiScale
         font.letterSpacing: 5 * uiScale
     }
@@ -207,7 +207,7 @@ Item {
         visible: librarySpace.sectionTitle !== ""
         text: librarySpace.sectionTitle
         color: luluPalette.primaryText
-        font.family: typography ? typography.displayFamily : "Zalando Sans Condensed Black"
+        font.family: typography ? typography.displayFamily : "JetBrains Mono"
         font.weight: typography ? typography.displayWeight : Font.Black
         font.pixelSize: typography ? typography.size("heading", 26) : 26 * uiScale
     }
@@ -247,6 +247,7 @@ Item {
             // The outer insets contain the selected card's scaled height;
             // selection must not reposition the grid.
             highlightRangeMode: GridView.NoHighlightRange
+            highlightFollowsCurrentItem: false
             contentY: librarySpace.firstVisibleRow * librarySpace.gridRowStep
             interactive: false
             boundsBehavior: Flickable.StopAtBounds

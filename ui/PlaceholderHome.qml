@@ -16,8 +16,8 @@ Item {
             anchors.horizontalCenter: parent.horizontalCenter
             text: title.toUpperCase()
             color: luluPalette.headingAccent
-            font.family: typography ? typography.displayFamily : "Zalando Sans Condensed Black"
-            font.weight: typography ? typography.displayWeight : Font.Black
+            font.family: typography ? typography.majorHeadingFamily : "JetBrains Mono"
+            font.weight: typography ? typography.majorHeadingWeight : Font.Black
             font.pixelSize: typography ? typography.size("section", 26) : 26 * uiScale
             font.letterSpacing: 4 * uiScale
         }
