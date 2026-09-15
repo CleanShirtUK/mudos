@@ -32,6 +32,37 @@ TestCase {
         }
     }
 
+    Item {
+        id: blurGeometryHarness
+        width: 800
+        height: 300
+
+        Item {
+            id: logicalSource
+            x: 120
+            y: 40
+            width: 400
+            height: 180
+
+            Rectangle {
+                id: logicalCard
+                x: 36
+                y: 24
+                width: 180
+                height: 100
+            }
+        }
+
+        Loader {
+            id: blurLoader
+            source: Qt.resolvedUrl("../../ui/DirectionalMotionBlur.qml")
+            onLoaded: {
+                item.sourceItem = logicalSource
+                item.sourceRect = Qt.rect(-64, -64, 528, 308)
+            }
+        }
+    }
+
     function test_starts_hidden_with_explicit_offscreen_geometry() {
         coordinator.startupClock = 0
         compare(coordinator.contentState, coordinator.hiddenState)
@@ -115,6 +146,49 @@ TestCase {
         coordinator.startupClock = coordinator.cardStartAt
             + coordinator.recentRowOvershootTime(1800)
         verify(Math.abs(coordinator.recentRowPresentationX(1800, 1280) - 40) < 0.01)
+    }
+
+    function test_recent_analytic_velocity_follows_signed_trajectory() {
+        var rowEdge = 1800
+        var turningPoint = coordinator.recentRowOvershootTime(rowEdge)
+            / coordinator.cardDuration
+        verify(coordinator.recentPresentationVelocityAt(0, rowEdge) > 0)
+        verify(coordinator.recentPresentationVelocityAt(turningPoint, rowEdge) < 0.000001)
+        verify(coordinator.recentPresentationVelocityAt(turningPoint, rowEdge) > -0.000001)
+        verify(coordinator.recentPresentationVelocityAt(0.9, rowEdge) < 0)
+        compare(coordinator.recentPresentationVelocityAt(1, rowEdge), 0)
+        coordinator.startupClock = coordinator.cardStartAt
+            + turningPoint * coordinator.cardDuration
+        verify(Math.abs(coordinator.recentPresentationVelocityPxPerMs(rowEdge)) < 0.000001)
+        coordinator.startupClock = coordinator.cardStartAt + coordinator.cardDuration
+        compare(coordinator.recentPresentationVelocityPxPerMs(rowEdge), 0)
+    }
+
+    function test_recent_blur_mapping_preserves_sign_dead_zone_and_clamp() {
+        compare(coordinator.recentSignedBlurPixelsFromVelocity(0), 0)
+        compare(coordinator.recentSignedBlurPixelsFromVelocity(0.01), 0)
+        verify(coordinator.recentSignedBlurPixelsFromVelocity(1) > 0)
+        verify(coordinator.recentSignedBlurPixelsFromVelocity(-1) < 0)
+        compare(coordinator.recentSignedBlurPixelsFromVelocity(100),
+                coordinator.motionBlurMaxPixels)
+        compare(coordinator.recentSignedBlurPixelsFromVelocity(-100),
+                -coordinator.motionBlurMaxPixels)
+    }
+
+    function test_motion_blur_padding_does_not_move_source_geometry() {
+        verify(blurLoader.item !== null)
+        var before = logicalCard.mapToItem(blurGeometryHarness, 0, 0)
+        blurLoader.item.sourceRect = Qt.rect(-64, -64, 528, 308)
+        var padded = logicalCard.mapToItem(blurGeometryHarness, 0, 0)
+        blurLoader.item.sourceRect = Qt.rect(-23, -17, 446, 220)
+        var differentlyPadded = logicalCard.mapToItem(blurGeometryHarness, 0, 0)
+        compare(before.x, padded.x)
+        compare(before.y, padded.y)
+        compare(before.x, differentlyPadded.x)
+        compare(before.y, differentlyPadded.y)
+        compare(logicalSource.x, 120)
+        compare(logicalSource.y, 40)
+        verify(blurLoader.item.sourceItem === logicalSource)
     }
 
     function test_presentation_state_boundaries_are_explicit() {

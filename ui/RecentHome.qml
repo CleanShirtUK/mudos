@@ -45,6 +45,16 @@ Item {
         }
         return rightEdge
     }
+    readonly property real rowLeftEdge: {
+        var leftEdge = 0
+        for (var index = 0; index < recentRepeater.count; index++) {
+            var relativeIndex = index - selectedIndex
+            leftEdge = Math.min(leftEdge, railX(relativeIndex))
+        }
+        return leftEdge
+    }
+    readonly property real motionBlurPadding: presentationCoordinator
+        ? presentationCoordinator.motionBlurMaxPixels : 64
     readonly property real recentRowStartupX: presentationCoordinator
         ? presentationCoordinator.recentRowStartupX(rowRightEdge) : 0
     readonly property real presentationX: presentationCoordinator
@@ -281,6 +291,27 @@ Item {
                 }
             }
         }
+    }
+
+    // This is an output overlay only. recentRow remains the live logical
+    // hierarchy and retains ownership of presentationX and delegate geometry.
+    DirectionalMotionBlur {
+        id: recentMotionBlur
+        x: recentHome.presentationX + recentHome.rowLeftEdge
+            - recentHome.motionBlurPadding
+        y: -recentHome.motionBlurPadding
+        width: recentHome.rowRightEdge - recentHome.rowLeftEdge
+            + 2 * recentHome.motionBlurPadding
+        height: recentHome.height + 2 * recentHome.motionBlurPadding
+        visible: recentModel && recentRepeater.count > 0
+        sourceItem: recentRow
+        sourceRect: Qt.rect(recentHome.rowLeftEdge - recentHome.motionBlurPadding,
+                            -recentHome.motionBlurPadding,
+                            recentHome.rowRightEdge - recentHome.rowLeftEdge
+                                + 2 * recentHome.motionBlurPadding,
+                            recentHome.height + 2 * recentHome.motionBlurPadding)
+        blurPixels: presentationCoordinator
+            ? presentationCoordinator.recentSignedBlurPixels(rowRightEdge) : 0
     }
 
     Connections {

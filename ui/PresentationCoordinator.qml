@@ -29,6 +29,11 @@ Item {
     readonly property int cardDuration: titleTrainDuration
     readonly property real recentRowOvershootPixels: 40
     readonly property real recentRowSafetyMargin: 24
+    // Presentation blur tuning is expressed in rendered pixels. The signed
+    // velocity remains separate from this visual mapping.
+    readonly property real motionBlurGain: 8
+    readonly property real motionBlurMaxPixels: 64
+    readonly property real motionBlurDeadZone: 0.03
     readonly property int hintsStartAt: 780
     readonly property int hintsDuration: 500
     readonly property real hintsTravel: 120
@@ -116,6 +121,40 @@ Item {
         var c3 = c1 + 1
         var remaining = 1 - normalized
         return 3 * c3 * Math.pow(remaining, 2) - 2 * c1 * remaining
+    }
+
+    function recentPresentationVelocityPxPerMs(rowRightEdge) {
+        var local = clamp01((startupClock - cardStartAt) / cardDuration)
+        var startupX = recentRowStartupX(rowRightEdge)
+        return -startupX * recentRowVelocityAt(local, rowRightEdge) / cardDuration
+    }
+
+    function recentPresentationVelocityAt(local, rowRightEdge) {
+        var startupX = recentRowStartupX(rowRightEdge)
+        return -startupX * recentRowVelocityAt(local, rowRightEdge) / cardDuration
+    }
+
+    function recentSignedBlurPixelsFromVelocity(velocity) {
+        if (Math.abs(velocity) <= motionBlurDeadZone)
+            return 0
+        return Math.max(-motionBlurMaxPixels,
+                        Math.min(motionBlurMaxPixels, velocity * motionBlurGain))
+    }
+
+    function recentSignedBlurPixels(rowRightEdge) {
+        return recentSignedBlurPixelsFromVelocity(
+            recentPresentationVelocityPxPerMs(rowRightEdge))
+    }
+
+    // Deliberately callable rather than frame-logged: this gives physical
+    // tuning a representative-point diagnostic without log flooding.
+    function logRecentMotionBlurDiagnostic(label, local, rowRightEdge) {
+        var position = recentRowStartupX(rowRightEdge)
+            * (1 - recentRowProgressAt(local, rowRightEdge))
+        var velocity = recentPresentationVelocityAt(local, rowRightEdge)
+        var blur = recentSignedBlurPixelsFromVelocity(velocity)
+        console.log("RECENT_MOTION_BLUR", label, "t", local * cardDuration,
+                    "x", position, "velocity", velocity, "blur", blur)
     }
 
     function recentRowProgress(rowRightEdge) {

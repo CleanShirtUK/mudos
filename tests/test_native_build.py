@@ -39,13 +39,43 @@ class NativeBuildTests(unittest.TestCase):
         self.assertIn("readonly property real recentRowStartupX", recent)
         self.assertIn("readonly property real presentationX", recent)
         self.assertIn("id: recentRow", recent)
+        self.assertIn("id: recentMotionBlur", recent)
         self.assertIn("x: recentHome.presentationX", recent)
+        self.assertIn("sourceItem: recentRow", recent)
+        self.assertIn("x: startX + (recentHome.railX(toRelativeIndex) - startX) * railProgress", recent)
+        source_section = recent.split("id: recentRow", 1)[1].split("DirectionalMotionBlur", 1)[0]
+        self.assertNotIn("+ recentHome.motionBlurPadding", source_section)
+        self.assertIn("focused: index === recentHome.selectedIndex", source_section)
+        self.assertIn("presentationProgress: blend", source_section)
+        self.assertIn("selectionProgress", (root / "ui" / "GameCard.qml").read_text())
         self.assertNotIn("cardOffset(index)", recent)
         self.assertIn("function recentRowStartupX", coordinator)
         self.assertIn("function recentRowPresentationX", coordinator)
         self.assertNotIn("recentRowFastPhase", coordinator)
         self.assertNotIn("recentRowFastProgress", coordinator)
         self.assertNotIn("recentRowSettlePower", coordinator)
+
+    def test_recent_motion_blur_is_bounded_and_qsb_backed(self) -> None:
+        root = Path(__file__).parents[1]
+        recent = (root / "ui" / "RecentHome.qml").read_text()
+        effect = (root / "ui" / "DirectionalMotionBlur.qml").read_text()
+        shader = (root / "ui" / "shaders" / "presentation-motion-blur.frag").read_text()
+        self.assertIn("motionBlurPadding", recent)
+        self.assertIn("hideSource: true", effect)
+        self.assertIn('fragmentShader: "shaders/presentation-motion-blur.frag.qsb"', effect)
+        self.assertIn("sourceTextureSize", shader)
+        self.assertEqual(shader.count("texture(source"), 7)
+        self.assertTrue((root / "ui" / "shaders" / "presentation-motion-blur.frag.qsb").exists())
+
+    def test_motion_blur_padding_is_effect_space_only(self) -> None:
+        root = Path(__file__).parents[1]
+        recent = (root / "ui" / "RecentHome.qml").read_text()
+        effect = (root / "ui" / "DirectionalMotionBlur.qml").read_text()
+        self.assertIn("sourceRect: Qt.rect(recentHome.rowLeftEdge - recentHome.motionBlurPadding", recent)
+        self.assertIn("property rect sourceRect", effect)
+        self.assertIn("sourceRect: root.sourceRect", effect)
+        self.assertIn("hideSource: true", effect)
+        self.assertIn("live: true", effect)
 
     def test_title_animation_viewport_is_separate_from_final_rail(self) -> None:
         root = Path(__file__).parents[1]
