@@ -95,6 +95,7 @@ Item {
         focalChromeOpacity: root.focalChromeOpacity
         compactTitleOpacity: root.compactTitleOpacity
         presentationState: root.presentationState
+        focusBrightness: root.focused ? 1 : 0.68
         liveSceneCoordinates: true
         opticsStage: root.presentationProgress > 0 ? 7 : -1
         compact: root.presentationState === "COMPACT"

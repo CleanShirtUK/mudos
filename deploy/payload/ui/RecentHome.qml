@@ -157,6 +157,10 @@ Item {
         return 5 * Math.pow(1 - normalized, 4) / transitionAnimation.duration
     }
 
+    function selectedOpacityOwner(index) {
+        return index === selectedIndex
+    }
+
     function selectionCardVelocityAt(progress, startX, targetX) {
         return (targetX - startX)
             * selectionProgressVelocityPxPerMs(progress)

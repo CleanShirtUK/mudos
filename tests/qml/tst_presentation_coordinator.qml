@@ -19,6 +19,29 @@ TestCase {
         }
     }
 
+    Loader {
+        id: libraryHomeLoader
+        source: Qt.resolvedUrl("../../ui/LibraryHome.qml")
+        onLoaded: {
+            item.luluPalette = testPalette
+            item.width = 1280
+            item.height = 500
+            item.categories = [{label: "A", scope: "all"},
+                               {label: "B", scope: "pc"}]
+        }
+    }
+
+    Loader {
+        id: systemHomeLoader
+        source: Qt.resolvedUrl("../../ui/SystemHome.qml")
+        onLoaded: {
+            item.luluPalette = testPalette
+            item.width = 1280
+            item.height = 500
+            item.categories = ["Display", "Audio"]
+        }
+    }
+
     QtObject {
         id: testPalette
         property color mutedText: "white"
@@ -273,6 +296,37 @@ TestCase {
         verify(rebasedRight < 0)
         verify(rebasedLeft > 0)
         verify(rebasedRight !== rebasedLeft)
+    }
+
+    function test_selection_opacity_ownership_transfers_at_retarget() {
+        verify(recentHomeLoader.item !== null)
+        var recent = recentHomeLoader.item
+        recent.selectedIndex = 1
+        recent.transitionProgress = 0
+        verify(recent.selectedOpacityOwner(1))
+        verify(!recent.selectedOpacityOwner(0))
+        recent.selectedIndex = 0
+        verify(recent.selectedOpacityOwner(0))
+        verify(!recent.selectedOpacityOwner(1))
+
+        verify(libraryHomeLoader.item !== null)
+        var library = libraryHomeLoader.item
+        library.moveSelection(1)
+        compare(library.selectionProgress, 0)
+        verify(library.selectedOpacityOwner(1))
+        verify(!library.selectedOpacityOwner(0))
+        library.selectionProgress = 0.4
+        library.moveSelection(-1)
+        compare(library.selectionProgress, 0)
+        verify(library.selectedOpacityOwner(0))
+        verify(!library.selectedOpacityOwner(1))
+
+        verify(systemHomeLoader.item !== null)
+        var system = systemHomeLoader.item
+        system.moveSelection(1)
+        compare(system.selectionProgress, 0)
+        verify(system.selectedOpacityOwner(1))
+        verify(!system.selectedOpacityOwner(0))
     }
 
     function test_presentation_state_boundaries_are_explicit() {

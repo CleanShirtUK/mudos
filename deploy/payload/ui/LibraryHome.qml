@@ -23,7 +23,9 @@ Item {
     readonly property bool transitioning: transitionState === "ACTIVATING"
 
     property real uiScale: 1
+    property var presentationCoordinator
     readonly property string navigationObject: "library"
+    readonly property bool selectionMotionActive: selectionAnimation.running
     signal openRequested(int index)
 
     function categoryArtwork(category) {
@@ -49,6 +51,10 @@ Item {
 
     function railX(relativeIndex) {
         return relativeIndex * (compactCardWidth + 18 * uiScale)
+    }
+
+    function selectedOpacityOwner(index) {
+        return index === selectedIndex
     }
 
     function captureSelection() {
@@ -119,8 +125,16 @@ Item {
             luluPalette: libraryHome.luluPalette
             canonicalTexture: libraryHome.canonicalTexture
             canonicalCoordinateRoot: libraryHome.canonicalCoordinateRoot
-            canonicalSize: libraryHome.canonicalSize
-            opacity: libraryHome.contentOpacity
+             canonicalSize: libraryHome.canonicalSize
+             motionBlurActive: libraryHome.selectionMotionActive
+             motionStartX: startX
+             motionTargetX: targetX
+             motionProgress: libraryHome.selectionProgress
+             motionBlurPixels: libraryHome.presentationCoordinator
+                 ? libraryHome.presentationCoordinator.signedMotionBlurPixelsFromVelocity(
+                     motionVelocity) : 0
+             selectedOpacityOwner: libraryHome.selectedOpacityOwner(index)
+             opacity: libraryHome.contentOpacity
             onActivated: libraryHome.openRequested(index)
         }
     }

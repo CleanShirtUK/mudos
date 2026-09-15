@@ -13,11 +13,13 @@ Item {
     property var canonicalTexture
     property var canonicalCoordinateRoot
     property size canonicalSize: Qt.size(1280, 720)
+    property var presentationCoordinator
     property var selectionStart: []
     property var presentationStartX: []
     property real selectionProgress: 1
     property bool suppressSelectionCompletion: false
     signal openRequested(int index)
+    readonly property bool selectionMotionActive: selectionAnimation.running
 
     function categoryArtwork(category) {
         return Qt.resolvedUrl("artwork/system-" + category.toLowerCase() + ".svg")
@@ -25,6 +27,10 @@ Item {
 
     function railX(relativeIndex) {
         return relativeIndex * (cardWidth + railGap)
+    }
+
+    function selectedOpacityOwner(index) {
+        return index === selectedIndex
     }
 
     function captureSelection() {
@@ -94,8 +100,16 @@ Item {
             luluPalette: root.luluPalette
             canonicalTexture: root.canonicalTexture
             canonicalCoordinateRoot: root.canonicalCoordinateRoot
-            canonicalSize: root.canonicalSize
-            onActivated: root.openRequested(index)
+             canonicalSize: root.canonicalSize
+             motionBlurActive: root.selectionMotionActive
+             motionStartX: startX
+             motionTargetX: targetX
+             motionProgress: root.selectionProgress
+             motionBlurPixels: root.presentationCoordinator
+                 ? root.presentationCoordinator.signedMotionBlurPixelsFromVelocity(
+                     motionVelocity) : 0
+             selectedOpacityOwner: root.selectedOpacityOwner(index)
+             onActivated: root.openRequested(index)
         }
     }
 }

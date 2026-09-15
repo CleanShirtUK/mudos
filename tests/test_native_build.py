@@ -105,6 +105,29 @@ class NativeBuildTests(unittest.TestCase):
         self.assertIn("motionBlurMaxPixels", shell)
         self.assertNotIn("sourceItem: titleRail", shell)
 
+    def test_library_and_system_share_coordinate_transparent_selection_blur(self) -> None:
+        root = Path(__file__).parents[1]
+        navigation = (root / "ui" / "NavigationCard.qml").read_text()
+        library = (root / "ui" / "LibraryHome.qml").read_text()
+        system = (root / "ui" / "SystemHome.qml").read_text()
+        store = (root / "ui" / "StoreHome.qml").read_text()
+        shell = (root / "ui" / "ConsoleShell.qml").read_text()
+        self.assertIn("id: logicalCard", navigation)
+        self.assertIn("sourceItem: logicalCard", navigation)
+        self.assertIn("motionStartX", navigation)
+        self.assertIn("motionTargetX", navigation)
+        self.assertIn("motionBlurActive", navigation)
+        self.assertIn("motionBlurPixels", navigation)
+        for domain in (library, system):
+            self.assertIn("selectionMotionActive", domain)
+            self.assertIn("motionStartX: startX", domain)
+            self.assertIn("motionTargetX: targetX", domain)
+            self.assertIn("Easing.OutQuint", domain)
+            self.assertIn("duration: 500", domain)
+        self.assertIn("presentationCoordinator: presentationCoordinator", shell)
+        self.assertIn("LibrarySpace {", store)
+        self.assertNotIn("selectionMotionActive", store)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -1316,9 +1316,9 @@ Window {
         }
 
         LibrarySpatialSurface {
-            canonicalTexture: orbitTexture
-            canonicalCoordinateRoot: orbitRenderSource
-            canonicalSize: Qt.size(root.width, root.height)
+                         canonicalTexture: orbitTexture
+                         canonicalCoordinateRoot: orbitRenderSource
+                         canonicalSize: Qt.size(root.width, root.height)
              progress: root.libraryTransitionProgress
             homeX: root.homeContentRailX
             homeY: root.homeActiveContentOriginY
@@ -1385,10 +1385,10 @@ Window {
                         uiScale: root.uiScale
                         typography: typography
                         luluPalette: luluPalette
-                        canonicalTexture: orbitTexture
-                        canonicalCoordinateRoot: orbitRenderSource
-                        canonicalSize: Qt.size(root.width, root.height)
-                        onSelectionIndexRequested: root.recentIndex = index
+                         canonicalTexture: orbitTexture
+                         canonicalCoordinateRoot: orbitRenderSource
+                         canonicalSize: Qt.size(root.width, root.height)
+                         onSelectionIndexRequested: root.recentIndex = index
                         onSelectionGameChanged: {
                             root.recentSelectedGameId = gameId
                             root.syncGameOptionsGame()
@@ -1419,9 +1419,10 @@ Window {
                         luluPalette: luluPalette
                         canonicalTexture: orbitTexture
                         canonicalCoordinateRoot: orbitRenderSource
-                        canonicalSize: Qt.size(root.width, root.height)
-                        compactCardWidth: root.compactCardWidth
-                        transitionState: root.libraryTransitionState
+                         canonicalSize: Qt.size(root.width, root.height)
+                         compactCardWidth: root.compactCardWidth
+                         presentationCoordinator: presentationCoordinator
+                         transitionState: root.libraryTransitionState
                         transitionProgress: root.libraryTransitionProgress
                         transitionExpanding: root.libraryTransitionExpanding
                         contentOpacity: root.homeContentOpacity
@@ -1485,9 +1486,10 @@ Window {
                         typography: typography
                         luluPalette: luluPalette
                         canonicalTexture: orbitTexture
-                        canonicalCoordinateRoot: orbitRenderSource
-                        canonicalSize: Qt.size(root.width, root.height)
-                    }
+                         canonicalCoordinateRoot: orbitRenderSource
+                         canonicalSize: Qt.size(root.width, root.height)
+                         presentationCoordinator: presentationCoordinator
+                     }
                     Component.onCompleted: root.systemHomeRailRef = systemHomeRail
                 }
 
