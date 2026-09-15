@@ -59,6 +59,9 @@ Item {
         ? presentationCoordinator.recentRowStartupX(rowRightEdge) : 0
     readonly property real presentationX: presentationCoordinator
         ? presentationCoordinator.recentRowPresentationX(rowRightEdge, width) : 0
+    readonly property bool selectionMotionActive: transitionAnimation.running
+    readonly property bool selectionBlurAllowed: presentationCoordinator
+        ? presentationCoordinator.contentPresented : true
 
     onSelectedIndexChanged: {
         if (recentModel && selectedIndex >= 0 && selectedIndex < recentRepeater.count
@@ -149,6 +152,56 @@ Item {
         fadeAnimation.restart()
     }
 
+    function selectionProgressVelocityPxPerMs(progress) {
+        var normalized = Math.max(0, Math.min(1, progress))
+        return 5 * Math.pow(1 - normalized, 4) / transitionAnimation.duration
+    }
+
+    function selectionCardVelocityAt(progress, startX, targetX) {
+        return (targetX - startX)
+            * selectionProgressVelocityPxPerMs(progress)
+    }
+
+    function selectionCardVelocityPxPerMs(startX, targetX) {
+        if (!selectionMotionActive)
+            return 0
+        return selectionCardVelocityAt(transitionProgress, startX, targetX)
+    }
+
+    function selectionSignedBlurPixelsAt(progress, startX, targetX) {
+        return presentationCoordinator
+            ? presentationCoordinator.signedMotionBlurPixelsFromVelocity(
+                selectionCardVelocityAt(progress, startX, targetX)) : 0
+    }
+
+    function selectionSignedBlurPixels(startX, targetX) {
+        return selectionSignedBlurPixelsAt(transitionProgress, startX, targetX)
+    }
+
+    readonly property int selectionBlurSurfaceCount: {
+        if (!selectionMotionActive || !selectionBlurAllowed)
+            return 0
+        var count = 0
+        for (var index = 0; index < recentRepeater.count; index++) {
+            var card = recentRepeater.itemAt(index)
+            if (card && card.visible)
+                count++
+        }
+        return count
+    }
+
+    function logSelectionMotionDiagnostic(label, cardId, startX, targetX,
+                                          captureWidth, captureHeight) {
+        var velocity = selectionCardVelocityPxPerMs(startX, targetX)
+        console.log("RECENT_SELECTION_BLUR", label, "card", cardId,
+                    "startX", startX, "targetX", targetX,
+                    "displacement", targetX - startX,
+                    "velocity", velocity,
+                    "blur", selectionSignedBlurPixels(startX, targetX),
+                    "capture", captureWidth, "x", captureHeight,
+                    "activeSurfaces", selectionBlurSurfaceCount)
+    }
+
     Component.onCompleted: {
         transitionFromIndex = selectedIndex
         transitionProgress = 1
@@ -202,93 +255,36 @@ Item {
         Repeater {
             id: recentRepeater
             model: recentModel
-            delegate: GameCard {
-                required property int index
-                required property string game_id
-                required property string provider
-                required property string install_state
-                required property var provider_id
-                required property var title
-                required property var platform
-                required property var launchable
-                required property var install_dir
-                required property var artwork_url
-                required property var artwork_suppressed
-                required property var last_played
-                required property var runtime
-                required property var genres
-                required property var local_multiplayer
-                required property var online_multiplayer
-                required property var game_mode
-                required property var display_title_override
-                required property var canonical_title
-                required property var platform_label
-                property var gameRecord: ({
-                    game_id: game_id,
-                    provider: provider,
-                    provider_id: provider_id,
-                    title: title,
-                    platform: platform,
-                    install_state: install_state,
-                    launchable: launchable,
-                    install_dir: install_dir,
-                    artwork_url: artwork_url,
-                    artwork_suppressed: artwork_suppressed,
-                    last_played: last_played,
-                    runtime: runtime,
-                    genres: genres,
-                    local_multiplayer: local_multiplayer,
-                    online_multiplayer: online_multiplayer,
-                    game_mode: game_mode,
-                    display_title_override: display_title_override,
-                    canonical_title: canonical_title,
-                    platform_label: platform_label
-                })
-                readonly property int toRelativeIndex: index - recentHome.selectedIndex
-                readonly property real railProgress: recentHome.transitionProgress
-                readonly property real startX: recentHome.presentationStartX[index] || 0
-                readonly property real startWidth: recentHome.presentationStartWidth[index] || 0
-                readonly property real startProgress: recentHome.presentationStartProgress[index] || 0
-                readonly property real startChrome: recentHome.presentationStartChrome[index] || 0
-                readonly property real startCompactTitle: recentHome.presentationStartCompactTitle[index] || 0
-                readonly property real targetProgress: index === recentHome.selectedIndex ? 1 : 0
-                readonly property real blend: startProgress
-                    + (targetProgress - startProgress) * railProgress
-                  game: gameRecord
-                  focused: index === recentHome.selectedIndex
-                presentationProgress: blend
-                compactEndpointWidth: recentHome.compactCardWidth
-                focalChromeOpacity: startChrome
-                    + ((index === recentHome.selectedIndex ? 1 : 0) - startChrome) * railProgress
-                compactTitleOpacity: startCompactTitle
-                    + ((index === recentHome.selectedIndex ? 0 : 1) - startCompactTitle) * railProgress
-                 presentationState: game_id === recentHome.selectedGameId ? "FOCUSED" : "COMPACT"
-                liveSceneCoordinates: true
-                opticsStage: blend > 0 ? 7 : -1
-                 compact: presentationState === "COMPACT"
-                 showAction: false
-                 actionLabel: install_state === "available"
-                      ? "Available to Download" : (provider === "steam-store"
-                         ? "A  Open" : "A  Play")
-                 homeCard: true
-                 playActivationSerial: recentHome.playActivationSerial
+            delegate: RecentCardPresentation {
+                home: recentHome
+                toRelativeIndex: index - recentHome.selectedIndex
+                startX: recentHome.presentationStartX[index] || 0
+                startWidth: recentHome.presentationStartWidth[index] || 0
+                startProgress: recentHome.presentationStartProgress[index] || 0
+                startChrome: recentHome.presentationStartChrome[index] || 0
+                startCompactTitle: recentHome.presentationStartCompactTitle[index] || 0
+                railProgress: recentHome.transitionProgress
+                focused: index === recentHome.selectedIndex
+                presentationState: game_id === recentHome.selectedGameId ? "FOCUSED" : "COMPACT"
+                selectionBlurActive: recentHome.selectionMotionActive
+                    && recentHome.selectionBlurAllowed
+                playActivationSerial: recentHome.playActivationSerial
                 canonicalTexture: recentHome.canonicalTexture
                 canonicalCoordinateRoot: recentHome.canonicalCoordinateRoot
                 canonicalSize: recentHome.canonicalSize
+                focalCardWidth: recentHome.focalCardWidth
+                focalCardHeight: recentHome.focalCardHeight
+                compactCardWidth: recentHome.compactCardWidth
                 focalScale: recentHome.focalScale
                 uiScale: recentHome.uiScale
                 typography: recentHome.typography
                 luluPalette: recentHome.luluPalette
-                  visible: recentHome.presentationStartVisible[index]
-                      || Math.abs(toRelativeIndex) <= recentHome.visibleRailRadius
-                  width: startWidth + (recentHome.railWidth(toRelativeIndex) - startWidth) * railProgress
-                  height: focalCardHeight
-                  x: startX + (recentHome.railX(toRelativeIndex) - startX) * railProgress
-
-                MouseArea {
-                    anchors.fill: parent
-                    onClicked: launchRequested(game_id)
-                }
+                visible: recentHome.presentationStartVisible[index]
+                    || Math.abs(toRelativeIndex) <= recentHome.visibleRailRadius
+                width: startWidth
+                    + (recentHome.railWidth(toRelativeIndex) - startWidth) * railProgress
+                height: focalCardHeight
+                x: startX + (recentHome.railX(toRelativeIndex) - startX) * railProgress
             }
         }
     }
@@ -304,6 +300,7 @@ Item {
             + 2 * recentHome.motionBlurPadding
         height: recentHome.height + 2 * recentHome.motionBlurPadding
         visible: recentModel && recentRepeater.count > 0
+        active: !recentHome.selectionMotionActive
         sourceItem: recentRow
         sourceRect: Qt.rect(recentHome.rowLeftEdge - recentHome.motionBlurPadding,
                             -recentHome.motionBlurPadding,

@@ -11,6 +11,7 @@ Item {
     // in sourceItem's hierarchy, so the observed scene geometry is unchanged.
     property rect sourceRect: Qt.rect(0, 0, width, height)
     property real blurPixels: 0
+    property bool active: true
 
     ShaderEffectSource {
         id: sourceTexture
@@ -19,13 +20,14 @@ Item {
         sourceRect: root.sourceRect
         textureSize: Qt.size(Math.max(1, Math.round(root.width)),
                              Math.max(1, Math.round(root.height)))
-        live: true
-        hideSource: true
+        live: root.active
+        hideSource: root.active
         visible: false
     }
 
     ShaderEffect {
         anchors.fill: parent
+        visible: root.active
         property var source: sourceTexture
         property real blurPixels: root.blurPixels
         property vector2d sourceTextureSize: Qt.vector2d(

@@ -245,7 +245,9 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertNotIn('steam://install', QML + store)
         self.assertNotIn('romm', store.lower())
         self.assertIn('call_list_available_games', bridge)
-        self.assertIn('actionLabel: install_state === "available"', (ROOT / "ui" / "RecentHome.qml").read_text())
+        recent = ((ROOT / "ui" / "RecentHome.qml").read_text()
+                  + (ROOT / "ui" / "RecentCardPresentation.qml").read_text())
+        self.assertIn('actionLabel: root.install_state === "available"', recent)
         self.assertIn('text: card.actionLabel', (ROOT / "ui" / "GameCard.qml").read_text())
 
     def test_non_game_portrait_artwork_assets_are_replaceable(self) -> None:
@@ -392,7 +394,8 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertIn("shadowOpacity: 0.35", game_card)
 
     def test_recent_has_distinct_focal_and_compact_geometry(self) -> None:
-        recent = (ROOT / "ui" / "RecentHome.qml").read_text()
+        recent = ((ROOT / "ui" / "RecentHome.qml").read_text()
+                  + (ROOT / "ui" / "RecentCardPresentation.qml").read_text())
         game_card = (ROOT / "ui" / "GameCard.qml").read_text()
         library_space = (ROOT / "ui" / "LibrarySpace.qml").read_text()
         shell = (ROOT / "ui" / "ConsoleShell.qml").read_text()
@@ -454,7 +457,7 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertIn("sceneCoordinateRoot: card.canonicalCoordinateRoot", game_card)
         self.assertIn("mapToItem(sceneCoordinateRoot, 0, 0)", (ROOT / "ui" / "GlassSurface.qml").read_text())
         self.assertIn("liveSceneCoordinates: true", recent)
-        self.assertIn("opticsStage: blend > 0 ? 7 : -1", recent)
+        self.assertIn("opticsStage: root.presentationProgress > 0 ? 7 : -1", recent)
         self.assertIn("layoutDependency = card.x + card.y + card.width + card.height", game_card)
         self.assertIn("property bool useExplicitSceneGeometry", (ROOT / "ui" / "GlassSurface.qml").read_text())
         self.assertIn("canonical-identity.frag.qsb", (ROOT / "ui" / "GlassSurface.qml").read_text())

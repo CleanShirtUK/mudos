@@ -9,6 +9,21 @@ TestCase {
         source: Qt.resolvedUrl("../../ui/PresentationCoordinator.qml")
     }
 
+    Loader {
+        id: recentHomeLoader
+        source: Qt.resolvedUrl("../../ui/RecentHome.qml")
+        onLoaded: {
+            item.luluPalette = testPalette
+            item.width = 1280
+            item.height = 500
+        }
+    }
+
+    QtObject {
+        id: testPalette
+        property color mutedText: "white"
+    }
+
     property var coordinator: coordinatorLoader.item
 
     Item {
@@ -235,6 +250,29 @@ TestCase {
         compare(logicalSource.x, 120)
         compare(logicalSource.y, 40)
         verify(blurLoader.item.sourceItem === logicalSource)
+    }
+
+    function test_recent_selection_velocity_is_per_card_and_rebases() {
+        verify(recentHomeLoader.item !== null)
+        var recent = recentHomeLoader.item
+        var rightVelocity = recent.selectionCardVelocityAt(0, 760, 0)
+        var leftVelocity = recent.selectionCardVelocityAt(0, 0, 760)
+        compare(rightVelocity, -leftVelocity)
+        verify(rightVelocity < 0)
+        verify(recent.selectionCardVelocityAt(1, 760, 0) === 0)
+        compare(recent.selectionSignedBlurPixelsAt(1, 760, 0), 0)
+
+        var focal = recent.selectionCardVelocityAt(0.2, 760, 0)
+        var compact = recent.selectionCardVelocityAt(0.2, 160, 0)
+        verify(Math.abs(focal) > Math.abs(compact))
+
+        // A retarget is a new segment from the captured current geometry; its
+        // sign follows the new displacement rather than stale input direction.
+        var rebasedRight = recent.selectionCardVelocityAt(0, 300, 80)
+        var rebasedLeft = recent.selectionCardVelocityAt(0, 300, 520)
+        verify(rebasedRight < 0)
+        verify(rebasedLeft > 0)
+        verify(rebasedRight !== rebasedLeft)
     }
 
     function test_presentation_state_boundaries_are_explicit() {
