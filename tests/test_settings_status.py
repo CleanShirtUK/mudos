@@ -14,6 +14,7 @@ class SettingsStatusTests(unittest.TestCase):
             path = Path(directory) / "settings.sqlite3"
             settings = SettingsStore(path)
             self.assertEqual(settings.get("display.output"), "auto")
+            self.assertTrue(settings.get("launch_overlay_enabled"))
             settings.set("display.output", "auto")
             self.assertEqual(SettingsStore(path).get("display.output"), "auto")
 

@@ -9,7 +9,6 @@ Item {
     property var canonicalCoordinateRoot
     property size canonicalSize: Qt.size(1280, 720)
     property real compactCardWidth: 160 * uiScale
-    property point allGamesSceneOrigin: Qt.point(0, 0)
     property string transitionState: "RESTING"
     property real transitionProgress: 0
     property bool transitionExpanding: true
@@ -126,15 +125,4 @@ Item {
         }
     }
 
-    Timer {
-        interval: 16
-        running: libraryHome.visible
-        repeat: true
-        onTriggered: {
-            var card = cardRepeater.itemAt(0)
-            if (card)
-                libraryHome.allGamesSceneOrigin = card.mapToItem(
-                    libraryHome.canonicalCoordinateRoot, 0, 0)
-        }
-    }
 }

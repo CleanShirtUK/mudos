@@ -22,18 +22,37 @@ Item {
     property bool useExplicitSceneGeometry: false
     property bool identitySampling: false
     property bool transparentOutsideMask: false
+    property var sceneCoordinateRoot
+    property bool useLiveSceneCoordinates: false
+    property point liveSceneOrigin: Qt.point(0, 0)
+    property bool liveSceneOriginInitialized: false
     property point sceneOriginOverride: Qt.point(0, 0)
     property size sceneSizeOverride: Qt.size(0, 0)
     // Developer-only diagnostics; production rendering uses mode 0.
     property int diagnosticMode: 0
     property string debugLabel: ""
     property var debugCoordinateRoot
+    readonly property point mappedSceneOrigin: sceneCoordinateRoot
+        ? mapToItem(sceneCoordinateRoot, 0, 0) : sceneOriginOverride
     readonly property point sceneOrigin: useExplicitSceneGeometry
-        ? sceneOriginOverride
+        ? (useLiveSceneCoordinates && sceneCoordinateRoot
+            ? (liveSceneOriginInitialized ? liveSceneOrigin : mappedSceneOrigin)
+            : sceneOriginOverride)
         : (canonicalTexture ? mapToItem(canonicalTexture, 0, 0) : Qt.point(0, 0))
     readonly property vector2d sceneSize: useExplicitSceneGeometry
         ? Qt.vector2d(sceneSizeOverride.width, sceneSizeOverride.height)
         : Qt.vector2d(width, height)
+
+    function invalidateLiveSceneOrigin() {
+        liveSceneOriginInitialized = false
+    }
+
+    onSceneCoordinateRootChanged: invalidateLiveSceneOrigin()
+    onParentChanged: invalidateLiveSceneOrigin()
+    onXChanged: invalidateLiveSceneOrigin()
+    onYChanged: invalidateLiveSceneOrigin()
+    onWidthChanged: invalidateLiveSceneOrigin()
+    onHeightChanged: invalidateLiveSceneOrigin()
 
     ShaderEffect {
         anchors.fill: parent
@@ -59,6 +78,18 @@ Item {
         property real u_cornerRadius: root.cornerRadius
         property real u_transparentOutsideMask: root.transparentOutsideMask ? 1.0 : 0.0
         property int u_diagnostic: root.diagnosticMode
+    }
+
+    Timer {
+        interval: 16
+        running: root.useLiveSceneCoordinates && root.visible
+            && root.sceneCoordinateRoot !== null
+            && root.sceneCoordinateRoot !== undefined
+        repeat: true
+        onTriggered: {
+            root.liveSceneOrigin = root.mapToItem(root.sceneCoordinateRoot, 0, 0)
+            root.liveSceneOriginInitialized = true
+        }
     }
 
     Timer {

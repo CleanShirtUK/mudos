@@ -18,6 +18,16 @@ class FakeSteamProvider:
 
 
 class CatalogueTests(unittest.TestCase):
+    @staticmethod
+    def _game_statements(store: CatalogueStore) -> list[str]:
+        statements: list[str] = []
+        store.connection.set_trace_callback(
+            lambda statement: statements.append(statement)
+            if any(token in statement.upper() for token in ("INSERT INTO GAMES", "UPDATE GAMES", "DELETE FROM GAMES"))
+            else None
+        )
+        return statements
+
     def test_romm_reconcile_uses_steam_identity_and_preserves_installed_state(self) -> None:
         romm = RommGame(42, "Cuphead", 99, "steam", "Steam", "cuphead.json", ".json", 10, "", False,
                         (RommFile(420, "cuphead.json"),))
@@ -172,6 +182,88 @@ class CatalogueTests(unittest.TestCase):
             recent = store.list_recent()
 
         self.assertEqual([record.game_id for record in recent], ["steam:40800"])
+
+    def test_unchanged_steam_reconcile_has_no_write_or_delta(self) -> None:
+        game = InstalledSteamGame("40800", "Super Meat Boy", "/games/Super Meat Boy", "/games", 123, 0)
+        with tempfile.TemporaryDirectory() as directory:
+            store = CatalogueStore(Path(directory) / "catalogue.sqlite3")
+            provider = FakeSteamProvider([game])
+            store.reconcile_steam(provider)
+            statements = self._game_statements(store)
+            store.reconcile_steam(provider)
+
+        self.assertEqual(store.last_deltas, ())
+        self.assertEqual(store.last_write_counts, {"insert": 0, "update": 0, "delete": 0})
+        self.assertEqual(statements, [])
+
+    def test_provider_change_is_one_update_with_deterministic_delta(self) -> None:
+        original = InstalledSteamGame("40800", "Super Meat Boy", "/games/Super Meat Boy", "/games", 123, 0)
+        changed = InstalledSteamGame("40800", "Super Meat Boy Updated", "/games/Super Meat Boy", "/games", 123, 0)
+        with tempfile.TemporaryDirectory() as directory:
+            store = CatalogueStore(Path(directory) / "catalogue.sqlite3")
+            provider = FakeSteamProvider([original])
+            store.reconcile_steam(provider)
+            statements = self._game_statements(store)
+            provider.games = [changed]
+            store.reconcile_steam(provider)
+
+        self.assertEqual(store.last_write_counts, {"insert": 0, "update": 1, "delete": 0})
+        self.assertEqual(len(store.last_deltas), 1)
+        self.assertEqual(store.last_deltas[0].kind, "update")
+        self.assertEqual(store.last_deltas[0].game_id, "steam:40800")
+        self.assertEqual(store.last_deltas[0].changed_fields,
+                         ("normalized_search_title", "source_title", "title"))
+        self.assertEqual(len(statements), 1)
+        self.assertTrue(statements[0].upper().startswith("UPDATE GAMES"))
+
+    def test_mark_played_reports_one_update(self) -> None:
+        game = InstalledSteamGame("40800", "Super Meat Boy", "/games/Super Meat Boy", "/games", 123, 0)
+        with tempfile.TemporaryDirectory() as directory:
+            store = CatalogueStore(Path(directory) / "catalogue.sqlite3")
+            store.reconcile_steam(FakeSteamProvider([game]))
+            delta = store.mark_played("steam:40800")
+
+        self.assertIsNotNone(delta)
+        self.assertEqual(delta.changed_fields, ("last_played",))
+        self.assertEqual(store.last_write_counts, {"insert": 0, "update": 1, "delete": 0})
+
+    def test_romm_unchanged_reconcile_and_presentation_have_no_writes(self) -> None:
+        romm = RommGame(43, "F-Zero", 1, "snes", "SNES", "F-Zero.sfc", ".sfc", 10, "", False,
+                        genres=("Racing",), release_year=1998)
+        record = CatalogueGame.from_romm(romm)
+        with tempfile.TemporaryDirectory() as directory:
+            store = CatalogueStore(Path(directory) / "catalogue.sqlite3")
+            store.reconcile_romm([record])
+            store.reconcile_romm([record])
+            self.assertEqual(store.last_deltas, ())
+            self.assertEqual(store.last_write_counts, {"insert": 0, "update": 0, "delete": 0})
+            self.assertIsNone(store.apply_romm_presentation(record.game_id, record))
+
+    def test_new_and_unavailable_records_have_one_logical_mutation_each(self) -> None:
+        game = InstalledSteamGame("40800", "Super Meat Boy", "/games/Super Meat Boy", "/games", 123, 0)
+        with tempfile.TemporaryDirectory() as directory:
+            store = CatalogueStore(Path(directory) / "catalogue.sqlite3")
+            store.reconcile_steam(FakeSteamProvider([game]))
+            self.assertEqual(store.last_write_counts, {"insert": 1, "update": 0, "delete": 0})
+            store.reconcile_steam(FakeSteamProvider([]))
+
+        self.assertEqual(store.last_write_counts, {"insert": 0, "update": 1, "delete": 0})
+        self.assertEqual(store.last_deltas[0].changed_fields, ("install_state", "launchable"))
+
+    def test_unchanged_local_reconcile_has_no_write_or_delta(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "roms"
+            (root / "nes").mkdir(parents=True)
+            (root / "nes" / "Mario.nes").write_bytes(b"fixture")
+            store = CatalogueStore(Path(directory) / "catalogue.sqlite3")
+            provider = LocalContentProvider({"nes": Path("/usr/bin/true")})
+            store.reconcile_local(provider, root)
+            statements = self._game_statements(store)
+            store.reconcile_local(provider, root)
+
+        self.assertEqual(store.last_deltas, ())
+        self.assertEqual(store.last_write_counts, {"insert": 0, "update": 0, "delete": 0})
+        self.assertEqual(statements, [])
 
     def test_local_reconcile_normalizes_content_and_removes_stale_records(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

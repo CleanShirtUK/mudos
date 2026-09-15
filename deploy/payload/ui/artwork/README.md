@@ -34,3 +34,10 @@ with artwork in the same filenames and do not require a source-code change.
 Tintable monochrome SVG assets must use white foregrounds on a transparent
 background. Runtime icon color is supplied by `LuluPalette` through the shared
 `MultiEffect` path.
+
+## Compact identity glyphs
+
+`IdentityGlyph.qml` resolves semantic glyphs through
+`IdentityGlyphResolver.js`; screens must not construct these paths themselves.
+Supply future glyphs under `glyphs/<namespace>/<identity>.svg`. Missing files
+remain collapsed by the component and are not replaced with textual symbols.

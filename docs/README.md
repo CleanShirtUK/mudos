@@ -7,6 +7,7 @@ and conditions that were true when they were captured.
 ## Current Orientation
 
 - [Implementation inventory](mudos-implementation-inventory.md): repository-derived map of the current system.
+- [Native catalogue and Recent model](catalogue-model-architecture.md): authoritative model transport, Recent migration, and physical evidence.
 - [Reconciliation backlog](reconciliation-backlog.md): known gaps, deferred work, and superseded material.
 - [Manual validation matrix](manual-validation-matrix.md): evidence-bounded validation status; no interactive tests are implied.
 - [Terminology](terminology.md): scope and naming rules for platform, appliance, host, and deployment.

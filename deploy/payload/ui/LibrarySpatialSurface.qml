@@ -18,7 +18,6 @@ Item {
     property real uiScale: 1
     property real verticalOffset: 0
     property bool surfaceVisible: false
-    property point liveSceneOrigin: Qt.point(0, 0)
 
     readonly property real surfaceX: homeX + (fullscreenX - homeX) * progress
     readonly property real surfaceY: homeY + (fullscreenY - homeY) * progress
@@ -38,15 +37,5 @@ Item {
         canonicalCoordinateRoot: root.canonicalCoordinateRoot
         cornerRadius: 16 * root.uiScale + 12 * root.uiScale * root.progress
         bevelWidthPx: 3 * root.uiScale + 3 * root.uiScale * root.progress
-        liveSceneOrigin: root.liveSceneOrigin
-    }
-
-    Timer {
-        interval: 16
-        running: root.canonicalCoordinateRoot !== null
-            && root.canonicalCoordinateRoot !== undefined
-        repeat: true
-        onTriggered: root.liveSceneOrigin = root.mapToItem(
-            root.canonicalCoordinateRoot, 0, 0)
     }
 }

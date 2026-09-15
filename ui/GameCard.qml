@@ -38,11 +38,11 @@ Rectangle {
     property real presentationContentOpacity: 1
     property real compactTitleOpacity: 1
     property real selectionProgress: focused ? 1 : 0
+    property int playActivationSerial: 0
+    property real playButtonScale: 1
     property real compactEndpointWidth: 0
     property point sceneOriginOverride: canonicalSceneOrigin
     property size sceneSizeOverride: Qt.size(width, height)
-    property point liveSceneOrigin: Qt.point(0, 0)
-    property vector2d livePlayOrigin: Qt.vector2d(0, 0)
     property alias actualGlassSurface: glassSurface
     property bool stackedGlass: false
     // Catalogue cards share the same glass-backed visual surface as navigation cards.
@@ -82,6 +82,28 @@ Rectangle {
     }
     readonly property bool recentFocal: homeCard && focused
     readonly property string presentationGameId: presentationId || (game ? String(game.game_id) : "")
+    onPlayActivationSerialChanged: {
+        if (card.recentFocal)
+            playPressAnimation.restart()
+    }
+
+    SequentialAnimation {
+        id: playPressAnimation
+        NumberAnimation {
+            target: card
+            property: "playButtonScale"
+            to: 0.97
+            duration: 60
+            easing.type: Easing.OutQuint
+        }
+        NumberAnimation {
+            target: card
+            property: "playButtonScale"
+            to: 1
+            duration: 100
+            easing.type: Easing.OutQuint
+        }
+    }
     readonly property var focalMetadataRows: {
         var rows = []
         if (!card.game)
@@ -174,8 +196,9 @@ Rectangle {
         cornerRadius: card.radius
         useExplicitSceneGeometry: card.presentationState === "COMPACT"
             || card.identitySampling || card.liveSceneCoordinates
-        sceneOriginOverride: card.identitySampling || card.liveSceneCoordinates
-            ? card.liveSceneOrigin : card.sceneOriginOverride
+        sceneCoordinateRoot: card.canonicalCoordinateRoot
+        useLiveSceneCoordinates: card.identitySampling || card.liveSceneCoordinates
+        sceneOriginOverride: card.sceneOriginOverride
         sceneSizeOverride: card.identitySampling || card.liveSceneCoordinates
             ? Qt.size(card.width, card.height) : card.sceneSizeOverride
         identitySampling: false
@@ -200,6 +223,10 @@ Rectangle {
         canonicalTexture: card.canonicalTexture
         canonicalSize: card.canonicalSize
         cardOrigin: card.stackedCardOrigin
+        coordinateRoot: card.stackedCoordinateRoot
+        cardCoordinateItem: card
+        playCoordinateItem: playButton
+        useLiveCoordinateMapping: card.stackedGlass
         cardSize: Qt.size(card.stackedCardSize.x, card.stackedCardSize.y)
         cardRadius: 28 * card.uiScale
         cardRefractionPixels: card.stackedCardRefractionPixels
@@ -220,27 +247,6 @@ Rectangle {
         playEdgeLightStrength: card.stackedPlayEdgeLightStrength
         focusBrightness: card.focusBrightness
     }
-
-    Timer {
-        interval: 16
-        running: (card.stackedGlass || card.identitySampling || card.liveSceneCoordinates)
-            && card.canonicalCoordinateRoot
-        repeat: true
-        onTriggered: {
-            if (card.stackedGlass) {
-                var stackedOrigin = card.mapToItem(card.stackedCoordinateRoot, 0, 0)
-                card.stackedPlayOrigin = Qt.vector2d(stackedOrigin.x, stackedOrigin.y)
-            }
-            if (card.identitySampling || card.liveSceneCoordinates)
-                card.liveSceneOrigin = card.actualGlassSurface.mapToItem(
-                    card.canonicalCoordinateRoot, 0, 0)
-            if (card.presentationProgress > 0) {
-                var playOrigin = playButton.mapToItem(card, 0, 0)
-                card.livePlayOrigin = Qt.vector2d(playOrigin.x, playOrigin.y)
-            }
-        }
-    }
-
 
     Rectangle {
         id: artworkFrame
@@ -374,6 +380,7 @@ Rectangle {
             anchors.right: parent.right
             anchors.bottom: parent.bottom
             height: 82 * focalScale * card.uiScale
+            scale: card.playButtonScale
             radius: 20 * focalScale * card.uiScale
             color: card.presentationProgress > 0 && card.presentationProgress < 1
                 ? card.luluPalette.transparent : card.luluPalette.actionSurface
@@ -385,13 +392,18 @@ Rectangle {
                 visible: card.focalChromeOpacity > 0
                 canonicalTexture: card.canonicalTexture
                 canonicalSize: card.canonicalSize
-                cardOrigin: card.canonicalTexture
+                 cardOrigin: card.canonicalTexture
                     ? Qt.vector2d(card.mapToItem(card.canonicalTexture, 0, 0).x,
                                   card.mapToItem(card.canonicalTexture, 0, 0).y)
                     : Qt.vector2d(0, 0)
                 cardSize: Qt.size(card.width, card.height)
                 cardRadius: card.radius
-                 playOrigin: card.livePlayOrigin
+                 coordinateRoot: card.canonicalTexture
+                 playCoordinateRoot: card
+                 cardCoordinateItem: card
+                 playCoordinateItem: playButton
+                 useLiveCoordinateMapping: true
+                 playOrigin: Qt.vector2d(0, 0)
                 cardRefractionPixels: 80 * card.uiScale
                 cardDiffusionPixels: 5 * card.uiScale
                  cardBevelWidth: 3 * card.uiScale

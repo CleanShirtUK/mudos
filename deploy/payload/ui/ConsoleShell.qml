@@ -88,6 +88,8 @@ Window {
     readonly property real selectedDomainY: homeActiveContentOriginY - homeHeadingCardClearance
         - activeHeadingHeight - headingCardGap
     property int recentIndex: 0
+    property string recentSelectedGameId: ""
+    property int playActivationSerial: 0
     property int libraryIndex: 0
     property int collectionIndex: 0
     property var libraryCollections: [{"label": "All Games", "scope": "all"}, {"label": "PC Games", "scope": "pc"}]
@@ -141,7 +143,6 @@ Window {
     }
 
     readonly property string libraryNavigationObject: "library"
-    property var recentGames: []
     property var libraryGames: []
     property var storeAvailableGames: []
     property var storeCategories: [{"label": "All Available", "scope": "all"}]
@@ -152,6 +153,8 @@ Window {
     property string launchTitle: ""
     property string launchGameId: ""
     property string launchToken: ""
+    property bool launchOverlayEnabled: controllerBridge.launchOverlayEnabled === true
+    property bool catalogueRefreshTimerDisabled: true
     property bool launchOverlayVisible: false
     property bool launchOverlayRetired: false
     property bool shellWasLeft: false
@@ -172,6 +175,8 @@ Window {
     property int launchStateApplied: 0
     property int launchStateRank: 0
     property var launchTracePrevious: ({})
+    readonly property bool launchOverlayEffectiveVisible: launchOverlayVisible
+        && launchOverlayEnabled && !launchOverlayRetired
 
     function traceLaunchMutation(name, value, reason) {
         var oldValue = launchTracePrevious[name]
@@ -197,7 +202,9 @@ Window {
     onLaunchLogLinesChanged: traceLaunchMutation("launchLogLines", {length: launchLogLines.length}, "property-change")
 
     readonly property string apiUrl: "http://127.0.0.1:38123"
-    readonly property var visibleRecentGame: recentGames.length ? recentGames[recentIndex] : null
+    readonly property var catalogueRecentModel: recentModel
+    readonly property var visibleRecentGame: recentSelectedGameId !== ""
+        ? catalogueModel.game(recentSelectedGameId) : null
     readonly property var visibleLibraryGame: libraryGames.length ? libraryGames[libraryIndex] : null
     readonly property var selectedGameForOptions: {
         if (space === "library" && libraryFocus === "games")
@@ -228,24 +235,24 @@ Window {
         request.send(body || "")
     }
 
-    function refreshCatalogue() {
-        request("/?scope=recent", "GET", "", function(data) {
-            var selectedId = visibleRecentGame ? visibleRecentGame.game_id : ""
-            recentGames = data
-            var selectedIndex = -1
-            for (var index = 0; index < recentGames.length; index++) {
-                if (recentGames[index].game_id === selectedId) {
-                    selectedIndex = index
-                    break
-                }
-            }
-            if (selectedIndex >= 0)
-                recentIndex = selectedIndex
-            else if (recentIndex >= recentGames.length)
-                recentIndex = Math.max(0, recentGames.length - 1)
-            syncGameOptionsGame()
-        })
-        refreshLibrary()
+    function catalogueContentsEqual(current, incoming) {
+        if (current.length !== incoming.length)
+            return false
+        for (var index = 0; index < current.length; index++) {
+            if (JSON.stringify(current[index]) !== JSON.stringify(incoming[index]))
+                return false
+        }
+        return true
+    }
+
+    function refreshRecentCatalogue(done) {
+        // Legacy request("/?scope=recent"...) remains available to tools,
+        // but production Recent updates now come from recentModel.
+        if (done)
+            done()
+    }
+
+    function refreshPlatformsCatalogue(done) {
         request("/platforms", "GET", "", function(data) {
             var collections = [{"label": "All Games", "scope": "all"}, {"label": "PC Games", "scope": "pc"}]
             for (var index = 0; index < data.length; index++)
@@ -253,7 +260,14 @@ Window {
             libraryCollections = collections
             if (collectionIndex >= libraryCollections.length)
                 collectionIndex = 0
+            if (done)
+                done()
         })
+    }
+
+    function refreshCatalogue() {
+        refreshLibrary()
+        refreshPlatformsCatalogue()
     }
 
     function refreshStore() {
@@ -412,7 +426,7 @@ Window {
         }, "", generation)
     }
 
-    function refreshLibrary() {
+    function refreshLibrary(done) {
         request("/?scope=" + libraryScope, "GET", "", function(data) {
             libraryGames = data
             if (libraryIndex >= libraryGames.length)
@@ -420,13 +434,35 @@ Window {
             libraryFirstVisibleRow = Math.min(libraryFirstVisibleRow,
                                                Math.max(0, Math.floor(Math.max(0, libraryGames.length - 1) / 6) - 1))
             syncGameOptionsGame()
+            if (done)
+                done()
+        })
+    }
+
+    function refreshCataloguePair(group) {
+        if (group === "recent-library") {
+            refreshLibrary()
+        } else if (group === "recent-platforms") {
+            refreshPlatformsCatalogue()
+        } else if (group === "library-platforms") {
+            refreshLibrary()
+            refreshPlatformsCatalogue()
+        }
+    }
+
+    function refreshCatalogueSerial() {
+        refreshLibrary(function() {
+            refreshPlatformsCatalogue()
         })
     }
 
     function syncGameOptionsGame() {
         if (!gameOptionsOpen || gameOptionsGameId === "")
             return
-        var games = recentGames.concat(libraryGames)
+        var games = []
+        if (visibleRecentGame)
+            games.push(visibleRecentGame)
+        games = games.concat(libraryGames)
         for (var index = 0; index < games.length; index++) {
             if (String(games[index].game_id) === gameOptionsGameId) {
                 gameOptionsGame = games[index]
@@ -627,10 +663,10 @@ Window {
     }
 
     function moveRecent(delta) {
-        if (!recentGames.length)
+        if (!recentHome || !recentHome.itemCount)
             return
         console.log("RECENT_NAV", "received", recentIndex, delta)
-        var nextIndex = Math.max(0, Math.min(recentGames.length - 1, recentIndex + delta))
+        var nextIndex = Math.max(0, Math.min(recentHome.itemCount - 1, recentIndex + delta))
         console.log("RECENT_NAV", "requested", delta, "result", nextIndex)
         if (nextIndex === recentIndex)
             return
@@ -723,7 +759,7 @@ Window {
     }
 
     function installGame(game) {
-        if (!game || launchOverlayVisible)
+        if (!game || launchOverlayEffectiveVisible)
             return
         var generation = ++launchGeneration
         launchTitle = game.title
@@ -768,7 +804,7 @@ Window {
     }
 
     function cancelLaunch() {
-        if (!launchOverlayVisible)
+        if (!launchOverlayEffectiveVisible)
             return
         request("/cancel", "POST", "", function(data) {
             launchStatusTimer.stop()
@@ -793,7 +829,7 @@ Window {
                     }
                 }
             }
-            if (key === "action" && value === "back" && root.launchOverlayVisible)
+            if (key === "action" && value === "back" && root.launchOverlayEffectiveVisible)
                 root.cancelLaunch()
             if (key === "action")
                 root.playAudioEvent(root.audioEventForAction(value))
@@ -834,6 +870,7 @@ Window {
         }
 
         if (selectedCategoryIndex === 3) {
+            playActivationSerial++
             launchGame(visibleRecentGame)
         } else if (selectedCategoryIndex === 2) {
             presentationTarget = "library"
@@ -893,7 +930,7 @@ Window {
     }
 
     function back() {
-        if (launchOverlayVisible) {
+        if (launchOverlayEffectiveVisible) {
             cancelLaunch()
             return
         }
@@ -1362,8 +1399,9 @@ Window {
                         y: 0
                         width: recentReveal.width
                         height: root.homeFocalCardHeight
-                        recentGames: root.recentGames
+                        recentModel: root.catalogueRecentModel
                         selectedIndex: root.recentIndex
+                        playActivationSerial: root.playActivationSerial
                         focalCardWidth: root.homeFocalCardWidth
                         focalCardHeight: root.homeFocalCardHeight
                         compactCardWidth: root.homeCompactCardWidth
@@ -1375,7 +1413,12 @@ Window {
                         canonicalTexture: orbitTexture
                         canonicalCoordinateRoot: orbitRenderSource
                         canonicalSize: Qt.size(root.width, root.height)
-                        onLaunchRequested: root.launchGame(game)
+                        onSelectionIndexRequested: root.recentIndex = index
+                        onSelectionGameChanged: {
+                            root.recentSelectedGameId = gameId
+                            root.syncGameOptionsGame()
+                        }
+                        onLaunchRequested: root.launchGame(root.catalogueModel.game(gameId))
                     }
                 }
 
@@ -1708,7 +1751,7 @@ Window {
 
     Rectangle {
         id: launchLogOverlay
-        visible: root.launchOverlayVisible && !root.launchOverlayRetired
+        visible: root.launchOverlayEffectiveVisible
         z: 100
         anchors.fill: parent
         clip: true
@@ -1750,8 +1793,30 @@ Window {
     }
 
     Timer {
-        interval: 2000
+        interval: 100
         running: true
+        repeat: true
+        onTriggered: {
+            var group = controllerBridge.consumeDiagnosticRefreshRequest()
+            if (group === "all")
+                root.refreshCatalogue()
+            else if (group === "recent")
+                root.refreshRecentCatalogue()
+            else if (group === "library")
+                root.refreshLibrary()
+            else if (group === "platforms")
+                root.refreshPlatformsCatalogue()
+            else if (group === "recent-library" || group === "recent-platforms"
+                     || group === "library-platforms")
+                root.refreshCataloguePair(group)
+            else if (group === "serial-all")
+                root.refreshCatalogueSerial()
+        }
+    }
+
+    Timer {
+        interval: 2000
+        running: !root.catalogueRefreshTimerDisabled
         repeat: true
         onTriggered: root.refreshCatalogue()
     }

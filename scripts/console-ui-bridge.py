@@ -154,6 +154,9 @@ from dbus_next import BusType, Variant
 from dbus_next.aio import MessageBus
 from dbus_next.errors import DBusError
 
+from lulu.paths import PATHS
+from lulu.settings import SettingsStore
+
 
 class ConsoleUiBridge:
     def __init__(self, loop: asyncio.AbstractEventLoop, consoled: object, sessiond: object) -> None:
@@ -177,6 +180,17 @@ class ConsoleUiBridge:
     async def list_available_games(self, provider: str) -> list[dict[str, object]]:
         rows = await self.consoled.call_list_available_games(provider)
         return [{key: value.value for key, value in row.items()} for row in rows]
+
+    async def refresh_catalogue(self) -> dict[str, int]:
+        count = await self.consoled.call_refresh()
+        LOGGER.info("manual catalogue refresh completed games=%s", count)
+        return {"games": int(count)}
+
+    async def refresh_catalogue_stages(self, stages: list[str]) -> dict[str, int]:
+        count = await self.consoled.call_refresh_stages(stages)
+        LOGGER.info("manual staged catalogue refresh completed stages=%s games=%s",
+                    ",".join(stages), count)
+        return {"games": int(count)}
 
     def launch_log(self) -> dict[str, object]:
         return self.launch_logs.snapshot()
@@ -323,6 +337,23 @@ class ApiHandler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:
         path = urlparse(self.path).path
+        if path == "/ui-refresh":
+            try:
+                group = parse_qs(urlparse(self.path).query).get("group", ["all"])[0]
+                Path("/tmp/lulu-qml-refresh-request").write_text(group, encoding="ascii")
+                self._respond(200, {"status": "requested", "group": group})
+            except OSError as error:
+                self._respond(409, {"error": str(error)})
+            return
+        if path == "/refresh":
+            try:
+                stages = [item for item in parse_qs(urlparse(self.path).query).get("stage", []) if item]
+                operation = (self.bridge.refresh_catalogue_stages(stages)
+                             if stages else self.bridge.refresh_catalogue())
+                self._respond(200, self.bridge.call(operation, timeout=None))
+            except Exception as error:  # pragma: no cover - live IPC failure path
+                self._respond(409, {"error": str(error) or type(error).__name__})
+            return
         if path.startswith("/metadata/"):
             try:
                 game_id = unquote(path.split("/", 3)[3])
@@ -435,6 +466,10 @@ async def main() -> None:
     Thread(target=server.serve_forever, daemon=True).start()
 
     environment = os.environ.copy()
+    settings = SettingsStore(PATHS.config_root / "settings.sqlite3")
+    environment["LULU_LAUNCH_OVERLAY_ENABLED"] = (
+        "true" if settings.get("launch_overlay_enabled") else "false"
+    )
     qml = os.environ.get("LULU_UI_FILE", "/opt/lulu/ui/ConsoleShell.qml")
     shell = os.environ.get("LULU_SHELL_EXECUTABLE", "/opt/lulu/bin/lulu-shell")
     process = await asyncio.create_subprocess_exec(shell, qml, env=environment)

@@ -1,0 +1,90 @@
+#include "catalogue-model.h"
+#include "recent-model.h"
+
+#include <QSignalSpy>
+#include <QTest>
+
+class CatalogueModelTests final : public QObject
+{
+    Q_OBJECT
+
+private slots:
+    void appliesUpdatesWithoutReset()
+    {
+        CatalogueModel model;
+        QVERIFY(model.loadSnapshot(10, R"([{"game_id":"steam:1","title":"One","last_played":0}])"));
+        QSignalSpy resetSpy(&model, &QAbstractItemModel::modelReset);
+        QSignalSpy changedSpy(&model, &QAbstractItemModel::dataChanged);
+
+        QVERIFY(model.applyChanges(10, R"([{"generation":11,"deltas":[{"kind":"update","game_id":"steam:1","changed_fields":["last_played"],"after":{"game_id":"steam:1","title":"One","last_played":99}}]}])"));
+        QCOMPARE(model.generation(), qulonglong(11));
+        QCOMPARE(model.rowCount(), 1);
+        QCOMPARE(model.game(QStringLiteral("steam:1")).value(QStringLiteral("last_played")).toInt(), 99);
+        QCOMPARE(resetSpy.count(), 0);
+        QCOMPARE(changedSpy.count(), 1);
+        QCOMPARE(changedSpy.at(0).at(2).value<QList<int>>(), QList<int>({CatalogueModel::LastPlayedRole}));
+    }
+
+    void appliesInsertAndRemoveWithStableIdentity()
+    {
+        CatalogueModel model;
+        QVERIFY(model.loadSnapshot(20, R"([{"game_id":"steam:1","title":"One"}])"));
+        QVERIFY(model.applyChanges(20, R"([{"generation":21,"deltas":[{"kind":"insert","game_id":"local:2","after":{"game_id":"local:2","title":"Two"}}]},{"generation":22,"deltas":[{"kind":"remove","game_id":"steam:1","before":{"game_id":"steam:1","title":"One"}}]}])"));
+        QCOMPARE(model.generation(), qulonglong(22));
+        QCOMPARE(model.rowCount(), 1);
+        QVERIFY(model.game(QStringLiteral("steam:1")).isEmpty());
+        QCOMPARE(model.game(QStringLiteral("local:2")).value(QStringLiteral("title")).toString(), QStringLiteral("Two"));
+    }
+
+    void recentMovesOneRowWithoutReset()
+    {
+        CatalogueModel source;
+        RecentModel recent(&source);
+        QVERIFY(source.loadSnapshot(30, R"([
+            {"game_id":"steam:a","title":"A","install_state":"installed","last_played":30},
+            {"game_id":"steam:b","title":"B","install_state":"installed","last_played":20},
+            {"game_id":"steam:c","title":"C","install_state":"installed","last_played":10},
+            {"game_id":"steam:x","title":"X","install_state":"installed","last_played":0}
+        ])"));
+        QSignalSpy resetSpy(&recent, &QAbstractItemModel::modelReset);
+        QSignalSpy movedSpy(&recent, &QAbstractItemModel::rowsMoved);
+        QVERIFY(source.applyChanges(30, R"([{"generation":31,"deltas":[{"kind":"update","game_id":"steam:c","changed_fields":["last_played"],"after":{"game_id":"steam:c","title":"C","install_state":"installed","last_played":40}}]}])"));
+        QCOMPARE(recent.gameIdAt(0), QStringLiteral("steam:c"));
+        QCOMPARE(recent.gameIdAt(1), QStringLiteral("steam:a"));
+        QCOMPARE(recent.gameIdAt(2), QStringLiteral("steam:b"));
+        QCOMPARE(resetSpy.count(), 0);
+        QCOMPARE(movedSpy.count(), 1);
+        QCOMPARE(recent.indexOfGame(QStringLiteral("steam:a")), 1);
+        QCOMPARE(recent.indexOfGame(QStringLiteral("steam:x")), -1);
+    }
+
+    void recentEligibilityInsertsAndRemoves()
+    {
+        CatalogueModel source;
+        RecentModel recent(&source);
+        QVERIFY(source.loadSnapshot(40, R"([{"game_id":"steam:a","title":"A","install_state":"installed","last_played":10},{"game_id":"steam:b","title":"B","install_state":"installed","last_played":0}])"));
+        QSignalSpy insertedSpy(&recent, &QAbstractItemModel::rowsInserted);
+        QSignalSpy removedSpy(&recent, &QAbstractItemModel::rowsRemoved);
+        QVERIFY(source.applyChanges(40, R"([{"generation":41,"deltas":[{"kind":"update","game_id":"steam:b","changed_fields":["last_played"],"after":{"game_id":"steam:b","title":"B","install_state":"installed","last_played":20}}]},{"generation":42,"deltas":[{"kind":"update","game_id":"steam:a","changed_fields":["last_played"],"after":{"game_id":"steam:a","title":"A","install_state":"installed","last_played":0}}]}])"));
+        QCOMPARE(insertedSpy.count(), 1);
+        QCOMPARE(removedSpy.count(), 1);
+        QCOMPARE(recent.rowCount(), 1);
+        QCOMPARE(recent.gameIdAt(0), QStringLiteral("steam:b"));
+    }
+
+    void recentNonOrderingRoleDoesNotMove()
+    {
+        CatalogueModel source;
+        RecentModel recent(&source);
+        QVERIFY(source.loadSnapshot(50, R"([{"game_id":"steam:a","title":"A","install_state":"installed","last_played":10}])"));
+        QSignalSpy movedSpy(&recent, &QAbstractItemModel::rowsMoved);
+        QSignalSpy changedSpy(&recent, &QAbstractItemModel::dataChanged);
+        QVERIFY(source.applyChanges(50, R"([{"generation":51,"deltas":[{"kind":"update","game_id":"steam:a","changed_fields":["title"],"after":{"game_id":"steam:a","title":"Renamed","install_state":"installed","last_played":10}}]}])"));
+        QCOMPARE(movedSpy.count(), 0);
+        QCOMPARE(changedSpy.count(), 1);
+        QCOMPARE(recent.gameIdAt(0), QStringLiteral("steam:a"));
+    }
+};
+
+QTEST_MAIN(CatalogueModelTests)
+#include "catalogue-model-test.moc"
