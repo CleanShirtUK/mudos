@@ -105,7 +105,7 @@ Item {
         showAction: false
         actionLabel: root.install_state === "available"
             ? "Available to Download" : (root.provider === "steam-store"
-                ? "A  Open" : "A  Play")
+                ? "Open" : "Play")
         homeCard: true
         playActivationSerial: root.playActivationSerial
         canonicalTexture: root.canonicalTexture

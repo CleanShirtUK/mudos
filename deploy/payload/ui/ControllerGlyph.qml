@@ -1,27 +1,27 @@
 import QtQuick
+import "ControllerProfiles.js" as ControllerProfiles
 
 Item {
     property string action: "confirm"
+    property string controllerProfile: "xbox"
     property real glyphSize: 22
     property var luluPalette
-    readonly property var glyphFiles: ({
-        confirm: "SteamDeck_A.png",
-        back: "SteamDeck_B.png",
-        previousCollection: "SteamDeck_L1.png",
-        nextCollection: "SteamDeck_R1.png",
-        navigation: "SteamDeck_Dpad.png",
-        up: "SteamDeck_Dpad_Up.png",
-        down: "SteamDeck_Dpad_Down.png",
-        left: "SteamDeck_Dpad_Left.png",
-        right: "SteamDeck_Dpad_Right.png"
-    })
+    property var typography
+    property FontLoader controllerFont: FontLoader {
+        source: "fonts/Config-Glyphs.otf"
+    }
+    readonly property string glyphText: ControllerProfiles.glyph(
+        controllerProfile, action)
+    readonly property string glyphFile: ControllerProfiles.glyphFile(
+        controllerProfile, action)
     width: glyphSize
     height: glyphSize
 
     Image {
         anchors.fill: parent
-        visible: parent.action !== "options"
-        source: "controllerglyphs/" + (glyphFiles[parent.action] || glyphFiles.confirm)
+        visible: parent.controllerFont.status !== FontLoader.Ready
+            && parent.action !== "options"
+        source: "controllerglyphs/" + parent.glyphFile
         sourceSize: Qt.size(parent.glyphSize, parent.glyphSize)
         fillMode: Image.PreserveAspectFit
         smooth: true
@@ -29,13 +29,23 @@ Item {
 
     Text {
         anchors.fill: parent
-        visible: parent.action === "options"
-        text: "X"
+        visible: parent.controllerFont.status === FontLoader.Ready
+            && parent.action !== "options"
+        text: parent.glyphText
         color: parent.luluPalette.primaryText
-        font.family: "JetBrains Mono"
-        font.bold: true
-        font.pixelSize: parent.glyphSize * 0.8
+        font.family: parent.controllerFont.name
+        font.pixelSize: parent.glyphSize
         horizontalAlignment: Text.AlignHCenter
         verticalAlignment: Text.AlignVCenter
+        renderType: Text.NativeRendering
+    }
+
+    MudosIcon {
+        anchors.fill: parent
+        visible: parent.action === "options"
+        name: "settings"
+        typography: parent.typography
+        semanticColor: parent.luluPalette.primaryText
+        iconSize: parent.glyphSize * 0.8
     }
 }

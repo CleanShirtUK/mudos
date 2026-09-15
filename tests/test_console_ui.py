@@ -148,11 +148,13 @@ class ConsoleUiTests(unittest.TestCase):
 
     def test_typography_uses_central_semantic_families(self) -> None:
         typography = (ROOT / "ui" / "Typography.qml").read_text()
-        self.assertIn('displayFamily: "JetBrains Mono"', typography)
+        self.assertIn("FontLoader", typography)
+        self.assertIn("regularFont.name", typography)
+        self.assertIn("iconFamily: bundledFamily", typography)
         self.assertIn("displayWeight: Font.Black", typography)
-        self.assertIn('majorHeadingFamily: "JetBrains Mono"', typography)
+        self.assertIn("majorHeadingFamily: bundledFamily", typography)
         self.assertIn("majorHeadingWeight: Font.Black", typography)
-        self.assertIn('interfaceFamily: "JetBrains Mono"', typography)
+        self.assertIn("interfaceFamily: bundledFamily", typography)
         palette = (ROOT / "ui" / "LuluPalette.qml").read_text()
         for role in ("guideSurface", "guideBorder", "guideItemSurface", "guideSelectedText",
                      "overlayBackdrop", "overlaySurface", "launchOverlaySurface"):
@@ -160,6 +162,26 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertIn("function size(role, value)", typography)
         for filename in ("ConsoleShell.qml", "GameCard.qml", "LibraryHome.qml", "LibrarySpace.qml", "PlaceholderHome.qml", "RecentHome.qml"):
             self.assertIn("typography", (ROOT / "ui" / filename).read_text())
+
+    def test_semantic_asset_and_controller_boundaries(self) -> None:
+        catalog = (ROOT / "ui" / "MudosAssetCatalog.js").read_text()
+        profiles = (ROOT / "ui" / "ControllerProfiles.js").read_text()
+        icon = (ROOT / "ui" / "MudosIcon.qml").read_text()
+        controller = (ROOT / "ui" / "ControllerGlyph.qml").read_text()
+        self.assertIn("wifi:", catalog)
+        self.assertIn("function platformArtwork", catalog)
+        self.assertIn("function suppliedArtwork", catalog)
+        self.assertIn("function physicalControl", profiles)
+        self.assertIn("function glyphFile", profiles)
+        self.assertIn("function glyph(profile, action)", profiles)
+        self.assertIn('confirm: "a"', profiles)
+        self.assertIn('previousCollection: "leftBumper"', profiles)
+        self.assertIn('a: "\\u0100"', profiles)
+        self.assertIn('source: "fonts/Config-Glyphs.otf"', controller)
+        self.assertIn('name: "settings"', controller)
+        self.assertIn("MudosAssetCatalog.icon", icon)
+        self.assertNotIn('font.family: "JetBrains Mono"', controller)
+        self.assertIn("controllerProfile", controller)
 
     def test_ui_palette_is_semantic_and_centralized(self) -> None:
         palette = (ROOT / "ui" / "LuluPalette.qml").read_text()
@@ -204,7 +226,7 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertIn("property url artworkSource", navigation_card)
         self.assertIn('property string artworkRole: "icon"', navigation_card)
         self.assertIn("artworkRole: root.artworkRole", navigation_card)
-        self.assertIn('artworkSource: Qt.resolvedUrl("artwork/store.png")', store)
+        self.assertIn('artworkSource: Qt.resolvedUrl(MudosAssetCatalog.suppliedArtwork("store"))', store)
         self.assertIn('artworkRole: "raster"', store)
         self.assertIn("function categoryArtwork(category)", (ROOT / "ui" / "LibraryHome.qml").read_text())
         self.assertIn("function categoryArtwork(category)", system)
@@ -263,8 +285,12 @@ class ConsoleUiTests(unittest.TestCase):
             "system-bluetooth.svg", "system-controllers.svg", "system-storage.svg",
             "system-system.svg", "system-lulu.svg", "README.md",
         }
-        self.assertEqual({path.name for path in artwork.iterdir()}, expected)
-        for path in artwork.iterdir():
+        self.assertTrue(expected.issubset({path.name for path in artwork.iterdir()}))
+        self.assertTrue((artwork / "navigation").is_dir())
+        self.assertTrue((artwork / "glyphs" / "metadata").is_dir())
+        for path in artwork.rglob("*"):
+            if not path.is_file():
+                continue
             self.assertGreater(path.stat().st_size, 0)
 
     def test_home_uses_one_fixed_content_stage_and_compact_library_object(self) -> None:
@@ -314,8 +340,13 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertIn("height: libraryHome.cardHeight", library_home)
         self.assertIn("width: libraryHome.compactCardWidth", library_home)
         self.assertIn('artworkSource: Qt.resolvedUrl("artwork/" + libraryHome.categoryArtwork(modelData.scope)[0])', library_home)
-        self.assertIn('"platform:nes": ["platform-nes.png", "raster"]', library_home)
-        self.assertIn('"all": ["platform-all.svg", "icon"]', library_home)
+        catalog = (ROOT / "ui" / "MudosAssetCatalog.js").read_text()
+        self.assertIn('nes: ["platforms/romm/nes.svg", "raster"]', catalog)
+        self.assertIn('all: ["platforms/romm/default.ico", "raster"]', catalog)
+        for asset in ("nes.svg", "snes.svg", "genesis.svg", "gb.svg", "gbc.svg",
+                      "gba.svg", "nds.svg", "ngc.svg", "wii.svg", "switch.svg",
+                      "psx.svg", "ps2.svg", "ps3.svg", "default.ico"):
+            self.assertTrue((ROOT / "ui/artwork/platforms/romm" / asset).is_file())
         self.assertIn('artworkRole: libraryHome.categoryArtwork(modelData.scope)[1]', library_home)
         self.assertIn("canonicalCoordinateRoot", library_home)
         self.assertNotIn("allGamesSceneOrigin", library_home)
@@ -419,7 +450,7 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertIn("property real compactTitleOpacity", game_card)
         self.assertIn("card.compactEndpointWidth > 0", game_card)
         self.assertIn('"Last Played  " + Qt.formatDateTime', game_card)
-        self.assertIn('text: "A  Play"', game_card)
+        self.assertIn('text: card.actionLabel || "Play"', game_card)
         self.assertIn("maximumLineCount: 2", game_card)
         self.assertIn("wrapMode: Text.WordWrap", game_card)
         self.assertIn("property real artworkRadius: card.mix", game_card)

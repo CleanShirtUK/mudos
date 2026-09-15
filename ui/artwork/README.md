@@ -31,6 +31,10 @@ directory. Keep the filenames unchanged when supplying artwork.
 The checked-in SVGs are harmless placeholders. They can be replaced directly
 with artwork in the same filenames and do not require a source-code change.
 
+Platform identity is now resolved through `MudosAssetCatalog.js` and the
+curated RomM set under `platforms/romm/`. The older platform portraits remain
+for review/backward compatibility and are not the canonical platform lookup.
+
 Tintable monochrome SVG assets must use white foregrounds on a transparent
 background. Runtime icon color is supplied by `LuluPalette` through the shared
 `MultiEffect` path.

@@ -3,7 +3,7 @@ import QtQuick
 Item {
     id: root
     property string displayTitle: ""
-    property string symbolicArtwork: "[ ]"
+    property string symbolicArtwork: ""
     property url artworkSource: ""
     property string artworkRole: "icon"
     property bool focused: false

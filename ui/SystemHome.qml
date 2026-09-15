@@ -1,4 +1,5 @@
 import QtQuick
+import "MudosAssetCatalog.js" as MudosAssetCatalog
 
 Item {
     id: root
@@ -22,7 +23,12 @@ Item {
     readonly property bool selectionMotionActive: selectionAnimation.running
 
     function categoryArtwork(category) {
-        return Qt.resolvedUrl("artwork/system-" + category.toLowerCase() + ".svg")
+        var key = String(category || "").toLowerCase()
+        var supplied = ["audio", "bluetooth", "controllers", "display", "fallback",
+                        "lulu", "network", "storage", "store", "system"]
+        return Qt.resolvedUrl(supplied.indexOf(key) >= 0
+                              ? MudosAssetCatalog.suppliedArtwork(key)
+                              : MudosAssetCatalog.systemArtwork(category))
     }
 
     function railX(relativeIndex) {

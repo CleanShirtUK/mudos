@@ -1,4 +1,5 @@
 import QtQuick
+import "MudosAssetCatalog.js" as MudosAssetCatalog
 
 Item {
     id: librarySpace
@@ -23,7 +24,7 @@ Item {
     property string sectionTitle: ""
     property string emptyText: "No installed games"
     property string specialCardId: ""
-    property string actionLabel: "A  Play"
+    property string actionLabel: "Play"
     readonly property string navigationObject: "library"
     readonly property real surfaceMargin: 44 * uiScale
     readonly property real gridGap: 14 * uiScale
@@ -319,7 +320,8 @@ Item {
                     displayTitle: gameData.title
                     symbolicArtwork: ""
                     artworkRole: "raster"
-                    artworkSource: gameData.artwork_url || Qt.resolvedUrl("artwork/store.png")
+                    artworkSource: gameData.artwork_url
+                        || Qt.resolvedUrl(MudosAssetCatalog.suppliedArtwork("store"))
                     focused: index === librarySpace.selectedIndex && !librarySpace.collectionFocus
                     uiScale: librarySpace.uiScale
                     typography: librarySpace.typography

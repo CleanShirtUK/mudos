@@ -198,7 +198,7 @@ Item {
 
             Item { width: 1; height: 1 }
             Text {
-                text: options.view === "search" ? "A  Choose    B  Back" : "A  Select    B  Back"
+                        text: options.view === "search" ? "Choose    Back" : "Select    Back"
                 color: options.luluPalette.secondaryText
                 font.family: options.typography.interfaceFamily
                 font.pixelSize: options.typography.size("hint", 14)

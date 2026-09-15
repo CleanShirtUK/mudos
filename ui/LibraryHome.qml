@@ -1,4 +1,5 @@
 import QtQuick
+import "MudosAssetCatalog.js" as MudosAssetCatalog
 
 Item {
     id: libraryHome
@@ -29,24 +30,7 @@ Item {
     signal openRequested(int index)
 
     function categoryArtwork(category) {
-        var artwork = {
-            "all": ["platform-all.svg", "icon"],
-            "pc": ["platform-pc.png", "raster"],
-            "platform:nes": ["platform-nes.png", "raster"],
-            "platform:snes": ["platform-snes.png", "raster"],
-            "platform:genesis": ["platform-genesis.png", "raster"],
-            "platform:gb": ["platform-gb.png", "raster"],
-            "platform:gbc": ["platform-gbc.png", "raster"],
-            "platform:gba": ["platform-gba.png", "raster"],
-            "platform:nds": ["platform-nds.png", "raster"],
-            "platform:gamecube": ["platform-gamecube.png", "raster"],
-            "platform:wii": ["platform-wii.png", "raster"],
-            "platform:switch": ["platform-switch.png", "raster"],
-            "platform:ps1": ["platform-ps1.png", "raster"],
-            "platform:ps2": ["platform-ps2.png", "raster"],
-            "platform:ps3": ["platform-ps3.png", "raster"]
-        }
-        return artwork[category] || artwork.all
+        return MudosAssetCatalog.platformArtwork(category)
     }
 
     function railX(relativeIndex) {

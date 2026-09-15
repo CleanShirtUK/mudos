@@ -12,6 +12,7 @@ Row {
         action: parent.action
         glyphSize: 20 * parent.uiScale
         luluPalette: parent.luluPalette
+        typography: parent.typography
         anchors.verticalCenter: parent.verticalCenter
     }
 

@@ -43,6 +43,12 @@ class IdentityGlyphTests(unittest.TestCase):
         self.assertIn('PAYLOAD_DIRS = ("ui",', release)
         self.assertTrue((ROOT / "ui").is_dir())
 
+    def test_supplied_metadata_assets_are_normalized(self):
+        metadata = ROOT / "ui/artwork/glyphs/metadata"
+        for name in ("genres.svg", "last-played.svg", "local-multiplayer.svg",
+                     "online-multiplayer.svg", "protondb.svg"):
+            self.assertTrue((metadata / name).is_file())
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Effects
+import "MudosAssetCatalog.js" as MudosAssetCatalog
 
 Rectangle {
     id: card
@@ -20,11 +21,11 @@ Rectangle {
     property var typography
     property var luluPalette
     property string displayTitle: ""
-    property string actionLabel: "A  Play"
+    property string actionLabel: "Play"
     property url artworkSource: ""
     property string artworkRole: "raster"
     // The supplied fallback asset belongs at this normal artwork-pipeline path.
-    property url fallbackArtworkSource: Qt.resolvedUrl("artwork/fallback.jpg")
+    property url fallbackArtworkSource: Qt.resolvedUrl(MudosAssetCatalog.suppliedArtwork("fallback"))
     property string presentationId: ""
     property string symbolicArtwork: ""
     property bool identitySampling: false
@@ -422,8 +423,7 @@ Rectangle {
 
             Text {
                 anchors.centerIn: parent
-                 // text: "A  Play" is the default action label.
-                 text: card.actionLabel || "A  Play"
+                 text: card.actionLabel || "Play"
                 color: card.focusedColor(card.luluPalette.actionText)
                 font.family: card.typography ? card.typography.interfaceFamily : "JetBrains Mono"
                 font.pixelSize: card.typography ? card.typography.size("control", 28 * focalScale) : 28 * focalScale * card.uiScale

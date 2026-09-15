@@ -1,4 +1,5 @@
 import QtQuick
+import "MudosAssetCatalog.js" as MudosAssetCatalog
 
 Item {
     id: root
@@ -46,7 +47,7 @@ Item {
         if (root.cardWidth === 0) {
             if (scope === "all")
                 result.push({game_id: "steam-store", title: "Steam Store",
-                             artwork_url: Qt.resolvedUrl("artwork/store.png"),
+                             artwork_url: Qt.resolvedUrl(MudosAssetCatalog.suppliedArtwork("store")),
                              artwork_suppressed: false, provider: "steam-store"})
         }
         return result
@@ -137,7 +138,7 @@ Item {
         displayTitle: "Store"
         symbolicArtwork: ""
         artworkRole: "raster"
-        artworkSource: Qt.resolvedUrl("artwork/store.png")
+        artworkSource: Qt.resolvedUrl(MudosAssetCatalog.suppliedArtwork("store"))
         uiScale: root.uiScale
         typography: root.typography
         luluPalette: root.luluPalette
