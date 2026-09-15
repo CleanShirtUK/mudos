@@ -102,6 +102,8 @@ Window {
     property int libraryFirstVisibleRow: 0
     property string libraryTransitionState: "RESTING"
     property bool libraryTransitioning: false
+    property bool storeTransitioning: false
+    property string presentationTarget: "library"
     property real libraryTransitionProgress: 0
     property bool libraryTransitionExpanding: true
     property bool libraryHandoffPending: false
@@ -416,7 +418,7 @@ Window {
             if (libraryIndex >= libraryGames.length)
                 libraryIndex = Math.max(0, libraryGames.length - 1)
             libraryFirstVisibleRow = Math.min(libraryFirstVisibleRow,
-                                              Math.max(0, Math.floor(Math.max(0, libraryGames.length - 1) / 7) - 1))
+                                               Math.max(0, Math.floor(Math.max(0, libraryGames.length - 1) / 6) - 1))
             syncGameOptionsGame()
         })
     }
@@ -652,12 +654,12 @@ Window {
     function moveLibraryVertical(delta) {
         if (!libraryGames.length)
             return
-        var column = libraryIndex % 7
-        var row = Math.floor(libraryIndex / 7) + delta
+        var column = libraryIndex % 6
+        var row = Math.floor(libraryIndex / 6) + delta
         if (row < 0)
             return
-        var target = row * 7 + column
-        var rowStart = row * 7
+        var target = row * 6 + column
+        var rowStart = row * 6
         if (rowStart >= libraryGames.length)
             return
         libraryIndex = Math.min(target, libraryGames.length - 1)
@@ -669,7 +671,6 @@ Window {
 
     function moveLibraryCollection(delta) {
         collectionIndex = Math.max(0, Math.min(libraryCollections.length - 1, collectionIndex + delta))
-        refreshLibrary()
     }
 
     function moveStoreCategory(delta) {
@@ -835,6 +836,7 @@ Window {
         if (selectedCategoryIndex === 3) {
             launchGame(visibleRecentGame)
         } else if (selectedCategoryIndex === 2) {
+            presentationTarget = "library"
             libraryTransitionState = "ACTIVATING"
             libraryTransitioning = true
             libraryTransitionExpanding = true
@@ -850,7 +852,16 @@ Window {
         } else if (selectedCategoryIndex === 0) {
             openSystemCategory(systemHomeRailRef ? systemHomeRailRef.selectedIndex : systemCategoryIndex)
         } else if (selectedCategoryIndex === 1) {
-            space = "store"
+            presentationTarget = "store"
+            storeTransitioning = true
+            libraryTransitionExpanding = true
+            libraryTransitionProgress = 0
+            libraryContentOpacity = 0
+            libraryTransitionAnimation.restart()
+            libraryContentFadeOut.stop()
+            libraryContentFadeIn.restart()
+            homeFadeIn.stop()
+            homeFadeOut.restart()
             storeHomeRef.categoryIndex = 0
             storeHomeRef.selectedIndex = 0
             refreshStore()
@@ -918,7 +929,13 @@ Window {
             libraryFocus = "games"
             message = ""
         } else if (space === "store") {
-            space = "home"
+            presentationTarget = "store"
+            storeTransitioning = true
+            libraryTransitionExpanding = false
+            libraryTransitionProgress = 1
+            libraryTransitionAnimation.restart()
+            libraryContentFadeOut.restart()
+            homeFadeIn.restart()
             message = ""
         } else {
             message = ""
@@ -935,12 +952,15 @@ Window {
         onStopped: {
             if (root.libraryTransitionExpanding) {
                 root.libraryContentOpacity = 1
-                root.space = "library"
+                root.space = root.presentationTarget
                 root.libraryTransitioning = false
+                root.storeTransitioning = false
                 root.libraryTransitionState = "EXPANDED"
             } else {
                 root.libraryContentOpacity = 0
                 root.space = "home"
+                root.libraryTransitioning = false
+                root.storeTransitioning = false
                 root.libraryHandoffPending = true
                 handoffTimer.restart()
             }
@@ -1256,24 +1276,25 @@ Window {
             canonicalTexture: orbitTexture
             canonicalCoordinateRoot: orbitRenderSource
             canonicalSize: Qt.size(root.width, root.height)
-            progress: root.libraryTransitionProgress
+             progress: root.libraryTransitionProgress
             homeX: root.homeContentRailX
             homeY: root.homeActiveContentOriginY
             homeWidth: root.compactCardWidth
             homeHeight: root.libraryHomePresentationHeight
             fullscreenX: 76 * root.uiScale
-            fullscreenY: 64 * root.uiScale
+            fullscreenY: 32 * root.uiScale
             fullscreenWidth: root.width - 152 * root.uiScale
-            fullscreenHeight: root.height - 128 * root.uiScale
+            fullscreenHeight: root.height - 48 * root.uiScale
             uiScale: root.uiScale
             verticalOffset: root.homeCategoryOffset(2)
-             surfaceVisible: root.space === "library" || root.libraryTransitioning
+             surfaceVisible: root.space === "library" || root.space === "store"
+                 || root.libraryTransitioning || root.storeTransitioning
         }
 
         Item {
             id: homeScene
             anchors.fill: parent
-            visible: root.space === "home" || root.libraryTransitioning
+            visible: root.space === "home" || root.libraryTransitioning || root.storeTransitioning
             opacity: root.homeContentOpacity
             Item {
                 x: root.homeCategoryRailX
@@ -1487,17 +1508,17 @@ Window {
              canonicalSize: Qt.size(root.width, root.height)
              firstVisibleRow: root.libraryFirstVisibleRow
              contentOpacity: root.libraryContentOpacity
-            onCollectionChanged: {
-                root.collectionIndex = index
-                root.refreshLibrary()
-            }
+             onCollectionChanged: {
+                 root.collectionIndex = index
+             }
+             onCategoryContentHidden: root.refreshLibrary()
              onLaunchRequested: root.launchGame(game)
          }
 
         StoreHome {
             id: storeHome
             anchors.fill: parent
-            visible: root.space === "store"
+            visible: root.space === "store" || root.storeTransitioning
             availableGames: root.storeAvailableGames
             categories: root.storeCategories
             focalCardWidth: root.homeFocalCardWidth
@@ -1510,6 +1531,7 @@ Window {
             canonicalCoordinateRoot: orbitRenderSource
             canonicalSize: Qt.size(root.width, root.height)
             errorMessage: root.storeError
+            contentOpacity: root.libraryContentOpacity
             onSteamStoreRequested: root.openSteamStore()
             onInstallGameRequested: root.installGame(game)
             Component.onCompleted: root.storeHomeRef = storeHome

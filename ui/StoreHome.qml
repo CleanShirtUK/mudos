@@ -7,7 +7,9 @@ Item {
     property var availableGames: []
     property var categories: [{"label": "All Available", "scope": "all"}]
     property string errorMessage: ""
+    property real contentOpacity: 1
     property int categoryIndex: 0
+    property int displayCategoryIndex: 0
     property int selectedIndex: 0
     property int firstVisibleRow: 0
     property real focalCardWidth: 760
@@ -23,7 +25,8 @@ Item {
     signal installGameRequested(var game)
 
     function filteredGames() {
-        var scope = categories.length > categoryIndex ? categories[categoryIndex].scope : "all"
+        var scope = categories.length > displayCategoryIndex
+            ? categories[displayCategoryIndex].scope : "all"
         var result = []
         var seen = ({})
         for (var index = 0; index < availableGames.length; index++) {
@@ -52,7 +55,7 @@ Item {
     // Keep the binding dependent on the async model/category assignments;
     // dependencies hidden inside filteredGames() are not reliably tracked by
     // the QML binding compiler.
-    readonly property var displayGames: availableGames.length + categories.length + categoryIndex >= 0
+    readonly property var displayGames: availableGames.length + categories.length + displayCategoryIndex >= 0
         ? filteredGames() : []
 
     function moveCategory(delta) {
@@ -70,11 +73,11 @@ Item {
     function moveVertical(delta) {
         if (!displayGames.length)
             return
-        var column = selectedIndex % 7
-        var row = Math.floor(selectedIndex / 7) + delta
-        if (row < 0 || row * 7 >= displayGames.length)
+        var column = selectedIndex % 6
+        var row = Math.floor(selectedIndex / 6) + delta
+        if (row < 0 || row * 6 >= displayGames.length)
             return
-        selectedIndex = Math.min(row * 7 + column, displayGames.length - 1)
+        selectedIndex = Math.min(row * 6 + column, displayGames.length - 1)
         if (row >= firstVisibleRow + 2)
             firstVisibleRow = row - 1
         else if (row < firstVisibleRow)
@@ -97,8 +100,10 @@ Item {
     }
 
     onAvailableGamesChanged: selectedIndex = Math.min(selectedIndex, Math.max(0, displayGames.length - 1))
-    onCategoriesChanged: categoryIndex = Math.min(categoryIndex, Math.max(0, categories.length - 1))
-
+    onCategoriesChanged: {
+        categoryIndex = Math.min(categoryIndex, Math.max(0, categories.length - 1))
+        displayCategoryIndex = Math.min(displayCategoryIndex, Math.max(0, categories.length - 1))
+    }
     LibrarySpace {
         anchors.fill: parent
         visible: root.cardWidth === 0
@@ -109,8 +114,8 @@ Item {
         collections: root.categories
         collectionFocus: false
         headingText: "STORE"
-        sectionTitle: "Available to Download"
         emptyText: root.errorMessage !== "" ? root.errorMessage : "No games available"
+        contentOpacity: root.contentOpacity
         specialCardId: "steam-store"
         actionLabel: "Download"
         uiScale: root.uiScale
@@ -122,6 +127,7 @@ Item {
         onCollectionChanged: root.categoryIndex = index
         onLaunchRequested: root.activateGame(game)
         onSpecialActivated: root.steamStoreRequested()
+        onCategoryContentHidden: root.displayCategoryIndex = root.categoryIndex
     }
 
     NavigationCard {

@@ -21,6 +21,7 @@ Item {
     property real cornerRadius: 0
     property bool useExplicitSceneGeometry: false
     property bool identitySampling: false
+    property bool transparentOutsideMask: false
     property point sceneOriginOverride: Qt.point(0, 0)
     property size sceneSizeOverride: Qt.size(0, 0)
     // Developer-only diagnostics; production rendering uses mode 0.
@@ -56,6 +57,7 @@ Item {
         property real u_edgeLightStrength: root.edgeLightStrength
         property vector2d u_edgeLightDirection: root.edgeLightDirection
         property real u_cornerRadius: root.cornerRadius
+        property real u_transparentOutsideMask: root.transparentOutsideMask ? 1.0 : 0.0
         property int u_diagnostic: root.diagnosticMode
     }
 

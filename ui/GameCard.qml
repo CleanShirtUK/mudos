@@ -62,6 +62,24 @@ Rectangle {
     property real stackedPlayBulgeStrength: 20
     property real stackedPlayBevelWidth: 0
     property real stackedPlayEdgeLightStrength: 0
+    Behavior on selectionProgress {
+        NumberAnimation {
+            duration: 180
+            easing.type: Easing.OutQuint
+        }
+    }
+    Behavior on focusBrightness {
+        NumberAnimation {
+            duration: 180
+            easing.type: Easing.OutQuint
+        }
+    }
+    Behavior on scale {
+        NumberAnimation {
+            duration: 180
+            easing.type: Easing.OutQuint
+        }
+    }
     readonly property bool recentFocal: homeCard && focused
     readonly property string presentationGameId: presentationId || (game ? String(game.game_id) : "")
     readonly property url displayedArtworkSource: String(card.artworkSource).length > 0
@@ -118,12 +136,12 @@ Rectangle {
     NavigationCardSurface {
         anchors.fill: parent
         visible: card.catalogueCard
+        transparentOutsideMask: card.catalogueCard
         canonicalTexture: card.canonicalTexture
         canonicalSize: card.canonicalSize
         canonicalCoordinateRoot: card.canonicalCoordinateRoot
         uiScale: card.uiScale
     }
-
     GlassSurface {
         id: glassSurface
         anchors.fill: parent
@@ -225,6 +243,7 @@ Rectangle {
             source: card.displayedArtworkSource
             fillMode: Image.PreserveAspectFit
             asynchronous: true
+            retainWhileLoading: false
             visible: !card.iconArtwork
         }
 
@@ -258,6 +277,7 @@ Rectangle {
             source: card.displayedArtworkSource
             fillMode: Image.PreserveAspectFit
             asynchronous: true
+            retainWhileLoading: false
             visible: card.iconArtwork
         }
 

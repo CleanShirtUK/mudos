@@ -6,7 +6,6 @@ GlassSurface {
     property var canonicalCoordinateRoot
     property point liveSceneOrigin: Qt.point(0, 0)
     property real uiScale: 1
-
     cornerRadius: 16 * uiScale
     useExplicitSceneGeometry: true
     sceneOriginOverride: root.liveSceneOrigin

@@ -21,6 +21,7 @@ layout(std140, binding = 0) uniform buf {
     float u_sceneLightPixels;
     float u_edgeLightStrength;
     vec2 u_edgeLightDirection;
+    float u_transparentOutsideMask;
     int u_diagnostic;
 };
 layout(binding = 1) uniform sampler2D source;
@@ -201,5 +202,8 @@ void main()
 
     float antialiasWidth = max(fwidth(boundaryDistance), 0.5);
     float roundedMask = 1.0 - smoothstep(-antialiasWidth, antialiasWidth, boundaryDistance);
-    fragColor = mix(canonicalBackdrop, fragColor, roundedMask);
+    if (u_transparentOutsideMask > 0.5)
+        fragColor = vec4(fragColor.rgb * roundedMask, fragColor.a * roundedMask);
+    else
+        fragColor = mix(canonicalBackdrop, fragColor, roundedMask);
 }
