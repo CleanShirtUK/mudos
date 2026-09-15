@@ -1520,20 +1520,45 @@ Window {
                 Repeater {
                     id: homeCategoryTitles
                     model: root.domains
-                    delegate: Text {
+                    delegate: Item {
                         required property int index
+                        readonly property real titleBlurPadding: presentationCoordinator
+                            ? presentationCoordinator.motionBlurMaxPixels : 64
+                        width: titleText.width
+                        height: titleText.height
                         x: presentationCoordinator.titleOffset(index,
-                            root.homeCategoryRailX, width)
+                            root.homeCategoryRailX, titleText.width)
                         y: root.titleRailChildY(index)
                         visible: true
-                        text: root.domains[index].toUpperCase()
-                        color: luluPalette.headingAccent
-                        font.family: typography.displayFamily
-                        font.weight: typography.displayWeight
-                        font.pixelSize: root.homeCategoryFontSize
-                        font.letterSpacing: 5 * root.uiScale
-                        opacity: 1
-                        scale: 1
+
+                        Text {
+                            id: titleText
+                            width: implicitWidth
+                            height: implicitHeight
+                            text: root.domains[index].toUpperCase()
+                            color: luluPalette.headingAccent
+                            font.family: typography.displayFamily
+                            font.weight: typography.displayWeight
+                            font.pixelSize: root.homeCategoryFontSize
+                            font.letterSpacing: 5 * root.uiScale
+                            opacity: 1
+                            scale: 1
+                        }
+
+                        DirectionalMotionBlur {
+                            id: titleMotionBlur
+                            x: -titleBlurPadding
+                            y: -titleBlurPadding
+                            width: titleText.width + 2 * titleBlurPadding
+                            height: titleText.height + 2 * titleBlurPadding
+                            sourceItem: titleText
+                            sourceRect: Qt.rect(-titleBlurPadding, -titleBlurPadding,
+                                titleText.width + 2 * titleBlurPadding,
+                                titleText.height + 2 * titleBlurPadding)
+                            blurPixels: presentationCoordinator
+                                ? presentationCoordinator.titleSignedBlurPixels(index,
+                                    root.homeCategoryRailX, titleText.width) : 0
+                        }
                     }
                 }
             }

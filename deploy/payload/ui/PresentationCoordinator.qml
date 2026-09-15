@@ -79,6 +79,26 @@ Item {
         return 1 + titleOvershoot * (1 - correction)
     }
 
+    // Derivative of titleTravelProgress with respect to its local 0..1 time.
+    // It intentionally follows the accepted position curve exactly; no timer
+    // sampling or alternate easing is introduced for blur.
+    function titleTravelVelocityAt(index) {
+        var local = (startupClock - titleStartAt - index * titleStagger) / titleDuration
+        if (local <= 0 || local >= 1)
+            return 0
+        if (Math.abs(local - titleApproachFraction) < 0.000001)
+            return 0
+        if (local < titleApproachFraction) {
+            var approachLocal = local / titleApproachFraction
+            return (1 + titleOvershoot) * 4
+                * Math.pow(1 - approachLocal, 3) / titleApproachFraction
+        }
+        var settleLocal = (local - titleApproachFraction)
+            / (1 - titleApproachFraction)
+        return -titleOvershoot * 2.3
+            * Math.pow(1 - settleLocal, 1.3) / (1 - titleApproachFraction)
+    }
+
     function titleStartupTranslation(restingLeft, titleWidth) {
         return -(restingLeft + titleWidth + titleStartupSafetyMargin)
     }
@@ -86,6 +106,23 @@ Item {
     function titleOffset(index, restingLeft, titleWidth) {
         var startupTranslation = titleStartupTranslation(restingLeft, titleWidth)
         return startupTranslation * (1 - titleTravelProgress(index))
+    }
+
+    function titlePresentationVelocityPxPerMs(index, restingLeft, titleWidth) {
+        var startupTranslation = titleStartupTranslation(restingLeft, titleWidth)
+        return -startupTranslation * titleTravelVelocityAt(index) / titleDuration
+    }
+
+    function signedMotionBlurPixelsFromVelocity(velocity) {
+        if (Math.abs(velocity) <= motionBlurDeadZone)
+            return 0
+        return Math.max(-motionBlurMaxPixels,
+                        Math.min(motionBlurMaxPixels, velocity * motionBlurGain))
+    }
+
+    function titleSignedBlurPixels(index, restingLeft, titleWidth) {
+        return signedMotionBlurPixelsFromVelocity(
+            titlePresentationVelocityPxPerMs(index, restingLeft, titleWidth))
     }
 
     function recentRowBackC1(rowRightEdge) {
@@ -135,10 +172,7 @@ Item {
     }
 
     function recentSignedBlurPixelsFromVelocity(velocity) {
-        if (Math.abs(velocity) <= motionBlurDeadZone)
-            return 0
-        return Math.max(-motionBlurMaxPixels,
-                        Math.min(motionBlurMaxPixels, velocity * motionBlurGain))
+        return signedMotionBlurPixelsFromVelocity(velocity)
     }
 
     function recentSignedBlurPixels(rowRightEdge) {

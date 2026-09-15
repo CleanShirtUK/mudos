@@ -102,6 +102,52 @@ TestCase {
         verify(coordinator.titleTravelProgress(3) === 0)
     }
 
+    function test_title_velocity_respects_stagger_and_turning_points() {
+        var widths = [180, 140, 220, 160]
+        for (var index = 0; index < coordinator.titleCount; index++) {
+            var start = coordinator.titleStartAt + index * coordinator.titleStagger
+            coordinator.startupClock = start - 1
+            compare(coordinator.titleTravelVelocityAt(index), 0)
+            compare(coordinator.titleSignedBlurPixels(index, 52, widths[index]), 0)
+
+            coordinator.startupClock = start + 1
+            verify(coordinator.titlePresentationVelocityPxPerMs(
+                       index, 52, widths[index]) > 0)
+            verify(coordinator.titleSignedBlurPixels(index, 52, widths[index]) > 0)
+
+            coordinator.startupClock = start
+                + coordinator.titleDuration * coordinator.titleApproachFraction
+            verify(Math.abs(coordinator.titleTravelVelocityAt(index)) < 0.000001)
+            verify(Math.abs(coordinator.titleSignedBlurPixels(
+                        index, 52, widths[index])) < 0.000001)
+
+            coordinator.startupClock = start + coordinator.titleDuration * 0.9
+            verify(coordinator.titlePresentationVelocityPxPerMs(
+                       index, 52, widths[index]) < 0)
+            verify(coordinator.titleSignedBlurPixels(index, 52, widths[index]) < 0)
+
+            coordinator.startupClock = start + coordinator.titleDuration
+            compare(coordinator.titleTravelVelocityAt(index), 0)
+            compare(coordinator.titlePresentationVelocityPxPerMs(
+                        index, 52, widths[index]), 0)
+            compare(coordinator.titleSignedBlurPixels(index, 52, widths[index]), 0)
+            compare(coordinator.titleOffset(index, 52, widths[index]), 0)
+        }
+    }
+
+    function test_title_velocity_is_independent_of_other_titles() {
+        var index = 2
+        var width = 220
+        coordinator.startupClock = coordinator.titleStartAt
+            + index * coordinator.titleStagger + 120
+        var velocity = coordinator.titlePresentationVelocityPxPerMs(index, 52, width)
+        var blur = coordinator.titleSignedBlurPixels(index, 52, width)
+        coordinator.titleCount = 1
+        compare(coordinator.titlePresentationVelocityPxPerMs(index, 52, width), velocity)
+        compare(coordinator.titleSignedBlurPixels(index, 52, width), blur)
+        coordinator.titleCount = 4
+    }
+
     function test_title_startup_geometry_is_fully_offscreen_per_width() {
         var widths = [100, 240, 140, 200]
         for (var index = 0; index < widths.length; index++) {

@@ -86,6 +86,20 @@ class NativeBuildTests(unittest.TestCase):
         self.assertIn("x: root.homeCategoryRailX", shell)
         self.assertIn("presentationCoordinator.titleOffset(index,", shell)
 
+    def test_titles_use_independent_live_motion_blur_surfaces(self) -> None:
+        root = Path(__file__).parents[1]
+        shell = (root / "ui" / "ConsoleShell.qml").read_text()
+        coordinator = (root / "ui" / "PresentationCoordinator.qml").read_text()
+        self.assertIn("delegate: Item", shell)
+        self.assertIn("id: titleText", shell)
+        self.assertIn("sourceItem: titleText", shell)
+        self.assertIn("sourceRect: Qt.rect(-titleBlurPadding", shell)
+        self.assertIn("titleSignedBlurPixels(index,", shell)
+        self.assertIn("titlePresentationVelocityPxPerMs", coordinator)
+        self.assertIn("function titleTravelVelocityAt(index)", coordinator)
+        self.assertIn("motionBlurMaxPixels", shell)
+        self.assertNotIn("sourceItem: titleRail", shell)
+
 
 if __name__ == "__main__":
     unittest.main()
