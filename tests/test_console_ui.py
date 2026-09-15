@@ -492,6 +492,23 @@ class ConsoleUiTests(unittest.TestCase):
             self.assertIn(uniform, adapter)
         self.assertIn('replace("gl_FragColor", "fragColor")', adapter)
 
+    def test_orbit_presentation_uses_coordinator_and_shared_canonical_texture(self) -> None:
+        source = (ROOT / "ui" / "OrbitRenderSource.qml").read_text()
+        coordinator = (ROOT / "ui" / "PresentationCoordinator.qml").read_text()
+        shell = (ROOT / "ui" / "ConsoleShell.qml").read_text()
+        self.assertIn("presentationCoordinator", source)
+        self.assertIn("orbitShaderTime", source)
+        self.assertIn("orbitVisibility", source)
+        self.assertNotIn("NumberAnimation on shaderTime", source)
+        self.assertIn("orbitBaseTimeAnimation", coordinator)
+        self.assertIn("orbitIntroCorrection", coordinator)
+        self.assertIn("orbitExitCorrection", coordinator)
+        self.assertIn('id: orbitTexture', shell)
+        self.assertIn('sourceItem: orbitRenderSource', shell)
+        self.assertIn('texture: orbitTexture', shell)
+        self.assertIn('canonicalTexture: orbitTexture', shell)
+        self.assertIn('canonicalCoordinateRoot: orbitRenderSource', shell)
+
     def test_canonical_identity_path_uses_shared_texture(self) -> None:
         glass = (ROOT / "ui" / "GlassSurface.qml").read_text()
         shader = (ROOT / "ui" / "shaders" / "canonical-identity.frag").read_text()
@@ -629,7 +646,70 @@ class ConsoleUiTests(unittest.TestCase):
 
     def test_launch_errors_are_not_reported_as_catalogue_failures(self) -> None:
         self.assertIn('encodeURIComponent(game.game_id)', QML)
-        self.assertIn('}, "Launch failed", generation)', QML)
+        self.assertIn('}, "Launch failed", generation, function()', QML)
+
+    def test_home_launch_waits_for_feedback_exit_and_hidden_boundary(self) -> None:
+        game_card = (ROOT / "ui" / "GameCard.qml").read_text()
+        coordinator = (ROOT / "ui" / "PresentationCoordinator.qml").read_text()
+        recent = (ROOT / "ui" / "RecentHome.qml").read_text()
+        self.assertIn("signal playFeedbackCompleted()", game_card)
+        self.assertIn("card.playFeedbackCompleted()", game_card)
+        self.assertIn("function beginPendingHomeLaunch", QML)
+        self.assertIn("function completePendingHomeLaunch", QML)
+        self.assertIn("function finishHiddenHomeLaunch", QML)
+        self.assertIn("beginContentExit()", QML)
+        self.assertIn("contentHiddenReached", coordinator)
+        self.assertIn("freezePresentation", recent)
+        self.assertIn("reconcilePresentation", recent)
+        self.assertIn("HOME_HIDDEN_LAUNCH_HANDOFF", QML)
+        self.assertNotIn("launchGame(visibleRecentGame)", QML)
+        self.assertNotIn("PauseAnimation { duration: 160", QML)
+
+    def test_return_observer_is_independent_of_launch_status_polling(self) -> None:
+        self.assertIn("property bool returnWatchActive: false", QML)
+        self.assertIn("function startReturnWatch()", QML)
+        self.assertIn("function refreshReturnState(generation)", QML)
+        self.assertIn("function evaluateReturnReadiness(source)", QML)
+        self.assertIn('traceLaunchEvent("RETURN_WATCH_STARTED"', QML)
+        self.assertIn('traceLaunchEvent("RETURN_STATE_OBSERVED"', QML)
+        self.assertIn('traceLaunchEvent("RETURN_PRESENTATION_OBSERVED"', QML)
+        self.assertIn('traceLaunchEvent("RETURN_READY"', QML)
+        self.assertIn('traceLaunchEvent("RETURN_WATCH_STOPPED"', QML)
+        self.assertIn("startReturnWatch()", QML[QML.index("function finishHiddenHomeLaunch") :])
+        self.assertIn("returnObserverTimer.start()", QML)
+        self.assertIn("returnObserverTimer.stop()", QML)
+        self.assertIn("returnStateObserved && presented", QML)
+        self.assertIn("stopReturnWatch(\"launch-failed\")", QML)
+
+    def test_recent_reconcile_is_deferred_until_presented(self) -> None:
+        presented = QML.split("function onContentPresentedReached()", 1)[1].split(
+            "function traceLaunchMutation", 1)[0]
+        prepare = QML.split("function prepareAndPresentHome()", 1)[1].split(
+            "function observeGamePresentation", 1)[0]
+        handoff = QML.split("function finishHiddenHomeLaunch()", 1)[1].split(
+            "function installGame", 1)[0]
+        self.assertIn("returnPresentationPending", presented)
+        self.assertIn("recentHome.reconcilePresentation()", presented)
+        self.assertIn("returnPresentationPending = false", presented)
+        self.assertNotIn("recentHome.reconcilePresentation()", prepare)
+        self.assertNotIn("recentHome.reconcilePresentation()", handoff)
+        self.assertIn("returnPresentationPending = true", prepare)
+        self.assertIn('traceLaunchEvent("PRESENTATION_FREEZE"', QML)
+        self.assertIn('traceLaunchEvent("RECENT_PRESENTATION_RELEASED"', QML)
+        self.assertIn("returnPresentationPending", QML[QML.index("readonly property bool homeLaunchGated") :])
+
+    def test_presented_reconcile_happens_before_input_unlock(self) -> None:
+        presented = QML.split("function onContentPresentedReached()", 1)[1].split(
+            "function traceLaunchMutation", 1)[0]
+        self.assertLess(presented.index("recentHome.reconcilePresentation()"),
+                        presented.index("HOME_INPUT_UNLOCKED"))
+
+    def test_recent_reconcile_requests_authority_before_releasing_frozen_rows(self) -> None:
+        recent = (ROOT / "ui" / "RecentHome.qml").read_text()
+        reconcile = recent.split("function reconcilePresentation()", 1)[1].split(
+            "function selectionCardVelocityAt", 1)[0]
+        self.assertLess(reconcile.index("selectionIndexRequested(reconciledIndex)"),
+                        reconcile.index("presentationFrozen = false"))
 
     def test_library_and_store_category_rail_uses_content_sized_selected_anchor(self) -> None:
         library_space = (ROOT / "ui" / "LibrarySpace.qml").read_text()
@@ -689,7 +769,9 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertIn("function finishLaunchOnShellReturn()", QML)
         self.assertIn("root.shellWasLeft = true", QML)
         self.assertIn("root.shellWasLeft = true", QML)
-        self.assertIn("if (root.shellWasLeft && root.gamePresentationObserved)", QML)
+        self.assertIn("if (root.shellWasLeft)", QML)
+        self.assertIn("function prepareAndPresentHome()", QML)
+        self.assertIn("launchLifecycle !== \"shell\"", QML)
         self.assertIn("launchLogTimer.stop()", QML)
         self.assertIn("launchLogLines = []", QML)
         self.assertIn("launchGeneration++", QML)

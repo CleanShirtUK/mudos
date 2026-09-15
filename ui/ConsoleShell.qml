@@ -175,12 +175,50 @@ Window {
     property int launchStateApplied: 0
     property int launchStateRank: 0
     property var launchTracePrevious: ({})
+    property var pendingHomeLaunch: null
+    property string pendingHomeLaunchPhase: "idle"
+    property string launchLifecycle: "shell"
+    property bool returnPreparationStarted: false
+    property bool returnPresentationPending: false
+    property bool returnWatchActive: false
+    property bool returnAlreadyHandled: false
+    property bool returnStateObserved: false
+    property bool returnPresentationObserved: false
+    property bool returnStateRequestInFlight: false
+    property bool returnAwayObserved: false
+    readonly property bool homeLaunchGated: pendingHomeLaunch !== null
+        || returnPresentationPending
+        || returnPreparationStarted
+        || presentationCoordinator.contentState !== presentationCoordinator.presentedState
     readonly property bool launchOverlayEffectiveVisible: launchOverlayVisible
         && launchOverlayEnabled && !launchOverlayRetired
 
     PresentationCoordinator {
         id: presentationCoordinator
         titleCount: root.domains.length
+    }
+
+    Connections {
+        target: presentationCoordinator
+        function onContentHiddenReached() {
+            root.finishHiddenHomeLaunch()
+        }
+        function onContentPresentedReached() {
+            root.traceLaunchEvent("COORDINATOR_PRESENTED", {})
+            if (root.returnPresentationPending) {
+                root.traceLaunchEvent("RECENT_RECONCILE_BEGIN", {})
+                recentHome.reconcilePresentation()
+                root.traceLaunchEvent("RECENT_PRESENTATION_RELEASED", {})
+                root.returnPresentationPending = false
+            }
+            root.returnPreparationStarted = false
+            console.log("HOME_INPUT_UNLOCK_ATTEMPT", JSON.stringify({
+                homeLaunchGated: root.homeLaunchGated,
+                coordinatorState: root.presentationCoordinator.contentState,
+                returnPresentationPending: root.returnPresentationPending
+            }))
+            root.traceLaunchEvent("HOME_INPUT_UNLOCKED", {})
+        }
     }
 
     function traceLaunchMutation(name, value, reason) {
@@ -221,7 +259,7 @@ Window {
     readonly property string libraryScope: libraryCollections.length > collectionIndex
         ? libraryCollections[collectionIndex].scope : "all"
 
-    function request(path, method, body, callback, failureMessage, generation) {
+    function request(path, method, body, callback, failureMessage, generation, failureCallback) {
         var request = new XMLHttpRequest()
         request.onreadystatechange = function() {
             if (request.readyState !== XMLHttpRequest.DONE)
@@ -233,6 +271,8 @@ Window {
                 if (generation !== undefined) {
                     launchStatus = "failed"
                     launchStatusTimer.stop()
+                    if (failureCallback)
+                        failureCallback()
                 }
             }
         }
@@ -337,6 +377,17 @@ Window {
             return
         }
         launchStateRank = stateRank
+        launchLifecycle = state.lifecycle
+        if (returnWatchActive)
+            traceLaunchEvent("RETURN_STATE_OBSERVED", {
+                source: "state", lifecycle: state.lifecycle,
+                luluPresented: controllerBridge.luluPresented === true
+            })
+        if (state.lifecycle !== "shell")
+            returnAwayObserved = true
+        if (state.lifecycle === "shell"
+                && (returnAwayObserved || (launchToken && stateToken === launchToken)))
+            returnStateObserved = true
         if (state.lifecycle === "launch_requested" || state.lifecycle === "starting"
                 || state.lifecycle === "presentation_pending") {
             launchStatus = "launching"
@@ -347,7 +398,7 @@ Window {
             message = "Running " + launchTitle
             retireLaunchOverlay(generation)
         } else if (state.lifecycle === "returning") {
-            traceLaunchEvent("GAME_EXITED", {lifecycle: state.lifecycle, presentation: state.presentation || ""})
+            traceLaunchEvent("GAME_EXIT_OBSERVED", {lifecycle: state.lifecycle, presentation: state.presentation || ""})
             traceLaunchEvent("SHELL_RETURN_STARTED", {})
             launchStatus = "returning"
             message = "Returning"
@@ -357,7 +408,47 @@ Window {
             launchStatusTimer.stop()
             if (launchOverlayRetired)
                 launchOverlayVisible = false
+            evaluateReturnReadiness("state")
         }
+    }
+
+    function startReturnWatch() {
+        returnWatchActive = true
+        returnAlreadyHandled = false
+        returnStateObserved = false
+        returnPresentationObserved = false
+        returnAwayObserved = false
+        traceLaunchEvent("RETURN_WATCH_STARTED", {})
+        returnObserverTimer.start()
+    }
+
+    function stopReturnWatch(reason) {
+        if (!returnWatchActive)
+            return
+        returnWatchActive = false
+        returnObserverTimer.stop()
+        traceLaunchEvent("RETURN_WATCH_STOPPED", {reason: reason || "complete"})
+    }
+
+    function evaluateReturnReadiness(source) {
+        if (!returnWatchActive || returnAlreadyHandled)
+            return false
+        var presented = controllerBridge.luluPresented === true
+        if (presented && returnStateObserved && !returnPresentationObserved) {
+            returnPresentationObserved = true
+            traceLaunchEvent("RETURN_PRESENTATION_OBSERVED", {source: source})
+        }
+        if (launchLifecycle === "shell" && returnStateObserved && presented) {
+            returnAlreadyHandled = true
+            traceLaunchEvent("RETURN_READY", {source: source})
+            return stopAndPrepareHome()
+        }
+        return false
+    }
+
+    function stopAndPrepareHome() {
+        stopReturnWatch("ready")
+        return prepareAndPresentHome()
     }
 
     function retireLaunchOverlay(generation) {
@@ -372,6 +463,19 @@ Window {
 
     function finishLaunchOnShellReturn() {
         traceLaunchEvent("RETURN_FAILSAFE_FIRED", {luluPresented: controllerBridge.luluPresented, gamePresentationObserved: gamePresentationObserved, launchOverlayVisible: launchOverlayVisible, launchOverlayRetired: launchOverlayRetired})
+        stopAndPrepareHome()
+    }
+
+    function prepareAndPresentHome() {
+        if (returnPreparationStarted || launchLifecycle !== "shell"
+                || controllerBridge.luluPresented !== true)
+            return false
+        stopReturnWatch("prepare")
+        returnPreparationStarted = true
+        returnPresentationPending = true
+        traceLaunchEvent("RETURN_PREPARE", {})
+        pendingHomeLaunch = null
+        pendingHomeLaunchPhase = "idle"
         launchStatusTimer.stop()
         launchLogTimer.stop()
         launchOverlayRetired = true
@@ -383,6 +487,14 @@ Window {
         shellWasLeft = false
         gamePresentationObserved = false
         launchGeneration++
+        libraryTransitioning = false
+        storeTransitioning = false
+        libraryTransitionState = "RESTING"
+        if (presentationCoordinator.contentHidden) {
+            traceLaunchEvent("ENTRANCE_REQUESTED", {})
+            presentationCoordinator.beginStartup()
+        }
+        return true
     }
 
     function observeGamePresentation(state, generation) {
@@ -416,6 +528,31 @@ Window {
             launchStateApplied = serial
             traceLaunchResponse("/state", state, generation, responseToken, true, "apply")
             applyLaunchState(state, generation)
+            evaluateReturnReadiness("state")
+        }, "", generation)
+    }
+
+    function refreshReturnState(generation) {
+        if (!returnWatchActive || returnStateRequestInFlight)
+            return
+        returnStateRequestInFlight = true
+        request("/state", "GET", "", function(state) {
+            returnStateRequestInFlight = false
+            if (generation !== launchGeneration || !returnWatchActive)
+                return
+            launchLifecycle = state.lifecycle || launchLifecycle
+            traceLaunchEvent("RETURN_STATE_OBSERVED", {
+                source: "poll", lifecycle: launchLifecycle,
+                luluPresented: controllerBridge.luluPresented === true
+            })
+            var stateToken = state.launch_token || (state.last_result
+                    ? state.last_result.token : "")
+            if (launchLifecycle !== "shell")
+                returnAwayObserved = true
+            if (launchLifecycle === "shell"
+                    && (returnAwayObserved || (launchToken && stateToken === launchToken)))
+                returnStateObserved = true
+            evaluateReturnReadiness("poll")
         }, "", generation)
     }
 
@@ -678,7 +815,10 @@ Window {
         recentHome.capturePresentation()
         recentIndex = nextIndex
         recentHome.beginRetarget()
-        console.log("RECENT_NAV", "presentation-target", recentHome.selectedIndex)
+        console.log("RECENT_NAV", "currentRootIndex", recentIndex,
+                    "delta", delta, "requestedIndex", nextIndex,
+                    "selectedIndex", recentHome.selectedIndex,
+                    "retargetTarget", recentHome.selectedIndex)
     }
 
     function moveLibrary(delta) {
@@ -733,6 +873,9 @@ Window {
         if (!game)
             return
         var generation = ++launchGeneration
+        launchLifecycle = "launch_requested"
+        returnPreparationStarted = false
+        returnAlreadyHandled = false
         traceLaunchEvent("LAUNCH_REQUESTED", {game_id: String(game.game_id), title: game.title})
         launchTitle = game.title
         launchGameId = String(game.game_id)
@@ -760,7 +903,68 @@ Window {
             refreshLaunchState(generation)
             launchStatusTimer.start()
             refreshCatalogue()
-        }, "Launch failed", generation)
+        }, "Launch failed", generation, function() {
+            if (generation !== launchGeneration)
+                return
+            pendingHomeLaunch = null
+            pendingHomeLaunchPhase = "idle"
+            launchLifecycle = "shell"
+            stopReturnWatch("launch-failed")
+            returnAlreadyHandled = false
+            returnPresentationPending = true
+            launchOverlayRetired = true
+            launchOverlayVisible = false
+            presentationCoordinator.beginStartup()
+        })
+    }
+
+    function recentGameById(gameId) {
+        return catalogueModel ? catalogueModel.game(gameId) : null
+    }
+
+    function beginPendingHomeLaunch(game) {
+        if (!game || homeLaunchGated
+                || presentationCoordinator.contentState
+                    !== presentationCoordinator.presentedState)
+            return false
+        pendingHomeLaunch = game
+        pendingHomeLaunchPhase = "feedback"
+        returnPreparationStarted = false
+        returnPresentationPending = false
+        console.log("RECENT_LAUNCH_SELECTION", JSON.stringify({
+            gameId: String(game.game_id),
+            rootIndex: recentIndex,
+            recentIndex: recentHome.selectedIndex,
+            order: recentHome.modelOrder(recentModel)
+        }))
+        playActivationSerial++
+        traceLaunchEvent("PLAY_FEEDBACK_STARTED", {game_id: String(game.game_id)})
+        return true
+    }
+
+    function completePendingHomeLaunch(gameId) {
+        if (pendingHomeLaunchPhase !== "feedback" || !pendingHomeLaunch
+                || String(pendingHomeLaunch.game_id) !== String(gameId))
+            return
+        pendingHomeLaunchPhase = "exiting"
+        recentHome.freezePresentation()
+        traceLaunchEvent("PRESENTATION_FREEZE", {})
+        traceLaunchEvent("PLAY_FEEDBACK_COMPLETED", {game_id: String(gameId)})
+        if (!presentationCoordinator.beginContentExit()) {
+            pendingHomeLaunch = null
+            pendingHomeLaunchPhase = "idle"
+        }
+    }
+
+    function finishHiddenHomeLaunch() {
+        if (pendingHomeLaunchPhase !== "exiting" || !pendingHomeLaunch)
+            return
+        var game = pendingHomeLaunch
+        pendingHomeLaunchPhase = "launching"
+        pendingHomeLaunch = null
+        traceLaunchEvent("HOME_HIDDEN_LAUNCH_HANDOFF", {game_id: String(game.game_id)})
+        launchGame(game)
+        startReturnWatch()
     }
 
     function installGame(game) {
@@ -825,14 +1029,19 @@ Window {
         function onValueChanged(key, value) {
             if (key === "luluPresented") {
                 traceLaunchEvent(value ? "SHELL_PRESENTED" : "GAME_PRESENTED", {luluPresented: value})
+                traceLaunchEvent("LULU_PRESENTED_CHANGED", {value: value})
+                if (value === true)
+                    evaluateReturnReadiness("signal")
                 if (root.launchGameId.indexOf("steam:") === 0) {
                     if (!value) {
                         root.shellWasLeft = true
                         root.traceLaunchEvent("SHELL_LEFT_OBSERVED", {luluPresented: value})
-                    } else if (root.shellWasLeft && root.gamePresentationObserved) {
-                        root.finishLaunchOnShellReturn()
+                    } else if (root.shellWasLeft) {
+                        root.refreshLaunchState(root.launchGeneration)
                     }
                 }
+                if (value === true && root.returnWatchActive)
+                    root.refreshReturnState(root.launchGeneration)
             }
             if (key === "action" && value === "back" && root.launchOverlayEffectiveVisible)
                 root.cancelLaunch()
@@ -849,6 +1058,8 @@ Window {
     }
 
     function activate() {
+        if (root.homeLaunchGated)
+            return
         if (gameOptionsOpen) {
             activateGameOptions()
             return
@@ -875,8 +1086,7 @@ Window {
         }
 
         if (selectedCategoryIndex === 3) {
-            playActivationSerial++
-            launchGame(visibleRecentGame)
+            beginPendingHomeLaunch(visibleRecentGame)
         } else if (selectedCategoryIndex === 2) {
             presentationTarget = "library"
             libraryTransitionState = "ACTIVATING"
@@ -1104,6 +1314,9 @@ Window {
     }
 
     function controllerUp() {
+            console.log("CONTROLLER_QML", "up", "gated", root.homeLaunchGated,
+                        "space", root.space)
+            if (root.homeLaunchGated) return
             if (root.gameOptionsOpen) root.moveGameOptions(-1)
             else if (root.space === "home") root.moveDomain(-1)
             else if (root.space === "library") root.moveLibraryVertical(-1)
@@ -1114,6 +1327,9 @@ Window {
             }
     }
     function controllerDown() {
+            console.log("CONTROLLER_QML", "down", "gated", root.homeLaunchGated,
+                        "space", root.space)
+            if (root.homeLaunchGated) return
             if (root.gameOptionsOpen) root.moveGameOptions(1)
             else if (root.space === "home") root.moveDomain(1)
             else if (root.space === "library") root.moveLibraryVertical(1)
@@ -1124,6 +1340,9 @@ Window {
             }
     }
     function controllerLeft() {
+            console.log("CONTROLLER_QML", "left", "gated", root.homeLaunchGated,
+                        "space", root.space)
+            if (root.homeLaunchGated) return
             if (root.gameOptionsOpen) root.moveGameOptions(-1)
             else if (root.space === "home") {
                 if (root.selectedCategoryIndex === 3) root.moveRecent(-1)
@@ -1139,6 +1358,9 @@ Window {
             }
     }
     function controllerRight() {
+            console.log("CONTROLLER_QML", "right", "gated", root.homeLaunchGated,
+                        "space", root.space)
+            if (root.homeLaunchGated) return
             if (root.gameOptionsOpen) root.moveGameOptions(1)
             else if (root.space === "home") {
                 if (root.selectedCategoryIndex === 3) root.moveRecent(1)
@@ -1167,6 +1389,7 @@ Window {
         id: orbitRenderSource
         anchors.fill: parent
         visible: false
+        presentationCoordinator: presentationCoordinator
     }
 
     ShaderEffectSource {
@@ -1194,6 +1417,10 @@ Window {
         focus: true
 
         Keys.onPressed: function(event) {
+            if (root.homeLaunchGated) {
+                event.accepted = true
+                return
+            }
             if (event.key === Qt.Key_X) {
                 if (selectedGameForOptions)
                     openGameOptions(selectedGameForOptions)
@@ -1387,14 +1614,24 @@ Window {
                         luluPalette: luluPalette
                          canonicalTexture: orbitTexture
                          canonicalCoordinateRoot: orbitRenderSource
-                         canonicalSize: Qt.size(root.width, root.height)
-                         onSelectionIndexRequested: root.recentIndex = index
+                     canonicalSize: Qt.size(root.width, root.height)
+                         onSelectionIndexRequested: {
+                             console.log("RECENT_RECONCILE",
+                                         "selectionIndexRequested", index,
+                                         "oldRootIndex", root.recentIndex)
+                             root.recentIndex = index
+                             console.log("RECENT_RECONCILE",
+                                         "resultingRootIndex", root.recentIndex,
+                                         "resultingSelectedIndex", recentHome.selectedIndex)
+                         }
                         onSelectionGameChanged: {
                             root.recentSelectedGameId = gameId
                             root.syncGameOptionsGame()
                         }
-                        onLaunchRequested: root.launchGame(root.catalogueModel.game(gameId))
-                    }
+                          onActivationRequested: root.beginPendingHomeLaunch(
+                             root.recentGameById(gameId))
+                         onPlayFeedbackCompleted: root.completePendingHomeLaunch(gameId)
+                     }
                 }
 
                 Item {
@@ -1788,6 +2025,13 @@ Window {
         interval: 150
         repeat: true
         onTriggered: root.refreshLaunchState(root.launchGeneration)
+    }
+
+    Timer {
+        id: returnObserverTimer
+        interval: 150
+        repeat: true
+        onTriggered: root.refreshReturnState(root.launchGeneration)
     }
 
     Timer {

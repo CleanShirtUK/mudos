@@ -14,7 +14,9 @@ class NativeBuildTests(unittest.TestCase):
     def test_recent_qml_uses_repeater_count_for_native_model_visibility(self) -> None:
         root = Path(__file__).parents[1]
         recent = (root / "ui" / "RecentHome.qml").read_text()
-        self.assertIn("model: recentModel", recent)
+        self.assertIn("property var renderedRecentModel", recent)
+        self.assertIn("model: recentHome.renderedRecentModel", recent)
+        self.assertIn("recentModel", recent)
         self.assertIn("recentRepeater.count > 0", recent)
         self.assertNotIn("recentModel.count", recent)
         self.assertTrue((root / "tests" / "qml" / "tst_recent_model_boundary.qml").exists())
@@ -31,6 +33,22 @@ class NativeBuildTests(unittest.TestCase):
             self.assertIn(f"required property", card_presentation)
         self.assertIn("game: root.gameRecord", card_presentation)
         self.assertIn("recentHome.itemCount - 1", (root / "ui" / "ConsoleShell.qml").read_text())
+
+    def test_recent_reconciliation_preserves_index_binding_and_uses_authority_signal(self) -> None:
+        root = Path(__file__).parents[1]
+        recent = (root / "ui" / "RecentHome.qml").read_text()
+        shell = (root / "ui" / "ConsoleShell.qml").read_text()
+        reconcile = recent.split("function reconcilePresentation()", 1)[1].split(
+            "function selectionCardVelocityAt", 1)[0]
+        self.assertIn("var reconciledIndex", reconcile)
+        self.assertIn("selectionIndexRequested(reconciledIndex)", reconcile)
+        self.assertIn("var fallbackIndex", reconcile)
+        self.assertNotIn("selectedIndex =", reconcile)
+        self.assertIn("selectedIndex: root.recentIndex", shell)
+        self.assertIn('"selectionIndexRequested"', shell)
+        self.assertIn('"resultingRootIndex"', shell)
+        self.assertIn('"resultingSelectedIndex"', shell)
+        self.assertIn('"retargetTarget"', shell)
 
     def test_startup_recent_motion_is_one_rigid_row(self) -> None:
         root = Path(__file__).parents[1]

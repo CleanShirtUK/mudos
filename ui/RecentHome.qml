@@ -8,6 +8,9 @@ Item {
     property real transitionProgress: 1
     property real transitionFadeProgress: 1
     property bool transitionInitialized: false
+    property bool presentationFrozen: false
+    property var frozenRecentRows: null
+    property string frozenSelectionGameId: ""
     property string selectedGameId: recentModel && selectedIndex >= 0
         ? String(recentModel.gameIdAt(selectedIndex)) : ""
     property string selectionAnchorId: ""
@@ -33,6 +36,8 @@ Item {
     property var presentationStartVisible: []
     property bool suppressTransitionCompletion: false
     signal launchRequested(string gameId)
+    signal activationRequested(string gameId)
+    signal playFeedbackCompleted(string gameId)
     signal selectionIndexRequested(int index)
     signal selectionGameChanged(string gameId)
     readonly property int itemCount: recentRepeater.count
@@ -60,6 +65,8 @@ Item {
     readonly property real presentationX: presentationCoordinator
         ? presentationCoordinator.recentRowPresentationX(rowRightEdge, width) : 0
     readonly property bool selectionMotionActive: transitionAnimation.running
+    readonly property var renderedRecentModel: presentationFrozen && frozenRecentRows
+        ? frozenRecentRows : recentModel
     readonly property bool selectionBlurAllowed: presentationCoordinator
         ? presentationCoordinator.contentPresented : true
 
@@ -161,6 +168,92 @@ Item {
         return index === selectedIndex
     }
 
+    function modelOrder(model) {
+        var order = []
+        if (!model)
+            return order
+        // RecentModel exposes gameIdAt(), not a QML count property.  The
+        // repeater count is the visible row count for this model generation.
+        for (var index = 0; index < recentRepeater.count; index++)
+            order.push(String(model.gameIdAt(index)))
+        return order
+    }
+
+    function frozenOrder() {
+        var order = []
+        if (!frozenRecentRows)
+            return order
+        for (var index = 0; index < frozenRecentRows.length; index++)
+            order.push(String(frozenRecentRows[index].game_id))
+        return order
+    }
+
+    function traceRecentOrder(event, signal) {
+        console.log("RECENT_ORDER", JSON.stringify({
+            event: event,
+            signal: signal || "",
+            selectedGameId: selectedGameId,
+            selectedIndex: selectedIndex,
+            presentationFrozen: presentationFrozen,
+            authoritative: modelOrder(recentModel),
+            presented: presentationFrozen ? frozenOrder() : modelOrder(recentModel)
+        }))
+    }
+
+    function freezePresentation() {
+        if (presentationFrozen)
+            return
+        var rows = []
+        for (var index = 0; index < recentRepeater.count; index++) {
+            var card = recentRepeater.itemAt(index)
+            if (card)
+                rows.push(card.gameRecord)
+        }
+        frozenRecentRows = rows
+        frozenSelectionGameId = selectedGameId
+        presentationFrozen = true
+        traceRecentOrder("PRESENTATION_FREEZE")
+    }
+
+    function reconcilePresentation() {
+        var anchor = frozenSelectionGameId
+        var oldIndex = selectedIndex
+        var anchorIndex = anchor && recentModel
+            ? recentModel.indexOfGame(anchor) : -1
+        var fallbackIndex = Math.max(0, Math.min(oldIndex,
+                                                 Math.max(0, recentRepeater.count - 1)))
+        var reconciledIndex = anchorIndex >= 0 ? anchorIndex : fallbackIndex
+        var newSelectedGameId = recentModel && reconciledIndex >= 0
+            && reconciledIndex < recentRepeater.count
+            ? String(recentModel.gameIdAt(reconciledIndex)) : ""
+        console.log("RECENT_RECONCILE_RESOLVED", JSON.stringify({
+            selectedGameId: anchor,
+            oldIndex: oldIndex,
+            resolvedIndex: reconciledIndex,
+            resolvedGameId: newSelectedGameId,
+            authoritative: modelOrder(recentModel)
+        }))
+        console.log("RECENT_RECONCILE_BEGIN", "selectedGameId", anchor,
+                    "oldIndex", oldIndex, "resolvedIndex", reconciledIndex)
+        console.log("RECENT_RECONCILE", "selectedGameId", anchor,
+                    "oldIndex", oldIndex, "resolvedIndex", reconciledIndex,
+                    "newSelectedGameId", newSelectedGameId,
+                    "itemCount", recentRepeater.count)
+        traceRecentOrder("BEFORE_RECONCILE")
+        // Keep selectedIndex: root.recentIndex as the sole live index binding.
+        selectionIndexRequested(reconciledIndex)
+        if (recentModel && reconciledIndex >= 0
+                && reconciledIndex < recentRepeater.count)
+            selectionGameChanged(recentModel.gameIdAt(reconciledIndex))
+        traceRecentOrder("RECONCILE_COMPLETE")
+        // Change the rendered model only after the authoritative index follows.
+        presentationFrozen = false
+        frozenRecentRows = null
+        frozenSelectionGameId = ""
+        capturePresentation()
+        traceRecentOrder("PRESENTATION_RELEASED")
+    }
+
     function selectionCardVelocityAt(progress, startX, targetX) {
         return (targetX - startX)
             * selectionProgressVelocityPxPerMs(progress)
@@ -258,7 +351,7 @@ Item {
 
         Repeater {
             id: recentRepeater
-            model: recentModel
+            model: recentHome.renderedRecentModel
             delegate: RecentCardPresentation {
                 home: recentHome
                 toRelativeIndex: index - recentHome.selectedIndex
@@ -283,6 +376,8 @@ Item {
                 uiScale: recentHome.uiScale
                 typography: recentHome.typography
                 luluPalette: recentHome.luluPalette
+                onActivationRequested: recentHome.activationRequested(gameId)
+                onPlayFeedbackCompleted: recentHome.playFeedbackCompleted(gameId)
                 visible: recentHome.presentationStartVisible[index]
                     || Math.abs(toRelativeIndex) <= recentHome.visibleRailRadius
                 width: startWidth
@@ -317,15 +412,37 @@ Item {
 
     Connections {
         target: recentHome.recentModel
-        function onRowsAboutToBeInserted() { recentHome.anchorSelection() }
-        function onRowsAboutToBeRemoved() { recentHome.anchorSelection() }
-        function onRowsAboutToBeMoved() { recentHome.anchorSelection() }
-        function onRowsInserted() { recentHome.restoreSelection() }
-        function onRowsRemoved() { recentHome.restoreSelection() }
-        function onRowsMoved() { recentHome.restoreSelection() }
+        function onRowsAboutToBeInserted() {
+            recentHome.traceRecentOrder("AUTHORITATIVE_CHANGE_BEGIN", "rowsAboutToBeInserted")
+            recentHome.anchorSelection()
+        }
+        function onRowsAboutToBeRemoved() {
+            recentHome.traceRecentOrder("AUTHORITATIVE_CHANGE_BEGIN", "rowsAboutToBeRemoved")
+            recentHome.anchorSelection()
+        }
+        function onRowsAboutToBeMoved() {
+            recentHome.traceRecentOrder("AUTHORITATIVE_CHANGE_BEGIN", "rowsAboutToBeMoved")
+            recentHome.anchorSelection()
+        }
+        function onRowsInserted() {
+            recentHome.restoreSelection()
+            recentHome.traceRecentOrder("AUTHORITATIVE_CHANGE_COMPLETE", "rowsInserted")
+        }
+        function onRowsRemoved() {
+            recentHome.restoreSelection()
+            recentHome.traceRecentOrder("AUTHORITATIVE_CHANGE_COMPLETE", "rowsRemoved")
+        }
+        function onRowsMoved() {
+            recentHome.restoreSelection()
+            recentHome.traceRecentOrder("AUTHORITATIVE_CHANGE_COMPLETE", "rowsMoved")
+        }
+        function onDataChanged() {
+            recentHome.traceRecentOrder("AUTHORITATIVE_CHANGE_COMPLETE", "dataChanged")
+        }
         function onModelReset() {
             recentHome.anchorSelection()
             recentHome.restoreSelection()
+            recentHome.traceRecentOrder("AUTHORITATIVE_CHANGE_COMPLETE", "modelReset")
         }
     }
 }

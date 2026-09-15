@@ -40,6 +40,7 @@ Rectangle {
     property real selectionProgress: focused ? 1 : 0
     property int playActivationSerial: 0
     property real playButtonScale: 1
+    signal playFeedbackCompleted()
     property real compactEndpointWidth: 0
     property point sceneOriginOverride: canonicalSceneOrigin
     property size sceneSizeOverride: Qt.size(width, height)
@@ -102,6 +103,10 @@ Rectangle {
             to: 1
             duration: 100
             easing.type: Easing.OutQuint
+        }
+        onStopped: {
+            if (card.playButtonScale === 1)
+                card.playFeedbackCompleted()
         }
     }
     readonly property var focalMetadataRows: {

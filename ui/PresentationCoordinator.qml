@@ -44,7 +44,20 @@ Item {
         titleTrainCompletionAt, recentRowCompletionAt, hintsCompletionAt)
 
     property real startupClock: 0
+    // The coordinator owns the continuous render clock. Orbit's intro clock is
+    // a subordinate animation triggered by beginStartup; it never gates the
+    // shell's PRESENTED/HIDDEN boundaries.
+    property real orbitBaseTime: 0
+    property real orbitSettledOffset: 0
+    property real orbitIntroClock: 0
+    property bool orbitIntroActive: false
+    property real orbitExitStartTime: 0
+    property real orbitExitStartBaseTime: 0
+    property real orbitExitStartVisibility: 0
+    property real orbitExitStartBrightness: 0
+    property real orbitExitStartSpeed: 1
     readonly property bool startupRunning: startupAnimation.running
+    readonly property bool exitRunning: exitAnimation.running
     readonly property bool contentVisible:
         contentState !== hiddenState
         && (contentState !== transitioningInState
@@ -55,8 +68,127 @@ Item {
         contentState === transitioningInState
         || contentState === transitioningAwayState
 
+    readonly property real presentationProgress:
+        contentState === hiddenState ? 0
+        : contentState === presentedState ? 1
+        : clamp01(startupClock / startupDuration)
+    readonly property real orbitIntroPeakSpeed: 34.0
+    readonly property int orbitIntroDuration: 4500
+    readonly property int orbitIntroPeakStart: 225
+    readonly property int orbitIntroPeakEnd: 360
+    readonly property int orbitIntroRevealEnd: 990
+    readonly property real orbitIntroDecay: 10.0
+    readonly property real orbitNormalSpeed: 1.0
+    readonly property real orbitExitTerminalSpeed: 0.15
+    readonly property real orbitClockRate: 1.0
+    readonly property real orbitVisibility: {
+        if (contentState === hiddenState)
+            return 0
+        if (contentState === transitioningAwayState)
+            return orbitExitStartVisibility * presentationProgress
+        if (orbitIntroActive)
+            return clamp01(orbitIntroClock / orbitIntroRevealEnd)
+        return 1
+    }
+    readonly property real orbitBrightness:
+        contentState === hiddenState ? 0
+        : contentState === transitioningAwayState
+            ? orbitExitStartBrightness * presentationProgress
+            : orbitIntroActive ? orbitVisibility : 1
+    readonly property real orbitSpeed:
+        contentState === hiddenState ? 0
+        : contentState === transitioningAwayState
+            ? orbitExitSpeedAt(1 - presentationProgress, orbitExitStartSpeed)
+            : orbitIntroActive
+                ? orbitIntroSpeedAt(orbitIntroClock)
+                : orbitNormalSpeed
+    readonly property real orbitShaderTime: {
+        if (contentState === hiddenState)
+            return 0
+        if (orbitIntroActive)
+            return orbitBaseTime + orbitIntroCorrection(orbitIntroClock)
+        if (contentState === transitioningAwayState)
+            return orbitExitStartTime + (orbitBaseTime - orbitExitStartBaseTime)
+                + orbitExitCorrection(1 - presentationProgress,
+                                       orbitExitStartSpeed)
+        return orbitBaseTime + orbitSettledOffset
+    }
+
     function clamp01(value) {
         return Math.max(0, Math.min(1, value))
+    }
+
+    function smoothstep(value) {
+        var normalized = clamp01(value)
+        return normalized * normalized * (3 - 2 * normalized)
+    }
+
+    function orbitIntroSpeedAt(elapsedMs) {
+        var value = Math.max(0, Math.min(orbitIntroDuration, elapsedMs))
+        if (value < orbitIntroPeakStart) {
+            var rising = value / orbitIntroPeakStart
+            return 0.01 + (orbitIntroPeakSpeed - 0.01) * smoothstep(rising)
+        }
+        if (value < orbitIntroPeakEnd)
+            return orbitIntroPeakSpeed
+        var decayProgress = (value - orbitIntroPeakEnd)
+            / (orbitIntroDuration - orbitIntroPeakEnd)
+        var endDecay = Math.exp(-orbitIntroDecay)
+        var decay = Math.exp(-orbitIntroDecay * decayProgress)
+        return orbitNormalSpeed + (orbitIntroPeakSpeed - orbitNormalSpeed)
+            * (decay - endDecay) / (1 - endDecay)
+    }
+
+    // Integral of the upstream intro speed curve over elapsed seconds.
+    function orbitIntroIntegratedSpeed(elapsedMs) {
+        var value = Math.max(0, Math.min(orbitIntroDuration, elapsedMs))
+        var duration = orbitIntroDuration
+        var firstLength = orbitIntroPeakStart
+        var secondLength = orbitIntroPeakEnd - orbitIntroPeakStart
+        var finalLength = duration - orbitIntroPeakEnd
+        var result = 0
+        if (value <= firstLength) {
+            var rising = value / firstLength
+            result = firstLength * (0.01 * rising
+                + (orbitIntroPeakSpeed - 0.01)
+                    * (rising * rising * rising
+                       - 0.5 * rising * rising * rising * rising))
+            return result / 1000
+        }
+        result = firstLength * (0.01
+            + (orbitIntroPeakSpeed - 0.01) * 0.5)
+        if (value <= orbitIntroPeakEnd)
+            return (result + (value - firstLength) * orbitIntroPeakSpeed) / 1000
+        var decayProgress = (value - orbitIntroPeakEnd) / finalLength
+        var endDecay = Math.exp(-orbitIntroDecay)
+        var decayIntegral = (1 - Math.exp(-orbitIntroDecay * decayProgress))
+            / orbitIntroDecay - endDecay * decayProgress
+        result += secondLength * orbitIntroPeakSpeed
+        result += finalLength * (decayProgress
+            + (orbitIntroPeakSpeed - orbitNormalSpeed)
+                * decayIntegral / (1 - endDecay))
+        return result / 1000
+    }
+
+    function orbitIntroCorrection(elapsedMs) {
+        return orbitIntroIntegratedSpeed(elapsedMs) - elapsedMs / 1000
+    }
+
+    function orbitExitSpeedAt(progress, initialSpeed) {
+        return initialSpeed
+            + (orbitExitTerminalSpeed - initialSpeed) * smoothstep(progress)
+    }
+
+    function orbitExitIntegratedSpeed(progress, initialSpeed) {
+        var value = clamp01(progress)
+        return initialSpeed * value
+            + (orbitExitTerminalSpeed - initialSpeed)
+                * (value * value * value - 0.5 * value * value * value * value)
+    }
+
+    function orbitExitCorrection(progress, initialSpeed) {
+        return (orbitExitIntegratedSpeed(progress, initialSpeed) - clamp01(progress))
+            * startupDuration / 1000
     }
 
     function easeOut(value, power) {
@@ -109,8 +241,11 @@ Item {
     }
 
     function titlePresentationVelocityPxPerMs(index, restingLeft, titleWidth) {
+        if (contentState === hiddenState)
+            return 0
         var startupTranslation = titleStartupTranslation(restingLeft, titleWidth)
-        return -startupTranslation * titleTravelVelocityAt(index) / titleDuration
+        var velocity = -startupTranslation * titleTravelVelocityAt(index) / titleDuration
+        return contentState === transitioningAwayState ? -velocity : velocity
     }
 
     function signedMotionBlurPixelsFromVelocity(velocity) {
@@ -121,6 +256,8 @@ Item {
     }
 
     function titleSignedBlurPixels(index, restingLeft, titleWidth) {
+        if (contentState === hiddenState)
+            return 0
         return signedMotionBlurPixelsFromVelocity(
             titlePresentationVelocityPxPerMs(index, restingLeft, titleWidth))
     }
@@ -161,14 +298,20 @@ Item {
     }
 
     function recentPresentationVelocityPxPerMs(rowRightEdge) {
+        if (contentState === hiddenState)
+            return 0
         var local = clamp01((startupClock - cardStartAt) / cardDuration)
         var startupX = recentRowStartupX(rowRightEdge)
-        return -startupX * recentRowVelocityAt(local, rowRightEdge) / cardDuration
+        var velocity = -startupX * recentRowVelocityAt(local, rowRightEdge) / cardDuration
+        return contentState === transitioningAwayState ? -velocity : velocity
     }
 
     function recentPresentationVelocityAt(local, rowRightEdge) {
+        if (contentState === hiddenState)
+            return 0
         var startupX = recentRowStartupX(rowRightEdge)
-        return -startupX * recentRowVelocityAt(local, rowRightEdge) / cardDuration
+        var velocity = -startupX * recentRowVelocityAt(local, rowRightEdge) / cardDuration
+        return contentState === transitioningAwayState ? -velocity : velocity
     }
 
     function recentSignedBlurPixelsFromVelocity(velocity) {
@@ -176,6 +319,8 @@ Item {
     }
 
     function recentSignedBlurPixels(rowRightEdge) {
+        if (contentState === hiddenState)
+            return 0
         return recentSignedBlurPixelsFromVelocity(
             recentPresentationVelocityPxPerMs(rowRightEdge))
     }
@@ -231,8 +376,17 @@ Item {
 
     function beginStartup() {
         startupAnimation.stop()
+        exitAnimation.stop()
+        orbitBaseTimeAnimation.stop()
+        orbitBaseTime = 0
+        orbitSettledOffset = 0
+        orbitIntroClock = 0
+        orbitIntroActive = true
         startupClock = 0
+        console.log("COORDINATOR", contentState, "->", transitioningInState)
         contentState = transitioningInState
+        orbitBaseTimeAnimation.start()
+        orbitIntroAnimation.start()
         startupAnimation.start()
     }
 
@@ -240,17 +394,50 @@ Item {
     // freeze/reconcile choreography can use them without moving authority into
     // Recent or introducing a timer-owned launch workaround.
     function beginContentExit() {
+        if (contentState !== presentedState || exitAnimation.running)
+            return false
+        orbitExitStartTime = orbitShaderTime
+        orbitExitStartBaseTime = orbitBaseTime
+        orbitExitStartVisibility = orbitVisibility
+        orbitExitStartBrightness = orbitBrightness
+        orbitExitStartSpeed = orbitSpeed
+        orbitIntroActive = false
+        orbitIntroAnimation.stop()
         contentState = transitioningAwayState
+        startupClock = startupDuration
+        exitAnimation.start()
+        return true
     }
 
     function markContentHidden() {
         startupAnimation.stop()
+        exitAnimation.stop()
+        orbitBaseTimeAnimation.stop()
+        orbitIntroAnimation.stop()
+        orbitIntroActive = false
+        startupClock = 0
         contentState = hiddenState
+        console.log("COORDINATOR", transitioningAwayState, "->", hiddenState)
+        contentHiddenReached()
     }
 
     function markContentPresented() {
         startupAnimation.stop()
+        exitAnimation.stop()
         contentState = presentedState
+        console.log("COORDINATOR", transitioningInState, "->", presentedState)
+        contentPresentedReached()
+    }
+
+    signal contentHiddenReached()
+    signal contentPresentedReached()
+
+    function finishOrbitIntro() {
+        if (!orbitIntroActive)
+            return
+        orbitIntroClock = orbitIntroDuration
+        orbitSettledOffset = orbitIntroCorrection(orbitIntroDuration)
+        orbitIntroActive = false
     }
 
     NumberAnimation {
@@ -264,6 +451,46 @@ Item {
         onStopped: {
             if (coordinator.contentState === coordinator.transitioningInState)
                 coordinator.markContentPresented()
+        }
+    }
+
+    NumberAnimation {
+        id: orbitBaseTimeAnimation
+        target: coordinator
+        property: "orbitBaseTime"
+        from: 0
+        to: 100000
+        duration: 100000000
+        loops: Animation.Infinite
+        running: true
+    }
+
+    NumberAnimation {
+        id: orbitIntroAnimation
+        target: coordinator
+        property: "orbitIntroClock"
+        from: 0
+        to: coordinator.orbitIntroDuration
+        duration: coordinator.orbitIntroDuration
+        easing.type: Easing.Linear
+        onStopped: {
+            if (coordinator.orbitIntroActive
+                    && coordinator.contentState !== coordinator.transitioningAwayState)
+                coordinator.finishOrbitIntro()
+        }
+    }
+
+    NumberAnimation {
+        id: exitAnimation
+        target: coordinator
+        property: "startupClock"
+        from: coordinator.startupDuration
+        to: 0
+        duration: coordinator.startupDuration
+        easing.type: Easing.Linear
+        onStopped: {
+            if (coordinator.contentState === coordinator.transitioningAwayState)
+                coordinator.markContentHidden()
         }
     }
 }

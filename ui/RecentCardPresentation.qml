@@ -50,6 +50,8 @@ Item {
     property bool startVisible: true
     property bool selectionBlurActive: false
     property string presentationState: "COMPACT"
+    signal activationRequested(string gameId)
+    signal playFeedbackCompleted(string gameId)
 
     readonly property real targetProgress: focused ? 1 : 0
     readonly property real presentationProgress: startProgress
@@ -96,6 +98,7 @@ Item {
         compactTitleOpacity: root.compactTitleOpacity
         presentationState: root.presentationState
         focusBrightness: root.focused ? 1 : 0.68
+        onPlayFeedbackCompleted: root.playFeedbackCompleted(root.game_id)
         liveSceneCoordinates: true
         opticsStage: root.presentationProgress > 0 ? 7 : -1
         compact: root.presentationState === "COMPACT"
@@ -130,6 +133,6 @@ Item {
 
     MouseArea {
         anchors.fill: parent
-        onClicked: if (root.home) root.home.launchRequested(root.game_id)
+        onClicked: root.activationRequested(root.game_id)
     }
 }

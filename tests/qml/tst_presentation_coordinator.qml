@@ -102,6 +102,7 @@ TestCase {
     }
 
     function test_starts_hidden_with_explicit_offscreen_geometry() {
+        coordinator.contentState = coordinator.hiddenState
         coordinator.startupClock = 0
         compare(coordinator.contentState, coordinator.hiddenState)
         verify(!coordinator.contentVisible)
@@ -109,6 +110,87 @@ TestCase {
         verify(coordinator.recentRowStartupX(1800) < -1800)
         verify(coordinator.recentRowPresentationX(1800, 1280) < -1800)
         verify(coordinator.hintsOffset() > 0)
+    }
+
+    function test_orbit_envelopes_have_exact_terminal_values() {
+        coordinator.contentState = coordinator.hiddenState
+        coordinator.startupClock = 0
+        compare(coordinator.presentationProgress, 0)
+        compare(coordinator.orbitVisibility, 0)
+        compare(coordinator.orbitBrightness, 0)
+        compare(coordinator.orbitShaderTime, 0)
+
+        coordinator.orbitIntroActive = true
+        coordinator.orbitIntroClock = coordinator.orbitIntroDuration
+        coordinator.finishOrbitIntro()
+        coordinator.contentState = coordinator.transitioningInState
+        coordinator.startupClock = coordinator.startupDuration
+        compare(coordinator.presentationProgress, 1)
+        compare(coordinator.orbitVisibility, 1)
+        compare(coordinator.orbitBrightness, 1)
+        compare(coordinator.orbitSpeed, coordinator.orbitNormalSpeed)
+
+        coordinator.contentState = coordinator.presentedState
+        compare(coordinator.orbitVisibility, 1)
+        compare(coordinator.orbitBrightness, 1)
+        compare(coordinator.orbitSpeed, coordinator.orbitNormalSpeed)
+
+        coordinator.contentState = coordinator.transitioningAwayState
+        coordinator.startupClock = 0
+        compare(coordinator.presentationProgress, 0)
+        compare(coordinator.orbitVisibility, 0)
+        compare(coordinator.orbitShaderTime,
+                coordinator.orbitExitStartTime
+                + (coordinator.orbitBaseTime - coordinator.orbitExitStartBaseTime)
+                + coordinator.orbitExitCorrection(1, coordinator.orbitExitStartSpeed))
+    }
+
+    function test_orbit_speed_and_shader_time_are_continuous_at_reversal_boundaries() {
+        coordinator.contentState = coordinator.transitioningInState
+        coordinator.orbitIntroActive = true
+        coordinator.orbitIntroClock = 2000
+        coordinator.contentState = coordinator.presentedState
+        var beforeExit = coordinator.orbitShaderTime
+        var beforeVisibility = coordinator.orbitVisibility
+        var beforeBrightness = coordinator.orbitBrightness
+        verify(coordinator.beginContentExit())
+        compare(coordinator.orbitExitStartTime, beforeExit)
+        compare(coordinator.orbitExitStartVisibility, beforeVisibility)
+        compare(coordinator.orbitExitStartBrightness, beforeBrightness)
+        var presentedTime = coordinator.orbitShaderTime
+        compare(presentedTime, beforeExit)
+        compare(coordinator.orbitVisibility, beforeVisibility)
+        compare(coordinator.orbitBrightness, beforeBrightness)
+        coordinator.markContentHidden()
+    }
+
+    function test_orbit_repeated_cycles_restart_from_deterministic_hidden_state() {
+        for (var cycle = 0; cycle < 3; cycle++) {
+            coordinator.contentState = coordinator.hiddenState
+            coordinator.startupClock = 0
+            coordinator.orbitIntroActive = false
+            coordinator.orbitSettledOffset = 0
+            compare(coordinator.orbitShaderTime, 0)
+            compare(coordinator.orbitVisibility, 0)
+
+            coordinator.contentState = coordinator.transitioningInState
+            coordinator.orbitIntroActive = true
+            coordinator.orbitIntroClock = coordinator.orbitIntroDuration
+            coordinator.finishOrbitIntro()
+            coordinator.contentState = coordinator.presentedState
+            compare(coordinator.orbitVisibility, 1)
+            compare(coordinator.orbitSpeed, coordinator.orbitNormalSpeed)
+
+            verify(coordinator.beginContentExit())
+            coordinator.startupClock = 0
+            compare(coordinator.orbitVisibility, 0)
+            compare(coordinator.orbitShaderTime,
+                    coordinator.orbitExitStartTime
+                    + (coordinator.orbitBaseTime - coordinator.orbitExitStartBaseTime)
+                    + coordinator.orbitExitCorrection(1,
+                                                       coordinator.orbitExitStartSpeed))
+            coordinator.markContentHidden()
+        }
     }
 
     function test_title_and_recent_envelopes_are_synchronized() {
@@ -141,6 +223,7 @@ TestCase {
     }
 
     function test_title_velocity_respects_stagger_and_turning_points() {
+        coordinator.contentState = coordinator.transitioningInState
         var widths = [180, 140, 220, 160]
         for (var index = 0; index < coordinator.titleCount; index++) {
             var start = coordinator.titleStartAt + index * coordinator.titleStagger
@@ -233,6 +316,7 @@ TestCase {
     }
 
     function test_recent_analytic_velocity_follows_signed_trajectory() {
+        coordinator.contentState = coordinator.transitioningInState
         var rowEdge = 1800
         var turningPoint = coordinator.recentRowOvershootTime(rowEdge)
             / coordinator.cardDuration
@@ -327,6 +411,25 @@ TestCase {
         compare(system.selectionProgress, 0)
         verify(system.selectedOpacityOwner(1))
         verify(!system.selectedOpacityOwner(0))
+    }
+
+    function test_exit_is_reverse_timeline_and_reaches_hidden() {
+        verify(coordinator !== null)
+        coordinator.contentState = coordinator.presentedState
+        coordinator.startupClock = coordinator.startupDuration
+        verify(coordinator.beginContentExit())
+        compare(coordinator.contentState, coordinator.transitioningAwayState)
+        verify(coordinator.exitRunning)
+        coordinator.startupClock = 700
+        verify(coordinator.titlePresentationVelocityPxPerMs(
+                   3, 120, 160) !== 0)
+
+        wait(coordinator.startupDuration + 80)
+        compare(coordinator.contentState, coordinator.hiddenState)
+        compare(coordinator.startupClock, 0)
+        compare(coordinator.titlePresentationVelocityPxPerMs(0, 120, 160), 0)
+        compare(coordinator.recentPresentationVelocityPxPerMs(800), 0)
+        compare(coordinator.recentSignedBlurPixels(800), 0)
     }
 
     function test_presentation_state_boundaries_are_explicit() {
