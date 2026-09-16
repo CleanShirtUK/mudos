@@ -14,6 +14,8 @@ RecentModel::RecentModel(CatalogueModel *source, QObject *parent)
             this, &RecentModel::sourceRowsInserted);
     connect(source_, &QAbstractItemModel::rowsAboutToBeRemoved,
             this, &RecentModel::sourceRowsAboutToBeRemoved);
+    connect(source_, &QAbstractItemModel::rowsRemoved,
+            this, &RecentModel::sourceRowsRemoved);
     connect(source_, &QAbstractItemModel::dataChanged,
             this, &RecentModel::sourceDataChanged);
     rebuild();
@@ -81,10 +83,14 @@ int RecentModel::sortedInsertRow(const QString &gameId) const
 void RecentModel::insertGame(const QString &gameId)
 {
     const int row = sortedInsertRow(gameId);
+    if (row >= kMaximumEntries)
+        return;
     beginInsertRows({}, row, row);
     gameIds_.insert(row, gameId);
     lastPlayedById_.insert(gameId, lastPlayed(gameId));
     endInsertRows();
+    if (gameIds_.size() > kMaximumEntries)
+        removeGame(gameIds_.constLast());
 }
 
 void RecentModel::removeGame(const QString &gameId)
@@ -113,6 +119,10 @@ void RecentModel::rebuild()
     std::sort(gameIds_.begin(), gameIds_.end(), [this](const QString &left, const QString &right) {
         return comesBefore(left, right);
     });
+    while (gameIds_.size() > kMaximumEntries) {
+        lastPlayedById_.remove(gameIds_.constLast());
+        gameIds_.removeLast();
+    }
     endResetModel();
 }
 
@@ -132,6 +142,14 @@ void RecentModel::sourceRowsAboutToBeRemoved(const QModelIndex &, int first, int
         removed.append(source_->data(source_->index(row, 0), CatalogueModel::GameIdRole).toString());
     for (const QString &gameId : removed)
         removeGame(gameId);
+}
+
+void RecentModel::sourceRowsRemoved(const QModelIndex &, int, int)
+{
+    // Entries below the public cap are intentionally not retained in
+    // gameIds_. Rebuild after a source removal so the next eligible history
+    // entry can fill the Recent rail.
+    rebuild();
 }
 
 void RecentModel::sourceDataChanged(const QModelIndex &topLeft, const QModelIndex &bottomRight,

@@ -47,6 +47,35 @@ Item {
         liveSceneOriginInitialized = false
     }
 
+    function dumpRuntimeState(position) {
+        var r = Qt.rect(sceneOrigin.x, sceneOrigin.y,
+                        sceneSize.x, sceneSize.y)
+        console.log("MUDOS_LEGACY_GLASS_RUNTIME",
+                    "canonicalSize", canonicalSize.width, canonicalSize.height,
+                    "canonicalRect", r.x, r.y, r.width, r.height,
+                    "surfaceSize", width, height,
+                    "sourceLogicalSize", canonicalTexture
+                        ? canonicalTexture.width + "x" + canonicalTexture.height
+                        : "none",
+                    "sourceRequestedTextureSize", canonicalTexture
+                        ? canonicalTexture.textureSize.width + "x"
+                            + canonicalTexture.textureSize.height : "none",
+                    "opacity", legacyShader.opacity,
+                    "ior", ior, "depth", glassDepth,
+                    "refractionPx", refractionPixels,
+                    "dispersion", dispersionIor,
+                    "diffusionPx", diffusionPixels,
+                    "transmission", transmission,
+                    "bevelPx", bevelWidthPx,
+                    "bulge", bulgeStrength,
+                    "edgeLight", edgeLightStrength,
+                    "edgeDirection", edgeLightDirection.x, edgeLightDirection.y,
+                    "sceneLight", sceneLightStrength, sceneLightPixels,
+                    "radius", cornerRadius,
+                    "transparentOutsideMask", transparentOutsideMask,
+                    "presentationPosition", position.x, position.y)
+    }
+
     onSceneCoordinateRootChanged: invalidateLiveSceneOrigin()
     onParentChanged: invalidateLiveSceneOrigin()
     onXChanged: invalidateLiveSceneOrigin()
@@ -55,6 +84,7 @@ Item {
     onHeightChanged: invalidateLiveSceneOrigin()
 
     ShaderEffect {
+        id: legacyShader
         anchors.fill: parent
         fragmentShader: root.identitySampling
             ? "shaders/canonical-identity.frag.qsb"

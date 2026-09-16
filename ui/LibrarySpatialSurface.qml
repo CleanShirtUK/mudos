@@ -18,6 +18,8 @@ Item {
     property real uiScale: 1
     property real verticalOffset: 0
     property bool surfaceVisible: false
+    property bool nativeGlassEnabled: true
+    property bool transparentOutsideMask: true
 
     readonly property real surfaceX: homeX + (fullscreenX - homeX) * progress
     readonly property real surfaceY: homeY + (fullscreenY - homeY) * progress
@@ -30,12 +32,52 @@ Item {
     height: surfaceHeight
     visible: surfaceVisible
 
+    // mapToItem() does not itself invalidate when an ancestor moves or
+    // scales. Read every authoritative presentation input here so the
+    // canonical rectangle is recomputed throughout interpolation, including
+    // reversal/retarget and category offset changes.
+    readonly property rect canonicalRect: {
+        var presentationDependency = progress + homeX + homeY
+            + homeWidth + homeHeight + fullscreenX + fullscreenY
+            + fullscreenWidth + fullscreenHeight + verticalOffset + uiScale
+            + x + y + width + height
+        var ancestorDependency = parent
+            ? parent.x + parent.y + parent.scale : 0
+        var dependency = presentationDependency + ancestorDependency
+        var topLeft = canonicalCoordinateRoot
+            ? root.mapToItem(canonicalCoordinateRoot, 0, 0)
+            : Qt.point(0, 0)
+        var bottomRight = canonicalCoordinateRoot
+            ? root.mapToItem(canonicalCoordinateRoot, width, height)
+            : Qt.point(width, height)
+        return Qt.rect(topLeft.x + dependency - dependency,
+                       topLeft.y + dependency - dependency,
+                       bottomRight.x - topLeft.x,
+                       bottomRight.y - topLeft.y)
+    }
+
+    function dumpPresentationState(mark) {
+        console.log("MUDOS_LIBRARY_SPATIAL_PRESENTATION",
+                    "mark", mark,
+                    "visible", root.visible,
+                    "surfaceVisible", root.surfaceVisible,
+                    "opacity", root.opacity,
+                    "progress", root.progress,
+                    "position", root.x, root.y,
+                    "size", root.width, root.height)
+        spatialSurface.dumpPresentationState(mark, "library-spatial")
+    }
+
     NavigationCardSurface {
+        id: spatialSurface
         anchors.fill: parent
-        canonicalTexture: root.canonicalTexture
-        canonicalSize: root.canonicalSize
-        canonicalCoordinateRoot: root.canonicalCoordinateRoot
-        cornerRadius: 16 * root.uiScale + 12 * root.uiScale * root.progress
-        bevelWidthPx: 3 * root.uiScale + 3 * root.uiScale * root.progress
+         canonicalTexture: root.canonicalTexture
+         canonicalSize: root.canonicalSize
+         canonicalCoordinateRoot: root.canonicalCoordinateRoot
+         canonicalRect: root.canonicalRect
+         nativeGlassEnabled: root.nativeGlassEnabled
+         transparentOutsideMask: root.transparentOutsideMask
+         cornerRadius: 16 * root.uiScale + 12 * root.uiScale * root.progress
+         bevelWidthPx: 3 * root.uiScale + 3 * root.uiScale * root.progress
     }
 }

@@ -22,6 +22,15 @@ Item {
     property var canonicalTexture
     property var canonicalCoordinateRoot
     property size canonicalSize: Qt.size(1280, 720)
+    property bool nativeLandingGlassEnabled: false
+    property bool glassDiscriminatorEnabled: false
+    property var presentationCoordinator
+    property real categoryProgress: 1
+    property bool categoryTransitioning: false
+    property int categoryFrom: -1
+    property int categoryTarget: -1
+    property int categoryDirection: 1
+    property real categoryMotionVelocity: 0
     signal steamStoreRequested()
     signal installGameRequested(var game)
 
@@ -139,12 +148,37 @@ Item {
         symbolicArtwork: ""
         artworkRole: "raster"
         artworkSource: Qt.resolvedUrl(MudosAssetCatalog.suppliedArtwork("store"))
+        focused: true
+        selectionProgress: 1
+        selectedOpacityOwner: true
         uiScale: root.uiScale
         typography: root.typography
         luluPalette: root.luluPalette
         canonicalTexture: root.canonicalTexture
         canonicalCoordinateRoot: root.canonicalCoordinateRoot
         canonicalSize: root.canonicalSize
+        nativeGlassEnabled: root.nativeLandingGlassEnabled
+        glassDiscriminatorEnabled: root.glassDiscriminatorEnabled
+        canonicalMappingDependency: ({
+            ownerX: root.x,
+            ownerY: root.y,
+            ownerScale: root.scale,
+            delegateX: x,
+            delegateY: y,
+            width: width,
+            height: height
+        })
+        categoryProgress: root.categoryProgress
+        categoryTransitioning: root.categoryTransitioning
+        categoryFrom: root.categoryFrom
+        categoryTarget: root.categoryTarget
+        categoryDirection: root.categoryDirection
+        presentationAncestorY: root.parent ? root.parent.y : 0
+        presentationAncestorScale: root.parent ? root.parent.scale : 1
+        motionBlurActive: root.categoryTransitioning
+        motionBlurVector: root.presentationCoordinator
+            ? root.presentationCoordinator.signedMotionBlurVectorFromVelocity(
+                0, root.categoryMotionVelocity) : Qt.vector2d(0, 0)
         onActivated: root.steamStoreRequested()
     }
 }

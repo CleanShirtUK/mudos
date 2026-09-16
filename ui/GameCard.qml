@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Effects
 import "MudosAssetCatalog.js" as MudosAssetCatalog
+import Mudos.Poc 1.0
 
 Rectangle {
     id: card
@@ -10,11 +11,13 @@ Rectangle {
     property bool compact: false
     property bool showAction: false
     property bool homeCard: false
+    // Development canary: only RecentCardPresentation enables this.
+    property bool nativeRecentGlassCanary: false
     property bool glassVisible: true
     property bool librarySurfaceMaterial: false
     property string presentationState: "COMPACT"
-    property var canonicalTexture
-    property var canonicalCoordinateRoot
+    property var canonicalTexture: null
+    property var canonicalCoordinateRoot: null
     property size canonicalSize: Qt.size(1280, 720)
     property real focalScale: 1
     property real uiScale: 1
@@ -30,6 +33,17 @@ Rectangle {
     property string symbolicArtwork: ""
     property bool identitySampling: false
     property bool liveSceneCoordinates: false
+    // Recent supplies the authoritative row/delegate presentation inputs.
+    // Reading this value in the mapping binding makes ancestor translations
+    // invalidate the mapToItem() result without changing the item hierarchy.
+    property var canonicalMappingDependency: null
+    property real canonicalMappingRevision: 0
+    property bool nativeGlassEnabled: false
+    // Catalogue cards use the rounded mask as the presentation boundary;
+    // outside the boundary must remain transparent rather than falling back
+    // to an undiffused canonical backdrop. Recent/landing keep their
+    // established native composition by default.
+    property bool nativeGlassTransparentOutsideMask: false
     property bool neutralOptics: false
     // Focal diagnostic stages: 0 neutral, then transmission, diffusion, bevel,
     // bulge, refraction, dispersion, and edge lighting.
@@ -149,12 +163,74 @@ Rectangle {
                        color.b * focusBrightness, color.a)
     }
     readonly property point canonicalSceneOrigin: {
+        var presentationDependency = canonicalMappingDependency
         var origin = canonicalCoordinateRoot
             ? card.mapToItem(canonicalCoordinateRoot, 0, 0)
             : Qt.point(0, 0)
         // mapToItem() is not reactive to ancestor layout changes by itself.
         var layoutDependency = card.x + card.y + card.width + card.height
+            + card.canonicalMappingRevision
         return Qt.point(origin.x + layoutDependency * 0, origin.y + layoutDependency * 0)
+    }
+    readonly property rect nativeRecentCanonicalRect: {
+        var presentationDependency = canonicalMappingDependency
+        var topLeft = canonicalCoordinateRoot
+            ? card.mapToItem(canonicalCoordinateRoot, 0, 0) : Qt.point(0, 0)
+        var bottomRight = canonicalCoordinateRoot
+            ? card.mapToItem(canonicalCoordinateRoot, width, height)
+            : Qt.point(width, height)
+        var layoutDependency = card.x + card.y + card.width + card.height
+            + card.canonicalMappingRevision
+        return Qt.rect(topLeft.x + layoutDependency * 0,
+                       topLeft.y + layoutDependency * 0,
+                       bottomRight.x - topLeft.x,
+                       bottomRight.y - topLeft.y)
+    }
+
+    function dumpRecentGlassMapping() {
+        if (!nativeRecentGlassCanary)
+            return
+        console.log("MUDOS_RECENT_GLASS_MAPPING",
+                    "localRect", 0, 0, width, height,
+                    "canonicalRect", nativeRecentCanonicalRect.x,
+                        nativeRecentCanonicalRect.y,
+                        nativeRecentCanonicalRect.width,
+                        nativeRecentCanonicalRect.height,
+                    "canonicalSize", canonicalSize.width, canonicalSize.height,
+                    "scenePosition", canonicalSceneOrigin.x, canonicalSceneOrigin.y,
+                    "sourceTextureSize", canonicalTexture
+                        ? canonicalTexture.width + "x" + canonicalTexture.height : "none",
+                    "uvRect", nativeRecentCanonicalRect.x / canonicalSize.width,
+                        nativeRecentCanonicalRect.y / canonicalSize.height,
+                        nativeRecentCanonicalRect.width / canonicalSize.width,
+                        nativeRecentCanonicalRect.height / canonicalSize.height)
+        nativeGlassSurface.dumpMapping()
+    }
+
+    function nativeRecentGlassIdentity() {
+        return String(nativeGlassSurface)
+    }
+
+    function dumpPresentationState(mark, identity) {
+        console.log("MUDOS_GAMECARD_PRESENTATION",
+                    "mark", mark, "identity", identity || card.displayTitle,
+                    "visible", card.visible, "opacity", card.opacity,
+                    "rootColorAlpha", card.color.a,
+                    "librarySurfaceMaterial", card.librarySurfaceMaterial,
+                    "presentationProgress", card.presentationProgress,
+                    "presentationContentOpacity", card.presentationContentOpacity,
+                    "selectionProgress", card.selectionProgress,
+                    "focusBrightness", card.focusBrightness,
+                    "artworkFrameVisible", artworkFrame.visible,
+                    "artworkFrameOpacity", artworkFrame.opacity,
+                    "artworkFrameColorAlpha", artworkFrame.color.a,
+                    "glassSurfaceVisible", glassSurface.visible,
+                    "glassSurfaceOpacity", glassSurface.opacity,
+                    "nativeGlassVisible", nativeGlassSurface.visible,
+                    "nativeGlassOpacity", nativeGlassSurface.opacity,
+                    "playButtonVisible", playButton.visible,
+                    "playButtonOpacity", playButton.opacity,
+                    "playButtonColorAlpha", playButton.color.a)
     }
 
     implicitWidth: recentFocal ? 1100 * uiScale : (compact ? 260 : 210) * uiScale
@@ -184,7 +260,7 @@ Rectangle {
 
     NavigationCardSurface {
         anchors.fill: parent
-        visible: card.catalogueCard
+        visible: card.catalogueCard && !card.nativeGlassEnabled
         transparentOutsideMask: card.catalogueCard
         canonicalTexture: card.canonicalTexture
         canonicalSize: card.canonicalSize
@@ -194,7 +270,9 @@ Rectangle {
     GlassSurface {
         id: glassSurface
         anchors.fill: parent
-        visible: card.homeCard && card.glassVisible
+        visible: (card.homeCard || card.catalogueCard)
+            && card.glassVisible && !card.nativeRecentGlassCanary
+            && !card.nativeGlassEnabled
         debugLabel: ""
         debugCoordinateRoot: card.canonicalCoordinateRoot
         canonicalTexture: card.canonicalTexture
@@ -220,7 +298,32 @@ Rectangle {
         sceneLightPixels: 24
         edgeLightStrength: card.opticsStage >= 0 && card.opticsStage < 7 ? 0 : 0.10
         edgeLightDirection: Qt.vector2d(1, -1)
-        diagnosticMode: 0
+        diagnosticMode: card.nativeRecentGlassCanary ? 1 : 0
+    }
+
+    MudosGlassItem {
+        id: nativeGlassSurface
+        anchors.fill: parent
+        visible: (card.homeCard || card.catalogueCard)
+            && card.glassVisible
+            && (card.nativeRecentGlassCanary || card.nativeGlassEnabled)
+        backdrop: card.canonicalTexture
+        canonicalSize: card.canonicalSize
+        canonicalRect: card.nativeRecentCanonicalRect
+        cornerRadius: card.radius
+        refractionPixels: card.opticsStage >= 0 && card.opticsStage < 5 ? 0 : 80 * card.uiScale
+        dispersionIor: card.opticsStage >= 0 && card.opticsStage < 6 ? 0 : 0.0175
+        diffusionPixels: card.opticsStage >= 0 && card.opticsStage < 2 ? 0 : 5 * card.uiScale
+        transmission: card.librarySurfaceMaterial ? 1
+            : (card.opticsStage >= 0 && card.opticsStage < 1 ? 1 : 0.75)
+        bevelWidthPx: card.opticsStage >= 0 && card.opticsStage < 3 ? 0 : 3 * card.uiScale
+        bulgeStrength: card.opticsStage >= 0 && card.opticsStage < 4 ? 0 : 100.0
+        sceneLightStrength: 0
+        sceneLightPixels: 24
+        edgeLightStrength: card.opticsStage >= 0 && card.opticsStage < 7 ? 0 : 0.10
+        edgeLightDirection: Qt.vector2d(1, -1)
+        transparentOutsideMask: card.nativeGlassTransparentOutsideMask
+        diagnosticMode: card.nativeRecentGlassCanary ? 1 : 0
     }
 
     PlayGlassSurface {

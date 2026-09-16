@@ -10,7 +10,7 @@ pkg_check_modules(XCB_KEYSYMS REQUIRED IMPORTED_TARGET xcb-keysyms)
 pkg_check_modules(XCB REQUIRED IMPORTED_TARGET xcb)
 pkg_check_modules(SDL3 REQUIRED IMPORTED_TARGET sdl3)
 
-add_executable(lulu-shell lulu-shell.cpp catalogue-model.cpp recent-model.cpp)
+add_executable(lulu-shell lulu-shell.cpp catalogue-model.cpp recent-model.cpp mudos-glass-item.cpp)
 target_link_libraries(lulu-shell PRIVATE Qt6::DBus Qt6::Gui Qt6::Multimedia Qt6::Qml Qt6::Quick PkgConfig::XCB PkgConfig::SDL3)
 
 enable_testing()

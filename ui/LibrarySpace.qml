@@ -20,6 +20,7 @@ Item {
     property var canonicalTexture
     property var canonicalCoordinateRoot
     property size canonicalSize: Qt.size(1280, 720)
+    property bool nativeCatalogueGlassEnabled: true
     property string headingText: "LIBRARY"
     property string sectionTitle: ""
     property string emptyText: "No installed games"
@@ -279,9 +280,29 @@ Item {
                     uiScale: librarySpace.uiScale
                     typography: librarySpace.typography
                     luluPalette: librarySpace.luluPalette
-                    canonicalTexture: librarySpace.canonicalTexture
-                    canonicalCoordinateRoot: librarySpace.canonicalCoordinateRoot
-                    canonicalSize: librarySpace.canonicalSize
+                     canonicalTexture: librarySpace.canonicalTexture
+                     canonicalCoordinateRoot: librarySpace.canonicalCoordinateRoot
+                     canonicalSize: librarySpace.canonicalSize
+                     nativeGlassEnabled: librarySpace.nativeCatalogueGlassEnabled
+                     nativeGlassTransparentOutsideMask:
+                         librarySpace.nativeCatalogueGlassEnabled
+                     canonicalMappingDependency: ({
+                         viewportX: gridViewport.x,
+                         viewportY: gridViewport.y,
+                         gridX: gameGrid.x,
+                         gridY: gameGrid.y,
+                         contentY: gameGrid.contentY,
+                         delegateX: parent.x,
+                         delegateY: parent.y,
+                         width: width,
+                         height: height,
+                         scale: scale,
+                         selectionProgress: selectionProgress
+                     })
+                     canonicalMappingRevision: gridViewport.x
+                         + gridViewport.y + gameGrid.x + gameGrid.y
+                         + gameGrid.contentY + parent.x + parent.y
+                         + scale + selectionProgress
                     showAction: false
                     actionLabel: librarySpace.actionLabel
                     catalogueCard: true
@@ -326,9 +347,15 @@ Item {
                     uiScale: librarySpace.uiScale
                     typography: librarySpace.typography
                     luluPalette: librarySpace.luluPalette
-                    canonicalTexture: librarySpace.canonicalTexture
-                    canonicalCoordinateRoot: librarySpace.canonicalCoordinateRoot
-                    canonicalSize: librarySpace.canonicalSize
+                     canonicalTexture: librarySpace.canonicalTexture
+                     canonicalCoordinateRoot: librarySpace.canonicalCoordinateRoot
+                     canonicalSize: librarySpace.canonicalSize
+                     nativeGlassEnabled: librarySpace.nativeCatalogueGlassEnabled
+                     transparentOutsideMask:
+                         librarySpace.nativeCatalogueGlassEnabled
+                     mappingRevision: gridViewport.x + gridViewport.y
+                         + gameGrid.x + gameGrid.y + gameGrid.contentY
+                         + parent.x + parent.y + scale + selectionProgress
                     onActivated: specialActivated(gameData)
                 }
             }

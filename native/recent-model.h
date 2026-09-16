@@ -11,6 +11,8 @@ class RecentModel final : public QAbstractListModel
     Q_OBJECT
 
 public:
+    static constexpr int kMaximumEntries = 8;
+
     explicit RecentModel(CatalogueModel *source, QObject *parent = nullptr);
 
     int rowCount(const QModelIndex &parent = {}) const override;
@@ -24,6 +26,7 @@ private slots:
     void rebuild();
     void sourceRowsInserted(const QModelIndex &parent, int first, int last);
     void sourceRowsAboutToBeRemoved(const QModelIndex &parent, int first, int last);
+    void sourceRowsRemoved(const QModelIndex &parent, int first, int last);
     void sourceDataChanged(const QModelIndex &topLeft, const QModelIndex &bottomRight,
                            const QList<int> &roles = {});
 

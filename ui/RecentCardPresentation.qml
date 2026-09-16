@@ -40,6 +40,7 @@ Item {
     property var luluPalette
     property int playActivationSerial: 0
     property bool focused: false
+    property bool nativeRecentGlassCanary: false
     property real startX: 0
     property real startWidth: 0
     property real startProgress: 0
@@ -47,7 +48,6 @@ Item {
     property real startCompactTitle: 0
     property real railProgress: 1
     property int toRelativeIndex: 0
-    property bool startVisible: true
     property bool selectionBlurActive: false
     property string presentationState: "COMPACT"
     signal activationRequested(string gameId)
@@ -61,6 +61,21 @@ Item {
     readonly property real compactTitleOpacity: startCompactTitle
         + ((focused ? 0 : 1) - startCompactTitle) * railProgress
     readonly property real targetX: home ? home.railX(toRelativeIndex) : 0
+    // This is deliberately composed from the properties that move the live
+    // Recent presentation. mapToItem() itself does not notify on ancestor
+    // transforms, so GameCard consumes this dependency explicitly.
+    readonly property var canonicalMappingDependency: ({
+        rowX: home ? home.presentationX : 0,
+        delegateX: x,
+        delegateY: y,
+        delegateWidth: width,
+        delegateHeight: height,
+        railProgress: railProgress,
+        transitionProgress: home ? home.transitionProgress : 1,
+        presentationProgress: presentationProgress,
+        targetX: targetX,
+        targetWidth: home ? home.railWidth(toRelativeIndex) : width
+    })
     readonly property real capturePadding: home && home.presentationCoordinator
         ? home.presentationCoordinator.motionBlurMaxPixels : 64
     readonly property real captureWidth: focalCardWidth + 2 * capturePadding
@@ -107,14 +122,84 @@ Item {
             ? "Available to Download" : (root.provider === "steam-store"
                 ? "Open" : "Play")
         homeCard: true
+        nativeRecentGlassCanary: root.nativeRecentGlassCanary
         playActivationSerial: root.playActivationSerial
         canonicalTexture: root.canonicalTexture
-        canonicalCoordinateRoot: root.canonicalCoordinateRoot
+         canonicalCoordinateRoot: root.canonicalCoordinateRoot
+         canonicalMappingDependency: root.canonicalMappingDependency
         canonicalSize: root.canonicalSize
         focalScale: root.focalScale
         uiScale: root.uiScale
         typography: root.typography
         luluPalette: root.luluPalette
+    }
+
+    Timer {
+        id: canaryDiagnostics
+        interval: 1200
+        repeat: false
+        running: root.nativeRecentGlassCanary && root.focused && root.visible
+        onTriggered: gameCard.dumpRecentGlassMapping()
+    }
+
+    Timer {
+        id: settledRailCardDiagnostic
+        interval: 1800
+        repeat: false
+        running: root.nativeRecentGlassCanary && root.visible
+        onTriggered: root.dumpSettledRailMapping()
+    }
+
+    onFocusedChanged: {
+        if (root.nativeRecentGlassCanary && root.focused)
+            canaryDiagnostics.restart()
+    }
+
+    function dumpSettledRailMapping() {
+        var r = gameCard.nativeRecentCanonicalRect
+        var uv = Qt.rect(r.x / root.canonicalSize.width,
+                         r.y / root.canonicalSize.height,
+                         r.width / root.canonicalSize.width,
+                         r.height / root.canonicalSize.height)
+        console.log("MUDOS_RECENT_RAIL_CARD",
+                    "gameId", root.game_id,
+                    "modelIndex", root.index,
+                    "relativeIndex", root.toRelativeIndex,
+                    "focused", root.focused,
+                    "localX", gameCard.x,
+                    "sceneX", r.x,
+                    "width", gameCard.width,
+                    "canonicalRect", r.x, r.y, r.width, r.height,
+                    "canonicalSize", root.canonicalSize.width, root.canonicalSize.height,
+                    "uvRect", uv.x, uv.y, uv.width, uv.height,
+                    "nativeItem", gameCard.nativeRecentGlassIdentity())
+        gameCard.dumpRecentGlassMapping()
+    }
+
+    function dumpPresentationState(mark) {
+        gameCard.dumpPresentationState(mark, "recent-" + root.game_id)
+    }
+
+    function dumpTransitionMapping(mark) {
+        var r = gameCard.nativeRecentCanonicalRect
+        var directTopLeft = root.canonicalCoordinateRoot
+            ? gameCard.mapToItem(root.canonicalCoordinateRoot, 0, 0)
+            : Qt.point(0, 0)
+        console.log("MUDOS_RECENT_TRANSITION_SAMPLE",
+                    "mark", mark,
+                    "gameId", root.game_id,
+                    "modelIndex", root.index,
+                    "relativeIndex", root.toRelativeIndex,
+                    "focused", root.focused,
+                    "transitionProgress", root.railProgress,
+                    "delegateX", root.x,
+                    "gameCardX", gameCard.x,
+                    "directMapX", directTopLeft.x,
+                    "sceneX", r.x,
+                    "canonicalRect", r.x, r.y, r.width, r.height,
+                    "nativeCanonicalRect", r.x, r.y, r.width, r.height,
+                    "uvX", r.x / root.canonicalSize.width,
+                    "nativeItem", gameCard.nativeRecentGlassIdentity())
     }
 
     DirectionalMotionBlur {

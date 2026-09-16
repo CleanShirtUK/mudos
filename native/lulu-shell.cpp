@@ -10,6 +10,7 @@
 #include <QQmlPropertyMap>
 #include <QQmlApplicationEngine>
 #include <QQuickWindow>
+#include <QQuickRenderTarget>
 #include <QSocketNotifier>
 #include <QTimer>
 #include <qnativeinterface.h>
@@ -31,6 +32,7 @@
 #include <chrono>
 #include "catalogue-model.h"
 #include "recent-model.h"
+#include "mudos-glass-item.h"
 
 namespace {
 
@@ -111,9 +113,24 @@ public:
     {
         window_ = window;
         qInfo() << "controller Lulu window" << window_->winId();
+        qInfo() << "MUDOS_RENDER_CHAIN_QT_WINDOW"
+                << "size" << window_->size()
+                << "width" << window_->width()
+                << "height" << window_->height()
+                << "effectiveDpr" << window_->effectiveDevicePixelRatio()
+                << "screenGeometry" << (window_->screen()
+                    ? window_->screen()->geometry() : QRect());
         connect(window_, &QQuickWindow::beforeSynchronizing, this, [this]() {
             timelineEvent("beforeSynchronizing");
             renderFrameStartNs_ = timelineNowNs();
+            static bool loggedRenderGeometry = false;
+            if (!loggedRenderGeometry && window_->width() > 0 && window_->height() > 0) {
+                loggedRenderGeometry = true;
+                qInfo() << "MUDOS_RENDER_CHAIN_QT_SYNC"
+                        << "size" << window_->size()
+                        << "effectiveDpr" << window_->effectiveDevicePixelRatio()
+                        << "renderTargetNull" << window_->renderTarget().isNull();
+            }
         }, Qt::DirectConnection);
         connect(window_, &QQuickWindow::afterSynchronizing, this, [this]() {
             timelineEvent("afterSynchronizing");
@@ -147,6 +164,25 @@ public:
         file.close();
         QFile::remove(path);
         return group.isEmpty() ? QStringLiteral("all") : group;
+    }
+
+    Q_INVOKABLE QString consumeGlassDiagnosticRequest()
+    {
+        const QString path = QStringLiteral("/tmp/mudos-glass-action");
+        QFile file(path);
+        if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
+            return {};
+        const QString action = QString::fromUtf8(file.readAll()).trimmed();
+        file.close();
+        QFile::remove(path);
+        return action;
+    }
+
+    Q_INVOKABLE void publishDiagnosticGlassMode(bool native)
+    {
+        QFile file(QStringLiteral("/tmp/mudos-glass-mode"));
+        if (file.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text))
+            file.write(native ? "native\n" : "legacy\n");
     }
 
 private slots:
@@ -260,7 +296,9 @@ private:
         });
         connect(guideProcess_, &QProcess::finished, this,
                 [this](int, QProcess::ExitStatus) { finishGuide(); });
-        guideProcess_->start("/opt/lulu/bin/mudos-guide", {
+        const QString guideExecutable = qEnvironmentVariable(
+            "LULU_GUIDE_EXECUTABLE", "/opt/lulu/bin/mudos-guide");
+        guideProcess_->start(guideExecutable, {
             QString::number(targetWindow_), QString::number(targetPid_), menuCommand, menuLabel
         });
         if (!guideProcess_->waitForStarted(1000)) {
@@ -439,7 +477,8 @@ private:
     }
     bool dispatchAllowed() const
     {
-        return window_ && (luluPresented_ || guideProcess_);
+        return window_ && (luluPresented_ || guideProcess_
+                           || qEnvironmentVariableIsSet("LULU_GLASS_POC"));
     }
 
     void setupPresentationObserver()
@@ -611,6 +650,7 @@ int main(int argc, char **argv)
 {
     qInstallMessageHandler(diagnosticMessageHandler);
     QGuiApplication application(argc, argv);
+    qmlRegisterType<MudosGlassItem>("Mudos.Poc", 1, 0, "MudosGlassItem");
     QQmlApplicationEngine engine;
     ControllerBridge controller(nullptr, &application);
     CatalogueModel catalogueModel(&application);

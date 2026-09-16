@@ -72,6 +72,27 @@ private slots:
         QCOMPARE(recent.gameIdAt(0), QStringLiteral("steam:b"));
     }
 
+    void recentExposesAtMostEightEntries()
+    {
+        CatalogueModel source;
+        RecentModel recent(&source);
+        QVERIFY(source.loadSnapshot(45, R"([
+            {"game_id":"steam:1","install_state":"installed","last_played":10},
+            {"game_id":"steam:2","install_state":"installed","last_played":20},
+            {"game_id":"steam:3","install_state":"installed","last_played":30},
+            {"game_id":"steam:4","install_state":"installed","last_played":40},
+            {"game_id":"steam:5","install_state":"installed","last_played":50},
+            {"game_id":"steam:6","install_state":"installed","last_played":60},
+            {"game_id":"steam:7","install_state":"installed","last_played":70},
+            {"game_id":"steam:8","install_state":"installed","last_played":80},
+            {"game_id":"steam:9","install_state":"installed","last_played":90}
+        ])"));
+        QCOMPARE(recent.rowCount(), RecentModel::kMaximumEntries);
+        QCOMPARE(recent.gameIdAt(0), QStringLiteral("steam:9"));
+        QCOMPARE(recent.indexOfGame(QStringLiteral("steam:1")), -1);
+        QCOMPARE(recent.gameIdAt(7), QStringLiteral("steam:2"));
+    }
+
     void recentNonOrderingRoleDoesNotMove()
     {
         CatalogueModel source;

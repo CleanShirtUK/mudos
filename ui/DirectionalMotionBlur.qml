@@ -11,6 +11,7 @@ Item {
     // in sourceItem's hierarchy, so the observed scene geometry is unchanged.
     property rect sourceRect: Qt.rect(0, 0, width, height)
     property real blurPixels: 0
+    property vector2d blurVector: Qt.vector2d(blurPixels, 0)
     property bool active: true
 
     ShaderEffectSource {
@@ -25,11 +26,11 @@ Item {
         visible: false
     }
 
-    ShaderEffect {
+        ShaderEffect {
         anchors.fill: parent
         visible: root.active
         property var source: sourceTexture
-        property real blurPixels: root.blurPixels
+        property vector2d blurVector: root.blurVector
         property vector2d sourceTextureSize: Qt.vector2d(
             Math.max(1, root.width), Math.max(1, root.height))
         fragmentShader: "shaders/presentation-motion-blur.frag.qsb"

@@ -27,14 +27,82 @@ Item {
     property var presentationCoordinator
     property real compactCardWidth: Math.min(160 * uiScale, focalCardHeight * 0.62)
     property real railGap: 18 * uiScale
-    property int visibleRailRadius: 3
     property var presentationStartX: []
     property var presentationStartWidth: []
     property var presentationStartProgress: []
     property var presentationStartChrome: []
     property var presentationStartCompactTitle: []
-    property var presentationStartVisible: []
     property bool suppressTransitionCompletion: false
+    property bool nativeRecentGlassCanary: false
+    property var transitionDiagnosticMarks: ({})
+
+    function sampleTransitionMarks() {
+        if (!nativeRecentGlassCanary)
+            return
+        var marks = [0, 0.25, 0.5, 0.75, 1]
+        for (var markIndex = 0; markIndex < marks.length; markIndex++) {
+            var mark = marks[markIndex]
+            if (transitionProgress + 0.02 < mark || transitionDiagnosticMarks[mark])
+                continue
+            transitionDiagnosticMarks[mark] = true
+            console.log("MUDOS_RECENT_TRANSITION_MARK",
+                        "mark", mark, "transitionProgress", transitionProgress,
+                        "selectedIndex", selectedIndex)
+            for (var index = 0; index < recentRepeater.count; index++) {
+                var delegate = recentRepeater.itemAt(index)
+                if (delegate && delegate.visible)
+                    delegate.dumpTransitionMapping(mark)
+                if (delegate && delegate.visible)
+                    delegate.dumpPresentationState(mark)
+            }
+        }
+    }
+
+    onTransitionProgressChanged: sampleTransitionMarks()
+
+    function dumpSettledRailMapping() {
+        console.log("MUDOS_RECENT_RAIL_BEGIN",
+                    "selectedIndex", selectedIndex,
+                    "transitionProgress", transitionProgress,
+                    "count", recentRepeater.count,
+                    "visible", visible)
+        for (var index = 0; index < recentRepeater.count; index++) {
+            var delegate = recentRepeater.itemAt(index)
+            if (delegate && delegate.visible)
+                delegate.dumpSettledRailMapping()
+            else
+                console.log("MUDOS_RECENT_RAIL_NO_VISIBLE_DELEGATE", index,
+                            "exists", !!delegate)
+        }
+        console.log("MUDOS_RECENT_RAIL_END")
+    }
+
+    function dumpStartupPresentationState(mark) {
+        console.log("MUDOS_RECENT_STARTUP_PRESENTATION",
+                    "mark", mark,
+                    "visible", recentHome.visible,
+                    "opacity", recentHome.opacity,
+                    "presentationX", recentHome.presentationX,
+                    "transitionProgress", recentHome.transitionProgress)
+        for (var index = 0; index < recentRepeater.count; index++) {
+            var delegate = recentRepeater.itemAt(index)
+            if (delegate && delegate.visible)
+                delegate.dumpPresentationState(mark)
+        }
+    }
+
+    Timer {
+        id: settledRailDiagnostic
+        interval: 1800
+        repeat: false
+        running: recentHome.nativeRecentGlassCanary && recentHome.visible
+        onTriggered: {
+            if (recentHome.transitionProgress === 1 && recentRepeater.count > 0)
+                recentHome.dumpSettledRailMapping()
+            else if (recentHome.nativeRecentGlassCanary && recentHome.visible)
+                settledRailDiagnostic.restart()
+        }
+    }
     signal launchRequested(string gameId)
     signal activationRequested(string gameId)
     signal playFeedbackCompleted(string gameId)
@@ -71,6 +139,7 @@ Item {
         ? presentationCoordinator.contentPresented : true
 
     onSelectedIndexChanged: {
+        transitionDiagnosticMarks = ({})
         if (recentModel && selectedIndex >= 0 && selectedIndex < recentRepeater.count
                 && !selectionAnchorId) {
             selectedGameId = recentModel.gameIdAt(selectedIndex)
@@ -115,7 +184,6 @@ Item {
         var startsProgress = []
         var startsChrome = []
         var startsCompactTitle = []
-        var startsVisible = []
         for (var index = 0; index < recentRepeater.count; index++) {
             var card = recentRepeater.itemAt(index)
             startsX[index] = card ? card.x : railX(index - selectedIndex)
@@ -126,14 +194,12 @@ Item {
                                         : (index === selectedIndex ? 1 : 0)
             startsCompactTitle[index] = card ? card.compactTitleOpacity
                                               : (index === selectedIndex ? 0 : 1)
-            startsVisible[index] = card ? card.visible : true
         }
         presentationStartX = startsX
         presentationStartWidth = startsWidth
         presentationStartProgress = startsProgress
         presentationStartChrome = startsChrome
         presentationStartCompactTitle = startsCompactTitle
-        presentationStartVisible = startsVisible
         console.log("RECENT_RETARGET", "capture", "selected", selectedIndex,
                     "progress", transitionProgress, "x", startsX,
                     "width", startsWidth, "presentation", startsProgress,
@@ -362,6 +428,7 @@ Item {
                 startCompactTitle: recentHome.presentationStartCompactTitle[index] || 0
                 railProgress: recentHome.transitionProgress
                 focused: index === recentHome.selectedIndex
+                nativeRecentGlassCanary: recentHome.nativeRecentGlassCanary
                 presentationState: game_id === recentHome.selectedGameId ? "FOCUSED" : "COMPACT"
                 selectionBlurActive: recentHome.selectionMotionActive
                     && recentHome.selectionBlurAllowed
@@ -378,8 +445,7 @@ Item {
                 luluPalette: recentHome.luluPalette
                 onActivationRequested: recentHome.activationRequested(gameId)
                 onPlayFeedbackCompleted: recentHome.playFeedbackCompleted(gameId)
-                visible: recentHome.presentationStartVisible[index]
-                    || Math.abs(toRelativeIndex) <= recentHome.visibleRailRadius
+                visible: true
                 width: startWidth
                     + (recentHome.railWidth(toRelativeIndex) - startWidth) * railProgress
                 height: focalCardHeight
