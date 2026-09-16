@@ -14,6 +14,7 @@ from .metadata import MetadataMatch, clean_local_title
 from .paths import PATHS
 from .romm import RommGame
 from .steam_provider import InstalledSteamGame, SteamProvider
+from .steam_entitlements import SteamEntitlement
 
 
 @dataclass(frozen=True, slots=True)
@@ -90,6 +91,24 @@ class CatalogueGame:
             title=game.title, platform="Steam", install_state="installed", launchable=True,
             install_dir=game.install_dir, artwork_url=game.artwork_url, last_played=game.last_played,
             source_title=game.title, normalized_search_title=clean_local_title(game.title),
+            catalogue_source="steam",
+        )
+
+    @classmethod
+    def from_steam_entitlement(cls, entitlement: SteamEntitlement,
+                               installed: InstalledSteamGame | None = None) -> "CatalogueGame":
+        return cls(
+            game_id=f"steam:{entitlement.app_id}", provider="steam",
+            provider_id=entitlement.app_id,
+            title=installed.title if installed else entitlement.title,
+            platform="Steam", install_state="installed" if installed else "available",
+            launchable=installed is not None,
+            install_dir=installed.install_dir if installed else "",
+            artwork_url=installed.artwork_url if installed else "",
+            last_played=installed.last_played if installed else 0,
+            platform_label="Steam", source_title=entitlement.title,
+            normalized_search_title=clean_local_title(entitlement.title),
+            availability_state="installed" if installed else "available",
             catalogue_source="steam",
         )
 
@@ -425,20 +444,70 @@ class CatalogueStore:
         deltas: list[CatalogueDelta] = []
         self._start_operation()
         with self.atomic():
-            # RomM-backed Steam entries also use provider=steam for stable
-            # Steam identity, but their availability is owned by RomM.
+            # Existing RomM-backed Steam rows may still be present from the
+            # migration boundary. Installed manifests supersede that legacy
+            # observation without requiring a destructive entitlement sweep.
             existing = self._rows(
-                f"SELECT {SELECT_COLUMNS} FROM games WHERE provider='steam' AND provider_record_id=''"
+                f"SELECT {SELECT_COLUMNS} FROM games WHERE provider='steam'"
             )
             incoming_ids = {game.game_id for game in games}
             for current in existing:
-                if current.game_id not in incoming_ids:
+                if current.game_id not in incoming_ids and not current.provider_record_id:
                     self._apply_existing_locked(
                         current, replace(current, install_state="missing", launchable=False), deltas)
+                elif current.game_id not in incoming_ids and current.provider_record_id:
+                    # Legacy RomM Steam observations remain owned/available;
+                    # they are not local-install observations.
+                    self._apply_existing_locked(
+                        current, replace(current, install_state="available",
+                                         launchable=False, install_dir="",
+                                         availability_state="available"), deltas)
             for game in games:
                 self._upsert_locked(game, deltas)
         self._finish_operation(deltas)
         return games
+
+    def reconcile_steam_entitlements(
+            self, entitlements: tuple[SteamEntitlement, ...], provider: SteamProvider
+    ) -> list[CatalogueGame]:
+        """Join a valid ownership snapshot to local installed manifests.
+
+        The snapshot is additive by design.  A valid refresh never deletes or
+        hides an older entitlement; only a separately tested revocation policy
+        may do that.  Installed manifests are always included and authoritative
+        for installability.
+        """
+        installed = {game.app_id: game for game in provider.list_installed()}
+        normalized = [
+            CatalogueGame.from_steam_entitlement(item, installed.get(item.app_id))
+            for item in entitlements
+        ]
+        known = {item.app_id for item in entitlements}
+        normalized.extend(
+            CatalogueGame.from_steam(game)
+            for app_id, game in installed.items() if app_id not in known
+        )
+        deltas: list[CatalogueDelta] = []
+        self._start_operation()
+        with self.atomic():
+            # A manifest disappearing does not revoke ownership, but it does
+            # mean the local install state is no longer installed. Keep the
+            # entitlement visible and eligible for acquisition.
+            existing = self._rows(
+                f"SELECT {SELECT_COLUMNS} FROM games WHERE provider='steam'"
+            )
+            for current in existing:
+                if current.provider_id not in installed and current.install_state == "installed":
+                    self._apply_existing_locked(
+                        current,
+                        replace(current, install_state="available", launchable=False,
+                                install_dir="", availability_state="available"),
+                        deltas,
+                    )
+            for game in normalized:
+                self._upsert_locked(game, deltas)
+        self._finish_operation(deltas)
+        return normalized
 
     def reconcile_local(self, provider: LocalContentProvider, root: Path) -> list[CatalogueGame]:
         games = [CatalogueGame.from_local(game) for game in provider.list_installed(root)]
@@ -466,15 +535,6 @@ class CatalogueStore:
                 existing = self._rows(f"SELECT {SELECT_COLUMNS} FROM games WHERE provider='romm'")
                 incoming_ids = {game.game_id for game in games}
                 for current in existing:
-                    if current.game_id not in incoming_ids:
-                        self._apply_existing_locked(
-                            current, replace(current, install_state="missing", launchable=False,
-                                             availability_state="unavailable"), deltas)
-                steam_existing = self._rows(
-                    f"SELECT {SELECT_COLUMNS} FROM games "
-                    "WHERE provider='steam' AND provider_record_id != '' AND install_state != 'installed'"
-                )
-                for current in steam_existing:
                     if current.game_id not in incoming_ids:
                         self._apply_existing_locked(
                             current, replace(current, install_state="missing", launchable=False,
@@ -519,9 +579,10 @@ class CatalogueStore:
         parameters: tuple[object, ...] = ()
         if provider is not None:
             if provider == "romm":
-                # Steam-backed RomM records retain runtime provider=steam; their
-                # non-empty provider_record_id is the authoritative RomM source.
-                query += " AND (provider='romm' OR (provider='steam' AND provider_record_id != ''))"
+                # The existing Store endpoint historically asked for the RomM
+                # provider, but also carried transitional Steam rows. Keep that
+                # display contract while the Steam rows now come from Valve.
+                query += " AND (provider='romm' OR (provider='steam' AND availability_state='available'))"
             else:
                 query += " AND provider=?"
                 parameters = (provider,)

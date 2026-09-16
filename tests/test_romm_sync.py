@@ -5,7 +5,7 @@ from pathlib import Path
 from lulu.artwork import LocalArtworkCache
 from lulu.catalogue import CatalogueStore
 from lulu.consoled import ConsoleCatalog
-from lulu.romm import RommFile, RommGame, SteamManifest
+from lulu.romm import RommFile, RommGame
 
 
 class EmptySteam:
@@ -25,15 +25,12 @@ class FakeRomm:
     def list_games(self):
         return [self.game]
 
-    def read_steam_manifest(self, romm_file):
-        return SteamManifest("104200")
-
 
 class RommSyncTests(unittest.TestCase):
     def test_sync_persists_metadata_and_local_artwork_and_reuses_asset(self):
         game = RommGame(
-            272, "BEEP", 7, "steam", "Steam", "104200-beep.json", ".json", 10,
-            "https://romm.test/beep.jpg", False, (RommFile(2720, "104200-beep.json"),),
+            272, "BEEP", 7, "gba", "GBA", "beep.rom", ".rom", 10,
+            "https://romm.test/beep.jpg", False, (RommFile(2720, "beep.rom"),),
             ("Action",), "2001-04-20", 2001,
         )
         with tempfile.TemporaryDirectory() as directory:
@@ -46,15 +43,15 @@ class RommSyncTests(unittest.TestCase):
             )
             catalog.refresh()
             catalog.refresh()
-            record = store.get_game("steam:104200")
+            record = store.get_game("romm:272")
             artwork = Path(record.artwork_url.removeprefix("file://"))
             self.assertEqual(record.catalogue_source, "romm")
             self.assertEqual(record.genres, ("Action",))
-            self.assertEqual(record.platform, "Steam")
-            self.assertEqual(record.provider, "steam")
-            self.assertEqual(record.provider_id, "104200")
+            self.assertEqual(record.platform, "gba")
+            self.assertEqual(record.provider, "romm")
+            self.assertEqual(record.provider_id, "272")
             self.assertTrue(artwork.is_file())
             self.assertEqual(calls, ["https://romm.test/beep.jpg"])
             store.connection.close()
             cached = CatalogueStore(root / "catalogue.sqlite3")
-            self.assertEqual(cached.get_game("steam:104200").title, "BEEP")
+            self.assertEqual(cached.get_game("romm:272").title, "BEEP")

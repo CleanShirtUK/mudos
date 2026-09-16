@@ -6,6 +6,7 @@ Item {
     property real cardHeight: 0
     property real cardWidth: 0
     property var availableGames: []
+    property var acquisitionJobs: ({})
     property var categories: [{"label": "All Available", "scope": "all"}]
     property string errorMessage: ""
     property real contentOpacity: 1
@@ -48,7 +49,20 @@ Item {
             if (seen[gameId])
                 continue
             seen[gameId] = true
-            result.push(game)
+            var decorated = ({})
+            for (var key in game)
+                decorated[key] = game[key]
+            var job = acquisitionJobs[String(game.game_id)]
+            if (!job && game.provider === "steam")
+                job = acquisitionJobs["steam:" + String(game.provider_id)]
+            if (job) {
+                decorated.acquisition_state = String(job.state || "")
+                decorated.acquisition_progress = job.progress === null || job.progress === undefined
+                    ? null : Number(job.progress)
+                decorated.acquisition_stage = String(job.stage || "")
+                decorated.acquisition_error = job.error || null
+            }
+            result.push(decorated)
         }
         // Keep the delegated commerce surface in every expanded category.
         if (root.cardWidth === 0) {
@@ -63,7 +77,9 @@ Item {
     // Keep the binding dependent on the async model/category assignments;
     // dependencies hidden inside filteredGames() are not reliably tracked by
     // the QML binding compiler.
-    readonly property var displayGames: availableGames.length + categories.length + displayCategoryIndex >= 0
+    // availableGames.length + categories.length + displayCategoryIndex >= 0
+    readonly property var displayGames: availableGames.length + categories.length + displayCategoryIndex
+        + Object.keys(acquisitionJobs).length >= 0
         ? filteredGames() : []
 
     function moveCategory(delta) {
@@ -103,7 +119,9 @@ Item {
             return
         if (String(game.game_id) === "steam-store")
             steamStoreRequested()
-        else if (game.provider === "steam" && String(game.provider_id).match(/^[1-9][0-9]*$/))
+        else if (game.provider === "steam"
+                 && ["queued", "starting", "transferring", "finalizing", "paused", "cancelling"].indexOf(String(game.acquisition_state)) < 0
+                 && String(game.provider_id).match(/^[1-9][0-9]*$/))
             installGameRequested(game)
     }
 

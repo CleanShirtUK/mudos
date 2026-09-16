@@ -1,0 +1,5 @@
+[
+  {"schema": 1, "provider": "steam", "id": "263980", "managed_by": "mudos-steam-sync"},
+  {"schema": 1, "provider": "steam", "id": "40800", "managed_by": "mudos-steam-sync"},
+  {"schema": 1, "provider": "steam", "id": "268910", "managed_by": "mudos-steam-sync"}
+]

@@ -9,6 +9,7 @@ class ServiceName(StrEnum):
     CONSOLE_SESSIOND = "console-sessiond"
     CONSOLED = "consoled"
     APPLICATIOND = "applicationd"
+    ACQUISITIOND = "acquisitiond"
     CONSOLE_UI = "console-ui"
 
 

@@ -4,11 +4,32 @@ from pathlib import Path
 from unittest.mock import patch
 
 from lulu.settings import SettingsStore
-from lulu.status import Readiness, RuntimeStatus, SystemStatus
+from lulu.status import (
+    BluetoothState,
+    Readiness,
+    RuntimeStatus,
+    SystemStatus,
+    network_manager_state_is_connected,
+    normalize_bluetooth_state,
+)
 from lulu.system_settings import SystemSettingsProvider
 
 
 class SettingsStatusTests(unittest.TestCase):
+    def test_network_manager_states_normalize_to_usable_connection(self) -> None:
+        self.assertTrue(network_manager_state_is_connected(50))
+        self.assertTrue(network_manager_state_is_connected(60))
+        self.assertTrue(network_manager_state_is_connected(70))
+        self.assertFalse(network_manager_state_is_connected(20))
+        self.assertFalse(network_manager_state_is_connected(None))
+
+    def test_bluetooth_state_normalizes_power_off_and_absence(self) -> None:
+        self.assertEqual(normalize_bluetooth_state(True, (True,)), BluetoothState.POWERED)
+        self.assertEqual(normalize_bluetooth_state(True, (False,)), BluetoothState.OFF)
+        self.assertEqual(normalize_bluetooth_state(True, (False, False)), BluetoothState.OFF)
+        self.assertEqual(normalize_bluetooth_state(True, ()), BluetoothState.UNAVAILABLE)
+        self.assertEqual(normalize_bluetooth_state(False, (True,)), BluetoothState.UNAVAILABLE)
+
     def test_settings_are_typed_persisted_and_owned(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "settings.sqlite3"

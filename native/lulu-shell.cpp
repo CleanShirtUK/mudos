@@ -5,6 +5,10 @@
 #include <QDBusInterface>
 #include <QDBusMessage>
 #include <QDBusVariant>
+#include <QDBusArgument>
+#include <QDBusObjectPath>
+#include <QDBusServiceWatcher>
+#include <QDBusConnectionInterface>
 #include <QProcess>
 #include <QQmlContext>
 #include <QQmlPropertyMap>
@@ -19,6 +23,7 @@
 #include <QSet>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <algorithm>
 
 #include <SDL3/SDL.h>
 #include <xcb/xcb.h>
@@ -35,6 +40,200 @@
 #include "mudos-glass-item.h"
 
 namespace {
+
+class SystemStatusBridge final : public QObject
+{
+    Q_OBJECT
+    Q_PROPERTY(bool networkConnected READ networkConnected NOTIFY networkConnectedChanged)
+    Q_PROPERTY(QString bluetoothState READ bluetoothState NOTIFY bluetoothStateChanged)
+    Q_PROPERTY(bool bluetoothPowered READ bluetoothPowered NOTIFY bluetoothStateChanged)
+    Q_PROPERTY(uint activeDownloadCount READ activeDownloadCount NOTIFY activeDownloadCountChanged)
+
+public:
+    explicit SystemStatusBridge(QObject *parent = nullptr)
+        : QObject(parent), bluezWatcher_(new QDBusServiceWatcher(
+              QStringLiteral("org.bluez"), QDBusConnection::systemBus(),
+              QDBusServiceWatcher::WatchForRegistration
+                  | QDBusServiceWatcher::WatchForUnregistration, this))
+    {
+        QDBusConnection bus = QDBusConnection::systemBus();
+        bus.connect(QStringLiteral("org.freedesktop.NetworkManager"),
+                    QStringLiteral("/org/freedesktop/NetworkManager"),
+                    QStringLiteral("org.freedesktop.DBus.Properties"),
+                    QStringLiteral("PropertiesChanged"), this,
+                    SLOT(onNetworkPropertiesChanged(QString,QVariantMap,QStringList)));
+        bus.connect(QStringLiteral("org.bluez"), QString(),
+                    QStringLiteral("org.freedesktop.DBus.Properties"),
+                    QStringLiteral("PropertiesChanged"), this,
+                    SLOT(onBluezPropertiesChanged(QString,QVariantMap,QStringList)));
+        bus.connect(QStringLiteral("org.bluez"), QStringLiteral("/"),
+                    QStringLiteral("org.freedesktop.DBus.ObjectManager"),
+                    QStringLiteral("InterfacesAdded"), this,
+                    SLOT(onBluezInterfacesAdded(QDBusObjectPath,QVariantMap)));
+        bus.connect(QStringLiteral("org.bluez"), QStringLiteral("/"),
+                    QStringLiteral("org.freedesktop.DBus.ObjectManager"),
+                    QStringLiteral("InterfacesRemoved"), this,
+                    SLOT(onBluezInterfacesRemoved(QDBusObjectPath,QStringList)));
+        connect(bluezWatcher_, &QDBusServiceWatcher::serviceRegistered,
+                this, &SystemStatusBridge::refreshBluetooth);
+        connect(bluezWatcher_, &QDBusServiceWatcher::serviceUnregistered,
+                this, &SystemStatusBridge::refreshBluetooth);
+        QDBusConnection::sessionBus().connect(
+            QStringLiteral("org.lulu.Acquisitiond"),
+            QStringLiteral("/org/lulu/Acquisition"),
+            QStringLiteral("org.lulu.Acquisition"),
+            QStringLiteral("StateChanged"), this,
+            SLOT(onAcquisitionStateChanged(QString)));
+        refreshNetwork();
+        refreshBluetooth();
+        refreshAcquisitionStatus();
+    }
+
+    bool networkConnected() const { return networkConnected_; }
+    QString bluetoothState() const { return bluetoothState_; }
+    bool bluetoothPowered() const { return bluetoothState_ == QStringLiteral("powered"); }
+    uint activeDownloadCount() const { return activeDownloadCount_; }
+
+signals:
+    void networkConnectedChanged();
+    void bluetoothStateChanged();
+    void activeDownloadCountChanged();
+
+private slots:
+    void onNetworkPropertiesChanged(const QString &interfaceName,
+                                    const QVariantMap &changed,
+                                    const QStringList &)
+    {
+        if (interfaceName == QStringLiteral("org.freedesktop.NetworkManager")
+                && (changed.contains(QStringLiteral("State"))
+                    || changed.contains(QStringLiteral("Connectivity"))))
+            refreshNetwork();
+    }
+
+    void onBluezPropertiesChanged(const QString &interfaceName,
+                                  const QVariantMap &,
+                                  const QStringList &)
+    {
+        if (interfaceName == QStringLiteral("org.bluez.Adapter1"))
+            refreshBluetooth();
+    }
+
+    void onBluezInterfacesAdded(const QDBusObjectPath &, const QVariantMap &interfaces)
+    {
+        if (interfaces.contains(QStringLiteral("org.bluez.Adapter1")))
+            refreshBluetooth();
+    }
+
+    void onBluezInterfacesRemoved(const QDBusObjectPath &, const QStringList &interfaces)
+    {
+        if (interfaces.contains(QStringLiteral("org.bluez.Adapter1")))
+            refreshBluetooth();
+    }
+
+    void onAcquisitionStateChanged(const QString &snapshot)
+    {
+        updateActiveDownloadCount(snapshot);
+    }
+
+private:
+    void refreshAcquisitionStatus()
+    {
+        QDBusInterface acquisition(QStringLiteral("org.lulu.Acquisitiond"),
+                                   QStringLiteral("/org/lulu/Acquisition"),
+                                   QStringLiteral("org.lulu.Acquisition"),
+                                   QDBusConnection::sessionBus());
+        const QDBusMessage reply = acquisition.call(QStringLiteral("GetSnapshot"));
+        if (reply.type() == QDBusMessage::ReplyMessage && !reply.arguments().isEmpty())
+            updateActiveDownloadCount(reply.arguments().constFirst().toString());
+    }
+
+    void updateActiveDownloadCount(const QString &snapshot)
+    {
+        const QJsonDocument document = QJsonDocument::fromJson(snapshot.toUtf8());
+        if (!document.isObject())
+            return;
+        const uint count = document.object().value(QStringLiteral("activeDownloadCount")).toInt(0);
+        if (count != activeDownloadCount_) {
+            activeDownloadCount_ = count;
+            emit activeDownloadCountChanged();
+        }
+    }
+
+    static bool networkStateIsConnected(uint state)
+    {
+        // NetworkManager: CONNECTED_LOCAL/SITE/GLOBAL are all usable links.
+        return state >= 50 && state <= 70;
+    }
+
+    void refreshNetwork()
+    {
+        QDBusInterface properties(QStringLiteral("org.freedesktop.NetworkManager"),
+                                  QStringLiteral("/org/freedesktop/NetworkManager"),
+                                  QStringLiteral("org.freedesktop.DBus.Properties"),
+                                  QDBusConnection::systemBus());
+        QDBusMessage reply = properties.call(QStringLiteral("Get"),
+                                             QStringLiteral("org.freedesktop.NetworkManager"),
+                                             QStringLiteral("State"));
+        bool connected = false;
+        if (reply.type() == QDBusMessage::ReplyMessage && !reply.arguments().isEmpty()) {
+            const QVariant value = reply.arguments().constFirst().value<QDBusVariant>().variant();
+            connected = networkStateIsConnected(value.toUInt());
+        }
+        if (connected != networkConnected_) {
+            networkConnected_ = connected;
+            emit networkConnectedChanged();
+        }
+    }
+
+    void refreshBluetooth()
+    {
+        QString nextState = QStringLiteral("unavailable");
+        QDBusConnectionInterface *busInterface = QDBusConnection::systemBus().interface();
+        if (busInterface && busInterface->isServiceRegistered(QStringLiteral("org.bluez"))) {
+            QDBusInterface manager(QStringLiteral("org.bluez"), QStringLiteral("/"),
+                                   QStringLiteral("org.freedesktop.DBus.ObjectManager"),
+                                   QDBusConnection::systemBus());
+            const QDBusMessage reply = manager.call(QStringLiteral("GetManagedObjects"));
+            QSet<QString> adapters;
+            if (reply.type() == QDBusMessage::ReplyMessage && !reply.arguments().isEmpty()) {
+                QMap<QDBusObjectPath, QMap<QString, QVariantMap>> objects;
+                QDBusArgument argument = reply.arguments().constFirst().value<QDBusArgument>();
+                argument >> objects;
+                for (auto it = objects.cbegin(); it != objects.cend(); ++it) {
+                    if (it.value().contains(QStringLiteral("org.bluez.Adapter1")))
+                        adapters.insert(it.key().path());
+                }
+            }
+            if (!adapters.isEmpty()) {
+                nextState = QStringLiteral("off");
+                for (const QString &path : adapters) {
+                    QDBusInterface adapter(QStringLiteral("org.bluez"), path,
+                                           QStringLiteral("org.freedesktop.DBus.Properties"),
+                                           QDBusConnection::systemBus());
+                    const QDBusMessage poweredReply = adapter.call(
+                        QStringLiteral("Get"), QStringLiteral("org.bluez.Adapter1"),
+                        QStringLiteral("Powered"));
+                    if (poweredReply.type() == QDBusMessage::ReplyMessage
+                            && !poweredReply.arguments().isEmpty()
+                            && poweredReply.arguments().constFirst().value<QDBusVariant>()
+                                   .variant().toBool()) {
+                        nextState = QStringLiteral("powered");
+                        break;
+                    }
+                }
+            }
+        }
+        if (nextState != bluetoothState_) {
+            bluetoothState_ = nextState;
+            emit bluetoothStateChanged();
+        }
+    }
+
+    bool networkConnected_ = false;
+    QString bluetoothState_ = QStringLiteral("unavailable");
+    uint activeDownloadCount_ = 0;
+    QDBusServiceWatcher *bluezWatcher_;
+};
 
 void diagnosticMessageHandler(QtMsgType, const QMessageLogContext &, const QString &message)
 {
@@ -85,10 +284,18 @@ public:
         insert("actionSerial", 0);
         insert("luluPresented", false);
         insert("guideSelection", 0);
+        insert("controllers", QVariantList());
         insert("launchOverlayEnabled",
                qEnvironmentVariable("LULU_LAUNCH_OVERLAY_ENABLED", "true")
                    .compare(QStringLiteral("false"), Qt::CaseInsensitive) != 0);
         refreshDbusSubscriptions();
+        QDBusConnection::sessionBus().connect(
+            QStringLiteral("org.lulu.ConsoleSessiond"),
+            QStringLiteral("/org/lulu/ConsoleSession"),
+            QStringLiteral("org.lulu.ConsoleSession"),
+            QStringLiteral("StateChanged"), this,
+            SLOT(onSessionStateChanged(QString)));
+        refreshSessionStatus();
         dbusDiscoveryTimer_.setInterval(500);
         connect(&dbusDiscoveryTimer_, &QTimer::timeout,
                 this, &ControllerBridge::refreshDbusSubscriptions);
@@ -167,12 +374,68 @@ public:
     }
 
 private slots:
+    void onSessionStateChanged(const QString &stateJson)
+    {
+        updateControllersFromSessionState(stateJson);
+    }
+
     void onDbusInputEvent(const QString &compositePath, const QString &event, double value)
     {
         handleInputEvent(compositePath, event, value);
     }
 
 private:
+    void refreshSessionStatus()
+    {
+        QDBusInterface session(QStringLiteral("org.lulu.ConsoleSessiond"),
+                               QStringLiteral("/org/lulu/ConsoleSession"),
+                               QStringLiteral("org.lulu.ConsoleSession"),
+                               QDBusConnection::sessionBus());
+        const QDBusMessage reply = session.call(QStringLiteral("GetState"));
+        if (reply.type() == QDBusMessage::ReplyMessage && !reply.arguments().isEmpty())
+            updateControllersFromSessionState(reply.arguments().constFirst().toString());
+    }
+
+    void updateControllersFromSessionState(const QString &stateJson)
+    {
+        const QJsonDocument document = QJsonDocument::fromJson(stateJson.toUtf8());
+        if (!document.isObject())
+            return;
+        const QJsonObject controllerRoot = document.object().value(QStringLiteral("controller"))
+            .toObject().value(QStringLiteral("controllers")).toObject();
+        QVariantList controllers;
+        for (auto iterator = controllerRoot.constBegin(); iterator != controllerRoot.constEnd(); ++iterator) {
+            const QJsonObject value = iterator.value().toObject();
+            if (!value.value(QStringLiteral("connected")).toBool())
+                continue;
+            const int player = value.value(QStringLiteral("player")).toInt(0);
+            if (player <= 0)
+                continue;
+            const QJsonObject battery = value.value(QStringLiteral("battery")).toObject();
+            const QString batteryKind = battery.value(QStringLiteral("kind"))
+                .toString(QStringLiteral("unknown"));
+            const QJsonValue percentage = battery.value(QStringLiteral("percentage"));
+            QVariantMap controller;
+            controller.insert(QStringLiteral("index"), player);
+            controller.insert(QStringLiteral("connected"), true);
+            controller.insert(QStringLiteral("identity"),
+                              value.value(QStringLiteral("physical_identity")).toString());
+            controller.insert(QStringLiteral("batteryKind"), batteryKind);
+            controller.insert(QStringLiteral("batteryPercentage"),
+                              percentage.isDouble() ? percentage.toInt() : -1);
+            controller.insert(QStringLiteral("battery"),
+                              batteryKind == QStringLiteral("percent") && percentage.isDouble()
+                                  ? QString::number(percentage.toInt()) + QStringLiteral("%")
+                                  : QStringLiteral("Unknown"));
+            controllers.append(controller);
+        }
+        std::sort(controllers.begin(), controllers.end(), [](const QVariant &left, const QVariant &right) {
+            return left.toMap().value(QStringLiteral("index")).toInt()
+                < right.toMap().value(QStringLiteral("index")).toInt();
+        });
+        insert(QStringLiteral("controllers"), controllers);
+    }
+
     static qint64 timelineNowNs()
     {
         return std::chrono::duration_cast<std::chrono::nanoseconds>(
@@ -633,9 +896,11 @@ int main(int argc, char **argv)
     qmlRegisterType<MudosGlassItem>("Mudos.Poc", 1, 0, "MudosGlassItem");
     QQmlApplicationEngine engine;
     ControllerBridge controller(nullptr, &application);
+    SystemStatusBridge systemStatus(&application);
     CatalogueModel catalogueModel(&application);
     RecentModel recentModel(&catalogueModel, &application);
     engine.rootContext()->setContextProperty("controllerBridge", &controller);
+    engine.rootContext()->setContextProperty("systemStatus", &systemStatus);
     // The native catalogue model is authoritative for the migrated Recent
     // consumer; Library and Store remain on their existing snapshot paths.
     engine.rootContext()->setContextProperty("catalogueModel", &catalogueModel);

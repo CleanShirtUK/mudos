@@ -133,10 +133,12 @@ from dbus_next.aio import MessageBus
 
 
 class ConsoleUiBridge:
-    def __init__(self, loop: asyncio.AbstractEventLoop, consoled: object, sessiond: object) -> None:
+    def __init__(self, loop: asyncio.AbstractEventLoop, consoled: object, sessiond: object,
+                 acquisitiond: object | None = None) -> None:
         self.loop = loop
         self.consoled = consoled
         self.sessiond = sessiond
+        self.acquisitiond = acquisitiond
         self.launch_logs = LaunchLogCapture()
 
     def call(self, operation: asyncio.Future, timeout: float | None = 15) -> object:

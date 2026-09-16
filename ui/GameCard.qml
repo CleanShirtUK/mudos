@@ -79,6 +79,10 @@ Rectangle {
         }
     }
     readonly property bool recentFocal: homeCard && focused
+    readonly property string acquisitionState: game && game.acquisition_state
+        ? String(game.acquisition_state) : ""
+    readonly property bool acquisitionVisible: game && game.provider === "steam"
+        && ["queued", "starting", "transferring", "finalizing", "paused", "cancelling", "failed"].indexOf(acquisitionState) >= 0
     readonly property string presentationGameId: presentationId || (game ? String(game.game_id) : "")
     onPlayActivationSerialChanged: {
         if (card.recentFocal)
@@ -406,6 +410,75 @@ Rectangle {
             font.family: card.typography.displayFamily
             font.weight: card.typography.displayWeight
             font.pixelSize: card.typography.size("display", 100)
+        }
+
+        Rectangle {
+            anchors.fill: parent
+            visible: card.acquisitionVisible
+            color: Qt.rgba(0.01, 0.02, 0.04, 0.78)
+            z: 5
+
+            Column {
+                anchors.centerIn: parent
+                width: parent.width * 0.82
+                spacing: 10 * card.uiScale
+
+                Text {
+                    width: parent.width
+                    text: card.acquisitionState === "queued" ? "Queued"
+                        : card.acquisitionState === "starting" ? "Starting"
+                        : card.acquisitionState === "transferring" ? "Downloading"
+                        : card.acquisitionState === "finalizing" ? "Finalizing"
+                        : card.acquisitionState === "paused" ? "Paused"
+                        : card.acquisitionState === "cancelling" ? "Stopping"
+                        : "Download failed"
+                    color: card.luluPalette.primaryText
+                    horizontalAlignment: Text.AlignHCenter
+                    font.family: card.typography.interfaceFamily
+                    font.pixelSize: card.typography.size("control", 20 * card.focalScale)
+                }
+
+                Rectangle {
+                    width: parent.width
+                    height: 8 * card.uiScale
+                    radius: height / 2
+                    color: card.luluPalette.glassBorder
+                    visible: card.acquisitionState !== "failed"
+
+                    Rectangle {
+                        width: card.game && card.game.acquisition_progress !== null
+                            ? parent.width * Math.max(0, Math.min(1, Number(card.game.acquisition_progress)))
+                            : (card.acquisitionState === "transferring" ? parent.width * 0.18 : 0)
+                        height: parent.height
+                        radius: parent.radius
+                        color: card.luluPalette.focusIndicator
+                    }
+                }
+
+                Text {
+                    width: parent.width
+                    visible: card.acquisitionState === "transferring"
+                        && card.game && card.game.acquisition_progress !== null
+                    text: Math.round(Number(card.game.acquisition_progress) * 100) + "%"
+                    color: card.luluPalette.secondaryText
+                    horizontalAlignment: Text.AlignHCenter
+                    font.family: card.typography.interfaceFamily
+                    font.pixelSize: card.typography.size("secondary", 16 * card.focalScale)
+                }
+
+                Text {
+                    width: parent.width
+                    visible: card.acquisitionState === "failed"
+                        && card.game && card.game.acquisition_error
+                    text: card.game && card.game.acquisition_error
+                        ? String(card.game.acquisition_error.message || "Acquisition failed") : ""
+                    color: card.luluPalette.mutedText
+                    elide: Text.ElideRight
+                    horizontalAlignment: Text.AlignHCenter
+                    font.family: card.typography.interfaceFamily
+                    font.pixelSize: card.typography.size("secondary", 14 * card.focalScale)
+                }
+            }
         }
     }
 

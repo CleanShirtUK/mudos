@@ -77,6 +77,12 @@ class ConsoleSessionInterface(ServiceInterface):
                         controller_id: {
                             "connected": controller.connected,
                             "player": controller.player,
+                            "physical_identity": controller.physical_identity,
+                            "battery": {
+                                "kind": controller.battery.kind.value,
+                                "percentage": controller.battery.percentage,
+                                "state": controller.battery.state,
+                            },
                         }
                         for controller_id, controller in self.controller_registry.controllers.items()
                     },

@@ -301,7 +301,12 @@ Item {
                          + gameGrid.contentY + parent.x + parent.y
                          + scale + selectionProgress
                     showAction: false
-                    actionLabel: librarySpace.actionLabel
+                     actionLabel: gameData.acquisition_state === "queued" ? "Queued"
+                         : gameData.acquisition_state === "starting" ? "Starting"
+                         : gameData.acquisition_state === "transferring" ? "Downloading"
+                         : gameData.acquisition_state === "finalizing" ? "Finalizing"
+                         : gameData.acquisition_state === "failed" ? "Retry Download"
+                         : librarySpace.actionLabel
                     catalogueCard: true
                     librarySurfaceMaterial: true
                     focusBrightness: (index === librarySpace.selectedIndex

@@ -70,6 +70,10 @@ Window {
     readonly property real homeCategoryFontSize: typography.size("display", 48)
     readonly property real homeCategoryGap: design(25)
     readonly property real homeCategoryPitch: homeCategoryFontSize + homeCategoryGap
+    readonly property real systemHeadingLeftInset: homeCategoryRailX
+        + (homeCategoryTitles.itemAt(0) ? homeCategoryTitles.itemAt(0).x : 0)
+    readonly property real systemHeadingTop: titleRailY
+        + (homeCategoryTitles.itemAt(0) ? homeCategoryTitles.itemAt(0).y : 0)
     readonly property real homeHeadingCardClearance: design(12)
     readonly property real homeCompositionOffsetY: -design(36)
     readonly property real homeHintTopY: height - design(45)
@@ -145,6 +149,8 @@ Window {
     readonly property string libraryNavigationObject: "library"
     property var libraryGames: []
     property var storeAvailableGames: []
+    property var acquisitionJobs: ({})
+    property var acquisitionCompletionSeen: ({})
     property var storeCategories: [{"label": "All Available", "scope": "all"}]
     property var storeHomeRef: null
     property string storeError: ""
@@ -361,6 +367,33 @@ Window {
         }
         request.open("GET", apiUrl + "/available?provider=romm")
         request.send()
+    }
+
+    function refreshAcquisitionJobs() {
+        request("/acquisition", "GET", "", function(snapshot) {
+            var jobs = ({})
+            var rows = snapshot.jobs || []
+            for (var index = 0; index < rows.length; index++) {
+                var job = rows[index]
+                if (String(job.provider || "") === "steam")
+                    jobs[String(job.content_identity || "")] = job
+                if (String(job.state || "") === "completed"
+                        && !acquisitionCompletionSeen[String(job.job_id || "")]) {
+                    acquisitionCompletionSeen[String(job.job_id || "")] = true
+                    refreshStore()
+                    refreshCatalogue()
+                }
+            }
+            acquisitionJobs = jobs
+        })
+    }
+
+    Timer {
+        id: acquisitionJobsTimer
+        interval: 500
+        repeat: true
+        running: true
+        onTriggered: root.refreshAcquisitionJobs()
     }
 
     function applyLaunchState(state, generation) {
@@ -985,8 +1018,11 @@ Window {
         launchTitle = game.title
         launchGameId = String(game.game_id)
         launchToken = ""
-        launchOverlayVisible = true
-        launchOverlayRetired = false
+        // Downloads use the Store card's acquisition overlay. Do not open the
+        // launch overlay: its Back action is a launch cancellation boundary,
+        // while SteamCMD cancellation is intentionally unsupported.
+        launchOverlayVisible = false
+        launchOverlayRetired = true
         shellWasLeft = false
         gamePresentationObserved = false
         launchLogLines = ["[Lulu] Download requested: " + game.title + " / " + game.game_id]
@@ -997,8 +1033,7 @@ Window {
         request("/install/" + encodeURIComponent(launchGameId), "POST", "", function(data) {
             if (generation !== launchGeneration)
                 return
-            launchToken = data.token
-            refreshLaunchState(generation)
+            refreshAcquisitionJobs()
         }, "Install failed", generation)
     }
 
@@ -1894,6 +1929,7 @@ Window {
             anchors.fill: parent
             visible: root.space === "store" || root.storeTransitioning
             availableGames: root.storeAvailableGames
+            acquisitionJobs: root.acquisitionJobs
             categories: root.storeCategories
             focalCardWidth: root.homeFocalCardWidth
             focalCardHeight: root.homeFocalCardHeight
@@ -1954,6 +1990,25 @@ Window {
             onBacked: root.back()
             onQueryEdited: root.metadataQuery = value
             onTitleEdited: root.metadataTitleDraft = value
+        }
+
+        SystemStatusStrip {
+            id: systemStatusStrip
+            z: 50
+            anchors.top: parent.top
+            anchors.right: parent.right
+            anchors.topMargin: root.systemHeadingTop
+            anchors.rightMargin: root.systemHeadingLeftInset
+            compact: root.space !== "home"
+                || root.libraryTransitioning || root.storeTransitioning
+                || (root.space === "system" && !root.systemLanding)
+            uiScale: root.uiScale
+            typography: typography
+            luluPalette: luluPalette
+            activeDownloadCount: systemStatus.activeDownloadCount
+            controllers: controllerBridge.controllers
+            bluetoothAvailable: systemStatus.bluetoothPowered
+            networkAvailable: systemStatus.networkConnected
         }
 
         Item {

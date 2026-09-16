@@ -12,7 +12,7 @@ from lulu.console_ui import ConsoleUi
 from lulu.consoled import ConsoleCatalog
 from lulu.catalogue import CatalogueGame, CatalogueStore
 from lulu.metadata import MetadataCandidate
-from lulu.controllerd import Controller, ControllerRegistry
+from lulu.controllerd import BatteryKind, BatteryState, Controller, ControllerRegistry
 from lulu.controllerd import default_inputplumber_client
 from lulu.contracts import InputMode, Lifecycle, Overlay, Role, ServiceName
 from lulu.gamescope import GamescopeInvocation, discover_presentation_output
@@ -127,6 +127,7 @@ class BoundaryTests(unittest.TestCase):
                 ConsoleCatalog.descriptor.name,
                 ApplicationCatalog.descriptor.name,
                 ConsoleUi.descriptor.name,
+                ServiceName.ACQUISITIOND,
             },
             set(ServiceName),
         )
@@ -139,6 +140,28 @@ class BoundaryTests(unittest.TestCase):
         registry.set_navigation_controller("pad-a")
         self.assertEqual(registry.controllers["pad-a"].player, 1)
         self.assertEqual(registry.navigation_controller_id, "pad-a")
+
+    def test_controller_battery_normalization_preserves_unknown(self) -> None:
+        controller = Controller("pad-a", battery=BatteryState())
+        self.assertEqual(controller.battery.kind, BatteryKind.UNKNOWN)
+        self.assertIsNone(controller.battery.percentage)
+
+        controller.battery = BatteryState(BatteryKind.PERCENT, 87)
+        self.assertEqual(controller.battery.percentage, 87)
+
+    def test_controller_indices_are_preserved_when_runtime_order_changes(self) -> None:
+        registry = ControllerRegistry()
+        registry.observe_runtime_composites({
+            "CompositeDevice0": ("pad-a", ("/dev/input/event1",)),
+            "CompositeDevice1": ("pad-b", ("/dev/input/event2",)),
+        })
+        self.assertEqual(registry.controllers["CompositeDevice0"].player, 1)
+        self.assertEqual(registry.controllers["CompositeDevice1"].player, 2)
+        registry.observe_runtime_composites({
+            "CompositeDevice1": ("pad-b", ("/dev/input/event2",)),
+        })
+        self.assertFalse(registry.controllers["CompositeDevice0"].connected)
+        self.assertEqual(registry.controllers["CompositeDevice1"].player, 2)
 
     def test_disconnect_releases_navigation_ownership_only(self) -> None:
         registry = ControllerRegistry()

@@ -8,6 +8,8 @@ runtime=/opt/lulu/dev-current
 dropin_root=/etc/systemd/system
 session_dropin="$dropin_root/lulu-session@.service.d/dev-runtime.conf"
 consoled_dropin="$dropin_root/lulu-consoled.service.d/dev-runtime.conf"
+acquisition_dropin="$dropin_root/lulu-acquisition.service.d/dev-runtime.conf"
+acquisition_unit="$dropin_root/lulu-acquisition.service"
 
 if [ "$(hostname)" != lulu ] || [ "$(CDPATH= cd -- "$repo_root" && pwd)" != "$repo_root" ]; then
     echo "dev runtime must be refreshed on canonical Lulu from $repo_root" >&2
@@ -34,6 +36,7 @@ refresh() {
     cp "$repo_root/deploy/payload/bin/verify-mudos.sh" "$staging/bin/verify-mudos.sh"
     LULU_INSTALL_ROOT="$staging" "$staging/scripts/build-lulu-shell.sh" "$staging/bin/lulu-shell"
     chmod +x "$staging/bin"/* "$staging/scripts"/*
+    install -m 0644 "$staging/packaging/lulu-acquisition.service" "$acquisition_unit"
     dirty=false
     [ -n "$status" ] && dirty=true
     cat > "$staging/NON_PROMOTABLE" <<EOF
@@ -47,7 +50,7 @@ refreshed=$stamp
 EOF
     rm -rf "$runtime"
     mv "$staging" "$runtime"
-    mkdir -p "$(dirname "$session_dropin")" "$(dirname "$consoled_dropin")"
+    mkdir -p "$(dirname "$session_dropin")" "$(dirname "$consoled_dropin")" "$(dirname "$acquisition_dropin")"
     cat > "$session_dropin" <<EOF
 [Service]
 Environment=LULU_INSTALL_ROOT=$runtime
@@ -62,13 +65,17 @@ Environment=PYTHONPATH=$runtime/lib
 Environment=LULU_SHELL_EXECUTABLE=$runtime/bin/lulu-shell
 Environment=LULU_UI_FILE=$runtime/ui/ConsoleShell.qml
 EOF
+    cat > "$acquisition_dropin" <<EOF
+[Service]
+Environment=PYTHONPATH=$runtime/lib
+EOF
     systemctl daemon-reload
-    systemctl restart lulu-consoled.service lulu-session@2.service
+    systemctl restart lulu-acquisition.service lulu-consoled.service lulu-session@2.service
     echo "refreshed non-promotable dev runtime: $runtime"
 }
 
 immutable() {
-    rm -f "$session_dropin" "$consoled_dropin"
+    rm -f "$session_dropin" "$consoled_dropin" "$acquisition_dropin" "$acquisition_unit"
     systemctl daemon-reload
     systemctl restart lulu-consoled.service lulu-session@2.service
     echo "restored immutable runtime: $(readlink -f /opt/lulu/current)"

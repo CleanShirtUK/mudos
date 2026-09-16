@@ -1,6 +1,6 @@
 [Unit]
 Description=Lulu appliance target
 Requires=seatd.service
-Wants=inputplumber.service user-runtime-dir@958.service user@958.service lulu-consoled.service lulu-session@2.service lulu-file-browser.service
+Wants=inputplumber.service user-runtime-dir@958.service user@958.service lulu-acquisition.service lulu-consoled.service lulu-session@2.service lulu-file-browser.service
 After=multi-user.target seatd.service inputplumber.service user-runtime-dir@958.service user@958.service lulu-consoled.service lulu-file-browser.service
 AllowIsolate=yes

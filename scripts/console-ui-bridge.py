@@ -159,10 +159,12 @@ from lulu.settings import SettingsStore
 
 
 class ConsoleUiBridge:
-    def __init__(self, loop: asyncio.AbstractEventLoop, consoled: object, sessiond: object) -> None:
+    def __init__(self, loop: asyncio.AbstractEventLoop, consoled: object,
+                 sessiond: object, acquisitiond: object | None = None) -> None:
         self.loop = loop
         self.consoled = consoled
         self.sessiond = sessiond
+        self.acquisitiond = acquisitiond
         self.launch_logs = LaunchLogCapture()
         self.local_token: str | None = None
 
@@ -216,6 +218,11 @@ class ConsoleUiBridge:
     async def state(self) -> dict[str, object]:
         return json.loads(await self.sessiond.call_get_state())
 
+    async def acquisition(self) -> dict[str, object]:
+        if self.acquisitiond is None:
+            return {"jobs": [], "activeDownloadCount": 0}
+        return json.loads(await self.acquisitiond.call_get_snapshot())
+
     async def open_steam_store(self) -> dict[str, str]:
         self.launch_logs.start("steam-store")
         self.launch_logs.note("Lulu", "Steam Store launch requested")
@@ -223,13 +230,38 @@ class ConsoleUiBridge:
         return {"token": token}
 
     async def install_game(self, game_id: str) -> dict[str, str]:
+        if self.acquisitiond is None:
+            raise RuntimeError("acquisition service is unavailable")
         appid = await self.consoled.call_resolve_steam_install(game_id)
-        state = await self.state()
-        if state.get("lifecycle") != "shell":
-            raise RuntimeError("another launch owns the session")
-        token = await self.sessiond.call_request_steam_install(appid, 15000)
-        self.launch_logs.note("Lulu", f"Steam install requested appid={appid} token={token}")
-        return {"token": normalize_launch_token(token)}
+        title = game_id
+        try:
+            rows = await self.list_available_games("romm")
+            for row in rows:
+                if str(row.get("game_id", "")) == game_id:
+                    title = str(row.get("title", title))
+                    break
+        except Exception:
+            LOGGER.info("Steam title lookup unavailable; using catalogue identity game_id=%s", game_id)
+        job_id = await self.acquisitiond.call_submit_job("steam", f"steam:{appid}", title)
+        asyncio.create_task(self._refresh_after_acquisition(job_id))
+        self.launch_logs.note("Lulu", f"Steam acquisition submitted appid={appid} job_id={job_id}")
+        return {"token": job_id}
+
+    async def _refresh_after_acquisition(self, job_id: str) -> None:
+        """Rejoin completed Steam content with the local catalogue."""
+        try:
+            for _ in range(720):
+                snapshot = json.loads(await self.acquisitiond.call_get_snapshot())
+                job = next((item for item in snapshot.get("jobs", [])
+                            if item.get("job_id") == job_id), None)
+                if job is None or job.get("state") in {"failed", "cancelled"}:
+                    return
+                if job.get("state") == "completed":
+                    await self.consoled.call_refresh_stages(["steam"])
+                    return
+                await asyncio.sleep(1)
+        except Exception:
+            LOGGER.exception("Steam acquisition catalogue refresh failed job_id=%s", job_id)
 
     async def cancel_launch(self) -> dict[str, str]:
         self.launch_logs.note_cancellation()
@@ -299,6 +331,12 @@ class ApiHandler(BaseHTTPRequestHandler):
             return
         if urlparse(self.path).path == "/launch-log":
             self._respond(200, self.bridge.launch_log())
+            return
+        if urlparse(self.path).path == "/acquisition":
+            try:
+                self._respond(200, self.bridge.call(self.bridge.acquisition()))
+            except Exception as error:  # pragma: no cover - live IPC failure path
+                self._respond(503, {"error": str(error)})
             return
         if urlparse(self.path).path == "/settings":
             category = parse_qs(urlparse(self.path).query).get("category", ["System"])[0]
@@ -459,8 +497,15 @@ async def main() -> None:
         "org.lulu.ConsoleSessiond", "/org/lulu/ConsoleSession", session_introspection
     )
     sessiond = session_proxy.get_interface("org.lulu.ConsoleSession")
+    acquisition_introspection = await wait_for_dbus_service(
+        bus, "org.lulu.Acquisitiond", "/org/lulu/Acquisition"
+    )
+    acquisition_proxy = bus.get_proxy_object(
+        "org.lulu.Acquisitiond", "/org/lulu/Acquisition", acquisition_introspection
+    )
+    acquisitiond = acquisition_proxy.get_interface("org.lulu.Acquisition")
     loop = asyncio.get_running_loop()
-    bridge = ConsoleUiBridge(loop, consoled, sessiond)
+    bridge = ConsoleUiBridge(loop, consoled, sessiond, acquisitiond)
     ApiHandler.bridge = bridge
     server = ThreadingHTTPServer(("127.0.0.1", 38123), ApiHandler)
     Thread(target=server.serve_forever, daemon=True).start()

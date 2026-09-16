@@ -14,7 +14,7 @@ import time
 import threading
 from collections import deque
 
-from dbus_next import BusType, Variant
+from dbus_next import BusType, Variant, DBusError
 from dbus_next.aio import MessageBus
 from dbus_next.service import ServiceInterface, method, signal as dbus_signal
 
@@ -29,6 +29,7 @@ from .local_content import LocalContentProvider
 from .metadata import MetadataMatcher, SteamGridDBMetadata, clean_local_title
 from .romm import RommApiError, RommClient, RommConfig, RommGame
 from .steam_provider import SteamProvider
+from .steam_entitlements import SteamEntitlementSource
 from .system_settings import CATEGORIES as SYSTEM_CATEGORIES, SystemSettingsProvider
 
 
@@ -54,7 +55,8 @@ class ConsoleCatalog:
     def __init__(self, store: CatalogueStore | None = None, provider: SteamProvider | None = None,
                  local_provider: LocalContentProvider | None = None,
                  metadata: SteamGridDBMetadata | None = None,
-                 romm: RommClient | None = None) -> None:
+                 romm: RommClient | None = None,
+                 steam_entitlements: SteamEntitlementSource | None = None) -> None:
         self.store = store or CatalogueStore()
         self.provider = provider or SteamProvider()
         self.local_provider = local_provider or LocalContentProvider()
@@ -62,6 +64,7 @@ class ConsoleCatalog:
         self.romm_artwork = LocalArtworkCache()
         self.metadata = metadata or SteamGridDBMetadata()
         self.matcher = MetadataMatcher(self.metadata)
+        self.steam_entitlements = steam_entitlements or SteamEntitlementSource()
         self._diagnostic_artwork_originals: dict[str, str] = {}
         self._diagnostic_timestamp_originals: dict[str, tuple[int | None, int | None]] = {}
         self._diagnostic_canonical_originals: dict[str, str] = {}
@@ -130,7 +133,15 @@ class ConsoleCatalog:
             return result
         if "steam" in selected:
             LOGGER.info("catalogue stage started name=steam")
-            self.store.reconcile_steam(self.provider)
+            self.steam_entitlements.refresh()
+            if self.steam_entitlements.has_snapshot:
+                self.store.reconcile_steam_entitlements(
+                    self.steam_entitlements.snapshot, self.provider
+                )
+            else:
+                # Before the first successful Valve snapshot, retain existing
+                # entitlement rows and only refresh local installed manifests.
+                self.store.reconcile_steam(self.provider)
             if self.store.last_deltas:
                 self.last_delta_batches.append(self.store.last_deltas)
             LOGGER.info("catalogue stage completed name=steam sqlite_commit=complete")
@@ -202,16 +213,14 @@ class ConsoleCatalog:
                 romm_games = self.romm.list_games()
                 LOGGER.info("catalogue romm substage completed name=network-list items=%d",
                             len(romm_games))
-                LOGGER.info("catalogue romm substage started name=installed-lookup")
-                installed = {game.app_id: game for game in self.provider.list_installed()}
-                LOGGER.info("catalogue romm substage completed name=installed-lookup items=%d",
-                            len(installed))
                 normalized: dict[str, object] = {}
                 for game in romm_games:
-                    app_id = self._steam_manifest_app_id(game)
-                    entry = CatalogueGame.from_romm(
-                        game, installed.get(app_id) if app_id else None, app_id
-                    )
+                    # RomM's transitional Steam marker platform is no longer a
+                    # Steam catalogue input. Steam ownership is sourced locally;
+                    # RomM continues to own all non-Steam ROM records below.
+                    if game.platform_slug.casefold() == "steam":
+                        continue
+                    entry = CatalogueGame.from_romm(game)
                     artwork = game.artwork_url
                     if "romm-artwork" in selected:
                         artwork = self.romm_artwork.cache_remote(entry.game_id, game.artwork_url)
@@ -414,18 +423,6 @@ class ConsoleCatalog:
         result = [game.as_dict() for game in self.store.list_games()]
         LOGGER.info("catalogue refresh worker completed games=%d sqlite_read=complete", len(result))
         return result
-
-    def _steam_manifest_app_id(self, game: object) -> str | None:
-        if not isinstance(game, RommGame) or game.platform_slug.casefold() != "steam":
-            return None
-        manifest_files = [item for item in game.files if item.name.casefold().endswith(".json")]
-        if not manifest_files or self.romm is None:
-            return None
-        try:
-            return self.romm.read_steam_manifest(manifest_files[0]).app_id
-        except RommApiError as error:
-            LOGGER.warning("Ignoring invalid RomM Steam manifest rom_id=%s: %s", game.rom_id, error)
-            return None
 
     def set_metadata_match(self, game_id: str, provider: str, metadata_game_id: str,
                            canonical_title: str) -> CatalogueDelta | None:
@@ -703,7 +700,7 @@ class ConsoleInterface(ServiceInterface):
         try:
             return self.catalogue.resolve_steam_install(game_id)
         except ValueError as error:
-            raise self._error(error) from error
+            raise DBusError("org.lulu.Console.Error.InvalidGame", str(error)) from error
 
     @method()
     def ListSystemSettings(self, category: "s") -> "aa{sv}":

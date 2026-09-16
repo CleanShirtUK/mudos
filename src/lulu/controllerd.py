@@ -1,6 +1,7 @@
 """Controller identity, assignment, role, and profile intent authority."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from enum import StrEnum
 from pathlib import Path
 
 from .contracts import InputMode, Role, ServiceDescriptor, ServiceName
@@ -22,6 +23,20 @@ DESCRIPTOR = ServiceDescriptor(
 )
 
 
+class BatteryKind(StrEnum):
+    PERCENT = "percent"
+    COARSE = "coarse"
+    UNKNOWN = "unknown"
+    NOT_APPLICABLE = "not_applicable"
+
+
+@dataclass(frozen=True, slots=True)
+class BatteryState:
+    kind: BatteryKind = BatteryKind.UNKNOWN
+    percentage: int | None = None
+    state: str | None = None
+
+
 @dataclass(slots=True)
 class Controller:
     controller_id: str
@@ -31,6 +46,7 @@ class Controller:
     player: int | None = None
     role: Role = Role.PLAYER
     profile_intent: str | None = None
+    battery: BatteryState = field(default_factory=BatteryState)
 
 
 class ControllerRegistry:
