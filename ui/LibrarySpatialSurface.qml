@@ -18,7 +18,6 @@ Item {
     property real uiScale: 1
     property real verticalOffset: 0
     property bool surfaceVisible: false
-    property bool nativeGlassEnabled: true
     property bool transparentOutsideMask: true
 
     readonly property real surfaceX: homeX + (fullscreenX - homeX) * progress
@@ -56,18 +55,6 @@ Item {
                        bottomRight.y - topLeft.y)
     }
 
-    function dumpPresentationState(mark) {
-        console.log("MUDOS_LIBRARY_SPATIAL_PRESENTATION",
-                    "mark", mark,
-                    "visible", root.visible,
-                    "surfaceVisible", root.surfaceVisible,
-                    "opacity", root.opacity,
-                    "progress", root.progress,
-                    "position", root.x, root.y,
-                    "size", root.width, root.height)
-        spatialSurface.dumpPresentationState(mark, "library-spatial")
-    }
-
     NavigationCardSurface {
         id: spatialSurface
         anchors.fill: parent
@@ -75,7 +62,6 @@ Item {
          canonicalSize: root.canonicalSize
          canonicalCoordinateRoot: root.canonicalCoordinateRoot
          canonicalRect: root.canonicalRect
-         nativeGlassEnabled: root.nativeGlassEnabled
          transparentOutsideMask: root.transparentOutsideMask
          cornerRadius: 16 * root.uiScale + 12 * root.uiScale * root.progress
          bevelWidthPx: 3 * root.uiScale + 3 * root.uiScale * root.progress

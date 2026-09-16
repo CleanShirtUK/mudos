@@ -20,7 +20,6 @@ Item {
     property var canonicalTexture
     property var canonicalCoordinateRoot
     property size canonicalSize: Qt.size(1280, 720)
-    property bool nativeCatalogueGlassEnabled: true
     property string headingText: "LIBRARY"
     property string sectionTitle: ""
     property string emptyText: "No installed games"
@@ -283,9 +282,7 @@ Item {
                      canonicalTexture: librarySpace.canonicalTexture
                      canonicalCoordinateRoot: librarySpace.canonicalCoordinateRoot
                      canonicalSize: librarySpace.canonicalSize
-                     nativeGlassEnabled: librarySpace.nativeCatalogueGlassEnabled
-                     nativeGlassTransparentOutsideMask:
-                         librarySpace.nativeCatalogueGlassEnabled
+                     nativeGlassTransparentOutsideMask: true
                      canonicalMappingDependency: ({
                          viewportX: gridViewport.x,
                          viewportY: gridViewport.y,
@@ -307,24 +304,9 @@ Item {
                     actionLabel: librarySpace.actionLabel
                     catalogueCard: true
                     librarySurfaceMaterial: true
-                    stackedGlass: false
-                    stackedCardBevelWidth: 3 * librarySpace.uiScale
-                    stackedPlayBevelWidth: 3 * librarySpace.uiScale
-                    stackedPlayEdgeLightStrength: 0.18
-                    stackedCardBulgeStrength: 0
-                    stackedCardRefractionPixels: 0
-                    stackedCardDispersionIor: 0
-                    stackedPlayRefractionPixels: 8 * librarySpace.uiScale
-                    stackedPlayDispersionIor: 0
-                    stackedPlayBulgeStrength: 0
                     focusBrightness: (index === librarySpace.selectedIndex
                         && !librarySpace.collectionFocus)
                         ? 1 : librarySpace.unfocusedBrightness
-                    stackedCoordinateRoot: librarySurface
-                    stackedCardOrigin: Qt.vector2d(librarySpace.surfaceSceneOrigin.x,
-                                                   librarySpace.surfaceSceneOrigin.y)
-                    stackedCardSize: Qt.vector2d(librarySurface.width,
-                                                librarySurface.height)
                     scale: focused ? librarySpace.fullscreenPanelCardSelectionScale : 1
                     z: focused ? 2 : 1
 
@@ -350,9 +332,7 @@ Item {
                      canonicalTexture: librarySpace.canonicalTexture
                      canonicalCoordinateRoot: librarySpace.canonicalCoordinateRoot
                      canonicalSize: librarySpace.canonicalSize
-                     nativeGlassEnabled: librarySpace.nativeCatalogueGlassEnabled
-                     transparentOutsideMask:
-                         librarySpace.nativeCatalogueGlassEnabled
+                     transparentOutsideMask: true
                      mappingRevision: gridViewport.x + gridViewport.y
                          + gameGrid.x + gameGrid.y + gameGrid.contentY
                          + parent.x + parent.y + scale + selectionProgress

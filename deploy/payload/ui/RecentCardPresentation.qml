@@ -47,7 +47,6 @@ Item {
     property real startCompactTitle: 0
     property real railProgress: 1
     property int toRelativeIndex: 0
-    property bool startVisible: true
     property bool selectionBlurActive: false
     property string presentationState: "COMPACT"
     signal activationRequested(string gameId)
@@ -61,6 +60,23 @@ Item {
     readonly property real compactTitleOpacity: startCompactTitle
         + ((focused ? 0 : 1) - startCompactTitle) * railProgress
     readonly property real targetX: home ? home.railX(toRelativeIndex) : 0
+    // This is deliberately composed from the properties that move the live
+    // Recent presentation. mapToItem() itself does not notify on ancestor
+    // transforms, so GameCard consumes this dependency explicitly.
+    readonly property var canonicalMappingDependency: ({
+        rowX: home ? home.presentationX : 0,
+        delegateX: x,
+        delegateY: y,
+        delegateWidth: width,
+        delegateHeight: height,
+        railProgress: railProgress,
+        transitionProgress: home ? home.transitionProgress : 1,
+        presentationProgress: presentationProgress,
+        targetX: targetX,
+        targetWidth: home ? home.railWidth(toRelativeIndex) : width,
+        categoryPresentationOffset: home
+            ? home.categoryPresentationOffset : 0
+    })
     readonly property real capturePadding: home && home.presentationCoordinator
         ? home.presentationCoordinator.motionBlurMaxPixels : 64
     readonly property real captureWidth: focalCardWidth + 2 * capturePadding
@@ -109,12 +125,36 @@ Item {
         homeCard: true
         playActivationSerial: root.playActivationSerial
         canonicalTexture: root.canonicalTexture
-        canonicalCoordinateRoot: root.canonicalCoordinateRoot
+         canonicalCoordinateRoot: root.canonicalCoordinateRoot
+         canonicalMappingDependency: root.canonicalMappingDependency
         canonicalSize: root.canonicalSize
         focalScale: root.focalScale
         uiScale: root.uiScale
         typography: root.typography
         luluPalette: root.luluPalette
+    }
+
+
+    function dumpTransitionMapping(mark) {
+        var r = gameCard.nativeRecentCanonicalRect
+        var directTopLeft = root.canonicalCoordinateRoot
+            ? gameCard.mapToItem(root.canonicalCoordinateRoot, 0, 0)
+            : Qt.point(0, 0)
+        console.log("MUDOS_RECENT_TRANSITION_SAMPLE",
+                    "mark", mark,
+                    "gameId", root.game_id,
+                    "modelIndex", root.index,
+                    "relativeIndex", root.toRelativeIndex,
+                    "focused", root.focused,
+                    "transitionProgress", root.railProgress,
+                    "delegateX", root.x,
+                    "gameCardX", gameCard.x,
+                    "directMapX", directTopLeft.x,
+                    "sceneX", r.x,
+                    "canonicalRect", r.x, r.y, r.width, r.height,
+                    "nativeCanonicalRect", r.x, r.y, r.width, r.height,
+                    "uvX", r.x / root.canonicalSize.width,
+                    "nativeItem", gameCard.nativeRecentGlassIdentity())
     }
 
     DirectionalMotionBlur {

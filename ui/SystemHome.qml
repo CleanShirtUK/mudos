@@ -21,34 +21,12 @@ Item {
     property int categoryTarget: -1
     property int categoryDirection: 1
     property real categoryMotionVelocity: 0
-    property bool nativeLandingGlassEnabled: false
-    property bool glassDiscriminatorEnabled: false
     property var selectionStart: []
     property var presentationStartX: []
     property real selectionProgress: 1
     property bool suppressSelectionCompletion: false
     signal openRequested(int index)
     readonly property bool selectionMotionActive: selectionAnimation.running
-
-    function dumpSelectedGlassRuntimeState() {
-        var card = cardRepeater.itemAt(selectedIndex)
-        if (card)
-            card.dumpRuntimeState()
-        if (card)
-            card.dumpRendererState()
-    }
-
-    function dumpSelectedGlassRendererState() {
-        var card = cardRepeater.itemAt(selectedIndex)
-        if (card)
-            card.dumpRendererState()
-    }
-
-    function dumpSelectedPresentationState(mark) {
-        var card = cardRepeater.itemAt(selectedIndex)
-        if (card)
-            card.dumpPresentationState(mark, "system-" + selectedIndex)
-    }
 
     function categoryArtwork(category) {
         var key = String(category || "").toLowerCase()
@@ -134,8 +112,7 @@ Item {
             luluPalette: root.luluPalette
             canonicalTexture: root.canonicalTexture
             canonicalCoordinateRoot: root.canonicalCoordinateRoot
-            nativeGlassEnabled: root.nativeLandingGlassEnabled
-            glassDiscriminatorEnabled: root.glassDiscriminatorEnabled
+
              canonicalMappingDependency: ({
                  ownerX: root.x,
                  ownerY: root.y,

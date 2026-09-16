@@ -15,12 +15,25 @@ Item {
     property var canonicalTexture
     property var canonicalCoordinateRoot
     property size canonicalSize: Qt.size(1280, 720)
+    property bool transparentOutsideMask: false
+    property var canonicalMappingDependency: null
+    property real mappingRevision: 0
+    property real categoryProgress: 1
+    property bool categoryTransitioning: false
+    property int categoryFrom: -1
+    property int categoryTarget: -1
+    property int categoryDirection: 1
+    property real presentationAncestorY: 0
+    property real presentationAncestorScale: 1
     property bool motionBlurActive: false
     property real motionStartX: 0
     property real motionTargetX: 0
     property real motionProgress: 1
     property real motionDuration: 500
     property real motionBlurPixels: 0
+    property real motionBlurVerticalPixels: 0
+    property vector2d motionBlurVector: Qt.vector2d(motionBlurPixels,
+                                                     motionBlurVerticalPixels)
     property real motionBlurPadding: 64
     readonly property real motionVelocity: motionBlurActive
         ? (motionTargetX - motionStartX) * 5
@@ -28,19 +41,42 @@ Item {
             / motionDuration : 0
     signal activated()
 
+    readonly property rect nativeCanonicalRect: {
+        var presentationDependency = canonicalMappingDependency
+        var categoryDependency = categoryProgress
+            + (categoryTransitioning ? 1 : 0)
+            + categoryFrom + categoryTarget + categoryDirection
+            + presentationAncestorY + presentationAncestorScale + mappingRevision
+        var topLeft = canonicalCoordinateRoot
+            ? root.mapToItem(canonicalCoordinateRoot, 0, 0) : Qt.point(0, 0)
+        var bottomRight = canonicalCoordinateRoot
+            ? root.mapToItem(canonicalCoordinateRoot, root.width, root.height)
+            : Qt.point(root.width, root.height)
+        return Qt.rect(topLeft.x + categoryDependency - categoryDependency,
+                       topLeft.y + categoryDependency - categoryDependency,
+                       bottomRight.x - topLeft.x,
+                       bottomRight.y - topLeft.y)
+    }
+
+
     Item {
         id: logicalCard
         anchors.fill: parent
 
         NavigationCardSurface {
+            id: navigationSurface
             anchors.fill: parent
             canonicalTexture: root.canonicalTexture
             canonicalSize: root.canonicalSize
             canonicalCoordinateRoot: root.canonicalCoordinateRoot
+            canonicalRect: root.nativeCanonicalRect
+            canonicalMappingDependency: root.canonicalMappingDependency
+            transparentOutsideMask: root.transparentOutsideMask
             uiScale: root.uiScale
         }
 
         GameCard {
+            id: cardVisual
             anchors.fill: parent
             compact: true
             homeCard: false
@@ -64,6 +100,7 @@ Item {
                 onClicked: root.activated()
             }
         }
+
     }
 
     DirectionalMotionBlur {
@@ -77,5 +114,7 @@ Item {
         sourceRect: Qt.rect(-root.motionBlurPadding, -root.motionBlurPadding,
                             width, height)
         blurPixels: root.motionBlurPixels
+        blurVector: root.motionBlurVector
     }
+
 }

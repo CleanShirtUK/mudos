@@ -11,9 +11,7 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QVariant>
-#include <QFile>
 #include <QStringList>
-#include <QTextStream>
 
 #include <xcb/xcb.h>
 #include <xcb/xtest.h>
@@ -108,14 +106,6 @@ private:
                 viewModel_->insert("confirmationPending", true);
                 viewModel_->insert("selection", 1);
                 return;
-            } else if (viewModel_->value("devGlassActions").toBool() && selection == 3) {
-                QFile trigger(QStringLiteral("/tmp/mudos-glass-action"));
-                if (trigger.open(QIODevice::WriteOnly | QIODevice::Truncate))
-                    trigger.write("toggle\n");
-            } else if (viewModel_->value("devGlassActions").toBool() && selection == 4) {
-                QFile trigger(QStringLiteral("/tmp/mudos-glass-action"));
-                if (trigger.open(QIODevice::WriteOnly | QIODevice::Truncate))
-                    trigger.write("dump\n");
             } else if (selection == 0)
                 resetMudos();
             else if (viewModel_->value("providerMenuAvailable").toBool() && selection == 1)
@@ -377,54 +367,10 @@ int main(int argc, char **argv)
     viewModel.insert("compatibilityModeAvailable", compatibilityModeAvailable);
     viewModel.insert("compatibilityMode", compatibilityMode);
     viewModel.insert("shellContext", shellContext);
-    viewModel.insert("devGlassActions", shellContext
-                     && qEnvironmentVariableIsSet("LULU_GLASS_POC"));
     viewModel.insert("confirmationPending", false);
     viewModel.insert("confirmationAction", QString());
     viewModel.insert("audioEvent", QString());
     viewModel.insert("audioEventSerial", 0);
-    QString glassMode = QStringLiteral("unknown");
-    QFile glassModeFile(QStringLiteral("/tmp/mudos-glass-mode"));
-    if (glassModeFile.open(QIODevice::ReadOnly | QIODevice::Text))
-        glassMode = QString::fromUtf8(glassModeFile.readAll()).trimmed().toLower();
-    viewModel.insert("glassMode", glassMode);
-    const bool devGlassActions = viewModel.value("devGlassActions").toBool();
-    const QStringList baseActions = {QStringLiteral("Restart Mudos"),
-                                     QStringLiteral("Reboot System"),
-                                     QStringLiteral("Shut Down System")};
-    const QStringList diagnosticActions = devGlassActions
-        ? QStringList{QStringLiteral("Toggle Glass: Native / Legacy (currently %1)").arg(glassMode.toUpper()),
-                      QStringLiteral("Dump Glass Diagnostics")}
-        : QStringList{};
-    const QStringList resolvedActions = shellContext
-        ? (devGlassActions
-           ? QStringList{QStringLiteral("Restart Mudos"), QStringLiteral("Reboot System"),
-                         QStringLiteral("Shut Down System"),
-                         QStringLiteral("Toggle Glass: Native / Legacy (currently %1)").arg(glassMode.toUpper()),
-                         QStringLiteral("Dump Glass Diagnostics")}
-           : QStringList{QStringLiteral("Restart Mudos"), QStringLiteral("Reboot System"),
-                         QStringLiteral("Shut Down System")})
-        : QStringList{QStringLiteral("Reset Mudos")};
-    qInfo() << "MUDOS_GUIDE_RUNTIME"
-            << "executable" << QCoreApplication::applicationFilePath()
-            << "ui" << qEnvironmentVariable("LULU_GUIDE_UI_FILE", "/opt/lulu/ui/MudosGuide.qml")
-            << "lifecycle" << (shellContext ? "shell" : "non-shell")
-            << "devGlassActions" << devGlassActions
-            << "baseCount" << baseActions.size()
-            << "diagnosticCount" << diagnosticActions.size()
-            << "resolvedActions" << resolvedActions;
-    QFile runtimeLog(QStringLiteral("/tmp/lulu-guide-runtime.log"));
-    if (runtimeLog.open(QIODevice::WriteOnly | QIODevice::Append | QIODevice::Text)) {
-        QTextStream stream(&runtimeLog);
-        stream << "MUDOS_GUIDE_RUNTIME"
-               << " executable=" << QCoreApplication::applicationFilePath()
-               << " ui=" << qEnvironmentVariable("LULU_GUIDE_UI_FILE", "/opt/lulu/ui/MudosGuide.qml")
-               << " lifecycle=" << (shellContext ? "shell" : "non-shell")
-               << " devGlassActions=" << (devGlassActions ? "true" : "false")
-               << " baseCount=" << baseActions.size()
-               << " diagnosticCount=" << diagnosticActions.size()
-               << " resolvedActions=" << resolvedActions.join(" | ") << Qt::endl;
-    }
     QQmlApplicationEngine engine;
     engine.rootContext()->setContextProperty("guideModel", &viewModel);
     engine.load(QUrl::fromLocalFile(qEnvironmentVariable("LULU_GUIDE_UI_FILE",

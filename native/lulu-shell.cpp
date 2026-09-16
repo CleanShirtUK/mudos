@@ -166,25 +166,6 @@ public:
         return group.isEmpty() ? QStringLiteral("all") : group;
     }
 
-    Q_INVOKABLE QString consumeGlassDiagnosticRequest()
-    {
-        const QString path = QStringLiteral("/tmp/mudos-glass-action");
-        QFile file(path);
-        if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
-            return {};
-        const QString action = QString::fromUtf8(file.readAll()).trimmed();
-        file.close();
-        QFile::remove(path);
-        return action;
-    }
-
-    Q_INVOKABLE void publishDiagnosticGlassMode(bool native)
-    {
-        QFile file(QStringLiteral("/tmp/mudos-glass-mode"));
-        if (file.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text))
-            file.write(native ? "native\n" : "legacy\n");
-    }
-
 private slots:
     void onDbusInputEvent(const QString &compositePath, const QString &event, double value)
     {
@@ -477,8 +458,7 @@ private:
     }
     bool dispatchAllowed() const
     {
-        return window_ && (luluPresented_ || guideProcess_
-                           || qEnvironmentVariableIsSet("LULU_GLASS_POC"));
+        return window_ && (luluPresented_ || guideProcess_);
     }
 
     void setupPresentationObserver()

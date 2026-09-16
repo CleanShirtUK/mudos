@@ -40,7 +40,6 @@ Item {
     property var luluPalette
     property int playActivationSerial: 0
     property bool focused: false
-    property bool nativeRecentGlassCanary: false
     property real startX: 0
     property real startWidth: 0
     property real startProgress: 0
@@ -74,7 +73,9 @@ Item {
         transitionProgress: home ? home.transitionProgress : 1,
         presentationProgress: presentationProgress,
         targetX: targetX,
-        targetWidth: home ? home.railWidth(toRelativeIndex) : width
+        targetWidth: home ? home.railWidth(toRelativeIndex) : width,
+        categoryPresentationOffset: home
+            ? home.categoryPresentationOffset : 0
     })
     readonly property real capturePadding: home && home.presentationCoordinator
         ? home.presentationCoordinator.motionBlurMaxPixels : 64
@@ -122,7 +123,6 @@ Item {
             ? "Available to Download" : (root.provider === "steam-store"
                 ? "Open" : "Play")
         homeCard: true
-        nativeRecentGlassCanary: root.nativeRecentGlassCanary
         playActivationSerial: root.playActivationSerial
         canonicalTexture: root.canonicalTexture
          canonicalCoordinateRoot: root.canonicalCoordinateRoot
@@ -134,51 +134,6 @@ Item {
         luluPalette: root.luluPalette
     }
 
-    Timer {
-        id: canaryDiagnostics
-        interval: 1200
-        repeat: false
-        running: root.nativeRecentGlassCanary && root.focused && root.visible
-        onTriggered: gameCard.dumpRecentGlassMapping()
-    }
-
-    Timer {
-        id: settledRailCardDiagnostic
-        interval: 1800
-        repeat: false
-        running: root.nativeRecentGlassCanary && root.visible
-        onTriggered: root.dumpSettledRailMapping()
-    }
-
-    onFocusedChanged: {
-        if (root.nativeRecentGlassCanary && root.focused)
-            canaryDiagnostics.restart()
-    }
-
-    function dumpSettledRailMapping() {
-        var r = gameCard.nativeRecentCanonicalRect
-        var uv = Qt.rect(r.x / root.canonicalSize.width,
-                         r.y / root.canonicalSize.height,
-                         r.width / root.canonicalSize.width,
-                         r.height / root.canonicalSize.height)
-        console.log("MUDOS_RECENT_RAIL_CARD",
-                    "gameId", root.game_id,
-                    "modelIndex", root.index,
-                    "relativeIndex", root.toRelativeIndex,
-                    "focused", root.focused,
-                    "localX", gameCard.x,
-                    "sceneX", r.x,
-                    "width", gameCard.width,
-                    "canonicalRect", r.x, r.y, r.width, r.height,
-                    "canonicalSize", root.canonicalSize.width, root.canonicalSize.height,
-                    "uvRect", uv.x, uv.y, uv.width, uv.height,
-                    "nativeItem", gameCard.nativeRecentGlassIdentity())
-        gameCard.dumpRecentGlassMapping()
-    }
-
-    function dumpPresentationState(mark) {
-        gameCard.dumpPresentationState(mark, "recent-" + root.game_id)
-    }
 
     function dumpTransitionMapping(mark) {
         var r = gameCard.nativeRecentCanonicalRect

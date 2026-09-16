@@ -6,6 +6,9 @@ Item {
     property int selectedIndex: 0
     property int transitionFromIndex: 0
     property real transitionProgress: 1
+    // Direct shell presentation input for recentReveal.y. Consumers include
+    // this value so vertical category motion invalidates canonical mapping.
+    property real categoryPresentationOffset: 0
     property real transitionFadeProgress: 1
     property bool transitionInitialized: false
     property bool presentationFrozen: false
@@ -33,76 +36,6 @@ Item {
     property var presentationStartChrome: []
     property var presentationStartCompactTitle: []
     property bool suppressTransitionCompletion: false
-    property bool nativeRecentGlassCanary: false
-    property var transitionDiagnosticMarks: ({})
-
-    function sampleTransitionMarks() {
-        if (!nativeRecentGlassCanary)
-            return
-        var marks = [0, 0.25, 0.5, 0.75, 1]
-        for (var markIndex = 0; markIndex < marks.length; markIndex++) {
-            var mark = marks[markIndex]
-            if (transitionProgress + 0.02 < mark || transitionDiagnosticMarks[mark])
-                continue
-            transitionDiagnosticMarks[mark] = true
-            console.log("MUDOS_RECENT_TRANSITION_MARK",
-                        "mark", mark, "transitionProgress", transitionProgress,
-                        "selectedIndex", selectedIndex)
-            for (var index = 0; index < recentRepeater.count; index++) {
-                var delegate = recentRepeater.itemAt(index)
-                if (delegate && delegate.visible)
-                    delegate.dumpTransitionMapping(mark)
-                if (delegate && delegate.visible)
-                    delegate.dumpPresentationState(mark)
-            }
-        }
-    }
-
-    onTransitionProgressChanged: sampleTransitionMarks()
-
-    function dumpSettledRailMapping() {
-        console.log("MUDOS_RECENT_RAIL_BEGIN",
-                    "selectedIndex", selectedIndex,
-                    "transitionProgress", transitionProgress,
-                    "count", recentRepeater.count,
-                    "visible", visible)
-        for (var index = 0; index < recentRepeater.count; index++) {
-            var delegate = recentRepeater.itemAt(index)
-            if (delegate && delegate.visible)
-                delegate.dumpSettledRailMapping()
-            else
-                console.log("MUDOS_RECENT_RAIL_NO_VISIBLE_DELEGATE", index,
-                            "exists", !!delegate)
-        }
-        console.log("MUDOS_RECENT_RAIL_END")
-    }
-
-    function dumpStartupPresentationState(mark) {
-        console.log("MUDOS_RECENT_STARTUP_PRESENTATION",
-                    "mark", mark,
-                    "visible", recentHome.visible,
-                    "opacity", recentHome.opacity,
-                    "presentationX", recentHome.presentationX,
-                    "transitionProgress", recentHome.transitionProgress)
-        for (var index = 0; index < recentRepeater.count; index++) {
-            var delegate = recentRepeater.itemAt(index)
-            if (delegate && delegate.visible)
-                delegate.dumpPresentationState(mark)
-        }
-    }
-
-    Timer {
-        id: settledRailDiagnostic
-        interval: 1800
-        repeat: false
-        running: recentHome.nativeRecentGlassCanary && recentHome.visible
-        onTriggered: {
-            if (recentHome.transitionProgress === 1 && recentRepeater.count > 0)
-                recentHome.dumpSettledRailMapping()
-            else if (recentHome.nativeRecentGlassCanary && recentHome.visible)
-                settledRailDiagnostic.restart()
-        }
-    }
     signal launchRequested(string gameId)
     signal activationRequested(string gameId)
     signal playFeedbackCompleted(string gameId)
@@ -428,7 +361,6 @@ Item {
                 startCompactTitle: recentHome.presentationStartCompactTitle[index] || 0
                 railProgress: recentHome.transitionProgress
                 focused: index === recentHome.selectedIndex
-                nativeRecentGlassCanary: recentHome.nativeRecentGlassCanary
                 presentationState: game_id === recentHome.selectedGameId ? "FOCUSED" : "COMPACT"
                 selectionBlurActive: recentHome.selectionMotionActive
                     && recentHome.selectionBlurAllowed
@@ -465,7 +397,8 @@ Item {
             + 2 * recentHome.motionBlurPadding
         height: recentHome.height + 2 * recentHome.motionBlurPadding
         visible: recentModel && recentRepeater.count > 0
-        active: !recentHome.selectionMotionActive
+         active: recentHome.selectionMotionActive
+             && recentHome.selectionBlurAllowed
         sourceItem: recentRow
         sourceRect: Qt.rect(recentHome.rowLeftEdge - recentHome.motionBlurPadding,
                             -recentHome.motionBlurPadding,

@@ -10,7 +10,6 @@ layout(std140, binding = 0) uniform buf {
     float borderAlpha;
     float borderWidthPx;
     float focusBrightness;
-    int diagnosticMode;
 };
 
 layout(location = 0) in vec2 qt_TexCoord0;
@@ -21,10 +20,6 @@ void main()
     float distance = length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - cornerRadius;
     float antialiasWidth = max(fwidth(distance), 0.0005);
     float alpha = 1.0 - smoothstep(-antialiasWidth, antialiasWidth, distance);
-    if (diagnosticMode == 1) {
-        fragColor = vec4(vec3(alpha), alpha) * qt_Opacity;
-        return;
-    }
     vec4 artwork = texture(source, qt_TexCoord0) * alpha;
     float pixelWidth = borderWidthPx / min(artworkSize.x, artworkSize.y);
     float border = smoothstep(-pixelWidth, 0.0, distance)

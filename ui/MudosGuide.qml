@@ -20,24 +20,7 @@ Window {
         if (confirmationPending)
             return ["Cancel", confirmationAction]
         if (shellContext) {
-            if (!guideModel.devGlassActions)
-                return ["Restart Mudos", "Reboot System", "Shut Down System"]
-            var baseActions = ["Restart Mudos", "Reboot System", "Shut Down System"]
-            var diagnosticActions = []
-            if (guideModel.devGlassActions) {
-                var mode = String(guideModel.glassMode || "unknown").toUpperCase()
-                diagnosticActions = ["Toggle Glass: Native / Legacy (currently "
-                                     + mode + ")", "Dump Glass Diagnostics"]
-            }
-            var resolved = baseActions.concat(diagnosticActions)
-            console.log("MUDOS_GUIDE_ACTION_MODEL",
-                        "baseCount", baseActions.length,
-                        "baseLabels", baseActions.join(" | "),
-                        "diagnosticCount", diagnosticActions.length,
-                        "diagnosticLabels", diagnosticActions.join(" | "),
-                        "finalCount", resolved.length,
-                        "finalLabels", resolved.join(" | "))
-            return resolved
+            return ["Restart Mudos", "Reboot System", "Shut Down System"]
         }
         var actions = ["Reset Mudos"]
         if (guideModel.providerMenuAvailable)
@@ -46,20 +29,8 @@ Window {
             actions.push(guideModel.compatibilityMode
                 ? "Switch to Gamepad Mode" : "Switch to Compatibility Mode")
         actions.push("Quit Current Application")
-        console.log("MUDOS_GUIDE_ACTION_MODEL",
-                    "baseCount", actions.length,
-                    "baseLabels", actions.join(" | "),
-                    "diagnosticCount", 0,
-                    "diagnosticLabels", "",
-                    "finalCount", actions.length,
-                    "finalLabels", actions.join(" | "))
         return actions
     }
-
-    Component.onCompleted: console.log("MUDOS_GUIDE_OPEN",
-                                      "shellContext", shellContext,
-                                      "devGlassActions", guideModel.devGlassActions,
-                                      "glassMode", String(guideModel.glassMode || "unknown"))
 
     LuluPalette {
         id: luluPalette
@@ -96,8 +67,7 @@ Window {
     Rectangle {
         anchors.centerIn: parent
         width: 520
-        height: confirmationPending ? 250 : shellContext
-            ? (guideModel.devGlassActions ? 370 : 250) : 310
+        height: confirmationPending ? 250 : shellContext ? 250 : 310
         color: luluPalette.guideSurface
         border.color: luluPalette.guideBorder
         border.width: 2

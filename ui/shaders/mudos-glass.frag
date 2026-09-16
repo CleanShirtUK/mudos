@@ -22,7 +22,6 @@ layout(std140, binding = 0) uniform buf {
     float u_edgeLightStrength;
     vec2 u_edgeLightDirection;
     float u_transparentOutsideMask;
-    int u_diagnostic;
     vec4 u_textureSubRect;
 };
 layout(binding = 1) uniform sampler2D source;
@@ -83,17 +82,6 @@ vec2 surfaceGradient(vec2 uv, vec2 size, float radius)
     return gradient / (2.0 * stepUv);
 }
 
-vec2 centralBulgeGradient(vec2 uv, vec2 size, float radius)
-{
-    vec2 stepUv = 1.0 / size;
-    vec2 gradient = vec2(
-        centralBulgeHeight(uv + vec2(stepUv.x, 0.0), size, radius)
-            - centralBulgeHeight(uv - vec2(stepUv.x, 0.0), size, radius),
-        centralBulgeHeight(uv + vec2(0.0, stepUv.y), size, radius)
-            - centralBulgeHeight(uv - vec2(0.0, stepUv.y), size, radius));
-    return gradient / (2.0 * stepUv);
-}
-
 vec4 diffuseSample(vec2 centerUv, vec2 radiusUv)
 {
     const float weights[5] = float[5](0.0625, 0.25, 0.375, 0.25, 0.0625);
@@ -114,28 +102,6 @@ void main()
     vec2 scenePosition = u_sceneOrigin + uv * u_sceneSize;
     vec2 baseUv = scenePosition / u_canonicalSize;
 
-    if (u_diagnostic == 10) {
-        vec2 forcedUv = baseUv + vec2(20.0 / u_canonicalSize.x, 0.0);
-        fragColor = texture(source, forcedUv) * qt_Opacity;
-        return;
-    }
-
-    if (u_diagnostic >= 11 && u_diagnostic <= 13) {
-        vec2 bulgeGradient = centralBulgeGradient(uv, u_sceneSize, u_cornerRadius);
-        if (u_diagnostic == 11) {
-            fragColor = vec4(vec3(centralBulgeHeight(uv, u_sceneSize, u_cornerRadius)), 1.0);
-        } else if (u_diagnostic == 12) {
-            fragColor = vec4(vec3(clamp(length(bulgeGradient) / 0.1, 0.0, 1.0)), 1.0);
-        } else {
-            vec3 bulgeRay = refract(vec3(0.0, 0.0, -1.0),
-                                    normalize(vec3(bulgeGradient * u_depth, 1.0)),
-                                    1.0 / max(u_ior, 1.001));
-            float displacement = length(bulgeRay.xy) * u_refractionPixels;
-            fragColor = vec4(vec3(clamp(displacement / 20.0, 0.0, 1.0)), 1.0);
-        }
-        return;
-    }
-
     vec2 gradient = surfaceGradient(uv, u_sceneSize, u_cornerRadius);
     vec3 normal = normalize(vec3(gradient * u_depth, 1.0));
     vec3 incident = vec3(0.0, 0.0, -1.0);
@@ -146,20 +112,6 @@ void main()
                            1.0 / max(u_ior + u_dispersionIor, 1.001));
     vec2 displacedUv = baseUv + rayGreen.xy * u_refractionPixels / u_canonicalSize;
     vec2 diffusionRadius = vec2(u_diffusionPixels) / u_canonicalSize;
-
-    if (u_diagnostic == 7) {
-        float height = surfaceHeight(uv, u_sceneSize, u_cornerRadius);
-        fragColor = vec4(vec3(height), 1.0);
-        return;
-    }
-    if (u_diagnostic == 8) {
-        fragColor = vec4(vec3(clamp(length(gradient) / 16.0, 0.0, 1.0)), 1.0);
-        return;
-    }
-    if (u_diagnostic == 9) {
-        fragColor = vec4(vec3(clamp(length(rayGreen.xy) * u_refractionPixels / 4.0, 0.0, 1.0)), 1.0);
-        return;
-    }
 
     vec4 canonicalBackdrop = texture(source, baseUv) * qt_Opacity;
     if (u_dispersionIor > 0.0) {

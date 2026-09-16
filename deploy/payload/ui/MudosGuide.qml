@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Window
 
 Window {
+    id: root
     objectName: "mudosGuide"
     visible: false
     title: "Mudos Guide"
@@ -13,6 +14,23 @@ Window {
     property bool shellContext: guideModel.shellContext
     property bool confirmationPending: guideModel.confirmationPending
     property string confirmationAction: guideModel.confirmationAction
+    property int delegateCreationCount: 0
+
+    function resolvedGuideActions() {
+        if (confirmationPending)
+            return ["Cancel", confirmationAction]
+        if (shellContext) {
+            return ["Restart Mudos", "Reboot System", "Shut Down System"]
+        }
+        var actions = ["Reset Mudos"]
+        if (guideModel.providerMenuAvailable)
+            actions.push(guideModel.providerMenuLabel)
+        if (guideModel.compatibilityModeAvailable)
+            actions.push(guideModel.compatibilityMode
+                ? "Switch to Gamepad Mode" : "Switch to Compatibility Mode")
+        actions.push("Quit Current Application")
+        return actions
+    }
 
     LuluPalette {
         id: luluPalette
@@ -67,19 +85,16 @@ Window {
             y: 76
             spacing: 12
             Repeater {
-                model: {
-                    if (confirmationPending)
-                        return ["Cancel", confirmationAction]
-                    if (shellContext)
-                        return ["Restart Mudos", "Reboot System", "Shut Down System"]
-                    var actions = ["Reset Mudos"]
-                    if (guideModel.providerMenuAvailable)
-                        actions.push(guideModel.providerMenuLabel)
-                    if (guideModel.compatibilityModeAvailable)
-                        actions.push(guideModel.compatibilityMode
-                            ? "Switch to Gamepad Mode" : "Switch to Compatibility Mode")
-                    actions.push("Quit Current Application")
-                    return actions
+                model: root.resolvedGuideActions()
+                onCountChanged: console.log("MUDOS_GUIDE_VISIBLE_MODEL",
+                                            "count", count,
+                                            "delegateCreationCount", root.delegateCreationCount)
+                onItemAdded: function(index, item) {
+                    root.delegateCreationCount += 1
+                    console.log("MUDOS_GUIDE_DELEGATE_CREATED",
+                                "index", index,
+                                "label", item ? item.children[0].text : "unknown",
+                                "delegateCreationCount", root.delegateCreationCount)
                 }
                 delegate: Rectangle {
                     width: 472
@@ -93,6 +108,9 @@ Window {
                         font.pixelSize: 18
                         verticalAlignment: Text.AlignVCenter
                     }
+                    Component.onCompleted: console.log("MUDOS_GUIDE_DELEGATE_COMPONENT",
+                                                       "index", index,
+                                                       "label", modelData)
                 }
             }
         }

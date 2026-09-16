@@ -25,6 +25,12 @@ Item {
 
     property real uiScale: 1
     property var presentationCoordinator
+    property real categoryProgress: 1
+    property bool categoryTransitioning: false
+    property int categoryFrom: -1
+    property int categoryTarget: -1
+    property int categoryDirection: 1
+    property real categoryMotionVelocity: 0
     readonly property string navigationObject: "library"
     readonly property bool selectionMotionActive: selectionAnimation.running
     signal openRequested(int index)
@@ -107,16 +113,42 @@ Item {
             uiScale: libraryHome.uiScale
             typography: libraryHome.typography
             luluPalette: libraryHome.luluPalette
-            canonicalTexture: libraryHome.canonicalTexture
-            canonicalCoordinateRoot: libraryHome.canonicalCoordinateRoot
+             canonicalTexture: libraryHome.canonicalTexture
+             canonicalCoordinateRoot: libraryHome.canonicalCoordinateRoot
+
+              canonicalMappingDependency: ({
+                  ownerX: libraryHome.x,
+                   ownerY: libraryHome.y,
+                   ownerScale: libraryHome.scale,
+                   delegateX: x,
+                 delegateY: y,
+                 width: width,
+                 height: height,
+                  selectionProgress: libraryHome.selectionProgress
+              })
+              categoryProgress: libraryHome.categoryProgress
+              categoryTransitioning: libraryHome.categoryTransitioning
+              categoryFrom: libraryHome.categoryFrom
+              categoryTarget: libraryHome.categoryTarget
+              categoryDirection: libraryHome.categoryDirection
+              presentationAncestorY: libraryHome.parent ? libraryHome.parent.y : 0
+              presentationAncestorScale: libraryHome.parent ? libraryHome.parent.scale : 1
              canonicalSize: libraryHome.canonicalSize
              motionBlurActive: libraryHome.selectionMotionActive
+                 || libraryHome.categoryTransitioning
              motionStartX: startX
              motionTargetX: targetX
              motionProgress: libraryHome.selectionProgress
-             motionBlurPixels: libraryHome.presentationCoordinator
-                 ? libraryHome.presentationCoordinator.signedMotionBlurPixelsFromVelocity(
-                     motionVelocity) : 0
+              motionBlurPixels: libraryHome.presentationCoordinator
+                  ? libraryHome.presentationCoordinator.signedMotionBlurPixelsFromVelocity(
+                      motionVelocity) : 0
+              motionBlurVerticalPixels: libraryHome.presentationCoordinator
+                  ? libraryHome.presentationCoordinator.signedMotionBlurPixelsFromVelocity(
+                      libraryHome.categoryMotionVelocity) : 0
+              motionBlurVector: libraryHome.presentationCoordinator
+                  ? libraryHome.presentationCoordinator.signedMotionBlurVectorFromVelocity(
+                      motionVelocity, libraryHome.categoryMotionVelocity)
+                  : Qt.vector2d(0, 0)
              selectedOpacityOwner: libraryHome.selectedOpacityOwner(index)
              opacity: libraryHome.contentOpacity
             onActivated: libraryHome.openRequested(index)

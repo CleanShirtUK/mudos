@@ -15,6 +15,12 @@ Item {
     property var canonicalCoordinateRoot
     property size canonicalSize: Qt.size(1280, 720)
     property var presentationCoordinator
+    property real categoryProgress: 1
+    property bool categoryTransitioning: false
+    property int categoryFrom: -1
+    property int categoryTarget: -1
+    property int categoryDirection: 1
+    property real categoryMotionVelocity: 0
     property var selectionStart: []
     property var presentationStartX: []
     property real selectionProgress: 1
@@ -106,14 +112,40 @@ Item {
             luluPalette: root.luluPalette
             canonicalTexture: root.canonicalTexture
             canonicalCoordinateRoot: root.canonicalCoordinateRoot
-             canonicalSize: root.canonicalSize
-             motionBlurActive: root.selectionMotionActive
+
+             canonicalMappingDependency: ({
+                 ownerX: root.x,
+                 ownerY: root.y,
+                 ownerScale: root.scale,
+                 delegateX: x,
+                delegateY: y,
+                width: width,
+                height: height,
+                 selectionProgress: root.selectionProgress
+             })
+             categoryProgress: root.categoryProgress
+             categoryTransitioning: root.categoryTransitioning
+             categoryFrom: root.categoryFrom
+             categoryTarget: root.categoryTarget
+             categoryDirection: root.categoryDirection
+             presentationAncestorY: root.parent ? root.parent.y : 0
+             presentationAncestorScale: root.parent ? root.parent.scale : 1
+            canonicalSize: root.canonicalSize
+              motionBlurActive: root.selectionMotionActive
+                  || root.categoryTransitioning
              motionStartX: startX
              motionTargetX: targetX
              motionProgress: root.selectionProgress
-             motionBlurPixels: root.presentationCoordinator
-                 ? root.presentationCoordinator.signedMotionBlurPixelsFromVelocity(
-                     motionVelocity) : 0
+              motionBlurPixels: root.presentationCoordinator
+                  ? root.presentationCoordinator.signedMotionBlurPixelsFromVelocity(
+                      motionVelocity) : 0
+              motionBlurVerticalPixels: root.presentationCoordinator
+                  ? root.presentationCoordinator.signedMotionBlurPixelsFromVelocity(
+                      root.categoryMotionVelocity) : 0
+              motionBlurVector: root.presentationCoordinator
+                  ? root.presentationCoordinator.signedMotionBlurVectorFromVelocity(
+                      motionVelocity, root.categoryMotionVelocity)
+                  : Qt.vector2d(0, 0)
              selectedOpacityOwner: root.selectedOpacityOwner(index)
              onActivated: root.openRequested(index)
         }

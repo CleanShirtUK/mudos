@@ -8,7 +8,6 @@
 #include <QSGMaterialShader>
 #include <QSGTextureProvider>
 #include <QSGTexture>
-#include <QStringList>
 
 #include <cstring>
 
@@ -76,8 +75,6 @@ public:
     QVector2D edgeLightDirection{1, -1};
     qreal cornerRadius = 0;
     bool transparentOutsideMask = false;
-    int diagnostic = 0;
-    MudosGlassItem *owner = nullptr;
 };
 
 void putFloat(QByteArray &data, int offset, float value)
@@ -117,13 +114,10 @@ bool GlassShader::updateUniformData(RenderState &state, QSGMaterial *newMaterial
     putFloat(*data, 140, material->edgeLightStrength);
     putVec2(*data, 144, material->edgeLightDirection);
     putFloat(*data, 152, material->transparentOutsideMask ? 1.0f : 0.0f);
-    putFloat(*data, 156, static_cast<float>(material->diagnostic));
     putFloat(*data, 160, material->textureSubRect.x());
     putFloat(*data, 164, material->textureSubRect.y());
     putFloat(*data, 168, material->textureSubRect.width());
     putFloat(*data, 172, material->textureSubRect.height());
-    if (material->owner)
-        material->owner->recordUniformData(*data);
     return true;
 }
 
@@ -155,8 +149,6 @@ void copyMaterial(GlassMaterial *material, const MudosGlassItem *item)
     material->edgeLightDirection = item->edgeLightDirection();
     material->cornerRadius = item->cornerRadius();
     material->transparentOutsideMask = item->transparentOutsideMask();
-    material->diagnostic = item->diagnosticMode();
-    material->owner = const_cast<MudosGlassItem *>(item);
     material->provider = item->backdrop() && item->backdrop()->isTextureProvider()
         ? item->backdrop()->textureProvider() : nullptr;
     material->textureSubRect = material->provider && material->provider->texture()
@@ -239,12 +231,6 @@ void MudosGlassItem::setTransparentOutsideMask(bool value)
     m_transparentOutsideMask = value; emit opticsChanged(); update();
 }
 
-void MudosGlassItem::setDiagnosticMode(int value)
-{
-    if (m_diagnosticMode == value) return;
-    m_diagnosticMode = value; emit opticsChanged(); update();
-}
-
 QSGNode *MudosGlassItem::updatePaintNode(QSGNode *oldNode, UpdatePaintNodeData *data)
 {
     Q_UNUSED(data)
@@ -270,89 +256,11 @@ QSGNode *MudosGlassItem::updatePaintNode(QSGNode *oldNode, UpdatePaintNodeData *
 
     auto *material = static_cast<GlassMaterial *>(node->material());
     copyMaterial(material, this);
-    m_lastMaterialAddress = reinterpret_cast<quintptr>(material);
     node->markDirty(QSGNode::DirtyGeometry | QSGNode::DirtyMaterial);
-    m_lastRenderMatrix = data && data->transformNode
-        ? data->transformNode->combinedMatrix() : QMatrix4x4();
     return node;
 }
 
 void MudosGlassItem::releaseResources()
 {
     update();
-}
-
-void MudosGlassItem::dumpMapping() const
-{
-    const qreal sourceWidth = m_backdrop ? m_backdrop->width() : 0;
-    const qreal sourceHeight = m_backdrop ? m_backdrop->height() : 0;
-    const QRectF uvRect(
-        m_canonicalRect.x() / m_canonicalSize.width(),
-        m_canonicalRect.y() / m_canonicalSize.height(),
-        m_canonicalRect.width() / m_canonicalSize.width(),
-        m_canonicalRect.height() / m_canonicalSize.height());
-    qInfo().noquote() << "MUDOS_GLASS_POC_MAPPING"
-                      << "itemAddress" << static_cast<const void *>(this)
-                      << "materialAddress" << reinterpret_cast<const void *>(m_lastMaterialAddress)
-                      << "item" << width() << height()
-                      << "canonicalRect" << m_canonicalRect
-                      << "canonicalSize" << m_canonicalSize
-                      << "sourceTextureSize" << QSizeF(sourceWidth, sourceHeight)
-                      << "uvRect" << uvRect
-                      << "renderMatrix" << m_lastRenderMatrix;
-}
-
-void MudosGlassItem::recordUniformData(const QByteArray &data)
-{
-    m_lastUniformData = data;
-}
-
-void MudosGlassItem::dumpRuntimeState(const QPointF &position) const
-{
-    const QSGTexture *texture = nullptr;
-    if (m_backdrop && m_backdrop->isTextureProvider())
-        texture = m_backdrop->textureProvider()->texture();
-
-    QStringList offsets;
-    for (int offset = 0; offset + 4 <= m_lastUniformData.size(); offset += 4) {
-        float value = 0;
-        std::memcpy(&value, m_lastUniformData.constData() + offset, sizeof(value));
-        offsets.append(QStringLiteral("%1:%2").arg(offset).arg(value, 0, 'g', 9));
-    }
-    float effectiveOpacity = 0;
-    if (m_lastUniformData.size() >= 68)
-        std::memcpy(&effectiveOpacity, m_lastUniformData.constData() + 64, sizeof(effectiveOpacity));
-
-    qInfo() << "MUDOS_NATIVE_GLASS_RUNTIME"
-            << "itemAddress" << static_cast<const void *>(this)
-            << "canonicalSize" << m_canonicalSize
-            << "canonicalRect" << m_canonicalRect
-            << "surfaceSize" << QSizeF(width(), height())
-            << "sourceLogicalSize" << (m_backdrop ? QSizeF(m_backdrop->width(), m_backdrop->height()) : QSizeF())
-            << "sourceNativeSize" << (texture ? texture->textureSize() : QSize())
-            << "normalizedSubRect" << (texture ? texture->normalizedTextureSubRect() : QRectF())
-            << "filtering" << (texture ? texture->filtering() : QSGTexture::None)
-            << "mipmapFiltering" << (texture ? texture->mipmapFiltering() : QSGTexture::None)
-            << "hasMipmaps" << (texture ? texture->hasMipmaps() : false)
-            << "hasAlpha" << (texture ? texture->hasAlphaChannel() : false)
-            << "anisotropy" << (texture ? texture->anisotropyLevel() : QSGTexture::AnisotropyNone)
-            << "horizontalWrap" << (texture ? texture->horizontalWrapMode() : QSGTexture::ClampToEdge)
-            << "verticalWrap" << (texture ? texture->verticalWrapMode() : QSGTexture::ClampToEdge)
-            << "effectiveOpacity" << effectiveOpacity
-            << "ior" << m_ior << "depth" << m_glassDepth
-            << "refractionPx" << m_refractionPixels
-            << "dispersion" << m_dispersionIor
-            << "diffusionPx" << m_diffusionPixels
-            << "transmission" << m_transmission
-            << "bevelPx" << m_bevelWidthPx
-            << "bulge" << m_bulgeStrength
-            << "edgeLight" << m_edgeLightStrength
-            << "edgeDirection" << m_edgeLightDirection
-            << "sceneLight" << m_sceneLightStrength << m_sceneLightPixels
-            << "radius" << m_cornerRadius
-            << "transparentOutsideMask" << m_transparentOutsideMask
-            << "presentationPosition" << position
-            << "uniformBytes" << m_lastUniformData.size()
-            << "uniformHex" << m_lastUniformData.toHex()
-            << "uniformFloatOffsets" << offsets;
 }

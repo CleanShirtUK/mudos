@@ -13,8 +13,6 @@ Item {
     property string transitionState: "RESTING"
     property real transitionProgress: 0
     property bool transitionExpanding: true
-    property bool nativeLandingGlassEnabled: false
-    property bool glassDiscriminatorEnabled: false
     property real contentOpacity: 1
     property int selectedIndex: 0
     property var categories: [{"label": "All Games", "scope": "all"}, {"label": "PC Games", "scope": "pc"}]
@@ -36,26 +34,6 @@ Item {
     readonly property string navigationObject: "library"
     readonly property bool selectionMotionActive: selectionAnimation.running
     signal openRequested(int index)
-
-    function dumpSelectedGlassRuntimeState() {
-        var card = cardRepeater.itemAt(selectedIndex)
-        if (card)
-            card.dumpRuntimeState()
-        if (card)
-            card.dumpRendererState()
-    }
-
-    function dumpSelectedGlassRendererState() {
-        var card = cardRepeater.itemAt(selectedIndex)
-        if (card)
-            card.dumpRendererState()
-    }
-
-    function dumpSelectedPresentationState(mark) {
-        var card = cardRepeater.itemAt(selectedIndex)
-        if (card)
-            card.dumpPresentationState(mark, "library-" + selectedIndex)
-    }
 
     function categoryArtwork(category) {
         return MudosAssetCatalog.platformArtwork(category)
@@ -137,8 +115,7 @@ Item {
             luluPalette: libraryHome.luluPalette
              canonicalTexture: libraryHome.canonicalTexture
              canonicalCoordinateRoot: libraryHome.canonicalCoordinateRoot
-             nativeGlassEnabled: libraryHome.nativeLandingGlassEnabled
-             glassDiscriminatorEnabled: libraryHome.glassDiscriminatorEnabled
+
               canonicalMappingDependency: ({
                   ownerX: libraryHome.x,
                    ownerY: libraryHome.y,

@@ -12,14 +12,17 @@ fi
 mkdir -p "$(dirname -- "$output")"
 repo_build=$(dirname -- "$output")
 /usr/lib/qt6/moc "$repo_root/native/lulu-shell.cpp" -o "$repo_build/lulu-shell.moc"
+/usr/lib/qt6/moc "$repo_root/native/mudos-glass-item.h" -o "$repo_build/mudos-glass-item_moc.cpp"
 /usr/lib/qt6/moc "$repo_root/native/catalogue-model.h" -o "$repo_build/catalogue-model_moc.cpp"
 /usr/lib/qt6/moc "$repo_root/native/recent-model.h" -o "$repo_build/recent-model_moc.cpp"
 g++ -std=c++17 -O2 -fPIC -Wall -Wextra -I"$repo_build" \
     "$repo_root/native/lulu-shell.cpp" \
     "$repo_root/native/catalogue-model.cpp" \
     "$repo_root/native/recent-model.cpp" \
+    "$repo_root/native/mudos-glass-item.cpp" \
     "$repo_build/catalogue-model_moc.cpp" \
     "$repo_build/recent-model_moc.cpp" \
+    "$repo_build/mudos-glass-item_moc.cpp" \
     -o "$output" \
     $(pkg-config --cflags --libs Qt6DBus Qt6Gui Qt6Multimedia Qt6Qml Qt6Quick xcb sdl3) \
     -no-pie

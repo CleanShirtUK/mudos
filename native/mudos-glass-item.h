@@ -29,7 +29,6 @@ class MudosGlassItem : public QQuickItem
     Q_PROPERTY(QVector2D edgeLightDirection READ edgeLightDirection WRITE setEdgeLightDirection NOTIFY opticsChanged)
     Q_PROPERTY(qreal cornerRadius READ cornerRadius WRITE setCornerRadius NOTIFY opticsChanged)
     Q_PROPERTY(bool transparentOutsideMask READ transparentOutsideMask WRITE setTransparentOutsideMask NOTIFY opticsChanged)
-    Q_PROPERTY(int diagnosticMode READ diagnosticMode WRITE setDiagnosticMode NOTIFY opticsChanged)
 
 public:
     explicit MudosGlassItem(QQuickItem *parent = nullptr);
@@ -69,12 +68,6 @@ public:
     void setCornerRadius(qreal value);
     bool transparentOutsideMask() const { return m_transparentOutsideMask; }
     void setTransparentOutsideMask(bool value);
-    int diagnosticMode() const { return m_diagnosticMode; }
-    void setDiagnosticMode(int value);
-
-    Q_INVOKABLE void dumpMapping() const;
-    Q_INVOKABLE void dumpRuntimeState(const QPointF &position = {}) const;
-    void recordUniformData(const QByteArray &data);
 
 signals:
     void backdropChanged();
@@ -104,8 +97,4 @@ private:
     QVector2D m_edgeLightDirection{1, -1};
     qreal m_cornerRadius = 0;
     bool m_transparentOutsideMask = false;
-    int m_diagnosticMode = 0;
-    QMatrix4x4 m_lastRenderMatrix;
-    quintptr m_lastMaterialAddress = 0;
-    QByteArray m_lastUniformData;
 };

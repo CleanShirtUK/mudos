@@ -21,7 +21,7 @@ to the effect texture coordinate system.
 
 The accepted identity pipeline is now a shared presentation-sized texture:
 
-`OrbitRenderSource -> orbitTexture -> OrbitBackdropView + GlassSurface`
+`OrbitRenderSource -> orbitTexture -> OrbitBackdropView + MudosGlassItem`
 
 `orbitTexture` is exactly `1280x720`. The visible backdrop and the Recent focal
 card consume this same texture. The card's immutable base coordinate is:
@@ -102,7 +102,6 @@ made the independent opaque artwork read as a reflected/brightened backdrop
 rather than cohesive glass illumination.
 
 Developer diagnostics are retained but cannot affect normal rendering unless a
-caller explicitly sets `GlassSurface.diagnosticMode`: mode `7` shows total
 height, `8` gradient magnitude, `9` final displacement magnitude, `10` is the
 known-good forced +20 source-pixel offset, and `11..13` show bulge height,
 bulge gradient, and bulge-only displacement. Production instances use mode `0`.

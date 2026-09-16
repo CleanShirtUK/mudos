@@ -22,8 +22,6 @@ Item {
     property var canonicalTexture
     property var canonicalCoordinateRoot
     property size canonicalSize: Qt.size(1280, 720)
-    property bool nativeLandingGlassEnabled: false
-    property bool glassDiscriminatorEnabled: false
     property var presentationCoordinator
     property real categoryProgress: 1
     property bool categoryTransitioning: false
@@ -157,8 +155,7 @@ Item {
         canonicalTexture: root.canonicalTexture
         canonicalCoordinateRoot: root.canonicalCoordinateRoot
         canonicalSize: root.canonicalSize
-        nativeGlassEnabled: root.nativeLandingGlassEnabled
-        glassDiscriminatorEnabled: root.glassDiscriminatorEnabled
+
         canonicalMappingDependency: ({
             ownerX: root.x,
             ownerY: root.y,

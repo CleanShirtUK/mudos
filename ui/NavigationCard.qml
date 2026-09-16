@@ -15,9 +15,7 @@ Item {
     property var canonicalTexture
     property var canonicalCoordinateRoot
     property size canonicalSize: Qt.size(1280, 720)
-    property bool nativeGlassEnabled: false
     property bool transparentOutsideMask: false
-    property bool glassDiscriminatorEnabled: false
     property var canonicalMappingDependency: null
     property real mappingRevision: 0
     property real categoryProgress: 1
@@ -61,39 +59,6 @@ Item {
     }
 
 
-    function dumpNativeMapping() {
-        navigationSurface.dumpNativeMapping(Qt.point(root.x, root.y))
-    }
-
-    function dumpRuntimeState() {
-        navigationSurface.dumpRuntimeState(Qt.point(root.x, root.y))
-    }
-
-    function dumpRendererState() {
-        navigationSurface.dumpRendererState(root.objectName || root.displayTitle)
-    }
-
-    function dumpPresentationState(mark, identity) {
-        var cardIdentity = identity || root.objectName || root.displayTitle
-        console.log("MUDOS_NAVIGATION_CARD_PRESENTATION",
-                    "mark", mark, "identity", cardIdentity,
-                    "visible", root.visible, "opacity", root.opacity,
-                    "focused", root.focused,
-                    "selectionProgress", root.selectionProgress,
-                    "position", root.x, root.y,
-                    "size", root.width, root.height,
-                    "motionBlurActive", motionBlur.active,
-                    "motionBlurVisible", motionBlur.visible,
-                    "logicalCardVisible", logicalCard.visible,
-                    "logicalCardOpacity", logicalCard.opacity,
-                    "canonicalRect", root.nativeCanonicalRect.x,
-                        root.nativeCanonicalRect.y,
-                        root.nativeCanonicalRect.width,
-                        root.nativeCanonicalRect.height)
-        navigationSurface.dumpPresentationState(mark, cardIdentity)
-        cardVisual.dumpPresentationState(mark, cardIdentity)
-    }
-
     Item {
         id: logicalCard
         anchors.fill: parent
@@ -106,10 +71,7 @@ Item {
             canonicalCoordinateRoot: root.canonicalCoordinateRoot
             canonicalRect: root.nativeCanonicalRect
             canonicalMappingDependency: root.canonicalMappingDependency
-            nativeGlassEnabled: root.nativeGlassEnabled
             transparentOutsideMask: root.transparentOutsideMask
-            glassDiscriminatorEnabled: root.glassDiscriminatorEnabled
-            selected: root.focused
             uiScale: root.uiScale
         }
 
@@ -139,24 +101,6 @@ Item {
             }
         }
 
-        Rectangle {
-            visible: root.glassDiscriminatorEnabled && root.focused
-            z: 100
-            x: 8 * root.uiScale
-            y: 8 * root.uiScale
-            width: label.implicitWidth + 14 * root.uiScale
-            height: 24 * root.uiScale
-            radius: 4 * root.uiScale
-            color: root.nativeGlassEnabled ? "#b8f7c5" : "#ffd0d0"
-            Text {
-                id: label
-                anchors.centerIn: parent
-                text: root.nativeGlassEnabled ? "NATIVE" : "LEGACY"
-                color: "#101010"
-                font.bold: true
-                font.pixelSize: 13 * root.uiScale
-            }
-        }
     }
 
     DirectionalMotionBlur {

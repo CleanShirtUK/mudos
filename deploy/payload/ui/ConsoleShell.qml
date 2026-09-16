@@ -154,6 +154,7 @@ Window {
     property string launchGameId: ""
     property string launchToken: ""
     property bool launchOverlayEnabled: controllerBridge.launchOverlayEnabled === true
+    // Development-only parity switch for the stationary landing-card specimen.
     property bool catalogueRefreshTimerDisabled: true
     property bool launchOverlayVisible: false
     property bool launchOverlayRetired: false
@@ -743,8 +744,8 @@ Window {
         homeCategoryTarget = selectedCategoryIndex
             + (desiredCategoryIndex > selectedCategoryIndex ? 1 : -1)
         homeCategoryDirection = selectedCategoryIndex > homeCategoryTarget ? 1 : -1
-        homeCategoryProgress = 0
         homeCategoryTransitioning = true
+        homeCategoryProgress = 0
         suppressTitleRailCompletion = true
         titleRailAnimation.stop()
         suppressTitleRailCompletion = false
@@ -766,6 +767,7 @@ Window {
         message = ""
     }
 
+
     function domainOffset(index) {
         return index - selectedCategoryIndex
     }
@@ -778,6 +780,15 @@ Window {
         if (index === homeCategoryTarget)
             return -homeCategoryDirection * homeCategoryTravel * (1 - homeCategoryProgress)
         return 0
+    }
+
+    function homeCategoryPresentationVelocity(index) {
+        if (!homeCategoryTransitioning
+                || (homeCategoryFrom !== index && homeCategoryTarget !== index))
+            return 0
+        return presentationCoordinator.categoryPresentationVelocity(
+            homeCategoryProgress, homeCategoryDirection,
+            homeCategoryTravel, homeCategoryHopDuration)
     }
 
     function titleRailLayoutY(index, activeIndex) {
@@ -1403,6 +1414,21 @@ Window {
         visible: false
     }
 
+    Timer {
+        interval: 1200
+        running: true
+        repeat: false
+        onTriggered: console.log("MUDOS_RENDER_CHAIN_QML",
+            "window", root.width, root.height,
+            "dprUnavailableInQml", "see_native_log",
+            "orbitRenderSource", orbitRenderSource.width, orbitRenderSource.height,
+            "orbitTextureLogical", orbitTexture.width, orbitTexture.height,
+            "orbitTextureRequested", orbitTexture.textureSize.width,
+                orbitTexture.textureSize.height,
+            "sourceRect", orbitTexture.sourceRect.x, orbitTexture.sourceRect.y,
+                orbitTexture.sourceRect.width, orbitTexture.sourceRect.height)
+    }
+
     OrbitBackdropView {
         id: orbitBackdropView
         texture: orbitTexture
@@ -1543,6 +1569,7 @@ Window {
         }
 
         LibrarySpatialSurface {
+                         id: librarySpatialSurface
                          canonicalTexture: orbitTexture
                          canonicalCoordinateRoot: orbitRenderSource
                          canonicalSize: Qt.size(root.width, root.height)
@@ -1555,9 +1582,10 @@ Window {
             fullscreenY: 32 * root.uiScale
             fullscreenWidth: root.width - 152 * root.uiScale
             fullscreenHeight: root.height - 48 * root.uiScale
-            uiScale: root.uiScale
-            verticalOffset: root.homeCategoryOffset(2)
-             surfaceVisible: root.space === "library" || root.space === "store"
+             uiScale: root.uiScale
+             verticalOffset: root.homeCategoryOffset(2)
+             transparentOutsideMask: true
+              surfaceVisible: root.space === "library" || root.space === "store"
                  || root.libraryTransitioning || root.storeTransitioning
         }
 
@@ -1614,7 +1642,8 @@ Window {
                         luluPalette: luluPalette
                          canonicalTexture: orbitTexture
                          canonicalCoordinateRoot: orbitRenderSource
-                     canonicalSize: Qt.size(root.width, root.height)
+                         canonicalSize: Qt.size(root.width, root.height)
+                         categoryPresentationOffset: root.homeCategoryOffset(3)
                          onSelectionIndexRequested: {
                              console.log("RECENT_RECONCILE",
                                          "selectionIndexRequested", index,
@@ -1656,9 +1685,15 @@ Window {
                         luluPalette: luluPalette
                         canonicalTexture: orbitTexture
                         canonicalCoordinateRoot: orbitRenderSource
-                         canonicalSize: Qt.size(root.width, root.height)
+                        canonicalSize: Qt.size(root.width, root.height)
                          compactCardWidth: root.compactCardWidth
                          presentationCoordinator: presentationCoordinator
+                         categoryProgress: root.homeCategoryProgress
+                         categoryTransitioning: root.homeCategoryTransitioning
+                         categoryFrom: root.homeCategoryFrom
+                         categoryTarget: root.homeCategoryTarget
+                         categoryDirection: root.homeCategoryDirection
+                         categoryMotionVelocity: root.homeCategoryPresentationVelocity(2)
                          transitionState: root.libraryTransitionState
                         transitionProgress: root.libraryTransitionProgress
                         transitionExpanding: root.libraryTransitionExpanding
@@ -1683,18 +1718,25 @@ Window {
                     visible: root.selectedCategoryIndex === 1
                         || (root.homeCategoryTransitioning
                             && (root.homeCategoryFrom === 1 || root.homeCategoryTarget === 1))
-                    StoreHome {
-                        width: storeReveal.width
+                     StoreHome {
+                         width: storeReveal.width
                         height: root.homeFocalCardHeight
                         cardWidth: root.compactCardWidth
                         cardHeight: root.compactCardHeight
                         uiScale: root.uiScale
                         typography: typography
                         luluPalette: luluPalette
-                        canonicalTexture: orbitTexture
-                        canonicalCoordinateRoot: orbitRenderSource
-                        canonicalSize: Qt.size(root.width, root.height)
-                        onSteamStoreRequested: root.openSteamStore()
+                         canonicalTexture: orbitTexture
+                         canonicalCoordinateRoot: orbitRenderSource
+                         canonicalSize: Qt.size(root.width, root.height)
+                         presentationCoordinator: presentationCoordinator
+                         categoryProgress: root.homeCategoryProgress
+                         categoryTransitioning: root.homeCategoryTransitioning
+                         categoryFrom: root.homeCategoryFrom
+                         categoryTarget: root.homeCategoryTarget
+                         categoryDirection: root.homeCategoryDirection
+                         categoryMotionVelocity: root.homeCategoryPresentationVelocity(1)
+                         onSteamStoreRequested: root.openSteamStore()
                     }
                 }
 
@@ -1724,9 +1766,15 @@ Window {
                         luluPalette: luluPalette
                         canonicalTexture: orbitTexture
                          canonicalCoordinateRoot: orbitRenderSource
-                         canonicalSize: Qt.size(root.width, root.height)
-                         presentationCoordinator: presentationCoordinator
-                     }
+                          canonicalSize: Qt.size(root.width, root.height)
+                           presentationCoordinator: presentationCoordinator
+                          categoryProgress: root.homeCategoryProgress
+                          categoryTransitioning: root.homeCategoryTransitioning
+                          categoryFrom: root.homeCategoryFrom
+                          categoryTarget: root.homeCategoryTarget
+                          categoryDirection: root.homeCategoryDirection
+                          categoryMotionVelocity: root.homeCategoryPresentationVelocity(0)
+                      }
                     Component.onCompleted: root.systemHomeRailRef = systemHomeRail
                 }
 
@@ -2103,6 +2151,7 @@ Window {
                 root.refreshCataloguePair(group)
             else if (group === "serial-all")
                 root.refreshCatalogueSerial()
+
         }
     }
 

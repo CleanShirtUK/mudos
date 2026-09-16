@@ -13,37 +13,79 @@ TestCase {
         height: 1080
 
         Item {
-            id: recentRow
-            x: rowX
-            property real rowX: 0
+            id: recentReveal
+            y: categoryOffset
+            property real categoryOffset: 0
 
             Item {
-                id: delegate
-                x: delegateX
-                property real delegateX: 400
-                property var mappingDependency: ({
-                    rowX: recentRow.x,
-                    delegateX: delegate.x,
-                    delegateWidth: width,
-                    delegateHeight: height,
-                    transition: transition,
-                    retarget: retarget
-                })
-                property real transition: 1
-                property real retarget: 0
+                id: recentRow
+                x: rowX
+                property real rowX: 0
 
                 Item {
-                    id: card
-                    width: 240
-                    height: 472
-                    property var dependency: delegate.mappingDependency
-                    readonly property rect canonicalRect: {
-                        var dependencyRead = dependency
-                        var topLeft = mapToItem(orbitRenderSource, 0, 0)
-                        var bottomRight = mapToItem(orbitRenderSource, width, height)
-                        return Qt.rect(topLeft.x, topLeft.y,
-                                       bottomRight.x - topLeft.x,
-                                       bottomRight.y - topLeft.y)
+                    id: delegate
+                    x: delegateX
+                    property real delegateX: 400
+                    property var mappingDependency: ({
+                        categoryPresentationOffset: recentReveal.y,
+                        rowX: recentRow.x,
+                        delegateX: delegate.x,
+                        delegateWidth: width,
+                        delegateHeight: height,
+                        transition: transition,
+                        retarget: retarget
+                    })
+                    property real transition: 1
+                    property real retarget: 0
+
+                    Item {
+                        id: card
+                        width: 240
+                        height: 472
+                        property var dependency: delegate.mappingDependency
+                        readonly property rect canonicalRect: {
+                            var dependencyRead = dependency
+                            var topLeft = mapToItem(orbitRenderSource, 0, 0)
+                            var bottomRight = mapToItem(orbitRenderSource,
+                                                        width, height)
+                            return Qt.rect(topLeft.x, topLeft.y,
+                                           bottomRight.x - topLeft.x,
+                                           bottomRight.y - topLeft.y)
+                        }
+                        Item {
+                            id: playButton
+                            x: 0
+                            y: 390
+                            width: 240
+                            height: 82
+                        }
+                        readonly property rect playCanonicalRect: {
+                            var dependencyRead = dependency
+                            var topLeft = playButton.mapToItem(
+                                orbitRenderSource, 0, 0)
+                            var bottomRight = playButton.mapToItem(
+                                orbitRenderSource, playButton.width,
+                                playButton.height)
+                            return Qt.rect(topLeft.x, topLeft.y,
+                                           bottomRight.x - topLeft.x,
+                                           bottomRight.y - topLeft.y)
+                        }
+                    }
+                    Item {
+                        id: adjacentCard
+                        x: 260
+                        width: 240
+                        height: 472
+                        property var dependency: delegate.mappingDependency
+                        readonly property rect canonicalRect: {
+                            var dependencyRead = dependency
+                            var topLeft = mapToItem(orbitRenderSource, 0, 0)
+                            var bottomRight = mapToItem(orbitRenderSource,
+                                                        width, height)
+                            return Qt.rect(topLeft.x, topLeft.y,
+                                           bottomRight.x - topLeft.x,
+                                           bottomRight.y - topLeft.y)
+                        }
                     }
                 }
             }
@@ -96,5 +138,45 @@ TestCase {
         delegate.delegateX = 820
         delegate.transition = 0.75
         compare(card.canonicalRect.x, 820)
+    }
+
+    function test_categoryTransitionBothDirectionsAndSettlement() {
+        delegate.delegateX = 400
+        recentRow.rowX = 0
+        recentReveal.categoryOffset = 720
+        compare(card.canonicalRect.y, 720)
+        compare(card.playCanonicalRect.y, 1110)
+
+        recentReveal.categoryOffset = 360
+        compare(card.canonicalRect.y, 360)
+        compare(card.playCanonicalRect.y, 750)
+
+        recentReveal.categoryOffset = 0
+        compare(card.canonicalRect.y, 0)
+        compare(card.playCanonicalRect.y, 390)
+
+        recentReveal.categoryOffset = -720
+        compare(card.canonicalRect.y, -720)
+        compare(card.playCanonicalRect.y, -330)
+        recentReveal.categoryOffset = 0
+    }
+
+    function test_categoryReversalRetargetAndAdjacentUniqueness() {
+        recentReveal.categoryOffset = 240
+        delegate.delegateX = 680
+        compare(card.canonicalRect.x, 680)
+        compare(card.canonicalRect.y, 240)
+        compare(card.playCanonicalRect.y, 630)
+
+        recentReveal.categoryOffset = -120
+        delegate.delegateX = 920
+        delegate.retarget = 1
+        compare(card.canonicalRect.x, 920)
+        compare(card.canonicalRect.y, -120)
+        compare(card.playCanonicalRect.y, 270)
+
+        verify(card.canonicalRect.x !== adjacentCard.canonicalRect.x)
+        recentReveal.categoryOffset = 0
+        delegate.delegateX = 400
     }
 }

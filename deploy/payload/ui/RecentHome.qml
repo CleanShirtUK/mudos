@@ -6,6 +6,9 @@ Item {
     property int selectedIndex: 0
     property int transitionFromIndex: 0
     property real transitionProgress: 1
+    // Direct shell presentation input for recentReveal.y. Consumers include
+    // this value so vertical category motion invalidates canonical mapping.
+    property real categoryPresentationOffset: 0
     property real transitionFadeProgress: 1
     property bool transitionInitialized: false
     property bool presentationFrozen: false
@@ -27,13 +30,11 @@ Item {
     property var presentationCoordinator
     property real compactCardWidth: Math.min(160 * uiScale, focalCardHeight * 0.62)
     property real railGap: 18 * uiScale
-    property int visibleRailRadius: 3
     property var presentationStartX: []
     property var presentationStartWidth: []
     property var presentationStartProgress: []
     property var presentationStartChrome: []
     property var presentationStartCompactTitle: []
-    property var presentationStartVisible: []
     property bool suppressTransitionCompletion: false
     signal launchRequested(string gameId)
     signal activationRequested(string gameId)
@@ -71,6 +72,7 @@ Item {
         ? presentationCoordinator.contentPresented : true
 
     onSelectedIndexChanged: {
+        transitionDiagnosticMarks = ({})
         if (recentModel && selectedIndex >= 0 && selectedIndex < recentRepeater.count
                 && !selectionAnchorId) {
             selectedGameId = recentModel.gameIdAt(selectedIndex)
@@ -115,7 +117,6 @@ Item {
         var startsProgress = []
         var startsChrome = []
         var startsCompactTitle = []
-        var startsVisible = []
         for (var index = 0; index < recentRepeater.count; index++) {
             var card = recentRepeater.itemAt(index)
             startsX[index] = card ? card.x : railX(index - selectedIndex)
@@ -126,14 +127,12 @@ Item {
                                         : (index === selectedIndex ? 1 : 0)
             startsCompactTitle[index] = card ? card.compactTitleOpacity
                                               : (index === selectedIndex ? 0 : 1)
-            startsVisible[index] = card ? card.visible : true
         }
         presentationStartX = startsX
         presentationStartWidth = startsWidth
         presentationStartProgress = startsProgress
         presentationStartChrome = startsChrome
         presentationStartCompactTitle = startsCompactTitle
-        presentationStartVisible = startsVisible
         console.log("RECENT_RETARGET", "capture", "selected", selectedIndex,
                     "progress", transitionProgress, "x", startsX,
                     "width", startsWidth, "presentation", startsProgress,
@@ -378,8 +377,7 @@ Item {
                 luluPalette: recentHome.luluPalette
                 onActivationRequested: recentHome.activationRequested(gameId)
                 onPlayFeedbackCompleted: recentHome.playFeedbackCompleted(gameId)
-                visible: recentHome.presentationStartVisible[index]
-                    || Math.abs(toRelativeIndex) <= recentHome.visibleRailRadius
+                visible: true
                 width: startWidth
                     + (recentHome.railWidth(toRelativeIndex) - startWidth) * railProgress
                 height: focalCardHeight
@@ -399,7 +397,8 @@ Item {
             + 2 * recentHome.motionBlurPadding
         height: recentHome.height + 2 * recentHome.motionBlurPadding
         visible: recentModel && recentRepeater.count > 0
-        active: !recentHome.selectionMotionActive
+         active: recentHome.selectionMotionActive
+             && recentHome.selectionBlurAllowed
         sourceItem: recentRow
         sourceRect: Qt.rect(recentHome.rowLeftEdge - recentHome.motionBlurPadding,
                             -recentHome.motionBlurPadding,

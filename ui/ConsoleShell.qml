@@ -117,8 +117,6 @@ Window {
     property int homeCategoryDirection: 1
     property real homeCategoryProgress: 1
     property int homeCategoryHopDuration: 250
-    property var landingIntroTraceMarks: ({})
-    property var recentStartupTraceMarks: ({})
     readonly property real homeCategoryTravel: height + design(72)
     property real titleRailY: selectedDomainY - selectedCategoryIndex * homeCategoryPitch
     property bool suppressTitleRailCompletion: false
@@ -157,8 +155,6 @@ Window {
     property string launchToken: ""
     property bool launchOverlayEnabled: controllerBridge.launchOverlayEnabled === true
     // Development-only parity switch for the stationary landing-card specimen.
-    property bool nativeLandingGlassEnabled: true
-    property bool glassDiscriminatorEnabled: true
     property bool catalogueRefreshTimerDisabled: true
     property bool launchOverlayVisible: false
     property bool launchOverlayRetired: false
@@ -223,9 +219,6 @@ Window {
                 returnPresentationPending: root.returnPresentationPending
             }))
             root.traceLaunchEvent("HOME_INPUT_UNLOCKED", {})
-        }
-        function onStartupClockChanged() {
-            root.traceRecentStartupPresentation()
         }
     }
 
@@ -753,8 +746,6 @@ Window {
         homeCategoryDirection = selectedCategoryIndex > homeCategoryTarget ? 1 : -1
         homeCategoryTransitioning = true
         homeCategoryProgress = 0
-        landingIntroTraceMarks = ({})
-        traceLandingPresentation("before movement", 0)
         suppressTitleRailCompletion = true
         titleRailAnimation.stop()
         suppressTitleRailCompletion = false
@@ -776,61 +767,6 @@ Window {
         message = ""
     }
 
-    function traceLandingPresentation(mark, progress) {
-        if (!homeCategoryTransitioning
-                || (homeCategoryFrom !== 2 && homeCategoryTarget !== 2
-                    && homeCategoryFrom !== 0 && homeCategoryTarget !== 0))
-            return
-        var key = String(mark)
-        if (landingIntroTraceMarks[key])
-            return
-        landingIntroTraceMarks[key] = true
-        console.log("MUDOS_LANDING_PRESENTATION_MARK",
-                    "mark", mark,
-                    "progress", progress,
-                    "from", homeCategoryFrom,
-                    "target", homeCategoryTarget,
-                    "homeSceneVisible", homeScene.visible,
-                    "homeSceneOpacity", homeScene.opacity,
-                    "homeContentOpacity", homeContent.opacity,
-                    "libraryTransitioning", libraryTransitioning,
-                    "libraryTransitionProgress", libraryTransitionProgress,
-                    "spatialVisible", librarySpatialSurface.visible,
-                    "spatialProgress", librarySpatialSurface.progress)
-        if (librarySpatialSurface)
-            librarySpatialSurface.dumpPresentationState(mark)
-        if (homeCategoryTarget === 2 || homeCategoryFrom === 2) {
-            if (libraryHomeLanding)
-                libraryHomeLanding.dumpSelectedPresentationState(mark)
-        } else if (systemHomeRail) {
-            systemHomeRail.dumpSelectedPresentationState(mark)
-        }
-    }
-
-    function traceRecentStartupPresentation() {
-        if (!presentationCoordinator.startupRunning || !recentHome)
-            return
-        var progress = Math.max(0, Math.min(1,
-            presentationCoordinator.startupClock / presentationCoordinator.startupDuration))
-        var marks = [0, 0.25, 0.5, 0.75, 1]
-        for (var index = 0; index < marks.length; index++) {
-            var mark = marks[index]
-            if (progress + 0.01 < mark || recentStartupTraceMarks[mark])
-                continue
-            recentStartupTraceMarks[mark] = true
-            recentHome.dumpStartupPresentationState(mark)
-        }
-    }
-
-    onHomeCategoryProgressChanged: {
-        if (!homeCategoryTransitioning)
-            return
-        var marks = [0, 0.25, 0.5, 0.75, 1]
-        for (var index = 0; index < marks.length; index++) {
-            if (homeCategoryProgress + 0.01 >= marks[index])
-                traceLandingPresentation(marks[index], homeCategoryProgress)
-        }
-    }
 
     function domainOffset(index) {
         return index - selectedCategoryIndex
@@ -1386,23 +1322,6 @@ Window {
         refreshCatalogue()
         refreshStore()
         presentationCoordinator.beginStartup()
-        publishLandingGlassMode("startup")
-        recentStartupTraceMarks = ({})
-    }
-
-    function publishLandingGlassMode(source) {
-        controllerBridge.publishDiagnosticGlassMode(root.nativeLandingGlassEnabled)
-        console.log("MUDOS_GLASS_MODE_RESOLVED",
-                    "source", source,
-                    "selectedCategory", root.selectedCategoryIndex,
-                    "mode", root.nativeLandingGlassEnabled ? "native" : "legacy")
-    }
-
-    function dumpLandingGlassRendererState() {
-        if (root.selectedCategoryIndex === 0 && systemHomeRail)
-            systemHomeRail.dumpSelectedGlassRendererState()
-        else if (root.selectedCategoryIndex === 2 && libraryHomeLanding)
-            libraryHomeLanding.dumpSelectedGlassRendererState()
     }
 
     function controllerUp() {
@@ -1525,22 +1444,6 @@ Window {
 
         Keys.onPressed: function(event) {
             if (root.homeLaunchGated) {
-                event.accepted = true
-                return
-            }
-            if (event.key === Qt.Key_G) {
-                root.nativeLandingGlassEnabled = !root.nativeLandingGlassEnabled
-                root.publishLandingGlassMode("keyboard")
-                console.log("MUDOS_LANDING_GLASS_AB_TOGGLE",
-                            "native", root.nativeLandingGlassEnabled)
-                event.accepted = true
-                return
-            }
-            if (event.key === Qt.Key_D) {
-                if (root.selectedCategoryIndex === 0 && systemHomeRail)
-                    systemHomeRail.dumpSelectedGlassRuntimeState()
-                else if (root.selectedCategoryIndex === 2 && libraryHomeLanding)
-                    libraryHomeLanding.dumpSelectedGlassRuntimeState()
                 event.accepted = true
                 return
             }
@@ -1681,7 +1584,6 @@ Window {
             fullscreenHeight: root.height - 48 * root.uiScale
              uiScale: root.uiScale
              verticalOffset: root.homeCategoryOffset(2)
-             nativeGlassEnabled: true
              transparentOutsideMask: true
               surfaceVisible: root.space === "library" || root.space === "store"
                  || root.libraryTransitioning || root.storeTransitioning
@@ -1740,8 +1642,8 @@ Window {
                         luluPalette: luluPalette
                          canonicalTexture: orbitTexture
                          canonicalCoordinateRoot: orbitRenderSource
-                        canonicalSize: Qt.size(root.width, root.height)
-                         nativeRecentGlassCanary: true
+                         canonicalSize: Qt.size(root.width, root.height)
+                         categoryPresentationOffset: root.homeCategoryOffset(3)
                          onSelectionIndexRequested: {
                              console.log("RECENT_RECONCILE",
                                          "selectionIndexRequested", index,
@@ -1792,8 +1694,6 @@ Window {
                          categoryTarget: root.homeCategoryTarget
                          categoryDirection: root.homeCategoryDirection
                          categoryMotionVelocity: root.homeCategoryPresentationVelocity(2)
-                          glassDiscriminatorEnabled: root.glassDiscriminatorEnabled
-                        nativeLandingGlassEnabled: root.nativeLandingGlassEnabled
                          transitionState: root.libraryTransitionState
                         transitionProgress: root.libraryTransitionProgress
                         transitionExpanding: root.libraryTransitionExpanding
@@ -1829,8 +1729,6 @@ Window {
                          canonicalTexture: orbitTexture
                          canonicalCoordinateRoot: orbitRenderSource
                          canonicalSize: Qt.size(root.width, root.height)
-                         nativeLandingGlassEnabled: root.nativeLandingGlassEnabled
-                         glassDiscriminatorEnabled: root.glassDiscriminatorEnabled
                          presentationCoordinator: presentationCoordinator
                          categoryProgress: root.homeCategoryProgress
                          categoryTransitioning: root.homeCategoryTransitioning
@@ -1876,8 +1774,6 @@ Window {
                           categoryTarget: root.homeCategoryTarget
                           categoryDirection: root.homeCategoryDirection
                           categoryMotionVelocity: root.homeCategoryPresentationVelocity(0)
-                           nativeLandingGlassEnabled: root.nativeLandingGlassEnabled
-                         glassDiscriminatorEnabled: root.glassDiscriminatorEnabled
                       }
                     Component.onCompleted: root.systemHomeRailRef = systemHomeRail
                 }
@@ -2256,23 +2152,6 @@ Window {
             else if (group === "serial-all")
                 root.refreshCatalogueSerial()
 
-            var glassAction = controllerBridge.consumeGlassDiagnosticRequest()
-            if (glassAction === "toggle") {
-                if (root.selectedCategoryIndex === 0 && systemHomeRail)
-                    root.nativeLandingGlassEnabled = !root.nativeLandingGlassEnabled
-                else if (root.selectedCategoryIndex === 2 && libraryHomeLanding)
-                    root.nativeLandingGlassEnabled = !root.nativeLandingGlassEnabled
-                root.publishLandingGlassMode("guide")
-                console.log("MUDOS_LANDING_GLASS_AB_TOGGLE",
-                            "native", root.nativeLandingGlassEnabled,
-                            "source", "guide")
-                root.dumpLandingGlassRendererState()
-            } else if (glassAction === "dump") {
-                if (root.selectedCategoryIndex === 0 && systemHomeRail)
-                    systemHomeRail.dumpSelectedGlassRuntimeState()
-                else if (root.selectedCategoryIndex === 2 && libraryHomeLanding)
-                    libraryHomeLanding.dumpSelectedGlassRuntimeState()
-            }
         }
     }
 

@@ -34,6 +34,7 @@ Item {
     readonly property real motionBlurGain: 8
     readonly property real motionBlurMaxPixels: 64
     readonly property real motionBlurDeadZone: 0.03
+    readonly property real motionBlurResponseGamma: 0.5
     readonly property int hintsStartAt: 780
     readonly property int hintsDuration: 500
     readonly property real hintsTravel: 120
@@ -251,8 +252,37 @@ Item {
     function signedMotionBlurPixelsFromVelocity(velocity) {
         if (Math.abs(velocity) <= motionBlurDeadZone)
             return 0
-        return Math.max(-motionBlurMaxPixels,
-                        Math.min(motionBlurMaxPixels, velocity * motionBlurGain))
+        var linearPixels = Math.abs(velocity) * motionBlurGain
+        var normalized = Math.min(1, linearPixels / motionBlurMaxPixels)
+        var perceptualPixels = motionBlurMaxPixels
+            * Math.pow(normalized, motionBlurResponseGamma)
+        return velocity < 0 ? -perceptualPixels : perceptualPixels
+    }
+
+    function signedMotionBlurVectorFromVelocity(velocityX, velocityY) {
+        var magnitude = Math.sqrt(velocityX * velocityX + velocityY * velocityY)
+        if (magnitude <= motionBlurDeadZone)
+            return Qt.vector2d(0, 0)
+        var linearPixels = magnitude * motionBlurGain
+        var normalized = Math.min(1, linearPixels / motionBlurMaxPixels)
+        var perceptualPixels = motionBlurMaxPixels
+            * Math.pow(normalized, motionBlurResponseGamma)
+        var scale = perceptualPixels / linearPixels
+        return Qt.vector2d(velocityX * motionBlurGain * scale,
+                           velocityY * motionBlurGain * scale)
+    }
+
+    // Derivative of q(u) = 1 - (1 - u)^5, matching Easing.OutQuint.
+    function easeOutQuintProgressVelocity(progress, duration) {
+        var normalized = clamp01(progress)
+        if (normalized >= 1 || duration <= 0)
+            return 0
+        return 5 * Math.pow(1 - normalized, 4) / duration
+    }
+
+    function categoryPresentationVelocity(progress, direction, travel, duration) {
+        return direction * travel
+            * easeOutQuintProgressVelocity(progress, duration)
     }
 
     function titleSignedBlurPixels(index, restingLeft, titleWidth) {

@@ -11,8 +11,6 @@ Rectangle {
     property bool compact: false
     property bool showAction: false
     property bool homeCard: false
-    // Development canary: only RecentCardPresentation enables this.
-    property bool nativeRecentGlassCanary: false
     property bool glassVisible: true
     property bool librarySurfaceMaterial: false
     property string presentationState: "COMPACT"
@@ -38,7 +36,6 @@ Rectangle {
     // invalidate the mapToItem() result without changing the item hierarchy.
     property var canonicalMappingDependency: null
     property real canonicalMappingRevision: 0
-    property bool nativeGlassEnabled: false
     // Catalogue cards use the rounded mask as the presentation boundary;
     // outside the boundary must remain transparent rather than falling back
     // to an undiffused canonical backdrop. Recent/landing keep their
@@ -59,25 +56,10 @@ Rectangle {
     property real compactEndpointWidth: 0
     property point sceneOriginOverride: canonicalSceneOrigin
     property size sceneSizeOverride: Qt.size(width, height)
-    property alias actualGlassSurface: glassSurface
-    property bool stackedGlass: false
     // Catalogue cards share the same glass-backed visual surface as navigation cards.
     // Interaction remains owned by the containing delegate.
     property bool catalogueCard: false
-    property var stackedCoordinateRoot
-    property vector2d stackedCardOrigin: Qt.vector2d(0, 0)
-    property vector2d stackedCardSize: Qt.vector2d(0, 0)
-    property vector2d stackedPlayOrigin: Qt.vector2d(0, 0)
     property real focusBrightness: 1
-    property real stackedCardBevelWidth: 3 * uiScale
-    property real stackedCardBulgeStrength: 0
-    property real stackedCardRefractionPixels: 80 * uiScale
-    property real stackedCardDispersionIor: 0.0175
-    property real stackedPlayRefractionPixels: 40 * uiScale
-    property real stackedPlayDispersionIor: 0.0175
-    property real stackedPlayBulgeStrength: 20
-    property real stackedPlayBevelWidth: 0
-    property real stackedPlayEdgeLightStrength: 0
     Behavior on selectionProgress {
         NumberAnimation {
             duration: 180
@@ -187,56 +169,34 @@ Rectangle {
                        bottomRight.y - topLeft.y)
     }
 
-    function dumpRecentGlassMapping() {
-        if (!nativeRecentGlassCanary)
-            return
-        console.log("MUDOS_RECENT_GLASS_MAPPING",
-                    "localRect", 0, 0, width, height,
-                    "canonicalRect", nativeRecentCanonicalRect.x,
-                        nativeRecentCanonicalRect.y,
-                        nativeRecentCanonicalRect.width,
-                        nativeRecentCanonicalRect.height,
-                    "canonicalSize", canonicalSize.width, canonicalSize.height,
-                    "scenePosition", canonicalSceneOrigin.x, canonicalSceneOrigin.y,
-                    "sourceTextureSize", canonicalTexture
-                        ? canonicalTexture.width + "x" + canonicalTexture.height : "none",
-                    "uvRect", nativeRecentCanonicalRect.x / canonicalSize.width,
-                        nativeRecentCanonicalRect.y / canonicalSize.height,
-                        nativeRecentCanonicalRect.width / canonicalSize.width,
-                        nativeRecentCanonicalRect.height / canonicalSize.height)
-        nativeGlassSurface.dumpMapping()
-    }
-
-    function nativeRecentGlassIdentity() {
-        return String(nativeGlassSurface)
-    }
-
-    function dumpPresentationState(mark, identity) {
-        console.log("MUDOS_GAMECARD_PRESENTATION",
-                    "mark", mark, "identity", identity || card.displayTitle,
-                    "visible", card.visible, "opacity", card.opacity,
-                    "rootColorAlpha", card.color.a,
-                    "librarySurfaceMaterial", card.librarySurfaceMaterial,
-                    "presentationProgress", card.presentationProgress,
-                    "presentationContentOpacity", card.presentationContentOpacity,
-                    "selectionProgress", card.selectionProgress,
-                    "focusBrightness", card.focusBrightness,
-                    "artworkFrameVisible", artworkFrame.visible,
-                    "artworkFrameOpacity", artworkFrame.opacity,
-                    "artworkFrameColorAlpha", artworkFrame.color.a,
-                    "glassSurfaceVisible", glassSurface.visible,
-                    "glassSurfaceOpacity", glassSurface.opacity,
-                    "nativeGlassVisible", nativeGlassSurface.visible,
-                    "nativeGlassOpacity", nativeGlassSurface.opacity,
-                    "playButtonVisible", playButton.visible,
-                    "playButtonOpacity", playButton.opacity,
-                    "playButtonColorAlpha", playButton.color.a)
+    // Play is a second canonical native-glass consumer. Its backdrop remains
+    // Orbit, but its consumer-owned rectangle is derived from the Play item
+    // itself so it tracks focal interpolation, resize, and retargeting.
+    readonly property rect nativePlayCanonicalRect: {
+        var presentationDependency = canonicalMappingDependency
+        var layoutDependency = card.x + card.y + card.width + card.height
+            + card.canonicalMappingRevision + card.presentationProgress
+            + card.focalChromeOpacity + card.focalScale + card.uiScale
+            + playButton.x + playButton.y + playButton.width
+            + playButton.height + playButton.scale
+        var topLeft = canonicalCoordinateRoot
+            ? playButton.mapToItem(canonicalCoordinateRoot, 0, 0)
+            : Qt.point(playButton.x, playButton.y)
+        var bottomRight = canonicalCoordinateRoot
+            ? playButton.mapToItem(canonicalCoordinateRoot,
+                                   playButton.width, playButton.height)
+            : Qt.point(playButton.x + playButton.width,
+                       playButton.y + playButton.height)
+        return Qt.rect(topLeft.x + layoutDependency - layoutDependency,
+                       topLeft.y + layoutDependency - layoutDependency,
+                       bottomRight.x - topLeft.x,
+                       bottomRight.y - topLeft.y)
     }
 
     implicitWidth: recentFocal ? 1100 * uiScale : (compact ? 260 : 210) * uiScale
     implicitHeight: recentFocal ? 560 * uiScale : (compact ? 430 : 330) * uiScale
     radius: recentFocal ? 28 * focalScale * uiScale : (compact ? 16 : 18) * uiScale
-    color: card.stackedGlass || card.librarySurfaceMaterial ? luluPalette.transparent
+    color: card.librarySurfaceMaterial ? luluPalette.transparent
         : (recentFocal ? luluPalette.glassTint
            : Qt.rgba(luluPalette.cardSurface.r
                + (luluPalette.focusedCardSurface.r - luluPalette.cardSurface.r) * card.selectionProgress,
@@ -258,55 +218,10 @@ Rectangle {
     border.width: card.librarySurfaceMaterial ? 0 : (1 + 2 * card.selectionProgress) * uiScale
     clip: true
 
-    NavigationCardSurface {
-        anchors.fill: parent
-        visible: card.catalogueCard && !card.nativeGlassEnabled
-        transparentOutsideMask: card.catalogueCard
-        canonicalTexture: card.canonicalTexture
-        canonicalSize: card.canonicalSize
-        canonicalCoordinateRoot: card.canonicalCoordinateRoot
-        uiScale: card.uiScale
-    }
-    GlassSurface {
-        id: glassSurface
-        anchors.fill: parent
-        visible: (card.homeCard || card.catalogueCard)
-            && card.glassVisible && !card.nativeRecentGlassCanary
-            && !card.nativeGlassEnabled
-        debugLabel: ""
-        debugCoordinateRoot: card.canonicalCoordinateRoot
-        canonicalTexture: card.canonicalTexture
-        canonicalSize: card.canonicalSize
-        cornerRadius: card.radius
-        useExplicitSceneGeometry: card.presentationState === "COMPACT"
-            || card.identitySampling || card.liveSceneCoordinates
-        sceneCoordinateRoot: card.canonicalCoordinateRoot
-        useLiveSceneCoordinates: card.identitySampling || card.liveSceneCoordinates
-        sceneOriginOverride: card.sceneOriginOverride
-        sceneSizeOverride: card.identitySampling || card.liveSceneCoordinates
-            ? Qt.size(card.width, card.height) : card.sceneSizeOverride
-        identitySampling: false
-        refractionPixels: card.opticsStage >= 0 && card.opticsStage < 5 ? 0 : 80 * card.uiScale
-        dispersionIor: card.opticsStage >= 0 && card.opticsStage < 6 ? 0 : 0.0175
-        diffusionPixels: card.opticsStage >= 0 && card.opticsStage < 2 ? 0 : 5 * card.uiScale
-        transmission: card.librarySurfaceMaterial ? 1
-            : (card.opticsStage >= 0 && card.opticsStage < 1 ? 1 : 0.75)
-        bevelWidthPx: card.opticsStage >= 0 && card.opticsStage < 3 ? 0 : 3 * card.uiScale
-        bulgeStrength: card.opticsStage >= 0 && card.opticsStage < 4 ? 0 : 100.0
-        // Retained as a disabled experiment; scene-derived illumination is not material.
-        sceneLightStrength: 0
-        sceneLightPixels: 24
-        edgeLightStrength: card.opticsStage >= 0 && card.opticsStage < 7 ? 0 : 0.10
-        edgeLightDirection: Qt.vector2d(1, -1)
-        diagnosticMode: card.nativeRecentGlassCanary ? 1 : 0
-    }
-
     MudosGlassItem {
         id: nativeGlassSurface
         anchors.fill: parent
-        visible: (card.homeCard || card.catalogueCard)
-            && card.glassVisible
-            && (card.nativeRecentGlassCanary || card.nativeGlassEnabled)
+        visible: (card.homeCard || card.catalogueCard) && card.glassVisible
         backdrop: card.canonicalTexture
         canonicalSize: card.canonicalSize
         canonicalRect: card.nativeRecentCanonicalRect
@@ -323,38 +238,6 @@ Rectangle {
         edgeLightStrength: card.opticsStage >= 0 && card.opticsStage < 7 ? 0 : 0.10
         edgeLightDirection: Qt.vector2d(1, -1)
         transparentOutsideMask: card.nativeGlassTransparentOutsideMask
-        diagnosticMode: card.nativeRecentGlassCanary ? 1 : 0
-    }
-
-    PlayGlassSurface {
-        anchors.fill: parent
-        visible: card.stackedGlass
-        canonicalTexture: card.canonicalTexture
-        canonicalSize: card.canonicalSize
-        cardOrigin: card.stackedCardOrigin
-        coordinateRoot: card.stackedCoordinateRoot
-        cardCoordinateItem: card
-        playCoordinateItem: playButton
-        useLiveCoordinateMapping: card.stackedGlass
-        cardSize: Qt.size(card.stackedCardSize.x, card.stackedCardSize.y)
-        cardRadius: 28 * card.uiScale
-        cardRefractionPixels: card.stackedCardRefractionPixels
-        cardDispersionIor: card.stackedCardDispersionIor
-        cardDiffusionPixels: 5 * card.uiScale
-        cardTransmission: 0.75
-        cardBevelWidth: card.stackedCardBevelWidth
-        cardBulgeStrength: card.stackedCardBulgeStrength
-        cardEdgeLightStrength: 0.10
-        cardEdgeLightDirection: Qt.vector2d(1, -1)
-        playOrigin: card.stackedPlayOrigin
-        playRefractionPixels: card.stackedPlayRefractionPixels
-        playDispersionIor: card.stackedPlayDispersionIor
-        playDiffusionPixels: 5 * card.uiScale
-        playTransmission: 0.82
-        playBulgeStrength: card.stackedPlayBulgeStrength
-        playBevelWidth: card.stackedPlayBevelWidth
-        playEdgeLightStrength: card.stackedPlayEdgeLightStrength
-        focusBrightness: card.focusBrightness
     }
 
     Rectangle {
@@ -369,7 +252,7 @@ Rectangle {
         radius: artworkRadius
         z: 2
         opacity: card.presentationContentOpacity
-            color: recentFocal || card.stackedGlass
+        color: recentFocal
                 ? luluPalette.transparent : luluPalette.artworkSurface
         clip: true
 
@@ -399,8 +282,7 @@ Rectangle {
             property real borderWidthPx: card.uiScale
             property real borderAlpha: artworkFrame.artworkBorderAlpha
             property real focusBrightness: card.focusBrightness
-            property int diagnosticMode: 0
-            opacity: card.stackedGlass ? 1 : (card.focused ? 1 : 0.68)
+        opacity: card.focused ? 1 : 0.68
             visible: !card.iconArtwork
             fragmentShader: "shaders/card-rounded.frag.qsb"
         }
@@ -496,32 +378,26 @@ Rectangle {
             border.color: card.luluPalette.focusIndicator
             border.width: 2 * card.uiScale
 
-            PlayGlassSurface {
+            MudosGlassItem {
+                id: nativePlayGlassSurface
                 anchors.fill: parent
                 visible: card.focalChromeOpacity > 0
-                canonicalTexture: card.canonicalTexture
+                    && card.homeCard
+                backdrop: card.canonicalTexture
                 canonicalSize: card.canonicalSize
-                 cardOrigin: card.canonicalTexture
-                    ? Qt.vector2d(card.mapToItem(card.canonicalTexture, 0, 0).x,
-                                  card.mapToItem(card.canonicalTexture, 0, 0).y)
-                    : Qt.vector2d(0, 0)
-                cardSize: Qt.size(card.width, card.height)
-                cardRadius: card.radius
-                 coordinateRoot: card.canonicalTexture
-                 playCoordinateRoot: card
-                 cardCoordinateItem: card
-                 playCoordinateItem: playButton
-                 useLiveCoordinateMapping: true
-                 playOrigin: Qt.vector2d(0, 0)
-                cardRefractionPixels: 80 * card.uiScale
-                cardDiffusionPixels: 5 * card.uiScale
-                 cardBevelWidth: 3 * card.uiScale
-                 playRefractionPixels: 40 * card.uiScale
-                 playRefractionBiasPx: 100 * card.uiScale
-                 playMaterialBiasPx: 100 * card.uiScale
-                 playDispersionIor: 0
-                 playDiffusionPixels: 5 * card.uiScale
-                 diagnosticMode: 0
+                canonicalRect: card.nativePlayCanonicalRect
+                cornerRadius: playButton.radius
+                ior: 1.08
+                glassDepth: 0.18
+                refractionPixels: 40 * card.uiScale
+                dispersionIor: 0
+                diffusionPixels: 5 * card.uiScale
+                transmission: 0.82
+                bevelWidthPx: 0
+                bulgeStrength: 20
+                edgeLightStrength: 0
+                transparentOutsideMask: true
+                opacity: card.focusBrightness
             }
 
             Text {
