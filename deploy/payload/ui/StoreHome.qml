@@ -32,6 +32,7 @@ Item {
     property real categoryMotionVelocity: 0
     signal steamStoreRequested()
     signal installGameRequested(var game)
+    signal downloadsRequested()
 
     function filteredGames() {
         var scope = categories.length > displayCategoryIndex
@@ -120,7 +121,12 @@ Item {
         if (String(game.game_id) === "steam-store")
             steamStoreRequested()
         else if ((game.provider === "steam" || game.provider === "romm")
+                 && ["queued", "starting", "transferring", "finalizing", "paused", "cancelling"].indexOf(String(game.acquisition_state)) >= 0)
+            downloadsRequested()
+        else if ((game.provider === "steam" || game.provider === "romm")
                  && ["queued", "starting", "transferring", "finalizing", "paused", "cancelling"].indexOf(String(game.acquisition_state)) < 0
+                 && (String(game.acquisition_state) !== "failed"
+                     || !game.acquisition_error || game.acquisition_error.retryable === true)
                  && String(game.provider_id).match(/^[1-9][0-9]*$/))
             installGameRequested(game)
     }

@@ -67,17 +67,16 @@ class SessionModelTests(unittest.TestCase):
         session.primary_started(token)
         self.assertEqual(session.state.lifecycle, Lifecycle.GAME)
 
-    def test_steam_store_downloads_is_one_delegated_application(self) -> None:
+    def test_downloads_is_a_mudos_requested_surface(self) -> None:
         session = SessionStateModel()
         token = session.request_launch("steam-store")
         session.launch_starting(token)
         session.primary_started(token, presentation=Presentation.FOREIGN_UI, input_mode=InputMode.GAME)
         self.assertEqual(session.state.delegated_surface, "store")
-        session.set_delegated_surface("downloads")
-        self.assertEqual(session.state.primary_id, "steam-store")
-        self.assertEqual(session.state.delegated_surface, "downloads")
-        session.set_delegated_surface("store")
-        self.assertEqual(session.state.delegated_surface, "store")
+        session.request_surface("downloads")
+        self.assertEqual(session.state.requested_surface, "downloads")
+        session.clear_requested_surface()
+        self.assertIsNone(session.state.requested_surface)
 
     def test_reset_tears_down_session_and_requests_service_restart(self) -> None:
         async def exercise() -> None:

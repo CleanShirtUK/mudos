@@ -5,6 +5,8 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import os
+from pathlib import Path
 
 from dbus_next import BusType, DBusError
 from dbus_next.aio import MessageBus
@@ -15,6 +17,8 @@ from .contracts import ServiceDescriptor, ServiceName
 from .steam_cmd import SteamCmdExecutor
 from .romm import RommClient, RommConfig
 from .romm_executor import RommExecutor
+from .acquisition_store import AcquisitionStore
+from .paths import PATHS
 
 
 BUS_NAME = "org.lulu.Acquisitiond"
@@ -65,6 +69,13 @@ class AcquisitionInterface(ServiceInterface):
         except KeyError as error:
             raise DBusError("org.lulu.Acquisition.Error.UnknownJob", str(error)) from error
 
+    @method()
+    def RetryJob(self, job_id: "s") -> "s":
+        try:
+            return self.manager.retry(job_id).job_id
+        except (KeyError, ValueError) as error:
+            raise DBusError("org.lulu.Acquisition.Error.Unavailable", str(error)) from error
+
     @signal()
     def StateChanged(self, snapshot: "s") -> "s":
         return snapshot
@@ -72,7 +83,9 @@ class AcquisitionInterface(ServiceInterface):
 
 async def serve(bus_type: BusType = BusType.SESSION) -> None:
     bus = await MessageBus(bus_type=bus_type).connect()
-    manager = JobManager(provider_limits={"steam": 1})
+    database = Path(os.environ.get("LULU_ACQUISITION_DB", str(PATHS.data_root / "acquisition.sqlite3")))
+    store = AcquisitionStore(database)
+    manager = JobManager(provider_limits={"steam": 1}, store=store)
     manager.register_executor("steam", SteamCmdExecutor(), limit=1)
     romm_config = RommConfig.from_file()
     manager.register_executor(

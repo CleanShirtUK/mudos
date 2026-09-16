@@ -99,15 +99,6 @@ class SteamProvider:
     def open_store(self) -> str:
         return self._dispatch_uri("steam://open/store")
 
-    def open_downloads(self) -> str:
-        uri = "steam://open/downloads"
-        environment = os.environ.copy()
-        environment.setdefault("DISPLAY", ":0")
-        subprocess.Popen([self.executable, uri], stdin=subprocess.DEVNULL,
-                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                         start_new_session=True, env=environment)
-        return uri
-
     def install(self, app_id: str) -> str:
         """Open Steam's normal install confirmation for a validated AppID."""
         self._validate_app_id(app_id)

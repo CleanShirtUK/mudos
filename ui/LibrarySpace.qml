@@ -305,7 +305,9 @@ Item {
                          : gameData.acquisition_state === "starting" ? "Starting"
                          : gameData.acquisition_state === "transferring" ? "Downloading"
                          : gameData.acquisition_state === "finalizing" ? "Finalizing"
-                         : gameData.acquisition_state === "failed" ? "Retry Download"
+                         : gameData.acquisition_state === "failed"
+                           && (!gameData.acquisition_error || gameData.acquisition_error.retryable !== false)
+                           ? "Retry Download"
                          : librarySpace.actionLabel
                     catalogueCard: true
                     librarySurfaceMaterial: true

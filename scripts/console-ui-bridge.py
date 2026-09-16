@@ -223,6 +223,15 @@ class ConsoleUiBridge:
             return {"jobs": [], "activeDownloadCount": 0}
         return json.loads(await self.acquisitiond.call_get_snapshot())
 
+    async def retry_acquisition(self, job_id: str) -> dict[str, str]:
+        if self.acquisitiond is None:
+            raise RuntimeError("acquisition service is unavailable")
+        return {"token": await self.acquisitiond.call_retry_job(job_id)}
+
+    async def clear_requested_surface(self) -> dict[str, str]:
+        await self.sessiond.call_clear_requested_surface()
+        return {"status": "cleared"}
+
     async def open_steam_store(self) -> dict[str, str]:
         self.launch_logs.start("steam-store")
         self.launch_logs.note("Lulu", "Steam Store launch requested")
@@ -248,7 +257,17 @@ class ConsoleUiBridge:
             content_identity = f"romm:{rom_id}"
         else:
             raise ValueError("game provider is not acquirable")
-        job_id = await self.acquisitiond.call_submit_job(provider, content_identity, title)
+        existing_snapshot = await self.acquisition()
+        existing = next((item for item in existing_snapshot.get("jobs", [])
+                         if item.get("provider") == provider
+                         and item.get("content_identity") == content_identity
+                         and item.get("state") == "failed"), None)
+        if existing is not None:
+            if not existing.get("retryable", False):
+                raise ValueError("acquisition is not retryable")
+            job_id = await self.acquisitiond.call_retry_job(str(existing["job_id"]))
+        else:
+            job_id = await self.acquisitiond.call_submit_job(provider, content_identity, title)
         asyncio.create_task(self._refresh_after_acquisition(job_id, provider))
         self.launch_logs.note("Lulu", f"{provider} acquisition submitted identity={content_identity} job_id={job_id}")
         return {"token": job_id}
@@ -423,6 +442,19 @@ class ApiHandler(BaseHTTPRequestHandler):
         if path == "/cancel":
             try:
                 self._respond(200, self.bridge.call(self.bridge.cancel_launch(), timeout=10))
+            except Exception as error:
+                self._respond(409, {"error": str(error) or type(error).__name__})
+            return
+        if path.startswith("/acquisition/retry/"):
+            try:
+                job_id = unquote(path.removeprefix("/acquisition/retry/"))
+                self._respond(200, self.bridge.call(self.bridge.retry_acquisition(job_id), timeout=20))
+            except Exception as error:
+                self._respond(409, {"error": str(error) or type(error).__name__})
+            return
+        if path == "/surface/clear":
+            try:
+                self._respond(200, self.bridge.call(self.bridge.clear_requested_surface()))
             except Exception as error:
                 self._respond(409, {"error": str(error) or type(error).__name__})
             return

@@ -48,11 +48,17 @@ class SystemStatusBridge final : public QObject
     Q_PROPERTY(QString bluetoothState READ bluetoothState NOTIFY bluetoothStateChanged)
     Q_PROPERTY(bool bluetoothPowered READ bluetoothPowered NOTIFY bluetoothStateChanged)
     Q_PROPERTY(uint activeDownloadCount READ activeDownloadCount NOTIFY activeDownloadCountChanged)
+    Q_PROPERTY(QString acquisitionSnapshot READ acquisitionSnapshot NOTIFY acquisitionSnapshotChanged)
+    Q_PROPERTY(bool acquisitionAvailable READ acquisitionAvailable NOTIFY acquisitionAvailabilityChanged)
 
 public:
     explicit SystemStatusBridge(QObject *parent = nullptr)
         : QObject(parent), bluezWatcher_(new QDBusServiceWatcher(
               QStringLiteral("org.bluez"), QDBusConnection::systemBus(),
+              QDBusServiceWatcher::WatchForRegistration
+                   | QDBusServiceWatcher::WatchForUnregistration, this))
+          , acquisitionWatcher_(new QDBusServiceWatcher(
+              QStringLiteral("org.lulu.Acquisitiond"), QDBusConnection::sessionBus(),
               QDBusServiceWatcher::WatchForRegistration
                   | QDBusServiceWatcher::WatchForUnregistration, this))
     {
@@ -77,7 +83,11 @@ public:
         connect(bluezWatcher_, &QDBusServiceWatcher::serviceRegistered,
                 this, &SystemStatusBridge::refreshBluetooth);
         connect(bluezWatcher_, &QDBusServiceWatcher::serviceUnregistered,
-                this, &SystemStatusBridge::refreshBluetooth);
+                 this, &SystemStatusBridge::refreshBluetooth);
+        connect(acquisitionWatcher_, &QDBusServiceWatcher::serviceRegistered,
+                this, &SystemStatusBridge::onAcquisitionRegistered);
+        connect(acquisitionWatcher_, &QDBusServiceWatcher::serviceUnregistered,
+                this, &SystemStatusBridge::onAcquisitionUnregistered);
         QDBusConnection::sessionBus().connect(
             QStringLiteral("org.lulu.Acquisitiond"),
             QStringLiteral("/org/lulu/Acquisition"),
@@ -93,11 +103,15 @@ public:
     QString bluetoothState() const { return bluetoothState_; }
     bool bluetoothPowered() const { return bluetoothState_ == QStringLiteral("powered"); }
     uint activeDownloadCount() const { return activeDownloadCount_; }
+    QString acquisitionSnapshot() const { return acquisitionSnapshot_; }
+    bool acquisitionAvailable() const { return acquisitionAvailable_; }
 
 signals:
     void networkConnectedChanged();
     void bluetoothStateChanged();
     void activeDownloadCountChanged();
+    void acquisitionSnapshotChanged();
+    void acquisitionAvailabilityChanged();
 
 private slots:
     void onNetworkPropertiesChanged(const QString &interfaceName,
@@ -132,7 +146,17 @@ private slots:
 
     void onAcquisitionStateChanged(const QString &snapshot)
     {
-        updateActiveDownloadCount(snapshot);
+        updateAcquisitionSnapshot(snapshot);
+    }
+
+    void onAcquisitionRegistered(const QString &)
+    {
+        refreshAcquisitionStatus();
+    }
+
+    void onAcquisitionUnregistered(const QString &)
+    {
+        updateAcquisitionSnapshot(QStringLiteral("{\"jobs\":[],\"activeDownloadCount\":0}"), false);
     }
 
 private:
@@ -144,10 +168,12 @@ private:
                                    QDBusConnection::sessionBus());
         const QDBusMessage reply = acquisition.call(QStringLiteral("GetSnapshot"));
         if (reply.type() == QDBusMessage::ReplyMessage && !reply.arguments().isEmpty())
-            updateActiveDownloadCount(reply.arguments().constFirst().toString());
+            updateAcquisitionSnapshot(reply.arguments().constFirst().toString(), true);
+        else
+            updateAcquisitionSnapshot(QStringLiteral("{\"jobs\":[],\"activeDownloadCount\":0}"), false);
     }
 
-    void updateActiveDownloadCount(const QString &snapshot)
+    void updateAcquisitionSnapshot(const QString &snapshot, bool available = true)
     {
         const QJsonDocument document = QJsonDocument::fromJson(snapshot.toUtf8());
         if (!document.isObject())
@@ -156,6 +182,14 @@ private:
         if (count != activeDownloadCount_) {
             activeDownloadCount_ = count;
             emit activeDownloadCountChanged();
+        }
+        if (snapshot != acquisitionSnapshot_) {
+            acquisitionSnapshot_ = snapshot;
+            emit acquisitionSnapshotChanged();
+        }
+        if (available != acquisitionAvailable_) {
+            acquisitionAvailable_ = available;
+            emit acquisitionAvailabilityChanged();
         }
     }
 
@@ -232,7 +266,10 @@ private:
     bool networkConnected_ = false;
     QString bluetoothState_ = QStringLiteral("unavailable");
     uint activeDownloadCount_ = 0;
+    QString acquisitionSnapshot_ = QStringLiteral("{\"jobs\":[],\"activeDownloadCount\":0}");
+    bool acquisitionAvailable_ = false;
     QDBusServiceWatcher *bluezWatcher_;
+    QDBusServiceWatcher *acquisitionWatcher_;
 };
 
 void diagnosticMessageHandler(QtMsgType, const QMessageLogContext &, const QString &message)
@@ -283,6 +320,7 @@ public:
         insert("action", QString());
         insert("actionSerial", 0);
         insert("luluPresented", false);
+        insert("requestedSurface", QString());
         insert("guideSelection", 0);
         insert("controllers", QVariantList());
         insert("launchOverlayEnabled",
@@ -401,6 +439,8 @@ private:
         const QJsonDocument document = QJsonDocument::fromJson(stateJson.toUtf8());
         if (!document.isObject())
             return;
+        insert(QStringLiteral("requestedSurface"),
+               document.object().value(QStringLiteral("requested_surface")).toString());
         const QJsonObject controllerRoot = document.object().value(QStringLiteral("controller"))
             .toObject().value(QStringLiteral("controllers")).toObject();
         QVariantList controllers;
@@ -608,9 +648,9 @@ private:
             const auto state = QJsonDocument::fromJson(
                 reply.arguments().constFirst().toString().toUtf8()).object();
             if (state.value("primary_id").toString() == QStringLiteral("steam-store"))
-                return QStringLiteral("steam");
+                return QStringLiteral("MUDOS_DOWNLOADS");
         }
-        return {};
+        return QStringLiteral("MUDOS_DOWNLOADS");
     }
 
     QString providerMenuLabel(uint32_t pid) const
@@ -622,10 +662,9 @@ private:
             const auto state = QJsonDocument::fromJson(
                 reply.arguments().constFirst().toString().toUtf8()).object();
             if (state.value("primary_id").toString() == QStringLiteral("steam-store"))
-                return state.value("delegated_surface").toString() == QStringLiteral("downloads")
-                    ? QStringLiteral("Go to Store") : QStringLiteral("View Download Queue");
+                return QStringLiteral("Open Downloads");
         }
-        return QStringLiteral("Provider Menu");
+        return QStringLiteral("Open Downloads");
     }
 
     void scanGamepads()

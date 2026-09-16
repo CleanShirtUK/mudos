@@ -98,6 +98,8 @@ Window {
     property int collectionIndex: 0
     property var libraryCollections: [{"label": "All Games", "scope": "all"}, {"label": "PC Games", "scope": "pc"}]
     property string space: "home"
+    property string downloadsReturnSpace: "home"
+    property var downloadsHomeRef: null
     property int systemCategoryIndex: 0
     property var systemHomeRailRef: null
     property int systemRowIndex: 0
@@ -225,6 +227,17 @@ Window {
                 returnPresentationPending: root.returnPresentationPending
             }))
             root.traceLaunchEvent("HOME_INPUT_UNLOCKED", {})
+        }
+    }
+
+    Connections {
+        target: systemStatus
+        function onAcquisitionSnapshotChanged() {
+            root.applyAcquisitionSnapshot(systemStatus.acquisitionSnapshot)
+        }
+        function onAcquisitionAvailabilityChanged() {
+            if (!systemStatus.acquisitionAvailable)
+                root.applyAcquisitionSnapshot("{\"jobs\":[],\"activeDownloadCount\":0}")
         }
     }
 
@@ -369,10 +382,11 @@ Window {
         request.send()
     }
 
-    function refreshAcquisitionJobs() {
-        request("/acquisition", "GET", "", function(snapshot) {
+    function applyAcquisitionSnapshot(snapshot) {
+        try {
+            var parsed = typeof snapshot === "string" ? JSON.parse(snapshot) : snapshot
             var jobs = ({})
-            var rows = snapshot.jobs || []
+            var rows = parsed.jobs || []
             for (var index = 0; index < rows.length; index++) {
                 var job = rows[index]
                 if (String(job.provider || "") === "steam"
@@ -386,12 +400,22 @@ Window {
                 }
             }
             acquisitionJobs = jobs
+        } catch (error) {
+            acquisitionJobs = ({})
+        }
+    }
+
+    // Compatibility/reconnect resynchronization only. Live updates arrive via
+    // SystemStatusBridge.acquisitionSnapshotChanged.
+    function refreshAcquisitionJobs() {
+        request("/acquisition", "GET", "", function(snapshot) {
+            root.applyAcquisitionSnapshot(snapshot)
         })
     }
 
     Timer {
         id: acquisitionJobsTimer
-        interval: 500
+        interval: 30000
         repeat: true
         running: true
         onTriggered: root.refreshAcquisitionJobs()
@@ -914,6 +938,17 @@ Window {
             storeHomeRef.moveVertical(delta)
     }
 
+    function moveDownloads(delta) {
+        if (downloadsHomeRef)
+            downloadsHomeRef.moveSelection(delta)
+    }
+
+    function openDownloads(returnSpace) {
+        downloadsReturnSpace = returnSpace === "downloads" ? "home" : returnSpace
+        space = "downloads"
+        message = ""
+    }
+
     function launchGame(game) {
         if (!game)
             return
@@ -1038,6 +1073,14 @@ Window {
         }, "Install failed", generation)
     }
 
+    function retryAcquisition(jobId) {
+        if (!jobId)
+            return
+        request("/acquisition/retry/" + encodeURIComponent(jobId), "POST", "", function(data) {
+            root.applyAcquisitionSnapshot(systemStatus.acquisitionSnapshot)
+        }, "Retry failed")
+    }
+
     function openSteamStore() {
         var generation = ++launchGeneration
         launchTitle = "Steam Store"
@@ -1090,6 +1133,10 @@ Window {
                 if (value === true && root.returnWatchActive)
                     root.refreshReturnState(root.launchGeneration)
             }
+            if (key === "requestedSurface" && value === "downloads") {
+                root.openDownloads(root.space)
+                root.request("/surface/clear", "POST", "", function(data) {})
+            }
             if (key === "action" && value === "back" && root.launchOverlayEffectiveVisible)
                 root.cancelLaunch()
             if (key === "action")
@@ -1129,6 +1176,11 @@ Window {
         if (space === "store") {
             if (storeHomeRef)
                 storeHomeRef.activateSelected()
+            return
+        }
+        if (space === "downloads") {
+            if (downloadsHomeRef)
+                downloadsHomeRef.activateSelected()
             return
         }
 
@@ -1235,6 +1287,9 @@ Window {
             libraryTransitionAnimation.restart()
             libraryContentFadeOut.restart()
             homeFadeIn.restart()
+            message = ""
+        } else if (space === "downloads") {
+            space = downloadsReturnSpace || "home"
             message = ""
         } else {
             message = ""
@@ -1355,6 +1410,7 @@ Window {
 
     Component.onCompleted: {
         inputSurface.forceActiveFocus()
+        root.applyAcquisitionSnapshot(systemStatus.acquisitionSnapshot)
         refreshCatalogue()
         refreshStore()
         presentationCoordinator.beginStartup()
@@ -1368,6 +1424,7 @@ Window {
             else if (root.space === "home") root.moveDomain(-1)
             else if (root.space === "library") root.moveLibraryVertical(-1)
             else if (root.space === "store") root.moveStoreGameVertical(-1)
+            else if (root.space === "downloads") root.moveDownloads(-1)
             else if (root.space === "system") {
                 if (root.systemLanding) root.moveSystemCategory(-4)
                 else root.systemRowIndex = Math.max(0, root.systemRowIndex - 1)
@@ -1381,6 +1438,7 @@ Window {
             else if (root.space === "home") root.moveDomain(1)
             else if (root.space === "library") root.moveLibraryVertical(1)
             else if (root.space === "store") root.moveStoreGameVertical(1)
+            else if (root.space === "downloads") root.moveDownloads(1)
             else if (root.space === "system") {
                 if (root.systemLanding) root.moveSystemCategory(4)
                 else root.systemRowIndex = Math.min(Math.max(0, root.systemSettings.length - 1), root.systemRowIndex + 1)
@@ -1417,6 +1475,8 @@ Window {
                 root.moveLibrary(1)
             } else if (root.space === "store") {
                 root.moveStoreGame(1)
+            } else if (root.space === "downloads") {
+                root.moveDownloads(1)
             } else if (root.space === "system") {
                 if (root.systemLanding) root.moveSystemCategory(1)
                 else root.systemRowIndex = Math.min(Math.max(0, root.systemSettings.length - 1), root.systemRowIndex + 1)
@@ -1561,6 +1621,14 @@ Window {
                     event.accepted = true
                 } else if (event.key === Qt.Key_Right) {
                     moveStoreGame(1)
+                    event.accepted = true
+                }
+            } else if (space === "downloads") {
+                if (event.key === Qt.Key_Up) {
+                    moveDownloads(-1)
+                    event.accepted = true
+                } else if (event.key === Qt.Key_Down) {
+                    moveDownloads(1)
                     event.accepted = true
                 }
             } else if (space === "system") {
@@ -1945,7 +2013,24 @@ Window {
             contentOpacity: root.libraryContentOpacity
             onSteamStoreRequested: root.openSteamStore()
             onInstallGameRequested: root.installGame(game)
+            onDownloadsRequested: root.openDownloads("store")
             Component.onCompleted: root.storeHomeRef = storeHome
+        }
+
+        DownloadsHome {
+            id: downloadsHome
+            anchors.fill: parent
+            visible: root.space === "downloads"
+            snapshot: systemStatus.acquisitionSnapshot
+            uiScale: root.uiScale
+            typography: typography
+            luluPalette: luluPalette
+            canonicalTexture: orbitTexture
+            canonicalCoordinateRoot: orbitRenderSource
+            canonicalSize: Qt.size(root.width, root.height)
+            onRetryRequested: root.retryAcquisition(jobId)
+            onBackRequested: root.back()
+            Component.onCompleted: root.downloadsHomeRef = downloadsHome
         }
 
         SystemHome {

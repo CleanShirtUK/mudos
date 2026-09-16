@@ -194,13 +194,6 @@ private:
 
     void sendDelete()
     {
-        if (providerMenuLabel_ == QStringLiteral("View Download Queue")
-            || providerMenuLabel_ == QStringLiteral("Go to Store")) {
-            QDBusInterface sessiond("org.lulu.ConsoleSessiond", "/org/lulu/ConsoleSession",
-                                    "org.lulu.ConsoleSession", QDBusConnection::sessionBus());
-            sessiond.call("QuitDelegated");
-            return;
-        }
         auto *x11 = qGuiApp->nativeInterface<QNativeInterface::QX11Application>();
         if (!x11 || !x11->connection())
             return;
@@ -277,16 +270,10 @@ private:
 
     void openProviderMenu()
     {
-        if (providerMenuLabel_ == QStringLiteral("View Download Queue")) {
+        if (providerMenuLabel_ == QStringLiteral("Open Downloads")) {
             QDBusInterface sessiond("org.lulu.ConsoleSessiond", "/org/lulu/ConsoleSession",
                                     "org.lulu.ConsoleSession", QDBusConnection::sessionBus());
-            sessiond.call("RequestSteamDownloads");
-            return;
-        }
-        if (providerMenuLabel_ == QStringLiteral("Go to Store")) {
-            QDBusInterface sessiond("org.lulu.ConsoleSessiond", "/org/lulu/ConsoleSession",
-                                    "org.lulu.ConsoleSession", QDBusConnection::sessionBus());
-            sessiond.call("RequestSteamStoreSurface");
+            sessiond.call("RequestMudosDownloads");
             return;
         }
         if (providerMenuLabel_ == QStringLiteral("Open PCSX2 Menu")) {
@@ -344,10 +331,9 @@ int main(int argc, char **argv)
         shellContext = state.value("lifecycle").toString() != QStringLiteral("game");
         compatibilityMode = state.value("input_mode").toString() == QStringLiteral("compat");
         const auto primaryId = state.value("primary_id").toString();
-        if (primaryId == QStringLiteral("steam-store")) {
-            effectiveProviderCommand = QStringLiteral("steam");
-            providerMenuLabel = state.value("delegated_surface").toString() == QStringLiteral("downloads")
-                ? QStringLiteral("Go to Store") : QStringLiteral("View Download Queue");
+            if (primaryId == QStringLiteral("steam-store")) {
+                effectiveProviderCommand = QStringLiteral("MUDOS_DOWNLOADS");
+                providerMenuLabel = QStringLiteral("Open Downloads");
         } else if (primaryId.startsWith(QStringLiteral("local:ps2:"))) {
             effectiveProviderCommand = QStringLiteral("PCSX2_OPEN_PAUSE_MENU");
             providerMenuLabel = QStringLiteral("Open PCSX2 Menu");

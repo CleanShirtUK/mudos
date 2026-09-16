@@ -469,14 +469,6 @@ class ProcessSupervisor:
         self._steam_store_window = None
         await self._notify()
 
-    async def open_steam_downloads(self) -> str:
-        if self.model.state.primary_id != "steam-store" or self.model.state.lifecycle.value != "game":
-            raise ValueError("Steam Store delegated surface is not active")
-        uri = await asyncio.to_thread((self._steam_provider or SteamProvider()).open_downloads)
-        self.model.set_delegated_surface("downloads")
-        await self._notify()
-        return uri
-
     async def open_steam_store_surface(self) -> str:
         if self.model.state.primary_id != "steam-store" or self.model.state.lifecycle.value != "game":
             raise ValueError("Steam Store delegated surface is not active")

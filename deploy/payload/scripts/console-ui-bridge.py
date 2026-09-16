@@ -154,12 +154,17 @@ from dbus_next import BusType, Variant
 from dbus_next.aio import MessageBus
 from dbus_next.errors import DBusError
 
+from lulu.paths import PATHS
+from lulu.settings import SettingsStore
+
 
 class ConsoleUiBridge:
-    def __init__(self, loop: asyncio.AbstractEventLoop, consoled: object, sessiond: object) -> None:
+    def __init__(self, loop: asyncio.AbstractEventLoop, consoled: object,
+                 sessiond: object, acquisitiond: object | None = None) -> None:
         self.loop = loop
         self.consoled = consoled
         self.sessiond = sessiond
+        self.acquisitiond = acquisitiond
         self.launch_logs = LaunchLogCapture()
         self.local_token: str | None = None
 
@@ -177,6 +182,17 @@ class ConsoleUiBridge:
     async def list_available_games(self, provider: str) -> list[dict[str, object]]:
         rows = await self.consoled.call_list_available_games(provider)
         return [{key: value.value for key, value in row.items()} for row in rows]
+
+    async def refresh_catalogue(self) -> dict[str, int]:
+        count = await self.consoled.call_refresh()
+        LOGGER.info("manual catalogue refresh completed games=%s", count)
+        return {"games": int(count)}
+
+    async def refresh_catalogue_stages(self, stages: list[str]) -> dict[str, int]:
+        count = await self.consoled.call_refresh_stages(stages)
+        LOGGER.info("manual staged catalogue refresh completed stages=%s games=%s",
+                    ",".join(stages), count)
+        return {"games": int(count)}
 
     def launch_log(self) -> dict[str, object]:
         return self.launch_logs.snapshot()
@@ -202,6 +218,20 @@ class ConsoleUiBridge:
     async def state(self) -> dict[str, object]:
         return json.loads(await self.sessiond.call_get_state())
 
+    async def acquisition(self) -> dict[str, object]:
+        if self.acquisitiond is None:
+            return {"jobs": [], "activeDownloadCount": 0}
+        return json.loads(await self.acquisitiond.call_get_snapshot())
+
+    async def retry_acquisition(self, job_id: str) -> dict[str, str]:
+        if self.acquisitiond is None:
+            raise RuntimeError("acquisition service is unavailable")
+        return {"token": await self.acquisitiond.call_retry_job(job_id)}
+
+    async def clear_requested_surface(self) -> dict[str, str]:
+        await self.sessiond.call_clear_requested_surface()
+        return {"status": "cleared"}
+
     async def open_steam_store(self) -> dict[str, str]:
         self.launch_logs.start("steam-store")
         self.launch_logs.note("Lulu", "Steam Store launch requested")
@@ -209,13 +239,55 @@ class ConsoleUiBridge:
         return {"token": token}
 
     async def install_game(self, game_id: str) -> dict[str, str]:
-        appid = await self.consoled.call_resolve_steam_install(game_id)
-        state = await self.state()
-        if state.get("lifecycle") != "shell":
-            raise RuntimeError("another launch owns the session")
-        token = await self.sessiond.call_request_steam_install(appid, 15000)
-        self.launch_logs.note("Lulu", f"Steam install requested appid={appid} token={token}")
-        return {"token": normalize_launch_token(token)}
+        if self.acquisitiond is None:
+            raise RuntimeError("acquisition service is unavailable")
+        rows = await self.list_available_games("romm")
+        selected = next((row for row in rows if str(row.get("game_id", "")) == game_id), None)
+        if selected is None:
+            raise ValueError("game is not available to acquire")
+        provider = str(selected.get("provider", ""))
+        title = str(selected.get("title", game_id))
+        if provider == "steam":
+            appid = await self.consoled.call_resolve_steam_install(game_id)
+            content_identity = f"steam:{appid}"
+        elif provider == "romm":
+            rom_id = str(selected.get("provider_id", ""))
+            if not rom_id.isdecimal() or int(rom_id) < 1:
+                raise ValueError("RomM content identity is invalid")
+            content_identity = f"romm:{rom_id}"
+        else:
+            raise ValueError("game provider is not acquirable")
+        existing_snapshot = await self.acquisition()
+        existing = next((item for item in existing_snapshot.get("jobs", [])
+                         if item.get("provider") == provider
+                         and item.get("content_identity") == content_identity
+                         and item.get("state") == "failed"), None)
+        if existing is not None:
+            if not existing.get("retryable", False):
+                raise ValueError("acquisition is not retryable")
+            job_id = await self.acquisitiond.call_retry_job(str(existing["job_id"]))
+        else:
+            job_id = await self.acquisitiond.call_submit_job(provider, content_identity, title)
+        asyncio.create_task(self._refresh_after_acquisition(job_id, provider))
+        self.launch_logs.note("Lulu", f"{provider} acquisition submitted identity={content_identity} job_id={job_id}")
+        return {"token": job_id}
+
+    async def _refresh_after_acquisition(self, job_id: str, provider: str) -> None:
+        """Rejoin completed provider content with the local catalogue."""
+        try:
+            for _ in range(720):
+                snapshot = json.loads(await self.acquisitiond.call_get_snapshot())
+                job = next((item for item in snapshot.get("jobs", [])
+                            if item.get("job_id") == job_id), None)
+                if job is None or job.get("state") in {"failed", "cancelled"}:
+                    return
+                if job.get("state") == "completed":
+                    stages = ["steam"] if provider == "steam" else ["local"]
+                    await self.consoled.call_refresh_stages(stages)
+                    return
+                await asyncio.sleep(1)
+        except Exception:
+            LOGGER.exception("Steam acquisition catalogue refresh failed job_id=%s", job_id)
 
     async def cancel_launch(self) -> dict[str, str]:
         self.launch_logs.note_cancellation()
@@ -286,6 +358,12 @@ class ApiHandler(BaseHTTPRequestHandler):
         if urlparse(self.path).path == "/launch-log":
             self._respond(200, self.bridge.launch_log())
             return
+        if urlparse(self.path).path == "/acquisition":
+            try:
+                self._respond(200, self.bridge.call(self.bridge.acquisition()))
+            except Exception as error:  # pragma: no cover - live IPC failure path
+                self._respond(503, {"error": str(error)})
+            return
         if urlparse(self.path).path == "/settings":
             category = parse_qs(urlparse(self.path).query).get("category", ["System"])[0]
             try:
@@ -323,6 +401,23 @@ class ApiHandler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:
         path = urlparse(self.path).path
+        if path == "/ui-refresh":
+            try:
+                group = parse_qs(urlparse(self.path).query).get("group", ["all"])[0]
+                Path("/tmp/lulu-qml-refresh-request").write_text(group, encoding="ascii")
+                self._respond(200, {"status": "requested", "group": group})
+            except OSError as error:
+                self._respond(409, {"error": str(error)})
+            return
+        if path == "/refresh":
+            try:
+                stages = [item for item in parse_qs(urlparse(self.path).query).get("stage", []) if item]
+                operation = (self.bridge.refresh_catalogue_stages(stages)
+                             if stages else self.bridge.refresh_catalogue())
+                self._respond(200, self.bridge.call(operation, timeout=None))
+            except Exception as error:  # pragma: no cover - live IPC failure path
+                self._respond(409, {"error": str(error) or type(error).__name__})
+            return
         if path.startswith("/metadata/"):
             try:
                 game_id = unquote(path.split("/", 3)[3])
@@ -347,6 +442,19 @@ class ApiHandler(BaseHTTPRequestHandler):
         if path == "/cancel":
             try:
                 self._respond(200, self.bridge.call(self.bridge.cancel_launch(), timeout=10))
+            except Exception as error:
+                self._respond(409, {"error": str(error) or type(error).__name__})
+            return
+        if path.startswith("/acquisition/retry/"):
+            try:
+                job_id = unquote(path.removeprefix("/acquisition/retry/"))
+                self._respond(200, self.bridge.call(self.bridge.retry_acquisition(job_id), timeout=20))
+            except Exception as error:
+                self._respond(409, {"error": str(error) or type(error).__name__})
+            return
+        if path == "/surface/clear":
+            try:
+                self._respond(200, self.bridge.call(self.bridge.clear_requested_surface()))
             except Exception as error:
                 self._respond(409, {"error": str(error) or type(error).__name__})
             return
@@ -428,15 +536,24 @@ async def main() -> None:
         "org.lulu.ConsoleSessiond", "/org/lulu/ConsoleSession", session_introspection
     )
     sessiond = session_proxy.get_interface("org.lulu.ConsoleSession")
-    await consoled.call_refresh()
-
+    acquisition_introspection = await wait_for_dbus_service(
+        bus, "org.lulu.Acquisitiond", "/org/lulu/Acquisition"
+    )
+    acquisition_proxy = bus.get_proxy_object(
+        "org.lulu.Acquisitiond", "/org/lulu/Acquisition", acquisition_introspection
+    )
+    acquisitiond = acquisition_proxy.get_interface("org.lulu.Acquisition")
     loop = asyncio.get_running_loop()
-    bridge = ConsoleUiBridge(loop, consoled, sessiond)
+    bridge = ConsoleUiBridge(loop, consoled, sessiond, acquisitiond)
     ApiHandler.bridge = bridge
     server = ThreadingHTTPServer(("127.0.0.1", 38123), ApiHandler)
     Thread(target=server.serve_forever, daemon=True).start()
 
     environment = os.environ.copy()
+    settings = SettingsStore(PATHS.config_root / "settings.sqlite3")
+    environment["LULU_LAUNCH_OVERLAY_ENABLED"] = (
+        "true" if settings.get("launch_overlay_enabled") else "false"
+    )
     qml = os.environ.get("LULU_UI_FILE", "/opt/lulu/ui/ConsoleShell.qml")
     shell = os.environ.get("LULU_SHELL_EXECUTABLE", "/opt/lulu/bin/lulu-shell")
     process = await asyncio.create_subprocess_exec(shell, qml, env=environment)

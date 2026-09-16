@@ -296,11 +296,14 @@ class ConsoleSessionInterface(ServiceInterface):
             raise self._error(ValueError(str(error))) from error
 
     @method()
-    async def RequestSteamDownloads(self) -> "s":
-        try:
-            return await self.supervisor.open_steam_downloads()
-        except ValueError as error:
-            raise self._error(error) from error
+    async def RequestMudosDownloads(self) -> "":
+        self.model.request_surface("downloads")
+        await self._state_changed()
+
+    @method()
+    async def ClearRequestedSurface(self) -> "":
+        self.model.clear_requested_surface()
+        await self._state_changed()
 
     @method()
     async def RequestSteamStoreSurface(self) -> "s":

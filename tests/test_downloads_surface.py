@@ -1,0 +1,52 @@
+from pathlib import Path
+import unittest
+
+
+ROOT = Path(__file__).parents[1]
+
+
+class DownloadsSurfaceTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.qml = (ROOT / "ui" / "DownloadsHome.qml").read_text()
+        self.shell = (ROOT / "ui" / "ConsoleShell.qml").read_text()
+        self.store = (ROOT / "ui" / "StoreHome.qml").read_text()
+        self.bridge = (ROOT / "scripts" / "console-ui-bridge.py").read_text()
+        self.guide = (ROOT / "native" / "mudos-guide.cpp").read_text()
+
+    def test_surface_is_snapshot_driven_and_provider_neutral(self) -> None:
+        for token in ("systemStatus.acquisitionSnapshot", "acquisitionSnapshotChanged",
+                      "activeStates", "queuedStates", "historyStates", "No downloads",
+                      "retryRequested"):
+            self.assertIn(token, self.qml + self.shell)
+        self.assertNotIn("SteamCmd", self.qml)
+        self.assertNotIn("Romm", self.qml)
+
+    def test_stage_and_history_semantics_are_explicit(self) -> None:
+        self.assertIn('String(job.state) === "transferring"', self.qml)
+        self.assertIn('String(job.state) === "completed"', self.qml)
+        self.assertIn('String(modelData.job.state) === "failed"', self.qml)
+        self.assertIn('modelData.job.retryable === true', self.qml)
+        self.assertIn('String(a.completed_at || a.updated_at || a.created_at', self.qml)
+
+    def test_navigation_retry_and_store_active_routing(self) -> None:
+        self.assertIn('root.space === "downloads"', self.shell)
+        self.assertIn('root.openDownloads(root.space)', self.shell)
+        self.assertIn('root.retryAcquisition(jobId)', self.shell)
+        self.assertIn('/acquisition/retry/', self.shell)
+        self.assertIn('downloadsRequested()', self.store)
+        self.assertIn('call_retry_job', self.bridge)
+        self.assertIn('RequestMudosDownloads', self.guide)
+        self.assertIn('Open Downloads', self.guide)
+
+    def test_old_steam_download_delegation_is_absent(self) -> None:
+        for path in (ROOT / "src", ROOT / "native", ROOT / "scripts", ROOT / "ui"):
+            for file in path.rglob("*"):
+                if file.suffix in {".py", ".cpp", ".qml"}:
+                    text = file.read_text()
+                    for obsolete in ("RequestSteamDownloads", "open_steam_downloads",
+                                     "steam://open/downloads", "View Download Queue"):
+                        self.assertNotIn(obsolete, text, str(file))
+
+
+if __name__ == "__main__":
+    unittest.main()
