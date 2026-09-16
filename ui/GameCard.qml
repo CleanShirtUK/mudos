@@ -81,7 +81,8 @@ Rectangle {
     readonly property bool recentFocal: homeCard && focused
     readonly property string acquisitionState: game && game.acquisition_state
         ? String(game.acquisition_state) : ""
-    readonly property bool acquisitionVisible: game && game.provider === "steam"
+    readonly property bool acquisitionVisible: game
+        && (game.provider === "steam" || game.provider === "romm")
         && ["queued", "starting", "transferring", "finalizing", "paused", "cancelling", "failed"].indexOf(acquisitionState) >= 0
     readonly property string presentationGameId: presentationId || (game ? String(game.game_id) : "")
     onPlayActivationSerialChanged: {

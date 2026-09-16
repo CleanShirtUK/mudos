@@ -119,7 +119,7 @@ Item {
             return
         if (String(game.game_id) === "steam-store")
             steamStoreRequested()
-        else if (game.provider === "steam"
+        else if ((game.provider === "steam" || game.provider === "romm")
                  && ["queued", "starting", "transferring", "finalizing", "paused", "cancelling"].indexOf(String(game.acquisition_state)) < 0
                  && String(game.provider_id).match(/^[1-9][0-9]*$/))
             installGameRequested(game)

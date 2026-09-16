@@ -13,6 +13,8 @@ from dbus_next.service import ServiceInterface, method, signal
 from .job_manager import JobManager, job_to_dict
 from .contracts import ServiceDescriptor, ServiceName
 from .steam_cmd import SteamCmdExecutor
+from .romm import RommClient, RommConfig
+from .romm_executor import RommExecutor
 
 
 BUS_NAME = "org.lulu.Acquisitiond"
@@ -72,6 +74,10 @@ async def serve(bus_type: BusType = BusType.SESSION) -> None:
     bus = await MessageBus(bus_type=bus_type).connect()
     manager = JobManager(provider_limits={"steam": 1})
     manager.register_executor("steam", SteamCmdExecutor(), limit=1)
+    romm_config = RommConfig.from_file()
+    manager.register_executor(
+        "romm", RommExecutor(RommClient(romm_config) if romm_config else None), limit=1
+    )
     interface = AcquisitionInterface(manager)
     bus.export(OBJECT_PATH, interface)
     await bus.request_name(BUS_NAME)

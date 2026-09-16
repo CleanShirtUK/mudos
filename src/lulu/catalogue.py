@@ -150,7 +150,8 @@ class CatalogueGame:
             install_dir="", artwork_url=game.artwork_url, last_played=0, runtime="",
             platform_label=game.platform_label, source_title=game.title,
             normalized_search_title=clean_local_title(game.title), availability_state="available",
-            provider_record_id=str(game.rom_id), content_identity=game.file_name,
+            provider_record_id=str(game.rom_id),
+            content_identity=game.files[0].name if game.files else game.file_name,
             catalogue_source="romm", genres=game.genres, release_date=game.release_date,
             release_year=game.release_year, total_playtime=game.total_playtime,
             local_multiplayer=game.local_multiplayer, online_multiplayer=game.online_multiplayer,
@@ -522,6 +523,30 @@ class CatalogueStore:
                         current, replace(current, install_state="missing", launchable=False), deltas)
             for game in games:
                 self._upsert_locked(game, deltas)
+            # A staged ROM is represented by both the local provider record
+            # and its remote RomM record. Reconcile Store availability by the
+            # canonical platform and filename after local discovery.
+            installed_files = {
+                (game.platform.casefold(), Path(game.source_title).name.casefold()): game
+                for game in games if game.install_state == "installed"
+            }
+            for current in self._rows(f"SELECT {SELECT_COLUMNS} FROM games WHERE provider='romm'"):
+                key = (current.platform.casefold(), Path(current.content_identity).name.casefold())
+                local = installed_files.get(key)
+                if local is not None:
+                    self._apply_existing_locked(
+                        current,
+                        replace(current, install_state="installed", launchable=local.launchable,
+                                install_dir=local.install_dir, availability_state="installed"),
+                        deltas,
+                    )
+                elif current.install_state == "installed":
+                    self._apply_existing_locked(
+                        current,
+                        replace(current, install_state="available", launchable=False,
+                                install_dir="", availability_state="available"),
+                        deltas,
+                    )
         self._finish_operation(deltas)
         return games
 

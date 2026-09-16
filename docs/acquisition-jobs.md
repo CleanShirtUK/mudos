@@ -5,9 +5,10 @@ shell and session lifecycle. Provider adapters register executors with its
 `JobManager`; the service publishes complete JSON snapshots and normalized
 state changes on the session D-Bus as `org.lulu.Acquisitiond`.
 
-The current service has no production provider executors. Consequently its
-authoritative active count is zero. The controlled executor exists only in
-unit tests.
+Steam and RomM executors are registered independently, each serialized at one
+active job per provider. Steam cancellation remains unavailable. RomM jobs
+stage streamed files and currently also advertise cancellation unavailable;
+failed staging files are cleaned before the job is normalized as failed.
 
 Jobs are currently in-memory. Restarting `lulu-acquisition.service` loses
 queued and active jobs; no provider work is resumed or silently reconstructed.

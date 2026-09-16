@@ -232,23 +232,29 @@ class ConsoleUiBridge:
     async def install_game(self, game_id: str) -> dict[str, str]:
         if self.acquisitiond is None:
             raise RuntimeError("acquisition service is unavailable")
-        appid = await self.consoled.call_resolve_steam_install(game_id)
-        title = game_id
-        try:
-            rows = await self.list_available_games("romm")
-            for row in rows:
-                if str(row.get("game_id", "")) == game_id:
-                    title = str(row.get("title", title))
-                    break
-        except Exception:
-            LOGGER.info("Steam title lookup unavailable; using catalogue identity game_id=%s", game_id)
-        job_id = await self.acquisitiond.call_submit_job("steam", f"steam:{appid}", title)
-        asyncio.create_task(self._refresh_after_acquisition(job_id))
-        self.launch_logs.note("Lulu", f"Steam acquisition submitted appid={appid} job_id={job_id}")
+        rows = await self.list_available_games("romm")
+        selected = next((row for row in rows if str(row.get("game_id", "")) == game_id), None)
+        if selected is None:
+            raise ValueError("game is not available to acquire")
+        provider = str(selected.get("provider", ""))
+        title = str(selected.get("title", game_id))
+        if provider == "steam":
+            appid = await self.consoled.call_resolve_steam_install(game_id)
+            content_identity = f"steam:{appid}"
+        elif provider == "romm":
+            rom_id = str(selected.get("provider_id", ""))
+            if not rom_id.isdecimal() or int(rom_id) < 1:
+                raise ValueError("RomM content identity is invalid")
+            content_identity = f"romm:{rom_id}"
+        else:
+            raise ValueError("game provider is not acquirable")
+        job_id = await self.acquisitiond.call_submit_job(provider, content_identity, title)
+        asyncio.create_task(self._refresh_after_acquisition(job_id, provider))
+        self.launch_logs.note("Lulu", f"{provider} acquisition submitted identity={content_identity} job_id={job_id}")
         return {"token": job_id}
 
-    async def _refresh_after_acquisition(self, job_id: str) -> None:
-        """Rejoin completed Steam content with the local catalogue."""
+    async def _refresh_after_acquisition(self, job_id: str, provider: str) -> None:
+        """Rejoin completed provider content with the local catalogue."""
         try:
             for _ in range(720):
                 snapshot = json.loads(await self.acquisitiond.call_get_snapshot())
@@ -257,7 +263,8 @@ class ConsoleUiBridge:
                 if job is None or job.get("state") in {"failed", "cancelled"}:
                     return
                 if job.get("state") == "completed":
-                    await self.consoled.call_refresh_stages(["steam"])
+                    stages = ["steam"] if provider == "steam" else ["local"]
+                    await self.consoled.call_refresh_stages(stages)
                     return
                 await asyncio.sleep(1)
         except Exception:

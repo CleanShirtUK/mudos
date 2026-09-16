@@ -295,7 +295,7 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertIn('request("/install/"', QML)
         self.assertIn('call_submit_job', bridge)
         self.assertNotIn('steam://install', QML + store)
-        self.assertNotIn('romm', store.lower())
+        self.assertIn('game.provider === "romm"', store)
         self.assertIn('call_list_available_games', bridge)
         recent = ((ROOT / "ui" / "RecentHome.qml").read_text()
                   + (ROOT / "ui" / "RecentCardPresentation.qml").read_text())

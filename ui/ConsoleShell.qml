@@ -375,7 +375,8 @@ Window {
             var rows = snapshot.jobs || []
             for (var index = 0; index < rows.length; index++) {
                 var job = rows[index]
-                if (String(job.provider || "") === "steam")
+                if (String(job.provider || "") === "steam"
+                        || String(job.provider || "") === "romm")
                     jobs[String(job.content_identity || "")] = job
                 if (String(job.state || "") === "completed"
                         && !acquisitionCompletionSeen[String(job.job_id || "")]) {

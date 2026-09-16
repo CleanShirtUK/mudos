@@ -8,11 +8,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import base64
+from io import BytesIO
 import json
 import logging
 import os
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any, BinaryIO, Protocol
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote, urlencode
 from urllib.request import Request, urlopen
@@ -257,6 +258,14 @@ class UrlLibTransport:
         with urlopen(request, timeout=timeout) as response:
             return int(response.status), response.read()
 
+    def open(self, method: str, url: str, headers: dict[str, str], timeout: float) -> BinaryIO:
+        request = Request(url, headers=headers, method=method)
+        response = urlopen(request, timeout=timeout)
+        if not 200 <= int(response.status) < 300:
+            response.close()
+            raise HTTPError(url, int(response.status), "RomM download failed", response.headers, None)
+        return response
+
 
 class RommClient:
     def __init__(self, config: RommConfig, transport: RommTransport | None = None) -> None:
@@ -322,6 +331,21 @@ class RommClient:
     def download_file(self, romm_file: RommFile) -> bytes:
         path = f"/roms/{romm_file.file_id}/files/content/{quote(romm_file.name, safe='')}"
         return self._request("GET", path, "application/octet-stream")[1]
+
+    def open_file_stream(self, romm_file: RommFile) -> BinaryIO:
+        """Open a RomM content response without materialising it in memory."""
+        path = f"/roms/{romm_file.file_id}/files/content/{quote(romm_file.name, safe='')}"
+        headers = {"Accept": "application/octet-stream", "User-Agent": "Mudos/romm"}
+        if (auth := self.config.auth_header()) is not None:
+            headers["Authorization"] = auth
+        if isinstance(self.transport, UrlLibTransport):
+            try:
+                return self.transport.open("GET", self.config.api_url + path, headers, self.config.timeout)
+            except (HTTPError, URLError, OSError, TimeoutError) as error:
+                raise RommApiError(f"RomM request failed: GET {path}") from error
+        # Test/custom transports expose only the existing bounded request API.
+        # Keep this compatibility fallback; production uses UrlLibTransport.
+        return BytesIO(self._request("GET", path, "application/octet-stream")[1])
 
     def read_steam_manifest(self, romm_file: RommFile) -> SteamManifest:
         path = f"/roms/{romm_file.file_id}/files/content/{quote(romm_file.name, safe='')}"
