@@ -10,18 +10,22 @@ class MudosOskProvisioningTests(unittest.TestCase):
     def test_pinned_artifact_and_runtime_provisioning(self) -> None:
         script = (ROOT / "scripts/provision-gamepad-osk.sh").read_text()
         self.assertIn("v2.1.1", script)
-        self.assertIn("4bc9b0f4fbb73da1c67a06cdbc08ef7300a2031b2d5e2a3d70e007490db7c1cc", script)
+        self.assertIn("9b4082f2abe8a13adbbfd7c7079b227b3ad5384a9e4ae2d1a22a19169a6287a8", script)
+        self.assertIn("gamepad-osk-gamescope-overlay.patch", script)
+        self.assertIn("go build -o gamepad-osk .", script)
         self.assertIn("sdl3_ttf", script)
         self.assertIn("--version", script)
 
     def test_payload_osk_files_are_mirrored_and_manifested(self) -> None:
         names = (
             "scripts/mudos-osk-device",
+            "scripts/mudos-osk-bridge",
             "scripts/mudos-osk-service",
             "scripts/mudos-keyboard",
             "scripts/provision-gamepad-osk.sh",
             "packaging/lulu-osk@.service",
             "packaging/udev/80-lulu-osk.rules",
+            "packaging/gamepad-osk-gamescope-overlay.patch",
         )
         manifest = (ROOT / "deploy/payload/manifest.sha256").read_text()
         for name in names:
@@ -39,7 +43,20 @@ class MudosOskProvisioningTests(unittest.TestCase):
         self.assertIn("ExecStart=/opt/lulu/current/scripts/mudos-osk-service", service)
         self.assertIn("SDL_VIDEODRIVER=x11", wrapper)
         self.assertIn("WAYLAND_DISPLAY=", wrapper)
+        self.assertIn("mudos-osk-bridge", wrapper)
         self.assertNotIn("--layer-shell", wrapper)
+
+    def test_bridge_uses_existing_normalized_actions_and_private_device(self) -> None:
+        bridge = (ROOT / "scripts/mudos-osk-bridge").read_text()
+        for action in (
+            '"ui_up"', '"ui_down"', '"ui_left"', '"ui_right"',
+            '"ui_accept"', '"ui_back"', '"ui_context"', '"ui_option"',
+            '"ui_l2"', '"ui_r2"',
+        ):
+            self.assertIn(action, bridge)
+        self.assertIn('"gamepad-osk-bridge"', bridge)
+        self.assertIn('Variant("u", mode)', bridge)
+        self.assertIn("self.pad.reset()", bridge)
 
     def test_keyboard_boundary_has_explicit_operations(self) -> None:
         wrapper = (ROOT / "scripts/mudos-keyboard").read_text()

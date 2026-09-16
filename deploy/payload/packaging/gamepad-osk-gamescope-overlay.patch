@@ -1,0 +1,94 @@
+--- a/app.go
++++ b/app.go
+@@ -195,4 +195,5 @@
+ 	// Set X11 hints AFTER renderer init (layer-shell handles this on Wayland)
+ 	if !hasLayerShell() {
++		SetGamescopeOverlay(window)
+ 		SetNoFocusHints(window)
+ 		// No RestoreFocus here: SDL init does not steal X11 focus when a WM is present
+@@ -313,5 +314,6 @@
+ 				if isWayland {
+ 					attachLayerShellAsync(window, width, height, app.posTop, margin, cfg.Window.PanelAvoid)
+ 				} else {
++					SetGamescopeOverlay(window)
+ 					SDL3ShowWindow(window)
+ 				}
+@@ -347,5 +349,6 @@
+ 				if isWayland {
+ 					destroyLayerSurface()
+ 				} else {
++					ClearGamescopeOverlay(window)
+ 					SDL3HideWindow(window)
+ 				}
+--- a/x11hints.go
++++ b/x11hints.go
+@@ -390,5 +390,25 @@
+     XFlush(dpy);
+     XCloseDisplay(dpy);
+ }
++
++void set_gamescope_overlay(unsigned long window_id) {
++    Display *dpy = XOpenDisplay(NULL);
++    if (!dpy) return;
++    Atom overlay = XInternAtom(dpy, "STEAM_OVERLAY", False);
++    unsigned long value = 1;
++    XChangeProperty(dpy, (Window)window_id, overlay, XA_CARDINAL, 32,
++                    PropModeReplace, (unsigned char *)&value, 1);
++    XFlush(dpy);
++    XCloseDisplay(dpy);
++}
++
++void clear_gamescope_overlay(unsigned long window_id) {
++    Display *dpy = XOpenDisplay(NULL);
++    if (!dpy) return;
++    Atom overlay = XInternAtom(dpy, "STEAM_OVERLAY", False);
++    XDeleteProperty(dpy, (Window)window_id, overlay);
++    XFlush(dpy);
++    XCloseDisplay(dpy);
++}
+ */
+ import "C"
+@@ -522,3 +533,43 @@
+ 	}
+ 	C.set_no_focus_hints(C.ulong(xwin))
+ }
++
++// SetGamescopeOverlay marks the X11 window before it is shown. Gamescope
++// consumes STEAM_OVERLAY during Xwayland map handling and composites the
++// window above the focused application without making it focusable.
++func SetGamescopeOverlay(window *Window) {
++	if !hasX11 {
++		return
++	}
++	props := SDL3GetWindowProperties(window)
++	if props == 0 {
++		log.Printf("Warning: cannot get window properties")
++		return
++	}
++	xwin := SDL3GetNumberProperty(props, "SDL.window.x11.window")
++	if xwin == 0 {
++		log.Printf("Warning: no X11 window ID")
++		return
++	}
++	C.set_gamescope_overlay(C.ulong(xwin))
++}
++
++// ClearGamescopeOverlay must run while the X11 window is still mapped. Gamescope
++// then observes the property change and removes it from notification composition
++// before the normal SDL hide operation.
++func ClearGamescopeOverlay(window *Window) {
++	if !hasX11 {
++		return
++	}
++	props := SDL3GetWindowProperties(window)
++	if props == 0 {
++		log.Printf("Warning: cannot get window properties")
++		return
++	}
++	xwin := SDL3GetNumberProperty(props, "SDL.window.x11.window")
++	if xwin == 0 {
++		log.Printf("Warning: no X11 window ID")
++		return
++	}
++	C.clear_gamescope_overlay(C.ulong(xwin))
++}

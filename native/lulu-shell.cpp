@@ -327,6 +327,10 @@ public:
         connect(&dbusDiscoveryTimer_, &QTimer::timeout,
                 this, &ControllerBridge::refreshDbusSubscriptions);
         dbusDiscoveryTimer_.start();
+        keyboardOwnershipTimer_.setInterval(100);
+        connect(&keyboardOwnershipTimer_, &QTimer::timeout,
+                this, &ControllerBridge::refreshKeyboardOwnership);
+        keyboardOwnershipTimer_.start();
         if (initialized)
             scanGamepads();
         timer_.setInterval(5);
@@ -461,6 +465,22 @@ private:
 
     void handleInputEvent(const QString &compositePath, const QString &event, double value)
     {
+        // OSK mode owns the intercepted D-Bus stream. The bridge consumes it
+        // and feeds the private gamepad-osk device; Guide must not also act.
+        if (oskActive_)
+            return;
+        if (event == QStringLiteral("ui_context") && pendingGuide_
+            && compositePath == guideOwnerComposite_) {
+            if (value == 1.0) {
+                if (!guideChordConsumed_) {
+                    guideChordConsumed_ = true;
+                    showKeyboard();
+                }
+                return;
+            }
+            if (value == 0.0)
+                return;
+        }
         if (event == QStringLiteral("ui_guide")) {
             if (value == 1.0) {
                 if (guideProcess_ && compositePath == guideOwnerComposite_) {
@@ -546,7 +566,19 @@ private:
             qWarning() << "Guide chord OSK show failed" << reply.errorMessage();
             return false;
         }
+        oskActive_ = true;
         return true;
+    }
+
+    void refreshKeyboardOwnership()
+    {
+        QDBusInterface consoled(QStringLiteral("org.lulu.Consoled"),
+                                QStringLiteral("/org/lulu/Console"),
+                                QStringLiteral("org.lulu.Console"),
+                                QDBusConnection::sessionBus());
+        const auto reply = consoled.call(QStringLiteral("KeyboardVisible"));
+        if (reply.type() == QDBusMessage::ReplyMessage && !reply.arguments().isEmpty())
+            oskActive_ = reply.arguments().constFirst().toBool();
     }
 
     void refreshDbusSubscriptions()
@@ -660,11 +692,6 @@ private:
                 insert("controllerIndex", -1);
                 insert("controllerIdentity", QString());
             } else if (event.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN) {
-                if (pendingGuide_ && event.gbutton.button == SDL_GAMEPAD_BUTTON_WEST) {
-                    guideChordConsumed_ = true;
-                    showKeyboard();
-                    continue;
-                }
                 const bool allowed = dispatchAllowed();
                 if (!allowed)
                     continue;
@@ -847,10 +874,12 @@ private:
     uint32_t targetPid_ = 0;
     QProcess *guideProcess_ = nullptr;
     QTimer dbusDiscoveryTimer_;
+    QTimer keyboardOwnershipTimer_;
     QHash<QString, DbusInputRelay *> dbusRelays_;
     QString guideOwnerComposite_;
     bool pendingGuide_ = false;
     bool guideChordConsumed_ = false;
+    bool oskActive_ = false;
     SDL_Gamepad *gamepad_ = nullptr;
 };
 

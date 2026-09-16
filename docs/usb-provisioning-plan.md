@@ -154,10 +154,11 @@ The ordered phases are:
     operator must authenticate SteamCMD separately when Steam acquisition is
     enabled.
 13. **Mudos OSK runtime**: run `scripts/provision-gamepad-osk.sh` as root. It
-    installs the pinned `gamepad-osk` v2.1.1 release after SHA-256 verification,
-    installs `sdl3_ttf`, installs the narrow uaccess rule, and verifies the
-    binary as the `lulu` user. The session service always uses the X11 SDL
-    backend; native Wayland/layer-shell mode is unsupported on Mudos.
+     downloads and verifies the pinned `gamepad-osk` v2.1.1 source, applies the
+     Gamescope X11 overlay patch, builds it, installs the required SDL/Go
+     packages, installs the narrow uaccess rule, and verifies the binary as the
+     `lulu` user. The session service always uses the X11 SDL backend; native
+     Wayland/layer-shell mode is unsupported on Mudos.
 14. **ROM/BIOS directories**: create and chown the directories only. If they
     already contain files, leave them untouched. Print the required locations
     and explicitly report that content and BIOS licensing are the operator's

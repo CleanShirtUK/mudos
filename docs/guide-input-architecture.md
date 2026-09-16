@@ -27,3 +27,25 @@ separate SDL pending-Guide path and is not reconstructed from D-Bus edges.
 This is deliberately a Mudos-side compatibility policy.  Maintaining a
 patched or forked InputPlumber is out of scope; the upstream defect is the
 independent per-edge asynchronous emission architecture.
+
+## OSK lifecycle known issue
+
+The controller-first OSK path is implemented and validated in the dev runtime:
+
+```text
+Guide+X → OSK visible → bridge-owned controller navigation
+B       → OSK hidden → normal Mudos controller ownership
+```
+
+Physical testing also shows an intermittent edge-loss issue on the
+InputPlumber D-Bus interception path.  Guide+X activation succeeds on roughly
+half of attempts, and B dismissal has similar intermittent misses.  Repeating
+X while Guide remains held does not recover a missed attempt; releasing Guide
+and starting a new chord does.  When either edge sequence succeeds, OSK input,
+the dedicated virtual controller, Gamescope composition, dismissal, and return
+to Mudos ownership all work correctly.
+
+This is recorded as a known upstream/interception-path issue, not an OSK
+architecture failure.  It is intentionally out of scope for this development
+pass.  Do not redesign the bridge, mappings, Guide handling, InputPlumber
+modes, or Gamescope lifecycle workaround based on these intermittent misses.

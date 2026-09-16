@@ -2,3 +2,6 @@
 # adding the appliance account to the broad input group.
 KERNEL=="event*", SUBSYSTEM=="input", ENV{ID_INPUT_JOYSTICK}=="1", TAG+="uaccess"
 KERNEL=="uinput", SUBSYSTEM=="misc", TAG+="uaccess", OPTIONS+="static_node=uinput"
+# The private OSK bridge is consumed directly by gamepad-osk. Do not let
+# InputPlumber rediscover it as another physical/gamepad source.
+KERNEL=="event*", SUBSYSTEM=="input", ATTRS{name}=="gamepad-osk-bridge", ENV{ID_INPUT_JOYSTICK}="0", ENV{ID_INPUT_GAMEPAD}="0", TAG+="uaccess"

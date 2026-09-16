@@ -1,0 +1,294 @@
+#!/usr/bin/env python3
+"""Route InputPlumber OSK-mode actions to a private uinput gamepad."""
+
+from __future__ import annotations
+
+import asyncio
+import fcntl
+import glob
+import os
+from pathlib import Path
+import struct
+import subprocess
+import sys
+import time
+
+from dbus_next import BusType, Message, Variant
+from dbus_next.aio import MessageBus
+
+INPUT_SERVICE = "org.shadowblip.InputPlumber"
+COMPOSITE_PATH = "/org/shadowblip/InputPlumber/CompositeDevice0"
+DBUS_PATH = "/org/shadowblip/InputPlumber/devices/target/dbus0"
+COMPOSITE_INTERFACE = "org.shadowblip.Input.CompositeDevice"
+PROPERTIES_INTERFACE = "org.freedesktop.DBus.Properties"
+DBUS_INTERFACE = "org.shadowblip.Input.DBusDevice"
+
+EV_SYN = 0
+EV_KEY = 1
+EV_ABS = 3
+BTN_SOUTH = 304
+BTN_EAST = 305
+BTN_NORTH = 307
+BTN_WEST = 308
+BTN_TL2 = 312
+BTN_TR2 = 313
+ABS_HAT0X = 0x10
+ABS_HAT0Y = 0x11
+ABS_Z = 2
+ABS_RZ = 5
+
+UI_SET_EVBIT = 0x40045564
+UI_SET_KEYBIT = 0x40045565
+UI_SET_ABSBIT = 0x40045567
+UI_DEV_CREATE = 0x5501
+UI_DEV_DESTROY = 0x5502
+EVENT_STRUCT = struct.Struct("llHHi")
+UINPUT_USER_DEV = struct.Struct("80sHHHHI" + ("i" * 64 * 4))
+
+
+def emit(fd: int, event_type: int, code: int, value: int) -> None:
+    now = time.time()
+    sec = int(now)
+    usec = int((now - sec) * 1_000_000)
+    os.write(fd, EVENT_STRUCT.pack(sec, usec, event_type, code, value))
+
+
+class VirtualGamepad:
+    """Minimal Xbox-compatible uinput device used only by gamepad-osk."""
+
+    def __init__(self) -> None:
+        self.fd = os.open("/dev/uinput", os.O_WRONLY | os.O_NONBLOCK)
+        self.closed = False
+        fcntl.ioctl(self.fd, UI_SET_EVBIT, EV_KEY)
+        fcntl.ioctl(self.fd, UI_SET_EVBIT, EV_ABS)
+        for code in (BTN_SOUTH, BTN_EAST, BTN_NORTH, BTN_WEST, BTN_TL2, BTN_TR2):
+            fcntl.ioctl(self.fd, UI_SET_KEYBIT, code)
+        for code in (ABS_HAT0X, ABS_HAT0Y, ABS_Z, ABS_RZ):
+            fcntl.ioctl(self.fd, UI_SET_ABSBIT, code)
+        absmax = [0] * 64
+        absmin = [0] * 64
+        absfuzz = [0] * 64
+        absflat = [0] * 64
+        for code in (ABS_HAT0X, ABS_HAT0Y):
+            absmin[code], absmax[code] = -1, 1
+        for code in (ABS_Z, ABS_RZ):
+            absmax[code] = 255
+        payload = UINPUT_USER_DEV.pack(
+            b"gamepad-osk-bridge\0".ljust(80, b"\0"),
+            0x03, 0x1D6B, 0x0104, 1, 0,
+            *(absmax + absmin + absfuzz + absflat),
+        )
+        os.write(self.fd, payload)
+        fcntl.ioctl(self.fd, UI_DEV_CREATE)
+        self.buttons: dict[int, int] = {}
+        self.axes = {ABS_HAT0X: 0, ABS_HAT0Y: 0, ABS_Z: 0, ABS_RZ: 0}
+
+    def event_path(self) -> str:
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            for path in glob.glob("/dev/input/event*"):
+                try:
+                    name = Path(f"/sys/class/input/{Path(path).name}/device/name").read_text().strip()
+                except OSError:
+                    continue
+                if name == "gamepad-osk-bridge":
+                    return path
+            time.sleep(0.05)
+        raise RuntimeError("uinput gamepad-osk-bridge event device did not appear")
+
+    def button(self, code: int, value: int) -> None:
+        value = 1 if value else 0
+        if self.buttons.get(code, 0) == value:
+            return
+        self.buttons[code] = value
+        emit(self.fd, EV_KEY, code, value)
+        emit(self.fd, EV_SYN, 0, 0)
+
+    def axis(self, code: int, value: int) -> None:
+        value = max(0, min(255, value)) if code in (ABS_Z, ABS_RZ) else max(-1, min(1, value))
+        if self.axes[code] == value:
+            return
+        self.axes[code] = value
+        emit(self.fd, EV_ABS, code, value)
+        emit(self.fd, EV_SYN, 0, 0)
+
+    def reset(self) -> None:
+        for code in tuple(self.buttons):
+            self.button(code, 0)
+        for code in tuple(self.axes):
+            self.axis(code, 0)
+
+    def close(self) -> None:
+        if self.closed:
+            return
+        self.closed = True
+        try:
+            self.reset()
+            fcntl.ioctl(self.fd, UI_DEV_DESTROY)
+        finally:
+            os.close(self.fd)
+
+
+def visible() -> bool:
+    try:
+        ids = subprocess.run(
+            ["xdotool", "search", "--name", "^gamepad-osk$"],
+            check=False, capture_output=True, text=True, timeout=1,
+        ).stdout.split()
+        for window in ids:
+            state = subprocess.run(
+                ["xprop", "-id", window, "WM_STATE"],
+                check=False, capture_output=True, text=True, timeout=1,
+            ).stdout
+            if "Normal" in state:
+                return True
+    except (OSError, subprocess.SubprocessError):
+        pass
+    return False
+
+
+async def set_intercept_mode(bus: MessageBus, mode: int) -> None:
+    reply = await bus.call(Message(
+        destination=INPUT_SERVICE, path=COMPOSITE_PATH,
+        interface=PROPERTIES_INTERFACE, member="Set", signature="ssv",
+        body=[COMPOSITE_INTERFACE, "InterceptMode", Variant("u", mode)],
+    ))
+    if reply.message_type.name == "ERROR":
+        raise RuntimeError(reply.error_name or "failed to restore InputPlumber mode")
+
+
+class Bridge:
+    def __init__(self, binary: str, config: str) -> None:
+        self.binary = binary
+        self.config = config
+        self.pad = VirtualGamepad()
+        self.active = False
+        self.process: asyncio.subprocess.Process | None = None
+        self.dpad = {"up": False, "down": False, "left": False, "right": False}
+        self.mode_restored = False
+        self.source_present = True
+        self.awaiting_show_until = 0.0
+
+    def dpad_event(self, direction: str, value: float) -> None:
+        self.dpad[direction] = value != 0
+        x = (-1 if self.dpad["left"] else 1 if self.dpad["right"] else 0)
+        y = (-1 if self.dpad["up"] else 1 if self.dpad["down"] else 0)
+        self.pad.axis(ABS_HAT0X, x)
+        self.pad.axis(ABS_HAT0Y, y)
+
+    def on_input(self, message: Message) -> None:
+        if not self.active or len(message.body) != 2:
+            return
+        event, raw_value = message.body
+        value = float(raw_value)
+        if event == "ui_up":
+            self.dpad_event("up", value)
+        elif event == "ui_down":
+            self.dpad_event("down", value)
+        elif event == "ui_left":
+            self.dpad_event("left", value)
+        elif event == "ui_right":
+            self.dpad_event("right", value)
+        elif event == "ui_accept":
+            self.pad.button(BTN_SOUTH, int(value != 0))
+        elif event == "ui_back":
+            self.pad.button(BTN_EAST, int(value != 0))
+        elif event == "ui_context":
+            self.pad.button(BTN_WEST, int(value != 0))
+        elif event == "ui_option":
+            self.pad.button(BTN_NORTH, int(value != 0))
+        elif event == "ui_l2":
+            self.pad.axis(ABS_Z, round(max(0.0, min(1.0, value)) * 255))
+        elif event == "ui_r2":
+            self.pad.axis(ABS_RZ, round(max(0.0, min(1.0, value)) * 255))
+
+    def on_properties(self, message: Message) -> None:
+        if message.path != COMPOSITE_PATH or len(message.body) < 2:
+            return
+        changed = message.body[1]
+        changed = changed if isinstance(changed, dict) else {}
+        source_paths = changed.get("SourceDevicePaths")
+        if source_paths is not None:
+            values = getattr(source_paths, "value", source_paths)
+            self.source_present = bool(values)
+        mode = changed.get("InterceptMode")
+        if mode is not None:
+            value = getattr(mode, "value", mode)
+            if value == 2:
+                self.mode_restored = False
+                self.awaiting_show_until = time.monotonic() + 2.0
+
+    async def run(self) -> None:
+        bus = await MessageBus(bus_type=BusType.SYSTEM).connect()
+        bus._add_match_rule(
+            "type='signal',sender='org.shadowblip.InputPlumber',"
+            f"path='{DBUS_PATH}',interface='{DBUS_INTERFACE}',member='InputEvent'"
+        )
+        bus._add_match_rule(
+            "type='signal',sender='org.shadowblip.InputPlumber',"
+            f"path='{COMPOSITE_PATH}',interface='{PROPERTIES_INTERFACE}',member='PropertiesChanged'"
+        )
+        bus.add_message_handler(self.on_input)
+        bus.add_message_handler(self.on_properties)
+        event_path = self.pad.event_path()
+        self.process = await asyncio.create_subprocess_exec(
+            self.binary, "--daemon", "--device", event_path, "--config", self.config,
+        )
+        was_visible = False
+        try:
+            while self.process.returncode is None:
+                if not self.source_present:
+                    self.active = False
+                    self.pad.reset()
+                    await set_intercept_mode(bus, 1)
+                    self.process.terminate()
+                    break
+                is_visible = visible()
+                if is_visible and not was_visible:
+                    self.active = True
+                    self.mode_restored = False
+                elif not is_visible and was_visible:
+                    self.active = False
+                    self.pad.reset()
+                    await set_intercept_mode(bus, 1)
+                    self.mode_restored = True
+                elif (not is_visible and not self.mode_restored
+                      and time.monotonic() >= self.awaiting_show_until):
+                    await set_intercept_mode(bus, 1)
+                    self.mode_restored = True
+                was_visible = is_visible
+                await asyncio.sleep(0.1)
+                if self.process.returncode is not None:
+                    break
+        finally:
+            self.active = False
+            self.dpad = {key: False for key in self.dpad}
+            self.pad.reset()
+            try:
+                await set_intercept_mode(bus, 1)
+            except Exception:
+                pass
+            if self.process and self.process.returncode is None:
+                self.process.terminate()
+                try:
+                    await asyncio.wait_for(self.process.wait(), 2)
+                except asyncio.TimeoutError:
+                    self.process.kill()
+            bus.disconnect()
+            self.pad.close()
+
+
+async def main() -> int:
+    if len(sys.argv) != 3:
+        print(f"usage: {sys.argv[0]} GAMEPAD_OSK CONFIG", file=sys.stderr)
+        return 2
+    try:
+        await Bridge(sys.argv[1], sys.argv[2]).run()
+    except (OSError, RuntimeError, asyncio.CancelledError) as error:
+        print(f"Mudos OSK bridge failed: {error}", file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(asyncio.run(main()))
