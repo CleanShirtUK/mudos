@@ -1,0 +1,44 @@
+#!/bin/sh
+set -eu
+
+binary=${LULU_GAMEPAD_OSK:-/var/lib/lulu/gamepad-osk/gamepad-osk}
+runtime=${XDG_RUNTIME_DIR:-/run/user/958}
+export SDL_VIDEODRIVER=x11 DISPLAY=${DISPLAY:-:0} WAYLAND_DISPLAY= XDG_RUNTIME_DIR="$runtime"
+exec 9>"$runtime/mudos-keyboard.lock"
+flock 9
+
+visible() {
+    for window in $(xdotool search --name '^gamepad-osk$' 2>/dev/null || true); do
+        xprop -id "$window" WM_STATE 2>/dev/null | grep -q 'Normal' && return 0
+    done
+    return 1
+}
+socket="$runtime/gamepad-osk.sock"
+
+case "${1:-status}" in
+    show|hide)
+        [ -S "$socket" ] || { echo "Mudos OSK daemon is not running" >&2; exit 1; }
+        current=hidden
+        visible && current=visible || true
+        need_toggle=false
+        if [ "$1" = show ]; then
+            [ "$current" = hidden ] && need_toggle=true || true
+        else
+            [ "$current" = visible ] && need_toggle=true || true
+        fi
+        if [ "$need_toggle" = true ]; then
+            "$binary" --toggle
+            target=$([ "$1" = show ] && echo visible || echo hidden)
+            for _ in 1 2 3 4 5 6 7 8 9 10; do
+                visible && current=visible || current=hidden
+                [ "$current" = "$target" ] && break
+                sleep 0.05
+            done
+        fi
+        visible && printf '%s\n' visible || printf '%s\n' hidden
+        ;;
+    status)
+        visible && printf '%s\n' visible || printf '%s\n' hidden
+        ;;
+    *) echo "usage: $0 show|hide|status" >&2; exit 2 ;;
+esac

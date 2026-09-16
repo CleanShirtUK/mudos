@@ -34,13 +34,39 @@ class SteamCmdExecutorTests(unittest.TestCase):
     def test_platform_policy_and_deterministic_commands(self) -> None:
         windows = SteamCmdExecutor(account="user", platforms={"263980": "windows"}, install_dir=Path("/games/Steam"))
         self.assertEqual(windows.command("263980"), [
-            "steamcmd", "+@NoPromptForPassword", "1", " +@sSteamCmdForcePlatformType".strip(), "windows",
+            "/var/lib/lulu/steamcmd/steamcmd.sh", "+@NoPromptForPassword", "1", " +@sSteamCmdForcePlatformType".strip(), "windows",
             "+force_install_dir", "/games/Steam", "+login", "user", "+app_update", "263980", "validate", "+quit",
         ])
         linux = SteamCmdExecutor(account="user", platforms={"42": "linux"})
         self.assertNotIn("+@sSteamCmdForcePlatformType", linux.command("42"))
         with self.assertRaisesRegex(Exception, "unknown"):
             linux.command("263980")
+
+    def test_executable_resolution_override_and_canonical(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            executable = Path(directory) / "steamcmd.sh"
+            executable.write_text("#!/bin/sh\nexit 0\n")
+            executable.chmod(0o755)
+            override = SteamCmdExecutor(executable=str(executable), account="user",
+                                         platforms={"42": "linux"})
+            self.assertEqual(override._require_executable(), str(executable))
+            with patch.dict("os.environ", {"LULU_STEAMCMD": str(executable)}):
+                self.assertEqual(SteamCmdExecutor(account="user", platforms={"42": "linux"}).executable,
+                                 str(executable))
+
+    def test_missing_executable_is_normalized(self) -> None:
+        executor = SteamCmdExecutor(executable="/does/not/exist/steamcmd", account="user",
+                                    platforms={"42": "linux"})
+        with self.assertRaisesRegex(Exception, "SteamCMD is not provisioned") as error:
+            executor._require_executable()
+        self.assertEqual(error.exception.code, "steamcmd-unavailable")
+
+    def test_provisioner_is_rerunnable_and_checksum_aware(self) -> None:
+        script = Path(__file__).parents[1] / "scripts/provision-steamcmd.sh"
+        source = script.read_text()
+        self.assertIn("if [ -x \"$root/steamcmd.sh\" ]", source)
+        self.assertIn("LULU_STEAMCMD_SHA256", source)
+        self.assertIn("mv \"$temporary\" \"$root\"", source)
 
     def test_platform_metadata_is_explicit(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -87,7 +113,7 @@ class SteamCmdExecutorTests(unittest.TestCase):
             process.stdout.feed_eof()
             process.stderr.feed_eof()
             manager = JobManager()
-            executor = SteamCmdExecutor(account="user", platforms={"263980": "windows"}, install_dir=Path(tempfile.gettempdir()) / "lulu-steam-test")
+            executor = SteamCmdExecutor(executable="/bin/true", account="user", platforms={"263980": "windows"}, install_dir=Path(tempfile.gettempdir()) / "lulu-steam-test")
             manager.register_executor("steam", executor)
             job = manager.submit("steam", "steam:263980", "Out There Somewhere")
             with patch("asyncio.create_subprocess_exec", new=AsyncMock(return_value=process)):

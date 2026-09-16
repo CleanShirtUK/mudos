@@ -147,11 +147,23 @@ The ordered phases are:
     let Mudos regenerate Dolphin, PCSX2, and per-launch RetroArch configuration
     from live InputPlumber discovery. Never use saved `gamepadN`, `dbusN`, or
     SDL indices as physical identity.
-12. **ROM/BIOS directories**: create and chown the directories only. If they
+12. **SteamCMD runtime**: run `scripts/provision-steamcmd.sh` as root. It
+    installs the official Linux SteamCMD runtime at
+    `/var/lib/lulu/steamcmd/steamcmd.sh`, verifies `+quit` startup, and is safe
+    to rerun. Do not copy Steam client or SteamCMD authentication state; the
+    operator must authenticate SteamCMD separately when Steam acquisition is
+    enabled.
+13. **Mudos OSK runtime**: run `scripts/provision-gamepad-osk.sh` as root. It
+    installs the pinned `gamepad-osk` v2.1.1 release after SHA-256 verification,
+    installs `sdl3_ttf`, installs the narrow uaccess rule, and verifies the
+    binary as the `lulu` user. The session service always uses the X11 SDL
+    backend; native Wayland/layer-shell mode is unsupported on Mudos.
+14. **ROM/BIOS directories**: create and chown the directories only. If they
     already contain files, leave them untouched. Print the required locations
     and explicitly report that content and BIOS licensing are the operator's
     responsibility.
-13. **Enable services**: enable `seatd.service` and `inputplumber.service`.
+15. **Enable services**: enable `seatd.service`, `inputplumber.service`, and
+    `lulu-osk@2.service`.
     Install the `lulu.target` wants-link under `multi-user.target`, because the
     current checkpoint target has no `[Install]` section and therefore cannot
     safely be treated as a normally enableable unit. Enable the target's
@@ -159,7 +171,7 @@ The ordered phases are:
     only services whose unit, package, or relevant configuration changed. A
     first install may start the target; a rerun must not launch a second
     session.
-14. **Verification**: run the checks below and exit nonzero on a failed
+16. **Verification**: run the checks below and exit nonzero on a failed
     required check. Write a concise summary to the terminal and the log.
 
 ## Reproduced Host State
@@ -181,6 +193,8 @@ The ordered phases are:
 | Emulator profiles | Mudos runtime ownership | generated below `/var/lib/lulu` | regenerate only through Mudos |
 | ROMs and BIOS | operator | `/var/lib/lulu/roms`, `/var/lib/lulu/bios` | create/chown directories; never delete/copy |
 | Steam data | operator | `/var/lib/lulu/.local/share/Steam` | preserve; do not attempt to provision content |
+| SteamCMD runtime | Mudos provisioner | `/var/lib/lulu/steamcmd` | verify and preserve a valid runtime; never migrate auth |
+| Mudos OSK runtime | Mudos provisioner | `/var/lib/lulu/gamepad-osk` | verify pinned v2.1.1; run only as `lulu` |
 | SteamGridDB secret | operator | `/etc/lulu/steamgriddb.env` | create only from supplied secret; never log or overwrite |
 
 The current checkpoint's generated catalogue, artwork, emulator INIs, saves,

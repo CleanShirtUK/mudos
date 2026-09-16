@@ -12,6 +12,7 @@
 #include <QJsonObject>
 #include <QVariant>
 #include <QStringList>
+#include <QFile>
 
 #include <xcb/xcb.h>
 #include <xcb/xtest.h>
@@ -24,6 +25,7 @@
 #include <dirent.h>
 #include <fcntl.h>
 #include <unistd.h>
+#include <QHash>
 
 namespace {
 
@@ -78,39 +80,65 @@ private:
 
     void handleCommand(const QString &command)
     {
-        if (command == QStringLiteral("ui_up")) {
+        const QStringList parts = command.split(QChar(' '), Qt::SkipEmptyParts);
+        const QString action = parts.value(0);
+        QString edge = QStringLiteral("down");
+        for (const QString &part : parts) {
+            if (part.startsWith(QStringLiteral("edge=")))
+                edge = part.mid(5);
+        }
+        if (action == QStringLiteral("reset_edges")) {
+            releasePressed_.clear();
+            return;
+        }
+        const bool guideAction = action == QStringLiteral("ui_up")
+            || action == QStringLiteral("ui_down")
+            || action == QStringLiteral("ui_accept")
+            || action == QStringLiteral("ui_back")
+            || action == QStringLiteral("ui_guide");
+        if (guideAction) {
+            const bool pressed = edge != QStringLiteral("up");
+            releasePressed_.insert(action, pressed);
+            if (pressed)
+                return;
+        }
+        if (action == QStringLiteral("ui_up")) {
             playAudio(QStringLiteral("navigate"));
             viewModel_->insert("selection", 0);
         }
-        else if (command == QStringLiteral("ui_down")) {
+        else if (action == QStringLiteral("ui_down")) {
             playAudio(QStringLiteral("navigate"));
             const int actionCount = actionCountForModel();
             viewModel_->insert("selection", qMin(viewModel_->value("selection").toInt() + 1, actionCount - 1));
         }
-        else if (command == QStringLiteral("ui_accept"))
+        else if (action == QStringLiteral("ui_accept"))
         {
             playAudio(QStringLiteral("confirm"));
+            const int selection = viewModel_->value("selection").toInt();
             if (viewModel_->value("confirmationPending").toBool()) {
-                if (viewModel_->value("confirmationAction").toString() == QStringLiteral("Reboot System"))
+                if (selection == 0) {
+                    viewModel_->insert("confirmationPending", false);
+                    viewModel_->insert("selection", 0);
+                } else if (viewModel_->value("confirmationAction").toString() == QStringLiteral("Reboot System"))
                     powerAction(QStringLiteral("Reboot"));
                 else if (viewModel_->value("confirmationAction").toString() == QStringLiteral("Shut Down System"))
                     powerAction(QStringLiteral("PowerOff"));
                 return;
             }
-            const int selection = viewModel_->value("selection").toInt();
-            if (viewModel_->value("shellContext").toBool() && selection == 0)
+            const int actionSelection = selection;
+            if (viewModel_->value("shellContext").toBool() && actionSelection == 0)
                 resetMudos();
-            else if (viewModel_->value("shellContext").toBool() && (selection == 1 || selection == 2)) {
-                viewModel_->insert("confirmationAction", selection == 1
+            else if (viewModel_->value("shellContext").toBool() && (actionSelection == 1 || actionSelection == 2)) {
+                viewModel_->insert("confirmationAction", actionSelection == 1
                                    ? QStringLiteral("Reboot System") : QStringLiteral("Shut Down System"));
                 viewModel_->insert("confirmationPending", true);
                 viewModel_->insert("selection", 1);
                 return;
-            } else if (selection == 0)
+            } else if (actionSelection == 0)
                 resetMudos();
-            else if (viewModel_->value("providerMenuAvailable").toBool() && selection == 1)
+            else if (viewModel_->value("providerMenuAvailable").toBool() && actionSelection == 1)
                 openProviderMenu();
-            else if (selection == compatibilitySelection())
+            else if (actionSelection == compatibilitySelection())
                 switchCompatibilityMode();
             else
                 if (edenProvider_)
@@ -119,7 +147,7 @@ private:
                     sendDelete();
             QCoreApplication::quit();
         }
-        else if (command == QStringLiteral("ui_back")) {
+        else if (action == QStringLiteral("ui_back")) {
             playAudio(QStringLiteral("back"));
             if (viewModel_->value("confirmationPending").toBool()) {
                 viewModel_->insert("confirmationPending", false);
@@ -127,7 +155,7 @@ private:
             } else {
                 QCoreApplication::quit();
             }
-        } else if (command == QStringLiteral("ui_guide")) {
+        } else if (action == QStringLiteral("ui_guide")) {
             playAudio(QStringLiteral("back"));
             QCoreApplication::quit();
         }
@@ -303,6 +331,7 @@ private:
     QQmlPropertyMap *viewModel_;
     QSocketNotifier *inputNotifier_ = nullptr;
     QByteArray inputBuffer_;
+    QHash<QString, bool> releasePressed_;
 };
 
 } // namespace

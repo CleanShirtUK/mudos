@@ -14,7 +14,6 @@ Window {
     property bool shellContext: guideModel.shellContext
     property bool confirmationPending: guideModel.confirmationPending
     property string confirmationAction: guideModel.confirmationAction
-    property int delegateCreationCount: 0
 
     function resolvedGuideActions() {
         if (confirmationPending)
@@ -82,20 +81,10 @@ Window {
 
         Column {
             x: 24
-            y: 76
+            y: 62
             spacing: 12
             Repeater {
                 model: root.resolvedGuideActions()
-                onCountChanged: console.log("MUDOS_GUIDE_VISIBLE_MODEL",
-                                            "count", count,
-                                            "delegateCreationCount", root.delegateCreationCount)
-                onItemAdded: function(index, item) {
-                    root.delegateCreationCount += 1
-                    console.log("MUDOS_GUIDE_DELEGATE_CREATED",
-                                "index", index,
-                                "label", item ? item.children[0].text : "unknown",
-                                "delegateCreationCount", root.delegateCreationCount)
-                }
                 delegate: Rectangle {
                     width: 472
                     height: 48
@@ -108,9 +97,6 @@ Window {
                         font.pixelSize: 18
                         verticalAlignment: Text.AlignVCenter
                     }
-                    Component.onCompleted: console.log("MUDOS_GUIDE_DELEGATE_COMPONENT",
-                                                       "index", index,
-                                                       "label", modelData)
                 }
             }
         }

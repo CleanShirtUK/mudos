@@ -10,6 +10,7 @@ session_dropin="$dropin_root/lulu-session@.service.d/dev-runtime.conf"
 consoled_dropin="$dropin_root/lulu-consoled.service.d/dev-runtime.conf"
 acquisition_dropin="$dropin_root/lulu-acquisition.service.d/dev-runtime.conf"
 acquisition_unit="$dropin_root/lulu-acquisition.service"
+osk_unit="$dropin_root/lulu-osk@.service"
 
 if [ "$(hostname)" != lulu ] || [ "$(CDPATH= cd -- "$repo_root" && pwd)" != "$repo_root" ]; then
     echo "dev runtime must be refreshed on canonical Lulu from $repo_root" >&2
@@ -37,6 +38,11 @@ refresh() {
     LULU_INSTALL_ROOT="$staging" "$staging/scripts/build-lulu-shell.sh" "$staging/bin/lulu-shell"
     chmod +x "$staging/bin"/* "$staging/scripts"/*
     install -m 0644 "$staging/packaging/lulu-acquisition.service" "$acquisition_unit"
+    sed "s#/opt/lulu/current#/opt/lulu/dev-current#g" \
+        "$staging/packaging/lulu-osk@.service" > "$osk_unit"
+    install -m 0644 "$staging/packaging/udev/80-lulu-osk.rules" \
+        /etc/udev/rules.d/80-lulu-osk.rules
+    udevadm control --reload-rules
     dirty=false
     [ -n "$status" ] && dirty=true
     cat > "$staging/NON_PROMOTABLE" <<EOF
@@ -57,6 +63,8 @@ Environment=LULU_INSTALL_ROOT=$runtime
 Environment=PYTHONPATH=$runtime/lib
 Environment=LULU_SHELL_EXECUTABLE=$runtime/bin/lulu-shell
 Environment=LULU_UI_FILE=$runtime/ui/ConsoleShell.qml
+Environment=LULU_GUIDE_EXECUTABLE=$runtime/bin/mudos-guide
+Environment=LULU_GUIDE_UI_FILE=$runtime/ui/MudosGuide.qml
 EOF
     cat > "$consoled_dropin" <<EOF
 [Service]
@@ -75,7 +83,8 @@ EOF
 }
 
 immutable() {
-    rm -f "$session_dropin" "$consoled_dropin" "$acquisition_dropin" "$acquisition_unit"
+    rm -f "$session_dropin" "$consoled_dropin" "$acquisition_dropin" "$acquisition_unit" "$osk_unit" \
+        /etc/udev/rules.d/80-lulu-osk.rules
     systemctl daemon-reload
     systemctl restart lulu-consoled.service lulu-session@2.service
     echo "restored immutable runtime: $(readlink -f /opt/lulu/current)"

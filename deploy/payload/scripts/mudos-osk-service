@@ -1,0 +1,18 @@
+#!/bin/sh
+set -eu
+
+root=${LULU_INSTALL_ROOT:-/opt/lulu/current}
+binary=${LULU_GAMEPAD_OSK:-/var/lib/lulu/gamepad-osk/gamepad-osk}
+while ! device=$("$root/scripts/mudos-osk-device" 2>/dev/null); do
+    sleep 2
+done
+config=${LULU_GAMEPAD_OSK_CONFIG:-$HOME/.config/gamepad-osk/config}
+
+[ -x "$binary" ] || { echo "Mudos OSK is not provisioned: $binary" >&2; exit 1; }
+[ -r "$device" ] || { echo "Mudos OSK controller is not readable: $device" >&2; exit 1; }
+
+export SDL_VIDEODRIVER=x11
+export DISPLAY=${DISPLAY:-:0}
+export WAYLAND_DISPLAY=
+export XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR:-/run/user/958}
+exec "$binary" --daemon --device "$device" --config "$config"

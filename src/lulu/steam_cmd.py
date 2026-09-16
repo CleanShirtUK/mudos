@@ -14,6 +14,7 @@ import json
 import os
 from pathlib import Path
 import re
+import shutil
 from typing import Callable, Mapping
 from urllib.request import Request, urlopen
 
@@ -160,7 +161,7 @@ class SteamCmdExecutor:
                  install_dir: Path | None = None, platforms: Mapping[str, str] | None = None,
                  parser: SteamCmdParser | None = None,
                  platform_resolver: SteamPlatformResolver | None = None) -> None:
-        self.executable = executable or os.environ.get("LULU_STEAMCMD", "steamcmd")
+        self.executable = executable or os.environ.get("LULU_STEAMCMD") or str(PATHS.steamcmd_executable)
         self.account = account or os.environ.get("LULU_STEAM_ACCOUNT", "")
         if not self.account:
             try:
@@ -177,6 +178,23 @@ class SteamCmdExecutor:
         self.platforms = dict(platforms or load_platforms())
         self.platform_resolver = platform_resolver or SteamPlatformResolver()
         self.parser = parser or SteamCmdParser()
+
+    def _require_executable(self) -> str:
+        """Resolve only the explicit override or the canonical Mudos path."""
+        candidate = self.executable
+        path = Path(candidate).expanduser()
+        if not path.is_absolute() and os.environ.get("LULU_STEAMCMD"):
+            resolved = shutil.which(candidate)
+            if resolved:
+                candidate, path = resolved, Path(resolved)
+        if not path.is_file() or not os.access(path, os.X_OK):
+            raise SteamCmdError(
+                "steamcmd-unavailable",
+                "SteamCMD is not provisioned or executable",
+                details={"executable": str(path)},
+                retryable=True,
+            )
+        return candidate
 
     @staticmethod
     def _app_id(identity: str) -> str:
@@ -205,6 +223,7 @@ class SteamCmdExecutor:
             if platform is not None:
                 self.platforms[app_id] = platform
         command = self.command(app_id)
+        command[0] = self._require_executable()
         self.install_dir.mkdir(parents=True, exist_ok=True)
         process = await asyncio.create_subprocess_exec(
             *command, stdin=asyncio.subprocess.DEVNULL,

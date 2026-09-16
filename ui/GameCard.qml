@@ -59,6 +59,7 @@ Rectangle {
     // Catalogue cards share the same glass-backed visual surface as navigation cards.
     // Interaction remains owned by the containing delegate.
     property bool catalogueCard: false
+    property var acquisitionJob: null
     property real focusBrightness: 1
     Behavior on selectionProgress {
         NumberAnimation {
@@ -79,8 +80,17 @@ Rectangle {
         }
     }
     readonly property bool recentFocal: homeCard && focused
-    readonly property string acquisitionState: game && game.acquisition_state
-        ? String(game.acquisition_state) : ""
+    readonly property string acquisitionState: acquisitionJob && acquisitionJob.state
+        ? String(acquisitionJob.state) : (game && game.acquisition_state
+            ? String(game.acquisition_state) : "")
+    readonly property real acquisitionProgress: acquisitionJob && acquisitionJob.progress !== null
+        && acquisitionJob.progress !== undefined ? Number(acquisitionJob.progress)
+        : (game && game.acquisition_progress !== undefined ? Number(game.acquisition_progress) : 0)
+    readonly property bool acquisitionProgressKnown: acquisitionJob
+        ? acquisitionJob.progress !== null && acquisitionJob.progress !== undefined
+        : !!(game && game.acquisition_progress !== null && game.acquisition_progress !== undefined)
+    readonly property var acquisitionError: acquisitionJob ? acquisitionJob.error
+        : (game ? game.acquisition_error : null)
     readonly property bool acquisitionVisible: game
         && (game.provider === "steam" || game.provider === "romm")
         && ["queued", "starting", "transferring", "finalizing", "paused", "cancelling", "failed"].indexOf(acquisitionState) >= 0
@@ -447,20 +457,32 @@ Rectangle {
                     visible: card.acquisitionState !== "failed"
 
                     Rectangle {
-                        width: card.game && card.game.acquisition_progress !== null
-                            ? parent.width * Math.max(0, Math.min(1, Number(card.game.acquisition_progress)))
-                            : (card.acquisitionState === "transferring" ? parent.width * 0.18 : 0)
+                        width: card.acquisitionProgressKnown
+                            ? parent.width * Math.max(0, Math.min(1, card.acquisitionProgress))
+                            : parent.width * 0.24
+                        x: card.acquisitionProgressKnown ? 0 : indeterminateOffset
                         height: parent.height
                         radius: parent.radius
                         color: card.luluPalette.focusIndicator
+                        visible: card.acquisitionState !== "queued"
+                        property real indeterminateOffset: 0
+                        NumberAnimation on indeterminateOffset {
+                            running: !card.acquisitionProgressKnown
+                                && (card.acquisitionState === "starting"
+                                    || card.acquisitionState === "finalizing")
+                            from: -parent.width * 0.24
+                            to: parent.width
+                            duration: 900
+                            loops: Animation.Infinite
+                        }
                     }
                 }
 
                 Text {
                     width: parent.width
                     visible: card.acquisitionState === "transferring"
-                        && card.game && card.game.acquisition_progress !== null
-                    text: Math.round(Number(card.game.acquisition_progress) * 100) + "%"
+                        && card.acquisitionProgressKnown
+                    text: Math.round(card.acquisitionProgress * 100) + "%"
                     color: card.luluPalette.secondaryText
                     horizontalAlignment: Text.AlignHCenter
                     font.family: card.typography.interfaceFamily
@@ -470,9 +492,9 @@ Rectangle {
                 Text {
                     width: parent.width
                     visible: card.acquisitionState === "failed"
-                        && card.game && card.game.acquisition_error
-                    text: card.game && card.game.acquisition_error
-                        ? String(card.game.acquisition_error.message || "Acquisition failed") : ""
+                        && card.acquisitionError
+                    text: card.acquisitionError
+                        ? String(card.acquisitionError.message || "Acquisition failed") : ""
                     color: card.luluPalette.mutedText
                     elide: Text.ElideRight
                     horizontalAlignment: Text.AlignHCenter

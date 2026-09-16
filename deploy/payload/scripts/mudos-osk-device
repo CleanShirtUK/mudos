@@ -1,0 +1,31 @@
+#!/bin/sh
+set -eu
+
+# Resolve an InputPlumber joystick output without persisting an event number.
+for event in /dev/input/event*; do
+    [ -e "$event" ] || continue
+    name_file="/sys/class/input/$(basename "$event")/device/name"
+    [ -r "$name_file" ] || continue
+    name=$(cat "$name_file")
+    case "$name" in
+        *gamepad-osk*|*keyboard*|*Keyboard*) continue ;;
+    esac
+    case "$name" in
+        *Xbox*|*xbox*|*InputPlumber*|*inputplumber*|*Composite*|*composite*)
+            [ -r "$event" ] && { printf '%s\n' "$event"; exit 0; }
+            ;;
+    esac
+done
+
+# InputPlumber may expose a generic virtual joystick name.
+for event in /dev/input/event*; do
+    [ -e "$event" ] || continue
+    properties=$(udevadm info -q property -n "$event" 2>/dev/null || true)
+    case "$properties" in
+        *ID_INPUT_JOYSTICK=1*)
+            [ -r "$event" ] && { printf '%s\n' "$event"; exit 0; }
+            ;;
+    esac
+done
+printf '%s\n' 'no readable InputPlumber controller device found' >&2
+exit 1

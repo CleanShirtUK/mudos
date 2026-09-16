@@ -52,6 +52,15 @@ class MudosPaths:
         return self.home / "Games/BIOS"
 
     @property
+    def steamcmd_root(self) -> Path:
+        """Mudos-owned SteamCMD runtime, separate from user Steam state."""
+        return Path(os.environ.get("LULU_STEAMCMD_ROOT", "/var/lib/lulu/steamcmd"))
+
+    @property
+    def steamcmd_executable(self) -> Path:
+        return self.steamcmd_root / "steamcmd.sh"
+
+    @property
     def recordings(self) -> Path:
         return self.home / "Recordings"
 

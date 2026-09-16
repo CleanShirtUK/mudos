@@ -1,0 +1,27 @@
+[Unit]
+Description=Mudos controller on-screen keyboard on VT %i
+Requires=lulu-session@%i.service inputplumber.service
+After=lulu-session@%i.service inputplumber.service
+BindsTo=lulu-session@%i.service
+PartOf=lulu-session@%i.service
+
+[Service]
+Type=simple
+User=lulu
+Environment=HOME=/home/lulu
+Environment=USER=lulu
+Environment=LOGNAME=lulu
+Environment=XDG_CONFIG_HOME=/home/lulu/.config
+Environment=XDG_DATA_HOME=/home/lulu/.local/share
+Environment=XDG_CACHE_HOME=/home/lulu/.cache
+Environment=XDG_RUNTIME_DIR=/run/user/958
+Environment=DISPLAY=:0
+Environment=WAYLAND_DISPLAY=gamescope-0
+Environment=LULU_INSTALL_ROOT=/opt/lulu/current
+ExecStart=/opt/lulu/current/scripts/mudos-osk-service
+Restart=on-failure
+RestartSec=2s
+KillMode=control-group
+
+[Install]
+WantedBy=lulu.target

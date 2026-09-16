@@ -23,7 +23,20 @@ Unknown metadata fails safely. Windows adds
 `@sSteamCmdForcePlatformType windows`; Linux uses SteamCMD's native default.
 
 The executor uses the canonical `PATHS.data_home / "Steam"` library unless a
-provider configuration supplies another path. It passes only the account name
-and relies on SteamCMD's own cached authentication; it never reads or copies
-credentials. Cancellation is deliberately unsupported until separately
+provider configuration supplies another path. SteamCMD itself is resolved in
+this order: an explicit `LULU_STEAMCMD` override, then the Mudos-provisioned
+`/var/lib/lulu/steamcmd/steamcmd.sh`. It never searches developer or temporary
+directories, and an unavailable executable is normalized as
+`steamcmd-unavailable` before process creation.
+
+`scripts/provision-steamcmd.sh` downloads the official Valve Linux SteamCMD
+archive, installs it beneath `/var/lib/lulu/steamcmd` as `lulu:lulu`, and runs
+`+quit` without a login command to verify startup. Rerunning it is a no-op when
+the canonical executable is present. `LULU_STEAMCMD_SHA256` can pin the
+download when an operator has a verified Valve archive digest. The provisioner
+does not inspect, copy, or migrate the experimental SteamCMD cache.
+
+SteamCMD still requires its own authenticated session. The executor passes
+only the account name and relies on SteamCMD's cache; graphical Steam login is
+not sufficient. Cancellation is deliberately unsupported until separately
 characterized.

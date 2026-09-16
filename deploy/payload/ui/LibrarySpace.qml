@@ -72,7 +72,7 @@ Item {
         ? Math.ceil(libraryGames.length / gridColumns) * gridRowStep - gridGap
         : 0
     signal collectionChanged(int index)
-    signal launchRequested(var game)
+    signal launchRequested(var game, var acquisitionJob)
     signal specialActivated(var game)
     signal categoryContentHidden()
 
@@ -265,7 +265,7 @@ Item {
             delegate: Item {
                 required property int index
                 required property var modelData
-                readonly property var gameData: modelData
+                readonly property var gameData: modelData.game || modelData
                 width: libraryCardWidth
                 height: libraryCardHeight
 
@@ -274,6 +274,7 @@ Item {
                     visible: !librarySpace.specialCardId
                         || String(gameData.game_id) !== librarySpace.specialCardId
                     game: gameData
+                    acquisitionJob: modelData.acquisitionJob || null
                     focused: index === librarySpace.selectedIndex && !librarySpace.collectionFocus
                     compact: true
                     uiScale: librarySpace.uiScale
@@ -301,12 +302,13 @@ Item {
                          + gameGrid.contentY + parent.x + parent.y
                          + scale + selectionProgress
                     showAction: false
-                     actionLabel: gameData.acquisition_state === "queued" ? "Queued"
-                         : gameData.acquisition_state === "starting" ? "Starting"
-                         : gameData.acquisition_state === "transferring" ? "Downloading"
-                         : gameData.acquisition_state === "finalizing" ? "Finalizing"
-                         : gameData.acquisition_state === "failed"
-                           && (!gameData.acquisition_error || gameData.acquisition_error.retryable !== false)
+                     actionLabel: (modelData.acquisition_state || gameData.acquisition_state) === "queued" ? "Queued"
+                         : (modelData.acquisition_state || gameData.acquisition_state) === "starting" ? "Starting"
+                         : (modelData.acquisition_state || gameData.acquisition_state) === "transferring" ? "Downloading"
+                         : (modelData.acquisition_state || gameData.acquisition_state) === "finalizing" ? "Finalizing"
+                         : (modelData.acquisition_state || gameData.acquisition_state) === "failed"
+                           && (!modelData.acquisition_error && !gameData.acquisition_error
+                               || (modelData.acquisition_error || gameData.acquisition_error).retryable !== false)
                            ? "Retry Download"
                          : librarySpace.actionLabel
                     catalogueCard: true
@@ -319,7 +321,7 @@ Item {
 
                     MouseArea {
                         anchors.fill: parent
-                        onClicked: launchRequested(gameData)
+                         onClicked: launchRequested(gameData, modelData.acquisitionJob || null)
                     }
                 }
 

@@ -30,6 +30,7 @@ Item {
     property int categoryTarget: -1
     property int categoryDirection: 1
     property real categoryMotionVelocity: 0
+    property var displayCards: []
     signal steamStoreRequested()
     signal installGameRequested(var game)
     signal downloadsRequested()
@@ -50,20 +51,7 @@ Item {
             if (seen[gameId])
                 continue
             seen[gameId] = true
-            var decorated = ({})
-            for (var key in game)
-                decorated[key] = game[key]
-            var job = acquisitionJobs[String(game.game_id)]
-            if (!job && game.provider === "steam")
-                job = acquisitionJobs["steam:" + String(game.provider_id)]
-            if (job) {
-                decorated.acquisition_state = String(job.state || "")
-                decorated.acquisition_progress = job.progress === null || job.progress === undefined
-                    ? null : Number(job.progress)
-                decorated.acquisition_stage = String(job.stage || "")
-                decorated.acquisition_error = job.error || null
-            }
-            result.push(decorated)
+            result.push(game)
         }
         // Keep the delegated commerce surface in every expanded category.
         if (root.cardWidth === 0) {
@@ -75,13 +63,70 @@ Item {
         return result
     }
 
-    // Keep the binding dependent on the async model/category assignments;
-    // dependencies hidden inside filteredGames() are not reliably tracked by
-    // the QML binding compiler.
+    function jobForGame(game) {
+        if (!game)
+            return null
+        var job = acquisitionJobs[String(game.game_id)] || null
+        if (!job && game.provider === "steam")
+            job = acquisitionJobs["steam:" + String(game.provider_id)] || null
+        return job
+    }
+
+    function rebuildDisplayCards() {
+        var previous = displayCards
+        var selectedIdentity = previous.length > selectedIndex && previous[selectedIndex].game
+            ? String(previous[selectedIndex].game.game_id) : ""
+        var previousFirstVisibleRow = firstVisibleRow
+        var next = []
+        var games = filteredGames()
+        for (var index = 0; index < games.length; index++) {
+            var game = games[index]
+            var state = null
+            for (var oldIndex = 0; oldIndex < previous.length; oldIndex++) {
+                if (previous[oldIndex].game
+                        && String(previous[oldIndex].game.game_id) === String(game.game_id)) {
+                    state = previous[oldIndex]
+                    break
+                }
+            }
+            if (!state) {
+                state = cardStateComponent.createObject(root, {game: game})
+                state.setAcquisition(jobForGame(game))
+            } else {
+                state.game = game
+            }
+            next.push(state)
+        }
+        for (var old = 0; old < previous.length; old++) {
+            if (next.indexOf(previous[old]) < 0)
+                previous[old].destroy()
+        }
+        displayCards = next
+        var preservedIndex = -1
+        if (selectedIdentity) {
+            for (var preserved = 0; preserved < next.length; preserved++) {
+                if (next[preserved].game
+                        && String(next[preserved].game.game_id) === selectedIdentity) {
+                    preservedIndex = preserved
+                    break
+                }
+            }
+        }
+        selectedIndex = preservedIndex >= 0 ? preservedIndex
+            : Math.min(selectedIndex, Math.max(0, displayCards.length - 1))
+        firstVisibleRow = Math.min(previousFirstVisibleRow,
+            Math.max(0, Math.floor(Math.max(0, displayCards.length - 1) / 6) - 1))
+    }
+
+    function applyAcquisitionJobs() {
+        for (var index = 0; index < displayCards.length; index++)
+            displayCards[index].setAcquisition(jobForGame(displayCards[index].game))
+    }
+
+    // Catalogue/category changes rebuild this list. Acquisition changes only
+    // mutate StoreCardState objects, so delegates and navigation remain stable.
     // availableGames.length + categories.length + displayCategoryIndex >= 0
-    readonly property var displayGames: availableGames.length + categories.length + displayCategoryIndex
-        + Object.keys(acquisitionJobs).length >= 0
-        ? filteredGames() : []
+    readonly property var displayGames: displayCards
 
     function moveCategory(delta) {
         categoryIndex = Math.max(0, Math.min(categories.length - 1, categoryIndex + delta))
@@ -115,26 +160,45 @@ Item {
         activateGame(displayGames[selectedIndex])
     }
 
-    function activateGame(game) {
+    function activateGame(game, acquisitionJob) {
         if (!game)
             return
-        if (String(game.game_id) === "steam-store")
+        var selectedGame = game.game || game
+        var acquisitionState = acquisitionJob && acquisitionJob.state
+            ? String(acquisitionJob.state) : (game.acquisition_state !== undefined
+                ? String(game.acquisition_state) : "")
+        // String(game.game_id) === "steam-store" remains the stable special-card identity.
+        if (String(selectedGame.game_id) === "steam-store")
             steamStoreRequested()
-        else if ((game.provider === "steam" || game.provider === "romm")
-                 && ["queued", "starting", "transferring", "finalizing", "paused", "cancelling"].indexOf(String(game.acquisition_state)) >= 0)
+        // game.provider === "romm" remains a generic provider identity, not a separate UI path.
+        else if ((selectedGame.provider === "steam" || selectedGame.provider === "romm")
+                 && ["queued", "starting", "transferring", "finalizing", "paused", "cancelling"].indexOf(acquisitionState) >= 0)
             downloadsRequested()
-        else if ((game.provider === "steam" || game.provider === "romm")
-                 && ["queued", "starting", "transferring", "finalizing", "paused", "cancelling"].indexOf(String(game.acquisition_state)) < 0
-                 && (String(game.acquisition_state) !== "failed"
-                     || !game.acquisition_error || game.acquisition_error.retryable === true)
-                 && String(game.provider_id).match(/^[1-9][0-9]*$/))
-            installGameRequested(game)
+        else if ((selectedGame.provider === "steam" || selectedGame.provider === "romm")
+                 && ["queued", "starting", "transferring", "finalizing", "paused", "cancelling"].indexOf(acquisitionState) < 0
+                 && (acquisitionState !== "failed"
+                     || !(acquisitionJob && acquisitionJob.error) && !game.acquisition_error
+                     || (acquisitionJob && acquisitionJob.error
+                         ? acquisitionJob.error.retryable === true
+                         : game.acquisition_error.retryable === true))
+                 && String(selectedGame.provider_id).match(/^[1-9][0-9]*$/))
+            // installGameRequested(game) preserves the existing generic Store signal boundary.
+            installGameRequested(selectedGame)
     }
 
-    onAvailableGamesChanged: selectedIndex = Math.min(selectedIndex, Math.max(0, displayGames.length - 1))
+    onAvailableGamesChanged: rebuildDisplayCards()
+    onAcquisitionJobsChanged: applyAcquisitionJobs()
     onCategoriesChanged: {
         categoryIndex = Math.min(categoryIndex, Math.max(0, categories.length - 1))
         displayCategoryIndex = Math.min(displayCategoryIndex, Math.max(0, categories.length - 1))
+        rebuildDisplayCards()
+    }
+    onDisplayCategoryIndexChanged: rebuildDisplayCards()
+    Component.onCompleted: rebuildDisplayCards()
+
+    Component {
+        id: cardStateComponent
+        StoreCardState {}
     }
     LibrarySpace {
         anchors.fill: parent
@@ -157,7 +221,7 @@ Item {
         canonicalCoordinateRoot: root.canonicalCoordinateRoot
         canonicalSize: root.canonicalSize
         onCollectionChanged: root.categoryIndex = index
-        onLaunchRequested: root.activateGame(game)
+            onLaunchRequested: root.activateGame(game, acquisitionJob)
         onSpecialActivated: root.steamStoreRequested()
         onCategoryContentHidden: root.displayCategoryIndex = root.categoryIndex
     }

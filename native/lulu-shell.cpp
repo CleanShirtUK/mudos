@@ -33,8 +33,6 @@
 #include <cstring>
 #include <string>
 #include <unistd.h>
-#include <QTextStream>
-#include <chrono>
 #include "catalogue-model.h"
 #include "recent-model.h"
 #include "mudos-glass-item.h"
@@ -272,15 +270,6 @@ private:
     QDBusServiceWatcher *acquisitionWatcher_;
 };
 
-void diagnosticMessageHandler(QtMsgType, const QMessageLogContext &, const QString &message)
-{
-    QFile file("/tmp/lulu-controller-diagnostics.log");
-    if (file.open(QIODevice::WriteOnly | QIODevice::Append | QIODevice::Text)) {
-        QTextStream stream(&file);
-        stream << message << '\n';
-    }
-}
-
 class ControllerBridge;
 
 class DbusInputRelay final : public QObject
@@ -357,43 +346,6 @@ public:
     void setWindow(QQuickWindow *window)
     {
         window_ = window;
-        qInfo() << "controller Lulu window" << window_->winId();
-        qInfo() << "MUDOS_RENDER_CHAIN_QT_WINDOW"
-                << "size" << window_->size()
-                << "width" << window_->width()
-                << "height" << window_->height()
-                << "effectiveDpr" << window_->effectiveDevicePixelRatio()
-                << "screenGeometry" << (window_->screen()
-                    ? window_->screen()->geometry() : QRect());
-        connect(window_, &QQuickWindow::beforeSynchronizing, this, [this]() {
-            timelineEvent("beforeSynchronizing");
-            renderFrameStartNs_ = timelineNowNs();
-            static bool loggedRenderGeometry = false;
-            if (!loggedRenderGeometry && window_->width() > 0 && window_->height() > 0) {
-                loggedRenderGeometry = true;
-                qInfo() << "MUDOS_RENDER_CHAIN_QT_SYNC"
-                        << "size" << window_->size()
-                        << "effectiveDpr" << window_->effectiveDevicePixelRatio()
-                        << "renderTargetNull" << window_->renderTarget().isNull();
-            }
-        }, Qt::DirectConnection);
-        connect(window_, &QQuickWindow::afterSynchronizing, this, [this]() {
-            timelineEvent("afterSynchronizing");
-        }, Qt::DirectConnection);
-        connect(window_, &QQuickWindow::beforeRendering, this, [this]() {
-            timelineEvent("beforeRendering");
-        }, Qt::DirectConnection);
-        connect(window_, &QQuickWindow::afterRendering, this, [this]() {
-            maybeArmTimeline();
-            if (renderTimelineFrames_ > 0) {
-                const qint64 now = timelineNowNs();
-                qInfo() << "RENDER_TIMELINE" << "afterRendering"
-                        << "mono_ns=" << now
-                        << "frame_ns=" << (renderFrameStartNs_ > 0 ? now - renderFrameStartNs_ : 0)
-                        << "remaining=" << renderTimelineFrames_;
-                --renderTimelineFrames_;
-            }
-        }, Qt::DirectConnection);
         setupPresentationObserver();
     }
 
@@ -476,30 +428,6 @@ private:
         insert(QStringLiteral("controllers"), controllers);
     }
 
-    static qint64 timelineNowNs()
-    {
-        return std::chrono::duration_cast<std::chrono::nanoseconds>(
-            std::chrono::steady_clock::now().time_since_epoch()).count();
-    }
-
-    void maybeArmTimeline()
-    {
-        if (renderTimelineFrames_ <= 0 && QFile::exists("/tmp/lulu-render-timeline-arm")) {
-            QFile::remove("/tmp/lulu-render-timeline-arm");
-            renderTimelineFrames_ = 180;
-            qInfo() << "RENDER_TIMELINE armed mono_ns=" << timelineNowNs();
-        }
-    }
-
-    void timelineEvent(const char *event)
-    {
-        maybeArmTimeline();
-        if (renderTimelineFrames_ > 0)
-            qInfo() << "RENDER_TIMELINE" << event
-                    << "mono_ns=" << timelineNowNs()
-                    << "remaining=" << renderTimelineFrames_;
-    }
-
     static constexpr const char *inputService = "org.shadowblip.InputPlumber";
     static constexpr const char *inputInterface = "org.shadowblip.Input.CompositeDevice";
 
@@ -533,20 +461,43 @@ private:
 
     void handleInputEvent(const QString &compositePath, const QString &event, double value)
     {
-        if (value != 1.0)
-            return;
-        if (event == QStringLiteral("ui_guide") && !guideProcess_) {
-            guideOwnerComposite_ = compositePath;
-            startGuide();
-            return;
+        if (event == QStringLiteral("ui_guide")) {
+            if (value == 1.0) {
+                if (guideProcess_ && compositePath == guideOwnerComposite_) {
+                    guideProcess_->write("ui_guide edge=down\n");
+                    return;
+                }
+                if (!pendingGuide_) {
+                    pendingGuide_ = true;
+                    guideChordConsumed_ = false;
+                    guideOwnerComposite_ = compositePath;
+                }
+                return;
+            }
+            if (value == 0.0 && pendingGuide_ && compositePath == guideOwnerComposite_) {
+                const bool chordConsumed = guideChordConsumed_;
+                pendingGuide_ = false;
+                guideChordConsumed_ = false;
+                if (!chordConsumed) {
+                    startGuide();
+                } else {
+                    guideOwnerComposite_.clear();
+                }
+                return;
+            }
+            if (!(guideProcess_ && compositePath == guideOwnerComposite_))
+                return;
         }
+        if (value != 1.0 && value != 0.0)
+            return;
         if (guideProcess_ && compositePath == guideOwnerComposite_
             && (event == QStringLiteral("ui_guide")
                               || event == QStringLiteral("ui_up")
                               || event == QStringLiteral("ui_down")
                               || event == QStringLiteral("ui_accept")
                               || event == QStringLiteral("ui_back"))) {
-            guideProcess_->write(event.toUtf8() + '\n');
+            const char *edge = value == 1.0 ? "down" : "up";
+            guideProcess_->write(event.toUtf8() + " edge=" + edge + '\n');
         }
     }
 
@@ -570,14 +521,6 @@ private:
         guideProcess_ = new QProcess(this);
         const auto menuCommand = providerMenuCommand(targetPid_);
         const auto menuLabel = providerMenuLabel(targetPid_);
-        qInfo() << "Guide context" << "pid=" << targetPid_
-                << "command=" << menuCommand << "label=" << menuLabel;
-        connect(guideProcess_, &QProcess::readyReadStandardOutput, this, [this]() {
-            qInfo().noquote() << guideProcess_->readAllStandardOutput().trimmed();
-        });
-        connect(guideProcess_, &QProcess::readyReadStandardError, this, [this]() {
-            qWarning().noquote() << guideProcess_->readAllStandardError().trimmed();
-        });
         connect(guideProcess_, &QProcess::finished, this,
                 [this](int, QProcess::ExitStatus) { finishGuide(); });
         const QString guideExecutable = qEnvironmentVariable(
@@ -587,6 +530,20 @@ private:
         });
         if (!guideProcess_->waitForStarted(1000)) {
             finishGuide();
+            return false;
+        }
+        return true;
+    }
+
+    bool showKeyboard()
+    {
+        QDBusInterface consoled(QStringLiteral("org.lulu.Consoled"),
+                                 QStringLiteral("/org/lulu/Console"),
+                                 QStringLiteral("org.lulu.Console"),
+                                 QDBusConnection::sessionBus());
+        const auto reply = consoled.call(QStringLiteral("ShowKeyboard"));
+        if (reply.type() == QDBusMessage::ErrorMessage) {
+            qWarning() << "Guide chord OSK show failed" << reply.errorMessage();
             return false;
         }
         return true;
@@ -613,8 +570,6 @@ private:
                 QDBusConnection::systemBus().connect(
                     inputService, dbusPath, dbusInterface, "InputEvent",
                     relay, SLOT(onInputEvent(QString,double)));
-                qInfo() << "subscribed InputPlumber D-Bus target"
-                        << dbusPath << "composite=" << compositePath;
             }
         }
         for (auto iterator = dbusRelays_.begin(); iterator != dbusRelays_.end();) {
@@ -625,6 +580,8 @@ private:
             QDBusConnection::systemBus().disconnect(
                 inputService, iterator.key(), dbusInterface, "InputEvent",
                 iterator.value(), SLOT(onInputEvent(QString,double)));
+            if (guideProcess_)
+                guideProcess_->write("reset_edges\n");
             iterator.value()->deleteLater();
             iterator = dbusRelays_.erase(iterator);
         }
@@ -703,13 +660,12 @@ private:
                 insert("controllerIndex", -1);
                 insert("controllerIdentity", QString());
             } else if (event.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN) {
+                if (pendingGuide_ && event.gbutton.button == SDL_GAMEPAD_BUTTON_WEST) {
+                    guideChordConsumed_ = true;
+                    showKeyboard();
+                    continue;
+                }
                 const bool allowed = dispatchAllowed();
-                qInfo() << "SDL button event received"
-                        << "button=" << event.gbutton.button
-                        << "focused_window=" << focusedWindow_
-                        << "lulu_xid=" << (window_ ? window_->winId() : 0)
-                        << "luluPresented=" << luluPresented_
-                        << "dispatch=" << (allowed ? "yes" : "no");
                 if (!allowed)
                     continue;
                 static const std::pair<SDL_GamepadButton, const char *> routes[] = {
@@ -733,7 +689,6 @@ private:
 private:
     void publish(const char *action)
     {
-        qInfo() << "SDL semantic navigation dispatch" << action;
         insert("action", QString::fromLatin1(action));
         insert("actionSerial", value("actionSerial").toInt() + 1);
         if (guideProcess_)
@@ -894,9 +849,9 @@ private:
     QTimer dbusDiscoveryTimer_;
     QHash<QString, DbusInputRelay *> dbusRelays_;
     QString guideOwnerComposite_;
+    bool pendingGuide_ = false;
+    bool guideChordConsumed_ = false;
     SDL_Gamepad *gamepad_ = nullptr;
-    int renderTimelineFrames_ = 0;
-    qint64 renderFrameStartNs_ = 0;
 };
 
 void DbusInputRelay::onInputEvent(const QString &event, double value)
@@ -930,7 +885,6 @@ bool setSteamGame(QQuickWindow *window)
 
 int main(int argc, char **argv)
 {
-    qInstallMessageHandler(diagnosticMessageHandler);
     QGuiApplication application(argc, argv);
     qmlRegisterType<MudosGlassItem>("Mudos.Poc", 1, 0, "MudosGlassItem");
     QQmlApplicationEngine engine;

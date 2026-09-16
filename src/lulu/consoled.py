@@ -5,6 +5,7 @@ from dataclasses import replace
 import logging
 import os
 from pathlib import Path
+from pathlib import Path
 import signal
 import subprocess
 import tempfile
@@ -509,6 +510,16 @@ INTERFACE_NAME = "org.lulu.Console"
 LOGGER = logging.getLogger("lulu.consoled")
 
 
+def _keyboard_boundary(action: str) -> bool:
+    """Call the provider-neutral Mudos keyboard boundary."""
+    root = Path(os.environ.get("LULU_INSTALL_ROOT", "/opt/lulu/current"))
+    command = root / "scripts" / "mudos-keyboard"
+    result = subprocess.run([str(command), action], check=False, capture_output=True, text=True)
+    if result.returncode:
+        raise RuntimeError(result.stderr.strip() or f"keyboard {action} failed")
+    return result.stdout.strip() == "visible"
+
+
 def _mudos_provider_device_indices() -> dict[int, int]:
     """Resolve logical players to current InputPlumber gamepad target indices."""
     client = InputPlumberClient("/org/shadowblip/InputPlumber/CompositeDevice0", {})
@@ -622,6 +633,18 @@ class ConsoleInterface(ServiceInterface):
     async def Refresh(self) -> "u":
         count = await self.refresh_catalogue()
         return count
+
+    @method()
+    async def ShowKeyboard(self) -> "b":
+        return await asyncio.to_thread(_keyboard_boundary, "show")
+
+    @method()
+    async def HideKeyboard(self) -> "b":
+        return await asyncio.to_thread(_keyboard_boundary, "hide")
+
+    @method()
+    async def KeyboardVisible(self) -> "b":
+        return await asyncio.to_thread(_keyboard_boundary, "status")
 
     @method()
     async def RefreshStages(self, stages: "as") -> "u":

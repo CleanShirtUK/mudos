@@ -1,0 +1,4 @@
+# Grant the active lulu session access to controller input and uinput without
+# adding the appliance account to the broad input group.
+KERNEL=="event*", SUBSYSTEM=="input", ENV{ID_INPUT_JOYSTICK}=="1", TAG+="uaccess"
+KERNEL=="uinput", SUBSYSTEM=="misc", TAG+="uaccess", OPTIONS+="static_node=uinput"
