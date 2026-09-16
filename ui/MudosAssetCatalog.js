@@ -1,7 +1,8 @@
 .pragma library
 
 // Semantic asset authority. Screens request names, never filesystem paths or
-// font codepoints. Platform artwork is the curated, vendored RomM set.
+// font codepoints. RomM platform artwork remains available for catalogue data;
+// Mudos-owned Library navigation uses its separate supplied-artwork map.
 var iconCodepoints = {
     wifi: "\uf1eb",
     wifiOff: "\uf6a9",
@@ -45,6 +46,24 @@ var platformAssets = {
     ps3: ["platforms/romm/ps3.svg", "raster"]
 }
 
+var libraryPlatformAssets = {
+    all: ["platform-all.svg", "icon"],
+    pc: ["platform-pc.png", "raster"],
+    nes: ["platform-nes.png", "raster"],
+    snes: ["platform-snes.png", "raster"],
+    genesis: ["platform-genesis.png", "raster"],
+    gb: ["platform-gb.png", "raster"],
+    gbc: ["platform-gbc.png", "raster"],
+    gba: ["platform-gba.png", "raster"],
+    nds: ["platform-nds.png", "raster"],
+    gamecube: ["platform-gamecube.png", "raster"],
+    wii: ["platform-wii.png", "raster"],
+    switch: ["platform-switch.png", "raster"],
+    ps1: ["platform-ps1.png", "raster"],
+    ps2: ["platform-ps2.png", "raster"],
+    ps3: ["platform-ps3.png", "raster"]
+}
+
 var platformAliases = {
     "platform:nes": "nes", "platform:snes": "snes",
     "platform:genesis": "genesis", "platform:gb": "gb",
@@ -69,11 +88,23 @@ function platformArtwork(platform) {
     return platformAssets[key] || platformAssets.all
 }
 
+function libraryPlatformArtwork(platform) {
+    var key = String(platform || "").toLowerCase()
+    key = platformAliases[key] || key
+    return libraryPlatformAssets[key] || libraryPlatformAssets.all
+}
+
 function systemArtwork(category) {
     var key = String(category || "").toLowerCase()
     return "artwork/system-" + key + ".svg"
 }
 
 function suppliedArtwork(name) {
+    if (String(name || "") === "store")
+        return "artwork/navigation/arrow-down-to-line-svgrepo-com.svg"
     return "artwork/navigation/" + String(name || "fallback") + ".png"
+}
+
+function metadataGlyph(name) {
+    return "artwork/glyphs/metadata/" + String(name || "") + ".svg"
 }

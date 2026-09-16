@@ -36,7 +36,7 @@ Item {
     signal openRequested(int index)
 
     function categoryArtwork(category) {
-        return MudosAssetCatalog.platformArtwork(category)
+        return MudosAssetCatalog.libraryPlatformArtwork(category)
     }
 
     function railX(relativeIndex) {

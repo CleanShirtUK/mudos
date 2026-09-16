@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Effects
 import "ControllerProfiles.js" as ControllerProfiles
 
 Item {
@@ -7,6 +8,7 @@ Item {
     property real glyphSize: 22
     property var luluPalette
     property var typography
+    property color semanticColor: luluPalette ? luluPalette.primaryText : "white"
     property FontLoader controllerFont: FontLoader {
         source: "fonts/Config-Glyphs.otf"
     }
@@ -18,21 +20,28 @@ Item {
     height: glyphSize
 
     Image {
+        id: fallbackImage
         anchors.fill: parent
         visible: parent.controllerFont.status !== FontLoader.Ready
-            && parent.action !== "options"
         source: "controllerglyphs/" + parent.glyphFile
         sourceSize: Qt.size(parent.glyphSize, parent.glyphSize)
         fillMode: Image.PreserveAspectFit
         smooth: true
     }
 
+    MultiEffect {
+        anchors.fill: fallbackImage
+        source: fallbackImage
+        visible: fallbackImage.visible
+        colorization: 1.0
+        colorizationColor: parent.semanticColor
+    }
+
     Text {
         anchors.fill: parent
         visible: parent.controllerFont.status === FontLoader.Ready
-            && parent.action !== "options"
         text: parent.glyphText
-        color: parent.luluPalette.primaryText
+        color: parent.semanticColor
         font.family: parent.controllerFont.name
         font.pixelSize: parent.glyphSize
         horizontalAlignment: Text.AlignHCenter
@@ -40,12 +49,4 @@ Item {
         renderType: Text.NativeRendering
     }
 
-    MudosIcon {
-        anchors.fill: parent
-        visible: parent.action === "options"
-        name: "settings"
-        typography: parent.typography
-        semanticColor: parent.luluPalette.primaryText
-        iconSize: parent.glyphSize * 0.8
-    }
 }

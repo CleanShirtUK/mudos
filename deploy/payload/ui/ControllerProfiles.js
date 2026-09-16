@@ -11,7 +11,7 @@ var profiles = {
         up: "dpadUp", down: "dpadDown", left: "dpadLeft", right: "dpadRight",
         previousCollection: "leftBumper", nextCollection: "rightBumper",
         x: "x", y: "y", leftStickClick: "leftStickClick",
-        rightStickClick: "rightStickClick"
+        rightStickClick: "rightStickClick", options: "x"
     }
 }
 

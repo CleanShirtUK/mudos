@@ -18,11 +18,13 @@ Item {
     required property var artwork_url
     required property var artwork_suppressed
     required property var last_played
+    required property var total_playtime
     required property var runtime
     required property var genres
     required property var local_multiplayer
     required property var online_multiplayer
     required property var game_mode
+    required property var protondb_rating
     required property var display_title_override
     required property var canonical_title
     required property var platform_label
@@ -93,11 +95,13 @@ Item {
         artwork_url: artwork_url,
         artwork_suppressed: artwork_suppressed,
         last_played: last_played,
+        total_playtime: total_playtime,
         runtime: runtime,
         genres: genres,
         local_multiplayer: local_multiplayer,
         online_multiplayer: online_multiplayer,
         game_mode: game_mode,
+        protondb_rating: protondb_rating,
         display_title_override: display_title_override,
         canonical_title: canonical_title,
         platform_label: platform_label

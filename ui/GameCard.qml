@@ -106,6 +106,79 @@ Rectangle {
                 card.playFeedbackCompleted()
         }
     }
+    function formatPlaytime(value) {
+        var minutes = Math.max(0, Math.floor(Number(value) || 0))
+        var hours = Math.floor(minutes / 60)
+        var remainder = minutes % 60
+        return hours > 0 ? hours + "h " + remainder + "m" : minutes + "m"
+    }
+    function multiplayerCapabilityState(value) {
+        if (value === true || value === 1)
+            return "SUPPORTED"
+        if (value === false || value === 0)
+            return "NOT_SUPPORTED"
+        if (typeof value === "string") {
+            var normalized = value.trim().toLowerCase()
+            if (normalized === "true" || normalized === "1")
+                return "SUPPORTED"
+            if (normalized === "false" || normalized === "0")
+                return "NOT_SUPPORTED"
+        }
+        return "UNKNOWN"
+    }
+    function focalMetadataGlyph(name) {
+        if (name === "genres")
+            return "\uf02c" // fa-tags
+        if (name === "last-played")
+            return "\uf1da" // fa-history
+        if (name === "clock")
+            return "\uf017" // fa-clock-o
+        if (name === "local-multiplayer")
+            return "\uf0c0" // fa-users
+        if (name === "online-multiplayer")
+            return "\uf0ac" // fa-globe
+        if (name === "protondb")
+            return "\ue27f" // nf-fae-atom
+        if (name === "platform")
+            return "\uf11b" // fa-gamepad
+        if (name === "provider")
+            return "\uf1e6"
+        return ""
+    }
+    function displayPlatform(value) {
+        var key = String(value || "").trim().toLowerCase()
+        var labels = {
+            pc: "PC", nes: "NES", snes: "SNES", genesis: "Genesis",
+            gb: "Game Boy", gbc: "Game Boy Color", gba: "Game Boy Advance",
+            nds: "Nintendo DS", gamecube: "GameCube", ngc: "GameCube",
+            wii: "Wii", switch: "Nintendo Switch", ps1: "PlayStation",
+            ps2: "PlayStation", ps3: "PlayStation"
+        }
+        return labels[key] || (String(value || "").trim() || "Unknown")
+    }
+    function displayProvider(provider, runtime) {
+        var key = String(runtime || provider || "").trim().toLowerCase()
+        var labels = {
+            steam: "Steam", romm: "RomM", retroarch: "RetroArch",
+            dolphin: "Dolphin", pcsx2: "PCSX2", eden: "Eden"
+        }
+        return labels[key] || (String(runtime || provider || "").trim() || "Unknown")
+    }
+    function protonDbText(provider, platform, rating) {
+        var providerKey = String(provider || "").trim().toLowerCase()
+        var platformKey = String(platform || "").trim().toLowerCase()
+        if (providerKey !== "steam" && platformKey !== "pc")
+            return ""
+        var normalized = String(rating || "").trim().toLowerCase()
+        if (!normalized)
+            return "Pending"
+        var labels = {
+            platinum: "Platinum", gold: "Gold", silver: "Silver",
+            bronze: "Bronze", borked: "Borked", pending: "Pending",
+            unknown: "Unknown"
+        }
+        return labels[normalized] || "Unknown"
+    }
     readonly property var focalMetadataRows: {
         var rows = []
         if (!card.game)
@@ -117,14 +190,30 @@ Rectangle {
                 usefulGenres.push(String(genres[genreIndex]).trim())
         }
         if (usefulGenres.length)
-            rows.push("Genres  " + usefulGenres.join(" · "))
+            rows.push({text: usefulGenres.join(" · "), glyph: "genres"})
         if (Number(card.game.last_played) > 0)
-            rows.push("Last Played  " + Qt.formatDateTime(
-                new Date(Number(card.game.last_played) * 1000), "d MMM yyyy"))
-        if (card.game.local_multiplayer === true || Number(card.game.local_multiplayer) === 1)
-            rows.push("Local Multiplayer")
-        if (card.game.online_multiplayer === true || Number(card.game.online_multiplayer) === 1)
-            rows.push("Online Multiplayer")
+            rows.push({text: Qt.formatDateTime(
+                new Date(Number(card.game.last_played) * 1000), "d MMM yyyy"),
+                glyph: "last-played"})
+        if (Number(card.game.total_playtime) > 0)
+            rows.push({text: "Total Playtime  " + card.formatPlaytime(card.game.total_playtime),
+                      glyph: "clock"})
+        var protonDb = card.protonDbText(card.game.provider, card.game.platform,
+                                         card.game.protondb_rating)
+        if (protonDb.length)
+            rows.push({text: protonDb, glyph: "protondb"})
+        rows.push({text: card.displayPlatform(
+                    card.game.platform_label || card.game.platform), glyph: "platform"})
+        rows.push({text: card.displayProvider(
+                    card.game.provider, card.game.runtime), glyph: "provider"})
+        var localState = card.multiplayerCapabilityState(card.game.local_multiplayer)
+        rows.push({text: localState === "SUPPORTED" ? "Local Multiplayer"
+                    : (localState === "NOT_SUPPORTED" ? "No Local Multiplayer" : "Unknown"),
+                    glyph: "local-multiplayer"})
+        var onlineState = card.multiplayerCapabilityState(card.game.online_multiplayer)
+        rows.push({text: onlineState === "SUPPORTED" ? "Online Multiplayer"
+                    : (onlineState === "NOT_SUPPORTED" ? "No Online Multiplayer" : "Unknown"),
+                    glyph: "online-multiplayer"})
         return rows
     }
     readonly property url displayedArtworkSource: String(card.artworkSource).length > 0
@@ -133,6 +222,7 @@ Rectangle {
             ? card.game.artwork_url : card.fallbackArtworkSource)
     readonly property bool iconArtwork: card.artworkRole === "icon" || !!card.symbolicArtwork
     readonly property real focalMargin: 30 * focalScale * uiScale
+    readonly property real focalMetadataGlyphColumnWidth: 18 * focalScale * uiScale
     readonly property real compactMargin: 14 * uiScale
     readonly property real artworkHeight: height - 2 * focalMargin
     readonly property real artworkWidth: artworkHeight / 1.5
@@ -348,19 +438,63 @@ Rectangle {
         Column {
             id: focalMetadata
             width: parent.width
-            y: focalTitle.height + 22 * focalScale * card.uiScale
+            anchors.bottom: playButton.top
+            anchors.bottomMargin: 22 * focalScale * card.uiScale
             spacing: 8 * focalScale * card.uiScale
 
             Repeater {
                 model: card.focalMetadataRows
-                delegate: Text {
-                    required property string modelData
+                delegate: Item {
+                    required property var modelData
+                    required property int index
                     width: focalMetadata.width
-                    text: modelData
-                    color: card.focusedColor(card.luluPalette.secondaryText)
-                    font.family: card.typography ? card.typography.interfaceFamily : "JetBrains Mono"
-                    font.pixelSize: card.typography ? card.typography.size("secondary", 17 * focalScale) : 17 * focalScale * card.uiScale
-                    elide: Text.ElideRight
+                    height: Math.max(metadataText.implicitHeight,
+                                     metadataGlyphText.height)
+
+                    Item {
+                        id: metadataGlyphColumn
+                        anchors.left: parent.left
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: card.focalMetadataGlyphColumnWidth
+                        height: 19 * focalScale * card.uiScale
+
+                        TextMetrics {
+                            id: metadataGlyphMetrics
+                            text: card.focalMetadataGlyph(modelData.glyph)
+                            font.family: card.typography ? card.typography.iconFamily : "JetBrains Mono"
+                            font.pixelSize: 18 * focalScale * card.uiScale
+                        }
+
+                        Text {
+                            id: metadataGlyphText
+                            x: parent.width / 2
+                                - (metadataGlyphMetrics.tightBoundingRect.x
+                                   + metadataGlyphMetrics.tightBoundingRect.width / 2)
+                            y: 0
+                            width: metadataGlyphMetrics.advanceWidth
+                            height: parent.height
+                            text: card.focalMetadataGlyph(modelData.glyph)
+                            color: card.focusedColor(card.luluPalette.secondaryText)
+                            font.family: card.typography ? card.typography.iconFamily : "JetBrains Mono"
+                            font.pixelSize: 18 * focalScale * card.uiScale
+                            horizontalAlignment: Text.AlignLeft
+                            verticalAlignment: Text.AlignVCenter
+                            renderType: Text.NativeRendering
+                        }
+                    }
+
+                    Text {
+                        id: metadataText
+                        anchors.left: parent.left
+                        anchors.leftMargin: 31 * focalScale * card.uiScale
+                        anchors.right: parent.right
+                        visible: modelData.text.length > 0
+                        text: modelData.text
+                        color: card.focusedColor(card.luluPalette.secondaryText)
+                        font.family: card.typography ? card.typography.interfaceFamily : "JetBrains Mono"
+                        font.pixelSize: card.typography ? card.typography.size("secondary", 17 * focalScale) : 17 * focalScale * card.uiScale
+                        elide: Text.ElideRight
+                    }
                 }
             }
         }

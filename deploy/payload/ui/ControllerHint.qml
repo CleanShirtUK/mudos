@@ -6,6 +6,7 @@ Row {
     property real uiScale: 1
     property var typography
     property var luluPalette
+    readonly property color hintColor: luluPalette.navigationText
     spacing: 5 * uiScale
 
     ControllerGlyph {
@@ -13,12 +14,13 @@ Row {
         glyphSize: 20 * parent.uiScale
         luluPalette: parent.luluPalette
         typography: parent.typography
+        semanticColor: parent.hintColor
         anchors.verticalCenter: parent.verticalCenter
     }
 
     Text {
         text: parent.label
-        color: parent.luluPalette.navigationText
+        color: parent.hintColor
         font.family: parent.typography.interfaceFamily
         font.pixelSize: parent.typography.size("hint", 14)
         anchors.verticalCenter: parent.verticalCenter
