@@ -324,6 +324,70 @@ class ConsoleUiBridge:
     async def mudos_menu(self) -> list[dict[str, object]]:
         return json.loads(await self.consoled.call_list_mudos_providers())
 
+    async def plugin_status(self) -> list[dict[str, object]]:
+        return json.loads(await self.consoled.call_get_plugin_status())
+
+    async def plugin_detail(self, plugin_id: str) -> dict[str, object]:
+        plugins = await self.plugin_status()
+        plugin = next((item for item in plugins if item.get("id") == plugin_id), None)
+        if plugin is None:
+            raise ValueError("unknown plugin")
+        options: list[dict[str, object]] = []
+        capabilities = plugin.get("capabilities", [])
+        if plugin_id == "steam":
+            options = [
+                {"key": "plugin.steam.open", "label": "Open Steam for Sign In", "kind": "action", "value": "", "writable": True},
+                {"key": "plugin.steamcmd.username", "label": "SteamCMD Username", "kind": "setting", "value": "", "writable": True},
+                {"key": "plugin.steamcmd.password", "label": "SteamCMD Password", "kind": "secret", "value": "", "writable": True},
+            ]
+        elif plugin_id == "romm":
+            options = [
+                {"key": "plugin.romm.url", "label": "URL", "kind": "setting", "value": "", "writable": True},
+                {"key": "plugin.romm.api_key", "label": "Pair RomM Device", "kind": "secret", "value": "", "writable": True},
+            ]
+        secret_names = {"steam": ["password"], "romm": ["api-key"]}.get(plugin_id, [])
+        for name in secret_names:
+            status = json.loads(await self.consoled.call_get_plugin_secret_status(plugin_id, name))
+            option = next((item for item in options if item["key"].endswith(name.replace("-", "_"))), None)
+            if option is not None and status.get("configured"):
+                option["label"] += " (configured)"
+                options.append({"key": option["key"] + ".clear", "label": option["label"].replace(" (configured)", "") + " — Clear", "kind": "action", "value": "", "writable": True})
+        return {"plugin": plugin, "options": options}
+
+    async def plugin_sign_in(self, plugin_id: str) -> dict[str, object]:
+        return json.loads(await self.consoled.call_begin_plugin_authentication(plugin_id))
+
+    async def credential_state(self) -> dict[str, object]:
+        return json.loads(await self.consoled.call_get_credential_state())
+
+    async def credential_begin(self, payload: dict[str, object]) -> dict[str, object]:
+        return json.loads(await self.consoled.call_begin_credential_request(
+            str(payload.get("title", "Credential")), str(payload.get("prompt", "Value")),
+            str(payload.get("input_type", "text")), bool(payload.get("secret", False)),
+            int(payload.get("min_length", 0)), int(payload.get("max_length", 4096))))
+
+    async def credential_submit(self, payload: dict[str, object]) -> dict[str, object]:
+        return json.loads(await self.consoled.call_submit_credential(
+            str(payload.get("id", "")), str(payload.get("value", ""))))
+
+    async def credential_cancel(self, payload: dict[str, object]) -> dict[str, object]:
+        return json.loads(await self.consoled.call_cancel_credential(str(payload.get("id", ""))))
+
+    async def plugin_secret(self, plugin_id: str, name: str, value: str) -> dict[str, object]:
+        result = json.loads(await self.consoled.call_set_plugin_secret(plugin_id, name, value))
+        if plugin_id == "steam" and name == "password":
+            result["verification"] = json.loads(await self.consoled.call_verify_plugin_acquisition(plugin_id))
+        return result
+
+    async def plugin_clear_secret(self, plugin_id: str, name: str) -> dict[str, object]:
+        return json.loads(await self.consoled.call_clear_plugin_secret(plugin_id, name))
+
+    async def pair_romm(self, code: str) -> dict[str, object]:
+        return json.loads(await self.consoled.call_pair_romm_device(code))
+
+    async def plugin_setting(self, plugin_id: str, name: str, value: str) -> dict[str, object]:
+        return json.loads(await self.consoled.call_set_plugin_setting(plugin_id, name, value))
+
     async def launch_provider(self, provider_id: str) -> dict[str, str]:
         token = await self.consoled.call_launch_provider_standalone(provider_id, 15000)
         self.local_token = token
@@ -500,6 +564,25 @@ class ApiHandler(BaseHTTPRequestHandler):
             except Exception as error:  # pragma: no cover - live IPC failure path
                 self._respond(503, {"error": str(error)})
             return
+        if urlparse(self.path).path == "/plugins":
+            try:
+                self._respond(200, self.bridge.call(self.bridge.plugin_status()))
+            except Exception as error:
+                self._respond(503, {"error": str(error)})
+            return
+        if urlparse(self.path).path.startswith("/plugins/") and not urlparse(self.path).path.endswith("/signin"):
+            try:
+                plugin_id = urlparse(self.path).path.removeprefix("/plugins/")
+                self._respond(200, self.bridge.call(self.bridge.plugin_detail(plugin_id)))
+            except Exception as error:
+                self._respond(404, {"error": str(error)})
+            return
+        if urlparse(self.path).path == "/credential":
+            try:
+                self._respond(200, self.bridge.call(self.bridge.credential_state()))
+            except Exception as error:
+                self._respond(503, {"error": str(error)})
+            return
         if urlparse(self.path).path == "/available":
             provider = parse_qs(urlparse(self.path).query).get("provider", ["romm"])[0]
             try:
@@ -531,6 +614,56 @@ class ApiHandler(BaseHTTPRequestHandler):
                 self._respond(200, {"status": "requested", "group": group})
             except OSError as error:
                 self._respond(409, {"error": str(error)})
+            return
+        if path.startswith("/plugins/") and path.endswith("/signin"):
+            try:
+                plugin_id = path.removeprefix("/plugins/").removesuffix("/signin")
+                self._respond(200, self.bridge.call(self.bridge.plugin_sign_in(plugin_id), timeout=30))
+            except Exception as error:
+                self._respond(409, {"error": str(error) or type(error).__name__})
+            return
+        if path == "/credential/begin":
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+                payload = json.loads(self.rfile.read(length) or b"{}")
+                self._respond(200, self.bridge.call(self.bridge.credential_begin(payload), timeout=30))
+            except Exception as error:
+                self._respond(409, {"error": str(error) or type(error).__name__})
+            return
+        if path in {"/credential/submit", "/credential/cancel"}:
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+                payload = json.loads(self.rfile.read(length) or b"{}")
+                operation = self.bridge.credential_submit if path.endswith("submit") else self.bridge.credential_cancel
+                self._respond(200, self.bridge.call(operation(payload), timeout=30))
+            except Exception as error:
+                self._respond(409, {"error": str(error) or type(error).__name__})
+            return
+        if path == "/plugins/romm/pair":
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+                payload = json.loads(self.rfile.read(length) or b"{}")
+                self._respond(200, self.bridge.call(
+                    self.bridge.pair_romm(str(payload.get("code", ""))), timeout=30))
+            except Exception as error:
+                self._respond(409, {"error": str(error) or type(error).__name__})
+            return
+        if path.startswith("/plugins/") and ("/secret/" in path or "/setting/" in path):
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+                payload = json.loads(self.rfile.read(length) or b"{}")
+                parts = path.split("/")
+                plugin_id, kind, name = parts[2], parts[3], parts[4]
+                if kind == "secret" and len(parts) > 5 and parts[5] == "clear":
+                    self._respond(200, self.bridge.call(self.bridge.plugin_clear_secret(plugin_id, name), timeout=30))
+                    return
+                if kind == "secret":
+                    result = self.bridge.plugin_secret(plugin_id, name, str(payload.get("value", "")))
+                else:
+                    result = self.bridge.plugin_setting(plugin_id, name, str(payload.get("value", "")))
+                self._respond(200, self.bridge.call(result, timeout=30))
+            except Exception as error:
+                self._respond(409, {"error": str(error) or type(error).__name__})
             return
         if path.startswith("/network/"):
             try:

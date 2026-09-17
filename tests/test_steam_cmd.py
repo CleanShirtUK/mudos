@@ -26,6 +26,7 @@ class SteamCmdParserTests(unittest.TestCase):
     def test_noop_errors_and_authentication(self) -> None:
         self.assertEqual(self.parser.parse("Success! App '263980' already up to date.").kind, "success")
         self.assertEqual(self.parser.parse("ERROR! Failed to install app '263980' (Invalid platform)").kind, "invalid-platform")
+        self.assertEqual(self.parser.parse("ERROR (Timeout)").kind, "network-error")
         self.assertEqual(self.parser.parse("Cached credentials not found.").kind, "authentication-required")
         self.assertEqual(self.parser.parse("ERROR! Failed to request app info update, not online or not logged in to Steam.").kind, "authentication-required")
 
@@ -34,9 +35,10 @@ class SteamCmdExecutorTests(unittest.TestCase):
     def test_platform_policy_and_deterministic_commands(self) -> None:
         windows = SteamCmdExecutor(account="user", platforms={"263980": "windows"}, install_dir=Path("/games/Steam"))
         self.assertEqual(windows.command("263980"), [
-            "/var/lib/lulu/steamcmd/steamcmd.sh", "+@NoPromptForPassword", "1", " +@sSteamCmdForcePlatformType".strip(), "windows",
+            "/var/lib/lulu/steamcmd/steamcmd.sh", " +@sSteamCmdForcePlatformType".strip(), "windows",
             "+force_install_dir", "/games/Steam", "+login", "user", "+app_update", "263980", "validate", "+quit",
         ])
+        self.assertNotIn("password", " ".join(windows.command("263980")).casefold())
         linux = SteamCmdExecutor(account="user", platforms={"42": "linux"})
         self.assertNotIn("+@sSteamCmdForcePlatformType", linux.command("42"))
         with self.assertRaisesRegex(Exception, "unknown"):

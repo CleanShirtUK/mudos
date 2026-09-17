@@ -1,8 +1,14 @@
 """Provider-neutral immutable acquisition/job domain objects."""
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from enum import StrEnum
+from datetime import datetime, timezone
 from typing import Any
+
+
+def utc_now() -> str:
+    """Return the stable UTC representation used at API and storage boundaries."""
+    return datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
 
 
 class JobState(StrEnum):
@@ -50,6 +56,13 @@ class DownloadJob:
     retryable: bool = True
     cancellation_supported: bool = False
     provider_job_id: str | None = None
+    created_at: str = field(default_factory=utc_now)
+    started_at: str | None = None
+    updated_at: str = field(default_factory=utc_now)
+    completed_at: str | None = None
+    attempt: int = 1
+    parent_job_id: str | None = None
+    recovery_reason: str | None = None
 
     @property
     def is_active(self) -> bool:
@@ -77,13 +90,25 @@ class DownloadJob:
             JobState.COMPLETED: set(),
             JobState.CANCELLED: set(),
         }
+        now = utc_now()
+        started_at = self.started_at
+        if started_at is None and state in {
+                JobState.STARTING, JobState.TRANSFERRING, JobState.FINALIZING,
+        }:
+            started_at = now
+        completed_at = self.completed_at
+        if state in {JobState.COMPLETED, JobState.FAILED, JobState.CANCELLED}:
+            completed_at = completed_at or now
         if state == self.state:
             if state == JobState.FINALIZING:
                 return replace(self, progress=None, downloaded_bytes=None,
                                total_bytes=None, stage=stage or self.stage,
-                               error=error)
+                               error=error, started_at=started_at,
+                               completed_at=completed_at, updated_at=now)
             return replace(self, progress=progress if progress is not None else self.progress,
-                           stage=stage or self.stage, error=error)
+                           stage=stage or self.stage, error=error,
+                           started_at=started_at, completed_at=completed_at,
+                           updated_at=now)
         if state not in allowed[self.state]:
             raise ValueError(f"invalid job transition: {self.state} -> {state}")
         if state == JobState.COMPLETED and self.progress not in (None, 1.0):
@@ -93,7 +118,9 @@ class DownloadJob:
                        progress=None if finalizing else (progress if progress is not None else self.progress),
                        downloaded_bytes=None if finalizing else self.downloaded_bytes,
                        total_bytes=None if finalizing else self.total_bytes,
-                       stage=stage or self.stage, error=error)
+                       stage=stage or self.stage, error=error,
+                       started_at=started_at, completed_at=completed_at,
+                       updated_at=now)
 
     def update_progress(self, progress: float | None = None, *,
                         downloaded_bytes: int | None = None,
@@ -114,4 +141,5 @@ class DownloadJob:
             downloaded_bytes=downloaded_bytes,
             total_bytes=total_bytes,
             stage=stage or self.stage,
+            updated_at=utc_now(),
         )

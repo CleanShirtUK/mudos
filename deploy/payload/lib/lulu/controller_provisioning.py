@@ -162,6 +162,7 @@ def ensure_provider_controller_config(
     config_root: Path | None = None,
     player_count: int | None = None,
     device_indices: dict[int, int] | None = None,
+    native_user_root: Path | None = None,
 ) -> Path:
     """Provision native profiles for the active logical player slots."""
     if player_count is None:
@@ -197,7 +198,8 @@ def ensure_provider_controller_config(
         _write_if_changed(path, source)
         return path
     if provider == "dolphin":
-        path = root / "dolphin-emu" / "GCPadNew.ini"
+        dolphin_root = native_user_root or (root / "dolphin-emu")
+        path = dolphin_root / "GCPadNew.ini"
         source = path.read_text(encoding="utf-8") if path.exists() else ""
         for player in range(1, player_count + 1):
             source = _replace_section(
@@ -209,7 +211,7 @@ def ensure_provider_controller_config(
                 ),
             )
         _write_if_changed(path, source)
-        dolphin_path = root / "dolphin-emu" / "Dolphin.ini"
+        dolphin_path = dolphin_root / "Dolphin.ini"
         dolphin_source = dolphin_path.read_text(encoding="utf-8") if dolphin_path.exists() else ""
         sidevices = {f"SIDevice{port}": "6" if port < player_count else "0" for port in range(4)}
         sidevices["WiimoteSource0"] = "0"
@@ -217,7 +219,7 @@ def ensure_provider_controller_config(
             dolphin_path,
             _update_section_values(dolphin_source, "Core", sidevices),
         )
-        wiimote_path = root / "dolphin-emu" / "WiimoteNew.ini"
+        wiimote_path = dolphin_root / "WiimoteNew.ini"
         wiimote_source = wiimote_path.read_text(encoding="utf-8") if wiimote_path.exists() else ""
         _write_if_changed(wiimote_path, _remove_section(wiimote_source, "Wiimote1"))
         return path

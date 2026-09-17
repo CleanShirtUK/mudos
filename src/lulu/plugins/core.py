@@ -130,6 +130,12 @@ class PluginRegistry:
         return tuple(contribution for record in self.enabled_records()
                      for contribution in record.registrations.get(capability, ()))
 
+    def for_plugin(self, plugin_id: str, capability: str) -> tuple[Any, ...]:
+        record = self.records.get(plugin_id.casefold())
+        if record is None or record.health != "available":
+            return ()
+        return tuple(record.registrations.get(capability, ()))
+
     def status(self) -> list[dict[str, object]]:
         return [{"id": record.manifest.plugin_id, "name": record.manifest.name,
                  "version": record.manifest.version, "health": record.health,

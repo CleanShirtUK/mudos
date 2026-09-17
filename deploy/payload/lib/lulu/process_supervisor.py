@@ -13,7 +13,7 @@ from .console_sessiond import SessionStateModel
 from .contracts import InputMode, Presentation
 from .gamescope import GamescopePresentation
 from .launch_identity import LaunchIdentity
-from .steam_provider import SteamLaunch, SteamProvider, SteamLaunchRequest
+from .plugins.steam.provider import SteamLaunch, SteamProvider, SteamLaunchRequest
 
 
 @dataclass(frozen=True, slots=True)

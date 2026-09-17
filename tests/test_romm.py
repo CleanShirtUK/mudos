@@ -1,6 +1,7 @@
 import json
 from pathlib import Path
 import unittest
+from unittest.mock import patch
 from urllib.parse import parse_qs, urlparse
 
 from lulu.romm import RommApiError, RommClient, RommConfig, RommGame, RommPlatform, SteamManifest
@@ -26,6 +27,27 @@ class Transport:
 
 
 class RommTests(unittest.TestCase):
+    def test_pairing_code_exchanges_for_client_token(self):
+        class PairTransport:
+            def __init__(self):
+                self.request_data = None
+
+            def request(self, method, url, headers, timeout, body=None):
+                self.request_data = (method, url, headers, body)
+                return 200, b'{"raw_token":"rmm_abc"}'
+
+        transport = PairTransport()
+        with patch("lulu.plugins.romm.client.SecretStore.put") as put:
+            RommClient(RommConfig("https://romm.test"), transport).exchange_pairing_code("ABCD-2345")
+        self.assertEqual(transport.request_data[0], "POST")
+        self.assertTrue(transport.request_data[1].endswith("/api/client-tokens/exchange"))
+        self.assertEqual(json.loads(transport.request_data[3]), {"code": "ABCD2345"})
+        put.assert_called_once_with("romm", "api-key", "rmm_abc")
+
+    def test_pairing_code_requires_eight_digits(self):
+        with self.assertRaises(ValueError):
+            RommClient(RommConfig("https://romm.test")).exchange_pairing_code("ABC-567")
+
     def test_paginated_catalogue_and_authentication(self):
         transport = Transport()
         client = RommClient(RommConfig("https://romm.test", client_token="secret"), transport)

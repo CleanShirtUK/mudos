@@ -17,6 +17,7 @@ from .contracts import ServiceDescriptor, ServiceName
 from .acquisition_store import AcquisitionStore
 from .paths import PATHS
 from .plugins import PluginRegistry
+from .credential import CredentialInput
 
 
 BUS_NAME = "org.lulu.Acquisitiond"
@@ -85,7 +86,7 @@ async def serve(bus_type: BusType = BusType.SESSION) -> None:
     store = AcquisitionStore(database)
     plugin_root = PATHS.plugins_root
     installed_plugins = PATHS.install_root / "config" / "plugins"
-    if not plugin_root.is_dir() and installed_plugins.is_dir():
+    if (not plugin_root.is_dir() or not any(plugin_root.glob("*/plugin.toml"))) and installed_plugins.is_dir():
         plugin_root = installed_plugins
     plugins = PluginRegistry(plugin_root)
     plugins.discover()
@@ -96,7 +97,26 @@ async def serve(bus_type: BusType = BusType.SESSION) -> None:
     }, store=store)
     for item in contributions:
         if isinstance(item, dict) and item.get("provider") and item.get("executor"):
-            manager.register_executor(item["provider"], item["executor"], limit=int(item.get("limit", 1)))
+            executor = item["executor"]
+            if hasattr(executor, "request_credential"):
+                async def request_credential(input_type: CredentialInput, title: str, prompt: str,
+                                             min_length: int, max_length: int) -> str:
+                    introspection = await bus.introspect("org.lulu.Consoled", "/org/lulu/Console")
+                    proxy = bus.get_proxy_object("org.lulu.Consoled", "/org/lulu/Console", introspection)
+                    consoled = proxy.get_interface("org.lulu.Console")
+                    request = json.loads(await consoled.call_begin_credential_request(
+                        title, prompt, input_type.value, input_type is CredentialInput.SECRET,
+                        min_length, max_length))
+                    request_id = request["id"]
+                    while True:
+                        state = json.loads(await consoled.call_get_credential_state())
+                        if state.get("status") == "submitted":
+                            return await consoled.call_take_credential_value(request_id)
+                        if state.get("status") in {"cancelled", "failed"}:
+                            raise RuntimeError("credential request ended")
+                        await asyncio.sleep(0.25)
+                executor.request_credential = request_credential
+            manager.register_executor(item["provider"], executor, limit=int(item.get("limit", 1)))
     interface = AcquisitionInterface(manager)
     bus.export(OBJECT_PATH, interface)
     await bus.request_name(BUS_NAME)

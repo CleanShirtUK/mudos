@@ -33,14 +33,15 @@ from .network_manager import NetworkManagerAdapter
 from .audio_manager import AudioManagerAdapter
 from .display_manager import DisplayManagerAdapter
 from .storage_manager import StorageManagerAdapter
-from .romm import RommApiError, RommClient, RommConfig, RommGame
-from .steam_provider import SteamProvider
-from .steam_entitlements import SteamEntitlementSource
+from .plugins.romm.client import RommApiError, RommClient, RommConfig, RommGame
+from .plugins.steam.provider import SteamProvider
+from .plugins.steam.entitlements import SteamEntitlementSource
 from .system_settings import CATEGORIES as SYSTEM_CATEGORIES, SystemSettingsProvider
 from .paths import PATHS
 from .platforms import load_platforms
 from .providers import NativeConfigAdapter, load_base_guide, load_mudos_guide, load_providers
 from .plugins import PluginRegistry
+from .credential import CredentialBroker, CredentialInput, CredentialStatus, SecretStore
 
 
 DESCRIPTOR = ServiceDescriptor(
@@ -60,7 +61,11 @@ DESCRIPTOR = ServiceDescriptor(
 def _load_plugin_registry() -> PluginRegistry:
     root = PATHS.plugins_root
     installed = PATHS.install_root / "config" / "plugins"
-    if not root.is_dir() and installed.is_dir():
+    # The user plugin root also owns per-plugin settings and may therefore
+    # exist before any user manifests are installed.  Settings alone must not
+    # mask the shipped plugin implementations.
+    has_manifests = root.is_dir() and any(root.glob("*/plugin.toml"))
+    if not has_manifests and installed.is_dir():
         root = installed
     registry = PluginRegistry(root)
     registry.discover()
@@ -608,7 +613,8 @@ class ConsoleInterface(ServiceInterface):
                  network_manager: NetworkManagerAdapter | None = None,
                  audio_manager: AudioManagerAdapter | None = None,
                  storage_manager: StorageManagerAdapter | None = None,
-                 display_manager: DisplayManagerAdapter | None = None) -> None:
+                 display_manager: DisplayManagerAdapter | None = None,
+                 credentials: CredentialBroker | None = None) -> None:
         super().__init__(INTERFACE_NAME)
         self.catalogue = catalogue
         self.local_runtime = local_runtime
@@ -618,6 +624,8 @@ class ConsoleInterface(ServiceInterface):
         self.audio_manager = audio_manager or AudioManagerAdapter()
         self.storage_manager = storage_manager or StorageManagerAdapter()
         self.display_manager = display_manager or DisplayManagerAdapter()
+        self.credentials = credentials or CredentialBroker()
+        self.secrets = SecretStore()
         self._local_process: asyncio.subprocess.Process | None = None
         self._local_token: str | None = None
         self._refresh_task: asyncio.Task[list[dict[str, object]]] | None = None
@@ -626,7 +634,11 @@ class ConsoleInterface(ServiceInterface):
         self._providers = load_providers()
         plugin_root = PATHS.plugins_root
         installed_plugins = PATHS.install_root / "config" / "plugins"
-        if not plugin_root.is_dir() and installed_plugins.is_dir():
+        # A user plugin-settings directory may exist before the shipped
+        # manifests are copied there. In that case still discover the bundled
+        # plugin definitions, while retaining the user-owned settings path for
+        # normal configuration and secrets.
+        if (not plugin_root.is_dir() or not any(plugin_root.glob("*/plugin.toml"))) and installed_plugins.is_dir():
             plugin_root = installed_plugins
         self._plugins = PluginRegistry(plugin_root)
         self._plugins.discover()
@@ -648,8 +660,10 @@ class ConsoleInterface(ServiceInterface):
             game = self.catalogue.store.get_game(str(state.get("primary_id", "")))
             if game is not None:
                 try:
-                    platform = self._platforms.get(game.platform)
-                    provider_id = platform.default_provider
+                    provider_id = game.provider
+                    if provider_id == "local":
+                        platform = self._platforms.get(game.platform)
+                        provider_id = platform.default_provider
                 except KeyError:
                     provider_id = None
         if not provider_id:
@@ -731,6 +745,9 @@ class ConsoleInterface(ServiceInterface):
 
     @method()
     async def LaunchProviderStandalone(self, provider_id: "s", timeout_ms: "u") -> "s":
+        return await self._launch_provider_standalone(provider_id, timeout_ms)
+
+    async def _launch_provider_standalone(self, provider_id: str, timeout_ms: int) -> str:
         provider = self._providers.get(provider_id)
         launch = provider.standalone_launch
         if launch is None or not launch.command:
@@ -1107,6 +1124,124 @@ class ConsoleInterface(ServiceInterface):
     def GetPluginStatus(self) -> "s":
         """Return normalized plugin health without exposing plugin internals."""
         return json.dumps(self._plugins.status(), separators=(",", ":"))
+
+    @method()
+    def GetPluginAuthStatus(self, plugin_id: "s") -> "s":
+        auth = self._plugins.for_plugin(plugin_id, "authentication")
+        if not auth:
+            return json.dumps({"status": "unavailable"}, separators=(",", ":"))
+        provider = auth[0]
+        try:
+            return json.dumps(provider.status(), separators=(",", ":"))
+        except Exception as error:
+            LOGGER.exception("plugin auth status failed plugin=%s", plugin_id)
+            return json.dumps({"status": "degraded", "error": str(error)}, separators=(",", ":"))
+
+    @method()
+    async def BeginPluginAuthentication(self, plugin_id: "s") -> "s":
+        auth = self._plugins.for_plugin(plugin_id, "authentication")
+        if not auth:
+            raise DBusError("org.lulu.Console.Error.PluginUnavailable", "plugin authentication unavailable")
+        result = auth[0].begin()
+        provider_id = str(result.get("provider_id", "")) if isinstance(result, dict) else ""
+        if provider_id:
+            return json.dumps({"status": "surface_requested",
+                               "launch": await self._launch_provider_standalone(provider_id, 15000)},
+                              separators=(",", ":"))
+        return json.dumps(result, separators=(",", ":"))
+
+    @method()
+    async def BeginCredentialRequest(self, title: "s", prompt: "s", input_type: "s",
+                                     secret: "b", min_length: "u", max_length: "u") -> "s":
+        try:
+            request = await self.credentials.request(title, prompt, CredentialInput(input_type),
+                                                     secret=secret, min_length=min_length,
+                                                     max_length=max_length)
+            return json.dumps(request.public_state(), separators=(",", ":"))
+        except (RuntimeError, ValueError) as error:
+            raise DBusError("org.lulu.Console.Error.CredentialUnavailable", str(error)) from error
+
+    @method()
+    def GetCredentialState(self) -> "s":
+        return json.dumps(self.credentials.state(), separators=(",", ":"))
+
+    @method()
+    def GetPluginSecretStatus(self, plugin_id: "s", name: "s") -> "s":
+        return json.dumps({"configured": self.secrets.configured(plugin_id, name),
+                           "backend": self.secrets.backend(plugin_id, name)}, separators=(",", ":"))
+
+    @method()
+    def SetPluginSecret(self, plugin_id: "s", name: "s", value: "s") -> "s":
+        self.secrets.put(plugin_id, name, value)
+        return json.dumps({"configured": True}, separators=(",", ":"))
+
+    @method()
+    def PairRommDevice(self, code: "s") -> "s":
+        from .plugins.romm import RommClient, RommConfig
+        config = RommConfig.from_file()
+        if config is None:
+            raise DBusError("org.lulu.Console.Error.InvalidPluginSetting", "RomM URL is not configured")
+        try:
+            RommClient(config).exchange_pairing_code(code)
+        except (ValueError, RommApiError) as error:
+            raise DBusError("org.lulu.Console.Error.CredentialInvalid", str(error)) from error
+        return json.dumps({"configured": True}, separators=(",", ":"))
+
+    @method()
+    async def VerifyPluginAcquisition(self, plugin_id: "s") -> "s":
+        auth = self._plugins.for_plugin(plugin_id, "authentication")
+        if not auth or not hasattr(auth[0], "verify_acquisition"):
+            return json.dumps({"status": "unavailable"}, separators=(",", ":"))
+        try:
+            return json.dumps(await auth[0].verify_acquisition(), separators=(",", ":"))
+        except Exception as error:
+            # Deliberately return only the normalized backend code/message.
+            code = getattr(error, "code", "authentication-failed")
+            return json.dumps({"status": str(code)}, separators=(",", ":"))
+
+    @method()
+    def ClearPluginSecret(self, plugin_id: "s", name: "s") -> "s":
+        self.secrets.clear(plugin_id, name)
+        return json.dumps({"configured": False}, separators=(",", ":"))
+
+    @method()
+    def SetPluginSetting(self, plugin_id: "s", name: "s", value: "s") -> "s":
+        if plugin_id == "romm" and name == "url":
+            from .plugins.romm import RommConfig
+            RommConfig.save_url(value)
+        elif plugin_id == "steam" and name == "username":
+            path = PATHS.plugins_root / "steam" / "settings.toml"
+            path.parent.mkdir(parents=True, exist_ok=True)
+            temporary = path.with_name(".settings.toml.tmp")
+            temporary.write_text("[settings]\nusername = " + json.dumps(value.strip()) + "\n")
+            os.chmod(temporary, 0o600)
+            os.replace(temporary, path)
+        else:
+            raise DBusError("org.lulu.Console.Error.InvalidPluginSetting", "unsupported plugin setting")
+        return json.dumps({"saved": True}, separators=(",", ":"))
+
+    @method()
+    async def SubmitCredential(self, request_id: "s", value: "s") -> "s":
+        try:
+            session = await self.credentials.submit(request_id, value)
+            return json.dumps(session.public_state(), separators=(",", ":"))
+        except (KeyError, ValueError) as error:
+            raise DBusError("org.lulu.Console.Error.CredentialInvalid", str(error)) from error
+
+    @method()
+    async def TakeCredentialValue(self, request_id: "s") -> "s":
+        try:
+            return await self.credentials.take_value(request_id)
+        except KeyError as error:
+            raise DBusError("org.lulu.Console.Error.CredentialUnknown", str(error)) from error
+
+    @method()
+    async def CancelCredential(self, request_id: "s") -> "s":
+        try:
+            await self.credentials.cancel(request_id)
+            return json.dumps(self.credentials.state(), separators=(",", ":"))
+        except KeyError as error:
+            raise DBusError("org.lulu.Console.Error.CredentialUnknown", str(error)) from error
         self.CatalogueChanged()
 
     @method()

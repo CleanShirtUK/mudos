@@ -28,6 +28,13 @@ var iconCodepoints = {
     close: "\uf00d"
 }
 
+// Logical asset IDs are the presentation-side counterpart of the Python
+// AssetRegistry. Keep repository-relative paths in this one catalog; screens
+// ask for a namespace/name rather than constructing paths themselves.
+function logicalAsset(namespace, name) {
+    return "artwork/" + (namespace ? namespace + "/" : "") + name
+}
+
 var platformAssets = {
     all: ["platforms/romm/default.ico", "raster"],
     pc: ["platforms/romm/default.ico", "raster"],
@@ -96,15 +103,15 @@ function libraryPlatformArtwork(platform) {
 
 function systemArtwork(category) {
     var key = String(category || "").toLowerCase()
-    return "artwork/system-" + key + ".svg"
+    return logicalAsset("", "system-" + key + ".svg")
 }
 
 function suppliedArtwork(name) {
     if (String(name || "") === "store")
-        return "artwork/navigation/arrow-down-to-line-svgrepo-com.svg"
-    return "artwork/navigation/" + String(name || "fallback") + ".png"
+        return logicalAsset("navigation", "arrow-down-to-line-svgrepo-com.svg")
+    return logicalAsset("navigation", String(name || "fallback") + ".png")
 }
 
 function metadataGlyph(name) {
-    return "artwork/glyphs/metadata/" + String(name || "") + ".svg"
+    return logicalAsset("glyphs/metadata", String(name || "") + ".svg")
 }

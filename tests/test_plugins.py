@@ -63,6 +63,18 @@ class PluginRegistryTests(unittest.TestCase):
             self.assertEqual(records["steam"].health, "disabled")
             self.assertEqual(registry.with_capability("providers"), ())
 
+    def test_empty_user_plugin_root_does_not_mask_shipped_plugins(self) -> None:
+        """A settings-only user root must still allow shipped discovery."""
+        with tempfile.TemporaryDirectory() as directory:
+            user_root = Path(directory) / "user"
+            installed_root = Path(directory) / "installed"
+            user_root.mkdir()
+            installed_root.mkdir()
+            self._plugin(installed_root, "steam")
+            selected = user_root if any(user_root.glob("*/plugin.toml")) else installed_root
+            registry = PluginRegistry(selected)
+            self.assertEqual([item.manifest.plugin_id for item in registry.discover()], ["steam"])
+
 
 if __name__ == "__main__":
     unittest.main()

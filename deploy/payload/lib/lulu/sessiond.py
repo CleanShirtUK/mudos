@@ -347,6 +347,29 @@ class ConsoleSessionInterface(ServiceInterface):
         return token
 
     @method()
+    def BeginProviderSession(self, provider_id: "s", controller_mode: "s", pid: "u", pgid: "u", executable: "s", argv: "as") -> "s":
+        if controller_mode not in {"game", "compat"}:
+            raise self._error(ValueError("invalid provider controller mode"))
+        if self._local_identity is not None:
+            raise self._error(ValueError("another local session owns the session"))
+        token: str | None = None
+        try:
+            token = self.model.request_launch(f"provider:{provider_id}:standalone")
+            self.model.state.controller_mode = controller_mode
+            self.model.launch_starting(token)
+            self._local_identity = LaunchIdentity(token, pid, pgid, executable, tuple(argv))
+            self._apply_input_mode(InputMode.GAME)
+            self.model.primary_started(token, input_mode=InputMode.GAME)
+        except (OSError, ValueError, TimeoutError) as error:
+            self._local_identity = None
+            if token is not None and self.model.state.lifecycle is not Lifecycle.SHELL:
+                self.model.fail(token, f"provider launch failed: {error}")
+                self.model.return_complete(token)
+            raise self._error(ValueError(str(error))) from error
+        self.StateChanged(self._state_json())
+        return token
+
+    @method()
     def EndLocalSession(self, token: "s", exit_code: "i") -> "":
         if self._local_identity is None or self._local_identity.token != token:
             return

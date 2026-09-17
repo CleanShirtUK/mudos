@@ -12,9 +12,9 @@ import time
 from .local_content import LocalContentGame, LocalContentProvider
 from .metadata import MetadataMatch, clean_local_title
 from .paths import PATHS
-from .romm import RommGame
-from .steam_provider import InstalledSteamGame, SteamProvider
-from .steam_entitlements import SteamEntitlement
+from .plugins.romm.client import RommGame
+from .plugins.steam.provider import InstalledSteamGame, SteamProvider
+from .plugins.steam.entitlements import SteamEntitlement
 
 
 @dataclass(frozen=True, slots=True)

@@ -106,7 +106,7 @@ Window {
     property var systemHomeRailRef: null
     property int systemRowIndex: 0
     property bool systemLanding: true
-    property var systemCategories: ["Mudos Menu", "Display", "Audio", "Network", "Bluetooth", "Controllers", "Storage", "System", "Lulu"]
+    property var systemCategories: ["Mudos Menu", "Plugins", "Display", "Audio", "Network", "Bluetooth", "Controllers", "Storage", "System", "Lulu"]
     property var systemSettings: []
     property string pendingMudosAction: ""
     property var standaloneProviderModes: ({})
@@ -173,6 +173,12 @@ Window {
     property var storeHomeRef: null
     property string storeError: ""
     property string message: ""
+    property var credentialRequest: ({status: "idle"})
+    property string credentialValue: ""
+    property var credentialTarget: ({kind: "", plugin: "", name: ""})
+    property bool credentialKeyboardShown: false
+    property bool credentialKeyboardShowAttempted: false
+    property string pluginDetailId: ""
     property string launchStatus: "idle"
     property string launchTitle: ""
     property string launchGameId: ""
@@ -807,6 +813,25 @@ Window {
             refreshMudosMenu()
             return
         }
+        if (systemCategories[systemCategoryIndex] === "Plugins") {
+            if (root.pluginDetailId !== "") {
+                request("/plugins/" + root.pluginDetailId, "GET", "", function(data) {
+                    systemSettings = data.options
+                    systemRowIndex = Math.min(systemRowIndex, Math.max(0, systemSettings.length - 1))
+                }, "Plugin unavailable")
+                return
+            }
+            request("/plugins", "GET", "", function(data) {
+                var rows = []
+                for (var i = 0; i < data.length; i++) {
+                    rows.push({key: "plugin.open:" + data[i].id, label: data[i].name,
+                               kind: "action", value: data[i].health, writable: true})
+                }
+                systemSettings = rows
+                systemRowIndex = Math.min(systemRowIndex, Math.max(0, rows.length - 1))
+            }, "Plugins unavailable")
+            return
+        }
         request("/settings?category=" + encodeURIComponent(systemCategories[systemCategoryIndex]),
                 "GET", "", function(data) {
                     systemSettings = data
@@ -845,6 +870,72 @@ Window {
         running: root.space === "system" && !root.systemLanding
             && root.systemCategories[root.systemCategoryIndex] === "Audio"
         onTriggered: root.refreshAudioState()
+    }
+
+    Timer {
+        id: credentialTimer
+        interval: 500
+        repeat: true
+        // This must remain active while idle so a backend-created request can
+        // wake the UI. OSK activation itself is separately single-flight.
+        running: true
+        onTriggered: root.request("/credential", "GET", "", function(data) {
+            root.credentialRequest = data
+        })
+    }
+
+    Timer {
+        id: credentialFocusTimer
+        interval: 300
+        repeat: true
+        running: root.credentialRequest.status === "requested" || root.credentialRequest.status === "waiting"
+        onTriggered: {
+            credentialInput.forceActiveFocus()
+            if (!root.credentialKeyboardShown && !root.credentialKeyboardShowAttempted) {
+                root.credentialKeyboardShowAttempted = true
+                root.request("/keyboard/show", "POST", "", function() {
+                    root.credentialKeyboardShown = true
+                }, "Keyboard unavailable", undefined, function() {
+                    root.credentialKeyboardShowAttempted = false
+                })
+            }
+        }
+    }
+
+    Rectangle {
+        anchors.fill: parent
+        visible: root.credentialRequest.status === "requested" || root.credentialRequest.status === "waiting"
+        z: 1000
+        color: luluPalette.backdrop
+        Text {
+            anchors.centerIn: parent
+            anchors.verticalCenterOffset: -150
+            text: root.credentialRequest.title + "\n" + root.credentialRequest.prompt
+                  + (root.credentialRequest.help_text ? "\n" + root.credentialRequest.help_text : "")
+            color: luluPalette.primaryText
+            font.pixelSize: 30
+            horizontalAlignment: Text.AlignHCenter
+        }
+        TextInput {
+            id: credentialInput
+            anchors.centerIn: parent
+            width: 700
+            height: 70
+            focus: parent.visible
+            echoMode: root.credentialRequest.secret ? TextInput.Password : TextInput.Normal
+            text: root.credentialValue
+            color: luluPalette.primaryText
+            font.pixelSize: 28
+            horizontalAlignment: TextInput.AlignHCenter
+            onTextChanged: root.credentialValue = text
+        }
+        Text {
+            anchors.centerIn: parent
+            anchors.verticalCenterOffset: 100
+            text: root.credentialRequest.status === "waiting" ? "Waiting…  A: continue   B: cancel" : "A: submit   B: cancel"
+            color: luluPalette.secondaryText
+            font.pixelSize: 20
+        }
     }
 
     Timer {
@@ -1378,6 +1469,40 @@ Window {
     }
 
     function activate() {
+        if (credentialRequest.status === "requested" || credentialRequest.status === "waiting") {
+            root.lastCredentialValue = credentialValue
+            root.request("/credential/submit", "POST", JSON.stringify({id: credentialRequest.id, value: credentialValue}),
+                         function(data) {
+                             var target = credentialTarget
+                             credentialValue = ""
+                             credentialRequest = data
+                              if (target.kind === "romm-pair")
+                                  root.request("/plugins/romm/pair", "POST", JSON.stringify({code: root.lastCredentialValue}), function(result) {
+                                      root.message = "RomM paired"
+                                      root.refreshSystemSettings()
+                                  }, "RomM pairing failed: check that the code is new and unexpired")
+                              else if (target.kind === "secret")
+                                 root.request("/plugins/" + target.plugin + "/secret/" + target.name,
+                                     "POST", JSON.stringify({value: root.lastCredentialValue}), function(result) {
+                                         if (result.verification && result.verification.status === "authenticated")
+                                             root.message = "SteamCMD signed in"
+                                         else if (result.verification && result.verification.status === "challenge-required")
+                                             root.message = "SteamCMD requires a Steam Guard code"
+                                         else
+                                             root.message = "Secret saved; SteamCMD authentication could not be verified"
+                                     }, "Secret save failed")
+                             else if (target.kind === "setting")
+                                 root.request("/plugins/" + target.plugin + "/setting/" + target.name,
+                                     "POST", JSON.stringify({value: root.lastCredentialValue}), function() {}, "Setting save failed")
+                             root.lastCredentialValue = ""
+                             root.request("/keyboard/hide", "POST", "", function() {
+                                 root.credentialKeyboardShown = false
+                                 root.credentialKeyboardShowAttempted = false
+                             })
+                         },
+                         function() { root.lastCredentialValue = ""; root.message = "Credential rejected" })
+            return
+        }
         if (root.homeLaunchGated)
             return
         if (gameOptionsOpen) {
@@ -1385,9 +1510,32 @@ Window {
             return
         }
         if (space === "system") {
-            if (!systemLanding && systemCategories[systemCategoryIndex] === "Mudos Menu"
+            if (!systemLanding && (systemCategories[systemCategoryIndex] === "Mudos Menu"
+                                   || systemCategories[systemCategoryIndex] === "Plugins")
                     && systemSettings[systemRowIndex]) {
-                activateMudosAction(systemSettings[systemRowIndex].key)
+                var selectedKey = systemSettings[systemRowIndex].key
+                if (selectedKey.indexOf("plugin.open:") === 0) {
+                    root.pluginDetailId = selectedKey.substring(12)
+                    root.systemRowIndex = 0
+                    root.refreshSystemSettings()
+                } else if (selectedKey === "plugin.steam.open")
+                    root.request("/plugins/steam/signin", "POST", "", function(data) {
+                        root.message = "Steam sign-in surface opened"
+                    }, "Plugin sign-in failed")
+                else if (selectedKey === "plugin.steamcmd.username")
+                    root.beginPluginCredential("steam", "username", "SteamCMD Username", "Username", "setting", false)
+                else if (selectedKey === "plugin.steamcmd.password")
+                    root.beginPluginCredential("steam", "password", "SteamCMD Password", "Password", "secret", true)
+                else if (selectedKey === "plugin.steamcmd.password.clear")
+                    root.request("/plugins/steam/secret/password/clear", "POST", "", function() { root.refreshSystemSettings() }, "Secret clear failed")
+                else if (selectedKey === "plugin.romm.url")
+                    root.beginPluginCredential("romm", "url", "RomM URL", "Server URL", "setting", false)
+                else if (selectedKey === "plugin.romm.api_key")
+                    root.beginPluginCredential("romm", "api-key", "Pair RomM Device", "Code (XXXX-XXXX)", "romm-pair", false)
+                else if (selectedKey === "plugin.romm.api_key.clear")
+                    root.request("/plugins/romm/secret/api-key/clear", "POST", "", function() { root.refreshSystemSettings() }, "Secret clear failed")
+                else if (selectedKey.indexOf("mudos.") === 0)
+                    activateMudosAction(selectedKey)
                 return
             }
             if (!systemLanding && systemCategories[systemCategoryIndex] === "Network"
@@ -1479,6 +1627,16 @@ Window {
         }
     }
 
+    property string lastCredentialValue: ""
+    function beginPluginCredential(plugin, name, title, prompt, kind, secret) {
+        credentialTarget = ({plugin: plugin, name: name, kind: kind})
+        credentialKeyboardShown = false
+        credentialKeyboardShowAttempted = false
+        request("/credential/begin", "POST", JSON.stringify({title: title, prompt: prompt,
+                input_type: secret ? "secret" : "text", secret: secret, max_length: 4096}),
+                function(data) { credentialRequest = data }, "Credential editor unavailable")
+    }
+
     function openSystemCategory(index) {
         systemCategoryIndex = Math.max(0, Math.min(systemCategories.length - 1, index))
         systemRowIndex = 0
@@ -1512,6 +1670,17 @@ Window {
     }
 
     function back() {
+        if (credentialRequest.status === "requested" || credentialRequest.status === "waiting") {
+            root.request("/credential/cancel", "POST", JSON.stringify({id: credentialRequest.id}),
+                         function(data) {
+                             credentialRequest = data
+                             root.request("/keyboard/hide", "POST", "", function() {
+                                 root.credentialKeyboardShown = false
+                                 root.credentialKeyboardShowAttempted = false
+                             })
+                         }, "Credential cancellation failed")
+            return
+        }
         if (launchOverlayEffectiveVisible) {
             cancelLaunch()
             return
@@ -1524,6 +1693,13 @@ Window {
                 gameOptionsIndex = 0
                 metadataError = ""
             }
+            return
+        }
+        if (space === "system" && !systemLanding && systemCategories[systemCategoryIndex] === "Plugins"
+                && pluginDetailId !== "") {
+            pluginDetailId = ""
+            systemRowIndex = 0
+            refreshSystemSettings()
             return
         }
         if (space === "system" && !systemLanding

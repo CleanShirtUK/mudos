@@ -167,6 +167,7 @@ Item {
                 Repeater {
                     model: root.rows
                     delegate: Item {
+                        required property int index
                         required property var modelData
                         width: contentColumn.width
                         height: modelData.heading ? 40 * root.uiScale : 78 * root.uiScale

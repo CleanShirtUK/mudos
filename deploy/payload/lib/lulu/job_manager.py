@@ -8,7 +8,8 @@ from dataclasses import asdict
 from typing import Awaitable, Callable, Protocol
 from uuid import uuid4
 
-from .jobs import DownloadJob, JobError, JobOperation, JobState
+from .jobs import DownloadJob, JobError, JobOperation, JobState, utc_now
+from .acquisition_store import AcquisitionStore
 
 
 class JobCancelled(Exception):
@@ -53,14 +54,21 @@ class JobManager:
     """In-memory manager; persistence can be added without changing its API."""
 
     def __init__(self, *, provider_limits: dict[str, int] | None = None,
-                 on_change: Callable[[tuple[DownloadJob, ...]], None] | None = None) -> None:
+                 on_change: Callable[[tuple[DownloadJob, ...]], None] | None = None,
+                 store: AcquisitionStore | None = None) -> None:
         self.provider_limits = dict(provider_limits or {})
-        self.jobs: dict[str, DownloadJob] = {}
+        self.store = store
+        self.jobs: dict[str, DownloadJob] = {
+            job.job_id: job for job in (store.load() if store is not None else ())
+        }
         self.executors: dict[str, JobExecutor] = {}
         self._queues: dict[str, deque[str]] = defaultdict(deque)
         self._running: dict[str, set[str]] = defaultdict(set)
         self._tasks: dict[str, asyncio.Task[None]] = {}
         self._on_change = on_change
+        for job in self.jobs.values():
+            if job.state == JobState.QUEUED:
+                self._queues[job.provider].append(job.job_id)
 
     def register_executor(self, provider: str, executor: JobExecutor, *, limit: int = 1) -> None:
         if limit < 1:
@@ -69,6 +77,7 @@ class JobManager:
             raise ValueError(f"executor already registered: {provider}")
         self.executors[provider] = executor
         self.provider_limits[provider] = limit
+        self._pump(provider)
 
     @property
     def active_download_count(self) -> int:
@@ -80,20 +89,44 @@ class JobManager:
     def submit(self, provider: str, content_identity: str, title: str, *,
                operation: JobOperation = JobOperation.ACQUIRE,
                cancellation_supported: bool = False,
-               provider_job_id: str | None = None) -> DownloadJob:
+               provider_job_id: str | None = None, attempt: int = 1,
+               parent_job_id: str | None = None) -> DownloadJob:
         if provider not in self.executors:
             raise ValueError(f"no executor registered for provider: {provider}")
+        for existing in self.jobs.values():
+            if (existing.provider == provider
+                    and existing.content_identity == content_identity
+                    and existing.operation == operation
+                    and existing.state in {
+                        JobState.QUEUED, JobState.STARTING, JobState.TRANSFERRING,
+                        JobState.FINALIZING, JobState.PAUSED, JobState.CANCELLING,
+                    }):
+                return existing
         job = DownloadJob(
             job_id=f"job-{uuid4().hex}", provider=provider, title=title,
             content_identity=content_identity, operation=operation,
             cancellation_supported=cancellation_supported,
             provider_job_id=provider_job_id,
+            created_at=utc_now(), updated_at=utc_now(), attempt=attempt,
+            parent_job_id=parent_job_id,
         )
         self.jobs[job.job_id] = job
         self._queues[provider].append(job.job_id)
         self._publish()
         self._pump(provider)
         return job
+
+    def retry(self, job_id: str) -> DownloadJob:
+        previous = self._require(job_id)
+        if previous.state != JobState.FAILED or not previous.retryable:
+            raise ValueError("job is not retryable")
+        return self.submit(
+            previous.provider, previous.content_identity, previous.title,
+            operation=previous.operation,
+            cancellation_supported=previous.cancellation_supported,
+            attempt=previous.attempt + 1,
+            parent_job_id=previous.job_id,
+        )
 
     def transition(self, job_id: str, state: JobState, *,
                    stage: str | None = None,
@@ -177,6 +210,14 @@ class JobManager:
             raise KeyError(f"unknown job: {job_id}") from error
 
     def _publish(self) -> None:
+        if self.store is not None:
+            self.store.save_all(self.jobs.values())
+            retained = self.store.job_ids()
+            self.jobs = {
+                job_id: job for job_id, job in self.jobs.items()
+                if not job.state in {JobState.COMPLETED, JobState.FAILED, JobState.CANCELLED}
+                or job_id in retained
+            }
         if self._on_change is not None:
             self._on_change(self.snapshot())
 

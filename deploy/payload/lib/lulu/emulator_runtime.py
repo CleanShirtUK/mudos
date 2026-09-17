@@ -4,6 +4,9 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .local_content import LocalContentGame
+from .paths import PATHS
+from .platforms import load_platforms
+from .providers import ProviderRegistry, launch_arguments, load_providers
 from .switch_provider import SwitchProvider
 
 
@@ -12,6 +15,8 @@ class EmulatorLaunchIntent:
     platform: str
     executable: str
     arguments: tuple[str, ...]
+    provider: str = ""
+    working_directory: str | None = None
 
 
 class EmulatorRuntimeAdapter:
@@ -20,10 +25,15 @@ class EmulatorRuntimeAdapter:
     _retroarch_platforms = {"nes", "genesis"}
 
     def __init__(self, runtime_paths: dict[str, Path], core_paths: dict[str, Path] | None = None,
-                 switch_provider: SwitchProvider | None = None) -> None:
+                 switch_provider: SwitchProvider | None = None,
+                 providers: ProviderRegistry | None = None,
+                 config_root: Path | None = None) -> None:
         self.runtime_paths = runtime_paths
         self.core_paths = core_paths or {}
         self.switch_provider = switch_provider or SwitchProvider()
+        self.providers = providers or load_providers()
+        self.platforms = load_platforms()
+        self.config_root = config_root
 
     @staticmethod
     def supports_provider_menu(platform: str) -> bool:
@@ -45,20 +55,14 @@ class EmulatorRuntimeAdapter:
         executable = self.runtime_paths.get(game.platform)
         if executable is None or not executable.is_file():
             raise ValueError(f"runtime-missing: {game.platform}")
-        if game.platform in self._retroarch_platforms:
-            core = self.core_paths.get(game.platform)
-            if core is None or not core.is_file():
-                raise ValueError(f"runtime-core-missing: {game.platform}")
-            content_path = getattr(game, "content_path", getattr(game, "install_dir", ""))
-            arguments = ("-L", str(core), content_path)
-        elif game.platform in {"wii", "ps2"}:
-            content_path = getattr(game, "content_path", getattr(game, "install_dir", ""))
-            arguments = ("--batch", "-e", content_path) if game.platform == "wii" else (
-                "-batch", "-fullscreen", "--", content_path
+        definition = self.platforms.get(game.platform)
+        provider = self.providers.get(definition.default_provider or "")
+        arguments = launch_arguments(provider, game, executable, self.core_paths.get(game.platform),
+                                     self.config_root / provider.provider_id / "config" if self.config_root else None,
+                                     self.switch_provider)
+        if provider.provider_id == "eden" and device_indices is not None:
+            arguments = self.switch_provider.launch_arguments(
+                getattr(game, "content_path", getattr(game, "install_dir", "")),
+                device_indices=device_indices,
             )
-        elif game.platform == "switch":
-            content_path = getattr(game, "content_path", getattr(game, "install_dir", ""))
-            arguments = self.switch_provider.launch_arguments(content_path, device_indices=device_indices)
-        else:
-            raise ValueError(f"unsupported-runtime: {game.platform}")
-        return EmulatorLaunchIntent(game.platform, str(executable), arguments)
+        return EmulatorLaunchIntent(game.platform, str(executable), arguments, provider.provider_id)
