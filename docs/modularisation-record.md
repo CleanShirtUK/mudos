@@ -72,6 +72,20 @@ specific sections it owns and preserves unrelated native settings.
 Initial validation passed as recorded above. Further changes and failures will
 be appended here with commit and release evidence.
 
+The migration checkpoint at commit `f1865a0` passed `PYTHONPATH=src pytest -q`
+with **293 passed**, and `git diff --check` was clean. The release builder
+completed successfully at `/opt/lulu/releases/f1865a0-candidate-20260917003916`
+and its payload was subsequently verified by the builder before activation.
+
+The native provider binaries were inspected in the test image. RetroArch
+explicitly supports `--config` and `--appendconfig`; the existing launch path
+continues to use the user's native RetroArch config and a disposable append
+file for controller indices, with `config_save_on_exit=false`. Dolphin and
+PCSX2 did not provide usable non-GUI help output in this session; their
+section-preserving native INI adapters remain the compatibility redirect and
+do not overwrite unrelated user settings. No emulator was launched during
+this pass because the active graphical session is also the test console.
+
 ## Known limitations at start
 
 Provider binaries were not all runnable in a non-interactive validation
