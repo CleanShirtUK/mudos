@@ -245,6 +245,11 @@ class Bridge:
                     break
                 is_visible = visible()
                 if is_visible and not was_visible:
+                    # The OSK owns the intercepted controller stream while its
+                    # window is visible. Without this transition, InputPlumber
+                    # remains in shell mode and the first navigation events are
+                    # discarded by lulu-shell.
+                    await set_intercept_mode(bus, 2)
                     self.active = True
                     self.mode_restored = False
                 elif not is_visible and was_visible:

@@ -84,6 +84,7 @@ class MudosOskBridgeTests(unittest.TestCase):
         self.assertIn("mode_restored", source)
         self.assertIn("source_present", source)
         self.assertIn("awaiting_show_until", source)
+        self.assertIn("await set_intercept_mode(bus, 2)", source)
 
     def test_private_device_is_not_the_inputplumber_xbox_identity(self):
         source = (ROOT / "scripts/mudos-osk-bridge").read_text()

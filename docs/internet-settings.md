@@ -28,7 +28,10 @@ scan. It grants no root command execution to QML.
 
 The OSK service waits for Xwayland before starting, avoiding the startup race
 that otherwise made secured-network onboarding unavailable. No boot-specific
-network behavior was added.
+network behavior was added. When the OSK becomes visible, its bridge explicitly
+switches InputPlumber to `InterceptMode=2`; this prevents the shell from
+discarding the first controller navigation event, and mode 1 is restored when
+the OSK hides.
 
 Physical-controller validation passed in the development runtime: AP discovery,
 radio toggle, secured onboarding through the OSK, connect/disconnect/reconnect,
