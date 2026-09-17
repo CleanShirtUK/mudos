@@ -177,6 +177,7 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertIn('BusType.SYSTEM', network)
         self.assertNotIn('nmcli', network)
         self.assertIn('operationRequested("forget", row.ssid, "")', qml)
+        self.assertIn('passwordInput.forceActiveFocus()', qml)
 
     def test_typography_uses_central_semantic_families(self) -> None:
         typography = (ROOT / "ui" / "Typography.qml").read_text()

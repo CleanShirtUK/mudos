@@ -61,6 +61,16 @@ Item {
         selectedIndex = Math.max(0, Math.min(rows().length - 1, selectedIndex + delta))
     }
 
+    // Showing the separate OSK overlay can temporarily take X focus. Reclaim
+    // the text target after the overlay has appeared so its injected keys land
+    // in this password field without a mouse click on the shell.
+    Timer {
+        interval: 300
+        repeat: true
+        running: root.credentialView
+        onTriggered: passwordInput.forceActiveFocus()
+    }
+
     Text {
         x: 76 * root.uiScale; y: 76 * root.uiScale
         text: "INTERNET"
