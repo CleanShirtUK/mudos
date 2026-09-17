@@ -1,8 +1,11 @@
 import QtQuick
 import QtMultimedia
 
-QtObject {
+Item {
     id: root
+    visible: false
+    width: 0
+    height: 0
 
     // Keep these names stable so replacing a sound never requires a QML edit.
     readonly property url navigateSource: "sounds/ui-navigate.wav"

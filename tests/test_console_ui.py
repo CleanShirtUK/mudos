@@ -160,6 +160,9 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertIn('def SetProviderSetting', consoled)
         self.assertIn('"setting_key": "fps_show"', consoled)
         self.assertIn('load_providers()', consoled)
+        audio = (ROOT / "ui" / "UiAudioEngine.qml").read_text()
+        self.assertIn("Item {", audio)
+        self.assertIn("property Component navigateVoiceComponent", audio)
 
     def test_typography_uses_central_semantic_families(self) -> None:
         typography = (ROOT / "ui" / "Typography.qml").read_text()
