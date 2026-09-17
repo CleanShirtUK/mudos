@@ -124,6 +124,35 @@ These are recorded as environment limitations, not claimed launch-persistence
 successes. Native file load and persistence are covered by adapter tests; a
 full interactive provider launch remains a hardware-session test.
 
+## Phase 2 runtime and asset migration
+
+`EmulatorRuntimeAdapter` now resolves the platform definition, obtains its
+declared provider, and delegates command construction to
+`providers/runtime.py`. RetroArch, Dolphin, PCSX2, and Eden launch knowledge
+is no longer selected by platform branches in the runtime adapter. Core still
+owns lifecycle, controller assignment, and process policy; provider adapters
+own executable arguments and native configuration selection. Steam and RomM
+branches in catalogue/acquisition code remain legitimate provider-local
+capability dispatch and are not emulator launch paths.
+
+Local content scanning continues through the compatibility view in
+`emulation.py`, but its `PLATFORMS` values are generated from the TOML
+registry. Consequently extension filtering, labels, provider defaults, and
+BIOS subdirectories come from platform definitions. A GameCube file now uses
+the Dolphin provider relationship without a new core conditional. The
+compatibility view contains only executable/core resolution needed by legacy
+callers and no independent platform list.
+
+The QML asset catalog now exposes `logicalAsset(namespace, name)` and uses it
+for system artwork, supplied navigation artwork, and metadata glyphs. This
+keeps the existing artwork files and output paths unchanged while preventing
+individual screens from constructing those repository-relative paths.
+
+Provider settings are deliberately narrow. No broad emulator settings UI was
+invented; the native adapter supports read/write of selected INI keys while
+preserving unowned sections and values, and controller provisioning writes
+only its owned sections. The boundary is covered by round-trip tests.
+
 Final deployment evidence: commit `0bb9793` passed **293 tests** and was
 built as `/opt/lulu/releases/0bb9793-candidate-20260917004001`. The release
 manifest verified successfully, all payload files are immutable, and
