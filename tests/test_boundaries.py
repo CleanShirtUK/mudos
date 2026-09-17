@@ -178,6 +178,7 @@ class BoundaryTests(unittest.TestCase):
             })
             self.assertEqual(restored.navigation_controller_id, "CompositeDevice1")
 
+
     def test_controller_battery_normalization_preserves_unknown(self) -> None:
         controller = Controller("pad-a", battery=BatteryState())
         self.assertEqual(controller.battery.kind, BatteryKind.UNKNOWN)
