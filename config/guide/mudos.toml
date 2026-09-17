@@ -1,0 +1,9 @@
+[guide]
+
+[[guide.actions]]
+id = "open-downloads"
+label = "Open Downloads"
+role = "system"
+target = "mudos:downloads"
+contexts = ["shell", "game", "standalone", "store", "downloads", "install"]
+order = 10

@@ -11,25 +11,8 @@ Window {
     width: 1920
     height: 1080
 
-    property bool shellContext: guideModel.shellContext
     property bool confirmationPending: guideModel.confirmationPending
     property string confirmationAction: guideModel.confirmationAction
-
-    function resolvedGuideActions() {
-        if (confirmationPending)
-            return ["Cancel", confirmationAction]
-        if (shellContext) {
-            return ["Restart Mudos", "Reboot System", "Shut Down System"]
-        }
-        var actions = ["Reset Mudos"]
-        if (guideModel.providerMenuAvailable)
-            actions.push(guideModel.providerMenuLabel)
-        if (guideModel.compatibilityModeAvailable)
-            actions.push(guideModel.compatibilityMode
-                ? "Switch to Gamepad Mode" : "Switch to Compatibility Mode")
-        actions.push("Quit Current Application")
-        return actions
-    }
 
     LuluPalette {
         id: luluPalette
@@ -38,7 +21,7 @@ Window {
     Rectangle {
         anchors.centerIn: parent
         width: 520
-        height: confirmationPending ? 250 : shellContext ? 250 : 310
+        height: confirmationPending ? 250 : Math.max(250, 110 + (guideModel.actions.length * 60))
         color: luluPalette.guideSurface
         border.color: luluPalette.guideBorder
         border.width: 2
@@ -56,7 +39,7 @@ Window {
             y: 62
             spacing: 12
             Repeater {
-                model: root.resolvedGuideActions()
+                model: confirmationPending ? [{label: "Cancel"}, {label: confirmationAction}] : guideModel.actions
                 delegate: Rectangle {
                     width: 472
                     height: 48
@@ -64,7 +47,7 @@ Window {
                     Text {
                         anchors.fill: parent
                         anchors.leftMargin: 14
-                        text: modelData
+                        text: modelData.label
                         color: index === guideModel.selection ? luluPalette.guideSelectedText : luluPalette.primaryText
                         font.pixelSize: 18
                         verticalAlignment: Text.AlignVCenter

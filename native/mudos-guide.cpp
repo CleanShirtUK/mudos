@@ -10,6 +10,7 @@
 #include <QDBusInterface>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QJsonArray>
 #include <QVariant>
 #include <QStringList>
 #include <QFile>
@@ -33,11 +34,10 @@ class GuideWindow final : public QObject
 {
 public:
     GuideWindow(QQuickWindow *window, uint32_t targetXid, uint32_t targetPid,
-                const QString &providerMenuCommand, const QString &providerMenuLabel,
-                bool edenProvider,
+                const QVariantList &actions,
                 QQmlPropertyMap *viewModel)
         : window_(window), targetXid_(targetXid), targetPid_(targetPid),
-          providerMenuCommand_(providerMenuCommand), providerMenuLabel_(providerMenuLabel), edenProvider_(edenProvider), viewModel_(viewModel)
+          actions_(actions), viewModel_(viewModel)
     {
     }
 
@@ -111,34 +111,23 @@ private:
                 if (selection == 0) {
                     viewModel_->insert("confirmationPending", false);
                     viewModel_->insert("selection", 0);
-                } else if (viewModel_->value("confirmationAction").toString() == QStringLiteral("Reboot System"))
-                    powerAction(QStringLiteral("Reboot"));
-                else if (viewModel_->value("confirmationAction").toString() == QStringLiteral("Shut Down System"))
-                    powerAction(QStringLiteral("PowerOff"));
+                } else {
+                    if (executeAction(viewModel_->value("confirmationId").toString()))
+                        QCoreApplication::quit();
+                }
                 return;
             }
             const int actionSelection = selection;
-            if (viewModel_->value("shellContext").toBool() && actionSelection == 0)
-                resetMudos();
-            else if (viewModel_->value("shellContext").toBool() && (actionSelection == 1 || actionSelection == 2)) {
-                viewModel_->insert("confirmationAction", actionSelection == 1
-                                   ? QStringLiteral("Reboot System") : QStringLiteral("Shut Down System"));
+            const auto action = actionAt(actionSelection);
+            if (action.value("confirm").toBool()) {
+                viewModel_->insert("confirmationId", action.value("id"));
+                viewModel_->insert("confirmationAction", action.value("label"));
                 viewModel_->insert("confirmationPending", true);
                 viewModel_->insert("selection", 1);
                 return;
-            } else if (actionSelection == 0)
-                resetMudos();
-            else if (viewModel_->value("providerMenuAvailable").toBool() && actionSelection == 1) {
-                openProviderMenu();
             }
-            else if (actionSelection == compatibilitySelection())
-                switchCompatibilityMode();
-            else
-                if (edenProvider_)
-                    terminateEden();
-                else
-                    sendDelete();
-            QCoreApplication::quit();
+            if (executeAction(action.value("id").toString()))
+                QCoreApplication::quit();
         }
         else if (action == QStringLiteral("ui_back")) {
             if (viewModel_->value("confirmationPending").toBool()) {
@@ -152,35 +141,35 @@ private:
         }
     }
 
-    int compatibilitySelection() const
-    {
-        if (!viewModel_->value("compatibilityModeAvailable").toBool())
-            return -1;
-        return viewModel_->value("providerMenuAvailable").toBool() ? 2 : 1;
-    }
-
     int actionCountForModel() const
     {
         if (viewModel_->value("confirmationPending").toBool())
             return 2;
-        if (viewModel_->value("shellContext").toBool())
-            return viewModel_->value("devGlassActions").toBool() ? 5 : 3;
-        return 2 + (viewModel_->value("providerMenuAvailable").toBool() ? 1 : 0)
-            + (viewModel_->value("compatibilityModeAvailable").toBool() ? 1 : 0);
+        return actions_.size();
     }
 
-    void switchCompatibilityMode()
+    QVariantMap actionAt(int index) const
     {
-        const bool compatibility = viewModel_->value("compatibilityMode").toBool();
-        QDBusInterface sessiond("org.lulu.ConsoleSessiond", "/org/lulu/ConsoleSession",
-                                "org.lulu.ConsoleSession", QDBusConnection::sessionBus());
-        const auto reply = sessiond.call("SetInputMode",
-                                         compatibility ? QStringLiteral("gamepad") : QStringLiteral("compat"));
+        return index >= 0 && index < actions_.size() ? actions_.at(index).toMap() : QVariantMap();
+    }
+
+    bool executeAction(const QString &id)
+    {
+        QDBusInterface consoled("org.lulu.Consoled", "/org/lulu/Console",
+                                "org.lulu.Console", QDBusConnection::sessionBus());
+        const auto reply = consoled.call("ExecuteGuideAction", id);
         if (reply.type() == QDBusMessage::ErrorMessage) {
-            qWarning() << "Input mode change failed" << reply.errorMessage();
-            return;
+            qWarning() << "Guide action failed" << id << reply.errorMessage();
+            return false;
         }
-        viewModel_->insert("compatibilityMode", !compatibility);
+        const QString target = reply.arguments().value(0).toString();
+        if (target == "executed") return true;
+        if (target == "window-delete") return sendDelete();
+        if (target == "process-group-terminate") return terminateProcessGroup();
+        if (target.startsWith("key:")) return sendKey(target.mid(4));
+        if (target.startsWith("command:")) return runCommand(target.mid(8));
+        qWarning() << "Guide action returned unusable target" << id << target;
+        return false;
     }
 
     bool setProperty(const char *name, uint32_t value)
@@ -198,24 +187,25 @@ private:
         xcb_flush(x11->connection());
         return true;
     }
-    void terminateEden()
+    bool terminateProcessGroup()
     {
         const auto group = ::getpgid(static_cast<pid_t>(targetPid_));
         if (group <= 1)
-            return;
+            return false;
         if (::kill(-group, SIGTERM) < 0)
-            return;
+            return false;
         ::usleep(100000);
         if (::kill(-group, 0) == 0)
             ::kill(-group, SIGKILL);
+        return true;
     }
 
 
-    void sendDelete()
+    bool sendDelete()
     {
         auto *x11 = qGuiApp->nativeInterface<QNativeInterface::QX11Application>();
         if (!x11 || !x11->connection())
-            return;
+            return false;
         const auto protocols = xcb_intern_atom(x11->connection(), 0,
                                                sizeof("WM_PROTOCOLS") - 1, "WM_PROTOCOLS");
         const auto deleteAtom = xcb_intern_atom(x11->connection(), 0,
@@ -225,7 +215,7 @@ private:
         if (!protocolReply || !deleteReply) {
             free(protocolReply);
             free(deleteReply);
-            return;
+            return false;
         }
         xcb_client_message_event_t message{};
         message.response_type = XCB_CLIENT_MESSAGE;
@@ -239,26 +229,10 @@ private:
         xcb_flush(x11->connection());
         free(protocolReply);
         free(deleteReply);
+        return true;
     }
 
-    void resetMudos()
-    {
-        QDBusInterface sessiond("org.lulu.ConsoleSessiond", "/org/lulu/ConsoleSession",
-                                "org.lulu.ConsoleSession", QDBusConnection::sessionBus());
-        sessiond.call("ResetMudos");
-    }
-
-    void powerAction(const QString &method)
-    {
-        QDBusInterface logind("org.freedesktop.login1", "/org/freedesktop/login1",
-                              "org.freedesktop.login1.Manager", QDBusConnection::systemBus());
-        const auto reply = logind.call(method, false);
-        if (reply.type() == QDBusMessage::ErrorMessage)
-            qWarning() << method << "failed" << reply.errorMessage();
-        else
-            QCoreApplication::quit();
-    }
-    bool sendPcsx2Hotkey()
+    bool sendKey(const QString &key)
     {
         auto *x11 = qGuiApp->nativeInterface<QNativeInterface::QX11Application>();
         if (!x11 || !x11->connection())
@@ -267,7 +241,8 @@ private:
         auto *keySymbols = xcb_key_symbols_alloc(connection);
         if (!keySymbols)
             return false;
-        const auto keycodes = xcb_key_symbols_get_keycode(keySymbols, XK_F12);
+        const auto keycodes = xcb_key_symbols_get_keycode(keySymbols,
+                                                          key == QStringLiteral("F12") ? XK_F12 : XK_F12);
         if (!keycodes || keycodes[0] == XCB_NO_SYMBOL)
         {
             free(keycodes);
@@ -287,38 +262,18 @@ private:
         return true;
     }
 
-    void openProviderMenu()
+    bool runCommand(const QString &commandLine)
     {
-        if (providerMenuLabel_ == QStringLiteral("Open Downloads")) {
-            QDBusInterface sessiond("org.lulu.ConsoleSessiond", "/org/lulu/ConsoleSession",
-                                    "org.lulu.ConsoleSession", QDBusConnection::sessionBus());
-            sessiond.call("RequestMudosDownloads");
-            return;
-        }
-        if (providerMenuLabel_ == QStringLiteral("Open PCSX2 Menu")) {
-            if (!sendPcsx2Hotkey())
-                qWarning() << "PCSX2 provider menu hotkey failed";
-            return;
-        }
-
-        const auto command = QProcess::splitCommand(providerMenuCommand_);
-        if (command.isEmpty())
-            return;
-        QProcess providerProcess;
-        providerProcess.start(command.constFirst(), command.mid(1));
-        if (!providerProcess.waitForStarted(1000)
-            || !providerProcess.waitForFinished(1000)) {
-            qWarning() << "Provider menu command failed to start" << providerMenuCommand_;
-        }
+        const auto command = QProcess::splitCommand(commandLine);
+        if (command.isEmpty()) return false;
+        return QProcess::startDetached(command.constFirst(), command.mid(1));
     }
 
     QQuickWindow *window_;
     uint32_t targetXid_;
 
     uint32_t targetPid_;
-    QString providerMenuCommand_;
-    QString providerMenuLabel_;
-    bool edenProvider_;
+    QVariantList actions_;
     QQmlPropertyMap *viewModel_;
     QSocketNotifier *inputNotifier_ = nullptr;
     QByteArray inputBuffer_;
@@ -329,54 +284,32 @@ private:
 
 int main(int argc, char **argv)
 {
-    if (argc < 3 || argc > 5)
+    if (argc < 3)
         return EXIT_FAILURE;
     const auto targetXid = static_cast<uint32_t>(std::strtoul(argv[1], nullptr, 0));
     const auto targetPid = static_cast<uint32_t>(std::strtoul(argv[2], nullptr, 0));
-    const auto providerMenuCommand = argc == 4 ? QString::fromLocal8Bit(argv[3]) : QString();
-    auto providerMenuLabel = argc == 5 ? QString::fromLocal8Bit(argv[4]) : QStringLiteral("Provider Menu");
-    bool edenProvider = false;
-    auto effectiveProviderCommand = providerMenuCommand;
-    bool compatibilityMode = false;
-    bool shellContext = false;
-    bool compatibilityModeAvailable = targetPid > 1;
-    QString primaryId;
-    QDBusInterface sessiond("org.lulu.ConsoleSessiond", "/org/lulu/ConsoleSession",
-                            "org.lulu.ConsoleSession", QDBusConnection::sessionBus());
-    const auto stateReply = sessiond.call("GetState");
-    if (stateReply.type() != QDBusMessage::ErrorMessage && !stateReply.arguments().isEmpty()) {
-        const auto state = QJsonDocument::fromJson(
-            stateReply.arguments().constFirst().toString().toUtf8()).object();
-        compatibilityModeAvailable = state.value("lifecycle").toString() != QStringLiteral("shell")
-            && targetPid > 1;
-        shellContext = state.value("lifecycle").toString() != QStringLiteral("game");
-        compatibilityMode = state.value("input_mode").toString() == QStringLiteral("compat");
-        primaryId = state.value("primary_id").toString();
-            if (primaryId == QStringLiteral("steam-store")) {
-                effectiveProviderCommand = QStringLiteral("MUDOS_DOWNLOADS");
-                providerMenuLabel = QStringLiteral("Open Downloads");
-        } else if (primaryId.startsWith(QStringLiteral("local:ps2:"))) {
-            effectiveProviderCommand = QStringLiteral("PCSX2_OPEN_PAUSE_MENU");
-            providerMenuLabel = QStringLiteral("Open PCSX2 Menu");
-        } else if (primaryId.startsWith(QStringLiteral("local:nes:"))
-                   || primaryId.startsWith(QStringLiteral("local:genesis:"))) {
-            effectiveProviderCommand = QStringLiteral("/usr/bin/retroarch --command MENU_TOGGLE");
-            providerMenuLabel = QStringLiteral("Open RetroArch Menu");
-        } else if (primaryId.startsWith(QStringLiteral("local:switch:"))) {
-            edenProvider = true;
+    QVariantList actions;
+    QDBusInterface consoled("org.lulu.Consoled", "/org/lulu/Console",
+                             "org.lulu.Console", QDBusConnection::sessionBus());
+    const auto actionsReply = consoled.call("GetGuideActions");
+    if (actionsReply.type() != QDBusMessage::ErrorMessage && !actionsReply.arguments().isEmpty()) {
+        const auto array = QJsonDocument::fromJson(actionsReply.arguments().constFirst().toString().toUtf8()).array();
+        for (const auto &value : array) {
+            QVariantMap action;
+            const auto object = value.toObject();
+            for (auto it = object.begin(); it != object.end(); ++it)
+                action.insert(it.key(), it.value().toVariant());
+            actions.append(action);
         }
     }
 
     QGuiApplication application(argc, argv);
     QQmlPropertyMap viewModel;
     viewModel.insert("selection", 0);
-    viewModel.insert("providerMenuAvailable", !effectiveProviderCommand.isEmpty());
-    viewModel.insert("compatibilityModeAvailable", compatibilityModeAvailable);
-    viewModel.insert("compatibilityMode", compatibilityMode);
-    viewModel.insert("shellContext", shellContext);
+    viewModel.insert("actions", actions);
     viewModel.insert("confirmationPending", false);
     viewModel.insert("confirmationAction", QString());
-    viewModel.insert("providerMenuLabel", providerMenuLabel);
+    viewModel.insert("confirmationId", QString());
     QQmlApplicationEngine engine;
     engine.rootContext()->setContextProperty("guideModel", &viewModel);
     engine.load(QUrl::fromLocalFile(qEnvironmentVariable("LULU_GUIDE_UI_FILE",
@@ -386,7 +319,7 @@ int main(int argc, char **argv)
     auto *window = qobject_cast<QQuickWindow *>(engine.rootObjects().constFirst());
     if (!window)
         return EXIT_FAILURE;
-    GuideWindow guide(window, targetXid, targetPid, effectiveProviderCommand, providerMenuLabel, edenProvider, &viewModel);
+    GuideWindow guide(window, targetXid, targetPid, actions, &viewModel);
     if (!guide.prepare())
         return EXIT_FAILURE;
     window->show();

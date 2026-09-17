@@ -35,8 +35,8 @@ class DownloadsSurfaceTests(unittest.TestCase):
         self.assertIn('/acquisition/retry/', self.shell)
         self.assertIn('downloadsRequested()', self.store)
         self.assertIn('call_retry_job', self.bridge)
-        self.assertIn('RequestMudosDownloads', self.guide)
-        self.assertIn('Open Downloads', self.guide)
+        self.assertIn('target = "mudos:downloads"', (ROOT / "config/guide/mudos.toml").read_text())
+        self.assertIn('label = "Open Downloads"', (ROOT / "config/guide/mudos.toml").read_text())
 
     def test_old_steam_download_delegation_is_absent(self) -> None:
         for path in (ROOT / "src", ROOT / "native", ROOT / "scripts", ROOT / "ui"):

@@ -13,3 +13,11 @@ command = "/usr/bin/eden"
 controller_mode = "compat"
 [launch.game]
 command = "/usr/bin/eden"
+
+[[guide.actions]]
+id = "eden-quit"
+label = "Quit Eden"
+role = "quit"
+target = "process-group-terminate"
+contexts = ["game", "standalone"]
+order = 90

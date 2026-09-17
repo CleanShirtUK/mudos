@@ -1,0 +1,35 @@
+[guide]
+
+[[guide.actions]]
+id = "switch-compatibility"
+label = "Switch to Compatibility Mode"
+role = "system"
+target = "session:set-input-mode"
+contexts = ["shell", "game", "standalone"]
+order = 10
+
+[[guide.actions]]
+id = "restart-mudos"
+label = "Restart Mudos"
+role = "system"
+target = "session:reset-mudos"
+contexts = ["shell", "game", "standalone"]
+order = 20
+
+[[guide.actions]]
+id = "reboot-system"
+label = "Reboot System"
+role = "system"
+target = "system:reboot"
+contexts = ["shell", "game", "standalone"]
+confirm = true
+order = 30
+
+[[guide.actions]]
+id = "shutdown-system"
+label = "Shutdown System"
+role = "system"
+target = "system:shutdown"
+contexts = ["shell", "game", "standalone"]
+confirm = true
+order = 40

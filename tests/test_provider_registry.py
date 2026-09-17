@@ -2,10 +2,28 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from lulu.providers import load_providers
+from lulu.providers import load_base_guide, load_mudos_guide, load_providers
 
 
 class ProviderLaunchContractTests(unittest.TestCase):
+    def test_base_guide_is_ordered_and_provider_quit_is_declared(self) -> None:
+        actions = load_base_guide()
+        self.assertEqual([action.label for action in actions], [
+            "Switch to Compatibility Mode", "Restart Mudos", "Reboot System", "Shutdown System",
+        ])
+        self.assertEqual([action.label for action in load_mudos_guide()], ["Open Downloads"])
+        providers = load_providers()
+        for provider_id in ("retroarch", "steam", "dolphin", "pcsx2", "eden"):
+            self.assertEqual(sum(action.role == "quit" for action in providers[provider_id].guide_actions), 1)
+
+    def test_provider_context_filtering_and_standalone_actions(self) -> None:
+        providers = load_providers()
+        self.assertEqual([a.action_id for a in providers.guide_actions("steam", "store")],
+                         ["steam-quit"])
+        self.assertEqual([a.action_id for a in providers.guide_actions("steam", "standalone")],
+                         ["steam-quit"])
+        self.assertEqual(providers.guide_actions("romm", "game"), ())
+
     def test_launch_contract_is_separate_and_menu_order_is_deterministic(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -20,7 +38,8 @@ class ProviderLaunchContractTests(unittest.TestCase):
                 (path / "provider.toml").write_text(
                     f'id = "{provider_id}"\nname = "{name}"\n'
                     '[capabilities]\nlaunch = true\n[platforms]\nsupported = []\n'
-                    '[config]\nstrategy = "direct"\n' + launch
+                    '[config]\nstrategy = "direct"\n' + launch +
+                    '\n[[guide.actions]]\nid = "quit"\nlabel = "Quit"\nrole = "quit"\ntarget = "window-delete"\n'
                 )
             registry = load_providers(root)
             self.assertEqual([item.provider_id for item in registry.standalone()], ["alpha", "zeta"])
@@ -37,6 +56,7 @@ class ProviderLaunchContractTests(unittest.TestCase):
                 '[config]\nstrategy = "direct"\n'
                 '[launch.standalone]\ncommand = "/usr/bin/retroarch"\n'
                 '[launch.game]\ncommand = "/usr/bin/retroarch --game"\n'
+                '[[guide.actions]]\nid = "quit"\nlabel = "Quit"\nrole = "quit"\ntarget = "window-delete"\n'
             )
             provider = load_providers(Path(directory))["retroarch"]
             self.assertEqual(provider.standalone_launch.command, ("/usr/bin/retroarch",))

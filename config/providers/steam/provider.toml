@@ -14,3 +14,11 @@ controller_mode = "compat"
 window_class = "steam"
 [launch.game]
 command = "/usr/bin/steam"
+
+[[guide.actions]]
+id = "steam-quit"
+label = "Quit Steam"
+role = "quit"
+target = "window-delete"
+contexts = ["game", "standalone", "store", "downloads", "install"]
+order = 90

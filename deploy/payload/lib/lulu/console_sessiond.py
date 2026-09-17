@@ -30,6 +30,7 @@ class SessionState:
     requested_surface: str | None = None
     session_kind: str = "shell"
     provider_id: str | None = None
+    controller_mode: str | None = None
 
 
 class SessionStateModel:
@@ -51,6 +52,11 @@ class SessionStateModel:
         if primary_id.startswith("provider:"):
             self.state.session_kind = "provider_standalone"
             self.state.provider_id = primary_id.split(":", 2)[1]
+        elif primary_id == "steam-store" or primary_id.startswith("steam-install:"):
+            # Delegated provider surfaces still have an owning provider even
+            # though they are not ordinary game launches.
+            self.state.session_kind = "game"
+            self.state.provider_id = "steam"
         else:
             self.state.session_kind = "game"
             self.state.provider_id = None

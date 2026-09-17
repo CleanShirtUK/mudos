@@ -14,3 +14,11 @@ command = "/usr/bin/dolphin-emu"
 controller_mode = "compat"
 [launch.game]
 command = "/usr/bin/dolphin-emu"
+
+[[guide.actions]]
+id = "dolphin-quit"
+label = "Quit Dolphin"
+role = "quit"
+target = "window-delete"
+contexts = ["game", "standalone"]
+order = 90

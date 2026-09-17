@@ -39,7 +39,7 @@ from .steam_entitlements import SteamEntitlementSource
 from .system_settings import CATEGORIES as SYSTEM_CATEGORIES, SystemSettingsProvider
 from .paths import PATHS
 from .platforms import load_platforms
-from .providers import NativeConfigAdapter, load_providers
+from .providers import NativeConfigAdapter, load_base_guide, load_mudos_guide, load_providers
 
 
 DESCRIPTOR = ServiceDescriptor(
@@ -606,12 +606,85 @@ class ConsoleInterface(ServiceInterface):
         self._catalogue_generation = 0
         self._delta_history: deque[tuple[int, list[dict[str, object]]]] = deque(maxlen=256)
         self._providers = load_providers()
+        self._base_guide = load_base_guide()
+        self._mudos_guide = load_mudos_guide()
         self._platforms = load_platforms()
 
     def _provider_for_game_id(self, game_id: str):
         game = self.catalogue.store.get_game(game_id)
         if game is None or game.provider != "local":
             return None
+
+    def _guide_context(self, state: dict[str, object]) -> tuple[str, object | None]:
+        lifecycle = str(state.get("lifecycle", "shell"))
+        if lifecycle == "shell":
+            return "shell", None
+        provider_id = state.get("provider_id")
+        if not provider_id and str(state.get("session_kind")) == "game":
+            game = self.catalogue.store.get_game(str(state.get("primary_id", "")))
+            if game is not None:
+                try:
+                    platform = self._platforms.get(game.platform)
+                    provider_id = platform.default_provider
+                except KeyError:
+                    provider_id = None
+        if not provider_id:
+            return "game", None
+        surface = state.get("delegated_surface")
+        context = str(surface) if surface else (
+            "standalone" if state.get("session_kind") == "provider_standalone" else "game")
+        try:
+            return context, self._providers.get(str(provider_id))
+        except KeyError:
+            return context, None
+
+    @method()
+    async def GetGuideActions(self) -> "s":
+        """Return the composed, normalized Guide model for the active context."""
+        state = json.loads(await self.sessiond.call_get_state()) if self.sessiond is not None else {"lifecycle": "shell"}
+        context, provider = self._guide_context(state)
+        provider_actions = self._providers.guide_actions(provider.provider_id, context) if provider is not None else ()
+        # Provider actions lead, including Quit; Mudos-owned actions follow.
+        actions = list(provider_actions)
+        actions.extend(action for action in self._base_guide if context in action.contexts)
+        actions.extend(action for action in self._mudos_guide if context in action.contexts)
+        return json.dumps([{
+            "id": action.action_id, "label": action.label, "role": action.role,
+            "target": action.target, "confirm": action.confirm, "order": action.order,
+        } for action in actions], separators=(",", ":"))
+
+    @method()
+    async def ExecuteGuideAction(self, action_id: "s") -> "s":
+        """Execute system-owned Guide actions; return provider targets to the helper."""
+        action = next((item for item in self._base_guide if item.action_id == action_id), None)
+        if action is None:
+            action = next((item for item in self._mudos_guide if item.action_id == action_id), None)
+        if action is not None:
+            if action.target == "session:set-input-mode":
+                await self.sessiond.call_set_input_mode("compat")
+            elif action.target == "session:reset-mudos":
+                await self.sessiond.call_reset_mudos()
+            elif action.target == "system:reboot":
+                await self.sessiond.call_reboot()
+            elif action.target == "system:shutdown":
+                await self.sessiond.call_shutdown()
+            elif action.target == "mudos:downloads":
+                await self.sessiond.call_request_mudos_downloads()
+            else:
+                raise ValueError(f"unsupported base Guide target: {action.target}")
+            return "executed"
+        state = json.loads(await self.sessiond.call_get_state())
+        context, provider = self._guide_context(state)
+        if provider is None:
+            raise ValueError("no provider owns the active Guide context")
+        actions = self._providers.guide_actions(provider.provider_id, context)
+        selected = next((item for item in actions if item.action_id == action_id), None)
+        if selected is None:
+            raise ValueError("Guide action is not valid in the active context")
+        if selected.target == "mudos:downloads":
+            await self.sessiond.call_request_mudos_downloads()
+            return "executed"
+        return selected.target
         try:
             platform = self._platforms.get(game.platform)
             return self._providers.get(platform.default_provider or "")

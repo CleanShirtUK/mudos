@@ -14,3 +14,19 @@ command = "/usr/bin/pcsx2-qt"
 controller_mode = "compat"
 [launch.game]
 command = "/usr/bin/pcsx2-qt"
+
+[[guide.actions]]
+id = "pcsx2-menu"
+label = "Open PCSX2 Menu"
+role = "provider"
+target = "key:F12"
+contexts = ["game", "standalone"]
+order = 10
+
+[[guide.actions]]
+id = "pcsx2-quit"
+label = "Quit PCSX2"
+role = "quit"
+target = "window-delete"
+contexts = ["game", "standalone"]
+order = 90

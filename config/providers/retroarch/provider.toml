@@ -13,3 +13,19 @@ command = "/usr/bin/retroarch --menu"
 controller_mode = "game"
 [launch.game]
 command = "/usr/bin/retroarch"
+
+[[guide.actions]]
+id = "retroarch-menu"
+label = "Open RetroArch Menu"
+role = "provider"
+target = "command:/usr/bin/retroarch --command MENU_TOGGLE"
+contexts = ["game", "standalone"]
+order = 10
+
+[[guide.actions]]
+id = "retroarch-quit"
+label = "Quit RetroArch"
+role = "quit"
+target = "window-delete"
+contexts = ["game", "standalone"]
+order = 90
