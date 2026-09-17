@@ -33,13 +33,13 @@ class NativeConfigAdapter:
             match = next((i for i, line in enumerate(lines)
                           if "=" in line and "[" not in line and line.split("=", 1)[0].strip() == key), None)
             if match is not None:
-                lines[match] = f"{key} = {value}"
+                lines[match] = f'{key} = "{value.strip(chr(34))}"'
                 self.path.parent.mkdir(parents=True, exist_ok=True)
                 temporary = self.path.with_suffix(self.path.suffix + ".tmp")
                 temporary.write_text("\n".join(lines) + "\n", encoding="utf-8")
                 temporary.replace(self.path)
                 return
-            lines.insert(0, f"{key} = {value}")
+            lines.insert(0, f'{key} = "{value.strip(chr(34))}"')
             self.path.parent.mkdir(parents=True, exist_ok=True)
             temporary = self.path.with_suffix(self.path.suffix + ".tmp")
             temporary.write_text("\n".join(lines) + "\n", encoding="utf-8")

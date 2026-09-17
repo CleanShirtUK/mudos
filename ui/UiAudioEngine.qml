@@ -17,44 +17,44 @@ QtObject {
     property var lastPlayedAt: ({})
     property string pendingSemantic: ""
 
-    Component {
+    property Component navigateVoiceComponent: Component {
         id: navigateVoiceComponent
         SoundEffect { source: root.navigateSource; volume: root.volume }
     }
-    Component {
+    property Component confirmVoiceComponent: Component {
         id: confirmVoiceComponent
         SoundEffect { source: root.confirmSource; volume: root.volume }
     }
-    Component {
+    property Component backVoiceComponent: Component {
         id: backVoiceComponent
         SoundEffect { source: root.backSource; volume: root.volume }
     }
-    Component {
+    property Component errorVoiceComponent: Component {
         id: errorVoiceComponent
         SoundEffect { source: root.errorSource; volume: root.volume }
     }
 
     Loader {
         id: navigateVoiceLoader
-        sourceComponent: navigateVoiceComponent
+        sourceComponent: root.navigateVoiceComponent
         active: false
         onLoaded: root.tryPlayPending()
     }
     Loader {
         id: confirmVoiceLoader
-        sourceComponent: confirmVoiceComponent
+        sourceComponent: root.confirmVoiceComponent
         active: false
         onLoaded: root.tryPlayPending()
     }
     Loader {
         id: backVoiceLoader
-        sourceComponent: backVoiceComponent
+        sourceComponent: root.backVoiceComponent
         active: false
         onLoaded: root.tryPlayPending()
     }
     Loader {
         id: errorVoiceLoader
-        sourceComponent: errorVoiceComponent
+        sourceComponent: root.errorVoiceComponent
         active: false
         onLoaded: root.tryPlayPending()
     }

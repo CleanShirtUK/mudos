@@ -623,14 +623,14 @@ class ConsoleInterface(ServiceInterface):
             "available": True,
             "provider_id": provider.provider_id,
             "provider_name": provider.name,
-            "setting_key": "config_save_on_exit",
-            "setting_label": "Save config on exit",
-            "setting_value": (adapter.get("", "config_save_on_exit", "true") or "true").strip('"'),
+            "setting_key": "fps_show",
+            "setting_label": "Show FPS",
+            "setting_value": (adapter.get("", "fps_show", "false") or "false").strip('"'),
         })
 
     @method()
     def SetProviderSetting(self, provider_id: "s", key: "s", value: "s") -> "s":
-        if provider_id != "retroarch" or key != "config_save_on_exit" or value not in {"true", "false"}:
+        if provider_id != "retroarch" or key != "fps_show" or value not in {"true", "false"}:
             raise DBusError("org.lulu.Console.Error.InvalidProviderSetting", "unsupported provider setting")
         adapter = self._provider_setting(provider_id)
         assert adapter is not None

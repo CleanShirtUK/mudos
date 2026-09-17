@@ -158,6 +158,7 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertIn('sessiond.call("GetProviderGuide", primaryId)', native)
         self.assertIn('def GetProviderGuide', consoled)
         self.assertIn('def SetProviderSetting', consoled)
+        self.assertIn('"setting_key": "fps_show"', consoled)
         self.assertIn('load_providers()', consoled)
 
     def test_typography_uses_central_semantic_families(self) -> None:

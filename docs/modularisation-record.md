@@ -80,7 +80,7 @@ and its payload was subsequently verified by the builder before activation.
 The native provider binaries were inspected in the test image. RetroArch
 explicitly supports `--config` and `--appendconfig`; the existing launch path
 continues to use the user's native RetroArch config and a disposable append
-file for controller indices, with `config_save_on_exit=false`. Dolphin and
+file for controller indices, with its runtime `config_save_on_exit=false` safeguard. Dolphin and
 PCSX2 did not provide usable non-GUI help output in this session; their
 section-preserving native INI adapters remain the compatibility redirect and
 do not overwrite unrelated user settings. No emulator was launched during
@@ -269,16 +269,16 @@ The fallback is now empty again, while Steam Store retains `Open Downloads`.
 RetroArch game processes advertise `Provider` and the Guide keeps Downloads
 contextual. Provider settings metadata is resolved by Consoled through the
 platform and provider registries. The restored Guide surface currently exposes
-one deliberately narrow native setting: RetroArch `config_save_on_exit`,
+one deliberately narrow native setting: RetroArch `fps_show`,
 read/written by `NativeConfigAdapter` in the centralized
 `~/.config/lulu/providers/retroarch/config/retroarch.cfg` file. The setting
 screen toggles the value and supports controller Back without leaking input to
 the game. Unsupported providers do not receive a fabricated settings screen.
 
-The live persistence exercise used `config_save_on_exit`. Its baseline was
-`"true"`; the deployed provider boundary changed the native file to `false`,
+The live persistence exercise used `fps_show`, which is not overridden by the
+ephemeral controller config. Its baseline was `"false"`; the deployed provider boundary changed the native file to `true`,
 and `GetProviderGuide` immediately reported `false`. Super Mario Bros was
 relaunched successfully with RetroArch using the centralized file. After
 restarting Acquisitiond, Consoled, and the graphical session, the setting
-still reported `false` and the native line remained present. Cold-boot
+still reported `true` and the native line remained present. Cold-boot
 validation follows the final release deployment.
