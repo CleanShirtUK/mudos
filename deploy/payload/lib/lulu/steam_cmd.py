@@ -14,7 +14,9 @@ import json
 import os
 from pathlib import Path
 import re
-from typing import Mapping
+import shutil
+from typing import Callable, Mapping
+from urllib.request import Request, urlopen
 
 from .jobs import DownloadJob, JobState
 from .job_manager import JobExecutionError, JobReporter
@@ -27,6 +29,63 @@ class SteamCmdError(JobExecutionError):
     def __init__(self, code: str, message: str, *, details: dict[str, object] | None = None,
                  retryable: bool = False) -> None:
         super().__init__(code, message, details=details, retryable=retryable)
+
+
+STEAM_APP_DETAILS_URL = "https://store.steampowered.com/api/appdetails"
+
+
+class SteamPlatformResolver:
+    """Resolve Steam's actual depot platform policy, not UI platform labels."""
+
+    def __init__(self, cache_path: Path | None = None,
+                 request: Callable[[str, float], bytes] | None = None) -> None:
+        self.cache_path = cache_path or (PATHS.config_root / "steam-platforms.json")
+        self._request = request or self._http_request
+
+    def resolve(self, app_id: str, timeout: float = 12.0) -> str | None:
+        cached = load_platforms(self.cache_path).get(app_id)
+        if cached in {"linux", "windows"}:
+            return cached
+        try:
+            payload = json.loads(self._request(
+                f"{STEAM_APP_DETAILS_URL}?appids={app_id}&filters=platforms", timeout
+            ))
+            record = payload.get(app_id) if isinstance(payload, dict) else None
+            data = record.get("data") if isinstance(record, dict) and record.get("success") else None
+            platforms = data.get("platforms", {}) if isinstance(data, dict) else {}
+            if not isinstance(platforms, dict):
+                return None
+            # Prefer native Linux depots. Windows is intentional for Proton;
+            # macOS-only and missing platform data remain unsupported.
+            if platforms.get("linux") is True:
+                platform = "linux"
+            elif platforms.get("windows") is True:
+                platform = "windows"
+            else:
+                return None
+            self._persist(app_id, platform)
+            return platform
+        except (OSError, TypeError, ValueError, json.JSONDecodeError):
+            return None
+
+    @staticmethod
+    def _http_request(url: str, timeout: float) -> bytes:
+        request = Request(url, headers={"Accept": "application/json", "User-Agent": "Lulu/1"})
+        with urlopen(request, timeout=timeout) as response:
+            if int(response.status) != 200:
+                raise OSError(f"Steam app details returned HTTP {response.status}")
+            return response.read()
+
+    def _persist(self, app_id: str, platform: str) -> None:
+        values = load_platforms(self.cache_path)
+        values[app_id] = platform
+        try:
+            self.cache_path.parent.mkdir(parents=True, exist_ok=True)
+            temporary = self.cache_path.with_suffix(".tmp")
+            temporary.write_text(json.dumps(values, sort_keys=True) + "\n")
+            temporary.replace(self.cache_path)
+        except OSError:
+            pass
 
 
 @dataclass(frozen=True, slots=True)
@@ -100,8 +159,9 @@ class SteamCmdExecutor:
 
     def __init__(self, *, executable: str | None = None, account: str | None = None,
                  install_dir: Path | None = None, platforms: Mapping[str, str] | None = None,
-                 parser: SteamCmdParser | None = None) -> None:
-        self.executable = executable or os.environ.get("LULU_STEAMCMD", "steamcmd")
+                 parser: SteamCmdParser | None = None,
+                 platform_resolver: SteamPlatformResolver | None = None) -> None:
+        self.executable = executable or os.environ.get("LULU_STEAMCMD") or str(PATHS.steamcmd_executable)
         self.account = account or os.environ.get("LULU_STEAM_ACCOUNT", "")
         if not self.account:
             try:
@@ -114,9 +174,27 @@ class SteamCmdExecutor:
         self.install_dir = install_dir
         if self.install_dir is None and configured_library:
             self.install_dir = Path(configured_library)
-        self.install_dir = self.install_dir or (PATHS.data_home / "Steam")
+        self.install_dir = self.install_dir or PATHS.steam_library_root
         self.platforms = dict(platforms or load_platforms())
+        self.platform_resolver = platform_resolver or SteamPlatformResolver()
         self.parser = parser or SteamCmdParser()
+
+    def _require_executable(self) -> str:
+        """Resolve only the explicit override or the canonical Mudos path."""
+        candidate = self.executable
+        path = Path(candidate).expanduser()
+        if not path.is_absolute() and os.environ.get("LULU_STEAMCMD"):
+            resolved = shutil.which(candidate)
+            if resolved:
+                candidate, path = resolved, Path(resolved)
+        if not path.is_file() or not os.access(path, os.X_OK):
+            raise SteamCmdError(
+                "steamcmd-unavailable",
+                "SteamCMD is not provisioned or executable",
+                details={"executable": str(path)},
+                retryable=True,
+            )
+        return candidate
 
     @staticmethod
     def _app_id(identity: str) -> str:
@@ -140,7 +218,12 @@ class SteamCmdExecutor:
 
     async def run(self, job: DownloadJob, reporter: JobReporter) -> None:
         app_id = self._app_id(job.content_identity)
+        if app_id not in self.platforms:
+            platform = await asyncio.to_thread(self.platform_resolver.resolve, app_id)
+            if platform is not None:
+                self.platforms[app_id] = platform
         command = self.command(app_id)
+        command[0] = self._require_executable()
         self.install_dir.mkdir(parents=True, exist_ok=True)
         process = await asyncio.create_subprocess_exec(
             *command, stdin=asyncio.subprocess.DEVNULL,

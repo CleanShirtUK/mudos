@@ -24,12 +24,13 @@ from .artwork import LocalArtworkCache, SteamGridDBArtwork
 from .contracts import ServiceDescriptor, ServiceName
 from .controller_provisioning import ensure_provider_controller_config
 from .emulator_runtime import EmulatorRuntimeAdapter
-from .emulation import PLATFORMS, ROM_ROOT, ensure_storage
+from .emulation import PLATFORMS, current_rom_root, ensure_storage
 from .inputplumber import InputPlumberClient
 from .local_content import LocalContentProvider
 from .metadata import MetadataMatcher, SteamGridDBMetadata, clean_local_title
 from .network_manager import NetworkManagerAdapter
 from .audio_manager import AudioManagerAdapter
+from .storage_manager import StorageManagerAdapter
 from .romm import RommApiError, RommClient, RommConfig, RommGame
 from .steam_provider import SteamProvider
 from .steam_entitlements import SteamEntitlementSource
@@ -154,7 +155,7 @@ class ConsoleCatalog:
         if "local" in selected:
             LOGGER.info("catalogue stage started name=local")
             ensure_storage()
-            self.store.reconcile_local(self.local_provider, ROM_ROOT)
+            self.store.reconcile_local(self.local_provider, current_rom_root())
             if self.store.last_deltas:
                 self.last_delta_batches.append(self.store.last_deltas)
             LOGGER.info("catalogue stage completed name=local sqlite_commit=complete")
@@ -585,7 +586,8 @@ class ConsoleInterface(ServiceInterface):
                  system_settings: SystemSettingsProvider | None = None,
                  sessiond: object | None = None,
                  network_manager: NetworkManagerAdapter | None = None,
-                 audio_manager: AudioManagerAdapter | None = None) -> None:
+                 audio_manager: AudioManagerAdapter | None = None,
+                 storage_manager: StorageManagerAdapter | None = None) -> None:
         super().__init__(INTERFACE_NAME)
         self.catalogue = catalogue
         self.local_runtime = local_runtime
@@ -593,6 +595,7 @@ class ConsoleInterface(ServiceInterface):
         self.sessiond = sessiond
         self.network_manager = network_manager or NetworkManagerAdapter()
         self.audio_manager = audio_manager or AudioManagerAdapter()
+        self.storage_manager = storage_manager or StorageManagerAdapter()
         self._local_process: asyncio.subprocess.Process | None = None
         self._local_token: str | None = None
         self._refresh_task: asyncio.Task[list[dict[str, object]]] | None = None
@@ -743,6 +746,26 @@ class ConsoleInterface(ServiceInterface):
     @method()
     async def SetAudioMute(self, device_id: "s", muted: "b", input_device: "b") -> "s":
         return json.dumps(await self.audio_manager.set_mute(device_id, muted, input_device), sort_keys=True)
+
+    @method()
+    async def GetStorageState(self) -> "s":
+        return json.dumps(await self.storage_manager.snapshot(), sort_keys=True)
+
+    @method()
+    async def MountStorage(self, device_id: "s") -> "s":
+        return json.dumps(await self.storage_manager.mount(device_id), sort_keys=True)
+
+    @method()
+    async def UnmountStorage(self, device_id: "s") -> "s":
+        return json.dumps(await self.storage_manager.unmount(device_id), sort_keys=True)
+
+    @method()
+    async def EjectStorage(self, device_id: "s") -> "s":
+        return json.dumps(await self.storage_manager.eject(device_id), sort_keys=True)
+
+    @method()
+    async def SelectStorageTarget(self, kind: "s", device_id: "s") -> "s":
+        return json.dumps(await self.storage_manager.select_target(kind, device_id), sort_keys=True)
 
     @method()
     async def RefreshStages(self, stages: "as") -> "u":

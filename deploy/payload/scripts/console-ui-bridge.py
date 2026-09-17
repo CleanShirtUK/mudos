@@ -320,6 +320,23 @@ class ConsoleUiBridge:
     async def audio_state(self) -> dict[str, object]:
         return json.loads(await self.consoled.call_get_audio_state())
 
+    async def storage_state(self) -> dict[str, object]:
+        return json.loads(await self.consoled.call_get_storage_state())
+
+    async def storage_mutation(self, action: str, payload: dict[str, object]) -> dict[str, object]:
+        device_id = str(payload.get("id", ""))
+        if action == "mount":
+            result = await self.consoled.call_mount_storage(device_id)
+        elif action == "unmount":
+            result = await self.consoled.call_unmount_storage(device_id)
+        elif action == "eject":
+            result = await self.consoled.call_eject_storage(device_id)
+        elif action == "target":
+            result = await self.consoled.call_select_storage_target(str(payload.get("kind", "")), device_id)
+        else:
+            raise ValueError(f"unknown storage operation: {action}")
+        return json.loads(result)
+
     async def audio_mutation(self, action: str, payload: dict[str, object]) -> dict[str, object]:
         device_id = str(payload.get("id", ""))
         input_device = bool(payload.get("input", False))
@@ -422,6 +439,12 @@ class ApiHandler(BaseHTTPRequestHandler):
             except Exception as error:
                 self._respond(503, {"error": str(error)})
             return
+        if urlparse(self.path).path == "/storage":
+            try:
+                self._respond(200, self.bridge.call(self.bridge.storage_state()))
+            except Exception as error:
+                self._respond(503, {"error": str(error)})
+            return
         if urlparse(self.path).path == "/platforms":
             try:
                 self._respond(200, self.bridge.call(self.bridge.list_platforms()))
@@ -475,6 +498,15 @@ class ApiHandler(BaseHTTPRequestHandler):
                 payload = json.loads(self.rfile.read(length) or b"{}")
                 action = path.removeprefix("/audio/")
                 self._respond(200, self.bridge.call(self.bridge.audio_mutation(action, payload), timeout=10))
+            except Exception as error:
+                self._respond(409, {"error": str(error) or type(error).__name__})
+            return
+        if path.startswith("/storage/"):
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+                payload = json.loads(self.rfile.read(length) or b"{}")
+                action = path.removeprefix("/storage/")
+                self._respond(200, self.bridge.call(self.bridge.storage_mutation(action, payload), timeout=20))
             except Exception as error:
                 self._respond(409, {"error": str(error) or type(error).__name__})
             return

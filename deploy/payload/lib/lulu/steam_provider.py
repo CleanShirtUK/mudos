@@ -142,7 +142,7 @@ class SteamProvider:
         return sorted({game.app_id: game for game in games}.values(), key=lambda game: game.title.casefold())
 
     def _library_roots(self) -> tuple[Path, ...]:
-        return (PATHS.data_home / "Steam",)
+        return (PATHS.steam_library_root,)
 
     @staticmethod
     def _is_launchable_app(app: dict[str, object]) -> bool:

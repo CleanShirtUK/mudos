@@ -12,6 +12,14 @@ ROM_ROOT = PATHS.rom_root
 BIOS_ROOT = PATHS.bios_root
 
 
+def current_rom_root() -> Path:
+    return PATHS.rom_root
+
+
+def current_bios_root() -> Path:
+    return PATHS.bios_root
+
+
 @dataclass(frozen=True, slots=True)
 class RuntimePlatformDefinition:
     """Compatibility view; semantic platform data lives in platforms/*.toml."""
@@ -25,7 +33,7 @@ class RuntimePlatformDefinition:
 
     @property
     def bios_root(self) -> Path:
-        return BIOS_ROOT / (self.bios_subdirectory or self.platform_id)
+        return current_bios_root() / (self.bios_subdirectory or self.platform_id)
 
 
 # Import compatibility for the pre-registry local content adapter.
@@ -59,10 +67,11 @@ for _id, _definition in load_platforms().items():
 
 def ensure_storage() -> None:
     """Create the documented roots without touching user firmware files."""
-    ROM_ROOT.mkdir(parents=True, exist_ok=True)
-    BIOS_ROOT.mkdir(parents=True, exist_ok=True)
+    rom_root, bios_root = current_rom_root(), current_bios_root()
+    rom_root.mkdir(parents=True, exist_ok=True)
+    bios_root.mkdir(parents=True, exist_ok=True)
     for definition in PLATFORMS.values():
-        (ROM_ROOT / definition.platform_id).mkdir(exist_ok=True)
+        (rom_root / definition.platform_id).mkdir(exist_ok=True)
         definition.bios_root.mkdir(parents=True, exist_ok=True)
-    (BIOS_ROOT / "switch" / "keys").mkdir(parents=True, exist_ok=True)
-    (BIOS_ROOT / "switch" / "firmware").mkdir(parents=True, exist_ok=True)
+    (bios_root / "switch" / "keys").mkdir(parents=True, exist_ok=True)
+    (bios_root / "switch" / "firmware").mkdir(parents=True, exist_ok=True)

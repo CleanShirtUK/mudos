@@ -3,6 +3,7 @@
 from dataclasses import dataclass
 import os
 from pathlib import Path
+import json
 
 
 def _xdg(name: str, fallback: Path) -> Path:
@@ -39,17 +40,65 @@ class MudosPaths:
     def data_root(self) -> Path:
         return self.data_home / "lulu"
 
+    def _storage_root(self, kind: str, fallback: Path) -> Path:
+        """Resolve a configured mounted target without using /dev names."""
+        state_path = self.config_root / "storage-targets.json"
+        try:
+            state = json.loads(state_path.read_text())
+            configured = state.get(f"{kind}_path")
+            if configured:
+                return Path(configured) / "Mudos"
+        except (OSError, ValueError, json.JSONDecodeError):
+            pass
+        return fallback
+
+    @property
+    def game_install_root(self) -> Path:
+        return self._storage_root("game", self.home / "Games")
+
+    @property
+    def emulation_root(self) -> Path:
+        return self._storage_root("emulation", self.home / "Games")
+
     @property
     def providers_root(self) -> Path:
         return self.config_root / "providers"
 
     @property
+    def platforms_root(self) -> Path:
+        return self.config_root / "platforms"
+
+    @property
+    def assets_root(self) -> Path:
+        return self.config_root / "assets"
+
+    def provider_root(self, provider_id: str) -> Path:
+        """Persistent state owned by one provider."""
+        return self.providers_root / provider_id
+
+    def provider_config_root(self, provider_id: str) -> Path:
+        return self.provider_root(provider_id) / "config"
+
+    @property
     def rom_root(self) -> Path:
-        return self.home / "Games/ROMs"
+        return self.emulation_root / "ROMs"
 
     @property
     def bios_root(self) -> Path:
-        return self.home / "Games/BIOS"
+        return self.emulation_root / "BIOS"
+
+    @property
+    def steam_library_root(self) -> Path:
+        return self.game_install_root / "Executables/steam"
+
+    @property
+    def steamcmd_root(self) -> Path:
+        """Mudos-owned SteamCMD runtime, separate from user Steam state."""
+        return Path(os.environ.get("LULU_STEAMCMD_ROOT", "/var/lib/lulu/steamcmd"))
+
+    @property
+    def steamcmd_executable(self) -> Path:
+        return self.steamcmd_root / "steamcmd.sh"
 
     @property
     def recordings(self) -> Path:
@@ -66,6 +115,10 @@ class MudosPaths:
     @property
     def artwork_cache(self) -> Path:
         return self.cache_home / "lulu/steamgriddb"
+
+    @property
+    def romm_artwork_cache(self) -> Path:
+        return self.cache_home / "lulu/romm/artwork"
 
     @property
     def metadata_cache(self) -> Path:

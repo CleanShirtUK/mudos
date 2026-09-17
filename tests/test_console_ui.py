@@ -194,6 +194,23 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertIn('pactl', audio)
         self.assertNotIn('QtMultimedia', qml + shell)
 
+    def test_storage_settings_uses_udisks_boundary_and_stable_targets(self) -> None:
+        qml = (ROOT / "ui" / "StorageSettings.qml").read_text()
+        shell = (ROOT / "ui" / "ConsoleShell.qml").read_text()
+        bridge = (ROOT / "scripts" / "console-ui-bridge.py").read_text()
+        consoled = (ROOT / "src" / "lulu" / "consoled.py").read_text()
+        storage = (ROOT / "src" / "lulu" / "storage_manager.py").read_text()
+        paths = (ROOT / "src" / "lulu" / "paths.py").read_text()
+        self.assertIn('request("/storage"', shell)
+        self.assertIn('path.startswith("/storage/")', bridge)
+        self.assertIn('def GetStorageState', consoled)
+        self.assertIn('def MountStorage', consoled)
+        self.assertIn('BusType.SYSTEM', storage)
+        self.assertIn('IdUUID', storage)
+        self.assertIn('system', storage)
+        self.assertIn('steam_library_root', paths)
+        self.assertNotIn('lsblk', storage + qml)
+
     def test_typography_uses_central_semantic_families(self) -> None:
         typography = (ROOT / "ui" / "Typography.qml").read_text()
         self.assertIn("FontLoader", typography)

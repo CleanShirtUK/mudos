@@ -174,7 +174,7 @@ class SteamCmdExecutor:
         self.install_dir = install_dir
         if self.install_dir is None and configured_library:
             self.install_dir = Path(configured_library)
-        self.install_dir = self.install_dir or (PATHS.data_home / "Steam")
+        self.install_dir = self.install_dir or PATHS.steam_library_root
         self.platforms = dict(platforms or load_platforms())
         self.platform_resolver = platform_resolver or SteamPlatformResolver()
         self.parser = parser or SteamCmdParser()

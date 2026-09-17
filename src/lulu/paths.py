@@ -3,6 +3,7 @@
 from dataclasses import dataclass
 import os
 from pathlib import Path
+import json
 
 
 def _xdg(name: str, fallback: Path) -> Path:
@@ -39,6 +40,26 @@ class MudosPaths:
     def data_root(self) -> Path:
         return self.data_home / "lulu"
 
+    def _storage_root(self, kind: str, fallback: Path) -> Path:
+        """Resolve a configured mounted target without using /dev names."""
+        state_path = self.config_root / "storage-targets.json"
+        try:
+            state = json.loads(state_path.read_text())
+            configured = state.get(f"{kind}_path")
+            if configured:
+                return Path(configured) / "Mudos"
+        except (OSError, ValueError, json.JSONDecodeError):
+            pass
+        return fallback
+
+    @property
+    def game_install_root(self) -> Path:
+        return self._storage_root("game", self.home / "Games")
+
+    @property
+    def emulation_root(self) -> Path:
+        return self._storage_root("emulation", self.home / "Games")
+
     @property
     def providers_root(self) -> Path:
         return self.config_root / "providers"
@@ -60,11 +81,15 @@ class MudosPaths:
 
     @property
     def rom_root(self) -> Path:
-        return self.home / "Games/ROMs"
+        return self.emulation_root / "ROMs"
 
     @property
     def bios_root(self) -> Path:
-        return self.home / "Games/BIOS"
+        return self.emulation_root / "BIOS"
+
+    @property
+    def steam_library_root(self) -> Path:
+        return self.game_install_root / "Executables/steam"
 
     @property
     def steamcmd_root(self) -> Path:
