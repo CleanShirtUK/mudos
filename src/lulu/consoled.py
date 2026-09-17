@@ -649,13 +649,30 @@ class ConsoleInterface(ServiceInterface):
             raise ValueError("session lifecycle unavailable")
         environment = os.environ.copy()
         environment["XDG_CONFIG_HOME"] = str(PATHS.provider_config_root(provider.provider_id))
-        if provider.provider_id == "pcsx2":
+        child_config_path: str | None = None
+        if provider.provider_id in {"retroarch", "pcsx2"}:
             environment.pop("WAYLAND_DISPLAY", None)
-        process = await asyncio.create_subprocess_exec(
-            *command, stdin=asyncio.subprocess.DEVNULL,
-            stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL,
-            env=environment, start_new_session=True,
-        )
+        if provider.provider_id == "retroarch":
+            device_indices = await asyncio.to_thread(_mudos_provider_device_indices)
+            child_config_path = await asyncio.to_thread(_retroarch_child_config, device_indices)
+            command[1:1] = ["--appendconfig", child_config_path]
+            environment["LIBRETRO_AUTOCONFIG_DIRECTORY"] = "/opt/lulu/config/retroarch/autoconfig"
+        steam_delegated = provider.provider_id == "steam"
+        if steam_delegated:
+            await asyncio.to_thread(self.catalogue.provider.open_main)
+            # Steam is already resident and the URI helper exits immediately.
+            # Keep a lifecycle-owned sentinel until the user leaves Steam.
+            process = await asyncio.create_subprocess_exec(
+                "sleep", "2147483647", stdin=asyncio.subprocess.DEVNULL,
+                stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL,
+                start_new_session=True,
+            )
+        else:
+            process = await asyncio.create_subprocess_exec(
+                *command, stdin=asyncio.subprocess.DEVNULL,
+                stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL,
+                env=environment, start_new_session=True,
+            )
         try:
             token = await self.sessiond.call_begin_local_session(
                 f"provider:{provider.provider_id}:standalone", process.pid,
@@ -672,6 +689,13 @@ class ConsoleInterface(ServiceInterface):
 
         async def reap() -> None:
             exit_code = await process.wait()
+            if child_config_path is not None:
+                try:
+                    os.unlink(child_config_path)
+                except FileNotFoundError:
+                    pass
+            if steam_delegated:
+                await asyncio.to_thread(self.catalogue.provider.hide_main)
             try:
                 await self.sessiond.call_end_local_session(token, exit_code)
             except Exception:
@@ -680,6 +704,16 @@ class ConsoleInterface(ServiceInterface):
             if self._local_token == token:
                 self._local_process = None
                 self._local_token = None
+        if steam_delegated:
+            async def watch_steam_window() -> None:
+                await asyncio.sleep(5)
+                while process.returncode is None:
+                    visible = await asyncio.to_thread(self.catalogue.provider.main_window_visible)
+                    if not visible:
+                        process.terminate()
+                        return
+                    await asyncio.sleep(1)
+            asyncio.create_task(watch_steam_window())
         asyncio.create_task(reap())
         LOGGER.info("standalone provider started provider=%s command=%r token=%s", provider.provider_id, command, token)
         return token

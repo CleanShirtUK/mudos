@@ -36,7 +36,10 @@ not shown in the Mudos Menu.
 
 Standalone declarations may also specify `controller_mode`: `game` keeps the
 normal virtual gamepad path (RetroArch), while `compat` is applied only after
-the provider reaches the presented session state (Dolphin, Eden, and PCSX2).
+the provider reaches the presented session state (Dolphin, Eden, PCSX2, and
+Steam). Steam is bootstrapped once with `-silent`; its standalone declaration
+surfaces the resident client with `steam://open/main` rather than reopening the
+update dialog.
 
 Standalone launches use the same session lifecycle as local games. The session
 state identifies `session_kind=provider_standalone` and carries `provider_id`

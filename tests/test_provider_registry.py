@@ -42,6 +42,12 @@ class ProviderLaunchContractTests(unittest.TestCase):
             self.assertEqual(provider.standalone_launch.command, ("/usr/bin/retroarch",))
             self.assertEqual(provider.game_launch.command, ("/usr/bin/retroarch", "--game"))
 
+    def test_steam_is_a_declared_standalone_provider(self) -> None:
+        provider = load_providers()["steam"]
+        self.assertEqual(provider.standalone_launch.command,
+                         ("/usr/bin/steam", "steam://open/main"))
+        self.assertEqual(provider.standalone_launch.controller_mode, "compat")
+
 
 if __name__ == "__main__":
     unittest.main()

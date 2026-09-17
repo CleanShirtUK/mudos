@@ -8,3 +8,8 @@ supported = ["pc"]
 [config]
 strategy = "redirected"
 directory = "config"
+[launch.standalone]
+command = "/usr/bin/steam steam://open/main"
+controller_mode = "compat"
+[launch.game]
+command = "/usr/bin/steam"

@@ -99,6 +99,26 @@ class SteamProvider:
     def open_store(self) -> str:
         return self._dispatch_uri("steam://open/store")
 
+    def open_main(self) -> str:
+        """Surface the already-started Steam client without relaunching it."""
+        return self._dispatch_uri("steam://open/main")
+
+    def hide_main(self) -> str:
+        """Return focus from Steam while leaving the client available."""
+        return self._dispatch_uri("steam://close")
+
+    def main_window_visible(self) -> bool:
+        """Report whether Steam's surfaced main window is still visible."""
+        try:
+            result = subprocess.run(
+                ["xdotool", "search", "--onlyvisible", "--class", "steam", "getwindowname", "%@"],
+                check=False, capture_output=True, text=True, timeout=2,
+                env={**os.environ, "DISPLAY": os.environ.get("DISPLAY", ":0")},
+            )
+        except (OSError, subprocess.SubprocessError):
+            return True
+        return any(line.strip().casefold() == "steam" for line in result.stdout.splitlines())
+
     def install(self, app_id: str) -> str:
         """Open Steam's normal install confirmation for a validated AppID."""
         self._validate_app_id(app_id)
