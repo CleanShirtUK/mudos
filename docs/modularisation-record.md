@@ -122,6 +122,19 @@ The OSK continues to retry when no InputPlumber DBus target device exists;
 this is a controller-availability condition and does not block Mudos shell
 startup. A replacement release will include the corrected cleanup script.
 
+## Second cold-boot validation and final repair evidence
+
+The first repaired reboot still showed the shell dependency gap because the
+installed `/etc/systemd/system/lulu.target` was an older copy that omitted
+`lulu-acquisition.service`, even though the repository target and release
+payload included it. Installing `packaging/lulu.target` from the immutable
+replacement release corrected the system-level deployment state. The next
+cold boot (boot `2026-09-17 08:45`) passed with Acquisitiond started by
+`lulu.target`; gamescope and the shell ran from
+`/opt/lulu/releases/9bb0ab8-candidate-20260917074311`, and systemd reported no
+failed units. This confirms both the source target contract and its deployed
+installation are aligned.
+
 ## Known limitations at start
 
 Provider binaries were not all runnable in a non-interactive validation
