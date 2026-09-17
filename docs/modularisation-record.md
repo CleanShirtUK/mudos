@@ -274,3 +274,11 @@ read/written by `NativeConfigAdapter` in the centralized
 `~/.config/lulu/providers/retroarch/config/retroarch.cfg` file. The setting
 screen toggles the value and supports controller Back without leaking input to
 the game. Unsupported providers do not receive a fabricated settings screen.
+
+The live persistence exercise used `config_save_on_exit`. Its baseline was
+`"true"`; the deployed provider boundary changed the native file to `false`,
+and `GetProviderGuide` immediately reported `false`. Super Mario Bros was
+relaunched successfully with RetroArch using the centralized file. After
+restarting Acquisitiond, Consoled, and the graphical session, the setting
+still reported `false` and the native line remained present. Cold-boot
+validation follows the final release deployment.
