@@ -531,6 +531,15 @@ class BoundaryTests(unittest.TestCase):
         command = GamescopeInvocation(steam=True).argv(["/usr/bin/true"])
         self.assertIn("--steam", command)
 
+    def test_gamescope_display_policy_uses_supported_flags(self) -> None:
+        command = GamescopeInvocation(
+            output="DP-1", output_width=1680, output_height=1050, output_refresh=59.88,
+        ).argv(["/usr/bin/true"])
+        self.assertIn("--output-width", command)
+        self.assertIn("--output-height", command)
+        self.assertIn("--nested-refresh", command)
+        self.assertNotIn("--output-refresh", command)
+
     def test_gamescope_discovers_connected_connector(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             drm = Path(directory) / "card0-HDMI-A-1"

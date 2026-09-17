@@ -323,6 +323,16 @@ class ConsoleUiBridge:
     async def storage_state(self) -> dict[str, object]:
         return json.loads(await self.consoled.call_get_storage_state())
 
+    async def display_state(self) -> dict[str, object]:
+        return json.loads(await self.consoled.call_get_display_state())
+
+    async def display_apply(self, payload: dict[str, object]) -> dict[str, object]:
+        result = await self.consoled.call_apply_display(str(payload.get("output", "")),
+                                                        int(payload.get("width", 0)),
+                                                        int(payload.get("height", 0)),
+                                                        float(payload.get("refresh", 0)))
+        return json.loads(result)
+
     async def storage_mutation(self, action: str, payload: dict[str, object]) -> dict[str, object]:
         device_id = str(payload.get("id", ""))
         if action == "mount":
@@ -445,6 +455,12 @@ class ApiHandler(BaseHTTPRequestHandler):
             except Exception as error:
                 self._respond(503, {"error": str(error)})
             return
+        if urlparse(self.path).path == "/display":
+            try:
+                self._respond(200, self.bridge.call(self.bridge.display_state()))
+            except Exception as error:
+                self._respond(503, {"error": str(error)})
+            return
         if urlparse(self.path).path == "/platforms":
             try:
                 self._respond(200, self.bridge.call(self.bridge.list_platforms()))
@@ -507,6 +523,14 @@ class ApiHandler(BaseHTTPRequestHandler):
                 payload = json.loads(self.rfile.read(length) or b"{}")
                 action = path.removeprefix("/storage/")
                 self._respond(200, self.bridge.call(self.bridge.storage_mutation(action, payload), timeout=20))
+            except Exception as error:
+                self._respond(409, {"error": str(error) or type(error).__name__})
+            return
+        if path == "/display/apply":
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+                payload = json.loads(self.rfile.read(length) or b"{}")
+                self._respond(200, self.bridge.call(self.bridge.display_apply(payload), timeout=20))
             except Exception as error:
                 self._respond(409, {"error": str(error) or type(error).__name__})
             return

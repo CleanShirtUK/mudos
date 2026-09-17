@@ -8,6 +8,21 @@ import subprocess
 import time
 from pathlib import Path
 from collections.abc import Callable
+from .display_manager import display_environment
+
+
+def optional_int_value(value: str | None) -> int | None:
+    if value in (None, ""):
+        return None
+    parsed = int(float(value))
+    return parsed if parsed > 0 else None
+
+
+def optional_float_value(value: str | None) -> float | None:
+    if value in (None, ""):
+        return None
+    parsed = float(value)
+    return parsed if parsed > 0 else None
 
 
 @dataclass(frozen=True, slots=True)
@@ -16,12 +31,13 @@ class GamescopeInvocation:
     output: str | None = None
     output_width: int | None = None
     output_height: int | None = None
-    output_refresh: int | None = None
+    output_refresh: float | None = None
     nested_width: int = 1920
     nested_height: int = 1080
 
     @classmethod
     def from_environment(cls) -> "GamescopeInvocation":
+        policy = display_environment()
         def optional_int(name: str) -> int | None:
             value = os.environ.get(name)
             if value is None or value == "":
@@ -31,11 +47,20 @@ class GamescopeInvocation:
                 raise ValueError(f"{name} must be positive")
             return parsed
 
+        def optional_refresh(name: str) -> float | None:
+            value = os.environ.get(name)
+            if value in (None, ""):
+                return None
+            parsed = float(value)
+            if parsed <= 0:
+                raise ValueError(f"{name} must be positive")
+            return parsed
+
         return cls(
-            output=os.environ.get("LULU_OUTPUT_CONNECTOR") or None,
-            output_width=optional_int("LULU_OUTPUT_WIDTH"),
-            output_height=optional_int("LULU_OUTPUT_HEIGHT"),
-            output_refresh=optional_int("LULU_OUTPUT_REFRESH"),
+            output=os.environ.get("LULU_OUTPUT_CONNECTOR") or policy.get("LULU_OUTPUT_CONNECTOR"),
+            output_width=optional_int("LULU_OUTPUT_WIDTH") or optional_int_value(policy.get("LULU_OUTPUT_WIDTH")),
+            output_height=optional_int("LULU_OUTPUT_HEIGHT") or optional_int_value(policy.get("LULU_OUTPUT_HEIGHT")),
+            output_refresh=optional_refresh("LULU_OUTPUT_REFRESH") or optional_float_value(policy.get("LULU_OUTPUT_REFRESH")),
             nested_width=optional_int("LULU_NESTED_WIDTH") or 1920,
             nested_height=optional_int("LULU_NESTED_HEIGHT") or 1080,
         )
@@ -59,7 +84,10 @@ class GamescopeInvocation:
         if self.output_height is not None:
             command += ["--output-height", str(self.output_height)]
         if self.output_refresh is not None:
-            command += ["--output-refresh", str(self.output_refresh)]
+            # Gamescope exposes refresh as nested-refresh; there is no
+            # output-refresh option.  Passing the latter makes Gamescope
+            # exit before the shell starts.
+            command += ["--nested-refresh", str(self.output_refresh)]
         command += [
             "--expose-wayland",
             "--nested-width",

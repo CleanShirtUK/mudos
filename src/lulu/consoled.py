@@ -30,6 +30,7 @@ from .local_content import LocalContentProvider
 from .metadata import MetadataMatcher, SteamGridDBMetadata, clean_local_title
 from .network_manager import NetworkManagerAdapter
 from .audio_manager import AudioManagerAdapter
+from .display_manager import DisplayManagerAdapter
 from .storage_manager import StorageManagerAdapter
 from .romm import RommApiError, RommClient, RommConfig, RommGame
 from .steam_provider import SteamProvider
@@ -587,7 +588,8 @@ class ConsoleInterface(ServiceInterface):
                  sessiond: object | None = None,
                  network_manager: NetworkManagerAdapter | None = None,
                  audio_manager: AudioManagerAdapter | None = None,
-                 storage_manager: StorageManagerAdapter | None = None) -> None:
+                 storage_manager: StorageManagerAdapter | None = None,
+                 display_manager: DisplayManagerAdapter | None = None) -> None:
         super().__init__(INTERFACE_NAME)
         self.catalogue = catalogue
         self.local_runtime = local_runtime
@@ -596,6 +598,7 @@ class ConsoleInterface(ServiceInterface):
         self.network_manager = network_manager or NetworkManagerAdapter()
         self.audio_manager = audio_manager or AudioManagerAdapter()
         self.storage_manager = storage_manager or StorageManagerAdapter()
+        self.display_manager = display_manager or DisplayManagerAdapter()
         self._local_process: asyncio.subprocess.Process | None = None
         self._local_token: str | None = None
         self._refresh_task: asyncio.Task[list[dict[str, object]]] | None = None
@@ -766,6 +769,16 @@ class ConsoleInterface(ServiceInterface):
     @method()
     async def SelectStorageTarget(self, kind: "s", device_id: "s") -> "s":
         return json.dumps(await self.storage_manager.select_target(kind, device_id), sort_keys=True)
+
+    @method()
+    async def GetDisplayState(self) -> "s":
+        state = await asyncio.to_thread(self.display_manager.snapshot)
+        return json.dumps(state, sort_keys=True)
+
+    @method()
+    async def ApplyDisplay(self, output: "s", width: "u", height: "u", refresh: "d") -> "s":
+        state = await asyncio.to_thread(self.display_manager.apply, output, width, height, refresh)
+        return json.dumps(state, sort_keys=True)
 
     @method()
     async def RefreshStages(self, stages: "as") -> "u":

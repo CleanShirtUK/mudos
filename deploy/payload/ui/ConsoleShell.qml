@@ -116,6 +116,8 @@ Window {
     property var audioSettingsRef: null
     property var storageState: ({available: false, devices: [], targets: {game: null, emulation: null}, error: ""})
     property var storageSettingsRef: null
+    property var displayState: ({available: false, displays: [], requested: {}, known_good: {}, selected: null, error: ""})
+    property var displaySettingsRef: null
     property string libraryFocus: "games"
     property int libraryFirstVisibleRow: 0
     property string libraryTransitionState: "RESTING"
@@ -862,6 +864,23 @@ Window {
         })
     }
 
+    function refreshDisplayState() {
+        request("/display", "GET", "", function(data) {
+            root.displayState = data
+            if (root.displaySettingsRef) root.displaySettingsRef.displayData = data
+        })
+    }
+
+    function applyDisplay(output, width, height, refresh) {
+        request("/display/apply", "POST", JSON.stringify({output: output, width: width, height: height, refresh: refresh}),
+                function(data) {
+                    root.displayState = data
+                    if (root.displaySettingsRef) root.displaySettingsRef.displayData = data
+                    if (root.displaySettingsRef) root.displaySettingsRef.message = "Display saved; restarting session"
+                    request("/reset", "POST", "", function(ignored) {}, "Display session restart failed")
+                }, "Display mode is unavailable")
+    }
+
     function storageOperation(action, deviceId, kind) {
         request("/storage/" + action, "POST", JSON.stringify({id: deviceId, kind: kind}),
                 function(data) {
@@ -1281,6 +1300,11 @@ Window {
                 audioSettingsRef.activate()
                 return
             }
+            if (!systemLanding && systemCategories[systemCategoryIndex] === "Display"
+                    && displaySettingsRef) {
+                displaySettingsRef.activate()
+                return
+            }
             if (!systemLanding && systemCategories[systemCategoryIndex] === "Storage"
                     && storageSettingsRef) {
                 storageSettingsRef.activate()
@@ -1363,6 +1387,8 @@ Window {
             refreshAudioState()
         if (systemCategories[systemCategoryIndex] === "Storage")
             refreshStorageState()
+        if (systemCategories[systemCategoryIndex] === "Display")
+            refreshDisplayState()
         console.log("SETTINGS_PAGE_OPEN", "category", systemCategories[systemCategoryIndex])
     }
 
@@ -1395,6 +1421,10 @@ Window {
                 && systemCategories[systemCategoryIndex] === "Storage" && storageSettingsRef
                 && storageSettingsRef.back())
             return
+        if (space === "system" && !systemLanding
+                && systemCategories[systemCategoryIndex] === "Display" && displaySettingsRef
+                && displaySettingsRef.back())
+            return
         if (space === "system") {
             if (!systemLanding && systemCategories[systemCategoryIndex] === "Network"
                     && internetSettingsRef && internetSettingsRef.credentialView) {
@@ -1402,7 +1432,7 @@ Window {
                 request("/keyboard/hide", "POST", "", function(data) {})
                 return
             }
-            if (systemLanding)
+        if (systemLanding)
                 space = "home"
             else {
                 console.log("SETTINGS_PAGE_CLOSE", "category", systemCategories[systemCategoryIndex])
@@ -1576,6 +1606,8 @@ Window {
                     root.audioSettingsRef.move(-1)
                 else if (root.systemCategories[root.systemCategoryIndex] === "Storage" && root.storageSettingsRef)
                     root.storageSettingsRef.move(-1)
+                else if (root.systemCategories[root.systemCategoryIndex] === "Display" && root.displaySettingsRef)
+                    root.displaySettingsRef.move(-1)
                 else root.systemRowIndex = Math.max(0, root.systemRowIndex - 1)
             }
     }
@@ -1596,6 +1628,8 @@ Window {
                     root.audioSettingsRef.move(1)
                 else if (root.systemCategories[root.systemCategoryIndex] === "Storage" && root.storageSettingsRef)
                     root.storageSettingsRef.move(1)
+                else if (root.systemCategories[root.systemCategoryIndex] === "Display" && root.displaySettingsRef)
+                    root.displaySettingsRef.move(1)
                 else root.systemRowIndex = Math.min(Math.max(0, root.systemSettings.length - 1), root.systemRowIndex + 1)
             }
     }
@@ -1620,6 +1654,8 @@ Window {
                     root.audioSettingsRef.adjust(-5)
                 else if (root.systemCategories[root.systemCategoryIndex] === "Storage" && root.storageSettingsRef)
                     root.storageSettingsRef.move(-1)
+                else if (root.systemCategories[root.systemCategoryIndex] === "Display" && root.displaySettingsRef)
+                    root.displaySettingsRef.move(-1)
                 else root.systemRowIndex = Math.max(0, root.systemRowIndex - 1)
             }
     }
@@ -1646,6 +1682,8 @@ Window {
                     root.audioSettingsRef.adjust(5)
                 else if (root.systemCategories[root.systemCategoryIndex] === "Storage" && root.storageSettingsRef)
                     root.storageSettingsRef.move(1)
+                else if (root.systemCategories[root.systemCategoryIndex] === "Display" && root.displaySettingsRef)
+                    root.displaySettingsRef.move(1)
                 else root.systemRowIndex = Math.min(Math.max(0, root.systemSettings.length - 1), root.systemRowIndex + 1)
             }
     }
@@ -2269,6 +2307,20 @@ Window {
             luluPalette: luluPalette
             Component.onCompleted: root.storageSettingsRef = storageSettings
             onOperationRequested: root.storageOperation(action, deviceId, kind)
+            onBackRequested: root.back()
+        }
+
+        DisplaySettings {
+            id: displaySettings
+            anchors.fill: parent
+            visible: root.space === "system" && !root.systemLanding
+                && root.systemCategories[root.systemCategoryIndex] === "Display"
+            displayData: root.displayState
+            uiScale: root.uiScale
+            typography: typography
+            luluPalette: luluPalette
+            Component.onCompleted: root.displaySettingsRef = displaySettings
+            onApplyRequested: root.applyDisplay(output, width, height, refresh)
             onBackRequested: root.back()
         }
 
