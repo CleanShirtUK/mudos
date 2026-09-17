@@ -8,6 +8,7 @@ PartOf=lulu-session@%i.service
 [Service]
 Type=simple
 User=lulu
+ExecStartPre=/bin/sh -c 'until DISPLAY=:0 /usr/bin/xprop -root >/dev/null 2>&1; do sleep 1; done'
 Environment=HOME=/home/lulu
 Environment=USER=lulu
 Environment=LOGNAME=lulu

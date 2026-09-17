@@ -39,6 +39,10 @@ class ProvisioningTests(unittest.TestCase):
         for path in source.iterdir():
             self.assertEqual((shipped / path.name).read_bytes(), path.read_bytes(), path.name)
 
+    def test_osk_waits_for_xwayland_before_starting(self) -> None:
+        service = (ROOT / "packaging/lulu-osk@.service").read_text()
+        self.assertIn("xprop -root", service)
+
     def test_checkpoint_has_canonical_key_value_format(self) -> None:
         values = {}
         for line in (ROOT / "deploy/CHECKPOINT").read_text().splitlines():

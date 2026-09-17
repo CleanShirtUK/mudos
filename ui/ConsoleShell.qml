@@ -108,6 +108,9 @@ Window {
     property bool systemLanding: true
     property var systemCategories: ["Display", "Audio", "Network", "Bluetooth", "Controllers", "Storage", "System", "Lulu"]
     property var systemSettings: []
+    property var networkState: ({available: false, wifi_enabled: false, state: "unavailable",
+                                 current: null, networks: [], known: [], error: ""})
+    property var internetSettingsRef: null
     property string libraryFocus: "games"
     property int libraryFirstVisibleRow: 0
     property string libraryTransitionState: "RESTING"
@@ -796,6 +799,46 @@ Window {
                 })
     }
 
+    function refreshNetworkState() {
+        request("/network", "GET", "", function(data) {
+            root.networkState = data
+            if (root.internetSettingsRef)
+                root.internetSettingsRef.networkData = data
+        })
+    }
+
+    Timer {
+        id: networkRefreshTimer
+        interval: 2000
+        repeat: true
+        running: root.space === "system" && !root.systemLanding
+            && root.systemCategories[root.systemCategoryIndex] === "Network"
+        onTriggered: root.refreshNetworkState()
+    }
+
+    function networkOperation(action, ssid, password) {
+        if (action === "keyboard-show") {
+            request("/keyboard/show", "POST", "", function(data) {})
+            return
+        }
+        var payload = {}
+        var endpoint = "/network/" + action
+        if (action === "wifi") payload.enabled = password === "true"
+        if (action === "connect") {
+            payload.ssid = ssid
+            payload.password = password
+        }
+        if (action === "forget") payload.ssid = ssid
+        request(endpoint, "POST", JSON.stringify(payload), function(data) {
+            root.networkState = data
+            if (root.internetSettingsRef) root.internetSettingsRef.networkData = data
+            if (action === "connect" && root.internetSettingsRef) {
+                root.internetSettingsRef.credentialView = false
+                request("/keyboard/hide", "POST", "", function(hidden) {})
+            }
+        }, "Network operation failed")
+    }
+
     function startNextHomeCategoryHop(chained) {
         if (selectedCategoryIndex === desiredCategoryIndex)
             return
@@ -1161,6 +1204,11 @@ Window {
             return
         }
         if (space === "system") {
+            if (!systemLanding && systemCategories[systemCategoryIndex] === "Network"
+                    && internetSettingsRef) {
+                internetSettingsRef.activate()
+                return
+            }
             if (!systemLanding && systemSettings[systemRowIndex]
                     && systemSettings[systemRowIndex].key === "lulu.reset")
                 resetMudos()
@@ -1232,6 +1280,8 @@ Window {
         space = "system"
         console.log("SYSTEM_HOME_ACTIVATE", "category", systemCategories[systemCategoryIndex])
         refreshSystemSettings()
+        if (systemCategories[systemCategoryIndex] === "Network")
+            refreshNetworkState()
         console.log("SETTINGS_PAGE_OPEN", "category", systemCategories[systemCategoryIndex])
     }
 
@@ -1261,6 +1311,12 @@ Window {
             return
         }
         if (space === "system") {
+            if (!systemLanding && systemCategories[systemCategoryIndex] === "Network"
+                    && internetSettingsRef && internetSettingsRef.credentialView) {
+                internetSettingsRef.credentialView = false
+                request("/keyboard/hide", "POST", "", function(data) {})
+                return
+            }
             if (systemLanding)
                 space = "home"
             else {
@@ -1429,6 +1485,8 @@ Window {
             else if (root.space === "downloads") root.moveDownloads(-1)
             else if (root.space === "system") {
                 if (root.systemLanding) root.moveSystemCategory(-4)
+                else if (root.systemCategories[root.systemCategoryIndex] === "Network" && root.internetSettingsRef)
+                    root.internetSettingsRef.move(-1)
                 else root.systemRowIndex = Math.max(0, root.systemRowIndex - 1)
             }
     }
@@ -1443,6 +1501,8 @@ Window {
             else if (root.space === "downloads") root.moveDownloads(1)
             else if (root.space === "system") {
                 if (root.systemLanding) root.moveSystemCategory(4)
+                else if (root.systemCategories[root.systemCategoryIndex] === "Network" && root.internetSettingsRef)
+                    root.internetSettingsRef.move(1)
                 else root.systemRowIndex = Math.min(Math.max(0, root.systemSettings.length - 1), root.systemRowIndex + 1)
             }
     }
@@ -1461,6 +1521,8 @@ Window {
                 root.moveStoreGame(-1)
             } else if (root.space === "system") {
                 if (root.systemLanding) root.moveSystemCategory(-1)
+                else if (root.systemCategories[root.systemCategoryIndex] === "Network" && root.internetSettingsRef)
+                    root.internetSettingsRef.move(-1)
                 else root.systemRowIndex = Math.max(0, root.systemRowIndex - 1)
             }
     }
@@ -1481,6 +1543,8 @@ Window {
                 root.moveDownloads(1)
             } else if (root.space === "system") {
                 if (root.systemLanding) root.moveSystemCategory(1)
+                else if (root.systemCategories[root.systemCategoryIndex] === "Network" && root.internetSettingsRef)
+                    root.internetSettingsRef.move(1)
                 else root.systemRowIndex = Math.min(Math.max(0, root.systemSettings.length - 1), root.systemRowIndex + 1)
             }
     }
@@ -2052,6 +2116,7 @@ Window {
         SystemSpace {
             anchors.fill: parent
             visible: root.space === "system" && !root.systemLanding
+                && root.systemCategories[root.systemCategoryIndex] !== "Network"
             category: root.systemCategories[root.systemCategoryIndex]
             settings: root.systemSettings
             selectedIndex: root.systemRowIndex
@@ -2059,6 +2124,21 @@ Window {
             typography: typography
             luluPalette: luluPalette
             onActionRequested: if (key === "lulu.reset") root.resetMudos()
+        }
+
+        InternetSettings {
+            id: internetSettings
+            anchors.fill: parent
+            visible: root.space === "system" && !root.systemLanding
+                && root.systemCategories[root.systemCategoryIndex] === "Network"
+            networkData: root.networkState
+            selectedIndex: 0
+            uiScale: root.uiScale
+            typography: typography
+            luluPalette: luluPalette
+            Component.onCompleted: root.internetSettingsRef = internetSettings
+            onOperationRequested: root.networkOperation(action, ssid, password)
+            onBackRequested: root.back()
         }
 
         GameOptions {
@@ -2092,10 +2172,10 @@ Window {
             uiScale: root.uiScale
             typography: typography
             luluPalette: luluPalette
-            activeDownloadCount: systemStatus.activeDownloadCount
+            activeDownloadCount: systemStatus ? systemStatus.activeDownloadCount : 0
             controllers: controllerBridge.controllers
-            bluetoothAvailable: systemStatus.bluetoothPowered
-            networkAvailable: systemStatus.networkConnected
+            bluetoothAvailable: systemStatus ? systemStatus.bluetoothPowered : false
+            networkAvailable: systemStatus ? systemStatus.networkConnected : false
         }
 
         Item {

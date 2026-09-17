@@ -28,6 +28,7 @@ from .emulation import PLATFORMS, ROM_ROOT, ensure_storage
 from .inputplumber import InputPlumberClient
 from .local_content import LocalContentProvider
 from .metadata import MetadataMatcher, SteamGridDBMetadata, clean_local_title
+from .network_manager import NetworkManagerAdapter
 from .romm import RommApiError, RommClient, RommConfig, RommGame
 from .steam_provider import SteamProvider
 from .steam_entitlements import SteamEntitlementSource
@@ -581,12 +582,14 @@ def _retroarch_child_config(device_indices: dict[int, int]) -> str:
 class ConsoleInterface(ServiceInterface):
     def __init__(self, catalogue: ConsoleCatalog, local_runtime: EmulatorRuntimeAdapter | None = None,
                  system_settings: SystemSettingsProvider | None = None,
-                 sessiond: object | None = None) -> None:
+                 sessiond: object | None = None,
+                 network_manager: NetworkManagerAdapter | None = None) -> None:
         super().__init__(INTERFACE_NAME)
         self.catalogue = catalogue
         self.local_runtime = local_runtime
         self.system_settings = system_settings or SystemSettingsProvider()
         self.sessiond = sessiond
+        self.network_manager = network_manager or NetworkManagerAdapter()
         self._local_process: asyncio.subprocess.Process | None = None
         self._local_token: str | None = None
         self._refresh_task: asyncio.Task[list[dict[str, object]]] | None = None
@@ -697,6 +700,26 @@ class ConsoleInterface(ServiceInterface):
     @method()
     async def KeyboardVisible(self) -> "b":
         return await asyncio.to_thread(_keyboard_boundary, "status")
+
+    @method()
+    async def GetNetworkState(self) -> "s":
+        return json.dumps(await self.network_manager.snapshot(), sort_keys=True)
+
+    @method()
+    async def SetWifiEnabled(self, enabled: "b") -> "s":
+        return json.dumps(await self.network_manager.set_enabled(enabled), sort_keys=True)
+
+    @method()
+    async def ConnectWifi(self, ssid: "s", password: "s") -> "s":
+        return json.dumps(await self.network_manager.connect_network(ssid, password), sort_keys=True)
+
+    @method()
+    async def DisconnectWifi(self) -> "s":
+        return json.dumps(await self.network_manager.disconnect(), sort_keys=True)
+
+    @method()
+    async def ForgetWifi(self, ssid: "s") -> "s":
+        return json.dumps(await self.network_manager.forget(ssid), sort_keys=True)
 
     @method()
     async def RefreshStages(self, stages: "as") -> "u":

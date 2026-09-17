@@ -85,9 +85,9 @@ class SystemSettingsProvider:
         )
         return [
             _status("network.state", "Connection", state),
-            _status("network.wifi", "Wi-Fi", wifi, "Mutation path is TO PROVE"),
+            _status("network.wifi", "Wi-Fi", wifi, "NetworkManager radio state"),
             _status("network.address", "IP address", address),
-            _status("network.scan", "Wi-Fi networks", "available", "Scan/connect/password flow is TO PROVE"),
+            _status("network.scan", "Wi-Fi networks", "available", "Use Internet settings for discovery and connection"),
             _status("network.file_browser", "File browser", file_browser_state, "dufs; ROM and BIOS roots only"),
             _status("network.file_browser_address", "File browser address", file_browser_address, "Local network; authentication required"),
         ]

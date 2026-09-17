@@ -161,6 +161,23 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertNotIn("audioEventSerial", guide + native)
         self.assertNotIn("fps_show", guide + native)
 
+    def test_internet_settings_uses_network_boundary_and_controller_model(self) -> None:
+        qml = (ROOT / "ui" / "InternetSettings.qml").read_text()
+        shell = (ROOT / "ui" / "ConsoleShell.qml").read_text()
+        bridge = (ROOT / "scripts" / "console-ui-bridge.py").read_text()
+        consoled = (ROOT / "src" / "lulu" / "consoled.py").read_text()
+        network = (ROOT / "src" / "lulu" / "network_manager.py").read_text()
+        self.assertIn('signal operationRequested(string action, string ssid, string password)', qml)
+        self.assertIn('operationRequested("connect", selectedSsid, password)', qml)
+        self.assertIn('request("/network"', shell)
+        self.assertIn('request("/keyboard/show"', shell)
+        self.assertIn('path.startswith("/network/")', bridge)
+        self.assertIn('def GetNetworkState', consoled)
+        self.assertIn('def ConnectWifi', consoled)
+        self.assertIn('BusType.SYSTEM', network)
+        self.assertNotIn('nmcli', network)
+        self.assertIn('operationRequested("forget", row.ssid, "")', qml)
+
     def test_typography_uses_central_semantic_families(self) -> None:
         typography = (ROOT / "ui" / "Typography.qml").read_text()
         self.assertIn("FontLoader", typography)

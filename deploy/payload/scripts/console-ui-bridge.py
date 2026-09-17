@@ -314,6 +314,27 @@ class ConsoleUiBridge:
         rows = await self.consoled.call_list_system_settings(category)
         return [{key: value.value for key, value in row.items()} for row in rows]
 
+    async def network_state(self) -> dict[str, object]:
+        return json.loads(await self.consoled.call_get_network_state())
+
+    async def network_mutation(self, action: str, payload: dict[str, object]) -> dict[str, object]:
+        if action == "wifi":
+            result = await self.consoled.call_set_wifi_enabled(bool(payload.get("enabled")))
+        elif action == "connect":
+            result = await self.consoled.call_connect_wifi(str(payload.get("ssid", "")),
+                                                           str(payload.get("password", "")))
+        elif action == "disconnect":
+            result = await self.consoled.call_disconnect_wifi()
+        elif action == "forget":
+            result = await self.consoled.call_forget_wifi(str(payload.get("ssid", "")))
+        else:
+            raise ValueError(f"unknown network operation: {action}")
+        return json.loads(result)
+
+    async def keyboard(self, action: str) -> dict[str, object]:
+        method = self.consoled.call_show_keyboard if action == "show" else self.consoled.call_hide_keyboard
+        return {"visible": bool(await method())}
+
     async def search_metadata(self, game_id: str, query: str) -> list[dict[str, object]]:
         rows = await self.consoled.call_search_metadata(game_id, query)
         return [{key: value.value for key, value in row.items()} for row in rows]
@@ -371,6 +392,12 @@ class ApiHandler(BaseHTTPRequestHandler):
             except Exception as error:  # pragma: no cover - live IPC failure path
                 self._respond(503, {"error": str(error)})
             return
+        if urlparse(self.path).path == "/network":
+            try:
+                self._respond(200, self.bridge.call(self.bridge.network_state()))
+            except Exception as error:
+                self._respond(503, {"error": str(error)})
+            return
         if urlparse(self.path).path == "/platforms":
             try:
                 self._respond(200, self.bridge.call(self.bridge.list_platforms()))
@@ -408,6 +435,22 @@ class ApiHandler(BaseHTTPRequestHandler):
                 self._respond(200, {"status": "requested", "group": group})
             except OSError as error:
                 self._respond(409, {"error": str(error)})
+            return
+        if path.startswith("/network/"):
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+                payload = json.loads(self.rfile.read(length) or b"{}")
+                action = path.removeprefix("/network/")
+                self._respond(200, self.bridge.call(self.bridge.network_mutation(action, payload), timeout=20))
+            except Exception as error:
+                self._respond(409, {"error": str(error) or type(error).__name__})
+            return
+        if path in {"/keyboard/show", "/keyboard/hide"}:
+            try:
+                action = path.rsplit("/", 1)[1]
+                self._respond(200, self.bridge.call(self.bridge.keyboard(action)))
+            except Exception as error:
+                self._respond(409, {"error": str(error) or type(error).__name__})
             return
         if path == "/refresh":
             try:
