@@ -226,3 +226,32 @@ Final Phase 2 source commit is `8de4eee`; immutable release
 `/opt/lulu/releases/8de4eee-candidate-20260917080027` was manifest-verified
 and activated. Cold boot `2026-09-17 09:01` verified that release, target
 dependency closure, centralized files, running shell, and zero failed units.
+
+## Recent-card launch regression repair — 2026-09-17
+
+`RecentHome.qml` had a binding on `selectedGameId` but imperatively assigned
+that property during index changes and reconciliation, destroying the binding.
+`ConsoleShell.qml` also kept a second mutable `recentSelectedGameId`. After
+the visible card moved, this could launch the stale index-0 game and leave
+`homeLaunchGated` set by a mismatched feedback completion.
+
+The repair makes both live identities readonly and derived from the
+authoritative selected index/model. Selection anchors and frozen IDs remain
+only for reorder/presentation reconciliation. The selection-change signal now
+only synchronizes options state.
+
+The deployed candidate was exercised through the real launch boundary. The
+catalogue's index-1 game, `local:nes:00946aa2b54b27d0` (Super Mario Bros),
+returned a launch token, and Consoled logged and started:
+
+```text
+/usr/bin/retroarch --appendconfig <ephemeral-controller-config>
+  --config /home/lulu/.config/lulu/providers/retroarch/config/retroarch.cfg
+  -L /usr/lib/libretro/nestopia_libretro.so
+  /home/lulu/Games/ROMs/nes/Super Mario Bros (E).nes
+```
+
+RetroArch was then cancelled through `/cancel`; Mudos returned to its shell
+with no failed units. Repair commit: `9b97b66`; Python suite: 297 passed. The
+QML runner's unrelated failures require the unavailable `Mudos.Poc` import and
+legacy harness assumptions; production shell startup was successful.
