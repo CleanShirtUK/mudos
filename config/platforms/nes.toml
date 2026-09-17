@@ -1,0 +1,12 @@
+id = "nes"
+name = "Nintendo Entertainment System"
+[content]
+subdir = "nes"
+extensions = [".nes"]
+[bios]
+required = false
+[providers]
+default = "retroarch"
+supported = ["retroarch"]
+[assets]
+icon = "platforms/nes.svg"

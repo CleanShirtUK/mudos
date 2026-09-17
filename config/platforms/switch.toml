@@ -1,0 +1,10 @@
+id = "switch"
+name = "Nintendo Switch"
+[content]
+subdir = "switch"
+extensions = [".nsp", ".xci"]
+[bios]
+required = false
+[providers]
+default = "eden"
+supported = ["eden"]

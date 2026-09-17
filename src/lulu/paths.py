@@ -44,6 +44,21 @@ class MudosPaths:
         return self.config_root / "providers"
 
     @property
+    def platforms_root(self) -> Path:
+        return self.config_root / "platforms"
+
+    @property
+    def assets_root(self) -> Path:
+        return self.config_root / "assets"
+
+    def provider_root(self, provider_id: str) -> Path:
+        """Persistent state owned by one provider."""
+        return self.providers_root / provider_id
+
+    def provider_config_root(self, provider_id: str) -> Path:
+        return self.provider_root(provider_id) / "config"
+
+    @property
     def rom_root(self) -> Path:
         return self.home / "Games/ROMs"
 

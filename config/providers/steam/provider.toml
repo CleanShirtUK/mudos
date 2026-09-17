@@ -1,0 +1,10 @@
+id = "steam"
+name = "Steam"
+[capabilities]
+launch = true
+library = true
+[platforms]
+supported = ["pc"]
+[config]
+strategy = "redirected"
+directory = "config"

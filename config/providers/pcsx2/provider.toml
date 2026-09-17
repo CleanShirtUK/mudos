@@ -1,0 +1,11 @@
+id = "pcsx2"
+name = "PCSX2"
+[capabilities]
+launch = true
+settings = true
+health = true
+[platforms]
+supported = ["ps2"]
+[config]
+strategy = "redirected"
+directory = "config"

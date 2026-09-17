@@ -1,0 +1,13 @@
+id = "ps2"
+name = "PlayStation 2"
+[content]
+subdir = "ps2"
+extensions = [".cue", ".iso"]
+[bios]
+required = true
+subdir = "ps2"
+[providers]
+default = "pcsx2"
+supported = ["pcsx2"]
+[assets]
+icon = "platforms/ps2.svg"

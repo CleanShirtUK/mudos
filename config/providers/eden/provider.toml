@@ -1,0 +1,10 @@
+id = "eden"
+name = "Eden"
+[capabilities]
+launch = true
+settings = true
+[platforms]
+supported = ["switch"]
+[config]
+strategy = "redirected"
+directory = "config"

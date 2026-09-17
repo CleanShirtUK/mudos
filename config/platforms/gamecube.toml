@@ -1,0 +1,12 @@
+id = "gamecube"
+name = "Nintendo GameCube"
+[content]
+subdir = "gamecube"
+extensions = [".iso", ".rvz", ".gcz"]
+[bios]
+required = false
+[providers]
+default = "dolphin"
+supported = ["dolphin"]
+[assets]
+icon = "platforms/gamecube.svg"

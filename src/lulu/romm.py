@@ -13,6 +13,7 @@ import json
 import logging
 import os
 from pathlib import Path
+import tomllib
 from typing import Any, BinaryIO, Protocol
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote, urlencode
@@ -39,11 +40,30 @@ class RommConfig:
 
     @classmethod
     def from_file(cls, path: Path | None = None) -> "RommConfig | None":
-        path = path or Path(os.environ.get("LULU_ROMM_CONFIG", PATHS.providers_root / "romm.json")).expanduser()
+        explicit = path is not None or "LULU_ROMM_CONFIG" in os.environ
+        path = path or Path(os.environ.get("LULU_ROMM_CONFIG", PATHS.provider_root("romm") / "provider.toml")).expanduser()
         if not path.is_file():
-            return None
+            legacy = PATHS.providers_root / "romm.json"
+            if not explicit and legacy.is_file():
+                path = legacy
+            else:
+                return None
         try:
-            value = json.loads(path.read_text())
+            if path.suffix.casefold() == ".toml":
+                with path.open("rb") as stream:
+                    value = tomllib.load(stream)
+                # provider.toml metadata and user connection settings coexist;
+                # settings is the owned, secret-bearing section.
+                value = value.get("settings", value)
+                # A shipped metadata-only provider definition is not a
+                # connection configuration. Preserve the old JSON migration
+                # path until credentials are placed in [settings].
+                if not value.get("server_url") and not explicit:
+                    legacy = PATHS.providers_root / "romm.json"
+                    if legacy.is_file():
+                        value = json.loads(legacy.read_text())
+            else:
+                value = json.loads(path.read_text())
             if not isinstance(value, dict):
                 raise ValueError("configuration must be an object")
             config = cls(

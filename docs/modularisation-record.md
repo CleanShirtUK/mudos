@@ -1,0 +1,80 @@
+# Mudos modularisation engineering record
+
+## Baseline checkpoint — 2026-09-17
+
+The authoritative checkout was clean before this work:
+
+* source: `/home/josh/src/lulu`
+* branch: `audit/network-file-browser-1670797`
+* commit: `f81a652` (`Checkpoint controller-first OSK integration`)
+* rollback tag: `mudos-modularisation-baseline-20260917`
+* tests: `PYTHONPATH=src pytest -q` — 289 passed, 47 warnings
+* unqualified `pytest -q` is not a valid baseline command here because this
+  checkout is src-layout and does not install itself (`ModuleNotFoundError`).
+* immutable release: `/opt/lulu/releases/f81a652-candidate-20260917003411`
+* manifest: verified with `scripts/release.py verify`
+* activation: `/opt/lulu/current` points to that release
+* running services after activation: `lulu-acquisition`, `lulu-consoled`,
+  `lulu-file-browser`, `lulu-osk@2`, and `lulu-session@2`
+
+The baseline release and tag are never mutated. Deterministic rollback is:
+
+```sh
+sudo python3 /home/josh/src/lulu/scripts/release.py verify \
+  --release-dir /opt/lulu/releases/f81a652-candidate-20260917003411
+sudo python3 /home/josh/src/lulu/scripts/release.py activate \
+  --release-dir /opt/lulu/releases/f81a652-candidate-20260917003411
+```
+
+Restart the affected `lulu-*` services after activation.
+
+## Reconnaissance
+
+Before this pass, platform identity, runtime executable/core paths, and
+provider launch selection lived in `emulation.py` and
+`emulator_runtime.py`. Native controller provisioning wrote conventional
+provider locations (`~/.config/PCSX2/inis` and `~/.config/dolphin-emu`) and
+RetroArch used a generated per-launch append config. RomM used
+`~/.config/lulu/providers/romm.json`.
+
+The provider executables available to this checkout use their conventional
+Linux user configuration paths. No installed Dolphin, PCSX2, or RetroArch
+binary/documentation in the test image demonstrated a supported explicit
+config-directory switch that could be adopted safely without changing runtime
+semantics. This pass therefore centralises Mudos-owned definitions and makes
+provider config roots explicit, while retaining compatibility with native
+locations for controller provisioning. See the strategy table below.
+
+## Architecture and decisions
+
+`lulu.platforms` owns content definitions and the platform registry;
+`lulu.providers` owns provider definitions, capabilities, and registry;
+`lulu.assets` owns logical asset resolution. `paths.py` remains the only
+owner of broad filesystem roots. TOML definitions are data, not executable
+provider configuration. `emulation.py` remains a compatibility facade for
+existing callers while loading the new platform registry.
+
+Provider configuration is persistent native state. Launch code must not
+regenerate it as a side effect; controller provisioning only updates the
+specific sections it owns and preserves unrelated native settings.
+
+| Provider | Strategy | Actual config location | Persistence verified | Notes |
+|---|---|---|---|---|
+| RetroArch | REDIRECTED | `~/.config/retroarch` plus Lulu append files | unit-level | RetroArch has no proven direct user-dir flag in image; append file is ephemeral input mapping only |
+| Dolphin | REDIRECTED | `~/.config/dolphin-emu` | unit-level | native INI is preserved; Lulu provider root is the declared future migration target |
+| PCSX2 | REDIRECTED | `~/.config/PCSX2/inis` | unit-level | native INI is section-merged, not regenerated |
+| Steam | N/A | Steam-owned normal paths; games at `~/Games/Executables/steam/steamapps` | existing tests | client state is intentionally not moved |
+| RomM | DIRECT (Mudos metadata) | `~/.config/lulu/providers/romm/provider.toml` | unit-level | remote service has no native local config |
+| Eden | REDIRECTED | `~/.config/eden` | existing tests | retained compatibility path |
+
+## Testing record
+
+Initial validation passed as recorded above. Further changes and failures will
+be appended here with commit and release evidence.
+
+## Known limitations at start
+
+Provider binaries were not all runnable in a non-interactive validation
+session, so native persistence requires a hardware/runtime smoke pass. Full
+third-party provider plugin loading and acquisition-source pluginisation are
+deliberately future work.

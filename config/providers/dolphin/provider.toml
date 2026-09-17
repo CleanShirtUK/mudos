@@ -1,0 +1,11 @@
+id = "dolphin"
+name = "Dolphin"
+[capabilities]
+launch = true
+settings = true
+health = true
+[platforms]
+supported = ["gamecube", "wii"]
+[config]
+strategy = "redirected"
+directory = "config"

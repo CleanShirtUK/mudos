@@ -1,0 +1,10 @@
+id = "retroarch"
+name = "RetroArch"
+[capabilities]
+launch = true
+settings = true
+[platforms]
+supported = ["nes", "genesis"]
+[config]
+strategy = "redirected"
+directory = "config"

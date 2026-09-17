@@ -1,0 +1,10 @@
+id = "genesis"
+name = "Sega Genesis"
+[content]
+subdir = "genesis"
+extensions = [".bin"]
+[bios]
+required = false
+[providers]
+default = "retroarch"
+supported = ["retroarch"]

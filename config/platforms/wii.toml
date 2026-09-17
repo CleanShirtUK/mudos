@@ -1,0 +1,10 @@
+id = "wii"
+name = "Nintendo Wii"
+[content]
+subdir = "wii"
+extensions = [".iso", ".wbfs", ".rvz"]
+[bios]
+required = false
+[providers]
+default = "dolphin"
+supported = ["dolphin"]

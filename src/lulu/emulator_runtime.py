@@ -51,9 +51,9 @@ class EmulatorRuntimeAdapter:
                 raise ValueError(f"runtime-core-missing: {game.platform}")
             content_path = getattr(game, "content_path", getattr(game, "install_dir", ""))
             arguments = ("-L", str(core), content_path)
-        elif game.platform in {"wii", "ps2"}:
+        elif game.platform in {"gamecube", "wii", "ps2"}:
             content_path = getattr(game, "content_path", getattr(game, "install_dir", ""))
-            arguments = ("--batch", "-e", content_path) if game.platform == "wii" else (
+            arguments = ("--batch", "-e", content_path) if game.platform in {"gamecube", "wii"} else (
                 "-batch", "-fullscreen", "--", content_path
             )
         elif game.platform == "switch":
