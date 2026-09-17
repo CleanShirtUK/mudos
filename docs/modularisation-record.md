@@ -208,3 +208,21 @@ Provider binaries were not all runnable in a non-interactive validation
 session, so native persistence requires a hardware/runtime smoke pass. Full
 third-party provider plugin loading and acquisition-source pluginisation are
 deliberately future work.
+
+## Phase 2 final persistence and deployment evidence
+
+| Provider | Final strategy | Physical config location | Mechanism | Real provider tested? | Launch persistence verified? | Service restart verified? | Cold-boot persistence relevant/verified? | Caveat |
+|---|---|---|---|---|---|---|---|---|
+| RetroArch | DIRECT | `~/.config/lulu/providers/retroarch/config/retroarch.cfg` | `--config FILE` | Yes; `--version` returned 0 | Native file survived invocation | Yes | Yes; file present after boot | Full content run was not safe in headless probe |
+| Dolphin | DIRECT | `~/.config/lulu/providers/dolphin/config/` | `--user USER` | Attempted; aborted 134 headless | Not claimed | Yes | Yes; INIs present | Requires graphics-capable session |
+| PCSX2 | DIRECT | `~/.config/lulu/providers/pcsx2/config/PCSX2/inis/` | `XDG_CONFIG_HOME` | Attempted; GUI timed out 124 | Not claimed | Yes | Yes; INIs present | Interactive GUI required |
+| Eden | DIRECT | `~/.config/lulu/providers/eden/config/` and XDG `eden/` | explicit `--config` plus XDG namespace | Attempted; X11 unavailable outside session | Not claimed | Yes | Yes; native files present | Must run inside gamescope |
+
+These results distinguish file/service/reboot persistence from successful
+interactive provider launch. No unsupported live-launch claim is made for
+providers that cannot safely run outside the active console.
+
+Final Phase 2 source commit is `8de4eee`; immutable release
+`/opt/lulu/releases/8de4eee-candidate-20260917080027` was manifest-verified
+and activated. Cold boot `2026-09-17 09:01` verified that release, target
+dependency closure, centralized files, running shell, and zero failed units.
