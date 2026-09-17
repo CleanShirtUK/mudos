@@ -92,7 +92,9 @@ Window {
     readonly property real selectedDomainY: homeActiveContentOriginY - homeHeadingCardClearance
         - activeHeadingHeight - headingCardGap
     property int recentIndex: 0
-    property string recentSelectedGameId: ""
+    readonly property string recentSelectedGameId: recentModel && recentIndex >= 0
+        && recentHome && recentIndex < recentHome.itemCount
+        ? String(recentModel.gameIdAt(recentIndex)) : ""
     property int playActivationSerial: 0
     property int libraryIndex: 0
     property int collectionIndex: 0
@@ -1758,9 +1760,8 @@ Window {
                                          "resultingSelectedIndex", recentHome.selectedIndex)
                          }
                         onSelectionGameChanged: {
-                            root.recentSelectedGameId = gameId
-                            root.syncGameOptionsGame()
-                        }
+                             root.syncGameOptionsGame()
+                         }
                           onActivationRequested: root.beginPendingHomeLaunch(
                              root.recentGameById(gameId))
                          onPlayFeedbackCompleted: root.completePendingHomeLaunch(gameId)

@@ -138,6 +138,15 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertIn("nativePlayCanonicalRect", game_card)
         self.assertIn("canonicalRect: root.canonicalRect", navigation_surface)
 
+    def test_recent_selection_has_one_live_index_derived_identity(self) -> None:
+        recent = (ROOT / "ui" / "RecentHome.qml").read_text()
+        self.assertIn("readonly property string selectedGameId:", recent)
+        self.assertNotIn("selectedGameId =", recent)
+        shell = QML
+        self.assertIn("readonly property string recentSelectedGameId:", shell)
+        self.assertNotIn("root.recentSelectedGameId =", shell)
+        self.assertIn("beginPendingHomeLaunch(visibleRecentGame)", shell)
+
     def test_typography_uses_central_semantic_families(self) -> None:
         typography = (ROOT / "ui" / "Typography.qml").read_text()
         self.assertIn("FontLoader", typography)
@@ -750,7 +759,7 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertIn("property int launchStateRank: 0", QML)
         self.assertIn("function applyLaunchState(state, generation)", QML)
         self.assertIn("state.launch_token", QML)
-        self.assertIn('property string recentSelectedGameId: ""', QML)
+        self.assertIn('readonly property string recentSelectedGameId:', QML)
         self.assertIn("onSelectionGameChanged", QML)
         self.assertNotIn('message = "Launch requested"', QML)
         self.assertIn("if (stateRank < launchStateRank)", QML)

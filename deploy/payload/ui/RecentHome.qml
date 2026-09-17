@@ -14,7 +14,7 @@ Item {
     property bool presentationFrozen: false
     property var frozenRecentRows: null
     property string frozenSelectionGameId: ""
-    property string selectedGameId: recentModel && selectedIndex >= 0
+    readonly property string selectedGameId: recentModel && selectedIndex >= 0
         ? String(recentModel.gameIdAt(selectedIndex)) : ""
     property string selectionAnchorId: ""
     property real focalCardWidth: 760
@@ -75,7 +75,6 @@ Item {
         transitionDiagnosticMarks = ({})
         if (recentModel && selectedIndex >= 0 && selectedIndex < recentRepeater.count
                 && !selectionAnchorId) {
-            selectedGameId = recentModel.gameIdAt(selectedIndex)
             selectionGameChanged(selectedGameId)
         }
     }
@@ -93,8 +92,8 @@ Item {
             index = Math.max(0, Math.min(selectedIndex, recentRepeater.count - 1))
         if (index !== selectedIndex)
             selectionIndexRequested(index)
-        selectedGameId = index >= 0 ? recentModel.gameIdAt(index) : ""
-        selectionGameChanged(selectedGameId)
+        if (index >= 0 && index < recentRepeater.count)
+            selectionGameChanged(String(recentModel.gameIdAt(index)))
         selectionAnchorId = ""
     }
 
