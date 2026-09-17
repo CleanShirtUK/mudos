@@ -179,6 +179,21 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertIn('operationRequested("forget", row.ssid, "")', qml)
         self.assertIn('passwordInput.forceActiveFocus()', qml)
 
+    def test_audio_settings_uses_session_audio_boundary_and_controller_model(self) -> None:
+        qml = (ROOT / "ui" / "AudioSettings.qml").read_text()
+        shell = (ROOT / "ui" / "ConsoleShell.qml").read_text()
+        bridge = (ROOT / "scripts" / "console-ui-bridge.py").read_text()
+        consoled = (ROOT / "src" / "lulu" / "consoled.py").read_text()
+        audio = (ROOT / "src" / "lulu" / "audio_manager.py").read_text()
+        self.assertIn('signal operationRequested(string action, string deviceId, int volume, bool inputDevice, bool muted)', qml)
+        self.assertIn('Left/Right: Volume', qml)
+        self.assertIn('request("/audio"', shell)
+        self.assertIn('path.startswith("/audio/")', bridge)
+        self.assertIn('def GetAudioState', consoled)
+        self.assertIn('def SetAudioVolume', consoled)
+        self.assertIn('pactl', audio)
+        self.assertNotIn('QtMultimedia', qml + shell)
+
     def test_typography_uses_central_semantic_families(self) -> None:
         typography = (ROOT / "ui" / "Typography.qml").read_text()
         self.assertIn("FontLoader", typography)

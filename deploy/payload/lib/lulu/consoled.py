@@ -29,6 +29,7 @@ from .inputplumber import InputPlumberClient
 from .local_content import LocalContentProvider
 from .metadata import MetadataMatcher, SteamGridDBMetadata, clean_local_title
 from .network_manager import NetworkManagerAdapter
+from .audio_manager import AudioManagerAdapter
 from .romm import RommApiError, RommClient, RommConfig, RommGame
 from .steam_provider import SteamProvider
 from .steam_entitlements import SteamEntitlementSource
@@ -583,13 +584,15 @@ class ConsoleInterface(ServiceInterface):
     def __init__(self, catalogue: ConsoleCatalog, local_runtime: EmulatorRuntimeAdapter | None = None,
                  system_settings: SystemSettingsProvider | None = None,
                  sessiond: object | None = None,
-                 network_manager: NetworkManagerAdapter | None = None) -> None:
+                 network_manager: NetworkManagerAdapter | None = None,
+                 audio_manager: AudioManagerAdapter | None = None) -> None:
         super().__init__(INTERFACE_NAME)
         self.catalogue = catalogue
         self.local_runtime = local_runtime
         self.system_settings = system_settings or SystemSettingsProvider()
         self.sessiond = sessiond
         self.network_manager = network_manager or NetworkManagerAdapter()
+        self.audio_manager = audio_manager or AudioManagerAdapter()
         self._local_process: asyncio.subprocess.Process | None = None
         self._local_token: str | None = None
         self._refresh_task: asyncio.Task[list[dict[str, object]]] | None = None
@@ -720,6 +723,26 @@ class ConsoleInterface(ServiceInterface):
     @method()
     async def ForgetWifi(self, ssid: "s") -> "s":
         return json.dumps(await self.network_manager.forget(ssid), sort_keys=True)
+
+    @method()
+    async def GetAudioState(self) -> "s":
+        return json.dumps(await self.audio_manager.snapshot(), sort_keys=True)
+
+    @method()
+    async def SetAudioOutput(self, device_id: "s") -> "s":
+        return json.dumps(await self.audio_manager.set_default_output(device_id), sort_keys=True)
+
+    @method()
+    async def SetAudioInput(self, device_id: "s") -> "s":
+        return json.dumps(await self.audio_manager.set_default_input(device_id), sort_keys=True)
+
+    @method()
+    async def SetAudioVolume(self, device_id: "s", volume: "u", input_device: "b") -> "s":
+        return json.dumps(await self.audio_manager.set_volume(device_id, volume, input_device), sort_keys=True)
+
+    @method()
+    async def SetAudioMute(self, device_id: "s", muted: "b", input_device: "b") -> "s":
+        return json.dumps(await self.audio_manager.set_mute(device_id, muted, input_device), sort_keys=True)
 
     @method()
     async def RefreshStages(self, stages: "as") -> "u":

@@ -317,6 +317,24 @@ class ConsoleUiBridge:
     async def network_state(self) -> dict[str, object]:
         return json.loads(await self.consoled.call_get_network_state())
 
+    async def audio_state(self) -> dict[str, object]:
+        return json.loads(await self.consoled.call_get_audio_state())
+
+    async def audio_mutation(self, action: str, payload: dict[str, object]) -> dict[str, object]:
+        device_id = str(payload.get("id", ""))
+        input_device = bool(payload.get("input", False))
+        if action == "output":
+            result = await self.consoled.call_set_audio_output(device_id)
+        elif action == "input":
+            result = await self.consoled.call_set_audio_input(device_id)
+        elif action == "volume":
+            result = await self.consoled.call_set_audio_volume(device_id, int(payload.get("volume", 0)), input_device)
+        elif action == "mute":
+            result = await self.consoled.call_set_audio_mute(device_id, bool(payload.get("muted", False)), input_device)
+        else:
+            raise ValueError(f"unknown audio operation: {action}")
+        return json.loads(result)
+
     async def network_mutation(self, action: str, payload: dict[str, object]) -> dict[str, object]:
         if action == "wifi":
             result = await self.consoled.call_set_wifi_enabled(bool(payload.get("enabled")))
@@ -398,6 +416,12 @@ class ApiHandler(BaseHTTPRequestHandler):
             except Exception as error:
                 self._respond(503, {"error": str(error)})
             return
+        if urlparse(self.path).path == "/audio":
+            try:
+                self._respond(200, self.bridge.call(self.bridge.audio_state()))
+            except Exception as error:
+                self._respond(503, {"error": str(error)})
+            return
         if urlparse(self.path).path == "/platforms":
             try:
                 self._respond(200, self.bridge.call(self.bridge.list_platforms()))
@@ -442,6 +466,15 @@ class ApiHandler(BaseHTTPRequestHandler):
                 payload = json.loads(self.rfile.read(length) or b"{}")
                 action = path.removeprefix("/network/")
                 self._respond(200, self.bridge.call(self.bridge.network_mutation(action, payload), timeout=20))
+            except Exception as error:
+                self._respond(409, {"error": str(error) or type(error).__name__})
+            return
+        if path.startswith("/audio/"):
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+                payload = json.loads(self.rfile.read(length) or b"{}")
+                action = path.removeprefix("/audio/")
+                self._respond(200, self.bridge.call(self.bridge.audio_mutation(action, payload), timeout=10))
             except Exception as error:
                 self._respond(409, {"error": str(error) or type(error).__name__})
             return

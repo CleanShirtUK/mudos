@@ -111,6 +111,9 @@ Window {
     property var networkState: ({available: false, wifi_enabled: false, state: "unavailable",
                                  current: null, networks: [], known: [], error: ""})
     property var internetSettingsRef: null
+    property var audioState: ({available: false, outputs: [], inputs: [], current_output: null,
+                               current_input: null, error: ""})
+    property var audioSettingsRef: null
     property string libraryFocus: "games"
     property int libraryFirstVisibleRow: 0
     property string libraryTransitionState: "RESTING"
@@ -807,6 +810,13 @@ Window {
         })
     }
 
+    function refreshAudioState() {
+        request("/audio", "GET", "", function(data) {
+            root.audioState = data
+            if (root.audioSettingsRef) root.audioSettingsRef.audioData = data
+        })
+    }
+
     Timer {
         id: networkRefreshTimer
         interval: 2000
@@ -814,6 +824,24 @@ Window {
         running: root.space === "system" && !root.systemLanding
             && root.systemCategories[root.systemCategoryIndex] === "Network"
         onTriggered: root.refreshNetworkState()
+    }
+
+    Timer {
+        id: audioRefreshTimer
+        interval: 1000
+        repeat: true
+        running: root.space === "system" && !root.systemLanding
+            && root.systemCategories[root.systemCategoryIndex] === "Audio"
+        onTriggered: root.refreshAudioState()
+    }
+
+    function audioOperation(action, deviceId, volume, inputDevice, muted) {
+        request("/audio/" + action, "POST",
+                JSON.stringify({id: deviceId, volume: volume, input: inputDevice, muted: muted}),
+                function(data) {
+                    root.audioState = data
+                    if (root.audioSettingsRef) root.audioSettingsRef.audioData = data
+                }, "Audio operation failed")
     }
 
     function networkOperation(action, ssid, password) {
@@ -1209,6 +1237,11 @@ Window {
                 internetSettingsRef.activate()
                 return
             }
+            if (!systemLanding && systemCategories[systemCategoryIndex] === "Audio"
+                    && audioSettingsRef) {
+                audioSettingsRef.activate()
+                return
+            }
             if (!systemLanding && systemSettings[systemRowIndex]
                     && systemSettings[systemRowIndex].key === "lulu.reset")
                 resetMudos()
@@ -1282,6 +1315,8 @@ Window {
         refreshSystemSettings()
         if (systemCategories[systemCategoryIndex] === "Network")
             refreshNetworkState()
+        if (systemCategories[systemCategoryIndex] === "Audio")
+            refreshAudioState()
         console.log("SETTINGS_PAGE_OPEN", "category", systemCategories[systemCategoryIndex])
     }
 
@@ -1487,6 +1522,8 @@ Window {
                 if (root.systemLanding) root.moveSystemCategory(-4)
                 else if (root.systemCategories[root.systemCategoryIndex] === "Network" && root.internetSettingsRef)
                     root.internetSettingsRef.move(-1)
+                else if (root.systemCategories[root.systemCategoryIndex] === "Audio" && root.audioSettingsRef)
+                    root.audioSettingsRef.move(-1)
                 else root.systemRowIndex = Math.max(0, root.systemRowIndex - 1)
             }
     }
@@ -1503,6 +1540,8 @@ Window {
                 if (root.systemLanding) root.moveSystemCategory(4)
                 else if (root.systemCategories[root.systemCategoryIndex] === "Network" && root.internetSettingsRef)
                     root.internetSettingsRef.move(1)
+                else if (root.systemCategories[root.systemCategoryIndex] === "Audio" && root.audioSettingsRef)
+                    root.audioSettingsRef.move(1)
                 else root.systemRowIndex = Math.min(Math.max(0, root.systemSettings.length - 1), root.systemRowIndex + 1)
             }
     }
@@ -1523,6 +1562,8 @@ Window {
                 if (root.systemLanding) root.moveSystemCategory(-1)
                 else if (root.systemCategories[root.systemCategoryIndex] === "Network" && root.internetSettingsRef)
                     root.internetSettingsRef.move(-1)
+                else if (root.systemCategories[root.systemCategoryIndex] === "Audio" && root.audioSettingsRef)
+                    root.audioSettingsRef.adjust(-5)
                 else root.systemRowIndex = Math.max(0, root.systemRowIndex - 1)
             }
     }
@@ -1545,6 +1586,8 @@ Window {
                 if (root.systemLanding) root.moveSystemCategory(1)
                 else if (root.systemCategories[root.systemCategoryIndex] === "Network" && root.internetSettingsRef)
                     root.internetSettingsRef.move(1)
+                else if (root.systemCategories[root.systemCategoryIndex] === "Audio" && root.audioSettingsRef)
+                    root.audioSettingsRef.adjust(5)
                 else root.systemRowIndex = Math.min(Math.max(0, root.systemSettings.length - 1), root.systemRowIndex + 1)
             }
     }
@@ -2138,6 +2181,21 @@ Window {
             luluPalette: luluPalette
             Component.onCompleted: root.internetSettingsRef = internetSettings
             onOperationRequested: root.networkOperation(action, ssid, password)
+            onBackRequested: root.back()
+        }
+
+        AudioSettings {
+            id: audioSettings
+            anchors.fill: parent
+            visible: root.space === "system" && !root.systemLanding
+                && root.systemCategories[root.systemCategoryIndex] === "Audio"
+            audioData: root.audioState
+            selectedIndex: 0
+            uiScale: root.uiScale
+            typography: typography
+            luluPalette: luluPalette
+            Component.onCompleted: root.audioSettingsRef = audioSettings
+            onOperationRequested: root.audioOperation(action, deviceId, volume, inputDevice, muted)
             onBackRequested: root.back()
         }
 

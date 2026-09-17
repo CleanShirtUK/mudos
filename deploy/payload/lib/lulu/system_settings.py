@@ -69,8 +69,7 @@ class SystemSettingsProvider:
         ]
 
     def _audio_settings(self) -> list[SystemSetting]:
-        server = _command("pactl", "info")
-        default = next((line.split(":", 1)[1].strip() for line in server.splitlines() if line.startswith("Default Sink:")), "unknown")
+        default = _command("pactl", "get-default-sink") or "unknown"
         return [_status("audio.output", "Default output", default, "PipeWire/Pulse compatibility status")]
 
     def _network_settings(self) -> list[SystemSetting]:
