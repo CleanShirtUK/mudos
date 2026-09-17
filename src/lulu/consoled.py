@@ -32,6 +32,7 @@ from .romm import RommApiError, RommClient, RommConfig, RommGame
 from .steam_provider import SteamProvider
 from .steam_entitlements import SteamEntitlementSource
 from .system_settings import CATEGORIES as SYSTEM_CATEGORIES, SystemSettingsProvider
+from .paths import PATHS
 
 
 DESCRIPTOR = ServiceDescriptor(
@@ -796,18 +797,18 @@ class ConsoleInterface(ServiceInterface):
                 device_indices = await asyncio.to_thread(_mudos_provider_device_indices)
             intent = self.local_runtime.launch_intent(game, device_indices=device_indices)
             command = [intent.executable, *intent.arguments]
-            is_pcsx2 = intent.platform == "ps2"
+            is_pcsx2 = intent.provider == "pcsx2"
             if is_pcsx2:
                 LOGGER.info("[PCSX2] selected game=%s path=%s", game_id, game.install_dir)
                 LOGGER.info("[PCSX2] resolved executable=%s", intent.executable)
             child_config_path: str | None = None
-            if intent.platform in {"ps2", "wii"}:
-                controller_provider = {"ps2": "pcsx2", "wii": "dolphin"}[intent.platform]
+            if intent.provider in {"pcsx2", "dolphin"}:
+                controller_provider = intent.provider
                 device_indices = await asyncio.to_thread(_mudos_provider_device_indices)
                 controller_config_path = await asyncio.to_thread(
                     ensure_provider_controller_config,
                     controller_provider,
-                    None,
+                    PATHS.provider_config_root(controller_provider),
                     max(device_indices),
                     device_indices,
                 )
@@ -816,7 +817,7 @@ class ConsoleInterface(ServiceInterface):
                     controller_provider,
                     controller_config_path,
                 )
-            if intent.platform in {"nes", "genesis"}:
+            if intent.provider == "retroarch":
                 device_indices = await asyncio.to_thread(_mudos_provider_device_indices)
                 child_config_path = await asyncio.to_thread(_retroarch_child_config, device_indices)
                 command[1:1] = [
@@ -832,16 +833,20 @@ class ConsoleInterface(ServiceInterface):
                 "local runtime dispatch game_id=%s runtime=%s core=%s rom=%s command=%r",
                 game_id,
                 intent.executable,
-                intent.arguments[1] if intent.platform in {"nes", "genesis"} else "",
+                intent.arguments[-3] if intent.provider == "retroarch" else "",
                 intent.arguments[-1],
                 command,
             )
             if is_pcsx2:
                 LOGGER.info("[PCSX2] command line=%s", shlex.join(command))
             child_environment = os.environ.copy()
-            if intent.platform in {"nes", "genesis", "ps2"}:
+            if intent.provider in {"retroarch", "pcsx2"}:
                 child_environment.pop("WAYLAND_DISPLAY", None)
-            if intent.platform in {"nes", "genesis"}:
+            if intent.provider:
+                child_environment["XDG_CONFIG_HOME"] = str(
+                    PATHS.provider_config_root(intent.provider)
+                )
+            if intent.provider == "retroarch":
                 child_environment["LIBRETRO_AUTOCONFIG_DIRECTORY"] = (
                     "/opt/lulu/config/retroarch/autoconfig"
                 )
@@ -854,7 +859,7 @@ class ConsoleInterface(ServiceInterface):
                 stdout=asyncio.subprocess.DEVNULL,
                 stderr=asyncio.subprocess.DEVNULL,
                 env=child_environment,
-                cwd="/home/lulu" if intent.platform == "switch" else None,
+                cwd="/home/lulu" if intent.provider == "eden" else None,
                 start_new_session=True,
             )
             if is_pcsx2:
@@ -936,6 +941,7 @@ async def serve() -> None:
     runtime = EmulatorRuntimeAdapter(
         {platform: definition.executable for platform, definition in PLATFORMS.items()},
         {platform: definition.core for platform, definition in PLATFORMS.items() if definition.core is not None},
+        config_root=PATHS.providers_root,
     )
     bus = await MessageBus(bus_type=BusType.SESSION).connect()
     session_introspection = await bus.introspect("org.lulu.ConsoleSessiond", "/org/lulu/ConsoleSession")

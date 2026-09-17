@@ -60,12 +60,12 @@ specific sections it owns and preserves unrelated native settings.
 
 | Provider | Strategy | Actual config location | Persistence verified | Notes |
 |---|---|---|---|---|
-| RetroArch | REDIRECTED | `~/.config/retroarch` plus Lulu append files | unit-level | RetroArch has no proven direct user-dir flag in image; append file is ephemeral input mapping only |
-| Dolphin | REDIRECTED | `~/.config/dolphin-emu` | unit-level | native INI is preserved; Lulu provider root is the declared future migration target |
-| PCSX2 | REDIRECTED | `~/.config/PCSX2/inis` | unit-level | native INI is section-merged, not regenerated |
+| RetroArch | DIRECT | `~/.config/lulu/providers/retroarch/config/retroarch.cfg` | unit-level | `--config` selects the Lulu-owned native file; append file is ephemeral input mapping only |
+| Dolphin | DIRECT | `~/.config/lulu/providers/dolphin/config/` | unit-level | `--user` selects the Lulu-owned Dolphin user directory; native INI is preserved |
+| PCSX2 | DIRECT | `~/.config/lulu/providers/pcsx2/config/PCSX2/inis` | unit-level | PCSX2 honors `XDG_CONFIG_HOME`; native INI is section-merged, not regenerated |
 | Steam | N/A | Steam-owned normal paths; games at `~/Games/Executables/steam/steamapps` | existing tests | client state is intentionally not moved |
 | RomM | DIRECT (Mudos metadata) | `~/.config/lulu/providers/romm/provider.toml` | unit-level | remote service has no native local config |
-| Eden | REDIRECTED | `~/.config/eden` | existing tests | retained compatibility path |
+| Eden | DIRECT | `~/.config/lulu/providers/eden/config/` | existing tests | Mudos passes the native config file explicitly |
 
 ## Testing record
 
@@ -85,6 +85,44 @@ PCSX2 did not provide usable non-GUI help output in this session; their
 section-preserving native INI adapters remain the compatibility redirect and
 do not overwrite unrelated user settings. No emulator was launched during
 this pass because the active graphical session is also the test console.
+
+## Phase 2 configuration reconnaissance and migration
+
+The installed provider interfaces provide supported centralisation mechanisms:
+
+* RetroArch 1.22.2 documents `--config=FILE` and `--appendconfig=FILE`.
+  Production now selects `providers/retroarch/config/retroarch.cfg`; only
+  the per-launch controller index append file remains ephemeral.
+* Dolphin exposes `-u USER, --user=USER`. Production passes the provider
+  `config/` directory as its user folder, so Dolphin's native INI files are
+  physically stored there.
+* PCSX2 honors `XDG_CONFIG_HOME`; production sets it to the provider config
+  directory. Its native files therefore live below
+  `providers/pcsx2/config/PCSX2/`.
+* Eden's direct launch accepts an explicit `--config` file. Its controller
+  profile and native `qt-config.ini` now live under the Eden provider config
+  directory.
+
+Existing `/home/lulu/.config` state was migrated non-destructively: the old
+RetroArch config was copied to the selected central file, Dolphin and Eden
+trees were copied into their provider config directories, and PCSX2's tree
+was copied beneath `config/PCSX2/` to match XDG resolution. Originals were
+not deleted or overwritten. `providers/migration.py` is rerunnable and copies
+only missing files.
+
+The earlier Phase 1 `REDIRECTED` labels were inaccurate: they described the
+conventional locations, not the post-launch physical locations. They are now
+correctly classified as `DIRECT` because the provider itself selects or
+resolves the Lulu-owned native directory.
+
+Isolated real-provider probes were attempted against the migrated locations.
+RetroArch reached its native startup path but exited with the image's
+nonfunctional GPU/video backend; Dolphin aborted in its headless environment;
+PCSX2 entered its GUI startup and was stopped by the noninteractive timeout;
+Eden's portable wrapper exited after reporting that X11 was unavailable.
+These are recorded as environment limitations, not claimed launch-persistence
+successes. Native file load and persistence are covered by adapter tests; a
+full interactive provider launch remains a hardware-session test.
 
 Final deployment evidence: commit `0bb9793` passed **293 tests** and was
 built as `/opt/lulu/releases/0bb9793-candidate-20260917004001`. The release

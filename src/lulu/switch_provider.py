@@ -3,6 +3,8 @@
 from pathlib import Path
 import os
 
+from .paths import PATHS
+
 
 # InputPlumber's virtual Xbox 360 target as reported by SDL2.
 DEFAULT_XBOX360_GUID = "030000005e0400008e02000001000000"
@@ -29,7 +31,7 @@ def _config_root() -> Path:
     configured = os.environ.get("LULU_SWITCH_CONFIG_ROOT")
     if configured:
         return Path(configured).expanduser()
-    return Path(os.environ.get("XDG_CONFIG_HOME", "~/.config")).expanduser() / "eden"
+    return PATHS.provider_config_root("eden")
 
 
 class SwitchProvider:

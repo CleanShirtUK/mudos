@@ -7,5 +7,5 @@ health = true
 [platforms]
 supported = ["ps2"]
 [config]
-strategy = "redirected"
+strategy = "direct"
 directory = "config"

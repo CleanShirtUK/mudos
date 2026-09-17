@@ -6,5 +6,5 @@ settings = true
 [platforms]
 supported = ["switch"]
 [config]
-strategy = "redirected"
+strategy = "direct"
 directory = "config"

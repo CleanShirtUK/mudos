@@ -5,6 +5,8 @@ import unittest
 from lulu.assets import AssetRegistry
 from lulu.platforms import load_platforms
 from lulu.providers import ConfigStrategy, load_providers
+from lulu.providers import NativeConfigAdapter
+from lulu.providers.runtime import launch_arguments
 
 
 class ModularisationTests(unittest.TestCase):
@@ -19,8 +21,35 @@ class ModularisationTests(unittest.TestCase):
         registry = load_providers(Path(__file__).parents[1] / "config/providers")
         self.assertTrue(registry["steam"].capabilities.library)
         self.assertEqual(registry["romm"].config_strategy, ConfigStrategy.DIRECT)
+        for provider in ("retroarch", "dolphin", "pcsx2", "eden"):
+            self.assertEqual(registry[provider].config_strategy, ConfigStrategy.DIRECT)
         self.assertEqual(registry["dolphin"].config_root(Path("/tmp/providers")),
                          Path("/tmp/providers/dolphin/config"))
+        self.assertEqual(registry.for_platform("wii").provider_id, "dolphin")
+
+    def test_provider_launch_adapter_uses_centralized_config(self):
+        registry = load_providers(Path(__file__).parents[1] / "config/providers")
+        provider = registry["retroarch"]
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            executable, core = root / "retroarch", root / "core.so"
+            executable.write_bytes(b"")
+            core.write_bytes(b"")
+            game = type("Game", (), {"platform": "nes", "content_path": "/tmp/game.nes"})()
+            args = launch_arguments(provider, game, executable, core,
+                                    root / "lulu/retroarch/config", None)
+        self.assertEqual(args[0], "--config")
+        self.assertEqual(Path(args[1]).parts[-4:-1], ("lulu", "retroarch", "config"))
+        self.assertEqual(Path(args[1]).name, "retroarch.cfg")
+
+    def test_native_setting_round_trip_preserves_unowned_values(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "Dolphin.ini"
+            path.write_text("[Core]\nCPUThread= true\nOther=keep\n")
+            adapter = NativeConfigAdapter(path)
+            adapter.set("Core", "CPUThread", "false")
+            self.assertEqual(adapter.get("Core", "CPUThread"), "false")
+            self.assertEqual(adapter.get("Core", "Other"), "keep")
 
     def test_user_registry_override_is_deterministic(self):
         with tempfile.TemporaryDirectory() as temporary:

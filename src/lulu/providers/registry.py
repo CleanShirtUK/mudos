@@ -23,6 +23,14 @@ class ProviderRegistry:
     def items(self):
         return self._definitions.items()
 
+    def for_platform(self, platform_id: str) -> ProviderDefinition:
+        """Resolve a launch-capable provider from the declared relationship."""
+        for definition in self._definitions.values():
+            if (platform_id.casefold() in definition.supported_platforms
+                    and definition.capabilities.launch):
+                return definition
+        raise KeyError(f"no launch provider registered for platform: {platform_id}")
+
 
 def load_providers(directory: Path | None = None) -> ProviderRegistry:
     directory = directory or PATHS.providers_root
