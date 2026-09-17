@@ -427,9 +427,12 @@ int main(int argc, char **argv)
     viewModel.insert("providerSettingValue", QString());
     if (!shellContext && !primaryId.isEmpty()) {
         const auto guideReply = sessiond.call("GetProviderGuide", primaryId);
+        qInfo() << "Guide provider metadata" << primaryId << guideReply.type()
+                << guideReply.errorMessage();
         if (guideReply.type() == QDBusMessage::ReplyMessage && !guideReply.arguments().isEmpty()) {
             const auto guide = QJsonDocument::fromJson(
                 guideReply.arguments().constFirst().toString().toUtf8()).object();
+            qInfo() << "Guide provider metadata payload" << guide;
             if (guide.value("available").toBool()) {
                 viewModel.insert("providerGuideAvailable", true);
                 providerMenuLabel = QStringLiteral("Provider");
