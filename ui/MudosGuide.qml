@@ -14,10 +14,15 @@ Window {
     property bool shellContext: guideModel.shellContext
     property bool confirmationPending: guideModel.confirmationPending
     property string confirmationAction: guideModel.confirmationAction
+    property bool providerSettingsView: guideModel.providerSettingsView
+    property string providerSettingLabel: guideModel.providerSettingLabel
+    property string providerSettingValue: guideModel.providerSettingValue
 
     function resolvedGuideActions() {
         if (confirmationPending)
             return ["Cancel", confirmationAction]
+        if (providerSettingsView)
+            return [providerSettingLabel + ": " + providerSettingValue, "Back"]
         if (shellContext) {
             return ["Restart Mudos", "Reboot System", "Shut Down System"]
         }
@@ -66,7 +71,7 @@ Window {
     Rectangle {
         anchors.centerIn: parent
         width: 520
-        height: confirmationPending ? 250 : shellContext ? 250 : 310
+        height: confirmationPending || providerSettingsView ? 250 : shellContext ? 250 : 310
         color: luluPalette.guideSurface
         border.color: luluPalette.guideBorder
         border.width: 2
@@ -74,7 +79,7 @@ Window {
         Text {
             x: 24
             y: 18
-            text: confirmationPending ? "Confirm" : "Guide"
+            text: confirmationPending ? "Confirm" : providerSettingsView ? "Provider" : "Guide"
             color: luluPalette.primaryText
             font.pixelSize: 28
         }

@@ -33,6 +33,8 @@ from .steam_provider import SteamProvider
 from .steam_entitlements import SteamEntitlementSource
 from .system_settings import CATEGORIES as SYSTEM_CATEGORIES, SystemSettingsProvider
 from .paths import PATHS
+from .platforms import load_platforms
+from .providers import NativeConfigAdapter, load_providers
 
 
 DESCRIPTOR = ServiceDescriptor(
@@ -590,6 +592,52 @@ class ConsoleInterface(ServiceInterface):
         self._refresh_task: asyncio.Task[list[dict[str, object]]] | None = None
         self._catalogue_generation = 0
         self._delta_history: deque[tuple[int, list[dict[str, object]]]] = deque(maxlen=256)
+        self._providers = load_providers()
+        self._platforms = load_platforms()
+
+    def _provider_for_game_id(self, game_id: str):
+        game = self.catalogue.store.get_game(game_id)
+        if game is None or game.provider != "local":
+            return None
+        try:
+            platform = self._platforms.get(game.platform)
+            return self._providers.get(platform.default_provider or "")
+        except KeyError:
+            return None
+
+    def _provider_setting(self, provider_id: str) -> NativeConfigAdapter | None:
+        if provider_id != "retroarch":
+            return None
+        return NativeConfigAdapter(PATHS.provider_config_root("retroarch") / "retroarch.cfg")
+
+    @method()
+    def GetProviderGuide(self, game_id: "s") -> "s":
+        """Return registry-resolved, Guide-safe settings metadata."""
+        provider = self._provider_for_game_id(game_id)
+        if provider is None or not provider.capabilities.settings:
+            return json.dumps({"available": False})
+        adapter = self._provider_setting(provider.provider_id)
+        if adapter is None:
+            return json.dumps({"available": False})
+        return json.dumps({
+            "available": True,
+            "provider_id": provider.provider_id,
+            "provider_name": provider.name,
+            "setting_key": "config_save_on_exit",
+            "setting_label": "Save config on exit",
+            "setting_value": (adapter.get("", "config_save_on_exit", "true") or "true").strip('"'),
+        })
+
+    @method()
+    def SetProviderSetting(self, provider_id: "s", key: "s", value: "s") -> "s":
+        if provider_id != "retroarch" or key != "config_save_on_exit" or value not in {"true", "false"}:
+            raise DBusError("org.lulu.Console.Error.InvalidProviderSetting", "unsupported provider setting")
+        adapter = self._provider_setting(provider_id)
+        assert adapter is not None
+        # RetroArch uses a global sectionless config, represented by an empty
+        # section in the line-preserving native adapter.
+        adapter.set("", key, value)
+        return (adapter.get("", key, value) or value).strip('"')
 
     def _publish_delta_batches(self, batches: object) -> None:
         for batch in batches:
@@ -855,6 +903,7 @@ class ConsoleInterface(ServiceInterface):
                 child_environment["MUDOS_PROVIDER_MENU_COMMAND"] = shlex.join(
                     self.local_runtime.open_provider_menu(intent.platform)
                 )
+                child_environment["MUDOS_PROVIDER_MENU_LABEL"] = "Provider"
             process = await asyncio.create_subprocess_exec(
                 *command,
                 stdin=asyncio.subprocess.DEVNULL,

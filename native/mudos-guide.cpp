@@ -115,6 +115,23 @@ private:
         {
             playAudio(QStringLiteral("confirm"));
             const int selection = viewModel_->value("selection").toInt();
+            if (viewModel_->value("providerSettingsView").toBool()) {
+                if (selection == 0) {
+                    QDBusInterface consoled("org.lulu.Consoled", "/org/lulu/Console",
+                                            "org.lulu.Console", QDBusConnection::sessionBus());
+                    const QString current = viewModel_->value("providerSettingValue").toString();
+                    const QString value = current == QStringLiteral("true") ? QStringLiteral("false") : QStringLiteral("true");
+                    const auto reply = consoled.call("SetProviderSetting",
+                        viewModel_->value("providerSettingProvider").toString(),
+                        viewModel_->value("providerSettingKey").toString(), value);
+                    if (reply.type() == QDBusMessage::ReplyMessage && !reply.arguments().isEmpty())
+                        viewModel_->insert("providerSettingValue", reply.arguments().constFirst().toString());
+                } else {
+                    viewModel_->insert("providerSettingsView", false);
+                    viewModel_->insert("selection", 1);
+                }
+                return;
+            }
             if (viewModel_->value("confirmationPending").toBool()) {
                 if (selection == 0) {
                     viewModel_->insert("confirmationPending", false);
@@ -149,7 +166,10 @@ private:
         }
         else if (action == QStringLiteral("ui_back")) {
             playAudio(QStringLiteral("back"));
-            if (viewModel_->value("confirmationPending").toBool()) {
+            if (viewModel_->value("providerSettingsView").toBool()) {
+                viewModel_->insert("providerSettingsView", false);
+                viewModel_->insert("selection", 1);
+            } else if (viewModel_->value("confirmationPending").toBool()) {
                 viewModel_->insert("confirmationPending", false);
                 viewModel_->insert("selection", 0);
             } else {
@@ -170,6 +190,8 @@ private:
 
     int actionCountForModel() const
     {
+        if (viewModel_->value("providerSettingsView").toBool())
+            return 2;
         if (viewModel_->value("confirmationPending").toBool())
             return 2;
         if (viewModel_->value("shellContext").toBool())
@@ -298,6 +320,11 @@ private:
 
     void openProviderMenu()
     {
+        if (viewModel_->value("providerGuideAvailable").toBool()) {
+            viewModel_->insert("providerSettingsView", true);
+            viewModel_->insert("selection", 0);
+            return;
+        }
         if (providerMenuLabel_ == QStringLiteral("Open Downloads")) {
             QDBusInterface sessiond("org.lulu.ConsoleSessiond", "/org/lulu/ConsoleSession",
                                     "org.lulu.ConsoleSession", QDBusConnection::sessionBus());
@@ -349,6 +376,7 @@ int main(int argc, char **argv)
     bool compatibilityMode = false;
     bool shellContext = false;
     bool compatibilityModeAvailable = targetPid > 1;
+    QString primaryId;
     QDBusInterface sessiond("org.lulu.ConsoleSessiond", "/org/lulu/ConsoleSession",
                             "org.lulu.ConsoleSession", QDBusConnection::sessionBus());
     const auto stateReply = sessiond.call("GetState");
@@ -359,7 +387,7 @@ int main(int argc, char **argv)
             && targetPid > 1;
         shellContext = state.value("lifecycle").toString() != QStringLiteral("game");
         compatibilityMode = state.value("input_mode").toString() == QStringLiteral("compat");
-        const auto primaryId = state.value("primary_id").toString();
+        primaryId = state.value("primary_id").toString();
             if (primaryId == QStringLiteral("steam-store")) {
                 effectiveProviderCommand = QStringLiteral("MUDOS_DOWNLOADS");
                 providerMenuLabel = QStringLiteral("Open Downloads");
@@ -386,6 +414,28 @@ int main(int argc, char **argv)
     viewModel.insert("confirmationAction", QString());
     viewModel.insert("audioEvent", QString());
     viewModel.insert("audioEventSerial", 0);
+    viewModel.insert("providerGuideAvailable", false);
+    viewModel.insert("providerSettingsView", false);
+    viewModel.insert("providerSettingProvider", QString());
+    viewModel.insert("providerSettingKey", QString());
+    viewModel.insert("providerSettingLabel", QString());
+    viewModel.insert("providerSettingValue", QString());
+    if (!shellContext && !primaryId.isEmpty()) {
+        const auto guideReply = sessiond.call("GetProviderGuide", primaryId);
+        if (guideReply.type() == QDBusMessage::ReplyMessage && !guideReply.arguments().isEmpty()) {
+            const auto guide = QJsonDocument::fromJson(
+                guideReply.arguments().constFirst().toString().toUtf8()).object();
+            if (guide.value("available").toBool()) {
+                viewModel.insert("providerGuideAvailable", true);
+                providerMenuLabel = QStringLiteral("Provider");
+                viewModel.insert("providerMenuLabel", providerMenuLabel);
+                viewModel.insert("providerSettingProvider", guide.value("provider_id").toString());
+                viewModel.insert("providerSettingKey", guide.value("setting_key").toString());
+                viewModel.insert("providerSettingLabel", guide.value("setting_label").toString());
+                viewModel.insert("providerSettingValue", guide.value("setting_value").toString());
+            }
+        }
+    }
     QQmlApplicationEngine engine;
     engine.rootContext()->setContextProperty("guideModel", &viewModel);
     engine.load(QUrl::fromLocalFile(qEnvironmentVariable("LULU_GUIDE_UI_FILE",

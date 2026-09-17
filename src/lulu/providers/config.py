@@ -17,7 +17,7 @@ class NativeConfigAdapter:
             stripped = line.strip()
             if stripped.startswith("[") and stripped.endswith("]"):
                 current = stripped[1:-1]
-            elif current == section and "=" in line:
+            elif (current == section or (section == "" and current is None)) and "=" in line:
                 name, value = line.split("=", 1)
                 if name.strip() == key:
                     return value.strip()
@@ -26,7 +26,25 @@ class NativeConfigAdapter:
     def set(self, section: str, key: str, value: str) -> None:
         source = self.path.read_text(encoding="utf-8") if self.path.is_file() else ""
         lines = source.splitlines()
-        start = next((i for i, line in enumerate(lines) if line.strip() == f"[{section}]"), None)
+        start = None if section == "" else next(
+            (i for i, line in enumerate(lines) if line.strip() == f"[{section}]"), None
+        )
+        if section == "":
+            match = next((i for i, line in enumerate(lines)
+                          if "=" in line and "[" not in line and line.split("=", 1)[0].strip() == key), None)
+            if match is not None:
+                lines[match] = f"{key} = {value}"
+                self.path.parent.mkdir(parents=True, exist_ok=True)
+                temporary = self.path.with_suffix(self.path.suffix + ".tmp")
+                temporary.write_text("\n".join(lines) + "\n", encoding="utf-8")
+                temporary.replace(self.path)
+                return
+            lines.insert(0, f"{key} = {value}")
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            temporary = self.path.with_suffix(self.path.suffix + ".tmp")
+            temporary.write_text("\n".join(lines) + "\n", encoding="utf-8")
+            temporary.replace(self.path)
+            return
         if start is None:
             if lines and lines[-1] != "":
                 lines.append("")

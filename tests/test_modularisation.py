@@ -51,6 +51,15 @@ class ModularisationTests(unittest.TestCase):
             self.assertEqual(adapter.get("Core", "CPUThread"), "false")
             self.assertEqual(adapter.get("Core", "Other"), "keep")
 
+    def test_native_sectionless_setting_round_trip(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "retroarch.cfg"
+            path.write_text('video_driver = "gl"\nconfig_save_on_exit = "true"\n')
+            adapter = NativeConfigAdapter(path)
+            self.assertEqual(adapter.get("", "config_save_on_exit"), '"true"')
+            adapter.set("", "config_save_on_exit", '"false"')
+            self.assertEqual(adapter.get("", "config_save_on_exit"), '"false"')
+
     def test_dolphin_central_user_directory_is_flat(self):
         from lulu.controller_provisioning import ensure_provider_controller_config
         with tempfile.TemporaryDirectory() as temporary:

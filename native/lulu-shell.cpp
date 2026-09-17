@@ -639,11 +639,20 @@ private:
             if (state.value("primary_id").toString() == QStringLiteral("steam-store"))
                 return QStringLiteral("MUDOS_DOWNLOADS");
         }
-        return QStringLiteral("MUDOS_DOWNLOADS");
+        return {};
     }
 
     QString providerMenuLabel(uint32_t pid) const
     {
+        QFile environment(QStringLiteral("/proc/%1/environ").arg(pid));
+        if (environment.open(QIODevice::ReadOnly)) {
+            const auto entries = environment.readAll().split('\0');
+            for (const auto &entry : entries) {
+                const QByteArray prefix("MUDOS_PROVIDER_MENU_LABEL=");
+                if (entry.startsWith(prefix))
+                    return QString::fromUtf8(entry.mid(prefix.size()));
+            }
+        }
         QDBusInterface sessiond("org.lulu.ConsoleSessiond", "/org/lulu/ConsoleSession",
                                 "org.lulu.ConsoleSession", QDBusConnection::sessionBus());
         const auto reply = sessiond.call("GetState");
@@ -653,7 +662,7 @@ private:
             if (state.value("primary_id").toString() == QStringLiteral("steam-store"))
                 return QStringLiteral("Open Downloads");
         }
-        return QStringLiteral("Open Downloads");
+        return QStringLiteral("Provider Menu");
     }
 
     void scanGamepads()

@@ -255,3 +255,22 @@ RetroArch was then cancelled through `/cancel`; Mudos returned to its shell
 with no failed units. Repair commit: `9b97b66`; Python suite: 297 passed. The
 QML runner's unrelated failures require the unavailable `Mudos.Poc` import and
 legacy harness assumptions; production shell startup was successful.
+
+## Provider Guide regression repair — 2026-09-17
+
+History identified the regression at `64aeb5c` (`Add Mudos-owned Downloads
+surface`). Before that change, `lulu-shell.cpp` returned `Provider Menu` for
+normal game contexts and selected contextual labels only for delegated Steam
+surfaces. That commit changed the fallback command and label to
+`MUDOS_DOWNLOADS` / `Open Downloads`, causing Downloads to replace Provider
+globally. The change was not intentional for emulator games.
+
+The fallback is now empty again, while Steam Store retains `Open Downloads`.
+RetroArch game processes advertise `Provider` and the Guide keeps Downloads
+contextual. Provider settings metadata is resolved by Consoled through the
+platform and provider registries. The restored Guide surface currently exposes
+one deliberately narrow native setting: RetroArch `config_save_on_exit`,
+read/written by `NativeConfigAdapter` in the centralized
+`~/.config/lulu/providers/retroarch/config/retroarch.cfg` file. The setting
+screen toggles the value and supports controller Back without leaking input to
+the game. Unsupported providers do not receive a fabricated settings screen.

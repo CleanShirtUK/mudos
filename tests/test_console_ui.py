@@ -147,6 +147,19 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertNotIn("root.recentSelectedGameId =", shell)
         self.assertIn("beginPendingHomeLaunch(visibleRecentGame)", shell)
 
+    def test_provider_and_download_guide_actions_are_contextual(self) -> None:
+        guide = (ROOT / "ui" / "MudosGuide.qml").read_text()
+        native = (ROOT / "native" / "mudos-guide.cpp").read_text()
+        consoled = (ROOT / "src" / "lulu" / "consoled.py").read_text()
+        self.assertIn('actions.push(guideModel.providerMenuLabel)', guide)
+        self.assertIn('return [providerSettingLabel + ": " + providerSettingValue, "Back"]', guide)
+        self.assertIn('providerMenuLabel = QStringLiteral("Open Downloads")', native)
+        self.assertIn('providerMenuLabel = QStringLiteral("Provider")', native)
+        self.assertIn('sessiond.call("GetProviderGuide", primaryId)', native)
+        self.assertIn('def GetProviderGuide', consoled)
+        self.assertIn('def SetProviderSetting', consoled)
+        self.assertIn('load_providers()', consoled)
+
     def test_typography_uses_central_semantic_families(self) -> None:
         typography = (ROOT / "ui" / "Typography.qml").read_text()
         self.assertIn("FontLoader", typography)
