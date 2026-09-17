@@ -30,6 +30,7 @@ class SessionState:
     requested_surface: str | None = None
     session_kind: str = "shell"
     provider_id: str | None = None
+    controller_mode: str | None = None
 
 
 class SessionStateModel:

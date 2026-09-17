@@ -119,6 +119,18 @@ class SteamProvider:
             return True
         return any(line.strip().casefold() == "steam" for line in result.stdout.splitlines())
 
+    def main_window_focused(self) -> bool:
+        """Return whether the focused X11 window belongs to Steam."""
+        try:
+            result = subprocess.run(
+                ["xdotool", "getactivewindow", "getwindowclassname"],
+                check=False, capture_output=True, text=True, timeout=2,
+                env={**os.environ, "DISPLAY": os.environ.get("DISPLAY", ":0")},
+            )
+        except (OSError, subprocess.SubprocessError):
+            return False
+        return result.stdout.strip().casefold() == "steam"
+
     def install(self, app_id: str) -> str:
         """Open Steam's normal install confirmation for a validated AppID."""
         self._validate_app_id(app_id)

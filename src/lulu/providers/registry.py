@@ -67,7 +67,8 @@ def load_providers(directory: Path | None = None) -> ProviderRegistry:
                 return None
             command = value["command"]
             parts = tuple(command) if isinstance(command, list) else tuple(shlex.split(str(command)))
-            return LaunchDefinition(parts, str(value.get("controller_mode", "game"))) if parts else None
+            return LaunchDefinition(parts, str(value.get("controller_mode", "game")),
+                                    str(value["window_class"]) if value.get("window_class") else None) if parts else None
 
         definitions[provider_id] = ProviderDefinition(
             provider_id, str(raw.get("name", provider_id)),

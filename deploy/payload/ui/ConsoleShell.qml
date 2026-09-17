@@ -471,10 +471,6 @@ Window {
             traceLaunchEvent("TARGET_READY", {lifecycle: state.lifecycle, presentation: state.presentation || ""})
             launchStatus = "running"
             message = "Running " + launchTitle
-            if (state.session_kind === "provider_standalone"
-                    && root.standaloneProviderModes[state.provider_id] === "compat"
-                    && state.input_mode !== "compat")
-                root.request("/input-mode/compat", "POST", "", function(data) {}, "Provider input handoff failed")
             retireLaunchOverlay(generation)
         } else if (state.lifecycle === "returning") {
             traceLaunchEvent("GAME_EXIT_OBSERVED", {lifecycle: state.lifecycle, presentation: state.presentation || ""})

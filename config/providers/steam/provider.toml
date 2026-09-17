@@ -11,5 +11,6 @@ directory = "config"
 [launch.standalone]
 command = "/usr/bin/steam steam://open/main"
 controller_mode = "compat"
+window_class = "steam"
 [launch.game]
 command = "/usr/bin/steam"

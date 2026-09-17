@@ -674,8 +674,8 @@ class ConsoleInterface(ServiceInterface):
                 env=environment, start_new_session=True,
             )
         try:
-            token = await self.sessiond.call_begin_local_session(
-                f"provider:{provider.provider_id}:standalone", process.pid,
+            token = await self.sessiond.call_begin_provider_session(
+                provider.provider_id, launch.controller_mode, process.pid,
                 os.getpgid(process.pid), os.path.realpath(f"/proc/{process.pid}/exe"), command)
         except Exception:
             try:
@@ -686,6 +686,24 @@ class ConsoleInterface(ServiceInterface):
             raise
         self._local_process = process
         self._local_token = token
+
+        async def apply_provider_controller_mode() -> None:
+            # Apply ownership only after the provider has had time to present.
+            # Verify that this standalone session is still current first.
+            await asyncio.sleep(1)
+            try:
+                state = json.loads(await self.sessiond.call_get_state())
+                if (state.get("launch_token") == token
+                        and state.get("session_kind") == "provider_standalone"
+                        and state.get("lifecycle") == "game"):
+                    if not steam_delegated:
+                        await self.sessiond.call_set_input_mode(launch.controller_mode)
+                        LOGGER.info("standalone provider controller mode applied provider=%s mode=%s",
+                                    provider.provider_id, launch.controller_mode)
+            except Exception:
+                LOGGER.exception("standalone provider controller mode failed provider=%s",
+                                 provider.provider_id)
+        asyncio.create_task(apply_provider_controller_mode())
 
         async def reap() -> None:
             exit_code = await process.wait()
@@ -706,8 +724,21 @@ class ConsoleInterface(ServiceInterface):
                 self._local_token = None
         if steam_delegated:
             async def watch_steam_window() -> None:
-                await asyncio.sleep(5)
+                # Steam's URI helper and update/web bootstrap can take several
+                # seconds before the final main window is mapped. Do not
+                # interpret that startup gap as a user closing Steam.
+                for _ in range(20):
+                    if await asyncio.to_thread(self.catalogue.provider.main_window_visible):
+                        break
+                    await asyncio.sleep(1)
                 while process.returncode is None:
+                    state = json.loads(await self.sessiond.call_get_state())
+                    if state.get("lifecycle") == "game":
+                        focused = await asyncio.to_thread(self.catalogue.provider.main_window_focused)
+                        desired = "compat" if focused else "gamepad"
+                        if state.get("input_mode") != desired:
+                            await self.sessiond.call_set_input_mode(desired)
+                            LOGGER.info("focused provider controller mode applied provider=steam mode=%s", desired)
                     visible = await asyncio.to_thread(self.catalogue.provider.main_window_visible)
                     if not visible:
                         process.terminate()

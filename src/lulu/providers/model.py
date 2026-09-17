@@ -26,6 +26,7 @@ class LaunchDefinition:
     """One explicit provider launch contract (never inferred from the other)."""
     command: tuple[str, ...]
     controller_mode: str = "game"
+    window_class: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

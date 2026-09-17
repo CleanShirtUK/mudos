@@ -47,6 +47,8 @@ class ProviderLaunchContractTests(unittest.TestCase):
         self.assertEqual(provider.standalone_launch.command,
                          ("/usr/bin/steam", "steam://open/main"))
         self.assertEqual(provider.standalone_launch.controller_mode, "compat")
+        self.assertEqual(provider.standalone_launch.window_class, "steam")
+
 
 
 if __name__ == "__main__":
