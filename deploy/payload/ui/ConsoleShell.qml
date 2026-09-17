@@ -89,8 +89,9 @@ Window {
     readonly property real homeContentOriginY: homeHintTopY - acceptedRecentCardHeight - headingCardGap
     readonly property real homeActiveContentOriginY: homeHintTopY - homeFocalCardHeight
         - headingCardGap + homeHeadingCardClearance + homeCompositionOffsetY
-    readonly property real selectedDomainY: homeActiveContentOriginY - homeHeadingCardClearance
-        - activeHeadingHeight - headingCardGap
+    // Category labels and controller hints share this screen-space band.
+    // Keep the label independent from card geometry and category content.
+    readonly property real selectedDomainY: homeBottomBandCenterY - activeHeadingHeight * 0.5
     property int recentIndex: 0
     readonly property string recentSelectedGameId: recentModel && recentIndex >= 0
         && recentHome && recentIndex < recentHome.itemCount
@@ -2686,8 +2687,10 @@ Window {
             height: root.design(72)
 
             Row {
-                x: root.design(76)
-                width: parent.width * 0.54
+                // Size to the visible hints so the complete group, rather
+                // than a content-column box, is centered on the screen.
+                width: implicitWidth
+                anchors.horizontalCenter: parent.horizontalCenter
                 anchors.verticalCenter: parent.verticalCenter
                 visible: presentationCoordinator.contentVisible
                     && (root.space === "library" || root.libraryTransitioning)
@@ -2740,9 +2743,10 @@ Window {
             }
 
             Row {
-                width: parent.width * 0.54
-                anchors.right: parent.right
-                anchors.rightMargin: root.design(76)
+                // Keep the hint group centered independently of its contents,
+                // selected card, and the surrounding content columns.
+                width: implicitWidth
+                anchors.horizontalCenter: parent.horizontalCenter
                 anchors.verticalCenter: parent.verticalCenter
                 visible: presentationCoordinator.contentVisible && root.space !== "library"
                 y: presentationCoordinator.hintsOffset()

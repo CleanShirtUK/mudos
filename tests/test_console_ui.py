@@ -53,7 +53,7 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertIn("titleRailActiveGap", QML)
         self.assertIn("titleRailLayoutY(index, activeIndex)", QML)
         self.assertIn("visible: true", QML)
-        self.assertIn("anchors.rightMargin: root.design(76)", QML)
+        self.assertIn("anchors.horizontalCenter: parent.horizontalCenter", QML)
         self.assertIn("homeBottomBandCenterY: height - design(36)", QML)
         self.assertIn("homeCategoryRailX: design(52)", QML)
         self.assertIn('homeCategoryFontSize: typography.size("display", 48)', QML)
@@ -159,6 +159,12 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertNotIn('source: "UiAudioEngine.qml"', guide)
         self.assertNotIn("audioEventSerial", guide + native)
         self.assertNotIn("fps_show", guide + native)
+
+    def test_controller_hint_groups_center_on_the_full_interaction_rail(self) -> None:
+        shell = (ROOT / "ui" / "ConsoleShell.qml").read_text()
+        self.assertGreaterEqual(shell.count("width: implicitWidth"), 2)
+        self.assertEqual(shell.count("anchors.horizontalCenter: parent.horizontalCenter"), 2)
+        self.assertNotIn("width: parent.width * 0.54", shell)
 
     def test_internet_settings_uses_network_boundary_and_controller_model(self) -> None:
         qml = (ROOT / "ui" / "InternetSettings.qml").read_text()
@@ -409,7 +415,7 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertIn("readonly property real headingCardGap: design(21)", QML)
         self.assertIn("readonly property real homeHintTopY: height - design(45)", QML)
         self.assertIn("homeContentOriginY: homeHintTopY - acceptedRecentCardHeight - headingCardGap", QML)
-        self.assertIn("selectedDomainY: homeActiveContentOriginY - homeHeadingCardClearance", QML)
+        self.assertIn("selectedDomainY: homeBottomBandCenterY - activeHeadingHeight * 0.5", QML)
         self.assertIn("acceptedRecentCardHeight", QML)
         self.assertIn("y: root.titleRailChildY(index)", QML)
         self.assertIn("function domainOffset(index)", QML)
