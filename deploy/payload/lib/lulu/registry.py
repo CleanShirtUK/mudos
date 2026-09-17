@@ -4,6 +4,7 @@ from pathlib import Path
 import tomllib
 
 from ..paths import PATHS
+from ..plugins import PluginRegistry
 import shlex
 
 from .model import ConfigStrategy, GuideAction, LaunchDefinition, ProviderCapabilities, ProviderDefinition
@@ -78,13 +79,13 @@ class ProviderRegistry:
 
 
 def load_base_guide(path: Path | None = None) -> tuple[GuideAction, ...]:
-    path = path or (Path(__file__).resolve().parents[3] / "config" / "guide" / "base.toml")
+    path = path or (PATHS.install_root / "config" / "guide" / "base.toml")
     with path.open("rb") as stream:
         return _guide_actions(tomllib.load(stream).get("guide"), path)
 
 
 def load_mudos_guide(path: Path | None = None) -> tuple[GuideAction, ...]:
-    path = path or (Path(__file__).resolve().parents[3] / "config" / "guide" / "mudos.toml")
+    path = path or (PATHS.install_root / "config" / "guide" / "mudos.toml")
     with path.open("rb") as stream:
         return _guide_actions(tomllib.load(stream).get("guide"), path)
 
@@ -92,12 +93,27 @@ def load_mudos_guide(path: Path | None = None) -> tuple[GuideAction, ...]:
 def load_providers(directory: Path | None = None) -> ProviderRegistry:
     directory = directory or PATHS.providers_root
     directories = [directory]
+    plugin_records = ()
     if directory == PATHS.providers_root:
-        installed = Path(__file__).resolve().parents[3] / "config" / "providers"
+        installed = PATHS.install_root / "config" / "providers"
         if installed.is_dir() and installed != directory:
             directories.insert(0, installed)
+    if directory == PATHS.providers_root:
+        plugin_root = PATHS.plugins_root
+        installed_plugins = PATHS.install_root / "config" / "plugins"
+        if installed_plugins.is_dir() and installed_plugins != plugin_root:
+            plugin_root = installed_plugins
+        plugin_records = PluginRegistry(plugin_root).discover()
+        for plugin in plugin_records:
+            if plugin.health == "available":
+                provider_root = plugin.manifest.root / "providers"
+                if provider_root.is_dir():
+                    directories.append(provider_root)
     definitions = {}
-    paths = {path.parent.name: path for root in directories if root.is_dir() for path in root.glob("*/provider.toml")}
+    disabled_provider_roots = {record.manifest.plugin_id for record in plugin_records
+                               if record.health != "available" and "providers" in record.manifest.capabilities}
+    paths = {path.parent.name: path for root in directories if root.is_dir()
+             for path in root.glob("*/provider.toml") if path.parent.name.casefold() not in disabled_provider_roots}
     for path in sorted(paths.values(), key=lambda item: item.parent.name):
         with path.open("rb") as stream:
             raw = tomllib.load(stream)

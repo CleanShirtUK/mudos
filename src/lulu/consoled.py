@@ -57,30 +57,47 @@ DESCRIPTOR = ServiceDescriptor(
 )
 
 
+def _load_plugin_registry() -> PluginRegistry:
+    root = PATHS.plugins_root
+    installed = PATHS.install_root / "config" / "plugins"
+    if not root.is_dir() and installed.is_dir():
+        root = installed
+    registry = PluginRegistry(root)
+    registry.discover()
+    return registry
+
+
 class ConsoleCatalog:
     """Consoled-owned normalized catalogue."""
 
     descriptor = DESCRIPTOR
 
     def __init__(self, store: CatalogueStore | None = None, provider: SteamProvider | None = None,
-                 local_provider: LocalContentProvider | None = None,
-                 metadata: SteamGridDBMetadata | None = None,
-                 romm: RommClient | None = None,
-                 steam_entitlements: SteamEntitlementSource | None = None) -> None:
+                  local_provider: LocalContentProvider | None = None,
+                  metadata: SteamGridDBMetadata | None = None,
+                  romm: RommClient | None = None,
+                  steam_entitlements: SteamEntitlementSource | None = None,
+                  plugin_registry: PluginRegistry | None = None) -> None:
         self.store = store or CatalogueStore()
-        self.provider = provider or SteamProvider()
+        self._plugins = plugin_registry or _load_plugin_registry()
+        if plugin_registry is None:
+            self._plugins.discover()
+        self.provider = provider or next((item for item in self._plugins.with_capability("session")
+                                          if hasattr(item, "open_main")), None)
         self.local_provider = local_provider or LocalContentProvider()
         self.artwork = SteamGridDBArtwork()
         self.romm_artwork = LocalArtworkCache()
         self.metadata = metadata or SteamGridDBMetadata()
         self.matcher = MetadataMatcher(self.metadata)
-        self.steam_entitlements = steam_entitlements or SteamEntitlementSource()
+        self.steam_entitlements = steam_entitlements or next(
+            (item for item in self._plugins.with_capability("installed_catalogue")
+             if hasattr(item, "has_snapshot")), None)
         self._diagnostic_artwork_originals: dict[str, str] = {}
         self._diagnostic_timestamp_originals: dict[str, tuple[int | None, int | None]] = {}
         self._diagnostic_canonical_originals: dict[str, str] = {}
         self.last_delta_batches: list[tuple[object, ...]] = []
-        config = RommConfig.from_file()
-        self.romm = romm or (RommClient(config) if config else None)
+        self.romm = romm or next((item for item in self._plugins.with_capability("installed_catalogue")
+                                  if hasattr(item, "list_games")), None)
         connection = self.store.connection
         LOGGER.info(
             "catalogue sqlite connection path=%s creator_thread=%s check_same_thread=false "
@@ -141,7 +158,7 @@ class ConsoleCatalog:
             LOGGER.info("catalogue direct diagnostic canonical_title transaction=%s", metrics)
             result = [game.as_dict() for game in self.store.list_games()]
             return result
-        if "steam" in selected:
+        if "steam" in selected and self.steam_entitlements is not None and self.provider is not None:
             LOGGER.info("catalogue stage started name=steam")
             self.steam_entitlements.refresh()
             if self.steam_entitlements.has_snapshot:

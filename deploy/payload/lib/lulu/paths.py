@@ -80,6 +80,11 @@ class MudosPaths:
         """Persistent state owned by one provider."""
         return self.providers_root / provider_id
 
+    @property
+    def install_root(self) -> Path:
+        configured = os.environ.get("LULU_INSTALL_ROOT")
+        return Path(configured).expanduser() if configured else Path(__file__).resolve().parents[2]
+
     def provider_config_root(self, provider_id: str) -> Path:
         return self.provider_root(provider_id) / "config"
 
