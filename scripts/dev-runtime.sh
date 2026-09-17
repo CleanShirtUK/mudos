@@ -83,10 +83,18 @@ EOF
 }
 
 immutable() {
-    rm -f "$session_dropin" "$consoled_dropin" "$acquisition_dropin" "$acquisition_unit" "$osk_unit" \
+    rm -f "$session_dropin" "$consoled_dropin" "$acquisition_dropin"
+    # Restore deployment-owned units from the active immutable release. The
+    # old implementation deleted these files, leaving lulu.target with a
+    # dangling OSK link and leaving the shell without Acquisitiond on reboot.
+    immutable_root=$(CDPATH= cd -- "$(readlink -f /opt/lulu/current)" && pwd)
+    install -m 0644 "$immutable_root/packaging/lulu-acquisition.service" "$acquisition_unit"
+    install -m 0644 "$immutable_root/packaging/lulu-osk@.service" "$osk_unit"
+    install -m 0644 "$immutable_root/packaging/udev/80-lulu-osk.rules" \
         /etc/udev/rules.d/80-lulu-osk.rules
+    udevadm control --reload-rules
     systemctl daemon-reload
-    systemctl restart lulu-consoled.service lulu-session@2.service
+    systemctl restart lulu-acquisition.service lulu-consoled.service lulu-session@2.service
     echo "restored immutable runtime: $(readlink -f /opt/lulu/current)"
 }
 

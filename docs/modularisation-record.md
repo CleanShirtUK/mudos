@@ -92,6 +92,36 @@ manifest verified successfully, all payload files are immutable, and
 `/opt/lulu/current` was atomically activated to it. Deployed imports found six
 platform definitions (including GameCube) and six provider definitions.
 
+## Cold-boot failure and repair — 2026-09-17
+
+The first post-Phase-1 cold boot produced a blinking cursor. Evidence showed
+that `/opt/lulu/current` was valid, but systemd had previously been configured
+by the mutable development-runtime workflow. `lulu-session@.service` and
+`lulu-consoled.service` had `dev-runtime` drop-ins pointing at
+`/opt/lulu/dev-current`; the development workflow had also replaced the
+acquisition and OSK unit files. Running its `immutable` cleanup removed those
+two units instead of restoring them. Consequently `lulu.target` retained a
+dangling `lulu-osk@2` link and Acquisitiond was absent. The immutable shell
+then exited with `org.lulu.Acquisitiond ... The name is not activatable`,
+leaving the cursor.
+
+Repair restored the packaged unit files and udev rule from the active release,
+removed all development drop-ins, reloaded systemd, and restarted the normal
+target. `dev-runtime.sh immutable` now performs that restoration itself and
+restarts Acquisitiond as part of the cleanup. This is a deployment-script
+repair, not a change to the immutable release contents or the Phase 1 tag.
+
+Cold-boot validation after the repair (boot `2026-09-17 08:31`) passed:
+
+* `/opt/lulu/current` remained the active immutable release;
+* `lulu-session@2`, gamescope, and `lulu-shell` started successfully;
+* Acquisitiond, Consoled, InputPlumber, seatd, and file browser were running;
+* no systemd units were failed.
+
+The OSK continues to retry when no InputPlumber DBus target device exists;
+this is a controller-availability condition and does not block Mudos shell
+startup. A replacement release will include the corrected cleanup script.
+
 ## Known limitations at start
 
 Provider binaries were not all runnable in a non-interactive validation
