@@ -89,9 +89,8 @@ Window {
     readonly property real homeContentOriginY: homeHintTopY - acceptedRecentCardHeight - headingCardGap
     readonly property real homeActiveContentOriginY: homeHintTopY - homeFocalCardHeight
         - headingCardGap + homeHeadingCardClearance + homeCompositionOffsetY
-    // Category labels and controller hints share this screen-space band.
-    // Keep the label independent from card geometry and category content.
-    readonly property real selectedDomainY: homeBottomBandCenterY - activeHeadingHeight * 0.5
+    readonly property real selectedDomainY: homeActiveContentOriginY - homeHeadingCardClearance
+        - activeHeadingHeight - headingCardGap
     property int recentIndex: 0
     readonly property string recentSelectedGameId: recentModel && recentIndex >= 0
         && recentHome && recentIndex < recentHome.itemCount
@@ -147,7 +146,8 @@ Window {
         - (homeCategoryTransitioning ? homeCategoryTarget : selectedCategoryIndex)
             * homeCategoryPitch
     readonly property real titleRailActiveGap: Math.max(0,
-        homeBottomBandCenterY - selectedDomainY - homeCategoryPitch)
+        homeBottomBandCenterY - selectedDomainY - homeCategoryPitch
+            - activeHeadingHeight * 0.5)
     readonly property real libraryHomePresentationHeight: !homeCategoryTransitioning
         ? homeFocalCardHeight
         : homeCategoryTarget === 2 && homeCategoryDirection === 1
@@ -1096,13 +1096,18 @@ Window {
     }
 
     function titleRailLayoutY(index, activeIndex) {
+        var titleItem = homeCategoryTitles.itemAt(index)
+        var titleHeight = titleItem ? titleItem.height : activeHeadingHeight
+        var activeGap = Math.max(0, homeBottomBandCenterY - selectedDomainY
+            - homeCategoryPitch - titleHeight * 0.5)
         return index * homeCategoryPitch
-            + (index > activeIndex ? titleRailActiveGap : 0)
+            + (index > activeIndex ? activeGap : 0)
     }
 
     function titleRailChildY(index) {
         if (!homeCategoryTransitioning)
             return titleRailLayoutY(index, selectedCategoryIndex)
+
         var fromY = titleRailLayoutY(index, homeCategoryFrom)
         var targetY = titleRailLayoutY(index, homeCategoryTarget)
         return fromY + (targetY - fromY) * homeCategoryProgress
@@ -1815,6 +1820,8 @@ Window {
         onStopped: {
             if (root.suppressTitleRailCompletion)
                 return
+            // Preserve the animated destination while the category state
+            // completion waits for the companion animation.
             root.titleRailY = root.titleRailTargetY
         }
     }
