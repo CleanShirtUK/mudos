@@ -321,6 +321,22 @@ class ConsoleUiBridge:
         result = await self.sessiond.call_reset_mudos()
         return {"status": result}
 
+    async def mudos_menu(self) -> list[dict[str, object]]:
+        return json.loads(await self.consoled.call_list_mudos_providers())
+
+    async def launch_provider(self, provider_id: str) -> dict[str, str]:
+        token = await self.consoled.call_launch_provider_standalone(provider_id, 15000)
+        self.local_token = token
+        return {"token": token}
+
+    async def system_power(self, action: str) -> dict[str, str]:
+        method = self.sessiond.call_reboot if action == "reboot" else self.sessiond.call_shutdown
+        return {"status": await method()}
+
+    async def set_input_mode(self, mode: str) -> dict[str, str]:
+        await self.sessiond.call_set_input_mode(mode)
+        return {"input_mode": mode}
+
     async def list_system_settings(self, category: str) -> list[dict[str, object]]:
         rows = await self.consoled.call_list_system_settings(category)
         return [{key: value.value for key, value in row.items()} for row in rows]
@@ -430,6 +446,12 @@ class ApiHandler(BaseHTTPRequestHandler):
             try:
                 self._respond(200, self.bridge.call(self.bridge.state()))
             except Exception as error:  # pragma: no cover - live IPC failure path
+                self._respond(503, {"error": str(error)})
+            return
+        if urlparse(self.path).path == "/mudos-menu":
+            try:
+                self._respond(200, self.bridge.call(self.bridge.mudos_menu()))
+            except Exception as error:
                 self._respond(503, {"error": str(error)})
             return
         if urlparse(self.path).path == "/launch-log":
@@ -615,6 +637,34 @@ class ApiHandler(BaseHTTPRequestHandler):
                 self._respond(200, self.bridge.call(self.bridge.reset_mudos(), timeout=5))
             except Exception as error:  # pragma: no cover - session restart may close IPC
                 self._respond(202, {"status": "reset-requested", "error": str(error)})
+            return
+        if path.startswith("/mudos/"):
+            try:
+                action = path.removeprefix("/mudos/")
+                if action == "provider":
+                    length = int(self.headers.get("Content-Length", "0"))
+                    payload = json.loads(self.rfile.read(length) or b"{}")
+                    result = self.bridge.launch_provider(str(payload.get("id", "")))
+                elif action in {"reboot", "shutdown"}:
+                    result = self.bridge.system_power(action)
+                elif action == "refresh-metadata":
+                    result = self.bridge.refresh_catalogue_stages(["metadata"])
+                elif action == "refresh-library":
+                    result = self.bridge.refresh_catalogue_stages(["steam", "local", "romm", "artwork"])
+                elif action == "refresh-downloads":
+                    result = self.bridge.refresh_catalogue_stages(["steam", "romm"])
+                else:
+                    raise ValueError("unknown Mudos action")
+                self._respond(200, self.bridge.call(result, timeout=None))
+            except Exception as error:
+                self._respond(409, {"error": str(error) or type(error).__name__})
+            return
+        if path.startswith("/input-mode/"):
+            try:
+                mode = path.removeprefix("/input-mode/")
+                self._respond(200, self.bridge.call(self.bridge.set_input_mode(mode)))
+            except Exception as error:
+                self._respond(409, {"error": str(error)})
             return
         if path == "/store/steam":
             try:

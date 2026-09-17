@@ -452,6 +452,18 @@ class ConsoleSessionInterface(ServiceInterface):
         os.kill(os.getpid(), os_signal.SIGTERM)
 
     @method()
+    async def Reboot(self) -> "s":
+        LOGGER.warning("controlled reboot requested")
+        await asyncio.create_subprocess_exec("systemctl", "reboot")
+        return "reboot-requested"
+
+    @method()
+    async def Shutdown(self) -> "s":
+        LOGGER.warning("controlled shutdown requested")
+        await asyncio.create_subprocess_exec("systemctl", "poweroff")
+        return "shutdown-requested"
+
+    @method()
     def SetInputMode(self, mode: "s") -> "":
         try:
             requested = InputMode(mode)

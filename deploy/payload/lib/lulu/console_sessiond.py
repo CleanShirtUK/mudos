@@ -28,6 +28,8 @@ class SessionState:
     launch_token: str | None = None
     delegated_surface: str | None = None
     requested_surface: str | None = None
+    session_kind: str = "shell"
+    provider_id: str | None = None
 
 
 class SessionStateModel:
@@ -46,6 +48,12 @@ class SessionStateModel:
         token = uuid4().hex
         self.last_failure_reason = None
         self.state.primary_id = primary_id
+        if primary_id.startswith("provider:"):
+            self.state.session_kind = "provider_standalone"
+            self.state.provider_id = primary_id.split(":", 2)[1]
+        else:
+            self.state.session_kind = "game"
+            self.state.provider_id = None
         self.state.launch_token = token
         self.state.lifecycle = Lifecycle.LAUNCH_REQUESTED
         return token

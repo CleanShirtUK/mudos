@@ -9,6 +9,7 @@ Item {
     property var typography
     property var luluPalette
     signal actionRequested(string key)
+    property int visibleRows: 7
 
     Text {
         x: 76 * root.uiScale
@@ -21,15 +22,26 @@ Item {
         font.letterSpacing: 5 * root.uiScale
     }
 
-    Column {
+    Flickable {
         x: 76 * root.uiScale
         y: 142 * root.uiScale
         width: parent.width - 152 * root.uiScale
-        spacing: 10 * root.uiScale
+        height: 7 * 58 * root.uiScale + 6 * 10 * root.uiScale
+        clip: true
+        contentWidth: width
+        contentHeight: rowColumn.height
+        contentY: Math.max(0, Math.min(contentHeight - height,
+            root.selectedIndex * (58 * root.uiScale + 10 * root.uiScale)))
+        boundsBehavior: Flickable.StopAtBounds
 
-        Repeater {
-            model: root.settings
-            delegate: Rectangle {
+        Column {
+            id: rowColumn
+            width: parent.width
+            spacing: 10 * root.uiScale
+
+            Repeater {
+                model: root.settings
+                delegate: Rectangle {
                 required property int index
                 required property var modelData
                 width: parent.width
@@ -60,6 +72,7 @@ Item {
                     anchors.fill: parent
                     enabled: modelData.writable === true && modelData.kind === "action"
                     onClicked: root.actionRequested(modelData.key)
+                }
                 }
             }
         }

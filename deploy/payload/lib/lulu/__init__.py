@@ -1,23 +1,8 @@
-"""Lulu service-boundary foundation.
+"""Stable provider contracts and registry."""
 
-Transport, persistence, and external integrations are intentionally not part of
-this initial substrate.
-"""
+from .model import ConfigStrategy, LaunchDefinition, ProviderCapabilities, ProviderDefinition
+from .registry import ProviderRegistry, load_providers
+from .runtime import launch_arguments
+from .config import NativeConfigAdapter
 
-from .contracts import (
-    InputMode,
-    Lifecycle,
-    Overlay,
-    Presentation,
-    Role,
-    ServiceDescriptor,
-)
-
-__all__ = [
-    "InputMode",
-    "Lifecycle",
-    "Overlay",
-    "Presentation",
-    "Role",
-    "ServiceDescriptor",
-]
+__all__ = ["ConfigStrategy", "LaunchDefinition", "NativeConfigAdapter", "ProviderCapabilities", "ProviderDefinition", "ProviderRegistry", "load_providers", "launch_arguments"]

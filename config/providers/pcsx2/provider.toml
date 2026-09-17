@@ -9,3 +9,8 @@ supported = ["ps2"]
 [config]
 strategy = "direct"
 directory = "config"
+[launch.standalone]
+command = "/usr/bin/pcsx2-qt"
+controller_mode = "compat"
+[launch.game]
+command = "/usr/bin/pcsx2-qt"

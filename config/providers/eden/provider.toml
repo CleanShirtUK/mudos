@@ -8,3 +8,8 @@ supported = ["switch"]
 [config]
 strategy = "direct"
 directory = "config"
+[launch.standalone]
+command = "/usr/bin/eden"
+controller_mode = "compat"
+[launch.game]
+command = "/usr/bin/eden"

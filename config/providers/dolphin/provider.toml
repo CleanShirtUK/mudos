@@ -9,3 +9,8 @@ supported = ["gamecube", "wii"]
 [config]
 strategy = "direct"
 directory = "config"
+[launch.standalone]
+command = "/usr/bin/dolphin-emu"
+controller_mode = "compat"
+[launch.game]
+command = "/usr/bin/dolphin-emu"

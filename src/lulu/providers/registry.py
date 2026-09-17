@@ -4,7 +4,9 @@ from pathlib import Path
 import tomllib
 
 from ..paths import PATHS
-from .model import ConfigStrategy, ProviderCapabilities, ProviderDefinition
+import shlex
+
+from .model import ConfigStrategy, LaunchDefinition, ProviderCapabilities, ProviderDefinition
 
 
 class ProviderRegistry:
@@ -22,6 +24,11 @@ class ProviderRegistry:
 
     def items(self):
         return self._definitions.items()
+
+    def standalone(self) -> tuple[ProviderDefinition, ...]:
+        """Declared providers with a content-independent standalone frontend."""
+        return tuple(definition for definition in self._definitions.values()
+                     if definition.standalone_launch is not None)
 
     def for_platform(self, platform_id: str) -> ProviderDefinition:
         """Resolve a launch-capable provider from the declared relationship."""
@@ -48,16 +55,26 @@ def load_providers(directory: Path | None = None) -> ProviderRegistry:
         caps = raw.get("capabilities", {})
         platforms = raw.get("platforms", {})
         config = raw.get("config", {})
+        launch = raw.get("launch", {})
         if not provider_id or not isinstance(caps, dict) or not isinstance(platforms, dict):
             raise ValueError(f"invalid provider definition: {path}")
         try:
             strategy = ConfigStrategy(str(config.get("strategy", "generated")).casefold())
         except ValueError as error:
             raise ValueError(f"invalid provider config strategy: {path}") from error
+        def launch_definition(value: object) -> LaunchDefinition | None:
+            if not isinstance(value, dict) or "command" not in value:
+                return None
+            command = value["command"]
+            parts = tuple(command) if isinstance(command, list) else tuple(shlex.split(str(command)))
+            return LaunchDefinition(parts, str(value.get("controller_mode", "game"))) if parts else None
+
         definitions[provider_id] = ProviderDefinition(
             provider_id, str(raw.get("name", provider_id)),
             ProviderCapabilities(*(bool(caps.get(name, False)) for name in ("launch", "settings", "library", "acquire", "health"))),
             tuple(str(item).casefold() for item in platforms.get("supported", ())), strategy,
             str(config.get("directory", "config")), raw.get("assets", {}).get("icon"),
+            launch_definition(launch.get("standalone")) if isinstance(launch, dict) else None,
+            launch_definition(launch.get("game")) if isinstance(launch, dict) else None,
         )
     return ProviderRegistry(definitions)

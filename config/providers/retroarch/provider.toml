@@ -8,3 +8,8 @@ supported = ["nes", "genesis"]
 [config]
 strategy = "direct"
 directory = "config"
+[launch.standalone]
+command = "/usr/bin/retroarch --menu"
+controller_mode = "game"
+[launch.game]
+command = "/usr/bin/retroarch"

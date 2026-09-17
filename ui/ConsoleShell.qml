@@ -106,8 +106,10 @@ Window {
     property var systemHomeRailRef: null
     property int systemRowIndex: 0
     property bool systemLanding: true
-    property var systemCategories: ["Display", "Audio", "Network", "Bluetooth", "Controllers", "Storage", "System", "Lulu"]
+    property var systemCategories: ["Mudos Menu", "Display", "Audio", "Network", "Bluetooth", "Controllers", "Storage", "System", "Lulu"]
     property var systemSettings: []
+    property string pendingMudosAction: ""
+    property var standaloneProviderModes: ({})
     property var networkState: ({available: false, wifi_enabled: false, state: "unavailable",
                                  current: null, networks: [], known: [], error: ""})
     property var internetSettingsRef: null
@@ -469,6 +471,10 @@ Window {
             traceLaunchEvent("TARGET_READY", {lifecycle: state.lifecycle, presentation: state.presentation || ""})
             launchStatus = "running"
             message = "Running " + launchTitle
+            if (state.session_kind === "provider_standalone"
+                    && root.standaloneProviderModes[state.provider_id] === "compat"
+                    && state.input_mode !== "compat")
+                root.request("/input-mode/compat", "POST", "", function(data) {}, "Provider input handoff failed")
             retireLaunchOverlay(generation)
         } else if (state.lifecycle === "returning") {
             traceLaunchEvent("GAME_EXIT_OBSERVED", {lifecycle: state.lifecycle, presentation: state.presentation || ""})
@@ -801,6 +807,10 @@ Window {
     }
 
     function refreshSystemSettings() {
+        if (systemCategories[systemCategoryIndex] === "Mudos Menu") {
+            refreshMudosMenu()
+            return
+        }
         request("/settings?category=" + encodeURIComponent(systemCategories[systemCategoryIndex]),
                 "GET", "", function(data) {
                     systemSettings = data
@@ -1146,6 +1156,29 @@ Window {
         })
     }
 
+    function launchProviderMenu(provider) {
+        if (!provider || root.launchOverlayEffectiveVisible)
+            return
+        var generation = ++launchGeneration
+        launchLifecycle = "launch_requested"
+        launchTitle = provider.name + " Menu"
+        launchGameId = "provider:" + provider.id + ":standalone"
+        launchToken = ""
+        launchOverlayVisible = true
+        launchOverlayRetired = false
+        shellWasLeft = false
+        gamePresentationObserved = false
+        launchStatus = "launching"
+        launchStateRank = 1
+        message = "Launching " + launchTitle
+        request("/mudos/provider", "POST", JSON.stringify({id: provider.id}), function(data) {
+            if (generation !== launchGeneration) return
+            launchToken = data.token
+            refreshLaunchState(generation)
+            launchStatusTimer.start()
+        }, "Provider launch failed", generation)
+    }
+
     function recentGameById(gameId) {
         return catalogueModel ? catalogueModel.game(gameId) : null
     }
@@ -1299,6 +1332,55 @@ Window {
         }, "Mudos reset failed")
     }
 
+    function refreshMudosMenu() {
+        root.request("/mudos-menu", "GET", "", function(providers) {
+            var rows = [
+                {key: "mudos.reset", label: "Reset Mudos", kind: "action", value: "", writable: true},
+                {key: "mudos.metadata", label: "Refresh Metadata", kind: "action", value: "", writable: true},
+                {key: "mudos.library", label: "Refresh Library Catalogue", kind: "action", value: "", writable: true},
+                {key: "mudos.downloads", label: "Refresh Available Downloads Catalogue", kind: "action", value: "", writable: true},
+                {key: "mudos.reboot", label: "Reboot", kind: "action", value: "", writable: true},
+                {key: "mudos.shutdown", label: "Shutdown", kind: "action", value: "", writable: true}
+            ]
+            for (var i = 0; i < providers.length; i++) {
+                root.standaloneProviderModes[providers[i].id] = providers[i].controller_mode || "game"
+                rows.push({key: "mudos.provider:" + providers[i].id,
+                           label: providers[i].name + " Menu", kind: "action", value: "", writable: true})
+            }
+            root.systemSettings = rows
+            root.systemRowIndex = Math.min(root.systemRowIndex, Math.max(0, rows.length - 1))
+        }, "Mudos Menu unavailable")
+    }
+
+    function activateMudosAction(key) {
+        var destructive = (key === "mudos.reset" || key === "mudos.reboot" || key === "mudos.shutdown")
+        if (destructive && root.pendingMudosAction !== key) {
+            root.pendingMudosAction = key
+            root.message = "Press A again to confirm " + root.systemSettings[root.systemRowIndex].label
+            return
+        }
+        root.pendingMudosAction = ""
+        var path = ""
+        if (key === "mudos.reset") path = "/reset"
+        else if (key === "mudos.metadata") path = "/mudos/refresh-metadata"
+        else if (key === "mudos.library") path = "/mudos/refresh-library"
+        else if (key === "mudos.downloads") path = "/mudos/refresh-downloads"
+        else if (key === "mudos.reboot") path = "/mudos/reboot"
+        else if (key === "mudos.shutdown") path = "/mudos/shutdown"
+        else if (key.indexOf("mudos.provider:") === 0) {
+            var providerId = key.substring(15)
+            root.launchProviderMenu({id: providerId,
+                                     name: root.systemSettings[root.systemRowIndex].label.replace(/ Menu$/, "")})
+            return
+        }
+        if (path) {
+            root.message = key === "mudos.metadata" ? "Refreshing metadata…" :
+                key === "mudos.library" ? "Refreshing library…" :
+                key === "mudos.downloads" ? "Refreshing available downloads…" : "Working…"
+            root.request(path, "POST", "", function(data) { root.message = "" }, "Mudos action failed")
+        }
+    }
+
     function activate() {
         if (root.homeLaunchGated)
             return
@@ -1307,6 +1389,11 @@ Window {
             return
         }
         if (space === "system") {
+            if (!systemLanding && systemCategories[systemCategoryIndex] === "Mudos Menu"
+                    && systemSettings[systemRowIndex]) {
+                activateMudosAction(systemSettings[systemRowIndex].key)
+                return
+            }
             if (!systemLanding && systemCategories[systemCategoryIndex] === "Network"
                     && internetSettingsRef) {
                 internetSettingsRef.activate()
@@ -1403,6 +1490,8 @@ Window {
         space = "system"
         console.log("SYSTEM_HOME_ACTIVATE", "category", systemCategories[systemCategoryIndex])
         refreshSystemSettings()
+        if (systemCategories[systemCategoryIndex] === "Mudos Menu")
+            refreshMudosMenu()
         if (systemCategories[systemCategoryIndex] === "Network")
             refreshNetworkState()
         if (systemCategories[systemCategoryIndex] === "Audio")
@@ -2299,7 +2388,11 @@ Window {
             uiScale: root.uiScale
             typography: typography
             luluPalette: luluPalette
-            onActionRequested: if (key === "lulu.reset") root.resetMudos()
+            onActionRequested: {
+                if (root.systemCategories[root.systemCategoryIndex] === "Mudos Menu")
+                    root.activateMudosAction(key)
+                else if (key === "lulu.reset") root.resetMudos()
+            }
         }
 
         InternetSettings {

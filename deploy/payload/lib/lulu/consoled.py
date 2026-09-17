@@ -4,6 +4,7 @@ import asyncio
 from dataclasses import replace
 import logging
 import os
+import shutil
 from pathlib import Path
 from pathlib import Path
 import signal
@@ -621,6 +622,67 @@ class ConsoleInterface(ServiceInterface):
         if provider_id != "retroarch":
             return None
         return NativeConfigAdapter(PATHS.provider_config_root("retroarch") / "retroarch.cfg")
+
+    @method()
+    def ListMudosProviders(self) -> "s":
+        """Registry-owned provider menu declarations for the Mudos Menu."""
+        return json.dumps([
+            {"id": provider.provider_id, "name": provider.name,
+             "controller_mode": provider.standalone_launch.controller_mode}
+            for provider in self._providers.standalone()
+        ], sort_keys=False)
+
+    @method()
+    async def LaunchProviderStandalone(self, provider_id: "s", timeout_ms: "u") -> "s":
+        provider = self._providers.get(provider_id)
+        launch = provider.standalone_launch
+        if launch is None or not launch.command:
+            raise ValueError("provider has no standalone launch")
+        command = list(launch.command)
+        executable = command[0]
+        if not os.path.isabs(executable):
+            executable = shutil.which(executable) or ""
+            command[0] = executable
+        if not executable or not os.path.isfile(executable):
+            raise ValueError(f"standalone runtime missing: {provider.provider_id}")
+        if self.sessiond is None:
+            raise ValueError("session lifecycle unavailable")
+        environment = os.environ.copy()
+        environment["XDG_CONFIG_HOME"] = str(PATHS.provider_config_root(provider.provider_id))
+        if provider.provider_id == "pcsx2":
+            environment.pop("WAYLAND_DISPLAY", None)
+        process = await asyncio.create_subprocess_exec(
+            *command, stdin=asyncio.subprocess.DEVNULL,
+            stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL,
+            env=environment, start_new_session=True,
+        )
+        try:
+            token = await self.sessiond.call_begin_local_session(
+                f"provider:{provider.provider_id}:standalone", process.pid,
+                os.getpgid(process.pid), os.path.realpath(f"/proc/{process.pid}/exe"), command)
+        except Exception:
+            try:
+                os.killpg(os.getpgid(process.pid), signal.SIGTERM)
+            except (ProcessLookupError, OSError):
+                pass
+            await process.wait()
+            raise
+        self._local_process = process
+        self._local_token = token
+
+        async def reap() -> None:
+            exit_code = await process.wait()
+            try:
+                await self.sessiond.call_end_local_session(token, exit_code)
+            except Exception:
+                LOGGER.exception("standalone provider session end failed provider=%s", provider.provider_id)
+            LOGGER.info("standalone provider exit provider=%s pid=%s exit_code=%s", provider.provider_id, process.pid, exit_code)
+            if self._local_token == token:
+                self._local_process = None
+                self._local_token = None
+        asyncio.create_task(reap())
+        LOGGER.info("standalone provider started provider=%s command=%r token=%s", provider.provider_id, command, token)
+        return token
 
     @method()
     def GetProviderGuide(self, game_id: "s") -> "s":
