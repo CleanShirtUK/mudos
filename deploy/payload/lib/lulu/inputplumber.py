@@ -196,7 +196,19 @@ class InputPlumberClient:
             capture_output=True,
             text=True,
         ).stdout
-        return tuple(re.findall(r'"(/org/shadowblip/InputPlumber/CompositeDevice\d+)"', result))
+        ordered = list(re.findall(r'"(/org/shadowblip/InputPlumber/CompositeDevice\d+)"', result))
+        # During startup InputPlumber can publish composites before its
+        # GamepadOrder property has converged. Preserve its order, but do not
+        # discard live composites omitted by that transient property state.
+        tree = subprocess.run(
+            [self.busctl, "tree", "org.shadowblip.InputPlumber"],
+            check=True, capture_output=True, text=True,
+        ).stdout
+        for path in sorted(set(re.findall(
+                r"(/org/shadowblip/InputPlumber/CompositeDevice\d+)", tree))):
+            if path not in ordered:
+                ordered.append(path)
+        return tuple(ordered)
 
     def runtime_gamepad_slots(self, *, execute: bool = True) -> list[tuple[str, str, int]]:
         """Return ordered runtime handles and their current gamepad target indices."""
