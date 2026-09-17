@@ -18,6 +18,10 @@ Rectangle {
     property var canonicalCoordinateRoot: null
     property size canonicalSize: Qt.size(1280, 720)
     property real focalScale: 1
+    // When a card is entering focal state, this is its final card width. It
+    // intentionally remains independent of the animated card width so focal
+    // title wrapping cannot be reformatted during the transition.
+    property real focalLayoutCardWidth: 0
     property real uiScale: 1
     property var typography
     property var luluPalette
@@ -241,6 +245,11 @@ Rectangle {
     readonly property real compactMargin: 14 * uiScale
     readonly property real artworkHeight: height - 2 * focalMargin
     readonly property real artworkWidth: artworkHeight / 1.5
+    readonly property real focalTitleLayoutWidth: Math.max(1,
+        (focalLayoutCardWidth > 0 ? focalLayoutCardWidth : width)
+            - artworkWidth - 3 * focalMargin)
+    readonly property int focalTitleLineCount: Math.max(1,
+        Math.min(2, focalTitleLayoutMeasure.lineCount || 1))
     readonly property real compactArtworkWidth: compactEndpointWidth > 0
         ? compactEndpointWidth - 28 * uiScale : width - 28 * uiScale
     readonly property real compactArtworkHeight: compactArtworkWidth * 1.5
@@ -516,7 +525,7 @@ Rectangle {
 
         Text {
             id: focalTitle
-            width: parent.width
+            width: card.focalTitleLayoutWidth
             text: card.displayTitle || (card.game
                 ? (card.game.display_title_override || card.game.canonical_title || card.game.title) : "")
             color: Qt.rgba(card.luluPalette.primaryText.r * card.focusBrightness,
@@ -527,8 +536,22 @@ Rectangle {
             font.weight: card.typography ? card.typography.displayWeight : Font.Black
             font.pixelSize: card.typography ? card.typography.size("display", 34 * focalScale) : 34 * focalScale * card.uiScale
             wrapMode: Text.WordWrap
-            maximumLineCount: 3
+            maximumLineCount: card.focalTitleLineCount
             elide: Text.ElideRight
+        }
+
+        // Resolve the focal line layout against the final focal geometry.
+        // The visible title uses the same fixed width, while the measurement
+        // item prevents the animated card width from becoming a wrap input.
+        Text {
+            id: focalTitleLayoutMeasure
+            width: card.focalTitleLayoutWidth
+            text: focalTitle.text
+            font: focalTitle.font
+            wrapMode: Text.WordWrap
+            maximumLineCount: 2
+            elide: Text.ElideRight
+            visible: false
         }
 
         Column {

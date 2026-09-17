@@ -116,6 +116,7 @@ Item {
         compactEndpointWidth: root.compactCardWidth
         focalChromeOpacity: root.focalChromeOpacity
         compactTitleOpacity: root.compactTitleOpacity
+        focalLayoutCardWidth: root.focalCardWidth
         presentationState: root.presentationState
         focusBrightness: root.focused ? 1 : 0.68
         onPlayFeedbackCompleted: root.playFeedbackCompleted(root.game_id)
