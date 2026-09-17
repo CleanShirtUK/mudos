@@ -266,14 +266,10 @@ surfaces. That commit changed the fallback command and label to
 globally. The change was not intentional for emulator games.
 
 The fallback is now empty again, while Steam Store retains `Open Downloads`.
-RetroArch game processes advertise `Provider` and the Guide keeps Downloads
-contextual. Provider settings metadata is resolved by Consoled through the
-platform and provider registries. The restored Guide surface currently exposes
-one deliberately narrow native setting: RetroArch `fps_show`,
-read/written by `NativeConfigAdapter` in the centralized
-`~/.config/lulu/providers/retroarch/config/retroarch.cfg` file. The setting
-screen toggles the value and supports controller Back without leaking input to
-the game. Unsupported providers do not receive a fabricated settings screen.
+RetroArch game processes present `Open RetroArch Menu`; the Guide keeps
+Downloads contextual. The provider settings backend remains registry-based and
+available for future UI work, but the Guide does not currently expose a setting
+toggle.
 
 The live persistence exercise used `fps_show`, which is not overridden by the
 ephemeral controller config. Its baseline was `"false"`; the deployed provider boundary changed the native file to `true`,
@@ -283,12 +279,24 @@ restarting Acquisitiond, Consoled, and the graphical session, the setting
 still reported `true` and the native line remained present. Cold-boot
 validation follows the final release deployment.
 
-## Guide controller mutation trace
+## Guide controller trace
 
-The initial functional trace showed Guide input arriving, but Provider metadata
-was unavailable because `mudos-guide` queried `GetProviderGuide` on the
-`ConsoleSession` interface instead of Consoled. The corrected trace on the
-deployed candidate was:
+### Guide audio disabled — 2026-09-17
+
+The Guide-local `UiAudioEngine`/`QSoundEffect` path has been removed. It was
+introduced in the shared audio work (`ec25dc6`) and added to Guide in
+`db3e5cf`; navigation lazily activated its `Loader`, creating a new Qt
+Multimedia/FFmpeg/Vulkan stack in the separate Guide process. On Gamescope,
+that stack aborted in the Vulkan WSI layer (`av_hwdevice_ctx_create` →
+`vkCreateDevice` → `libVkLayer_FROG_gamescope_wsi`). Guide now has no audio
+loader, audio connection, or audio event emission. Navigation and Provider
+actions are intentionally silent; Mudos audio remains deferred technical debt.
+
+The earlier Provider-settings trace showed Guide input arriving, but Provider
+metadata was unavailable because `mudos-guide` queried `GetProviderGuide` on the
+`ConsoleSession` interface instead of Consoled. That backend repair remains in
+the source, although the Guide now deliberately opens the native RetroArch
+menu instead of exposing the temporary `fps_show` toggle.
 
 ```text
 Guide provider metadata ... available:true provider_id:retroarch setting_key:fps_show
@@ -301,11 +309,12 @@ Guide provider setting call "true" ReplyMessage
 Guide input ui_back
 ```
 
-This was performed through the real `mudos-guide` QML window and its
-controller command stream while Super Mario Bros was running; no direct
-provider-setting API call was used in that functional mutation. The native
-file changed from `fps_show = "false"` to `fps_show = "true"`, and the Guide
-model refreshed its displayed value. A subsequent normal relaunch started
-RetroArch with that file, and the value survived service/session restart and
-cold boot. `config_save_on_exit` remains forced false in the ephemeral
-controller config and is not used as the validation setting.
+That trace was performed through the real `mudos-guide` QML window and its
+controller command stream; it is retained as backend evidence, not current UI
+behavior. `config_save_on_exit` remains forced false in the ephemeral
+controller config. Guide audio is disabled and deferred.
+
+The revised physical-controller pass on the non-promotable development runtime
+completed successfully: repeated Guide navigation, the `Open RetroArch Menu`
+action, Back/close/reopen, and Quit Application all worked; gameplay resumed,
+no new coredump appeared, and no Guide Qt Multimedia/FFmpeg startup occurred.

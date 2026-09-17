@@ -152,17 +152,14 @@ class ConsoleUiTests(unittest.TestCase):
         native = (ROOT / "native" / "mudos-guide.cpp").read_text()
         consoled = (ROOT / "src" / "lulu" / "consoled.py").read_text()
         self.assertIn('actions.push(guideModel.providerMenuLabel)', guide)
-        self.assertIn('return [providerSettingLabel + ": " + providerSettingValue, "Back"]', guide)
         self.assertIn('providerMenuLabel = QStringLiteral("Open Downloads")', native)
-        self.assertIn('providerMenuLabel = QStringLiteral("Provider")', native)
-        self.assertIn('consoled.call("GetProviderGuide", primaryId)', native)
+        self.assertIn('providerMenuLabel = QStringLiteral("Open RetroArch Menu")', native)
         self.assertIn('def GetProviderGuide', consoled)
         self.assertIn('def SetProviderSetting', consoled)
-        self.assertIn('"setting_key": "fps_show"', consoled)
         self.assertIn('load_providers()', consoled)
-        audio = (ROOT / "ui" / "UiAudioEngine.qml").read_text()
-        self.assertIn("Item {", audio)
-        self.assertIn("property Component navigateVoiceComponent", audio)
+        self.assertNotIn('source: "UiAudioEngine.qml"', guide)
+        self.assertNotIn("audioEventSerial", guide + native)
+        self.assertNotIn("fps_show", guide + native)
 
     def test_typography_uses_central_semantic_families(self) -> None:
         typography = (ROOT / "ui" / "Typography.qml").read_text()
@@ -826,8 +823,8 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertIn("function loaderFor(semantic)", engine)
         self.assertIn("property string pendingSemantic", engine)
         self.assertIn("onLoaded: root.tryPlayPending()", engine)
+        self.assertNotIn('source: "UiAudioEngine.qml"', (ROOT / "ui" / "MudosGuide.qml").read_text())
         self.assertIn('source: "UiAudioEngine.qml"', QML)
-        self.assertIn("active: false", QML)
         self.assertNotIn("onValueChanged", engine)
 
     def test_ui_audio_assets_are_canonical_and_replaceable(self) -> None:

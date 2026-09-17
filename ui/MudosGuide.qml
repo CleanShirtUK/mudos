@@ -14,15 +14,10 @@ Window {
     property bool shellContext: guideModel.shellContext
     property bool confirmationPending: guideModel.confirmationPending
     property string confirmationAction: guideModel.confirmationAction
-    property bool providerSettingsView: guideModel.providerSettingsView
-    property string providerSettingLabel: guideModel.providerSettingLabel
-    property string providerSettingValue: guideModel.providerSettingValue
 
     function resolvedGuideActions() {
         if (confirmationPending)
             return ["Cancel", confirmationAction]
-        if (providerSettingsView)
-            return [providerSettingLabel + ": " + providerSettingValue, "Back"]
         if (shellContext) {
             return ["Restart Mudos", "Reboot System", "Shut Down System"]
         }
@@ -40,38 +35,10 @@ Window {
         id: luluPalette
     }
 
-    Loader {
-        id: uiAudioLoader
-        active: false
-        source: "UiAudioEngine.qml"
-        property string pendingEvent: ""
-        onLoaded: {
-            if (pendingEvent) {
-                var event = pendingEvent
-                pendingEvent = ""
-                item.play(event)
-            }
-        }
-    }
-
-    Connections {
-        target: guideModel
-        function onAudioEventSerialChanged() {
-            if (!uiAudioLoader.active) {
-                uiAudioLoader.pendingEvent = guideModel.audioEvent
-                uiAudioLoader.active = true
-            } else if (uiAudioLoader.item) {
-                uiAudioLoader.item.play(guideModel.audioEvent)
-            } else {
-                uiAudioLoader.pendingEvent = guideModel.audioEvent
-            }
-        }
-    }
-
     Rectangle {
         anchors.centerIn: parent
         width: 520
-        height: confirmationPending || providerSettingsView ? 250 : shellContext ? 250 : 310
+        height: confirmationPending ? 250 : shellContext ? 250 : 310
         color: luluPalette.guideSurface
         border.color: luluPalette.guideBorder
         border.width: 2
@@ -79,7 +46,7 @@ Window {
         Text {
             x: 24
             y: 18
-            text: confirmationPending ? "Confirm" : providerSettingsView ? "Provider" : "Guide"
+            text: confirmationPending ? "Confirm" : "Guide"
             color: luluPalette.primaryText
             font.pixelSize: 28
         }

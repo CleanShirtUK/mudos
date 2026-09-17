@@ -54,12 +54,6 @@ public:
         return setProperty("GAMESCOPE_EXTERNAL_OVERLAY", 1);
     }
 
-    void playAudio(const QString &event)
-    {
-        viewModel_->insert("audioEvent", event);
-        viewModel_->insert("audioEventSerial", viewModel_->value("audioEventSerial").toInt() + 1);
-    }
-
 private:
     void readInput()
     {
@@ -104,36 +98,15 @@ private:
                 return;
         }
         if (action == QStringLiteral("ui_up")) {
-            playAudio(QStringLiteral("navigate"));
             viewModel_->insert("selection", 0);
         }
         else if (action == QStringLiteral("ui_down")) {
-            playAudio(QStringLiteral("navigate"));
             const int actionCount = actionCountForModel();
             viewModel_->insert("selection", qMin(viewModel_->value("selection").toInt() + 1, actionCount - 1));
         }
         else if (action == QStringLiteral("ui_accept"))
         {
-            playAudio(QStringLiteral("confirm"));
             const int selection = viewModel_->value("selection").toInt();
-            if (viewModel_->value("providerSettingsView").toBool()) {
-                if (selection == 0) {
-                    QDBusInterface consoled("org.lulu.Consoled", "/org/lulu/Console",
-                                            "org.lulu.Console", QDBusConnection::sessionBus());
-                    const QString current = viewModel_->value("providerSettingValue").toString();
-                    const QString value = current == QStringLiteral("true") ? QStringLiteral("false") : QStringLiteral("true");
-                    const auto reply = consoled.call("SetProviderSetting",
-                        viewModel_->value("providerSettingProvider").toString(),
-                        viewModel_->value("providerSettingKey").toString(), value);
-                    qInfo() << "Guide provider setting call" << value << reply.type() << reply.errorMessage();
-                    if (reply.type() == QDBusMessage::ReplyMessage && !reply.arguments().isEmpty())
-                        viewModel_->insert("providerSettingValue", reply.arguments().constFirst().toString());
-                } else {
-                    viewModel_->insert("providerSettingsView", false);
-                    viewModel_->insert("selection", 1);
-                }
-                return;
-            }
             if (viewModel_->value("confirmationPending").toBool()) {
                 if (selection == 0) {
                     viewModel_->insert("confirmationPending", false);
@@ -157,8 +130,6 @@ private:
                 resetMudos();
             else if (viewModel_->value("providerMenuAvailable").toBool() && actionSelection == 1) {
                 openProviderMenu();
-                if (viewModel_->value("providerGuideAvailable").toBool())
-                    return;
             }
             else if (actionSelection == compatibilitySelection())
                 switchCompatibilityMode();
@@ -170,18 +141,13 @@ private:
             QCoreApplication::quit();
         }
         else if (action == QStringLiteral("ui_back")) {
-            playAudio(QStringLiteral("back"));
-            if (viewModel_->value("providerSettingsView").toBool()) {
-                viewModel_->insert("providerSettingsView", false);
-                viewModel_->insert("selection", 1);
-            } else if (viewModel_->value("confirmationPending").toBool()) {
+            if (viewModel_->value("confirmationPending").toBool()) {
                 viewModel_->insert("confirmationPending", false);
                 viewModel_->insert("selection", 0);
             } else {
                 QCoreApplication::quit();
             }
         } else if (action == QStringLiteral("ui_guide")) {
-            playAudio(QStringLiteral("back"));
             QCoreApplication::quit();
         }
     }
@@ -195,8 +161,6 @@ private:
 
     int actionCountForModel() const
     {
-        if (viewModel_->value("providerSettingsView").toBool())
-            return 2;
         if (viewModel_->value("confirmationPending").toBool())
             return 2;
         if (viewModel_->value("shellContext").toBool())
@@ -325,11 +289,6 @@ private:
 
     void openProviderMenu()
     {
-        if (viewModel_->value("providerGuideAvailable").toBool()) {
-            viewModel_->insert("providerSettingsView", true);
-            viewModel_->insert("selection", 0);
-            return;
-        }
         if (providerMenuLabel_ == QStringLiteral("Open Downloads")) {
             QDBusInterface sessiond("org.lulu.ConsoleSessiond", "/org/lulu/ConsoleSession",
                                     "org.lulu.ConsoleSession", QDBusConnection::sessionBus());
@@ -402,6 +361,7 @@ int main(int argc, char **argv)
         } else if (primaryId.startsWith(QStringLiteral("local:nes:"))
                    || primaryId.startsWith(QStringLiteral("local:genesis:"))) {
             effectiveProviderCommand = QStringLiteral("/usr/bin/retroarch --command MENU_TOGGLE");
+            providerMenuLabel = QStringLiteral("Open RetroArch Menu");
         } else if (primaryId.startsWith(QStringLiteral("local:switch:"))) {
             edenProvider = true;
         }
@@ -411,41 +371,12 @@ int main(int argc, char **argv)
     QQmlPropertyMap viewModel;
     viewModel.insert("selection", 0);
     viewModel.insert("providerMenuAvailable", !effectiveProviderCommand.isEmpty());
-    viewModel.insert("providerMenuLabel", providerMenuLabel);
     viewModel.insert("compatibilityModeAvailable", compatibilityModeAvailable);
     viewModel.insert("compatibilityMode", compatibilityMode);
     viewModel.insert("shellContext", shellContext);
     viewModel.insert("confirmationPending", false);
     viewModel.insert("confirmationAction", QString());
-    viewModel.insert("audioEvent", QString());
-    viewModel.insert("audioEventSerial", 0);
-    viewModel.insert("providerGuideAvailable", false);
-    viewModel.insert("providerSettingsView", false);
-    viewModel.insert("providerSettingProvider", QString());
-    viewModel.insert("providerSettingKey", QString());
-    viewModel.insert("providerSettingLabel", QString());
-    viewModel.insert("providerSettingValue", QString());
-    if (!shellContext && !primaryId.isEmpty()) {
-        QDBusInterface consoled("org.lulu.Consoled", "/org/lulu/Console",
-                                "org.lulu.Console", QDBusConnection::sessionBus());
-        const auto guideReply = consoled.call("GetProviderGuide", primaryId);
-        qInfo() << "Guide provider metadata" << primaryId << guideReply.type()
-                << guideReply.errorMessage();
-        if (guideReply.type() == QDBusMessage::ReplyMessage && !guideReply.arguments().isEmpty()) {
-            const auto guide = QJsonDocument::fromJson(
-                guideReply.arguments().constFirst().toString().toUtf8()).object();
-            qInfo() << "Guide provider metadata payload" << guide;
-            if (guide.value("available").toBool()) {
-                viewModel.insert("providerGuideAvailable", true);
-                providerMenuLabel = QStringLiteral("Provider");
-                viewModel.insert("providerMenuLabel", providerMenuLabel);
-                viewModel.insert("providerSettingProvider", guide.value("provider_id").toString());
-                viewModel.insert("providerSettingKey", guide.value("setting_key").toString());
-                viewModel.insert("providerSettingLabel", guide.value("setting_label").toString());
-                viewModel.insert("providerSettingValue", guide.value("setting_value").toString());
-            }
-        }
-    }
+    viewModel.insert("providerMenuLabel", providerMenuLabel);
     QQmlApplicationEngine engine;
     engine.rootContext()->setContextProperty("guideModel", &viewModel);
     engine.load(QUrl::fromLocalFile(qEnvironmentVariable("LULU_GUIDE_UI_FILE",
