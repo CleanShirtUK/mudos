@@ -1,5 +1,7 @@
 import asyncio
 import json
+from pathlib import Path
+from tempfile import TemporaryDirectory
 import unittest
 
 from lulu.audio_manager import AudioManagerAdapter
@@ -23,7 +25,7 @@ class AudioManagerTests(unittest.TestCase):
         def runner(*args):
             calls.append(args)
             return values["info"] if args[-1] == "info" else values[args[-1]]
-        state = asyncio.run(AudioManagerAdapter(runner).snapshot())
+        state = asyncio.run(AudioManagerAdapter(runner, Path("/dev/null/audio-state.json")).snapshot())
         self.assertEqual(state["current_output"]["id"], "alsa_output.hdmi")
         self.assertEqual(state["current_output"]["volume"], 40)
         self.assertEqual(state["inputs"][0]["volume"], 80)
@@ -53,6 +55,27 @@ class AudioManagerTests(unittest.TestCase):
         state = asyncio.run(AudioManagerAdapter(runner).snapshot())
         self.assertFalse(state["available"])
         self.assertEqual(state["outputs"], [])
+
+    def test_saved_volume_is_restored_once_for_stack_without_native_restore(self):
+        with TemporaryDirectory() as directory:
+            state_path = Path(directory) / "audio-state.json"
+            state_path.write_text(json.dumps({"volume": 40, "mute": False}))
+            calls = []
+            current_volume = [100]
+            def runner(*args):
+                calls.append(args)
+                if args and args[0] == "set-sink-volume":
+                    current_volume[0] = int(args[-1].rstrip("%"))
+                    return ""
+                if args[-1] == "info":
+                    return json.dumps({"default_sink_name": "sink", "default_source_name": "source"})
+                if args[-1] == "sinks":
+                    return json.dumps([{"name": "sink", "description": "HDMI", "state": "IDLE", "mute": False,
+                                        "volume": {"left": {"value_percent": f"{current_volume[0]}%"}}, "properties": {}}])
+                return "[]"
+            state = asyncio.run(AudioManagerAdapter(runner, state_path).snapshot())
+            self.assertEqual(state["current_output"]["volume"], 40)
+            self.assertIn(("set-sink-volume", "sink", "40%"), calls)
 
 
 if __name__ == "__main__":

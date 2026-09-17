@@ -6,6 +6,7 @@ import asyncio
 import json
 import logging
 import os
+from pathlib import Path
 import subprocess
 from typing import Any
 
@@ -15,8 +16,20 @@ LOGGER = logging.getLogger(__name__)
 class AudioManagerAdapter:
     """PipeWire owns devices, defaults, volume, mute, and persistence."""
 
-    def __init__(self, runner: Any | None = None) -> None:
+    def __init__(self, runner: Any | None = None, state_path: Path | None = None) -> None:
         self._runner = runner or self._run
+        config = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "lulu"
+        self._state_path = state_path or config / "audio-state.json"
+        self._restore_attempted = False
+
+    def _save(self, **values: Any) -> None:
+        try:
+            state = json.loads(self._state_path.read_text()) if self._state_path.exists() else {}
+            state.update(values)
+            self._state_path.parent.mkdir(parents=True, exist_ok=True)
+            self._state_path.write_text(json.dumps(state, sort_keys=True) + "\n")
+        except (OSError, ValueError, json.JSONDecodeError) as error:
+            LOGGER.warning("could not save audio preference: %s", error)
 
     @staticmethod
     def _run(*args: str) -> str:
@@ -89,6 +102,23 @@ class AudioManagerAdapter:
             outputs = [self._device(item, default_sink) for item in sinks]
             inputs = [self._device(item, default_source, True) for item in sources
                       if not str(item.get("name", "")).endswith(".monitor")]
+            if not self._restore_attempted:
+                self._restore_attempted = True
+                try:
+                    saved = json.loads(self._state_path.read_text())
+                    commands = []
+                    if saved.get("default_output") in {item["id"] for item in outputs}:
+                        commands.append(("set-default-sink", saved["default_output"]))
+                    if saved.get("volume") is not None and default_sink:
+                        commands.append(("set-sink-volume", default_sink,
+                                         f"{max(0, min(100, int(saved['volume'])))}%"))
+                    if saved.get("mute") is not None and default_sink:
+                        commands.append(("set-sink-mute", default_sink, "1" if saved["mute"] else "0"))
+                    if commands:
+                        await asyncio.gather(*(asyncio.to_thread(self._runner, *command) for command in commands))
+                        return await self.snapshot()
+                except (OSError, ValueError, json.JSONDecodeError, subprocess.SubprocessError, TypeError) as error:
+                    LOGGER.info("audio preference restore skipped: %s", error)
             current_output = next((item for item in outputs if item["active"]), None)
             current_input = next((item for item in inputs if item["active"]), None)
             return {"available": True, "outputs": outputs, "inputs": inputs,
@@ -111,6 +141,7 @@ class AudioManagerAdapter:
         return await self.snapshot()
 
     async def set_default_output(self, device_id: str) -> dict[str, Any]:
+        self._save(default_output=device_id)
         return await self._mutate("set-default-sink", device_id)
 
     async def set_default_input(self, device_id: str) -> dict[str, Any]:
@@ -118,9 +149,13 @@ class AudioManagerAdapter:
 
     async def set_volume(self, device_id: str, volume: int, input_device: bool = False) -> dict[str, Any]:
         volume = max(0, min(100, int(volume)))
+        if not input_device:
+            self._save(volume=volume)
         return await self._mutate("set-source-volume" if input_device else "set-sink-volume",
                                   device_id, f"{volume}%")
 
     async def set_mute(self, device_id: str, muted: bool, input_device: bool = False) -> dict[str, Any]:
+        if not input_device:
+            self._save(mute=muted)
         return await self._mutate("set-source-mute" if input_device else "set-sink-mute",
                                   device_id, "1" if muted else "0")
