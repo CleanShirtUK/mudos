@@ -4,6 +4,7 @@ from pathlib import Path
 import tomllib
 
 from ..paths import PATHS
+from ..plugins import PluginRegistry
 import shlex
 
 from .model import ConfigStrategy, GuideAction, LaunchDefinition, ProviderCapabilities, ProviderDefinition
@@ -96,6 +97,16 @@ def load_providers(directory: Path | None = None) -> ProviderRegistry:
         installed = Path(__file__).resolve().parents[3] / "config" / "providers"
         if installed.is_dir() and installed != directory:
             directories.insert(0, installed)
+    if directory == PATHS.providers_root:
+        plugin_root = PATHS.plugins_root
+        installed_plugins = Path(__file__).resolve().parents[3] / "config" / "plugins"
+        if installed_plugins.is_dir() and installed_plugins != plugin_root:
+            plugin_root = installed_plugins
+        for plugin in PluginRegistry(plugin_root).discover():
+            if plugin.health == "available":
+                provider_root = plugin.manifest.root / "providers"
+                if provider_root.is_dir():
+                    directories.append(provider_root)
     definitions = {}
     paths = {path.parent.name: path for root in directories if root.is_dir() for path in root.glob("*/provider.toml")}
     for path in sorted(paths.values(), key=lambda item: item.parent.name):

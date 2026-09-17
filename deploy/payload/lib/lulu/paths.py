@@ -65,6 +65,10 @@ class MudosPaths:
         return self.config_root / "providers"
 
     @property
+    def plugins_root(self) -> Path:
+        return Path(os.environ.get("LULU_PLUGIN_ROOT", self.config_root / "plugins")).expanduser()
+
+    @property
     def platforms_root(self) -> Path:
         return self.config_root / "platforms"
 

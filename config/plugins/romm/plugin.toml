@@ -1,0 +1,10 @@
+id = "romm"
+name = "RomM"
+version = "1"
+api_version = 1
+
+[capabilities]
+installed_catalogue = true
+metadata = true
+acquisition = true
+settings = true

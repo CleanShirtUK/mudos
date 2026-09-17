@@ -1,0 +1,12 @@
+id = "steam"
+name = "Steam"
+version = "1"
+api_version = 1
+
+[capabilities]
+providers = true
+installed_catalogue = true
+available_catalogue = true
+acquisition = true
+authentication = true
+session = true

@@ -14,11 +14,9 @@ from dbus_next.service import ServiceInterface, method, signal
 
 from .job_manager import JobManager, job_to_dict
 from .contracts import ServiceDescriptor, ServiceName
-from .steam_cmd import SteamCmdExecutor
-from .romm import RommClient, RommConfig
-from .romm_executor import RommExecutor
 from .acquisition_store import AcquisitionStore
 from .paths import PATHS
+from .plugins import PluginRegistry
 
 
 BUS_NAME = "org.lulu.Acquisitiond"
@@ -85,12 +83,20 @@ async def serve(bus_type: BusType = BusType.SESSION) -> None:
     bus = await MessageBus(bus_type=bus_type).connect()
     database = Path(os.environ.get("LULU_ACQUISITION_DB", str(PATHS.data_root / "acquisition.sqlite3")))
     store = AcquisitionStore(database)
-    manager = JobManager(provider_limits={"steam": 1}, store=store)
-    manager.register_executor("steam", SteamCmdExecutor(), limit=1)
-    romm_config = RommConfig.from_file()
-    manager.register_executor(
-        "romm", RommExecutor(RommClient(romm_config) if romm_config else None), limit=1
-    )
+    plugin_root = PATHS.plugins_root
+    installed_plugins = Path(__file__).resolve().parents[3] / "config" / "plugins"
+    if not plugin_root.is_dir() and installed_plugins.is_dir():
+        plugin_root = installed_plugins
+    plugins = PluginRegistry(plugin_root)
+    plugins.discover()
+    contributions = plugins.with_capability("acquisition")
+    manager = JobManager(provider_limits={
+        item["provider"]: int(item.get("limit", 1)) for item in contributions
+        if isinstance(item, dict) and item.get("provider")
+    }, store=store)
+    for item in contributions:
+        if isinstance(item, dict) and item.get("provider") and item.get("executor"):
+            manager.register_executor(item["provider"], item["executor"], limit=int(item.get("limit", 1)))
     interface = AcquisitionInterface(manager)
     bus.export(OBJECT_PATH, interface)
     await bus.request_name(BUS_NAME)

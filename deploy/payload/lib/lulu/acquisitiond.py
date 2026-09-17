@@ -5,6 +5,8 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import os
+from pathlib import Path
 
 from dbus_next import BusType, DBusError
 from dbus_next.aio import MessageBus
@@ -12,7 +14,9 @@ from dbus_next.service import ServiceInterface, method, signal
 
 from .job_manager import JobManager, job_to_dict
 from .contracts import ServiceDescriptor, ServiceName
-from .steam_cmd import SteamCmdExecutor
+from .acquisition_store import AcquisitionStore
+from .paths import PATHS
+from .plugins import PluginRegistry
 
 
 BUS_NAME = "org.lulu.Acquisitiond"
@@ -63,6 +67,13 @@ class AcquisitionInterface(ServiceInterface):
         except KeyError as error:
             raise DBusError("org.lulu.Acquisition.Error.UnknownJob", str(error)) from error
 
+    @method()
+    def RetryJob(self, job_id: "s") -> "s":
+        try:
+            return self.manager.retry(job_id).job_id
+        except (KeyError, ValueError) as error:
+            raise DBusError("org.lulu.Acquisition.Error.Unavailable", str(error)) from error
+
     @signal()
     def StateChanged(self, snapshot: "s") -> "s":
         return snapshot
@@ -70,8 +81,22 @@ class AcquisitionInterface(ServiceInterface):
 
 async def serve(bus_type: BusType = BusType.SESSION) -> None:
     bus = await MessageBus(bus_type=bus_type).connect()
-    manager = JobManager(provider_limits={"steam": 1})
-    manager.register_executor("steam", SteamCmdExecutor(), limit=1)
+    database = Path(os.environ.get("LULU_ACQUISITION_DB", str(PATHS.data_root / "acquisition.sqlite3")))
+    store = AcquisitionStore(database)
+    plugin_root = PATHS.plugins_root
+    installed_plugins = Path(__file__).resolve().parents[3] / "config" / "plugins"
+    if not plugin_root.is_dir() and installed_plugins.is_dir():
+        plugin_root = installed_plugins
+    plugins = PluginRegistry(plugin_root)
+    plugins.discover()
+    contributions = plugins.with_capability("acquisition")
+    manager = JobManager(provider_limits={
+        item["provider"]: int(item.get("limit", 1)) for item in contributions
+        if isinstance(item, dict) and item.get("provider")
+    }, store=store)
+    for item in contributions:
+        if isinstance(item, dict) and item.get("provider") and item.get("executor"):
+            manager.register_executor(item["provider"], item["executor"], limit=int(item.get("limit", 1)))
     interface = AcquisitionInterface(manager)
     bus.export(OBJECT_PATH, interface)
     await bus.request_name(BUS_NAME)

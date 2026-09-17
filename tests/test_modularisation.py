@@ -18,7 +18,7 @@ class ModularisationTests(unittest.TestCase):
         self.assertFalse(hasattr(gamecube, "executable"))
 
     def test_provider_capabilities_and_strategy_are_explicit(self):
-        registry = load_providers(Path(__file__).parents[1] / "config/providers")
+        registry = load_providers()
         self.assertTrue(registry["steam"].capabilities.library)
         self.assertEqual(registry["romm"].config_strategy, ConfigStrategy.DIRECT)
         for provider in ("retroarch", "dolphin", "pcsx2", "eden"):
@@ -28,7 +28,7 @@ class ModularisationTests(unittest.TestCase):
         self.assertEqual(registry.for_platform("wii").provider_id, "dolphin")
 
     def test_provider_launch_adapter_uses_centralized_config(self):
-        registry = load_providers(Path(__file__).parents[1] / "config/providers")
+        registry = load_providers()
         provider = registry["retroarch"]
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

@@ -40,6 +40,7 @@ from .system_settings import CATEGORIES as SYSTEM_CATEGORIES, SystemSettingsProv
 from .paths import PATHS
 from .platforms import load_platforms
 from .providers import NativeConfigAdapter, load_base_guide, load_mudos_guide, load_providers
+from .plugins import PluginRegistry
 
 
 DESCRIPTOR = ServiceDescriptor(
@@ -606,6 +607,12 @@ class ConsoleInterface(ServiceInterface):
         self._catalogue_generation = 0
         self._delta_history: deque[tuple[int, list[dict[str, object]]]] = deque(maxlen=256)
         self._providers = load_providers()
+        plugin_root = PATHS.plugins_root
+        installed_plugins = Path(__file__).resolve().parents[3] / "config" / "plugins"
+        if not plugin_root.is_dir() and installed_plugins.is_dir():
+            plugin_root = installed_plugins
+        self._plugins = PluginRegistry(plugin_root)
+        self._plugins.discover()
         self._base_guide = load_base_guide()
         self._mudos_guide = load_mudos_guide()
         self._platforms = load_platforms()
@@ -1078,6 +1085,11 @@ class ConsoleInterface(ServiceInterface):
             (delta,) for delta in self.catalogue.apply_metadata_match(
                 game_id, provider, metadata_game_id, canonical_title)
         ])
+
+    @method()
+    def GetPluginStatus(self) -> "s":
+        """Return normalized plugin health without exposing plugin internals."""
+        return json.dumps(self._plugins.status(), separators=(",", ":"))
         self.CatalogueChanged()
 
     @method()
