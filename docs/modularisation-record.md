@@ -86,6 +86,12 @@ section-preserving native INI adapters remain the compatibility redirect and
 do not overwrite unrelated user settings. No emulator was launched during
 this pass because the active graphical session is also the test console.
 
+Final deployment evidence: commit `0bb9793` passed **293 tests** and was
+built as `/opt/lulu/releases/0bb9793-candidate-20260917004001`. The release
+manifest verified successfully, all payload files are immutable, and
+`/opt/lulu/current` was atomically activated to it. Deployed imports found six
+platform definitions (including GameCube) and six provider definitions.
+
 ## Known limitations at start
 
 Provider binaries were not all runnable in a non-interactive validation
