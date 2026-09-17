@@ -158,7 +158,7 @@ class SteamCmdExecutor:
     """Execute one SteamCMD AppID operation; cancellation is unsupported."""
 
     def __init__(self, *, executable: str | None = None, account: str | None = None,
-                 install_dir: Path | None = None, platforms: Mapping[str, str] | None = None,
+                 platforms: Mapping[str, str] | None = None,
                  parser: SteamCmdParser | None = None,
                  platform_resolver: SteamPlatformResolver | None = None) -> None:
         self.executable = executable or os.environ.get("LULU_STEAMCMD") or str(PATHS.steamcmd_executable)
@@ -170,11 +170,6 @@ class SteamCmdExecutor:
                 self.account = (PATHS.config_root / "steam-account").read_text().strip()
             except (FileNotFoundError, OSError):
                 pass
-        configured_library = os.environ.get("LULU_STEAM_LIBRARY")
-        self.install_dir = install_dir
-        if self.install_dir is None and configured_library:
-            self.install_dir = Path(configured_library)
-        self.install_dir = self.install_dir or (PATHS.data_home / "Steam")
         self.platforms = dict(platforms or load_platforms())
         self.platform_resolver = platform_resolver or SteamPlatformResolver()
         self.parser = parser or SteamCmdParser()
@@ -212,8 +207,7 @@ class SteamCmdExecutor:
         command = [self.executable, "+@NoPromptForPassword", "1"]
         if platform == "windows":
             command += ["+@sSteamCmdForcePlatformType", "windows"]
-        command += ["+force_install_dir", str(self.install_dir), "+login", self.account,
-                    "+app_update", app_id, "validate", "+quit"]
+        command += ["+login", self.account, "+app_update", app_id, "validate", "+quit"]
         return command
 
     async def run(self, job: DownloadJob, reporter: JobReporter) -> None:
@@ -224,7 +218,6 @@ class SteamCmdExecutor:
                 self.platforms[app_id] = platform
         command = self.command(app_id)
         command[0] = self._require_executable()
-        self.install_dir.mkdir(parents=True, exist_ok=True)
         process = await asyncio.create_subprocess_exec(
             *command, stdin=asyncio.subprocess.DEVNULL,
             stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,

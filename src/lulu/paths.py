@@ -44,12 +44,24 @@ class MudosPaths:
         return self.config_root / "providers"
 
     @property
+    def games_root(self) -> Path:
+        return self.home / "Games"
+
+    @property
+    def executables_root(self) -> Path:
+        return self.games_root / "Executables"
+
+    @property
+    def steam_library_root(self) -> Path:
+        return self.executables_root / "steam"
+
+    @property
     def rom_root(self) -> Path:
-        return self.home / "Games/ROMs"
+        return self.games_root / "ROMs"
 
     @property
     def bios_root(self) -> Path:
-        return self.home / "Games/BIOS"
+        return self.games_root / "BIOS"
 
     @property
     def steamcmd_root(self) -> Path:

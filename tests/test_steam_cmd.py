@@ -32,10 +32,10 @@ class SteamCmdParserTests(unittest.TestCase):
 
 class SteamCmdExecutorTests(unittest.TestCase):
     def test_platform_policy_and_deterministic_commands(self) -> None:
-        windows = SteamCmdExecutor(account="user", platforms={"263980": "windows"}, install_dir=Path("/games/Steam"))
+        windows = SteamCmdExecutor(account="user", platforms={"263980": "windows"})
         self.assertEqual(windows.command("263980"), [
             "/var/lib/lulu/steamcmd/steamcmd.sh", "+@NoPromptForPassword", "1", " +@sSteamCmdForcePlatformType".strip(), "windows",
-            "+force_install_dir", "/games/Steam", "+login", "user", "+app_update", "263980", "validate", "+quit",
+            "+login", "user", "+app_update", "263980", "validate", "+quit",
         ])
         linux = SteamCmdExecutor(account="user", platforms={"42": "linux"})
         self.assertNotIn("+@sSteamCmdForcePlatformType", linux.command("42"))
@@ -113,7 +113,7 @@ class SteamCmdExecutorTests(unittest.TestCase):
             process.stdout.feed_eof()
             process.stderr.feed_eof()
             manager = JobManager()
-            executor = SteamCmdExecutor(executable="/bin/true", account="user", platforms={"263980": "windows"}, install_dir=Path(tempfile.gettempdir()) / "lulu-steam-test")
+            executor = SteamCmdExecutor(executable="/bin/true", account="user", platforms={"263980": "windows"})
             manager.register_executor("steam", executor)
             job = manager.submit("steam", "steam:263980", "Out There Somewhere")
             with patch("asyncio.create_subprocess_exec", new=AsyncMock(return_value=process)):
