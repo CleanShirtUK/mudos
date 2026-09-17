@@ -153,8 +153,11 @@ private:
                 return;
             } else if (actionSelection == 0)
                 resetMudos();
-            else if (viewModel_->value("providerMenuAvailable").toBool() && actionSelection == 1)
+            else if (viewModel_->value("providerMenuAvailable").toBool() && actionSelection == 1) {
                 openProviderMenu();
+                if (viewModel_->value("providerGuideAvailable").toBool())
+                    return;
+            }
             else if (actionSelection == compatibilitySelection())
                 switchCompatibilityMode();
             else
