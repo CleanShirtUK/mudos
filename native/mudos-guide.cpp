@@ -82,6 +82,7 @@ private:
     {
         const QStringList parts = command.split(QChar(' '), Qt::SkipEmptyParts);
         const QString action = parts.value(0);
+        qInfo() << "Guide input" << action << parts;
         QString edge = QStringLiteral("down");
         for (const QString &part : parts) {
             if (part.startsWith(QStringLiteral("edge=")))
@@ -124,6 +125,7 @@ private:
                     const auto reply = consoled.call("SetProviderSetting",
                         viewModel_->value("providerSettingProvider").toString(),
                         viewModel_->value("providerSettingKey").toString(), value);
+                    qInfo() << "Guide provider setting call" << value << reply.type() << reply.errorMessage();
                     if (reply.type() == QDBusMessage::ReplyMessage && !reply.arguments().isEmpty())
                         viewModel_->insert("providerSettingValue", reply.arguments().constFirst().toString());
                 } else {

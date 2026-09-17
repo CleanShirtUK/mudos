@@ -630,6 +630,7 @@ class ConsoleInterface(ServiceInterface):
 
     @method()
     def SetProviderSetting(self, provider_id: "s", key: "s", value: "s") -> "s":
+        LOGGER.info("provider setting mutation requested provider=%s key=%s value=%s", provider_id, key, value)
         if provider_id != "retroarch" or key != "fps_show" or value not in {"true", "false"}:
             raise DBusError("org.lulu.Console.Error.InvalidProviderSetting", "unsupported provider setting")
         adapter = self._provider_setting(provider_id)
@@ -637,7 +638,9 @@ class ConsoleInterface(ServiceInterface):
         # RetroArch uses a global sectionless config, represented by an empty
         # section in the line-preserving native adapter.
         adapter.set("", key, value)
-        return (adapter.get("", key, value) or value).strip('"')
+        result = (adapter.get("", key, value) or value).strip('"')
+        LOGGER.info("provider setting mutation applied provider=%s key=%s value=%s", provider_id, key, result)
+        return result
 
     def _publish_delta_batches(self, batches: object) -> None:
         for batch in batches:
