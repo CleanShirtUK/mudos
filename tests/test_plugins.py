@@ -1,4 +1,5 @@
 import tempfile
+import shutil
 from pathlib import Path
 import unittest
 
@@ -49,6 +50,18 @@ class PluginRegistryTests(unittest.TestCase):
             (root / "missing" / "plugin.py").unlink()
             record = PluginRegistry(root).discover()[0]
             self.assertEqual(record.health, "degraded")
+
+    def test_provider_contribution_disappears_when_plugin_is_disabled(self) -> None:
+        source = Path(__file__).parents[1] / "config/plugins"
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "plugins"
+            shutil.copytree(source, root)
+            manifest = root / "steam/plugin.toml"
+            manifest.write_text(manifest.read_text().replace('api_version = 1', 'api_version = 1\nenabled = false'))
+            registry = PluginRegistry(root)
+            records = {record.manifest.plugin_id: record for record in registry.discover()}
+            self.assertEqual(records["steam"].health, "disabled")
+            self.assertEqual(registry.with_capability("providers"), ())
 
 
 if __name__ == "__main__":

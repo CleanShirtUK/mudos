@@ -608,7 +608,7 @@ class ConsoleInterface(ServiceInterface):
         self._delta_history: deque[tuple[int, list[dict[str, object]]]] = deque(maxlen=256)
         self._providers = load_providers()
         plugin_root = PATHS.plugins_root
-        installed_plugins = Path(__file__).resolve().parents[3] / "config" / "plugins"
+        installed_plugins = PATHS.install_root / "config" / "plugins"
         if not plugin_root.is_dir() and installed_plugins.is_dir():
             plugin_root = installed_plugins
         self._plugins = PluginRegistry(plugin_root)

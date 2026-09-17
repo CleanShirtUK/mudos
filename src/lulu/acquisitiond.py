@@ -84,7 +84,7 @@ async def serve(bus_type: BusType = BusType.SESSION) -> None:
     database = Path(os.environ.get("LULU_ACQUISITION_DB", str(PATHS.data_root / "acquisition.sqlite3")))
     store = AcquisitionStore(database)
     plugin_root = PATHS.plugins_root
-    installed_plugins = Path(__file__).resolve().parents[3] / "config" / "plugins"
+    installed_plugins = PATHS.install_root / "config" / "plugins"
     if not plugin_root.is_dir() and installed_plugins.is_dir():
         plugin_root = installed_plugins
     plugins = PluginRegistry(plugin_root)
