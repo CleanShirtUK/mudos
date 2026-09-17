@@ -2372,6 +2372,7 @@ Window {
             luluPalette: luluPalette
             Component.onCompleted: root.controllerSettingsRef = controllerSettings
             onOperationRequested: root.controllerOperation(action, controllerId, player)
+            onRefreshRequested: root.refreshControllerState()
             onBackRequested: root.back()
         }
 

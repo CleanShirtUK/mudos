@@ -199,8 +199,11 @@ class ConsoleSessionInterface(ServiceInterface):
         if self._inputplumber_event is None:
             return
         while True:
-            await self._inputplumber_event.wait()
-            self._inputplumber_event.clear()
+            try:
+                await asyncio.wait_for(self._inputplumber_event.wait(), timeout=1.0)
+                self._inputplumber_event.clear()
+            except asyncio.TimeoutError:
+                pass
             try:
                 composites = await asyncio.to_thread(self._inputplumber.runtime_composite_statuses)
             except (OSError, RuntimeError, ValueError, subprocess.SubprocessError):
@@ -211,7 +214,8 @@ class ConsoleSessionInterface(ServiceInterface):
                 if path in composites and composites[path] == signature
             }
             before = self.controller_registry.navigation_controller_id, tuple(
-                (key, value.connected) for key, value in self.controller_registry.controllers.items()
+                (key, value.connected, value.player)
+                for key, value in self.controller_registry.controllers.items()
             )
             self.controller_registry.observe_runtime_composites(composites)
             for object_path, composite in composites.items():
@@ -223,7 +227,8 @@ class ConsoleSessionInterface(ServiceInterface):
                             "controller initialization pending path=%s error=%s", object_path, error
                         )
             after = self.controller_registry.navigation_controller_id, tuple(
-                (key, value.connected) for key, value in self.controller_registry.controllers.items()
+                (key, value.connected, value.player)
+                for key, value in self.controller_registry.controllers.items()
             )
             if before != after:
                 await self._state_changed()

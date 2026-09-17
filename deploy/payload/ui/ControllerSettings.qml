@@ -11,6 +11,16 @@ Item {
     property var luluPalette
     signal operationRequested(string action, string controllerId, int player)
     signal backRequested()
+    signal refreshRequested()
+
+    Timer {
+        interval: 1000
+        repeat: true
+        running: root.visible
+        onTriggered: root.refreshRequested()
+    }
+
+    onControllerDataChanged: selectedIndex = Math.max(0, Math.min(rows().length - 1, selectedIndex))
 
     function items() {
         var result = [], controllers = controllerData.controllers || {}

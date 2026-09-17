@@ -60,6 +60,7 @@ class ControllerRegistry:
         self.navigation_controller_id: str | None = None
         self.policy_path = policy_path
         self._policy: dict[str, object] = {}
+        self._runtime_seen = False
         if policy_path is not None:
             try:
                 value = json.loads(policy_path.read_text())
@@ -94,14 +95,20 @@ class ControllerRegistry:
     def disconnect(self, controller_id: str) -> None:
         self.controllers[controller_id].connected = False
         if self.navigation_controller_id == controller_id:
-            self.navigation_controller_id = next(
-                (
-                    candidate_id
-                    for candidate_id, candidate in self.controllers.items()
-                    if candidate.connected
-                ),
-                None,
-            )
+            self._select_navigation_fallback()
+
+    def _select_navigation_fallback(self) -> None:
+        connected = [
+            (controller.player if controller.player is not None else 999, controller_id)
+            for controller_id, controller in self.controllers.items()
+            if controller.connected
+        ]
+        self.navigation_controller_id = min(connected)[1] if connected else None
+        self._policy["navigation_player"] = (
+            self.controllers[self.navigation_controller_id].player
+            if self.navigation_controller_id else None
+        )
+        self._save_policy()
 
     def assign_player(self, controller_id: str, player: int | None) -> None:
         if controller_id not in self.controllers:
@@ -193,18 +200,17 @@ class ControllerRegistry:
             else:
                 controller.connected = True
 
-        preferred_player = self._policy.get("navigation_player")
+        preferred_player = self._policy.get("navigation_player") if not self._runtime_seen else None
         preferred_runtime = next(
             (runtime_id for runtime_id in connected_ids
              if isinstance(preferred_player, int)
              and self.controllers.get(runtime_id) is not None
-             and self.controllers[runtime_id].player == preferred_player),
-            None,
-        )
+             and self.controllers[runtime_id].player == preferred_player), None)
         if preferred_runtime is not None:
             self.navigation_controller_id = preferred_runtime
         elif self.navigation_controller_id not in connected_ids:
-            self.navigation_controller_id = connected_ids[0] if connected_ids else None
+            self._select_navigation_fallback()
+        self._runtime_seen = True
 
     def request_input_mode(self, mode: InputMode, client: InputPlumberClient) -> list[str]:
         """Ask InputPlumber to load a mapping without changing target topology."""

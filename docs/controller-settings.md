@@ -22,10 +22,13 @@ Dolphin Classic Controller conventions therefore remain provider-side policy
 contracts.
 
 If the preferred navigation controller disconnects, the controller registry
-selects the first connected composite so Mudos remains recoverable. A returning
-preferred controller is recognized by identity without forcibly stealing focus
-mid-action. InputPlumber recreates composites on reconnect and Mudos restores
-the safe default interception baseline without restarting the daemon.
+selects the lowest-numbered connected logical player and persists that
+effective owner. A returning former owner is recognized without forcibly
+stealing focus mid-action. InputPlumber recreates composites on reconnect and
+Mudos restores the safe default interception baseline without restarting the
+daemon. Event-driven updates are supplemented by a one-second reconciliation
+pass while Controller Settings is open, and the session monitor also performs
+periodic reconciliation to cover startup/readiness races.
 
 The normal page intentionally shows no raw event stream or arbitrary mapping
 editor. Battery values are displayed only when the authority reports a

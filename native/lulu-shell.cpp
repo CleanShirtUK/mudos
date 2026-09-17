@@ -719,6 +719,10 @@ private:
                 insert("controllerConnected", false);
                 insert("controllerIndex", -1);
                 insert("controllerIdentity", QString());
+                // The remaining SDL device does not emit an add event when
+                // the selected device disappears; reopen the current
+                // navigation slot immediately for failover.
+                scanGamepads();
             } else if (event.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN) {
                 const bool allowed = dispatchAllowed();
                 if (!allowed)
