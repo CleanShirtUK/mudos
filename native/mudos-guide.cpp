@@ -426,7 +426,9 @@ int main(int argc, char **argv)
     viewModel.insert("providerSettingLabel", QString());
     viewModel.insert("providerSettingValue", QString());
     if (!shellContext && !primaryId.isEmpty()) {
-        const auto guideReply = sessiond.call("GetProviderGuide", primaryId);
+        QDBusInterface consoled("org.lulu.Consoled", "/org/lulu/Console",
+                                "org.lulu.Console", QDBusConnection::sessionBus());
+        const auto guideReply = consoled.call("GetProviderGuide", primaryId);
         qInfo() << "Guide provider metadata" << primaryId << guideReply.type()
                 << guideReply.errorMessage();
         if (guideReply.type() == QDBusMessage::ReplyMessage && !guideReply.arguments().isEmpty()) {
