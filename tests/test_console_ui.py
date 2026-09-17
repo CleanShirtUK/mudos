@@ -155,7 +155,7 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertIn('return [providerSettingLabel + ": " + providerSettingValue, "Back"]', guide)
         self.assertIn('providerMenuLabel = QStringLiteral("Open Downloads")', native)
         self.assertIn('providerMenuLabel = QStringLiteral("Provider")', native)
-        self.assertIn('sessiond.call("GetProviderGuide", primaryId)', native)
+        self.assertIn('consoled.call("GetProviderGuide", primaryId)', native)
         self.assertIn('def GetProviderGuide', consoled)
         self.assertIn('def SetProviderSetting', consoled)
         self.assertIn('"setting_key": "fps_show"', consoled)
