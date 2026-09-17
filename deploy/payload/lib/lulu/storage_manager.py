@@ -172,10 +172,23 @@ class StorageManagerAdapter:
         path, item = await self._find(device_id)
         if item["system"] or not item["removable"]:
             return (await self.snapshot()) | {"error": "only removable storage can be ejected"}
+        if item["mounted"]:
+            # UDisks2 will reject power-off while any filesystem is mounted.
+            # Eject is therefore an orderly unmount followed by drive power-off.
+            await (await self._interface(path, FILESYSTEM)).call_unmount({})
         drive_path = (await self._props(path, BLOCK)).get("Drive", "/")
         if drive_path == "/":
             raise ValueError("storage drive is unavailable")
-        await (await self._interface(drive_path, DRIVE)).call_power_off({})
+        try:
+            await (await self._interface(drive_path, DRIVE)).call_power_off({})
+        except Exception:
+            # Some USB bridges disappear immediately after the unmount and
+            # report a late fsync/no-device error for the power-off request.
+            # If UDisks no longer lists the UUID, the eject completed safely.
+            state = await self.snapshot()
+            if not any(device["id"] == device_id for device in state["devices"]):
+                return state
+            raise
         return await self.snapshot()
 
     async def select_target(self, kind: str, device_id: str) -> dict[str, Any]:

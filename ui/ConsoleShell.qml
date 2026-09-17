@@ -869,6 +869,17 @@ Window {
                     if (root.storageSettingsRef) root.storageSettingsRef.storageData = data
                     if (root.storageSettingsRef && action === "target")
                         root.storageSettingsRef.message = kind === "game" ? "Game Install Storage selected" : "Emulation Storage selected"
+                    if (root.storageSettingsRef && action === "target-default") {
+                        root.storageSettingsRef.message = kind === "game" ? "Game Install Storage reset" : "Emulation Storage reset"
+                        // Restore discovery from the existing internal library;
+                        // selecting a removable target never silently migrates
+                        // or invalidates the existing catalogue.
+                        request("/refresh?stage=local", "POST", "", function(data) {
+                            // The catalogue model is refreshed separately from
+                            // the storage mutation response.
+                            root.refreshCatalogue()
+                        })
+                    }
                 }, "Storage operation failed")
     }
 
