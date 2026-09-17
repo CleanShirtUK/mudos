@@ -874,9 +874,9 @@ Window {
                         // Restore discovery from the existing internal library;
                         // selecting a removable target never silently migrates
                         // or invalidates the existing catalogue.
-                        request("/refresh?stage=local", "POST", "", function(data) {
-                            // The catalogue model is refreshed separately from
-                            // the storage mutation response.
+                        request("/refresh", "POST", "", function(data) {
+                            // Reconcile every provider after restoring the
+                            // internal policy, including the Steam library.
                             root.refreshCatalogue()
                         })
                     }

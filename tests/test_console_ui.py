@@ -209,7 +209,7 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertIn('IdUUID', storage)
         self.assertIn('system', storage)
         self.assertIn('steam_library_root', paths)
-        self.assertIn('request("/refresh?stage=local"', shell)
+        self.assertIn('request("/refresh"', shell)
         self.assertIn('root.refreshCatalogue()', shell)
         self.assertNotIn('lsblk', storage + qml)
 
