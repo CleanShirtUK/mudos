@@ -811,6 +811,8 @@ class ConsoleInterface(ServiceInterface):
                     PATHS.provider_config_root(controller_provider),
                     max(device_indices),
                     device_indices,
+                    PATHS.provider_config_root(controller_provider)
+                    if controller_provider == "dolphin" else None,
                 )
                 LOGGER.info(
                     "local runtime controller profile provider=%s path=%s",

@@ -51,6 +51,16 @@ class ModularisationTests(unittest.TestCase):
             self.assertEqual(adapter.get("Core", "CPUThread"), "false")
             self.assertEqual(adapter.get("Core", "Other"), "keep")
 
+    def test_dolphin_central_user_directory_is_flat(self):
+        from lulu.controller_provisioning import ensure_provider_controller_config
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            path = ensure_provider_controller_config(
+                "dolphin", root / "xdg", native_user_root=root / "lulu-dolphin"
+            )
+            self.assertEqual(path, root / "lulu-dolphin/GCPadNew.ini")
+            self.assertTrue((root / "lulu-dolphin/Dolphin.ini").is_file())
+
     def test_user_registry_override_is_deterministic(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
