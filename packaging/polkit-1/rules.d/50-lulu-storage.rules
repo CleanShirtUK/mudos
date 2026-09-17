@@ -1,0 +1,11 @@
+// Permit only the Mudos console account to manage removable filesystems.
+polkit.addRule(function(action, subject) {
+    var allowed = [
+        "org.freedesktop.udisks2.filesystem-mount",
+        "org.freedesktop.udisks2.filesystem-unmount-others",
+        "org.freedesktop.udisks2.eject-media",
+        "org.freedesktop.udisks2.power-off-drive"
+    ];
+    if (subject.user === "lulu" && allowed.indexOf(action.id) !== -1)
+        return polkit.Result.YES;
+});

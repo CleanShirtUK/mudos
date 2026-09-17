@@ -134,7 +134,7 @@ class StorageManagerAdapter:
             target_state = {}
             for kind in ("game", "emulation"):
                 selected = by_id.get(targets.get(kind, ""))
-                target_state[kind] = selected | {"configured": True} if selected else (
+                target_state[kind] = selected | {"configured": True, "available": bool(selected.get("mounted"))} if selected else (
                     {"id": targets[kind], "available": False, "configured": True} if kind in targets else None)
                 if selected and selected.get("mount_point"):
                     targets[f"{kind}_path"] = selected["mount_point"]
@@ -181,6 +181,17 @@ class StorageManagerAdapter:
     async def select_target(self, kind: str, device_id: str) -> dict[str, Any]:
         if kind not in {"game", "emulation"}:
             raise ValueError("unknown storage target")
+        if not device_id:
+            targets = self._targets()
+            targets.pop(kind, None)
+            try:
+                state = json.loads(self.state_path.read_text())
+                state.pop(f"{kind}_path", None)
+                state.pop(kind, None)
+                self.state_path.write_text(json.dumps(state, sort_keys=True) + "\n")
+            except (OSError, ValueError, json.JSONDecodeError):
+                pass
+            return await self.snapshot()
         _, item = await self._find(device_id)
         if item["system"] or item["read_only"] or not item["mounted"]:
             return (await self.snapshot()) | {"error": "target must be mounted and writable"}

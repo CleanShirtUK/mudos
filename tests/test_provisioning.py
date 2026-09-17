@@ -43,6 +43,11 @@ class ProvisioningTests(unittest.TestCase):
         service = (ROOT / "packaging/lulu-osk@.service").read_text()
         self.assertIn("xprop -root", service)
 
+    def test_storage_polkit_rule_is_shipped(self) -> None:
+        rule = (ROOT / "packaging/polkit-1/rules.d/50-lulu-storage.rules").read_text()
+        self.assertIn("org.freedesktop.udisks2.filesystem-mount", rule)
+        self.assertIn("org.freedesktop.udisks2.power-off-drive", rule)
+
     def test_checkpoint_has_canonical_key_value_format(self) -> None:
         values = {}
         for line in (ROOT / "deploy/CHECKPOINT").read_text().splitlines():

@@ -7,6 +7,8 @@ Item {
     property real uiScale: 1
     property var typography
     property var luluPalette
+    property string message: ""
+    property string targetView: ""
     signal operationRequested(string action, string deviceId, string kind)
     signal backRequested()
 
@@ -22,6 +24,15 @@ Item {
         return target && target.name ? target.name : target && target.available === false ? "Unavailable" : "Internal default"
     }
     function rows() {
+        if (root.targetView) {
+            var choices = [{label: "Internal Storage (default)", value: "Default", action: "target-default", kind: root.targetView}]
+            for (var candidate of (storageData.devices || []))
+                if (candidate.mounted && !candidate.system && !candidate.read_only)
+                    choices.push({label: candidate.name, value: candidate.filesystem + " · " + size(candidate.free) + " free",
+                                  action: "target", kind: root.targetView, device: candidate})
+            choices.push({label: "Back", value: "", action: "target-back"})
+            return choices
+        }
         var result = [{label: "Game Install Storage", value: targetName("game"), action: "heading"},
                       {label: "Emulation Storage", value: targetName("emulation"), action: "heading"}]
         for (var device of (storageData.devices || [])) {
@@ -29,10 +40,6 @@ Item {
             result.push({label: device.name, value: device.filesystem + " · " + size(device.capacity) + " · " + state,
                          action: "device", device: device})
             if (device.mounted && !device.system && !device.read_only) {
-                result.push({label: "Use for Game Install", value: device.game_target ? "Selected" : "Select",
-                             action: "target", kind: "game", device: device})
-                result.push({label: "Use for Emulation", value: device.emulation_target ? "Selected" : "Select",
-                             action: "target", kind: "emulation", device: device})
                 if (device.removable)
                     result.push({label: "Eject " + device.name, value: "A", action: "eject", device: device})
             }
@@ -43,14 +50,31 @@ Item {
     function activate() {
         var row = rows()[selectedIndex]
         if (!row) return
-        if (row.action === "device") {
+        if (row.action === "heading") {
+            root.targetView = row.label.indexOf("Game") === 0 ? "game" : "emulation"
+            root.selectedIndex = 0
+        } else if (row.action === "device") {
             if (row.device.mounted) operationRequested("unmount", row.device.id, "")
             else operationRequested("mount", row.device.id, "")
-        } else if (row.action === "target") operationRequested("target", row.device.id, row.kind)
-        else if (row.action === "eject") operationRequested("eject", row.device.id, "")
+        } else if (row.action === "target") {
+            operationRequested("target", row.device.id, row.kind)
+            root.targetView = ""
+            root.selectedIndex = 0
+        } else if (row.action === "target-default") {
+            operationRequested("target-default", "", row.kind)
+            root.targetView = ""
+            root.selectedIndex = 0
+        } else if (row.action === "target-back") {
+            root.targetView = ""
+            root.selectedIndex = 0
+        } else if (row.action === "eject") operationRequested("eject", row.device.id, "")
         else if (row.action === "back") backRequested()
     }
     function move(delta) { selectedIndex = Math.max(0, Math.min(rows().length - 1, selectedIndex + delta)) }
+    function back() {
+        if (root.targetView) { root.targetView = ""; root.selectedIndex = 0; return true }
+        return false
+    }
 
     Text { x: 76 * root.uiScale; y: 76 * root.uiScale; text: "STORAGE"
         color: luluPalette.headingAccent; font.family: typography.majorHeadingFamily
@@ -74,6 +98,6 @@ Item {
             }
         }
     }
-    Text { x: 76 * root.uiScale; y: 650 * root.uiScale; text: root.storageData.available ? (root.storageData.error || "A: Select · mounted devices are safe targets") : "UDisks2 unavailable"
+    Text { x: 76 * root.uiScale; y: 650 * root.uiScale; text: root.storageData.available ? (root.message || root.storageData.error || "A: Select · mounted devices are safe targets") : "UDisks2 unavailable"
         color: luluPalette.secondaryText; font.family: typography.interfaceFamily; font.pixelSize: typography.size("body", 16) }
 }

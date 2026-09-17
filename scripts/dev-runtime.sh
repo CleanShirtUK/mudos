@@ -44,6 +44,8 @@ refresh() {
         /etc/udev/rules.d/80-lulu-osk.rules
     install -D -m 0644 "$staging/packaging/polkit-1/rules.d/49-lulu-network.rules" \
         /etc/polkit-1/rules.d/49-lulu-network.rules
+    install -D -m 0644 "$staging/packaging/polkit-1/rules.d/50-lulu-storage.rules" \
+        /etc/polkit-1/rules.d/50-lulu-storage.rules
     udevadm control --reload-rules
     dirty=false
     [ -n "$status" ] && dirty=true
@@ -96,6 +98,8 @@ immutable() {
         /etc/udev/rules.d/80-lulu-osk.rules
     install -D -m 0644 "$immutable_root/packaging/polkit-1/rules.d/49-lulu-network.rules" \
         /etc/polkit-1/rules.d/49-lulu-network.rules
+    install -D -m 0644 "$immutable_root/packaging/polkit-1/rules.d/50-lulu-storage.rules" \
+        /etc/polkit-1/rules.d/50-lulu-storage.rules
     udevadm control --reload-rules
     systemctl daemon-reload
     systemctl restart lulu-acquisition.service lulu-consoled.service lulu-session@2.service

@@ -331,7 +331,7 @@ class ConsoleUiBridge:
             result = await self.consoled.call_unmount_storage(device_id)
         elif action == "eject":
             result = await self.consoled.call_eject_storage(device_id)
-        elif action == "target":
+        elif action in {"target", "target-default"}:
             result = await self.consoled.call_select_storage_target(str(payload.get("kind", "")), device_id)
         else:
             raise ValueError(f"unknown storage operation: {action}")

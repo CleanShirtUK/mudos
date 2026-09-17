@@ -867,6 +867,8 @@ Window {
                 function(data) {
                     root.storageState = data
                     if (root.storageSettingsRef) root.storageSettingsRef.storageData = data
+                    if (root.storageSettingsRef && action === "target")
+                        root.storageSettingsRef.message = kind === "game" ? "Game Install Storage selected" : "Emulation Storage selected"
                 }, "Storage operation failed")
     }
 
@@ -1378,6 +1380,10 @@ Window {
             }
             return
         }
+        if (space === "system" && !systemLanding
+                && systemCategories[systemCategoryIndex] === "Storage" && storageSettingsRef
+                && storageSettingsRef.back())
+            return
         if (space === "system") {
             if (!systemLanding && systemCategories[systemCategoryIndex] === "Network"
                     && internetSettingsRef && internetSettingsRef.credentialView) {
