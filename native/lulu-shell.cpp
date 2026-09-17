@@ -371,6 +371,7 @@ private slots:
     void onSessionStateChanged(const QString &stateJson)
     {
         updateControllersFromSessionState(stateJson);
+        selectNavigationGamepad();
     }
 
     void onDbusInputEvent(const QString &compositePath, const QString &event, double value)
@@ -399,6 +400,8 @@ private:
                document.object().value(QStringLiteral("requested_surface")).toString());
         const QJsonObject controllerRoot = document.object().value(QStringLiteral("controller"))
             .toObject().value(QStringLiteral("controllers")).toObject();
+        const QString navigationId = document.object().value(QStringLiteral("controller"))
+            .toObject().value(QStringLiteral("navigation_controller_id")).toString();
         QVariantList controllers;
         for (auto iterator = controllerRoot.constBegin(); iterator != controllerRoot.constEnd(); ++iterator) {
             const QJsonObject value = iterator.value().toObject();
@@ -424,6 +427,8 @@ private:
                                   ? QString::number(percentage.toInt()) + QStringLiteral("%")
                                   : QStringLiteral("Unknown"));
             controllers.append(controller);
+            if (iterator.key() == navigationId)
+                navigationPlayer_ = player;
         }
         std::sort(controllers.begin(), controllers.end(), [](const QVariant &left, const QVariant &right) {
             return left.toMap().value(QStringLiteral("index")).toInt()
@@ -671,7 +676,9 @@ private:
         SDL_JoystickID *ids = SDL_GetGamepads(&count);
         qInfo() << "SDL gamepad scan count=" << count;
         if (ids && count > 0) {
-            gamepad_ = SDL_OpenGamepad(ids[0]);
+            const int requested = std::max(0, std::min(navigationPlayer_ - 1, count - 1));
+            gamepadSlot_ = requested;
+            gamepad_ = SDL_OpenGamepad(ids[requested]);
             if (gamepad_) {
                 qInfo() << "SDL gamepad opened" << SDL_GetGamepadName(gamepad_);
                 insert("controllerConnected", true);
@@ -680,6 +687,18 @@ private:
             }
         }
         SDL_free(ids);
+    }
+
+    void selectNavigationGamepad()
+    {
+        if (!gamepad_)
+            return;
+        const int requested = std::max(0, navigationPlayer_ - 1);
+        if (requested == gamepadSlot_)
+            return;
+        SDL_CloseGamepad(gamepad_);
+        gamepad_ = nullptr;
+        scanGamepads();
     }
 
     void poll()
@@ -890,6 +909,8 @@ private:
     bool guideChordConsumed_ = false;
     bool oskActive_ = false;
     SDL_Gamepad *gamepad_ = nullptr;
+    int gamepadSlot_ = 0;
+    int navigationPlayer_ = 1;
 };
 
 void DbusInputRelay::onInputEvent(const QString &event, double value)

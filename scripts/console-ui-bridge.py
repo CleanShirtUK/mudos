@@ -218,6 +218,17 @@ class ConsoleUiBridge:
     async def state(self) -> dict[str, object]:
         return json.loads(await self.sessiond.call_get_state())
 
+    async def controller_mutation(self, action: str, payload: dict[str, object]) -> dict[str, object]:
+        controller_id = str(payload.get("id", ""))
+        if action == "player":
+            result = await self.sessiond.call_set_controller_player(
+                controller_id, int(payload.get("player", 0)))
+        elif action == "navigation":
+            result = await self.sessiond.call_set_navigation_controller(controller_id)
+        else:
+            raise ValueError(f"unknown controller operation: {action}")
+        return json.loads(result)
+
     async def acquisition(self) -> dict[str, object]:
         if self.acquisitiond is None:
             return {"jobs": [], "activeDownloadCount": 0}
@@ -531,6 +542,15 @@ class ApiHandler(BaseHTTPRequestHandler):
                 length = int(self.headers.get("Content-Length", "0"))
                 payload = json.loads(self.rfile.read(length) or b"{}")
                 self._respond(200, self.bridge.call(self.bridge.display_apply(payload), timeout=20))
+            except Exception as error:
+                self._respond(409, {"error": str(error) or type(error).__name__})
+            return
+        if path.startswith("/controller/"):
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+                payload = json.loads(self.rfile.read(length) or b"{}")
+                action = path.removeprefix("/controller/")
+                self._respond(200, self.bridge.call(self.bridge.controller_mutation(action, payload), timeout=10))
             except Exception as error:
                 self._respond(409, {"error": str(error) or type(error).__name__})
             return

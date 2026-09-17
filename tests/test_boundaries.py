@@ -141,6 +141,43 @@ class BoundaryTests(unittest.TestCase):
         self.assertEqual(registry.controllers["pad-a"].player, 1)
         self.assertEqual(registry.navigation_controller_id, "pad-a")
 
+    def test_controller_policy_has_no_button_mapping_surface(self) -> None:
+        source = (Path(__file__).parents[1] / "ui/ControllerSettings.qml").read_text()
+        self.assertIn("operationRequested", source)
+        self.assertIn('view === "player"', source)
+        self.assertIn('view === "navigation"', source)
+        self.assertIn('label: "Player " + player', source)
+        self.assertNotIn("buttonMap", source)
+        self.assertNotIn("remap", source.lower())
+
+    def test_persisted_player_assignment_does_not_duplicate_on_rebind(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            policy = Path(directory) / "controller-policy.json"
+            policy.write_text('{"players": {"receiver": 1}}')
+            registry = ControllerRegistry(policy)
+            registry.observe_runtime_composites({
+                "CompositeDevice0": ("receiver", ("/dev/input/event1",)),
+                "CompositeDevice1": ("receiver", ("/dev/input/event2",)),
+            })
+            players = [controller.player for controller in registry.controllers.values()]
+            self.assertEqual(sorted(player for player in players if player is not None), [1, 2])
+
+    def test_navigation_policy_follows_logical_player_when_identity_is_shared(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            policy = Path(directory) / "controller-policy.json"
+            registry = ControllerRegistry(policy)
+            registry.observe_runtime_composites({
+                "CompositeDevice0": ("receiver", ("/dev/input/event1",)),
+                "CompositeDevice1": ("receiver", ("/dev/input/event2",)),
+            })
+            registry.set_navigation_controller("CompositeDevice1")
+            restored = ControllerRegistry(policy)
+            restored.observe_runtime_composites({
+                "CompositeDevice0": ("receiver", ("/dev/input/event3",)),
+                "CompositeDevice1": ("receiver", ("/dev/input/event4",)),
+            })
+            self.assertEqual(restored.navigation_controller_id, "CompositeDevice1")
+
     def test_controller_battery_normalization_preserves_unknown(self) -> None:
         controller = Controller("pad-a", battery=BatteryState())
         self.assertEqual(controller.battery.kind, BatteryKind.UNKNOWN)

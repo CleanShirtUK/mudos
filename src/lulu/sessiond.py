@@ -41,7 +41,7 @@ class ConsoleSessionInterface(ServiceInterface):
         inputplumber = default_inputplumber_client(
             Path(__file__).resolve().parents[2] / "config" / "inputplumber"
         )
-        self.controller_registry = ControllerRegistry()
+        self.controller_registry = ControllerRegistry(Path.home() / ".config/lulu/controller-policy.json")
         self._inputplumber = inputplumber
         self._native_controller = os.environ.get("LULU_NATIVE_CONTROLLER", "0") == "1"
         self._applied_input_modes: dict[str, InputMode] = {}
@@ -106,7 +106,12 @@ class ConsoleSessionInterface(ServiceInterface):
         for object_path, composite in composites.items():
             _, source_paths = composite
             if source_paths:
-                await self._initialize_composite(object_path, composite)
+                try:
+                    await self._initialize_composite(object_path, composite)
+                except (OSError, RuntimeError, ValueError, subprocess.SubprocessError) as error:
+                    logging.getLogger("lulu.sessiond").warning(
+                        "controller initialization pending path=%s error=%s", object_path, error
+                    )
         self._inputplumber_event = asyncio.Event()
         self._inputplumber_bus = await MessageBus(bus_type=BusType.SYSTEM).connect()
         introspection = await self._inputplumber_bus.introspect(
@@ -211,7 +216,12 @@ class ConsoleSessionInterface(ServiceInterface):
             self.controller_registry.observe_runtime_composites(composites)
             for object_path, composite in composites.items():
                 if composite[1]:
-                    await self._initialize_composite(object_path, composite)
+                    try:
+                        await self._initialize_composite(object_path, composite)
+                    except (OSError, RuntimeError, ValueError, subprocess.SubprocessError) as error:
+                        logging.getLogger("lulu.sessiond").warning(
+                            "controller initialization pending path=%s error=%s", object_path, error
+                        )
             after = self.controller_registry.navigation_controller_id, tuple(
                 (key, value.connected) for key, value in self.controller_registry.controllers.items()
             )
@@ -296,6 +306,20 @@ class ConsoleSessionInterface(ServiceInterface):
     @method()
     def GetState(self) -> "s":
         return self._state_json()
+
+    @method()
+    def SetControllerPlayer(self, controller_id: "s", player: "i") -> "s":
+        self.controller_registry.assign_player(controller_id, None if player <= 0 else player)
+        state = self._state_json()
+        self.StateChanged(state)
+        return state
+
+    @method()
+    def SetNavigationController(self, controller_id: "s") -> "s":
+        self.controller_registry.set_navigation_controller(controller_id or None)
+        state = self._state_json()
+        self.StateChanged(state)
+        return state
 
     @method()
     def BeginLocalSession(self, game_id: "s", pid: "u", pgid: "u", executable: "s", argv: "as") -> "s":

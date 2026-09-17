@@ -3,6 +3,7 @@
 from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
+import json
 
 from .contracts import InputMode, Role, ServiceDescriptor, ServiceName
 from .inputplumber import InputPlumberClient
@@ -50,16 +51,44 @@ class Controller:
 
 
 class ControllerRegistry:
-    """In-memory contract model; persistence and device discovery are deferred."""
+    """Normalized controller state; InputPlumber remains device authority."""
 
     descriptor = DESCRIPTOR
 
-    def __init__(self) -> None:
+    def __init__(self, policy_path: Path | None = None) -> None:
         self.controllers: dict[str, Controller] = {}
         self.navigation_controller_id: str | None = None
+        self.policy_path = policy_path
+        self._policy: dict[str, object] = {}
+        if policy_path is not None:
+            try:
+                value = json.loads(policy_path.read_text())
+                if isinstance(value, dict):
+                    self._policy = value
+            except (OSError, ValueError, json.JSONDecodeError):
+                pass
+
+    def _save_policy(self) -> None:
+        if self.policy_path is None:
+            return
+        self.policy_path.parent.mkdir(parents=True, exist_ok=True)
+        self.policy_path.write_text(json.dumps(self._policy, sort_keys=True) + "\n")
 
     def connect(self, controller: Controller) -> None:
         controller.connected = True
+        assignments = self._policy.get("players", {})
+        if controller.physical_identity and isinstance(assignments, dict):
+            saved_player = assignments.get(controller.physical_identity)
+            occupied = {candidate.player for candidate in self.controllers.values()
+                        if candidate.connected and candidate.player is not None}
+            if (isinstance(saved_player, int) and saved_player in range(1, 5)
+                    and saved_player not in occupied):
+                controller.player = saved_player
+            elif controller.player in occupied:
+                controller.player = next(
+                    (candidate for candidate in range(1, 5) if candidate not in occupied),
+                    None,
+                )
         self.controllers[controller.controller_id] = controller
 
     def disconnect(self, controller_id: str) -> None:
@@ -75,12 +104,37 @@ class ControllerRegistry:
             )
 
     def assign_player(self, controller_id: str, player: int | None) -> None:
+        if controller_id not in self.controllers:
+            raise ValueError("unknown controller")
+        if player is not None and player not in range(1, 5):
+            raise ValueError("player must be between 1 and 4")
+        if player is not None:
+            for candidate_id, candidate in self.controllers.items():
+                if candidate_id != controller_id and candidate.player == player:
+                    candidate.player = None
         self.controllers[controller_id].player = player
+        identity = self.controllers[controller_id].physical_identity
+        if identity:
+            players = self._policy.setdefault("players", {})
+            if isinstance(players, dict):
+                if player is None:
+                    players.pop(identity, None)
+                else:
+                    players[identity] = player
+            self._save_policy()
 
     def set_navigation_controller(self, controller_id: str | None) -> None:
+        if controller_id is not None and controller_id not in self.controllers:
+            raise ValueError("unknown controller")
         if controller_id is not None and not self.controllers[controller_id].connected:
             raise ValueError("navigation controller must be connected")
         self.navigation_controller_id = controller_id
+        identity = self.controllers[controller_id].physical_identity if controller_id else None
+        self._policy["navigation_identity"] = identity
+        self._policy["navigation_player"] = (
+            self.controllers[controller_id].player if controller_id else None
+        )
+        self._save_policy()
 
     def observe_persistent_composite(self, persistent_id: str, source_paths: tuple[str, ...]) -> None:
         """Reconcile physical presence without replacing InputPlumber targets."""
@@ -97,7 +151,11 @@ class ControllerRegistry:
             self.connect(controller)
         else:
             controller.connected = True
-        if self.navigation_controller_id is None:
+        preferred = self._policy.get("navigation_identity")
+        preferred_player = self._policy.get("navigation_player")
+        if (isinstance(preferred_player, int) and controller.player == preferred_player):
+            self.navigation_controller_id = persistent_id
+        elif self.navigation_controller_id is None or preferred == persistent_id:
             self.navigation_controller_id = persistent_id
 
     def observe_runtime_composites(
@@ -135,7 +193,17 @@ class ControllerRegistry:
             else:
                 controller.connected = True
 
-        if self.navigation_controller_id not in connected_ids:
+        preferred_player = self._policy.get("navigation_player")
+        preferred_runtime = next(
+            (runtime_id for runtime_id in connected_ids
+             if isinstance(preferred_player, int)
+             and self.controllers.get(runtime_id) is not None
+             and self.controllers[runtime_id].player == preferred_player),
+            None,
+        )
+        if preferred_runtime is not None:
+            self.navigation_controller_id = preferred_runtime
+        elif self.navigation_controller_id not in connected_ids:
             self.navigation_controller_id = connected_ids[0] if connected_ids else None
 
     def request_input_mode(self, mode: InputMode, client: InputPlumberClient) -> list[str]:

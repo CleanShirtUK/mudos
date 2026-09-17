@@ -118,6 +118,8 @@ Window {
     property var storageSettingsRef: null
     property var displayState: ({available: false, displays: [], requested: {}, known_good: {}, selected: null, error: ""})
     property var displaySettingsRef: null
+    property var controllerState: ({controllers: {}, navigation_controller_id: ""})
+    property var controllerSettingsRef: null
     property string libraryFocus: "games"
     property int libraryFirstVisibleRow: 0
     property string libraryTransitionState: "RESTING"
@@ -871,6 +873,21 @@ Window {
         })
     }
 
+    function refreshControllerState() {
+        request("/state", "GET", "", function(data) {
+            root.controllerState = data.controller || ({controllers: {}, navigation_controller_id: ""})
+            if (root.controllerSettingsRef) root.controllerSettingsRef.controllerData = root.controllerState
+        })
+    }
+
+    function controllerOperation(action, id, player) {
+        request("/controller/" + action, "POST", JSON.stringify({id: id, player: player}),
+                function(data) {
+                    root.controllerState = data.controller || ({controllers: {}, navigation_controller_id: ""})
+                    if (root.controllerSettingsRef) root.controllerSettingsRef.controllerData = root.controllerState
+                }, "Controller policy update failed")
+    }
+
     function applyDisplay(output, width, height, refresh) {
         request("/display/apply", "POST", JSON.stringify({output: output, width: width, height: height, refresh: refresh}),
                 function(data) {
@@ -1305,6 +1322,11 @@ Window {
                 displaySettingsRef.activate()
                 return
             }
+            if (!systemLanding && systemCategories[systemCategoryIndex] === "Controllers"
+                    && controllerSettingsRef) {
+                controllerSettingsRef.activate()
+                return
+            }
             if (!systemLanding && systemCategories[systemCategoryIndex] === "Storage"
                     && storageSettingsRef) {
                 storageSettingsRef.activate()
@@ -1389,6 +1411,8 @@ Window {
             refreshStorageState()
         if (systemCategories[systemCategoryIndex] === "Display")
             refreshDisplayState()
+        if (systemCategories[systemCategoryIndex] === "Controllers")
+            refreshControllerState()
         console.log("SETTINGS_PAGE_OPEN", "category", systemCategories[systemCategoryIndex])
     }
 
@@ -1424,6 +1448,11 @@ Window {
         if (space === "system" && !systemLanding
                 && systemCategories[systemCategoryIndex] === "Display" && displaySettingsRef
                 && displaySettingsRef.back())
+            return
+        if (space === "system" && !systemLanding
+                && systemCategories[systemCategoryIndex] === "Controllers" && controllerSettingsRef
+                && controllerSettingsRef.view !== "main"
+                && controllerSettingsRef.back())
             return
         if (space === "system") {
             if (!systemLanding && systemCategories[systemCategoryIndex] === "Network"
@@ -1608,6 +1637,8 @@ Window {
                     root.storageSettingsRef.move(-1)
                 else if (root.systemCategories[root.systemCategoryIndex] === "Display" && root.displaySettingsRef)
                     root.displaySettingsRef.move(-1)
+                else if (root.systemCategories[root.systemCategoryIndex] === "Controllers" && root.controllerSettingsRef)
+                    root.controllerSettingsRef.move(-1)
                 else root.systemRowIndex = Math.max(0, root.systemRowIndex - 1)
             }
     }
@@ -1630,6 +1661,8 @@ Window {
                     root.storageSettingsRef.move(1)
                 else if (root.systemCategories[root.systemCategoryIndex] === "Display" && root.displaySettingsRef)
                     root.displaySettingsRef.move(1)
+                else if (root.systemCategories[root.systemCategoryIndex] === "Controllers" && root.controllerSettingsRef)
+                    root.controllerSettingsRef.move(1)
                 else root.systemRowIndex = Math.min(Math.max(0, root.systemSettings.length - 1), root.systemRowIndex + 1)
             }
     }
@@ -1656,6 +1689,8 @@ Window {
                     root.storageSettingsRef.move(-1)
                 else if (root.systemCategories[root.systemCategoryIndex] === "Display" && root.displaySettingsRef)
                     root.displaySettingsRef.move(-1)
+                else if (root.systemCategories[root.systemCategoryIndex] === "Controllers" && root.controllerSettingsRef)
+                    root.controllerSettingsRef.move(-1)
                 else root.systemRowIndex = Math.max(0, root.systemRowIndex - 1)
             }
     }
@@ -1684,6 +1719,8 @@ Window {
                     root.storageSettingsRef.move(1)
                 else if (root.systemCategories[root.systemCategoryIndex] === "Display" && root.displaySettingsRef)
                     root.displaySettingsRef.move(1)
+                else if (root.systemCategories[root.systemCategoryIndex] === "Controllers" && root.controllerSettingsRef)
+                    root.controllerSettingsRef.move(1)
                 else root.systemRowIndex = Math.min(Math.max(0, root.systemSettings.length - 1), root.systemRowIndex + 1)
             }
     }
@@ -2321,6 +2358,20 @@ Window {
             luluPalette: luluPalette
             Component.onCompleted: root.displaySettingsRef = displaySettings
             onApplyRequested: root.applyDisplay(output, width, height, refresh)
+            onBackRequested: root.back()
+        }
+
+        ControllerSettings {
+            id: controllerSettings
+            anchors.fill: parent
+            visible: root.space === "system" && !root.systemLanding
+                && root.systemCategories[root.systemCategoryIndex] === "Controllers"
+            controllerData: root.controllerState
+            uiScale: root.uiScale
+            typography: typography
+            luluPalette: luluPalette
+            Component.onCompleted: root.controllerSettingsRef = controllerSettings
+            onOperationRequested: root.controllerOperation(action, controllerId, player)
             onBackRequested: root.back()
         }
 
