@@ -282,3 +282,30 @@ relaunched successfully with RetroArch using the centralized file. After
 restarting Acquisitiond, Consoled, and the graphical session, the setting
 still reported `true` and the native line remained present. Cold-boot
 validation follows the final release deployment.
+
+## Guide controller mutation trace
+
+The initial functional trace showed Guide input arriving, but Provider metadata
+was unavailable because `mudos-guide` queried `GetProviderGuide` on the
+`ConsoleSession` interface instead of Consoled. The corrected trace on the
+deployed candidate was:
+
+```text
+Guide provider metadata ... available:true provider_id:retroarch setting_key:fps_show
+Guide input ui_down
+Guide input ui_accept
+Guide input ui_accept
+provider setting mutation requested provider=retroarch key=fps_show value=true
+provider setting mutation applied provider=retroarch key=fps_show value=true
+Guide provider setting call "true" ReplyMessage
+Guide input ui_back
+```
+
+This was performed through the real `mudos-guide` QML window and its
+controller command stream while Super Mario Bros was running; no direct
+provider-setting API call was used in that functional mutation. The native
+file changed from `fps_show = "false"` to `fps_show = "true"`, and the Guide
+model refreshed its displayed value. A subsequent normal relaunch started
+RetroArch with that file, and the value survived service/session restart and
+cold boot. `config_save_on_exit` remains forced false in the ephemeral
+controller config and is not used as the validation setting.
