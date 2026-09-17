@@ -26,8 +26,9 @@ silently migrated. `paths.py` resolves configured target mount paths and keeps
 the canonical emulation root. A missing selected target remains explicitly
 unavailable rather than silently redirecting writes.
 
-The current machine has no UDisks2 service installed and only the protected
-NVMe system disk was present during implementation, so physical USB
-mount/eject/hotplug validation is pending installation of UDisks2 and insertion
-of an explicitly identified disposable USB. No partitioning or formatting UI
-was added. Audio, Guide, UI sounds, and other settings are unchanged.
+Validation used the explicitly identified disposable SanDisk Cruzer Blade
+(serial `03032219102723045822`, exFAT UUID `EE7A-7C19`). Mount, target
+selection, directory creation, read/write access, unmount, eject, reconnect
+with the same UUID, and unexpected removal were exercised through the
+controller workflow. No partitioning or formatting UI was added. Audio,
+Guide, UI sounds, and other settings are unchanged.
