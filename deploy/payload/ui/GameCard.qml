@@ -54,9 +54,6 @@ Rectangle {
     property real presentationContentOpacity: 1
     property real compactTitleOpacity: 1
     property real selectionProgress: focused ? 1 : 0
-    // Visual-only idle motion. The containing surface remains responsible for
-    // the selected card's baseline scale and layout geometry.
-    property real breathingScale: 1
     property int playActivationSerial: 0
     property real playButtonScale: 1
     signal playFeedbackCompleted()
@@ -68,33 +65,6 @@ Rectangle {
     property bool catalogueCard: false
     property var acquisitionJob: null
     property real focusBrightness: 1
-    readonly property bool breathingReady: focused && selectionProgress >= 1
-        && (homeCard
-            ? presentationProgress >= 1 && focalChromeOpacity >= 1
-            : catalogueCard)
-    onBreathingReadyChanged: {
-        if (!breathingReady)
-            breathingScale = 1
-    }
-    Scale {
-        id: breathingTransform
-        origin.x: card.width * 0.5
-        origin.y: card.height * 0.5
-        xScale: card.breathingScale
-        yScale: card.breathingScale
-    }
-    SequentialAnimation {
-        id: breathingAnimation
-        running: card.breathingReady
-        loops: Animation.Infinite
-        NumberAnimation { target: card; property: "breathingScale"; from: 1; to: 1.01; duration: 2600; easing.type: Easing.InOutSine }
-        NumberAnimation { target: card; property: "breathingScale"; from: 1.01; to: 0.99; duration: 2000; easing.type: Easing.InOutSine }
-        NumberAnimation { target: card; property: "breathingScale"; from: 0.99; to: 1; duration: 2600; easing.type: Easing.InOutSine }
-        onStopped: {
-            if (!card.breathingReady)
-                card.breathingScale = 1
-        }
-    }
     Behavior on selectionProgress {
         NumberAnimation {
             duration: 180
@@ -361,7 +331,6 @@ Rectangle {
             + (luluPalette.focusIndicator.a - luluPalette.glassBorder.a) * card.selectionProgress)
     border.width: card.librarySurfaceMaterial ? 0 : (1 + 2 * card.selectionProgress) * uiScale
     clip: true
-    transform: breathingTransform
 
     MudosGlassItem {
         id: nativeGlassSurface
