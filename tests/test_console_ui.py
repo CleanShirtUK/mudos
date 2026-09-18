@@ -385,7 +385,6 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertIn('function ensureSelectedVisible()', settings_page)
         self.assertIn('onSelectedIndexChanged: ensureSelectedVisible()', settings_page)
         self.assertIn('transformOrigin: Item.Center', settings_page)
-        self.assertIn('transformOrigin: Item.Left', settings_page)
 
         for page_name in (
                 "SystemSpace.qml", "InternetSettings.qml", "StorageSettings.qml",
