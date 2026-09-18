@@ -76,6 +76,14 @@ Window {
     readonly property real statusStripRightMargin: homeCategoryRailX
     readonly property real statusStripTop: selectedDomainY
         - (domains.length - 1) * homeCategoryPitch
+    readonly property real expandedShellSideMargin: design(96)
+    readonly property real expandedShellTop: statusStripTop
+        + systemStatusStrip.height + design(18)
+    readonly property real expandedShellBottom: interactionRail.y - design(18)
+    readonly property real expandedShellX: expandedShellSideMargin
+    readonly property real expandedShellY: expandedShellTop
+    readonly property real expandedShellWidth: width - 2 * expandedShellSideMargin
+    readonly property real expandedShellHeight: expandedShellBottom - expandedShellTop
     readonly property real homeHeadingCardClearance: design(12)
     readonly property real homeCompositionOffsetY: -design(36)
     readonly property real homeHintTopY: height - design(45)
@@ -2246,10 +2254,10 @@ Window {
             homeY: root.homeActiveContentOriginY
              homeWidth: root.homeNavigationCardWidth
             homeHeight: root.libraryHomePresentationHeight
-            fullscreenX: 76 * root.uiScale
-            fullscreenY: 32 * root.uiScale
-            fullscreenWidth: root.width - 152 * root.uiScale
-            fullscreenHeight: root.height - 48 * root.uiScale
+            fullscreenX: root.expandedShellX
+            fullscreenY: root.expandedShellY
+            fullscreenWidth: root.expandedShellWidth
+            fullscreenHeight: root.expandedShellHeight
              uiScale: root.uiScale
              verticalOffset: root.homeCategoryOffset(2)
              transparentOutsideMask: true
@@ -2755,7 +2763,8 @@ Window {
                 anchors.horizontalCenter: parent.horizontalCenter
                 anchors.verticalCenter: parent.verticalCenter
                 visible: presentationCoordinator.contentVisible
-                    && (root.space === "library" || root.libraryTransitioning)
+                    && (root.space === "library" || root.space === "store"
+                        || root.libraryTransitioning || root.storeTransitioning)
                 opacity: root.libraryContentOpacity
                 spacing: root.design(14)
 
@@ -2782,7 +2791,7 @@ Window {
                 }
                 ControllerHint {
                     action: "confirm"
-                    label: root.space === "library" ? "Launch" : "Select"
+                    label: root.space === "library" ? "Launch" : "Download"
                     uiScale: root.uiScale
                     typography: typography
                     luluPalette: luluPalette
@@ -2810,7 +2819,9 @@ Window {
                 width: implicitWidth
                 anchors.horizontalCenter: parent.horizontalCenter
                 anchors.verticalCenter: parent.verticalCenter
-                visible: presentationCoordinator.contentVisible && root.space !== "library"
+                visible: presentationCoordinator.contentVisible
+                    && root.space !== "library" && root.space !== "store"
+                    && !root.libraryTransitioning && !root.storeTransitioning
                 y: presentationCoordinator.hintsOffset()
                 opacity: root.homeContentOpacity * presentationCoordinator.hintsOpacity()
                 spacing: root.design(14)
