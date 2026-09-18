@@ -53,6 +53,7 @@ Item {
     readonly property real gridVisualWidth: gridSlotWidth + 2 * gridHorizontalGrowth
     readonly property real contentOriginX: (parent.width - gridVisualWidth) / 2
     readonly property real gridSlotLeft: contentOriginX + gridHorizontalGrowth
+    readonly property real categoryFadeWidth: categoryGlyphMetrics.advanceWidth * 10
     readonly property real gridContentFootprintHeight:
         libraryCardHeight + gridGap + libraryCardHeight + selectedGrowth
     readonly property real gridTop: contentBottom - gridContentFootprintHeight
@@ -96,6 +97,7 @@ Item {
             duration: librarySpace.gameContentOpacity === 0 ? 100 : 200
             easing.type: Easing.OutQuint
         }
+
     }
 
     Timer {
@@ -215,6 +217,33 @@ Item {
                 }
             }
 
+        }
+
+        TextMetrics {
+            id: categoryGlyphMetrics
+            font.family: typography ? typography.interfaceFamily : "JetBrains Mono"
+            font.pixelSize: typography ? typography.size("secondary", 14) : 14 * uiScale
+            text: "0"
+        }
+
+        // The source is limited to the moving rail's visible viewport. The
+        // shader therefore fades against the real right clipping boundary.
+        ShaderEffectSource {
+            id: categoryRailSource
+            sourceItem: categoryRail
+            sourceRect: Qt.rect(-categoryRail.x, 0,
+                                categoryViewport.width, categoryViewport.height)
+            hideSource: true
+            live: true
+        }
+
+        ShaderEffect {
+            id: categoryRailFade
+            anchors.fill: parent
+            property var source: categoryRailSource
+            property real fadeWidth: librarySpace.categoryFadeWidth
+            property vector2d viewportSize: Qt.vector2d(width, height)
+            fragmentShader: "shaders/category-rail-fade.frag.qsb"
         }
     }
 
