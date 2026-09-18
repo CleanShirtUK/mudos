@@ -1,7 +1,9 @@
 #include "mudos-display-underlay.h"
 
 #include <QMetaObject>
-#include <QPainter>
+#include <QSGSimpleTextureNode>
+#include <QSGTexture>
+#include <QSGTextureProvider>
 
 #include <pipewire/pipewire.h>
 #include <spa/param/video/format-utils.h>
@@ -12,6 +14,23 @@
 #include <cstring>
 #include <mutex>
 #include <thread>
+
+class MudosDisplayUnderlay::TextureProvider final : public QSGTextureProvider
+{
+public:
+    QSGTexture *texture() const override { return texture_; }
+
+    void setTexture(QSGTexture *texture)
+    {
+        if (texture_ == texture)
+            return;
+        texture_ = texture;
+        emit textureChanged();
+    }
+
+private:
+    QSGTexture *texture_ = nullptr;
+};
 
 class MudosDisplayUnderlay::Capture final
 {
@@ -53,18 +72,35 @@ private:
         }
 
         QImage frame(static_cast<int>(self->width_), static_cast<int>(self->height_),
-                     QImage::Format_RGB32);
+                     QImage::Format_RGBA8888);
         const auto *source = static_cast<const unsigned char *>(spa.data) + spa.chunk->offset;
         const int sourceStride = spa.chunk->stride;
+        self->sourceStride_ = sourceStride;
+        if (!self->loggedSource_) {
+            self->loggedSource_ = true;
+            qInfo() << "MUDOS_DISPLAY_UNDERLAY_BUFFER"
+                    << "offset=" << spa.chunk->offset
+                    << "size=" << spa.chunk->size
+                    << "stride=" << sourceStride
+                    << "firstBGRx=" << source[0] << source[1] << source[2] << source[3];
+        }
         const int destinationStride = frame.bytesPerLine();
-        const int rowBytes = std::min(sourceStride, destinationStride);
-        for (uint32_t row = 0; row < self->height_; ++row)
-            std::memcpy(frame.scanLine(static_cast<int>(row)),
-                        source + row * sourceStride, static_cast<size_t>(rowBytes));
+        for (uint32_t row = 0; row < self->height_; ++row) {
+            const auto *input = source + row * sourceStride;
+            auto *output = frame.scanLine(static_cast<int>(row));
+            for (uint32_t column = 0; column < self->width_; ++column) {
+                // PipeWire BGRx is explicitly converted to Qt's byte-ordered
+                // RGBA8888. The x byte is padding, never alpha.
+                output[column * 4 + 0] = input[column * 4 + 2];
+                output[column * 4 + 1] = input[column * 4 + 1];
+                output[column * 4 + 2] = input[column * 4 + 0];
+                output[column * 4 + 3] = 0xff;
+            }
+        }
 
         pw_stream_queue_buffer(self->stream_, buffer);
-        QMetaObject::invokeMethod(self->owner_, [owner = self->owner_, frame = std::move(frame)] {
-            owner->acceptFrame(frame);
+        QMetaObject::invokeMethod(self->owner_, [owner = self->owner_, frame = std::move(frame), sourceStride] {
+            owner->acceptFrame(frame, sourceStride);
         }, Qt::QueuedConnection);
     }
 
@@ -174,14 +210,17 @@ private:
     std::atomic<bool> running_{false};
     uint32_t width_ = 0;
     uint32_t height_ = 0;
+    int sourceStride_ = 0;
+    bool loggedSource_ = false;
 };
 
 constexpr pw_stream_events MudosDisplayUnderlay::Capture::events_;
 
 MudosDisplayUnderlay::MudosDisplayUnderlay(QQuickItem *parent)
-    : QQuickPaintedItem(parent), capture_(std::make_unique<Capture>(this))
+    : QQuickItem(parent), capture_(std::make_unique<Capture>(this)),
+      provider_(std::make_unique<TextureProvider>())
 {
-    setOpaquePainting(false);
+    setFlag(ItemHasContents, true);
     connect(this, &QQuickItem::visibleChanged, this, [this] {
         if (isVisible())
             capture_->start();
@@ -194,26 +233,61 @@ MudosDisplayUnderlay::MudosDisplayUnderlay(QQuickItem *parent)
 
 MudosDisplayUnderlay::~MudosDisplayUnderlay() = default;
 
-void MudosDisplayUnderlay::acceptFrame(const QImage &frame)
+void MudosDisplayUnderlay::acceptFrame(const QImage &frame, int sourceStride)
 {
     const bool sizeChanged = frameSize_ != frame.size();
     const bool availabilityChanged = !available_;
     frame_ = frame;
     frameSize_ = frame.size();
+    ++frameCount_;
+    const bool strideChanged = frameStride_ != sourceStride;
+    frameStride_ = sourceStride;
     available_ = true;
     if (!loggedFirstFrame_) {
         loggedFirstFrame_ = true;
-        qInfo() << "MUDOS_DISPLAY_UNDERLAY_FRAME" << frame.size();
+        qInfo() << "MUDOS_DISPLAY_UNDERLAY_FRAME"
+                << "size=" << frame.size()
+                << "format=BGRx->RGBA8888"
+                << "sourceStride=" << sourceStride
+                << "qtStride=" << frame.bytesPerLine()
+                << "diagnostic=" << diagnosticMode_;
+        frame_.save(QStringLiteral("/tmp/mudos-display-underlay-raw-first.png"));
     }
     if (sizeChanged)
         emit frameSizeChanged();
+    if (strideChanged)
+        emit frameStrideChanged();
+    if (frameCount_ == 30)
+        frame_.save(QStringLiteral("/tmp/mudos-display-underlay-raw.png"));
     if (availabilityChanged)
         emit availableChanged();
     update();
 }
 
-void MudosDisplayUnderlay::paint(QPainter *painter)
+bool MudosDisplayUnderlay::isTextureProvider() const
 {
-    if (!frame_.isNull())
-        painter->drawImage(boundingRect(), frame_);
+    return true;
+}
+
+QSGTextureProvider *MudosDisplayUnderlay::textureProvider() const
+{
+    return provider_.get();
+}
+
+QSGNode *MudosDisplayUnderlay::updatePaintNode(QSGNode *oldNode, UpdatePaintNodeData *)
+{
+    auto *node = static_cast<QSGSimpleTextureNode *>(oldNode);
+    if (!node) {
+        node = new QSGSimpleTextureNode;
+        node->setOwnsTexture(true);
+    }
+    if (frame_.isNull() || !window())
+        return node;
+    auto *texture = window()->createTextureFromImage(frame_);
+    if (!texture)
+        return node;
+    provider_->setTexture(texture);
+    node->setTexture(texture);
+    node->setRect(boundingRect());
+    return node;
 }

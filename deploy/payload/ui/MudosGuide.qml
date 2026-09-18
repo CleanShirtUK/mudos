@@ -25,7 +25,6 @@ Window {
         id: displayUnderlay
         width: frameSize.width > 0 ? frameSize.width : root.width
         height: frameSize.height > 0 ? frameSize.height : root.height
-        textureSize: frameSize
         opacity: 0.0001
     }
 

@@ -604,6 +604,9 @@ private:
 
     void handleInputEvent(const QString &compositePath, const QString &event, double value)
     {
+        if (guideVisible() || event == QStringLiteral("ui_guide"))
+            qInfo() << "GUIDE_INPUT" << compositePath << event << value
+                    << "visible=" << guideVisible();
         // OSK mode owns the intercepted D-Bus stream. The bridge consumes it
         // and feeds the private gamepad-osk device; Guide must not also act.
         if (oskActive_)
@@ -685,6 +688,11 @@ private:
         }
         targetWindow_ = focusedWindow_;
         targetPid_ = windowProperty(targetWindow_, "_NET_WM_PID");
+        if (!setInterceptMode(guideOwnerComposite_, 2)) {
+            restoreInput();
+            return false;
+        }
+        qInfo() << "GUIDE_INPUT_INTERCEPT" << guideOwnerComposite_ << "mode=2";
         QVariantList actions;
         QDBusInterface consoled("org.lulu.Consoled", "/org/lulu/Console",
                                 "org.lulu.Console", QDBusConnection::sessionBus());

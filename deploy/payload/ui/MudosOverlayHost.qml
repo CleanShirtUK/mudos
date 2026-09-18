@@ -27,12 +27,11 @@ MudosOverlayWindow {
         id: displayUnderlay
         width: frameSize.width > 0 ? frameSize.width : root.width
         height: frameSize.height > 0 ? frameSize.height : root.height
-        textureSize: frameSize
-        opacity: 0.0001
+        opacity: displayUnderlay.diagnosticMode ? 1 : 0.0001
     }
 
     MudosGuidePanel {
-        visible: root.guideModel.guideVisible
+        visible: root.guideModel.guideVisible && !displayUnderlay.diagnosticMode
         anchors.fill: parent
         guideModel: root.guideModel
         luluPalette: root.luluPalette
@@ -42,6 +41,7 @@ MudosOverlayWindow {
 
     GameOptions {
         visible: root.game !== null && !root.guideModel.guideVisible
+            && !displayUnderlay.diagnosticMode
         anchors.fill: parent
         game: root.game
         view: root.view
