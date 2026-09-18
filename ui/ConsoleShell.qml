@@ -1147,7 +1147,10 @@ Window {
 
     function homeCategoryTitleOpacityForSelection(index, selectedIndex) {
         var distance = Math.abs(index - selectedIndex)
-        return Math.max(0.6, 1.0 - distance * 0.1)
+        var minimumOpacity = 0.30
+        var maximumDistance = 3.0
+        return Math.max(minimumOpacity,
+            1.0 - distance * ((1.0 - minimumOpacity) / maximumDistance))
     }
 
     function homeCategoryTitleOpacity(index) {
