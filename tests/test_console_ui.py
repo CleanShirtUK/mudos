@@ -717,6 +717,7 @@ class ConsoleUiTests(unittest.TestCase):
         coordinator = (ROOT / "ui" / "PresentationCoordinator.qml").read_text()
         shell = (ROOT / "ui" / "ConsoleShell.qml").read_text()
         self.assertIn("presentationCoordinator", source)
+        self.assertIn("onVisibleChanged", shell)
         self.assertIn("orbitShaderTime", source)
         self.assertIn("orbitVisibility", source)
         self.assertNotIn("NumberAnimation on shaderTime", source)

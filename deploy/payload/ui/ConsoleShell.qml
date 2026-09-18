@@ -8,6 +8,12 @@ Window {
     color: luluPalette.backdrop
     flags: Qt.FramelessWindowHint
 
+    onVisibleChanged: {
+        if (visible && presentationCoordinator.contentState
+                === presentationCoordinator.hiddenState)
+            presentationCoordinator.beginStartup()
+    }
+
     property var domains: ["System", "Store", "Library", "Recent"]
     property int selectedCategoryIndex: 3
     property int desiredCategoryIndex: 3
@@ -1964,7 +1970,6 @@ Window {
             root.applyAcquisitionSnapshot(systemStatus.acquisitionSnapshot)
         refreshCatalogue()
         refreshStore()
-        presentationCoordinator.beginStartup()
     }
 
     function controllerUp() {
