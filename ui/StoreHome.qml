@@ -209,7 +209,7 @@ Item {
         collectionIndex: root.categoryIndex
         collections: root.categories
         collectionFocus: false
-        headingText: "STORE"
+        headingText: "AVAILABLE TO DOWNLOAD"
         emptyText: root.errorMessage !== "" ? root.errorMessage : "No games available"
         contentOpacity: root.contentOpacity
         specialCardId: "steam-store"
@@ -230,7 +230,7 @@ Item {
         visible: root.cardWidth > 0
         width: root.cardWidth
         height: root.cardHeight
-        displayTitle: "Store"
+        displayTitle: "Available to Download"
         symbolicArtwork: ""
         artworkRole: "raster"
         artworkSource: Qt.resolvedUrl(MudosAssetCatalog.suppliedArtwork("store"))

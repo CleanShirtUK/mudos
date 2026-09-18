@@ -9,7 +9,7 @@ SHELL_PROFILE = (ROOT / "config" / "inputplumber" / "profiles" / "shell.yaml").r
 
 class ConsoleUiTests(unittest.TestCase):
     def test_qml_preserves_card_to_space_shell_interaction(self) -> None:
-        self.assertIn('property var domains: ["System", "Store", "Library", "Recent"]', QML)
+        self.assertIn('property var domains: ["System", "Available to Download", "Library", "Recent"]', QML)
         self.assertIn("property int selectedCategoryIndex: 3", QML)
         self.assertIn('property string space: "home"', QML)
         self.assertIn('presentationTarget = "library"', QML)
@@ -839,7 +839,9 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertNotIn("width: librarySpace.categoryPitch", library_space)
         self.assertIn("horizontalAlignment: Text.AlignHCenter", library_space)
         self.assertIn("LibrarySpace {", (ROOT / "ui" / "StoreHome.qml").read_text())
-        self.assertNotIn('sectionTitle: "Available to Download"', (ROOT / "ui" / "StoreHome.qml").read_text())
+        store_home = (ROOT / "ui" / "StoreHome.qml").read_text()
+        self.assertIn('headingText: "AVAILABLE TO DOWNLOAD"', store_home)
+        self.assertIn('displayTitle: "Available to Download"', store_home)
         self.assertIn('root.space === "store"', QML)
         self.assertIn("text: root.domains[index].toUpperCase()", QML)
         self.assertIn("font.letterSpacing: 5 * root.uiScale", QML)

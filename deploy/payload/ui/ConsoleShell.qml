@@ -8,7 +8,7 @@ Window {
     color: luluPalette.backdrop
     flags: Qt.FramelessWindowHint
 
-    property var domains: ["System", "Store", "Library", "Recent"]
+    property var domains: ["System", "Available to Download", "Library", "Recent"]
     property int selectedCategoryIndex: 3
     property int desiredCategoryIndex: 3
     readonly property real referenceWidth: 1280
