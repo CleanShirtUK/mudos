@@ -43,18 +43,6 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertIn("capturePresentation()", recent)
         self.assertIn("suppressTransitionCompletion", recent)
         self.assertIn("transitionAnimation.stop()", recent)
-
-    def test_external_overlay_uses_live_display_underlay_texture(self) -> None:
-        host = (ROOT / "ui" / "MudosOverlayHost.qml").read_text()
-        capture = (ROOT / "native" / "mudos-display-underlay.cpp").read_text()
-        header = (ROOT / "native" / "mudos-display-underlay.h").read_text()
-        native = (ROOT / "native" / "lulu-shell.cpp").read_text()
-        self.assertIn("MudosDisplayUnderlay", host)
-        self.assertIn("backdrop: root.displayUnderlay", (ROOT / "ui" / "MudosGuidePanel.qml").read_text())
-        self.assertIn("BGRx -> RGBA8888", header)
-        self.assertIn("sourceStride", capture)
-        self.assertIn("mudos-display-underlay-raw.png", capture)
-        self.assertIn("setInterceptMode(guideOwnerComposite_, 2)", native)
         self.assertIn("transitionAnimation.start()", recent)
         self.assertIn("compactCardWidth + railGap", recent)
         self.assertNotIn("edgeViewportWidth", recent)
@@ -99,6 +87,18 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertIn('readonly property string libraryScope:', QML)
         self.assertNotIn("/dev/input", QML)
         self.assertNotIn("Social", QML)
+
+    def test_external_overlay_uses_live_display_underlay_texture(self) -> None:
+        host = (ROOT / "ui" / "MudosOverlayHost.qml").read_text()
+        capture = (ROOT / "native" / "mudos-display-underlay.cpp").read_text()
+        header = (ROOT / "native" / "mudos-display-underlay.h").read_text()
+        native = (ROOT / "native" / "lulu-shell.cpp").read_text()
+        self.assertIn("MudosDisplayUnderlay", host)
+        self.assertIn("backdrop: root.displayUnderlay", (ROOT / "ui" / "MudosGuidePanel.qml").read_text())
+        self.assertIn("BGRx -> RGBA8888", header)
+        self.assertIn("sourceStride", capture)
+        self.assertIn("mudos-display-underlay-raw.png", capture)
+        self.assertIn("setInterceptMode(guideOwnerComposite_, 2)", native)
 
     def test_reset_mudos_uses_the_shared_session_boundary(self) -> None:
         guide = (ROOT / "ui" / "MudosGuide.qml").read_text()
