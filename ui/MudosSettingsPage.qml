@@ -74,7 +74,6 @@ Item {
 
     Flickable {
         x: root.expandedShellX + root.contentInset
-            - root.horizontalScaleInset
         y: root.expandedShellY + 110 * root.uiScale
         width: root.nominalRowWidth + 2 * root.horizontalScaleInset
         height: 7 * 58 * root.uiScale + 6 * 10 * root.uiScale
