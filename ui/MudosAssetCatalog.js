@@ -10,9 +10,13 @@ var iconCodepoints = {
     volume: "\uf028",
     volumeMute: "\uf026",
     controller: "\uf11b",
+    collection: "\uf11b",
     battery: "\uf240",
     download: "\uf019",
     storage: "\uf0a0",
+    plug: "\uf1e6",
+    display: "\uf108",
+    wrench: "\uf0ad",
     power: "\uf011",
     warning: "\uf071",
     error: "\uf057",
@@ -101,9 +105,21 @@ function libraryPlatformArtwork(platform) {
     return libraryPlatformAssets[key] || libraryPlatformAssets.all
 }
 
-function systemArtwork(category) {
-    var key = String(category || "").toLowerCase()
-    return logicalAsset("", "system-" + key + ".svg")
+var systemIcons = {
+    "Mudos Menu": "settings",
+    Plugins: "plug",
+    Display: "display",
+    Audio: "volume",
+    Network: "wifi",
+    Bluetooth: "bluetooth",
+    Controllers: "controller",
+    Storage: "storage",
+    System: "wrench",
+    Lulu: "settings"
+}
+
+function systemIcon(category) {
+    return icon(systemIcons[String(category || "")] || "settings")
 }
 
 function suppliedArtwork(name) {

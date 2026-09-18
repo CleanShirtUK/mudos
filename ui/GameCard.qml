@@ -420,26 +420,25 @@ Rectangle {
             fillMode: Image.PreserveAspectFit
             asynchronous: true
             retainWhileLoading: false
-            visible: card.iconArtwork
+            visible: card.iconArtwork && !card.symbolicArtwork
         }
 
         MultiEffect {
             anchors.fill: iconArtworkSource
             source: iconArtworkSource
-            visible: card.iconArtwork
+            visible: card.iconArtwork && !card.symbolicArtwork
             z: 1
             colorization: 1.0
             colorizationColor: card.focusedColor(card.luluPalette.primaryText)
         }
 
-        Text {
+        MudosIcon {
             anchors.centerIn: parent
             visible: !!card.symbolicArtwork
-            text: card.symbolicArtwork
-            color: card.focusedColor(card.luluPalette.primaryText)
-            font.family: card.typography.displayFamily
-            font.weight: card.typography.displayWeight
-            font.pixelSize: card.typography.size("display", 100)
+            glyph: card.symbolicArtwork
+            semanticColor: card.focusedColor(card.luluPalette.primaryText)
+            typography: card.typography
+            iconSize: card.typography.size("display", 88)
         }
 
         Rectangle {

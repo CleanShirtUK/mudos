@@ -107,9 +107,13 @@ Item {
                 + ((index === libraryHome.selectedIndex ? 1 : 0)
                    - (libraryHome.selectionStart[index] || 0)) * libraryHome.selectionProgress
             displayTitle: modelData.label
-            symbolicArtwork: ""
-            artworkRole: libraryHome.categoryArtwork(modelData.scope)[1]
-            artworkSource: Qt.resolvedUrl("artwork/" + libraryHome.categoryArtwork(modelData.scope)[0])
+            symbolicArtwork: modelData.scope === "all"
+                ? MudosAssetCatalog.icon("collection") : ""
+            artworkRole: modelData.scope === "all" ? "icon"
+                : libraryHome.categoryArtwork(modelData.scope)[1]
+            artworkSource: modelData.scope === "all" ? ""
+                : Qt.resolvedUrl("artwork/"
+                    + libraryHome.categoryArtwork(modelData.scope)[0])
             uiScale: libraryHome.uiScale
             typography: libraryHome.typography
             luluPalette: libraryHome.luluPalette

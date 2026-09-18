@@ -281,6 +281,9 @@ class ConsoleUiTests(unittest.TestCase):
     def test_system_status_strip_is_shell_level_and_responsive(self) -> None:
         strip = (ROOT / "ui" / "SystemStatusStrip.qml").read_text()
         shell = (ROOT / "ui" / "ConsoleShell.qml").read_text()
+        system_home = (ROOT / "ui" / "SystemHome.qml").read_text()
+        library_home = (ROOT / "ui" / "LibraryHome.qml").read_text()
+        store_home = (ROOT / "ui" / "StoreHome.qml").read_text()
         native = (ROOT / "native" / "lulu-shell.cpp").read_text()
         self.assertIn('property bool compact', strip)
         self.assertIn('property var controllers', strip)
@@ -298,6 +301,9 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertNotIn('"Unknown" : modelData.battery', strip)
         self.assertIn('Qt.formatTime(new Date(), "HH:mm")', strip)
         self.assertIn('SystemStatusStrip {', shell)
+        self.assertIn('MudosAssetCatalog.systemIcon(modelData)', system_home)
+        self.assertIn('MudosAssetCatalog.icon("collection")', library_home)
+        self.assertIn('MudosAssetCatalog.icon("collection")', store_home)
         self.assertIn('root.selectedCategoryIndex === 3 ? "Navigation" : "Navigate"', shell)
         self.assertNotIn('"Navigate / Games"', shell)
         self.assertIn('systemStatus.networkConnected', shell)
@@ -378,10 +384,10 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertIn("property url artworkSource", navigation_card)
         self.assertIn('property string artworkRole: "icon"', navigation_card)
         self.assertIn("artworkRole: root.artworkRole", navigation_card)
-        self.assertIn('artworkSource: Qt.resolvedUrl(MudosAssetCatalog.suppliedArtwork("store"))', store)
-        self.assertIn('artworkRole: "raster"', store)
+        self.assertIn('MudosAssetCatalog.icon("collection")', store)
+        self.assertIn('artworkRole: "icon"', store)
         self.assertIn("function categoryArtwork(category)", (ROOT / "ui" / "LibraryHome.qml").read_text())
-        self.assertIn("function categoryArtwork(category)", system)
+        self.assertIn("MudosAssetCatalog.systemIcon(modelData)", system)
         self.assertNotIn("border.width", (ROOT / "ui" / "NavigationCard.qml").read_text())
         self.assertNotIn("anchors.margins: -8", (ROOT / "ui" / "NavigationCard.qml").read_text())
         self.assertIn("onOpenRequested: root.openSystemCategory(index)", QML)
@@ -433,9 +439,7 @@ class ConsoleUiTests(unittest.TestCase):
             "platform-nds.png", "platform-gamecube.png", "platform-wii.png",
             "platform-switch.png", "platform-ps1.png", "platform-ps2.png",
             "platform-ps3.png",
-            "system-display.svg", "system-audio.svg", "system-network.svg",
-            "system-bluetooth.svg", "system-controllers.svg", "system-storage.svg",
-            "system-system.svg", "system-lulu.svg", "README.md",
+            "README.md",
         }
         self.assertTrue(expected.issubset({path.name for path in artwork.iterdir()}))
         self.assertTrue((artwork / "navigation").is_dir())
@@ -494,7 +498,7 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertIn("property real cardHeight", library_home)
         self.assertIn("height: libraryHome.cardHeight", library_home)
         self.assertIn("width: libraryHome.compactCardWidth", library_home)
-        self.assertIn('artworkSource: Qt.resolvedUrl("artwork/" + libraryHome.categoryArtwork(modelData.scope)[0])', library_home)
+        self.assertIn('modelData.scope === "all"', library_home)
         catalog = (ROOT / "ui" / "MudosAssetCatalog.js").read_text()
         self.assertIn('nes: ["platforms/romm/nes.svg", "raster"]', catalog)
         self.assertIn('all: ["platforms/romm/default.ico", "raster"]', catalog)
@@ -502,7 +506,7 @@ class ConsoleUiTests(unittest.TestCase):
                       "gba.svg", "nds.svg", "ngc.svg", "wii.svg", "switch.svg",
                       "psx.svg", "ps2.svg", "ps3.svg", "default.ico"):
             self.assertTrue((ROOT / "ui/artwork/platforms/romm" / asset).is_file())
-        self.assertIn('artworkRole: libraryHome.categoryArtwork(modelData.scope)[1]', library_home)
+        self.assertIn('artworkRole: modelData.scope === "all" ? "icon"', library_home)
         self.assertIn("canonicalCoordinateRoot", library_home)
         self.assertNotIn("allGamesSceneOrigin", library_home)
         self.assertNotIn("gameCount", library_home)

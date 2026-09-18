@@ -28,10 +28,6 @@ Item {
     signal openRequested(int index)
     readonly property bool selectionMotionActive: selectionAnimation.running
 
-    function categoryArtwork(category) {
-        return Qt.resolvedUrl(MudosAssetCatalog.systemArtwork(category))
-    }
-
     function railX(relativeIndex) {
         return relativeIndex * (cardWidth + railGap)
     }
@@ -100,8 +96,8 @@ Item {
                 + ((index === root.selectedIndex ? 1 : 0)
                    - (root.selectionStart[index] || 0)) * root.selectionProgress
             displayTitle: modelData
-            symbolicArtwork: ""
-            artworkSource: root.categoryArtwork(modelData)
+            symbolicArtwork: MudosAssetCatalog.systemIcon(modelData)
+            artworkSource: ""
             uiScale: root.uiScale
             typography: root.typography
             luluPalette: root.luluPalette

@@ -235,9 +235,9 @@ Item {
         width: root.cardWidth
         height: root.cardHeight
         displayTitle: "Available to Download"
-        symbolicArtwork: ""
-        artworkRole: "raster"
-        artworkSource: Qt.resolvedUrl(MudosAssetCatalog.suppliedArtwork("store"))
+        symbolicArtwork: MudosAssetCatalog.icon("collection")
+        artworkRole: "icon"
+        artworkSource: ""
         focused: true
         selectionProgress: 1
         selectedOpacityOwner: true
