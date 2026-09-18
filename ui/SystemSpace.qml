@@ -51,37 +51,53 @@ Item {
         height: 7 * 58 * root.uiScale + 6 * 10 * root.uiScale
         clip: true
         contentWidth: width
-        contentHeight: rowColumn.height
+        contentHeight: rowColumn.height + 8 * root.uiScale
         contentY: Math.max(0, Math.min(contentHeight - height,
             root.selectedIndex * (58 * root.uiScale + 10 * root.uiScale)))
         boundsBehavior: Flickable.StopAtBounds
 
         Column {
             id: rowColumn
+            y: 4 * root.uiScale
             width: parent.width
             spacing: 10 * root.uiScale
 
             Repeater {
                 model: root.settings
-                delegate: Rectangle {
+                delegate: Item {
                 required property int index
                 required property var modelData
                 width: parent.width
                 height: 58 * root.uiScale
-                radius: 10 * root.uiScale
-                color: luluPalette.transparent
-                border.color: index === root.selectedIndex
-                    ? luluPalette.focusIndicator : luluPalette.glassBorder
-                border.width: index === root.selectedIndex
-                    ? 2 * root.uiScale : root.uiScale
+                z: index === root.selectedIndex ? 1 : 0
+                property real selectionProgress: index === root.selectedIndex ? 1 : 0
+                Behavior on selectionProgress {
+                    NumberAnimation {
+                        duration: 180
+                        easing.type: Easing.OutQuint
+                    }
+                }
+
+                MudosCardSurface {
+                    anchors.fill: parent
+                    scale: 1 + 0.05 * parent.selectionProgress
+                    transformOrigin: Item.Center
+                    selectionProgress: parent.selectionProgress
+                    uiScale: root.uiScale
+                    luluPalette: root.luluPalette
+                    canonicalTexture: root.canonicalTexture
+                    canonicalCoordinateRoot: root.canonicalCoordinateRoot
+                    canonicalSize: root.canonicalSize
+                }
+
                 Text {
                     x: 18 * root.uiScale
                     anchors.verticalCenter: parent.verticalCenter
                     text: modelData.label
-                    color: index === root.selectedIndex
-                        ? luluPalette.selectedText : luluPalette.primaryText
+                    color: luluPalette.primaryText
                     font.family: typography.interfaceFamily
                     font.pixelSize: typography.size("body", 18)
+                    z: 1
                 }
                 Text {
                     anchors.right: parent.right
@@ -91,6 +107,7 @@ Item {
                     color: luluPalette.secondaryText
                     font.family: typography.interfaceFamily
                     font.pixelSize: typography.size("body", 16)
+                    z: 1
                 }
                 MouseArea {
                     anchors.fill: parent

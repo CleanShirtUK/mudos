@@ -369,10 +369,13 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertIn('modelData.label', system_space)
         self.assertIn('LibrarySpatialSurface {', system_space)
         self.assertIn('surfaceVisible: true', system_space)
-        self.assertIn('luluPalette.selectedText', system_space)
-        self.assertIn('color: luluPalette.transparent', system_space)
-        self.assertIn('border.color:', system_space)
+        self.assertIn('MudosCardSurface {', system_space)
         self.assertIn('root.expandedShellX + root.contentInset', system_space)
+        card_surface = (ROOT / "ui" / "MudosCardSurface.qml").read_text()
+        self.assertIn('transmission: 0.75', card_surface)
+        self.assertIn('refractionPixels: 80', card_surface)
+        self.assertIn('focusedCardSurface', card_surface)
+        self.assertIn('scale: 1 + 0.05', system_space)
 
     def test_navigation_cards_share_the_all_games_surface(self) -> None:
         navigation_card = (ROOT / "ui" / "NavigationCard.qml").read_text()
