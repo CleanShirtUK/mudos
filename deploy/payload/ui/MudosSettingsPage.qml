@@ -20,6 +20,7 @@ Item {
     property string footerText: ""
     property bool rowsVisible: true
     readonly property real contentInset: 44 * root.uiScale
+    readonly property real horizontalScaleInset: 72 * root.uiScale
     signal rowActivated(int index)
 
     LibrarySpatialSurface {
@@ -51,6 +52,7 @@ Item {
         x: root.expandedShellX + root.contentInset
         y: root.expandedShellY + 110 * root.uiScale
         width: root.expandedShellWidth - 2 * root.contentInset
+            - root.horizontalScaleInset
         height: 7 * 58 * root.uiScale + 6 * 10 * root.uiScale
         visible: root.rowsVisible
         clip: true
