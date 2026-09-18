@@ -284,7 +284,7 @@ class ConsoleUiTests(unittest.TestCase):
         spatial_depth = (ROOT / "ui" / "SpatialDepth.js").read_text()
         self.assertIn("var maxDistance = 3", spatial_depth)
         self.assertIn("var cardScales = [1.0, 0.95, 0.86, 0.78]", spatial_depth)
-        self.assertIn("var cardBlurPixels = [0.0, 4.0, 9.0, 16.0]", spatial_depth)
+        self.assertIn("var cardBlurPixels = [0.0, 5.0, 11.0, 18.0]", spatial_depth)
         self.assertIn("var titleScales = [1.0, 0.97, 0.92, 0.86]", spatial_depth)
         self.assertIn("var titleBlurPixels = [0.0, 4.0, 11.0, 20.0]", spatial_depth)
         self.assertIn("var gapFactors = [1.0, 1.0, 0.76, 0.52]", spatial_depth)

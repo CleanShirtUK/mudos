@@ -2,7 +2,7 @@
 
 var maxDistance = 3
 var cardScales = [1.0, 0.95, 0.86, 0.78]
-var cardBlurPixels = [0.0, 4.0, 9.0, 16.0]
+var cardBlurPixels = [0.0, 5.0, 11.0, 18.0]
 var titleScales = [1.0, 0.97, 0.92, 0.86]
 var titleBlurPixels = [0.0, 4.0, 11.0, 20.0]
 var gapFactors = [1.0, 1.0, 0.76, 0.52]

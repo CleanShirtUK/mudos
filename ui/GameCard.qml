@@ -45,7 +45,7 @@ Rectangle {
     // outside the boundary must remain transparent rather than falling back
     // to an undiffused canonical backdrop. Recent/landing keep their
     // established native composition by default.
-    property bool nativeGlassTransparentOutsideMask: false
+    property bool nativeGlassTransparentOutsideMask: true
     property bool neutralOptics: false
     // Focal diagnostic stages: 0 neutral, then transmission, diffusion, bevel,
     // bulge, refraction, dispersion, and edge lighting.

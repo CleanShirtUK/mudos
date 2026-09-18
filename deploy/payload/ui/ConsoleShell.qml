@@ -2463,12 +2463,14 @@ Window {
                             font.letterSpacing: 5 * root.uiScale
                             opacity: 1
                             scale: 1
-                            layer.enabled: depthBlurRadius > 0
-                            layer.effect: MultiEffect {
-                                blurEnabled: depthBlurRadius > 0
-                                blurMax: 32
-                                blurMultiplier: Math.min(1, depthBlurRadius / 20)
-                            }
+                        }
+
+                        SpatialBlur {
+                            anchors.fill: titleText
+                            z: 10
+                            sourceItem: titleText
+                            blurRadius: depthBlurRadius
+                            active: depthBlurRadius > 0
                         }
 
                         DirectionalMotionBlur {

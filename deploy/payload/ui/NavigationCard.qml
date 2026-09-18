@@ -17,7 +17,7 @@ Item {
     property var canonicalTexture
     property var canonicalCoordinateRoot
     property size canonicalSize: Qt.size(1280, 720)
-    property bool transparentOutsideMask: false
+    property bool transparentOutsideMask: true
     property var canonicalMappingDependency: null
     property real mappingRevision: 0
     property real categoryProgress: 1
@@ -84,12 +84,6 @@ Item {
             xScale: root.depthScale
             yScale: root.depthScale
         }
-        layer.enabled: root.depthBlurRadius > 0
-        layer.effect: MultiEffect {
-            blurEnabled: root.depthBlurRadius > 0
-            blurMax: 32
-            blurMultiplier: Math.min(1, root.depthBlurRadius / 16)
-        }
 
         NavigationCardSurface {
             id: navigationSurface
@@ -129,6 +123,16 @@ Item {
             }
         }
 
+    }
+
+    SpatialBlur {
+        anchors.fill: logicalCard
+        z: 10
+        sourceItem: logicalCard
+        blurRadius: root.depthBlurRadius
+        cornerRadius: 16 * root.uiScale
+        outputScale: root.depthScale
+        active: root.depthBlurRadius > 0
     }
 
     DirectionalMotionBlur {

@@ -140,6 +140,16 @@ Item {
         luluPalette: root.luluPalette
     }
 
+    SpatialBlur {
+        anchors.fill: gameCard
+        z: 10
+        sourceItem: gameCard
+        blurRadius: gameCard.depthBlurRadius
+        cornerRadius: gameCard.radius
+        outputScale: gameCard.depthScale
+        active: gameCard.depthBlurRadius > 0
+    }
+
 
     function dumpTransitionMapping(mark) {
         var r = gameCard.nativeRecentCanonicalRect
