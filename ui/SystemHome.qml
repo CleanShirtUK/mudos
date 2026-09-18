@@ -96,6 +96,7 @@ Item {
             width: root.cardWidth
             height: root.cardHeight
             focused: index === root.selectedIndex
+            depthDistance: Math.abs(index - root.selectedIndex)
             selectionProgress: (root.selectionStart[index] || 0)
                 + ((index === root.selectedIndex ? 1 : 0)
                    - (root.selectionStart[index] || 0)) * root.selectionProgress

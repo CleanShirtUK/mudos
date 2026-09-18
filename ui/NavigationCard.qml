@@ -1,4 +1,6 @@
 import QtQuick
+import QtQuick.Effects
+import "SpatialDepth.js" as SpatialDepth
 
 Item {
     id: root
@@ -32,6 +34,9 @@ Item {
     property real motionDuration: 500
     property real motionBlurPixels: 0
     property real motionBlurVerticalPixels: 0
+    property real depthDistance: 0
+    property real depthScale: SpatialDepth.cardScale(depthDistance)
+    property real depthBlurRadius: SpatialDepth.cardBlur(depthDistance)
     property vector2d motionBlurVector: Qt.vector2d(motionBlurPixels,
                                                      motionBlurVerticalPixels)
     property real motionBlurPadding: 64
@@ -40,6 +45,13 @@ Item {
             * Math.pow(1 - Math.max(0, Math.min(1, motionProgress)), 4)
             / motionDuration : 0
     signal activated()
+
+    Behavior on depthScale {
+        NumberAnimation { duration: 500; easing.type: Easing.OutQuint }
+    }
+    Behavior on depthBlurRadius {
+        NumberAnimation { duration: 500; easing.type: Easing.OutQuint }
+    }
 
     readonly property rect nativeCanonicalRect: {
         var presentationDependency = canonicalMappingDependency
@@ -62,6 +74,18 @@ Item {
     Item {
         id: logicalCard
         anchors.fill: parent
+        transform: Scale {
+            origin.x: logicalCard.width * 0.5
+            origin.y: logicalCard.height * 0.5
+            xScale: root.depthScale
+            yScale: root.depthScale
+        }
+        layer.enabled: root.depthBlurRadius > 0
+        layer.effect: MultiEffect {
+            blurEnabled: root.depthBlurRadius > 0
+            blurMax: 32
+            blurMultiplier: root.depthBlurRadius / 32
+        }
 
         NavigationCardSurface {
             id: navigationSurface

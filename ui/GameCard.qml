@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Effects
 import "MudosAssetCatalog.js" as MudosAssetCatalog
+import "SpatialDepth.js" as SpatialDepth
 import Mudos.Poc 1.0
 
 Rectangle {
@@ -54,6 +55,9 @@ Rectangle {
     property real presentationContentOpacity: 1
     property real compactTitleOpacity: 1
     property real selectionProgress: focused ? 1 : 0
+    property real depthDistance: 0
+    property real depthScale: SpatialDepth.cardScale(depthDistance)
+    property real depthBlurRadius: SpatialDepth.cardBlur(depthDistance)
     property int playActivationSerial: 0
     property real playButtonScale: 1
     signal playFeedbackCompleted()
@@ -65,6 +69,12 @@ Rectangle {
     property bool catalogueCard: false
     property var acquisitionJob: null
     property real focusBrightness: 1
+    Behavior on depthScale {
+        NumberAnimation { duration: 500; easing.type: Easing.OutQuint }
+    }
+    Behavior on depthBlurRadius {
+        NumberAnimation { duration: 500; easing.type: Easing.OutQuint }
+    }
     Behavior on selectionProgress {
         NumberAnimation {
             duration: 180
@@ -331,6 +341,18 @@ Rectangle {
             + (luluPalette.focusIndicator.a - luluPalette.glassBorder.a) * card.selectionProgress)
     border.width: card.librarySurfaceMaterial ? 0 : (1 + 2 * card.selectionProgress) * uiScale
     clip: true
+    transform: Scale {
+        origin.x: card.width * 0.5
+        origin.y: card.height * 0.5
+        xScale: card.depthScale
+        yScale: card.depthScale
+    }
+    layer.enabled: card.depthBlurRadius > 0
+    layer.effect: MultiEffect {
+        blurEnabled: card.depthBlurRadius > 0
+        blurMax: 32
+        blurMultiplier: card.depthBlurRadius / 32
+    }
 
     MudosGlassItem {
         id: nativeGlassSurface

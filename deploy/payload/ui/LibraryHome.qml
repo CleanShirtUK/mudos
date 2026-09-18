@@ -103,6 +103,7 @@ Item {
             width: libraryHome.compactCardWidth
             height: libraryHome.cardHeight
             focused: index === libraryHome.selectedIndex
+            depthDistance: Math.abs(index - libraryHome.selectedIndex)
             selectionProgress: (libraryHome.selectionStart[index] || 0)
                 + ((index === libraryHome.selectedIndex ? 1 : 0)
                    - (libraryHome.selectionStart[index] || 0)) * libraryHome.selectionProgress

@@ -112,6 +112,7 @@ Item {
         anchors.fill: parent
         game: root.gameRecord
         focused: root.focused
+        depthDistance: Math.abs(root.toRelativeIndex)
         presentationProgress: root.presentationProgress
         compactEndpointWidth: root.compactCardWidth
         focalChromeOpacity: root.focalChromeOpacity

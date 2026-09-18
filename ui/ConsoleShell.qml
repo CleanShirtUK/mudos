@@ -1,5 +1,7 @@
 import QtQuick
 import QtQuick.Window
+import QtQuick.Effects
+import "SpatialDepth.js" as SpatialDepth
 
 Window {
     id: root
@@ -2423,6 +2425,11 @@ Window {
                     model: root.domains
                     delegate: Item {
                         required property int index
+                        readonly property real distanceFromSelectedIndex:
+                            SpatialDepth.distanceFromSelectedIndex(index,
+                                root.selectedCategoryIndex)
+                        property real depthScale: SpatialDepth.titleScale(distanceFromSelectedIndex)
+                        property real depthBlurRadius: SpatialDepth.titleBlur(distanceFromSelectedIndex)
                         readonly property real titleBlurPadding: presentationCoordinator
                             ? presentationCoordinator.motionBlurMaxPixels : 64
                         width: titleText.width
@@ -2431,6 +2438,18 @@ Window {
                             root.homeCategoryRailX, titleText.width)
                         y: root.titleRailChildY(index)
                         visible: true
+                        Behavior on depthScale {
+                            NumberAnimation { duration: 500; easing.type: Easing.OutQuint }
+                        }
+                        Behavior on depthBlurRadius {
+                            NumberAnimation { duration: 500; easing.type: Easing.OutQuint }
+                        }
+                        transform: Scale {
+                            origin.x: titleText.width * 0.5
+                            origin.y: titleText.height * 0.5
+                            xScale: depthScale
+                            yScale: depthScale
+                        }
 
                         Text {
                             id: titleText
@@ -2444,6 +2463,12 @@ Window {
                             font.letterSpacing: 5 * root.uiScale
                             opacity: 1
                             scale: 1
+                            layer.enabled: depthBlurRadius > 0
+                            layer.effect: MultiEffect {
+                                blurEnabled: depthBlurRadius > 0
+                                blurMax: 32
+                                blurMultiplier: depthBlurRadius / 32
+                            }
                         }
 
                         DirectionalMotionBlur {
