@@ -40,7 +40,13 @@ Item {
     readonly property real collectionSelectorBottomY: 164 * uiScale
     readonly property real currentHeaderToGridGap: 22 * uiScale
     readonly property real headerToGridGap: currentHeaderToGridGap / 2
+    // A shared, restrained presentation reduction creates header breathing
+    // room while preserving the card aspect ratio and six-column grid.
+    readonly property real expandedCardScale: 0.94
     readonly property real usableGridWidth: parent.width - 2 * (76 * uiScale + surfaceMargin)
+    readonly property real headingBottom: pageHeading.y + pageHeading.height
+    readonly property real firstRowTop: gridTop - (gridRow === 0 ? selectedGrowth : 0)
+    readonly property real categoryRailHeight: categoryRow.implicitHeight + 8 * uiScale
     readonly property real gridContentFootprintHeight:
         libraryCardHeight + gridGap + libraryCardHeight
         + (gridRow > 0 ? selectedGrowth : 0)
@@ -50,7 +56,8 @@ Item {
         parent.height - 16 * uiScale - gridBottomInset
     readonly property real gridRegionHeight: requiredTwoRowHeight
     readonly property real horizontalCardWidth:
-        (usableGridWidth - (gridColumns - 1) * gridGap) / gridColumns
+        ((usableGridWidth - (gridColumns - 1) * gridGap) / gridColumns)
+            * expandedCardScale
     readonly property real libraryCardWidth: horizontalCardWidth
     readonly property real libraryCardHeight: libraryCardWidth * 1.55
     readonly property real gridHorizontalGrowth:
@@ -123,6 +130,7 @@ Item {
     }
 
     Text {
+        id: pageHeading
         x: 76 * uiScale + surfaceMargin
         opacity: librarySpace.contentOpacity
         y: 76 * uiScale
@@ -140,20 +148,22 @@ Item {
         id: categoryViewport
         x: 120 * uiScale
         opacity: librarySpace.contentOpacity
-        y: 116 * uiScale
+        y: librarySpace.headingBottom
+            + (librarySpace.firstRowTop - librarySpace.headingBottom
+                - librarySpace.categoryRailHeight) / 2
         width: parent.width - 240 * uiScale
-        height: 32 * uiScale
+        height: librarySpace.categoryRailHeight
         clip: true
 
         Item {
             id: categoryRail
             // Keep the selected delegate's left edge anchored while the row
             // underneath it is laid out from each label's natural width.
-            readonly property var selectedCategoryDelegate:
+                readonly property var selectedCategoryDelegate:
                 categoryRepeater.itemAt(librarySpace.collectionIndex)
             x: selectedCategoryDelegate ? -selectedCategoryDelegate.x : 0
             width: categoryRow.implicitWidth
-            height: categoryViewport.height
+            height: librarySpace.categoryRailHeight
 
             Behavior on x {
                 NumberAnimation {
