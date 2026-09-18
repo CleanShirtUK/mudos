@@ -288,7 +288,7 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertIn('visible: root.activeDownloadCount > 0', strip)
         self.assertIn('property string networkConnectionType', strip)
         self.assertIn('root.networkConnectionType === "ethernet"', strip)
-        self.assertIn('String.fromCodePoint(0xF0200)', strip)
+        self.assertIn('String.fromCodePoint(0xF0201)', strip)
         self.assertIn('"\\uf1eb"', strip)
         self.assertIn('"\\uf6a9"', strip)
         self.assertIn('String.fromCodePoint(0xF00AF)', strip)

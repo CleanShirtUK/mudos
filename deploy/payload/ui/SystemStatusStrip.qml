@@ -112,7 +112,7 @@ Item {
         StatusGlyph {
             glyph: !root.networkAvailable ? "\uf6a9"
                 : root.networkConnectionType === "ethernet"
-                    ? String.fromCodePoint(0xF0200) : "\uf1eb"
+                    ? String.fromCodePoint(0xF0201) : "\uf1eb"
             glyphSize: root.glyphSize
             targetPaintedHeight: root.glyphSize * 0.72
             fontFamily: root.typography ? root.typography.iconFamily : "JetBrains Mono"
