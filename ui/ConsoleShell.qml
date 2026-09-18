@@ -2852,7 +2852,7 @@ Window {
 
                 ControllerHint {
                     action: "navigation"
-                     label: root.selectedCategoryIndex === 3 ? "Navigate / Games" : "Navigate"
+                      label: root.selectedCategoryIndex === 3 ? "Navigation" : "Navigate"
                     uiScale: root.uiScale
                     typography: typography
                     luluPalette: luluPalette
