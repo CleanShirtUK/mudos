@@ -370,6 +370,9 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertIn('LibrarySpatialSurface {', system_space)
         self.assertIn('surfaceVisible: true', system_space)
         self.assertIn('luluPalette.selectedText', system_space)
+        self.assertIn('color: luluPalette.transparent', system_space)
+        self.assertIn('border.color:', system_space)
+        self.assertIn('root.expandedShellX + root.contentInset', system_space)
 
     def test_navigation_cards_share_the_all_games_surface(self) -> None:
         navigation_card = (ROOT / "ui" / "NavigationCard.qml").read_text()

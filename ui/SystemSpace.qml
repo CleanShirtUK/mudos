@@ -15,6 +15,7 @@ Item {
     property real expandedShellY: 0
     property real expandedShellWidth: 0
     property real expandedShellHeight: 0
+    readonly property real contentInset: 44 * root.uiScale
     signal actionRequested(string key)
     property int visibleRows: 7
 
@@ -33,8 +34,8 @@ Item {
     }
 
     Text {
-        x: 76 * root.uiScale
-        y: 76 * root.uiScale
+        x: root.expandedShellX + root.contentInset
+        y: root.expandedShellY + root.contentInset
         text: root.category.toUpperCase()
         color: luluPalette.headingAccent
         font.family: typography.majorHeadingFamily
@@ -44,9 +45,9 @@ Item {
     }
 
     Flickable {
-        x: 76 * root.uiScale
-        y: 142 * root.uiScale
-        width: parent.width - 152 * root.uiScale
+        x: root.expandedShellX + root.contentInset
+        y: root.expandedShellY + 110 * root.uiScale
+        width: root.expandedShellWidth - 2 * root.contentInset
         height: 7 * 58 * root.uiScale + 6 * 10 * root.uiScale
         clip: true
         contentWidth: width
@@ -62,11 +63,17 @@ Item {
 
             Repeater {
                 model: root.settings
-                delegate: Item {
+                delegate: Rectangle {
                 required property int index
                 required property var modelData
                 width: parent.width
                 height: 58 * root.uiScale
+                radius: 10 * root.uiScale
+                color: luluPalette.transparent
+                border.color: index === root.selectedIndex
+                    ? luluPalette.focusIndicator : luluPalette.glassBorder
+                border.width: index === root.selectedIndex
+                    ? 2 * root.uiScale : root.uiScale
                 Text {
                     x: 18 * root.uiScale
                     anchors.verticalCenter: parent.verticalCenter
