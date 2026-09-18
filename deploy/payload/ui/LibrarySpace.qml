@@ -48,6 +48,11 @@ Item {
     readonly property real headingBottom: pageHeading.y + pageHeading.height
     readonly property real firstRowTop: gridTop - selectedGrowth
     readonly property real categoryRailHeight: categoryRow.implicitHeight + 8 * uiScale
+    readonly property real gridSlotWidth:
+        gridColumns * libraryCardWidth + (gridColumns - 1) * gridGap
+    readonly property real gridVisualWidth: gridSlotWidth + 2 * gridHorizontalGrowth
+    readonly property real contentOriginX: (parent.width - gridVisualWidth) / 2
+    readonly property real gridSlotLeft: contentOriginX + gridHorizontalGrowth
     readonly property real gridContentFootprintHeight:
         libraryCardHeight + gridGap + libraryCardHeight + selectedGrowth
     readonly property real gridTop: contentBottom - gridContentFootprintHeight
@@ -122,7 +127,7 @@ Item {
     // Keeps stacked-card shader coordinates aligned with the persistent shell surface.
     Item {
         id: librarySurface
-        x: contentSideMargin
+        x: contentOriginX
         y: 32 * uiScale
         width: parent.width - 152 * uiScale
         height: parent.height - 48 * uiScale
@@ -131,7 +136,7 @@ Item {
 
     Text {
         id: pageHeading
-        x: contentSideMargin
+        x: contentOriginX
         opacity: librarySpace.contentOpacity
         y: 76 * uiScale
         text: librarySpace.headingText
@@ -146,12 +151,12 @@ Item {
 
     Item {
         id: categoryViewport
-        x: contentSideMargin
+        x: contentOriginX
         opacity: librarySpace.contentOpacity
         y: librarySpace.headingBottom
             + (librarySpace.firstRowTop - librarySpace.headingBottom
                 - librarySpace.categoryRailHeight) / 2
-        width: parent.width - 2 * contentSideMargin
+        width: gridVisualWidth
         height: librarySpace.categoryRailHeight
         clip: true
 
@@ -240,9 +245,9 @@ Item {
         id: gridViewport
         opacity: librarySpace.contentOpacity * librarySpace.gameContentOpacity
         visible: librarySpace.gameContentVisible && libraryGames.length > 0
-        x: contentSideMargin - gridLeftInset
+        x: gridSlotLeft - gridLeftInset
         y: gridTop - gridTopInset
-        width: usableGridWidth + gridLeftInset + gridRightInset
+        width: gridVisualWidth + gridLeftInset + gridRightInset
         height: gridRegionHeight + gridTopInset
         clip: true
 
@@ -250,7 +255,7 @@ Item {
             id: gameGrid
             x: gridLeftInset
             y: gridTopInset
-            width: usableGridWidth + gridGap
+            width: gridSlotWidth + gridGap
             height: gridRegionHeight
             cellWidth: libraryCardWidth + gridGap
             cellHeight: libraryCardHeight + gridGap
