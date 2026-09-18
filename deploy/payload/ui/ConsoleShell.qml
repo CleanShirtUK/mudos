@@ -91,10 +91,10 @@ Window {
         / homeNavigationCardAspect
     readonly property real homeCompactCardWidth: homeNavigationCardWidth
     readonly property real homeInterCardGap: design(24)
-    readonly property real compactGameCardAspect: 0.62
-    readonly property real compactCardWidth: design(220)
-    readonly property real compactCardHeight: compactCardWidth
-        / compactGameCardAspect
+    // Compact games use the Home navigation card geometry as their sole
+    // physical footprint contract. Content and interaction remain separate.
+    readonly property real compactCardWidth: homeNavigationCardWidth
+    readonly property real compactCardHeight: homeNavigationCardHeight
     readonly property real compactGameCardWidth: compactCardWidth
     readonly property real homeContentOriginY: homeHintTopY - acceptedRecentCardHeight - headingCardGap
     readonly property real homeActiveContentOriginY: homeHintTopY - homeFocalCardHeight
