@@ -30,6 +30,9 @@ class StoreAcquisitionStabilityTests(unittest.TestCase):
         self.assertIn('card.acquisitionState === "starting"', self.game_card)
         self.assertIn('card.acquisitionState === "finalizing"', self.game_card)
         self.assertIn('card.acquisitionState === "queued"', self.game_card)
+        self.assertIn("radius: artworkFrame.artworkRadius", self.game_card)
+        self.assertIn("font.pixelSize: card.typography.size(\"control\", 16 * card.focalScale)", self.game_card)
+        self.assertIn("font.pixelSize: card.typography.size(\"secondary\", 13 * card.focalScale)", self.game_card)
 
     def test_completion_is_the_only_acquisition_catalogue_refresh(self) -> None:
         completion_block = self.shell.split('if (String(job.state || "") === "completed"', 1)[1]

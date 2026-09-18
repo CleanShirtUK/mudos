@@ -436,12 +436,14 @@ Rectangle {
             anchors.fill: parent
             visible: card.acquisitionVisible
             color: Qt.rgba(0.01, 0.02, 0.04, 0.78)
+            radius: artworkFrame.artworkRadius
+            clip: true
             z: 5
 
             Column {
                 anchors.centerIn: parent
                 width: parent.width * 0.82
-                spacing: 10 * card.uiScale
+                spacing: 8 * card.uiScale
 
                 Text {
                     width: parent.width
@@ -455,12 +457,12 @@ Rectangle {
                     color: card.luluPalette.primaryText
                     horizontalAlignment: Text.AlignHCenter
                     font.family: card.typography.interfaceFamily
-                    font.pixelSize: card.typography.size("control", 20 * card.focalScale)
+                    font.pixelSize: card.typography.size("control", 16 * card.focalScale)
                 }
 
                 Rectangle {
                     width: parent.width
-                    height: 8 * card.uiScale
+                    height: 6 * card.uiScale
                     radius: height / 2
                     color: card.luluPalette.glassBorder
                     visible: card.acquisitionState !== "failed"
@@ -495,20 +497,7 @@ Rectangle {
                     color: card.luluPalette.secondaryText
                     horizontalAlignment: Text.AlignHCenter
                     font.family: card.typography.interfaceFamily
-                    font.pixelSize: card.typography.size("secondary", 16 * card.focalScale)
-                }
-
-                Text {
-                    width: parent.width
-                    visible: card.acquisitionState === "failed"
-                        && card.acquisitionError
-                    text: card.acquisitionError
-                        ? String(card.acquisitionError.message || "Acquisition failed") : ""
-                    color: card.luluPalette.mutedText
-                    elide: Text.ElideRight
-                    horizontalAlignment: Text.AlignHCenter
-                    font.family: card.typography.interfaceFamily
-                    font.pixelSize: card.typography.size("secondary", 14 * card.focalScale)
+                    font.pixelSize: card.typography.size("secondary", 13 * card.focalScale)
                 }
             }
         }
