@@ -1,7 +1,6 @@
 import QtQuick
 import QtQuick.Effects
 import "MudosAssetCatalog.js" as MudosAssetCatalog
-import "SpatialDepth.js" as SpatialDepth
 import Mudos.Poc 1.0
 
 Rectangle {
@@ -55,9 +54,6 @@ Rectangle {
     property real presentationContentOpacity: 1
     property real compactTitleOpacity: 1
     property real selectionProgress: focused ? 1 : 0
-    property real depthDistance: 0
-    property real depthScale: SpatialDepth.cardScaleAt(depthDistance)
-    property real depthBlurRadius: SpatialDepth.cardBlurAt(depthDistance)
     property int playActivationSerial: 0
     property real playButtonScale: 1
     signal playFeedbackCompleted()
@@ -69,14 +65,6 @@ Rectangle {
     property bool catalogueCard: false
     property var acquisitionJob: null
     property real focusBrightness: 1
-    Behavior on depthScale {
-        enabled: !card.homeCard
-        NumberAnimation { duration: 500; easing.type: Easing.OutQuint }
-    }
-    Behavior on depthBlurRadius {
-        enabled: !card.homeCard
-        NumberAnimation { duration: 500; easing.type: Easing.OutQuint }
-    }
     Behavior on selectionProgress {
         NumberAnimation {
             duration: 180
@@ -277,7 +265,7 @@ Rectangle {
             : Qt.point(0, 0)
         // mapToItem() is not reactive to ancestor layout changes by itself.
         var layoutDependency = card.x + card.y + card.width + card.height
-            + card.depthScale + card.canonicalMappingRevision
+            + card.canonicalMappingRevision
         return Qt.point(origin.x + layoutDependency * 0, origin.y + layoutDependency * 0)
     }
     readonly property rect nativeRecentCanonicalRect: {
@@ -288,7 +276,7 @@ Rectangle {
             ? card.mapToItem(canonicalCoordinateRoot, width, height)
             : Qt.point(width, height)
         var layoutDependency = card.x + card.y + card.width + card.height
-            + card.depthScale + card.canonicalMappingRevision
+            + card.canonicalMappingRevision
         return Qt.rect(topLeft.x + layoutDependency * 0,
                        topLeft.y + layoutDependency * 0,
                        bottomRight.x - topLeft.x,
@@ -301,7 +289,7 @@ Rectangle {
     readonly property rect nativePlayCanonicalRect: {
         var presentationDependency = canonicalMappingDependency
         var layoutDependency = card.x + card.y + card.width + card.height
-            + card.depthScale + card.canonicalMappingRevision + card.presentationProgress
+            + card.canonicalMappingRevision + card.presentationProgress
             + card.focalChromeOpacity + card.focalScale + card.uiScale
             + playButton.x + playButton.y + playButton.width
             + playButton.height + playButton.scale
@@ -343,12 +331,6 @@ Rectangle {
             + (luluPalette.focusIndicator.a - luluPalette.glassBorder.a) * card.selectionProgress)
     border.width: card.librarySurfaceMaterial ? 0 : (1 + 2 * card.selectionProgress) * uiScale
     clip: true
-    transform: Scale {
-        origin.x: card.width * 0.5
-        origin.y: card.height * 0.5
-        xScale: card.depthScale
-        yScale: card.depthScale
-    }
 
     MudosGlassItem {
         id: nativeGlassSurface

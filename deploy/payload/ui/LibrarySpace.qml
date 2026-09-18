@@ -276,7 +276,6 @@ Item {
                     game: gameData
                     acquisitionJob: modelData.acquisitionJob || null
                     focused: index === librarySpace.selectedIndex && !librarySpace.collectionFocus
-                    depthDistance: Math.abs(index - librarySpace.selectedIndex)
                     compact: true
                     uiScale: librarySpace.uiScale
                     typography: librarySpace.typography

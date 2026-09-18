@@ -1,5 +1,4 @@
 import QtQuick
-import "SpatialDepth.js" as SpatialDepth
 import "MudosAssetCatalog.js" as MudosAssetCatalog
 
 Item {
@@ -44,11 +43,6 @@ Item {
         return relativeIndex * (compactCardWidth + 18 * uiScale)
     }
 
-    function visualRailX(relativeIndex) {
-        return SpatialDepth.projectedXForRelativeIndex(relativeIndex,
-            compactCardWidth, compactCardWidth, 18 * uiScale)
-    }
-
     function selectedOpacityOwner(index) {
         return index === selectedIndex
     }
@@ -59,7 +53,7 @@ Item {
         for (var index = 0; index < categories.length; index++) {
             var card = cardRepeater.itemAt(index)
             starts[index] = card ? card.selectionProgress : (index === selectedIndex ? 1 : 0)
-            startsX[index] = card ? card.x : visualRailX(index - selectedIndex)
+            startsX[index] = card ? card.x : railX(index - selectedIndex)
         }
         selectionStart = starts
         presentationStartX = startsX
@@ -103,13 +97,12 @@ Item {
             required property int index
             required property var modelData
             readonly property real startX: libraryHome.presentationStartX[index] || 0
-            readonly property real targetX: libraryHome.visualRailX(index - libraryHome.selectedIndex)
+            readonly property real targetX: libraryHome.railX(index - libraryHome.selectedIndex)
             x: startX + (targetX - startX) * libraryHome.selectionProgress
             y: 0
             width: libraryHome.compactCardWidth
             height: libraryHome.cardHeight
             focused: index === libraryHome.selectedIndex
-            depthDistance: Math.abs(index - libraryHome.selectedIndex)
             selectionProgress: (libraryHome.selectionStart[index] || 0)
                 + ((index === libraryHome.selectedIndex ? 1 : 0)
                    - (libraryHome.selectionStart[index] || 0)) * libraryHome.selectionProgress

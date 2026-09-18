@@ -1,5 +1,4 @@
 import QtQuick
-import "SpatialDepth.js" as SpatialDepth
 
 Item {
     id: root
@@ -16,7 +15,7 @@ Item {
     property var canonicalTexture
     property var canonicalCoordinateRoot
     property size canonicalSize: Qt.size(1280, 720)
-    property bool transparentOutsideMask: true
+    property bool transparentOutsideMask: false
     property var canonicalMappingDependency: null
     property real mappingRevision: 0
     property real categoryProgress: 1
@@ -33,9 +32,6 @@ Item {
     property real motionDuration: 500
     property real motionBlurPixels: 0
     property real motionBlurVerticalPixels: 0
-    property real depthDistance: 0
-    property real depthScale: SpatialDepth.cardScale(depthDistance)
-    property real depthBlurRadius: SpatialDepth.cardBlur(depthDistance)
     property vector2d motionBlurVector: Qt.vector2d(motionBlurPixels,
                                                      motionBlurVerticalPixels)
     property real motionBlurPadding: 64
@@ -45,28 +41,17 @@ Item {
             / motionDuration : 0
     signal activated()
 
-    Behavior on depthScale {
-        NumberAnimation { duration: 500; easing.type: Easing.OutQuint }
-    }
-    Behavior on depthBlurRadius {
-        NumberAnimation { duration: 500; easing.type: Easing.OutQuint }
-    }
-
     readonly property rect nativeCanonicalRect: {
         var presentationDependency = canonicalMappingDependency
         var categoryDependency = categoryProgress
             + (categoryTransitioning ? 1 : 0)
             + categoryFrom + categoryTarget + categoryDirection
             + presentationAncestorY + presentationAncestorScale + mappingRevision
-        // The canonical surface is the transformed visual subtree, not the
-        // unscaled delegate shell. This keeps glass/mask coordinates in the
-        // same space as the depth presentation transform.
         var topLeft = canonicalCoordinateRoot
-            ? logicalCard.mapToItem(canonicalCoordinateRoot, 0, 0) : Qt.point(0, 0)
+            ? root.mapToItem(canonicalCoordinateRoot, 0, 0) : Qt.point(0, 0)
         var bottomRight = canonicalCoordinateRoot
-            ? logicalCard.mapToItem(canonicalCoordinateRoot,
-                                    logicalCard.width, logicalCard.height)
-            : Qt.point(logicalCard.width, logicalCard.height)
+            ? root.mapToItem(canonicalCoordinateRoot, root.width, root.height)
+            : Qt.point(root.width, root.height)
         return Qt.rect(topLeft.x + categoryDependency - categoryDependency,
                        topLeft.y + categoryDependency - categoryDependency,
                        bottomRight.x - topLeft.x,
@@ -77,12 +62,6 @@ Item {
     Item {
         id: logicalCard
         anchors.fill: parent
-        transform: Scale {
-            origin.x: logicalCard.width * 0.5
-            origin.y: logicalCard.height * 0.5
-            xScale: root.depthScale
-            yScale: root.depthScale
-        }
 
         NavigationCardSurface {
             id: navigationSurface
@@ -123,16 +102,6 @@ Item {
         }
 
     }
-
-    DepthOfFieldSurface {
-        anchors.fill: logicalCard
-        z: 10
-        sourceItem: logicalCard
-        blurRadius: root.depthBlurRadius
-        outputScale: root.depthScale
-        active: !root.focused && root.depthBlurRadius > 0
-    }
-
 
     DirectionalMotionBlur {
         id: motionBlur

@@ -62,7 +62,7 @@ class NativeBuildTests(unittest.TestCase):
         self.assertIn("id: recentMotionBlur", recent)
         self.assertIn("x: recentHome.presentationX", recent)
         self.assertIn("sourceItem: recentRow", recent)
-        self.assertIn("recentHome.isFocalTransitionIndex(index)", recent)
+        self.assertIn("x: startX + (recentHome.railX(toRelativeIndex) - startX) * railProgress", recent)
         source_section = recent.split("id: recentRow", 1)[1].split("DirectionalMotionBlur", 1)[0]
         self.assertNotIn("+ recentHome.motionBlurPadding", source_section)
         self.assertIn("focused: index === recentHome.selectedIndex", recent)

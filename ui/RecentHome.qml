@@ -1,5 +1,4 @@
 import QtQuick
-import "SpatialDepth.js" as SpatialDepth
 
 Item {
     id: recentHome
@@ -21,7 +20,6 @@ Item {
     property real focalCardWidth: 760
     property real focalCardHeight: 500
     property real focalScale: 1
-    property real compactCardHeight: 375
     property int playActivationSerial: 0
     property var canonicalTexture
     property var canonicalCoordinateRoot
@@ -34,32 +32,30 @@ Item {
     property real railGap: 18 * uiScale
     property var presentationStartX: []
     property var presentationStartWidth: []
-    property var presentationStartHeight: []
     property var presentationStartProgress: []
     property var presentationStartChrome: []
     property var presentationStartCompactTitle: []
     property bool suppressTransitionCompletion: false
-    property var transitionDiagnosticMarks: ({})
     signal launchRequested(string gameId)
     signal activationRequested(string gameId)
     signal playFeedbackCompleted(string gameId)
     signal selectionIndexRequested(int index)
     signal selectionGameChanged(string gameId)
     readonly property int itemCount: recentRepeater.count
-    readonly property real animatedSelectedPosition: transitionFromIndex
-        + (selectedIndex - transitionFromIndex) * transitionProgress
     readonly property real rowRightEdge: {
         var rightEdge = 0
         for (var index = 0; index < recentRepeater.count; index++) {
+            var relativeIndex = index - selectedIndex
             rightEdge = Math.max(rightEdge,
-                                 animatedRailX(index) + animatedRailWidth(index))
+                                 railX(relativeIndex) + railWidth(relativeIndex))
         }
         return rightEdge
     }
     readonly property real rowLeftEdge: {
         var leftEdge = 0
         for (var index = 0; index < recentRepeater.count; index++) {
-            leftEdge = Math.min(leftEdge, animatedRailX(index))
+            var relativeIndex = index - selectedIndex
+            leftEdge = Math.min(leftEdge, railX(relativeIndex))
         }
         return leftEdge
     }
@@ -110,82 +106,20 @@ Item {
                 + (relativeIndex - 1) * (compactCardWidth + railGap)
     }
 
-    function visualRailX(relativeIndex) {
-        return SpatialDepth.projectedXForRelativeIndex(relativeIndex,
-            focalCardWidth, compactCardWidth, railGap)
-    }
-
-    function animatedDepthForIndex(index) {
-        return Math.abs(index - animatedSelectedPosition)
-    }
-
-    function animatedRailX(index) {
-        return positionedRailX(index, animatedSelectedPosition)
-    }
-
-    function animatedRailWidth(index) {
-        return SpatialDepth.visibleWidthAtDepth(animatedDepthForIndex(index),
-                                                focalCardWidth, compactCardWidth)
-    }
-
-    // The projected rail uses rendered (uniformly scaled) widths. Delegates
-    // retain base geometry, so compensate for the centre-origin scale here.
-    function positionedRailX(index, selectedPosition) {
-        var depth = Math.abs(index - selectedPosition)
-        var baseWidth = depth < 1 ? focalCardWidth : compactCardWidth
-        var scale = SpatialDepth.cardScaleAt(depth)
-        return SpatialDepth.projectedXForIndex(index, selectedPosition,
-            focalCardWidth, compactCardWidth, railGap)
-            - (baseWidth - baseWidth * scale) * 0.5
-    }
-
-    function targetRailX(index) {
-        return positionedRailX(index, selectedIndex)
-    }
-
-    function animatedBaseWidth(index) {
-        return animatedDepthForIndex(index) < 1 ? focalCardWidth : compactCardWidth
-    }
-
-    function animatedBaseHeight(index) {
-        return animatedDepthForIndex(index) < 1
-            ? focalCardHeight : compactCardHeight
-    }
-
-    function isFocalTransitionIndex(index) {
-        return transitionAnimation.running
-            && (index === transitionFromIndex || index === selectedIndex)
-    }
-
-    function cardBlurRadius(relativeIndex) {
-        var depth = Math.min(3, Math.abs(Math.round(relativeIndex)))
-        return SpatialDepth.cardBlur(depth)
-    }
-
-    function cardBlurRadiusForIndex(index) {
-        return SpatialDepth.cardBlurAt(animatedDepthForIndex(index))
-    }
-
     function railWidth(relativeIndex) {
         return relativeIndex === 0 ? focalCardWidth : compactCardWidth
-    }
-
-    function railHeight(relativeIndex) {
-        return relativeIndex === 0 ? focalCardHeight : compactCardHeight
     }
 
     function capturePresentation() {
         var startsX = []
         var startsWidth = []
-        var startsHeight = []
         var startsProgress = []
         var startsChrome = []
         var startsCompactTitle = []
         for (var index = 0; index < recentRepeater.count; index++) {
             var card = recentRepeater.itemAt(index)
-            startsX[index] = card ? card.x : visualRailX(index - selectedIndex)
+            startsX[index] = card ? card.x : railX(index - selectedIndex)
             startsWidth[index] = card ? card.width : railWidth(index - selectedIndex)
-            startsHeight[index] = card ? card.height : railHeight(index - selectedIndex)
             startsProgress[index] = card ? card.presentationProgress
                                           : (index === selectedIndex ? 1 : 0)
             startsChrome[index] = card ? card.focalChromeOpacity
@@ -195,7 +129,6 @@ Item {
         }
         presentationStartX = startsX
         presentationStartWidth = startsWidth
-        presentationStartHeight = startsHeight
         presentationStartProgress = startsProgress
         presentationStartChrome = startsChrome
         presentationStartCompactTitle = startsCompactTitle
@@ -205,13 +138,13 @@ Item {
                     "chrome", startsChrome, "compactTitle", startsCompactTitle)
     }
 
-    function beginRetarget(fromIndex) {
-        transitionFromIndex = fromIndex === undefined ? selectedIndex : fromIndex
+    function beginRetarget() {
+        transitionFromIndex = selectedIndex
         var toX = []
         var toWidth = []
         for (var index = 0; index < recentRepeater.count; index++) {
-            toX[index] = positionedRailX(index, selectedIndex)
-            toWidth[index] = animatedRailWidth(index)
+            toX[index] = railX(index - selectedIndex)
+            toWidth[index] = railWidth(index - selectedIndex)
         }
         console.log("RECENT_RETARGET", "target", selectedIndex,
                     "toX", toX, "toWidth", toWidth)
@@ -422,7 +355,6 @@ Item {
                 toRelativeIndex: index - recentHome.selectedIndex
                 startX: recentHome.presentationStartX[index] || 0
                 startWidth: recentHome.presentationStartWidth[index] || 0
-                startHeight: recentHome.presentationStartHeight[index] || 0
                 startProgress: recentHome.presentationStartProgress[index] || 0
                 startChrome: recentHome.presentationStartChrome[index] || 0
                 startCompactTitle: recentHome.presentationStartCompactTitle[index] || 0
@@ -438,7 +370,6 @@ Item {
                 focalCardWidth: recentHome.focalCardWidth
                 focalCardHeight: recentHome.focalCardHeight
                 compactCardWidth: recentHome.compactCardWidth
-                compactCardHeight: recentHome.compactCardHeight
                 focalScale: recentHome.focalScale
                 uiScale: recentHome.uiScale
                 typography: recentHome.typography
@@ -446,19 +377,10 @@ Item {
                 onActivationRequested: recentHome.activationRequested(gameId)
                 onPlayFeedbackCompleted: recentHome.playFeedbackCompleted(gameId)
                 visible: true
-                z: -recentHome.animatedDepthForIndex(index)
-                width: recentHome.isFocalTransitionIndex(index)
-                    ? startWidth + (recentHome.railWidth(index - recentHome.selectedIndex)
-                        - startWidth) * railProgress
-                    : recentHome.animatedBaseWidth(index)
-                height: recentHome.isFocalTransitionIndex(index)
-                    ? startHeight + (recentHome.railHeight(index - recentHome.selectedIndex)
-                        - startHeight) * railProgress
-                    : recentHome.animatedBaseHeight(index)
-                x: recentHome.isFocalTransitionIndex(index)
-                    ? startX + (recentHome.targetRailX(index)
-                        - startX) * railProgress
-                    : recentHome.positionedRailX(index, recentHome.animatedSelectedPosition)
+                width: startWidth
+                    + (recentHome.railWidth(toRelativeIndex) - startWidth) * railProgress
+                height: focalCardHeight
+                x: startX + (recentHome.railX(toRelativeIndex) - startX) * railProgress
             }
         }
     }

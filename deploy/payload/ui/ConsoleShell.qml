@@ -1,7 +1,5 @@
 import QtQuick
 import QtQuick.Window
-import QtQuick.Effects
-import "SpatialDepth.js" as SpatialDepth
 
 Window {
     id: root
@@ -84,14 +82,10 @@ Window {
     readonly property real homeFocalCardHeight: Math.min(design(500), (height - design(248 + 88)) * 0.82)
     readonly property real homeContentRailX: design(52)
     readonly property real homeFocalCardWidth: Math.min(design(900), width - homeContentRailX - design(40), homeFocalCardHeight * 1.9)
-    readonly property real homeNavigationCardWidth: design(248)
-    readonly property real homeNavigationCardHeight: design(170)
-    readonly property real homeCompactCardWidth: homeNavigationCardWidth
+    readonly property real homeCompactCardWidth: compactCardWidth
     readonly property real homeInterCardGap: design(24)
+    readonly property real compactCardWidth: Math.min(design(220), acceptedRecentCardHeight * 0.62)
     readonly property real compactCardHeight: acceptedRecentCardHeight
-    readonly property real compactGameCardAspect: 0.68
-    readonly property real compactCardWidth: Math.min(design(260),
-        compactCardHeight * compactGameCardAspect)
     readonly property real homeContentOriginY: homeHintTopY - acceptedRecentCardHeight - headingCardGap
     readonly property real homeActiveContentOriginY: homeHintTopY - homeFocalCardHeight
         - headingCardGap + homeHeadingCardClearance + homeCompositionOffsetY
@@ -1138,10 +1132,9 @@ Window {
         console.log("RECENT_NAV", "requested", delta, "result", nextIndex)
         if (nextIndex === recentIndex)
             return
-        var previousIndex = recentIndex
         recentHome.capturePresentation()
         recentIndex = nextIndex
-        recentHome.beginRetarget(previousIndex)
+        recentHome.beginRetarget()
         console.log("RECENT_NAV", "currentRootIndex", recentIndex,
                     "delta", delta, "requestedIndex", nextIndex,
                     "selectedIndex", recentHome.selectedIndex,
@@ -2254,10 +2247,9 @@ Window {
                         presentationCoordinator: presentationCoordinator
                         selectedIndex: root.recentIndex
                         playActivationSerial: root.playActivationSerial
-                         focalCardWidth: root.homeFocalCardWidth
-                         focalCardHeight: root.homeFocalCardHeight
-                         compactCardWidth: root.compactCardWidth
-                         compactCardHeight: root.compactCardHeight
+                        focalCardWidth: root.homeFocalCardWidth
+                        focalCardHeight: root.homeFocalCardHeight
+                        compactCardWidth: root.homeCompactCardWidth
                         railGap: root.homeInterCardGap
                         focalScale: 0.67
                         uiScale: root.uiScale
@@ -2301,14 +2293,14 @@ Window {
                         width: libraryReveal.width - root.homeContentRailX
                         height: root.homeFocalCardHeight
                         scale: libraryReveal.visible ? 1 : 0.94
-                          cardHeight: root.homeNavigationCardHeight
+                         cardHeight: root.compactCardHeight
                         uiScale: root.uiScale
                         typography: typography
                         luluPalette: luluPalette
                         canonicalTexture: orbitTexture
                         canonicalCoordinateRoot: orbitRenderSource
                         canonicalSize: Qt.size(root.width, root.height)
-                          compactCardWidth: root.homeNavigationCardWidth
+                         compactCardWidth: root.compactCardWidth
                          presentationCoordinator: presentationCoordinator
                          categoryProgress: root.homeCategoryProgress
                          categoryTransitioning: root.homeCategoryTransitioning
@@ -2343,8 +2335,8 @@ Window {
                      StoreHome {
                          width: storeReveal.width
                         height: root.homeFocalCardHeight
-                         cardWidth: root.homeNavigationCardWidth
-                         cardHeight: root.homeNavigationCardHeight
+                        cardWidth: root.compactCardWidth
+                        cardHeight: root.compactCardHeight
                         uiScale: root.uiScale
                         typography: typography
                         luluPalette: luluPalette
@@ -2379,8 +2371,8 @@ Window {
                         width: systemReveal.width - root.homeContentRailX
                         height: root.homeFocalCardHeight
                         y: 0
-                        cardWidth: root.homeNavigationCardWidth
-                        cardHeight: root.homeNavigationCardHeight
+                        cardWidth: root.compactCardWidth
+                        cardHeight: root.compactCardHeight
                         categories: root.systemCategories
                         selectedIndex: root.systemCategoryIndex
                         uiScale: root.uiScale
@@ -2431,11 +2423,6 @@ Window {
                     model: root.domains
                     delegate: Item {
                         required property int index
-                        readonly property real distanceFromSelectedIndex:
-                            SpatialDepth.distanceFromSelectedIndex(index,
-                                root.selectedCategoryIndex)
-                        property real depthScale: SpatialDepth.titleScale(distanceFromSelectedIndex)
-                        property real depthBlurRadius: SpatialDepth.titleBlur(distanceFromSelectedIndex)
                         readonly property real titleBlurPadding: presentationCoordinator
                             ? presentationCoordinator.motionBlurMaxPixels : 64
                         width: titleText.width
@@ -2444,18 +2431,6 @@ Window {
                             root.homeCategoryRailX, titleText.width)
                         y: root.titleRailChildY(index)
                         visible: true
-                        Behavior on depthScale {
-                            NumberAnimation { duration: 500; easing.type: Easing.OutQuint }
-                        }
-                        Behavior on depthBlurRadius {
-                            NumberAnimation { duration: 500; easing.type: Easing.OutQuint }
-                        }
-                        transform: Scale {
-                            origin.x: titleText.width * 0.5
-                            origin.y: titleText.height * 0.5
-                            xScale: depthScale
-                            yScale: depthScale
-                        }
 
                         Text {
                             id: titleText
@@ -2470,7 +2445,6 @@ Window {
                             opacity: 1
                             scale: 1
                         }
-
 
                         DirectionalMotionBlur {
                             id: titleMotionBlur
