@@ -2767,6 +2767,13 @@ Window {
             anchors.right: parent.right
             anchors.topMargin: root.statusStripTop
             anchors.rightMargin: root.statusStripRightMargin
+            visible: presentationCoordinator.contentState
+                !== presentationCoordinator.hiddenState
+            opacity: presentationCoordinator.presentationProgress
+            transform: Translate {
+                y: -systemStatusStrip.height
+                    * (1 - presentationCoordinator.presentationProgress)
+            }
             compact: false
             uiScale: root.uiScale
             typography: typography
