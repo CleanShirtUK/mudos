@@ -367,6 +367,15 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertIn('PageUp', QML)
         self.assertIn('PageDown', QML)
         self.assertIn('modelData.label', system_space)
+        row = (ROOT / "ui" / "MudosGlassRow.qml").read_text()
+        self.assertIn('MudosGlassRow', system_space)
+        self.assertIn('MudosGlassItem {', row)
+        self.assertIn('property bool selected', row)
+        self.assertIn('font.weight: Font.Bold', row)
+        self.assertNotIn('border.width', row)
+        self.assertNotIn('border.color', row)
+        self.assertIn('property real pageProgress', system_space)
+        self.assertIn('easing.type: Easing.OutQuint', system_space)
 
     def test_navigation_cards_share_the_all_games_surface(self) -> None:
         navigation_card = (ROOT / "ui" / "NavigationCard.qml").read_text()

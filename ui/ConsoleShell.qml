@@ -2608,9 +2608,9 @@ Window {
              uiScale: root.uiScale
             typography: typography
             luluPalette: luluPalette
-            canonicalTexture: orbitTexture
-            canonicalCoordinateRoot: orbitRenderSource
-            canonicalSize: Qt.size(root.width, root.height)
+             canonicalTexture: orbitTexture
+             canonicalCoordinateRoot: orbitRenderSource
+             canonicalSize: Qt.size(root.width, root.height)
             contentBottom: root.expandedContentBottom
             errorMessage: root.storeError
             contentOpacity: root.libraryContentOpacity
@@ -2653,14 +2653,18 @@ Window {
 
         SystemSpace {
             anchors.fill: parent
-            visible: root.space === "system" && !root.systemLanding
+            visible: root.space === "system"
                 && root.systemCategories[root.systemCategoryIndex] !== "Network"
+            active: !root.systemLanding
             category: root.systemCategories[root.systemCategoryIndex]
             settings: root.systemSettings
             selectedIndex: root.systemRowIndex
             uiScale: root.uiScale
             typography: typography
             luluPalette: luluPalette
+            canonicalTexture: orbitTexture
+            canonicalCoordinateRoot: orbitRenderSource
+            canonicalSize: Qt.size(root.width, root.height)
             onActionRequested: {
                 if (root.systemCategories[root.systemCategoryIndex] === "Mudos Menu")
                     root.activateMudosAction(key)
