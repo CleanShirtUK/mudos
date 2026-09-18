@@ -21,7 +21,7 @@ Item {
     readonly property real valueSize: (compact ? 12 : 16) * uiScale * presentationScale
     readonly property real groupSpacing: (compact ? 8 : 16) * uiScale * presentationScale
     readonly property real innerSpacing: (compact ? 4 : 5) * uiScale * presentationScale
-    readonly property color statusColor: luluPalette ? luluPalette.secondaryText : "white"
+    readonly property color statusColor: luluPalette ? luluPalette.primaryText : "white"
 
     width: statusRow.implicitWidth
     height: statusRow.implicitHeight

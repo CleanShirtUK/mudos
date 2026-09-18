@@ -1,10 +1,10 @@
 import QtQuick
 
 QtObject {
-    readonly property color primaryText: "#ffffff"
+    readonly property color primaryText: headingAccent
     readonly property color secondaryText: "#c5cee2"
     readonly property color mutedText: "#9aa8c2"
-    readonly property color selectedText: "#ffffff"
+    readonly property color selectedText: headingAccent
     readonly property color accent: "#e0c5ff"
     readonly property color focusIndicator: "#e0c5ff"
     readonly property color warning: "#e0c5ff"
