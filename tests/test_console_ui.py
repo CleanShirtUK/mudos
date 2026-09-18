@@ -9,7 +9,7 @@ SHELL_PROFILE = (ROOT / "config" / "inputplumber" / "profiles" / "shell.yaml").r
 
 class ConsoleUiTests(unittest.TestCase):
     def test_qml_preserves_card_to_space_shell_interaction(self) -> None:
-        self.assertIn('property var domains: ["System", "Available to Download", "Library", "Recent"]', QML)
+        self.assertIn('property var domains: ["System", "Store", "Library", "Recent"]', QML)
         self.assertIn("property int selectedCategoryIndex: 3", QML)
         self.assertIn('property string space: "home"', QML)
         self.assertIn('presentationTarget = "library"', QML)
