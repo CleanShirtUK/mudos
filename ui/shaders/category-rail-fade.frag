@@ -9,11 +9,14 @@ layout(std140, binding = 0) uniform buf {
     float qt_Opacity;
     float fadeWidth;
     vec2 viewportSize;
+    float sourceWidth;
 };
 
 void main()
 {
-    fragColor = texture(source, qt_TexCoord0);
+    vec2 sourceCoord = qt_TexCoord0;
+    sourceCoord.x *= viewportSize.x / max(sourceWidth, 1.0);
+    fragColor = texture(source, sourceCoord);
     float fadeStart = 1.0 - fadeWidth / max(viewportSize.x, 1.0);
     float edgeFade = 1.0 - smoothstep(fadeStart, 1.0, qt_TexCoord0.x);
     fragColor.a *= edgeFade * qt_Opacity;

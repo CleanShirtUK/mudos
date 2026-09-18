@@ -54,6 +54,8 @@ Item {
     readonly property real contentOriginX: (parent.width - gridVisualWidth) / 2
     readonly property real gridSlotLeft: contentOriginX + gridHorizontalGrowth
     readonly property real categoryFadeWidth: categoryGlyphMetrics.advanceWidth * 10
+    readonly property real categoryFadeSourceWidth:
+        categoryViewport.width + categoryFadeWidth + categoryGlyphMetrics.advanceWidth
     readonly property real gridContentFootprintHeight:
         libraryCardHeight + gridGap + libraryCardHeight + selectedGrowth
     readonly property real gridTop: contentBottom - gridContentFootprintHeight
@@ -169,7 +171,10 @@ Item {
                 readonly property var selectedCategoryDelegate:
                 categoryRepeater.itemAt(librarySpace.collectionIndex)
             x: selectedCategoryDelegate ? -selectedCategoryDelegate.x : 0
+            // Keep enough source bounds beyond the viewport for glyphs to
+            // travel through the complete fade before the final crop.
             width: categoryRow.implicitWidth
+                + categoryFadeWidth + categoryGlyphMetrics.advanceWidth
             height: librarySpace.categoryRailHeight
 
             Behavior on x {
@@ -232,7 +237,8 @@ Item {
             id: categoryRailSource
             sourceItem: categoryRail
             sourceRect: Qt.rect(-categoryRail.x, 0,
-                                categoryViewport.width, categoryViewport.height)
+                                librarySpace.categoryFadeSourceWidth,
+                                categoryViewport.height)
             hideSource: true
             live: true
         }
@@ -243,6 +249,7 @@ Item {
             property var source: categoryRailSource
             property real fadeWidth: librarySpace.categoryFadeWidth
             property vector2d viewportSize: Qt.vector2d(width, height)
+            property real sourceWidth: librarySpace.categoryFadeSourceWidth
             fragmentShader: "shaders/category-rail-fade.frag.qsb"
         }
     }
