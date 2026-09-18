@@ -31,10 +31,14 @@ Item {
             canonicalSize: root.displayUnderlay.frameSize
             canonicalRect: Qt.rect(panel.x, panel.y, panel.width, panel.height)
             cornerRadius: 10 * root.uiScale
-            refractionPixels: root.glassMode === "plain" ? 0 : 24 * root.uiScale
-            diffusionPixels: root.glassMode === "plain" ? 0 : 7 * root.uiScale
+            refractionPixels: root.glassMode === "plain" || root.glassMode === "minimal"
+                ? 0 : 24 * root.uiScale
+            diffusionPixels: root.glassMode === "plain" || root.glassMode === "minimal"
+                ? 0 : 7 * root.uiScale
             transmission: 1
-            bevelWidthPx: root.glassMode === "plain" ? 0 : 3 * root.uiScale
+            bevelWidthPx: root.glassMode === "plain" || root.glassMode === "minimal"
+                ? 0 : 3 * root.uiScale
+            directSample: root.glassMode === "plain"
         }
 
         Text {

@@ -23,6 +23,7 @@ layout(std140, binding = 0) uniform buf {
     vec2 u_edgeLightDirection;
     float u_transparentOutsideMask;
     vec4 u_textureSubRect;
+    float u_directSample;
 };
 layout(binding = 1) uniform sampler2D source;
 
@@ -101,6 +102,12 @@ void main()
     vec2 uv = qt_TexCoord0;
     vec2 scenePosition = u_sceneOrigin + uv * u_sceneSize;
     vec2 baseUv = scenePosition / u_canonicalSize;
+
+    if (u_directSample > 0.5) {
+        fragColor = vec4(texture(source, clamp(baseUv, vec2(0.0), vec2(1.0))).rgb, 1.0)
+            * qt_Opacity;
+        return;
+    }
 
     vec2 gradient = surfaceGradient(uv, u_sceneSize, u_cornerRadius);
     vec3 normal = normalize(vec3(gradient * u_depth, 1.0));

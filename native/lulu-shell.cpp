@@ -430,6 +430,14 @@ public:
         return group.isEmpty() ? QStringLiteral("all") : group;
     }
 
+    Q_INVOKABLE bool showDiagnosticGuide()
+    {
+        if (guideVisible())
+            return true;
+        guideOwnerComposite_ = currentCompositePath();
+        return !guideOwnerComposite_.isEmpty() && startGuide();
+    }
+
 private slots:
     void onSessionStateChanged(const QString &stateJson)
     {
@@ -532,6 +540,23 @@ private:
         return value.isValid() ? value.toInt() : -1;
     }
 
+    QString currentCompositePath() const
+    {
+        QDBusInterface manager(inputService,
+                               "/org/shadowblip/InputPlumber/Manager",
+                               "org.shadowblip.InputManager",
+                               QDBusConnection::systemBus());
+        const QString path = manager.property("GamepadOrder").toStringList().value(0);
+        if (!path.isEmpty())
+            return path;
+        if (!dbusRelays_.isEmpty())
+            return dbusRelays_.constBegin().value()->compositePath();
+        // Diagnostic launch only: the live path is still validated by the
+        // relay discovery path; this fallback lets pixel diagnostics run when
+        // the manager has not published GamepadOrder yet.
+        return QStringLiteral("/org/shadowblip/InputPlumber/CompositeDevice0");
+    }
+
     void clearTarget()
     {
         targetWindow_ = XCB_WINDOW_NONE;
@@ -559,6 +584,9 @@ private:
             return;
         const int next = std::clamp(value(QStringLiteral("guideSelection")).toInt() + delta, 0, count - 1);
         insert(QStringLiteral("guideSelection"), next);
+        qInfo() << "GUIDE_INPUT_EVENT" << "stage=GuideNavigation"
+                << "action=" << (delta < 0 ? "up" : "down")
+                << "selection=" << next;
     }
 
     void backGuide()
@@ -620,6 +648,9 @@ private:
 
     void handleInputEvent(const QString &compositePath, const QString &event, double value)
     {
+        qInfo() << "GUIDE_INPUT_EVENT" << "stage=ControllerBridge"
+                << "composite=" << compositePath << "event=" << event
+                << "value=" << value << "guideVisible=" << guideVisible();
         if (guideVisible() || event == QStringLiteral("ui_guide"))
             qInfo() << "GUIDE_INPUT" << compositePath << event << value
                     << "visible=" << guideVisible();
@@ -704,14 +735,9 @@ private:
         }
         targetWindow_ = focusedWindow_;
         targetPid_ = windowProperty(targetWindow_, "_NET_WM_PID");
-        qInfo() << "GUIDE_INPUT_INTERCEPT_BEFORE"
-                << guideOwnerComposite_ << "actual="
-                << interceptMode(guideOwnerComposite_);
-        if (!setInterceptMode(guideOwnerComposite_, 2)) {
-            restoreInput();
-            return false;
-        }
-        qInfo() << "GUIDE_INPUT_INTERCEPT" << guideOwnerComposite_ << "mode=2";
+        qInfo() << "GUIDE_INPUT_LIFECYCLE" << "start"
+                << "composite=" << guideOwnerComposite_
+                << "interceptMode=" << interceptMode(guideOwnerComposite_);
         QVariantList actions;
         QDBusInterface consoled("org.lulu.Consoled", "/org/lulu/Console",
                                 "org.lulu.Console", QDBusConnection::sessionBus());
@@ -788,7 +814,8 @@ private:
                                 << "old=" << previousComposite
                                 << "new=" << compositePath;
                         guideOwnerComposite_ = compositePath;
-                        setInterceptMode(guideOwnerComposite_, 2);
+                        qInfo() << "GUIDE_INPUT_LIFECYCLE"
+                                << "rebound-interceptMode=" << interceptMode(compositePath);
                     }
                     continue;
                 }
@@ -1124,6 +1151,11 @@ int main(int argc, char **argv)
         return EXIT_FAILURE;
 
     window->show();
+    if (qEnvironmentVariableIsSet("LULU_GUIDE_DIAGNOSTIC_VISIBLE")) {
+        QTimer::singleShot(1500, &application, [&controller] {
+            qInfo() << "GUIDE_DIAGNOSTIC_SHOW" << controller.showDiagnosticGuide();
+        });
+    }
     return application.exec();
 }
 

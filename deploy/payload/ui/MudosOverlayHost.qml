@@ -35,7 +35,10 @@ MudosOverlayWindow {
         id: displayUnderlay
         width: frameSize.width > 0 ? frameSize.width : root.width
         height: frameSize.height > 0 ? frameSize.height : root.height
-        opacity: displayUnderlay.glassMode === "raw" ? 1 : 0.0001
+        // The provider is also a scene-graph item.  A nearly-zero item
+        // opacity made its texture sample transparent in the external
+        // window, even though the raw node itself was valid.
+        opacity: 1
     }
 
     MudosGuidePanel {

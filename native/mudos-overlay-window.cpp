@@ -2,6 +2,7 @@
 
 #include <QGuiApplication>
 #include <QScreen>
+#include <QSurfaceFormat>
 #include <qnativeinterface.h>
 
 #include <xcb/xcb.h>
@@ -9,6 +10,9 @@
 MudosOverlayWindow::MudosOverlayWindow(QWindow *parent)
     : QQuickWindow(parent)
 {
+    auto format = QSurfaceFormat::defaultFormat();
+    format.setAlphaBufferSize(8);
+    setFormat(format);
     setColor(Qt::transparent);
     setFlags(Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint);
 }

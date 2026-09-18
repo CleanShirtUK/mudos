@@ -98,7 +98,9 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertIn("BGRx -> RGBA8888", header)
         self.assertIn("sourceStride", capture)
         self.assertIn("mudos-display-underlay-raw.png", capture)
-        self.assertIn("setInterceptMode(guideOwnerComposite_, 2)", native)
+        self.assertIn("GUIDE_INPUT_LIFECYCLE", native)
+        self.assertNotIn("setInterceptMode(guideOwnerComposite_, 2)", native)
+        self.assertIn("directSample", (ROOT / "native" / "mudos-glass-item.h").read_text())
         self.assertIn('color: "transparent"', (ROOT / "ui" / "MudosGuidePanel.qml").read_text())
         self.assertIn("GUIDE_INPUT_COMPOSITE_REBOUND", native)
 
