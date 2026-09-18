@@ -85,13 +85,11 @@ Rectangle {
     }
     SequentialAnimation {
         id: breathingAnimation
-        target: card
-        property: "breathingScale"
         running: card.breathingReady
         loops: Animation.Infinite
-        NumberAnimation { from: 1; to: 1.005; duration: 2600; easing.type: Easing.InOutSine }
-        NumberAnimation { from: 1.005; to: 0.995; duration: 5200; easing.type: Easing.InOutSine }
-        NumberAnimation { from: 0.995; to: 1; duration: 2600; easing.type: Easing.InOutSine }
+        NumberAnimation { target: card; property: "breathingScale"; from: 1; to: 1.005; duration: 2600; easing.type: Easing.InOutSine }
+        NumberAnimation { target: card; property: "breathingScale"; from: 1.005; to: 0.995; duration: 5200; easing.type: Easing.InOutSine }
+        NumberAnimation { target: card; property: "breathingScale"; from: 0.995; to: 1; duration: 2600; easing.type: Easing.InOutSine }
         onStopped: {
             if (!card.breathingReady)
                 card.breathingScale = 1
