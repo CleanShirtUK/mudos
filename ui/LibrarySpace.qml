@@ -20,6 +20,7 @@ Item {
     property var canonicalTexture
     property var canonicalCoordinateRoot
     property size canonicalSize: Qt.size(1280, 720)
+    property real contentBottom: parent ? parent.height : 0
     property string headingText: "LIBRARY"
     property string sectionTitle: ""
     property string emptyText: "No installed games"
@@ -40,8 +41,10 @@ Item {
     readonly property real currentHeaderToGridGap: 22 * uiScale
     readonly property real headerToGridGap: currentHeaderToGridGap / 2
     readonly property real usableGridWidth: parent.width - 2 * (76 * uiScale + surfaceMargin)
-    readonly property real gridTop:
-        collectionSelectorBottomY + headerToGridGap - 13 * uiScale
+    readonly property real gridContentFootprintHeight:
+        libraryCardHeight + gridGap + libraryCardHeight
+        + (gridRow > 0 ? selectedGrowth : 0)
+    readonly property real gridTop: contentBottom - gridContentFootprintHeight
     // Keep the catalogue backing boundary separate from the two-row card clip.
     readonly property real gridBottom:
         parent.height - 16 * uiScale - gridBottomInset
@@ -108,7 +111,6 @@ Item {
         librarySpace.gameContentOpacity = 0
         categoryContentFadeTimer.restart()
     }
-
 
     // Keeps stacked-card shader coordinates aligned with the persistent shell surface.
     Item {

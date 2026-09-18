@@ -84,6 +84,7 @@ Window {
         + expandedSurfaceChromeGap
     readonly property real expandedShellBottom: expandedHintRowTop
         - expandedSurfaceChromeGap
+    readonly property real expandedContentBottom: expandedShellBottom
     readonly property real expandedShellX: expandedShellSideMargin
     readonly property real expandedShellY: expandedShellTop
     readonly property real expandedShellWidth: width - 2 * expandedShellSideMargin
@@ -2564,6 +2565,7 @@ Window {
              canonicalCoordinateRoot: orbitRenderSource
              canonicalSize: Qt.size(root.width, root.height)
              firstVisibleRow: root.libraryFirstVisibleRow
+             contentBottom: root.expandedContentBottom
              contentOpacity: root.libraryContentOpacity
              onCollectionChanged: {
                  root.collectionIndex = index
@@ -2588,6 +2590,7 @@ Window {
             canonicalTexture: orbitTexture
             canonicalCoordinateRoot: orbitRenderSource
             canonicalSize: Qt.size(root.width, root.height)
+            contentBottom: root.expandedContentBottom
             errorMessage: root.storeError
             contentOpacity: root.libraryContentOpacity
             onSteamStoreRequested: root.openSteamStore()

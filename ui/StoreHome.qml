@@ -23,6 +23,7 @@ Item {
     property var canonicalTexture
     property var canonicalCoordinateRoot
     property size canonicalSize: Qt.size(1280, 720)
+    property real contentBottom: parent ? parent.height : 0
     property var presentationCoordinator
     property real categoryProgress: 1
     property bool categoryTransitioning: false
@@ -208,6 +209,7 @@ Item {
         firstVisibleRow: root.firstVisibleRow
         collectionIndex: root.categoryIndex
         collections: root.categories
+        contentBottom: root.contentBottom
         collectionFocus: false
         headingText: "AVAILABLE TO DOWNLOAD"
         emptyText: root.errorMessage !== "" ? root.errorMessage : "No games available"
