@@ -1,4 +1,5 @@
 import QtQuick
+import "SpatialDepth.js" as SpatialDepth
 
 Item {
     id: recentHome
@@ -47,7 +48,7 @@ Item {
         for (var index = 0; index < recentRepeater.count; index++) {
             var relativeIndex = index - selectedIndex
             rightEdge = Math.max(rightEdge,
-                                 railX(relativeIndex) + railWidth(relativeIndex))
+                                 visualRailX(relativeIndex) + railWidth(relativeIndex))
         }
         return rightEdge
     }
@@ -55,7 +56,7 @@ Item {
         var leftEdge = 0
         for (var index = 0; index < recentRepeater.count; index++) {
             var relativeIndex = index - selectedIndex
-            leftEdge = Math.min(leftEdge, railX(relativeIndex))
+            leftEdge = Math.min(leftEdge, visualRailX(relativeIndex))
         }
         return leftEdge
     }
@@ -106,6 +107,11 @@ Item {
                 + (relativeIndex - 1) * (compactCardWidth + railGap)
     }
 
+    function visualRailX(relativeIndex) {
+        return railX(relativeIndex)
+            + SpatialDepth.visualOffsetForRelativeIndex(relativeIndex, railGap)
+    }
+
     function railWidth(relativeIndex) {
         return relativeIndex === 0 ? focalCardWidth : compactCardWidth
     }
@@ -118,7 +124,7 @@ Item {
         var startsCompactTitle = []
         for (var index = 0; index < recentRepeater.count; index++) {
             var card = recentRepeater.itemAt(index)
-            startsX[index] = card ? card.x : railX(index - selectedIndex)
+            startsX[index] = card ? card.x : visualRailX(index - selectedIndex)
             startsWidth[index] = card ? card.width : railWidth(index - selectedIndex)
             startsProgress[index] = card ? card.presentationProgress
                                           : (index === selectedIndex ? 1 : 0)
@@ -143,7 +149,7 @@ Item {
         var toX = []
         var toWidth = []
         for (var index = 0; index < recentRepeater.count; index++) {
-            toX[index] = railX(index - selectedIndex)
+            toX[index] = visualRailX(index - selectedIndex)
             toWidth[index] = railWidth(index - selectedIndex)
         }
         console.log("RECENT_RETARGET", "target", selectedIndex,
@@ -380,7 +386,7 @@ Item {
                 width: startWidth
                     + (recentHome.railWidth(toRelativeIndex) - startWidth) * railProgress
                 height: focalCardHeight
-                x: startX + (recentHome.railX(toRelativeIndex) - startX) * railProgress
+                x: startX + (recentHome.visualRailX(toRelativeIndex) - startX) * railProgress
             }
         }
     }

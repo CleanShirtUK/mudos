@@ -2467,7 +2467,7 @@ Window {
                             layer.effect: MultiEffect {
                                 blurEnabled: depthBlurRadius > 0
                                 blurMax: 32
-                                blurMultiplier: depthBlurRadius / 32
+                                blurMultiplier: Math.min(1, depthBlurRadius / 20)
                             }
                         }
 

@@ -59,11 +59,15 @@ Item {
             + (categoryTransitioning ? 1 : 0)
             + categoryFrom + categoryTarget + categoryDirection
             + presentationAncestorY + presentationAncestorScale + mappingRevision
+        // The canonical surface is the transformed visual subtree, not the
+        // unscaled delegate shell. This keeps glass/mask coordinates in the
+        // same space as the depth presentation transform.
         var topLeft = canonicalCoordinateRoot
-            ? root.mapToItem(canonicalCoordinateRoot, 0, 0) : Qt.point(0, 0)
+            ? logicalCard.mapToItem(canonicalCoordinateRoot, 0, 0) : Qt.point(0, 0)
         var bottomRight = canonicalCoordinateRoot
-            ? root.mapToItem(canonicalCoordinateRoot, root.width, root.height)
-            : Qt.point(root.width, root.height)
+            ? logicalCard.mapToItem(canonicalCoordinateRoot,
+                                    logicalCard.width, logicalCard.height)
+            : Qt.point(logicalCard.width, logicalCard.height)
         return Qt.rect(topLeft.x + categoryDependency - categoryDependency,
                        topLeft.y + categoryDependency - categoryDependency,
                        bottomRight.x - topLeft.x,
@@ -84,7 +88,7 @@ Item {
         layer.effect: MultiEffect {
             blurEnabled: root.depthBlurRadius > 0
             blurMax: 32
-            blurMultiplier: root.depthBlurRadius / 32
+            blurMultiplier: Math.min(1, root.depthBlurRadius / 16)
         }
 
         NavigationCardSurface {

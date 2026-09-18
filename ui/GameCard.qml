@@ -351,7 +351,9 @@ Rectangle {
     layer.effect: MultiEffect {
         blurEnabled: card.depthBlurRadius > 0
         blurMax: 32
-        blurMultiplier: card.depthBlurRadius / 32
+        // MultiEffect takes a normalized intensity; map our tunable visual
+        // blur values explicitly into its supported range.
+        blurMultiplier: Math.min(1, card.depthBlurRadius / 16)
     }
 
     MudosGlassItem {

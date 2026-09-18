@@ -1,4 +1,5 @@
 import QtQuick
+import "SpatialDepth.js" as SpatialDepth
 import "MudosAssetCatalog.js" as MudosAssetCatalog
 
 Item {
@@ -36,6 +37,11 @@ Item {
         return relativeIndex * (cardWidth + railGap)
     }
 
+    function visualRailX(relativeIndex) {
+        return railX(relativeIndex)
+            + SpatialDepth.visualOffsetForRelativeIndex(relativeIndex, railGap)
+    }
+
     function selectedOpacityOwner(index) {
         return index === selectedIndex
     }
@@ -46,7 +52,7 @@ Item {
         for (var index = 0; index < categories.length; index++) {
             var card = cardRepeater.itemAt(index)
             starts[index] = card ? card.selectionProgress : (index === selectedIndex ? 1 : 0)
-            startsX[index] = card ? card.x : railX(index - selectedIndex)
+            startsX[index] = card ? card.x : visualRailX(index - selectedIndex)
         }
         selectionStart = starts
         presentationStartX = startsX
@@ -90,7 +96,7 @@ Item {
             required property int index
             required property string modelData
             readonly property real startX: root.presentationStartX[index] || 0
-            readonly property real targetX: root.railX(index - root.selectedIndex)
+            readonly property real targetX: root.visualRailX(index - root.selectedIndex)
             x: startX + (targetX - startX) * root.selectionProgress
             y: 0
             width: root.cardWidth
