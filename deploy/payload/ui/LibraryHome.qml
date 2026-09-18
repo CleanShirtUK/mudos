@@ -45,8 +45,8 @@ Item {
     }
 
     function visualRailX(relativeIndex) {
-        return railX(relativeIndex)
-            + SpatialDepth.visualOffsetForRelativeIndex(relativeIndex, 18 * uiScale)
+        return SpatialDepth.projectedXForRelativeIndex(relativeIndex,
+            compactCardWidth, compactCardWidth, 18 * uiScale)
     }
 
     function selectedOpacityOwner(index) {

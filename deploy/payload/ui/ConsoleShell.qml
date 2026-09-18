@@ -2465,13 +2465,6 @@ Window {
                             scale: 1
                         }
 
-                        SpatialBlur {
-                            anchors.fill: titleText
-                            z: 10
-                            sourceItem: titleText
-                            blurRadius: depthBlurRadius
-                            active: depthBlurRadius > 0
-                        }
 
                         DirectionalMotionBlur {
                             id: titleMotionBlur

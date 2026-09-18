@@ -140,15 +140,15 @@ Item {
         luluPalette: root.luluPalette
     }
 
-    SpatialBlur {
+    DepthOfFieldSurface {
         anchors.fill: gameCard
         z: 10
         sourceItem: gameCard
-        blurRadius: gameCard.depthBlurRadius
-        cornerRadius: gameCard.radius
+        blurRadius: root.home.cardBlurRadius(root.toRelativeIndex)
         outputScale: gameCard.depthScale
-        active: gameCard.depthBlurRadius > 0
+        active: !root.focused && gameCard.depthBlurRadius > 0
     }
+
 
 
     function dumpTransitionMapping(mark) {

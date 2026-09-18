@@ -108,8 +108,13 @@ Item {
     }
 
     function visualRailX(relativeIndex) {
-        return railX(relativeIndex)
-            + SpatialDepth.visualOffsetForRelativeIndex(relativeIndex, railGap)
+        return SpatialDepth.projectedXForRelativeIndex(relativeIndex,
+            focalCardWidth, compactCardWidth, railGap)
+    }
+
+    function cardBlurRadius(relativeIndex) {
+        var depth = Math.min(3, Math.abs(Math.round(relativeIndex)))
+        return SpatialDepth.cardBlur(depth)
     }
 
     function railWidth(relativeIndex) {

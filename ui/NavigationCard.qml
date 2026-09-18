@@ -1,5 +1,4 @@
 import QtQuick
-import QtQuick.Effects
 import "SpatialDepth.js" as SpatialDepth
 
 Item {
@@ -125,15 +124,15 @@ Item {
 
     }
 
-    SpatialBlur {
+    DepthOfFieldSurface {
         anchors.fill: logicalCard
         z: 10
         sourceItem: logicalCard
         blurRadius: root.depthBlurRadius
-        cornerRadius: 16 * root.uiScale
         outputScale: root.depthScale
-        active: root.depthBlurRadius > 0
+        active: !root.focused && root.depthBlurRadius > 0
     }
+
 
     DirectionalMotionBlur {
         id: motionBlur

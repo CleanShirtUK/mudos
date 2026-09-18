@@ -38,8 +38,8 @@ Item {
     }
 
     function visualRailX(relativeIndex) {
-        return railX(relativeIndex)
-            + SpatialDepth.visualOffsetForRelativeIndex(relativeIndex, railGap)
+        return SpatialDepth.projectedXForRelativeIndex(relativeIndex,
+            cardWidth, cardWidth, railGap)
     }
 
     function selectedOpacityOwner(index) {

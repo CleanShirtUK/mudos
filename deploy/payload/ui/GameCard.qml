@@ -45,7 +45,7 @@ Rectangle {
     // outside the boundary must remain transparent rather than falling back
     // to an undiffused canonical backdrop. Recent/landing keep their
     // established native composition by default.
-    property bool nativeGlassTransparentOutsideMask: true
+    property bool nativeGlassTransparentOutsideMask: false
     property bool neutralOptics: false
     // Focal diagnostic stages: 0 neutral, then transmission, diffusion, bevel,
     // bulge, refraction, dispersion, and edge lighting.
@@ -346,14 +346,6 @@ Rectangle {
         origin.y: card.height * 0.5
         xScale: card.depthScale
         yScale: card.depthScale
-    }
-    layer.enabled: card.depthBlurRadius > 0
-    layer.effect: MultiEffect {
-        blurEnabled: card.depthBlurRadius > 0
-        blurMax: 32
-        // MultiEffect takes a normalized intensity; map our tunable visual
-        // blur values explicitly into its supported range.
-        blurMultiplier: Math.min(1, card.depthBlurRadius / 16)
     }
 
     MudosGlassItem {
