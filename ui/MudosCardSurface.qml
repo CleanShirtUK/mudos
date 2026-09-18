@@ -10,13 +10,16 @@ Rectangle {
     property real uiScale: 1
     property real selectionProgress: 0
     property var luluPalette
+    property var mappingItem: root
 
     readonly property rect mappedCanonicalRect: {
         var dependency = x + y + width + height + selectionProgress + uiScale
+        var sourceItem = mappingItem || root
         var topLeft = canonicalCoordinateRoot
-            ? root.mapToItem(canonicalCoordinateRoot, 0, 0) : Qt.point(0, 0)
+            ? sourceItem.mapToItem(canonicalCoordinateRoot, 0, 0) : Qt.point(0, 0)
         var bottomRight = canonicalCoordinateRoot
-            ? root.mapToItem(canonicalCoordinateRoot, width, height)
+            ? sourceItem.mapToItem(canonicalCoordinateRoot, sourceItem.width,
+                                   sourceItem.height)
             : Qt.point(width, height)
         return Qt.rect(topLeft.x + dependency - dependency,
                        topLeft.y + dependency - dependency,

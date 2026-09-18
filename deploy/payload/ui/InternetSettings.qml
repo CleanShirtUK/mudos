@@ -12,6 +12,14 @@ Item {
     property real uiScale: 1
     property var typography
     property var luluPalette
+    property var canonicalTexture
+    property var canonicalCoordinateRoot
+    property size canonicalSize: Qt.size(1280, 720)
+    property real expandedShellX: 0
+    property real expandedShellY: 0
+    property real expandedShellWidth: 0
+    property real expandedShellHeight: 0
+    property real expandedShellBottom: 0
     signal operationRequested(string action, string ssid, string password)
     signal backRequested()
 
@@ -71,42 +79,35 @@ Item {
         onTriggered: passwordInput.forceActiveFocus()
     }
 
-    Text {
-        x: 76 * root.uiScale; y: 76 * root.uiScale
-        text: "INTERNET"
-        color: luluPalette.headingAccent
-        font.family: typography.majorHeadingFamily
-        font.weight: typography.majorHeadingWeight
-        font.pixelSize: typography.size("section", 30)
-        font.letterSpacing: 5 * root.uiScale
-    }
-    Column {
-        x: 76 * root.uiScale; y: 142 * root.uiScale
-        width: parent.width - 152 * root.uiScale; spacing: 10 * root.uiScale
-        visible: !root.credentialView
-        Repeater {
-            model: root.rows()
-            delegate: Rectangle {
-                required property int index
-                required property var modelData
-                width: parent.width; height: 58 * root.uiScale; radius: 10 * root.uiScale
-                color: index === root.selectedIndex ? luluPalette.focusedCardSurface : luluPalette.cardSurface
-                border.color: index === root.selectedIndex ? luluPalette.focusIndicator : luluPalette.glassBorder
-                border.width: index === root.selectedIndex ? 2 * root.uiScale : root.uiScale
-                Text { x: 18 * root.uiScale; anchors.verticalCenter: parent.verticalCenter
-                    text: modelData.label; color: luluPalette.primaryText
-                    font.family: typography.interfaceFamily; font.pixelSize: typography.size("body", 18) }
-                Text { anchors.right: parent.right; anchors.rightMargin: 18 * root.uiScale
-                    anchors.verticalCenter: parent.verticalCenter; text: modelData.value
-                    color: luluPalette.secondaryText; font.family: typography.interfaceFamily
-                    font.pixelSize: typography.size("body", 16) }
-            }
+    MudosSettingsPage {
+        anchors.fill: parent
+        title: "INTERNET"
+        rows: root.rows()
+        selectedIndex: root.selectedIndex
+        rowsVisible: !root.credentialView
+        uiScale: root.uiScale
+        typography: root.typography
+        luluPalette: root.luluPalette
+        canonicalTexture: root.canonicalTexture
+        canonicalCoordinateRoot: root.canonicalCoordinateRoot
+        canonicalSize: root.canonicalSize
+        expandedShellX: root.expandedShellX
+        expandedShellY: root.expandedShellY
+        expandedShellWidth: root.expandedShellWidth
+        expandedShellHeight: root.expandedShellHeight
+        expandedShellBottom: root.expandedShellBottom
+        footerText: root.message || root.networkData.error
+        onRowActivated: {
+            root.selectedIndex = index
+            root.activate()
         }
     }
     Rectangle {
         visible: root.credentialView
-        x: 76 * root.uiScale; y: 142 * root.uiScale
-        width: parent.width - 152 * root.uiScale; height: 220 * root.uiScale
+        x: root.expandedShellX + 44 * root.uiScale
+        y: root.expandedShellY + 110 * root.uiScale
+        width: root.expandedShellWidth - 88 * root.uiScale
+        height: 220 * root.uiScale
         color: luluPalette.cardSurface; radius: 10 * root.uiScale
         Text { x: 18 * root.uiScale; y: 18 * root.uiScale; text: "Password for " + root.selectedSsid
             color: luluPalette.primaryText; font.family: typography.interfaceFamily
@@ -122,7 +123,4 @@ Item {
             color: luluPalette.secondaryText; font.family: typography.interfaceFamily
             font.pixelSize: typography.size("body", 16) }
     }
-    Text { x: 76 * root.uiScale; y: 390 * root.uiScale; text: root.message || root.networkData.error
-        color: luluPalette.secondaryText; font.family: typography.interfaceFamily
-        font.pixelSize: typography.size("body", 16) }
 }

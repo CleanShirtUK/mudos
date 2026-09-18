@@ -2668,6 +2668,7 @@ Window {
             expandedShellY: root.expandedShellY
             expandedShellWidth: root.expandedShellWidth
             expandedShellHeight: root.expandedShellHeight
+            expandedShellBottom: root.expandedShellBottom
             onActionRequested: {
                 if (root.systemCategories[root.systemCategoryIndex] === "Mudos Menu")
                     root.activateMudosAction(key)
@@ -2685,6 +2686,14 @@ Window {
             uiScale: root.uiScale
             typography: typography
             luluPalette: luluPalette
+            canonicalTexture: orbitTexture
+            canonicalCoordinateRoot: orbitRenderSource
+            canonicalSize: Qt.size(root.width, root.height)
+            expandedShellX: root.expandedShellX
+            expandedShellY: root.expandedShellY
+            expandedShellWidth: root.expandedShellWidth
+            expandedShellHeight: root.expandedShellHeight
+            expandedShellBottom: root.expandedShellBottom
             Component.onCompleted: root.internetSettingsRef = internetSettings
             onOperationRequested: root.networkOperation(action, ssid, password)
             onBackRequested: root.back()
@@ -2700,6 +2709,14 @@ Window {
             uiScale: root.uiScale
             typography: typography
             luluPalette: luluPalette
+            canonicalTexture: orbitTexture
+            canonicalCoordinateRoot: orbitRenderSource
+            canonicalSize: Qt.size(root.width, root.height)
+            expandedShellX: root.expandedShellX
+            expandedShellY: root.expandedShellY
+            expandedShellWidth: root.expandedShellWidth
+            expandedShellHeight: root.expandedShellHeight
+            expandedShellBottom: root.expandedShellBottom
             Component.onCompleted: root.audioSettingsRef = audioSettings
             onOperationRequested: root.audioOperation(action, deviceId, volume, inputDevice, muted)
             onBackRequested: root.back()
@@ -2715,6 +2732,14 @@ Window {
             uiScale: root.uiScale
             typography: typography
             luluPalette: luluPalette
+            canonicalTexture: orbitTexture
+            canonicalCoordinateRoot: orbitRenderSource
+            canonicalSize: Qt.size(root.width, root.height)
+            expandedShellX: root.expandedShellX
+            expandedShellY: root.expandedShellY
+            expandedShellWidth: root.expandedShellWidth
+            expandedShellHeight: root.expandedShellHeight
+            expandedShellBottom: root.expandedShellBottom
             Component.onCompleted: root.storageSettingsRef = storageSettings
             onOperationRequested: root.storageOperation(action, deviceId, kind)
             onBackRequested: root.back()
@@ -2729,6 +2754,14 @@ Window {
             uiScale: root.uiScale
             typography: typography
             luluPalette: luluPalette
+            canonicalTexture: orbitTexture
+            canonicalCoordinateRoot: orbitRenderSource
+            canonicalSize: Qt.size(root.width, root.height)
+            expandedShellX: root.expandedShellX
+            expandedShellY: root.expandedShellY
+            expandedShellWidth: root.expandedShellWidth
+            expandedShellHeight: root.expandedShellHeight
+            expandedShellBottom: root.expandedShellBottom
             Component.onCompleted: root.displaySettingsRef = displaySettings
             onApplyRequested: root.applyDisplay(output, width, height, refresh)
             onBackRequested: root.back()
@@ -2743,6 +2776,14 @@ Window {
             uiScale: root.uiScale
             typography: typography
             luluPalette: luluPalette
+            canonicalTexture: orbitTexture
+            canonicalCoordinateRoot: orbitRenderSource
+            canonicalSize: Qt.size(root.width, root.height)
+            expandedShellX: root.expandedShellX
+            expandedShellY: root.expandedShellY
+            expandedShellWidth: root.expandedShellWidth
+            expandedShellHeight: root.expandedShellHeight
+            expandedShellBottom: root.expandedShellBottom
             Component.onCompleted: root.controllerSettingsRef = controllerSettings
             onOperationRequested: root.controllerOperation(action, controllerId, player)
             onRefreshRequested: root.refreshControllerState()
