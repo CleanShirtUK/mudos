@@ -26,7 +26,7 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertIn('function openGameOptions(game)', QML)
         self.assertIn('event.key === Qt.Key_X', QML)
         self.assertIn('action: "options"', QML)
-        self.assertIn('GameOptions {', QML)
+        self.assertIn('MudosOverlayHost {', QML)
         self.assertIn('space === "library" && libraryFocus === "games"', QML)
         self.assertIn('space === "home" && selectedCategoryIndex === 3', QML)
         self.assertIn('if (gameOptionsView === "menu")', QML)

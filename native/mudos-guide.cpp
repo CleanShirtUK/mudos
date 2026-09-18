@@ -14,6 +14,7 @@
 #include <QVariant>
 #include <QStringList>
 #include <QFile>
+#include "mudos-display-underlay.h"
 
 #include <xcb/xcb.h>
 #include <xcb/xtest.h>
@@ -311,6 +312,7 @@ int main(int argc, char **argv)
     viewModel.insert("confirmationAction", QString());
     viewModel.insert("confirmationId", QString());
     QQmlApplicationEngine engine;
+    qmlRegisterType<MudosDisplayUnderlay>("Mudos.Poc", 1, 0, "MudosDisplayUnderlay");
     engine.rootContext()->setContextProperty("guideModel", &viewModel);
     engine.load(QUrl::fromLocalFile(qEnvironmentVariable("LULU_GUIDE_UI_FILE",
                                                          "/opt/lulu/ui/MudosGuide.qml")));
@@ -319,6 +321,8 @@ int main(int argc, char **argv)
     auto *window = qobject_cast<QQuickWindow *>(engine.rootObjects().constFirst());
     if (!window)
         return EXIT_FAILURE;
+    if (auto *screen = QGuiApplication::primaryScreen())
+        window->setGeometry(screen->geometry());
     GuideWindow guide(window, targetXid, targetPid, actions, &viewModel);
     if (!guide.prepare())
         return EXIT_FAILURE;

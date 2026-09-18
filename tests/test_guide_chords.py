@@ -27,7 +27,7 @@ class GuideChordSourceTests(unittest.TestCase):
         self.assertIn('else {\n                    guideOwnerComposite_.clear();', self.source)
 
     def test_context_is_not_forwarded_as_guide_input_without_pending_guide(self) -> None:
-        forwarding = self.source[self.source.index('if (guideProcess_ && compositePath == guideOwnerComposite_'):]
+        forwarding = self.source[self.source.index('if (guideVisible() && compositePath == guideOwnerComposite_'):]
         self.assertNotIn('QStringLiteral("ui_context")', forwarding[:500])
 
     def test_unrelated_input_does_not_consume_pending_guide(self) -> None:
@@ -41,11 +41,12 @@ class GuideChordSourceTests(unittest.TestCase):
             self.assertNotIn("toggle_combo = guide+", config.read_text())
 
     def test_guide_forwards_explicit_edges(self) -> None:
-        self.assertIn('" edge=" + edge', self.source)
         self.assertIn("value != 1.0 && value != 0.0", self.source)
+        self.assertIn("moveGuide(-1)", self.source)
+        self.assertIn("acceptGuide()", self.source)
 
     def test_guide_release_path_resets_on_target_loss(self) -> None:
-        self.assertIn('guideProcess_->write("reset_edges\\n")', self.source)
+        self.assertIn('insert(QStringLiteral("guideVisible"), false)', self.source)
 
 
 if __name__ == "__main__":

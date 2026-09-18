@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Window
+import Mudos.Poc 1.0
 
 Window {
     id: root
@@ -18,13 +19,38 @@ Window {
         id: luluPalette
     }
 
+    // This item is the single live display-space texture source for the
+    // external overlay. Gamescope excludes this window from its stream.
+    MudosDisplayUnderlay {
+        id: displayUnderlay
+        width: frameSize.width > 0 ? frameSize.width : root.width
+        height: frameSize.height > 0 ? frameSize.height : root.height
+        textureSize: frameSize
+        opacity: 0.0001
+    }
+
     Rectangle {
+        id: panel
         anchors.centerIn: parent
         width: 520
         height: confirmationPending ? 250 : Math.max(250, 110 + (guideModel.actions.length * 60))
         color: luluPalette.guideSurface
         border.color: luluPalette.guideBorder
         border.width: 2
+
+        MudosGlassItem {
+            anchors.fill: parent
+            anchors.margins: 1
+            backdrop: displayUnderlay
+            canonicalSize: displayUnderlay.frameSize.width > 0
+                ? displayUnderlay.frameSize : Qt.size(root.width, root.height)
+            canonicalRect: Qt.rect(panel.x, panel.y, panel.width, panel.height)
+            cornerRadius: 10
+            refractionPixels: 24
+            diffusionPixels: 7
+            transmission: 0.8
+            bevelWidthPx: 3
+        }
 
         Text {
             x: 24

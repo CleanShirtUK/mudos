@@ -22,6 +22,7 @@
 #include <QHash>
 #include <QSet>
 #include <QJsonDocument>
+#include <QJsonArray>
 #include <QJsonObject>
 #include <algorithm>
 
@@ -36,6 +37,8 @@
 #include "catalogue-model.h"
 #include "recent-model.h"
 #include "mudos-glass-item.h"
+#include "mudos-display-underlay.h"
+#include "mudos-overlay-window.h"
 
 namespace {
 
@@ -365,6 +368,11 @@ public:
         insert("luluPresented", false);
         insert("requestedSurface", QString());
         insert("guideSelection", 0);
+        insert("guideVisible", false);
+        insert("guideActions", QVariantList());
+        insert("guideConfirmationPending", false);
+        insert("guideConfirmationAction", QString());
+        insert("guideConfirmationId", QString());
         insert("controllers", QVariantList());
         insert("launchOverlayEnabled",
                qEnvironmentVariable("LULU_LAUNCH_OVERLAY_ENABLED", "true")
@@ -522,6 +530,78 @@ private:
         clearTarget();
     }
 
+    bool guideVisible() const
+    {
+        return value(QStringLiteral("guideVisible")).toBool();
+    }
+
+    void moveGuide(int delta)
+    {
+        const auto actions = value(QStringLiteral("guideActions")).toList();
+        const int count = value(QStringLiteral("guideConfirmationPending")).toBool() ? 2 : actions.size();
+        if (count < 1)
+            return;
+        const int next = std::clamp(value(QStringLiteral("guideSelection")).toInt() + delta, 0, count - 1);
+        insert(QStringLiteral("guideSelection"), next);
+    }
+
+    void backGuide()
+    {
+        if (value(QStringLiteral("guideConfirmationPending")).toBool()) {
+            insert(QStringLiteral("guideConfirmationPending"), false);
+            insert(QStringLiteral("guideSelection"), 0);
+            return;
+        }
+        insert(QStringLiteral("guideVisible"), false);
+        restoreInput();
+    }
+
+    void acceptGuide()
+    {
+        const int selection = value(QStringLiteral("guideSelection")).toInt();
+        if (value(QStringLiteral("guideConfirmationPending")).toBool()) {
+            if (selection == 0) {
+                backGuide();
+            } else {
+                executeGuideAction(value(QStringLiteral("guideConfirmationId")).toString());
+            }
+            return;
+        }
+        const auto actions = value(QStringLiteral("guideActions")).toList();
+        if (selection < 0 || selection >= actions.size())
+            return;
+        const auto action = actions.at(selection).toMap();
+        if (action.value(QStringLiteral("confirm")).toBool()) {
+            insert(QStringLiteral("guideConfirmationId"), action.value(QStringLiteral("id")));
+            insert(QStringLiteral("guideConfirmationAction"), action.value(QStringLiteral("label")));
+            insert(QStringLiteral("guideConfirmationPending"), true);
+            insert(QStringLiteral("guideSelection"), 1);
+            return;
+        }
+        executeGuideAction(action.value(QStringLiteral("id")).toString());
+    }
+
+    void executeGuideAction(const QString &id)
+    {
+        QDBusInterface consoled("org.lulu.Consoled", "/org/lulu/Console",
+                                "org.lulu.Console", QDBusConnection::sessionBus());
+        const auto reply = consoled.call("ExecuteGuideAction", id);
+        if (reply.type() == QDBusMessage::ErrorMessage)
+            return;
+        const QString target = reply.arguments().value(0).toString();
+        if (target == QStringLiteral("process-group-terminate")) {
+            const auto group = ::getpgid(static_cast<pid_t>(targetPid_));
+            if (group > 1)
+                ::kill(-group, SIGTERM);
+        } else if (target.startsWith(QStringLiteral("command:"))) {
+            const auto command = QProcess::splitCommand(target.mid(8));
+            if (!command.isEmpty())
+                QProcess::startDetached(command.constFirst(), command.mid(1));
+        }
+        insert(QStringLiteral("guideVisible"), false);
+        restoreInput();
+    }
+
     void handleInputEvent(const QString &compositePath, const QString &event, double value)
     {
         // OSK mode owns the intercepted D-Bus stream. The bridge consumes it
@@ -542,8 +622,7 @@ private:
         }
         if (event == QStringLiteral("ui_guide")) {
             if (value == 1.0) {
-                if (guideProcess_ && compositePath == guideOwnerComposite_) {
-                    guideProcess_->write("ui_guide edge=down\n");
+                if (guideVisible() && compositePath == guideOwnerComposite_) {
                     return;
                 }
                 if (!pendingGuide_) {
@@ -564,19 +643,27 @@ private:
                 }
                 return;
             }
-            if (!(guideProcess_ && compositePath == guideOwnerComposite_))
+            if (!guideVisible() || compositePath != guideOwnerComposite_)
                 return;
         }
         if (value != 1.0 && value != 0.0)
             return;
-        if (guideProcess_ && compositePath == guideOwnerComposite_
+        if (guideVisible() && compositePath == guideOwnerComposite_
             && (event == QStringLiteral("ui_guide")
                               || event == QStringLiteral("ui_up")
                               || event == QStringLiteral("ui_down")
                               || event == QStringLiteral("ui_accept")
                               || event == QStringLiteral("ui_back"))) {
-            const char *edge = value == 1.0 ? "down" : "up";
-            guideProcess_->write(event.toUtf8() + " edge=" + edge + '\n');
+            if (value != 1.0)
+                return;
+            if (event == QStringLiteral("ui_up"))
+                moveGuide(-1);
+            else if (event == QStringLiteral("ui_down"))
+                moveGuide(1);
+            else if (event == QStringLiteral("ui_accept"))
+                acceptGuide();
+            else if (event == QStringLiteral("ui_back"))
+                backGuide();
         }
     }
 
@@ -586,29 +673,32 @@ private:
             guideProcess_->deleteLater();
             guideProcess_ = nullptr;
         }
+        insert(QStringLiteral("guideVisible"), false);
         restoreInput();
     }
 
     bool startGuide()
     {
-        if (guideProcess_ || !presentationConnection_ || !focusedWindow_ || !window_) {
+        if (guideVisible() || !presentationConnection_ || !focusedWindow_ || !window_) {
             restoreInput();
             return false;
         }
         targetWindow_ = focusedWindow_;
         targetPid_ = windowProperty(targetWindow_, "_NET_WM_PID");
-        guideProcess_ = new QProcess(this);
-        connect(guideProcess_, &QProcess::finished, this,
-                [this](int, QProcess::ExitStatus) { finishGuide(); });
-        const QString guideExecutable = qEnvironmentVariable(
-            "LULU_GUIDE_EXECUTABLE", "/opt/lulu/bin/mudos-guide");
-        guideProcess_->start(guideExecutable, {
-            QString::number(targetWindow_), QString::number(targetPid_)
-        });
-        if (!guideProcess_->waitForStarted(1000)) {
-            finishGuide();
-            return false;
+        QVariantList actions;
+        QDBusInterface consoled("org.lulu.Consoled", "/org/lulu/Console",
+                                "org.lulu.Console", QDBusConnection::sessionBus());
+        const auto reply = consoled.call("GetGuideActions");
+        if (reply.type() == QDBusMessage::ReplyMessage && !reply.arguments().isEmpty()) {
+            const auto array = QJsonDocument::fromJson(
+                reply.arguments().constFirst().toString().toUtf8()).array();
+            for (const auto &value : array)
+                actions.append(value.toObject().toVariantMap());
         }
+        insert(QStringLiteral("guideActions"), actions);
+        insert(QStringLiteral("guideSelection"), 0);
+        insert(QStringLiteral("guideConfirmationPending"), false);
+        insert(QStringLiteral("guideVisible"), true);
         return true;
     }
 
@@ -957,6 +1047,8 @@ int main(int argc, char **argv)
 {
     QGuiApplication application(argc, argv);
     qmlRegisterType<MudosGlassItem>("Mudos.Poc", 1, 0, "MudosGlassItem");
+    qmlRegisterType<MudosDisplayUnderlay>("Mudos.Poc", 1, 0, "MudosDisplayUnderlay");
+    qmlRegisterType<MudosOverlayWindow>("Mudos.Poc", 1, 0, "MudosOverlayWindow");
     QQmlApplicationEngine engine;
     ControllerBridge controller(nullptr, &application);
     SystemStatusBridge systemStatus(&application);

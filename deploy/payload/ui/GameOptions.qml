@@ -1,4 +1,5 @@
 import QtQuick
+import Mudos.Poc 1.0
 
 Item {
     id: options
@@ -14,6 +15,7 @@ Item {
     property real uiScale: 1
     property var typography
     property var luluPalette
+    property var displayUnderlay
     signal activated()
     signal backed()
     signal queryEdited(string value)
@@ -38,10 +40,27 @@ Item {
         anchors.top: parent.top
         anchors.bottom: parent.bottom
         width: Math.min(parent.width * 0.48, 560 * options.uiScale)
-        color: options.luluPalette.overlaySurface
+        color: Qt.rgba(options.luluPalette.overlaySurface.r,
+            options.luluPalette.overlaySurface.g,
+            options.luluPalette.overlaySurface.b, 0.68)
         border.color: options.luluPalette.focusIndicator
         border.width: options.uiScale
         clip: true
+
+        MudosGlassItem {
+            anchors.fill: parent
+            anchors.margins: 1
+            backdrop: options.displayUnderlay
+            canonicalSize: options.displayUnderlay.frameSize.width > 0
+                ? options.displayUnderlay.frameSize
+                : Qt.size(options.width, options.height)
+            canonicalRect: Qt.rect(panel.x, panel.y, panel.width, panel.height)
+            cornerRadius: 10 * options.uiScale
+            refractionPixels: 24 * options.uiScale
+            diffusionPixels: 7 * options.uiScale
+            transmission: 0.8
+            bevelWidthPx: 3 * options.uiScale
+        }
 
         Column {
             anchors.fill: parent

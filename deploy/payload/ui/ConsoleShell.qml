@@ -2790,7 +2790,8 @@ Window {
             onBackRequested: root.back()
         }
 
-        GameOptions {
+        MudosOverlayHost {
+            guideModel: controllerBridge
             game: root.gameOptionsGame
             view: root.gameOptionsView
             selectedIndex: root.gameOptionsIndex
@@ -2802,8 +2803,9 @@ Window {
             uiScale: root.uiScale
             typography: typography
             luluPalette: luluPalette
-            onActivated: root.activateGameOptions()
-            onBacked: root.back()
+            onGameActivated: root.activateGameOptions()
+            onGameBacked: root.back()
+            onGameMoved: function(delta) { root.moveGameOptions(delta) }
             onQueryEdited: root.metadataQuery = value
             onTitleEdited: root.metadataTitleDraft = value
         }
