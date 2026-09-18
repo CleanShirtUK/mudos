@@ -92,8 +92,7 @@ Window {
     readonly property real homeCompactCardWidth: homeNavigationCardWidth
     readonly property real homeInterCardGap: design(24)
     readonly property real compactGameCardAspect: 0.62
-    readonly property real compactCardWidth: Math.min(design(220),
-        acceptedRecentCardHeight * compactGameCardAspect)
+    readonly property real compactCardWidth: design(220)
     readonly property real compactCardHeight: compactCardWidth
         / compactGameCardAspect
     readonly property real compactGameCardWidth: compactCardWidth

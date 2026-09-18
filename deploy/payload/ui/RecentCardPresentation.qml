@@ -136,8 +136,9 @@ Item {
         focalScale: root.focalScale
         uiScale: root.uiScale
         typography: root.typography
-        luluPalette: root.luluPalette
-    }
+         luluPalette: root.luluPalette
+     }
+
 
 
     function dumpTransitionMapping(mark) {
