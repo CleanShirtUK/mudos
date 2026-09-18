@@ -77,7 +77,7 @@ Item {
                     glyphColor: root.statusColor
                 }
                 Text {
-                    text: String(modelData.index === undefined ? "?" : modelData.index) + ":"
+                    text: String(modelData.index === undefined ? "?" : modelData.index)
                     color: root.statusColor
                     font.family: root.typography ? root.typography.displayFamily : "JetBrains Mono"
                     font.weight: root.typography ? root.typography.displayWeight : Font.Black
@@ -86,7 +86,10 @@ Item {
                     verticalAlignment: Text.AlignVCenter
                 }
                 Text {
-                    text: String(modelData.battery === undefined ? "Unknown" : modelData.battery)
+                    visible: modelData.batteryKind === "percent"
+                        && modelData.batteryPercentage !== undefined
+                        && modelData.batteryPercentage >= 0
+                    text: ": " + String(modelData.battery)
                     color: root.statusColor
                     font.family: root.typography ? root.typography.displayFamily : "JetBrains Mono"
                     font.weight: root.typography ? root.typography.displayWeight : Font.Black

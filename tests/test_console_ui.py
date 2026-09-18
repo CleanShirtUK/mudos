@@ -275,6 +275,10 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertIn('"\\uf1eb"', strip)
         self.assertIn('"\\uf6a9"', strip)
         self.assertIn('String.fromCodePoint(0xF00AF)', strip)
+        self.assertIn('text: String(modelData.index === undefined ? "?" : modelData.index)', strip)
+        self.assertIn('visible: modelData.batteryKind === "percent"', strip)
+        self.assertIn('text: ": " + String(modelData.battery)', strip)
+        self.assertNotIn('"Unknown" : modelData.battery', strip)
         self.assertIn('Qt.formatTime(new Date(), "HH:mm")', strip)
         self.assertIn('SystemStatusStrip {', shell)
         self.assertIn('systemStatus.networkConnected', shell)
@@ -309,7 +313,7 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertIn('displayWeight', strip)
         self.assertIn('property real innerSpacing', strip)
         self.assertIn('property real groupSpacing', strip)
-        self.assertIn(') + ":"', strip)
+        self.assertIn('text: ": " + String(modelData.battery)', strip)
 
     def test_system_settings_is_controller_first_and_backend_driven(self) -> None:
         system_home = (ROOT / "ui" / "SystemHome.qml").read_text()
