@@ -19,6 +19,7 @@ Item {
     property string selectionAnchorId: ""
     property real focalCardWidth: 760
     property real focalCardHeight: 500
+    property real compactCardHeight: 354.84
     property real focalScale: 1
     property int playActivationSerial: 0
     property var canonicalTexture
@@ -379,7 +380,8 @@ Item {
                 visible: true
                 width: startWidth
                     + (recentHome.railWidth(toRelativeIndex) - startWidth) * railProgress
-                height: focalCardHeight
+                height: compactCardHeight
+                    + (focalCardHeight - compactCardHeight) * presentationProgress
                 x: startX + (recentHome.railX(toRelativeIndex) - startX) * railProgress
             }
         }
