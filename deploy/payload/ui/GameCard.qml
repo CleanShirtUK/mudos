@@ -653,12 +653,31 @@ Rectangle {
                 opacity: card.focusBrightness
             }
 
-            Text {
+            Row {
                 anchors.centerIn: parent
-                 text: card.actionLabel || "Play"
-                color: card.focusedColor(card.luluPalette.actionText)
-                font.family: card.typography ? card.typography.interfaceFamily : "JetBrains Mono"
-                font.pixelSize: card.typography ? card.typography.size("control", 28 * focalScale) : 28 * focalScale * card.uiScale
+                spacing: 8 * card.uiScale
+
+                Text {
+                    visible: !card.actionLabel || card.actionLabel === "Play"
+                    width: visible ? implicitWidth : 0
+                    height: playLabel.implicitHeight
+                    text: String.fromCodePoint(0xF04B)
+                    color: card.focusedColor(card.luluPalette.actionText)
+                    font.family: card.typography ? card.typography.iconFamily : "JetBrains Mono"
+                    font.pixelSize: card.typography
+                        ? card.typography.size("control", 24 * focalScale)
+                        : 24 * focalScale * card.uiScale
+                    verticalAlignment: Text.AlignVCenter
+                }
+
+                Text {
+                    id: playLabel
+                    text: card.actionLabel || "Play"
+                    color: card.focusedColor(card.luluPalette.actionText)
+                    font.family: card.typography ? card.typography.interfaceFamily : "JetBrains Mono"
+                    font.pixelSize: card.typography ? card.typography.size("control", 28 * focalScale) : 28 * focalScale * card.uiScale
+                    verticalAlignment: Text.AlignVCenter
+                }
             }
         }
     }
