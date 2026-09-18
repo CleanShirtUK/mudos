@@ -2491,7 +2491,9 @@ Window {
                             font.weight: typography.displayWeight
                             font.pixelSize: root.homeCategoryFontSize
                             font.letterSpacing: 5 * root.uiScale
-                            opacity: root.homeCategoryTitleOpacity(index)
+                            // The blur source is captured by titleMotionBlur;
+                            // keep the source opaque and fade the visible copy.
+                            opacity: 1
                             scale: 1
                         }
 
@@ -2508,6 +2510,7 @@ Window {
                             blurPixels: presentationCoordinator
                                 ? presentationCoordinator.titleSignedBlurPixels(index,
                                     root.homeCategoryRailX, titleText.width) : 0
+                            opacity: root.homeCategoryTitleOpacity(index)
                         }
                     }
                 }
