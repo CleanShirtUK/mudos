@@ -13,8 +13,15 @@ Rectangle {
     property var mappingItem: root
 
     readonly property rect mappedCanonicalRect: {
-        var dependency = x + y + width + height + selectionProgress + uiScale
         var sourceItem = mappingItem || root
+        var dependency = selectionProgress + uiScale
+        var dependencyItem = sourceItem
+        while (dependencyItem) {
+            dependency += dependencyItem.x + dependencyItem.y
+                + dependencyItem.width + dependencyItem.height
+                + dependencyItem.scale
+            dependencyItem = dependencyItem.parent
+        }
         var topLeft = canonicalCoordinateRoot
             ? sourceItem.mapToItem(canonicalCoordinateRoot, 0, 0) : Qt.point(0, 0)
         var bottomRight = canonicalCoordinateRoot

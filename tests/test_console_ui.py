@@ -378,7 +378,10 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertIn('transmission: 0.75', card_surface)
         self.assertIn('refractionPixels: 80', card_surface)
         self.assertIn('focusedCardSurface', card_surface)
+        self.assertIn('while (dependencyItem)', card_surface)
+        self.assertIn('sourceItem.mapToItem', card_surface)
         self.assertIn('scale: 1 + 0.05', settings_page)
+        self.assertIn('horizontalScaleInset', settings_page)
 
         for page_name in (
                 "SystemSpace.qml", "InternetSettings.qml", "StorageSettings.qml",

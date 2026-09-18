@@ -21,6 +21,8 @@ Item {
     property bool rowsVisible: true
     readonly property real contentInset: 44 * root.uiScale
     readonly property real horizontalScaleInset: 72 * root.uiScale
+    readonly property real nominalRowWidth: root.expandedShellWidth
+        - 2 * root.contentInset - root.horizontalScaleInset
     signal rowActivated(int index)
 
     LibrarySpatialSurface {
@@ -50,9 +52,9 @@ Item {
 
     Flickable {
         x: root.expandedShellX + root.contentInset
-        y: root.expandedShellY + 110 * root.uiScale
-        width: root.expandedShellWidth - 2 * root.contentInset
             - root.horizontalScaleInset
+        y: root.expandedShellY + 110 * root.uiScale
+        width: root.nominalRowWidth + 2 * root.horizontalScaleInset
         height: 7 * 58 * root.uiScale + 6 * 10 * root.uiScale
         visible: root.rowsVisible
         clip: true
@@ -65,7 +67,8 @@ Item {
         Column {
             id: rowColumn
             y: 4 * root.uiScale
-            width: parent.width
+            x: root.horizontalScaleInset
+            width: root.nominalRowWidth
             spacing: 10 * root.uiScale
 
             Repeater {
