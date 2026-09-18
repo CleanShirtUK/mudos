@@ -131,6 +131,16 @@ Rectangle {
         var remainder = minutes % 60
         return hours > 0 ? hours + "h " + remainder + "m" : minutes + "m"
     }
+
+    function acquisitionStatusLabel(state) {
+        if (state === "queued") return "Queued"
+        if (state === "starting") return "Starting"
+        if (state === "transferring") return "Downloading"
+        if (state === "finalizing") return "Finalizing"
+        if (state === "paused") return "Paused"
+        if (state === "cancelling") return "Stopping"
+        return "Download failed"
+    }
     function multiplayerCapabilityState(value) {
         if (value === true || value === 1)
             return "SUPPORTED"
@@ -445,17 +455,20 @@ Rectangle {
                 width: parent.width * 0.82
                 spacing: 8 * card.uiScale
 
+                TextMetrics {
+                    id: acquisitionStatusMetrics
+                    text: "00000000000"
+                    font.family: card.typography.interfaceFamily
+                    font.pixelSize: card.typography.size("control", 16 * card.focalScale)
+                }
+
                 Text {
-                    width: parent.width
-                    text: card.acquisitionState === "queued" ? "Queued"
-                        : card.acquisitionState === "starting" ? "Starting"
-                        : card.acquisitionState === "transferring" ? "Downloading"
-                        : card.acquisitionState === "finalizing" ? "Finalizing"
-                        : card.acquisitionState === "paused" ? "Paused"
-                        : card.acquisitionState === "cancelling" ? "Stopping"
-                        : "Download failed"
+                    width: acquisitionStatusMetrics.advanceWidth
+                    text: card.acquisitionStatusLabel(card.acquisitionState)
                     color: card.luluPalette.primaryText
                     horizontalAlignment: Text.AlignHCenter
+                    wrapMode: Text.WordWrap
+                    maximumLineCount: 2
                     font.family: card.typography.interfaceFamily
                     font.pixelSize: card.typography.size("control", 16 * card.focalScale)
                 }
