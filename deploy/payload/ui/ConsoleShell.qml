@@ -70,10 +70,12 @@ Window {
     readonly property real homeCategoryFontSize: typography.size("display", 48)
     readonly property real homeCategoryGap: design(25)
     readonly property real homeCategoryPitch: homeCategoryFontSize + homeCategoryGap
-    readonly property real systemHeadingLeftInset: homeCategoryRailX
-        + (homeCategoryTitles.itemAt(0) ? homeCategoryTitles.itemAt(0).x : 0)
-    readonly property real systemHeadingTop: titleRailY
-        + (homeCategoryTitles.itemAt(0) ? homeCategoryTitles.itemAt(0).y : 0)
+    // Persistent status chrome is positioned in root screen space. These
+    // values match the settled Recent composition's System-title reference,
+    // without following the animated title rail or its presentation offset.
+    readonly property real statusStripRightMargin: homeCategoryRailX
+    readonly property real statusStripTop: selectedDomainY
+        - (domains.length - 1) * homeCategoryPitch
     readonly property real homeHeadingCardClearance: design(12)
     readonly property real homeCompositionOffsetY: -design(36)
     readonly property real homeHintTopY: height - design(45)
@@ -2727,11 +2729,9 @@ Window {
             z: 50
             anchors.top: parent.top
             anchors.right: parent.right
-            anchors.topMargin: root.systemHeadingTop
-            anchors.rightMargin: root.systemHeadingLeftInset
-            compact: root.space !== "home"
-                || root.libraryTransitioning || root.storeTransitioning
-                || (root.space === "system" && !root.systemLanding)
+            anchors.topMargin: root.statusStripTop
+            anchors.rightMargin: root.statusStripRightMargin
+            compact: false
             uiScale: root.uiScale
             typography: typography
             luluPalette: luluPalette
