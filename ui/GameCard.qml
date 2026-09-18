@@ -275,7 +275,7 @@ Rectangle {
             : Qt.point(0, 0)
         // mapToItem() is not reactive to ancestor layout changes by itself.
         var layoutDependency = card.x + card.y + card.width + card.height
-            + card.canonicalMappingRevision
+            + card.depthScale + card.canonicalMappingRevision
         return Qt.point(origin.x + layoutDependency * 0, origin.y + layoutDependency * 0)
     }
     readonly property rect nativeRecentCanonicalRect: {
@@ -286,7 +286,7 @@ Rectangle {
             ? card.mapToItem(canonicalCoordinateRoot, width, height)
             : Qt.point(width, height)
         var layoutDependency = card.x + card.y + card.width + card.height
-            + card.canonicalMappingRevision
+            + card.depthScale + card.canonicalMappingRevision
         return Qt.rect(topLeft.x + layoutDependency * 0,
                        topLeft.y + layoutDependency * 0,
                        bottomRight.x - topLeft.x,
@@ -299,7 +299,7 @@ Rectangle {
     readonly property rect nativePlayCanonicalRect: {
         var presentationDependency = canonicalMappingDependency
         var layoutDependency = card.x + card.y + card.width + card.height
-            + card.canonicalMappingRevision + card.presentationProgress
+            + card.depthScale + card.canonicalMappingRevision + card.presentationProgress
             + card.focalChromeOpacity + card.focalScale + card.uiScale
             + playButton.x + playButton.y + playButton.width
             + playButton.height + playButton.scale
