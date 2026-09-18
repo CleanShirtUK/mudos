@@ -2769,6 +2769,7 @@ Window {
             controllers: controllerBridge.controllers
             bluetoothAvailable: systemStatus ? systemStatus.bluetoothPowered : false
             networkAvailable: systemStatus ? systemStatus.networkConnected : false
+            networkConnectionType: systemStatus ? systemStatus.networkConnectionType : ""
         }
 
         Item {

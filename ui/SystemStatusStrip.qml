@@ -14,6 +14,7 @@ Item {
     property var controllers: []
     property bool bluetoothAvailable: false
     property bool networkAvailable: false
+    property string networkConnectionType: ""
     property string currentTime: Qt.formatTime(new Date(), "HH:mm")
 
     readonly property real presentationScale: compact ? 0.72 : 1.35
@@ -42,7 +43,7 @@ Item {
         Row {
             height: root.glyphSize
             spacing: root.innerSpacing
-            visible: true
+            visible: root.activeDownloadCount > 0
 
             StatusGlyph {
                 glyph: "\uf019" // fa-download
@@ -109,7 +110,9 @@ Item {
         }
 
         StatusGlyph {
-            glyph: root.networkAvailable ? "\uf1eb" : "\uf6a9"
+            glyph: !root.networkAvailable ? "\uf6a9"
+                : root.networkConnectionType === "ethernet"
+                    ? String.fromCodePoint(0xF0200) : "\uf1eb"
             glyphSize: root.glyphSize
             targetPaintedHeight: root.glyphSize * 0.72
             fontFamily: root.typography ? root.typography.iconFamily : "JetBrains Mono"

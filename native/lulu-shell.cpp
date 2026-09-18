@@ -43,6 +43,7 @@ class SystemStatusBridge final : public QObject
 {
     Q_OBJECT
     Q_PROPERTY(bool networkConnected READ networkConnected NOTIFY networkConnectedChanged)
+    Q_PROPERTY(QString networkConnectionType READ networkConnectionType NOTIFY networkConnectionTypeChanged)
     Q_PROPERTY(QString bluetoothState READ bluetoothState NOTIFY bluetoothStateChanged)
     Q_PROPERTY(bool bluetoothPowered READ bluetoothPowered NOTIFY bluetoothStateChanged)
     Q_PROPERTY(uint activeDownloadCount READ activeDownloadCount NOTIFY activeDownloadCountChanged)
@@ -99,6 +100,7 @@ public:
 
     bool networkConnected() const { return networkConnected_; }
     QString bluetoothState() const { return bluetoothState_; }
+    QString networkConnectionType() const { return networkConnectionType_; }
     bool bluetoothPowered() const { return bluetoothState_ == QStringLiteral("powered"); }
     uint activeDownloadCount() const { return activeDownloadCount_; }
     QString acquisitionSnapshot() const { return acquisitionSnapshot_; }
@@ -106,6 +108,7 @@ public:
 
 signals:
     void networkConnectedChanged();
+    void networkConnectionTypeChanged();
     void bluetoothStateChanged();
     void activeDownloadCountChanged();
     void acquisitionSnapshotChanged();
@@ -207,13 +210,63 @@ private:
                                              QStringLiteral("org.freedesktop.NetworkManager"),
                                              QStringLiteral("State"));
         bool connected = false;
+        QString connectionType;
         if (reply.type() == QDBusMessage::ReplyMessage && !reply.arguments().isEmpty()) {
             const QVariant value = reply.arguments().constFirst().value<QDBusVariant>().variant();
             connected = networkStateIsConnected(value.toUInt());
         }
+
+        QDBusMessage activeReply = properties.call(
+            QStringLiteral("Get"), QStringLiteral("org.freedesktop.NetworkManager"),
+            QStringLiteral("ActiveConnections"));
+        if (activeReply.type() == QDBusMessage::ReplyMessage
+                && !activeReply.arguments().isEmpty()) {
+            const QVariant value = activeReply.arguments().constFirst()
+                .value<QDBusVariant>().variant();
+            if (value.canConvert<QDBusArgument>()) {
+                QDBusArgument argument = value.value<QDBusArgument>();
+                argument.beginArray();
+                while (!argument.atEnd()) {
+                    QDBusObjectPath path;
+                    argument >> path;
+                    QDBusInterface activeConnection(
+                        QStringLiteral("org.freedesktop.NetworkManager"), path.path(),
+                        QStringLiteral("org.freedesktop.DBus.Properties"),
+                        QDBusConnection::systemBus());
+                    QDBusMessage defaultReply = activeConnection.call(
+                        QStringLiteral("Get"),
+                        QStringLiteral("org.freedesktop.NetworkManager.Connection.Active"),
+                        QStringLiteral("Default"));
+                    bool isDefault = defaultReply.type() == QDBusMessage::ReplyMessage
+                        && !defaultReply.arguments().isEmpty()
+                        && defaultReply.arguments().constFirst().value<QDBusVariant>()
+                            .variant().toBool();
+                    if (!isDefault)
+                        continue;
+                    QDBusMessage typeReply = activeConnection.call(
+                        QStringLiteral("Get"),
+                        QStringLiteral("org.freedesktop.NetworkManager.Connection.Active"),
+                        QStringLiteral("Type"));
+                    if (typeReply.type() == QDBusMessage::ReplyMessage
+                            && !typeReply.arguments().isEmpty()) {
+                        const QString type = typeReply.arguments().constFirst()
+                            .value<QDBusVariant>().variant().toString();
+                        if (type == QStringLiteral("802-3-ethernet"))
+                            connectionType = QStringLiteral("ethernet");
+                        else if (type == QStringLiteral("802-11-wireless"))
+                            connectionType = QStringLiteral("wifi");
+                    }
+                    break;
+                }
+            }
+        }
         if (connected != networkConnected_) {
             networkConnected_ = connected;
             emit networkConnectedChanged();
+        }
+        if (connectionType != networkConnectionType_) {
+            networkConnectionType_ = connectionType;
+            emit networkConnectionTypeChanged();
         }
     }
 
@@ -262,6 +315,7 @@ private:
     }
 
     bool networkConnected_ = false;
+    QString networkConnectionType_;
     QString bluetoothState_ = QStringLiteral("unavailable");
     uint activeDownloadCount_ = 0;
     QString acquisitionSnapshot_ = QStringLiteral("{\"jobs\":[],\"activeDownloadCount\":0}");
