@@ -21,6 +21,7 @@ Item {
     property var canonicalCoordinateRoot
     property size canonicalSize: Qt.size(1280, 720)
     property real contentBottom: parent ? parent.height : 0
+    property real contentSideMargin: 120 * uiScale
     property string headingText: "LIBRARY"
     property string sectionTitle: ""
     property string emptyText: "No installed games"
@@ -43,13 +44,12 @@ Item {
     // A shared, restrained presentation reduction creates header breathing
     // room while preserving the card aspect ratio and six-column grid.
     readonly property real expandedCardScale: 0.94
-    readonly property real usableGridWidth: parent.width - 2 * (76 * uiScale + surfaceMargin)
+    readonly property real usableGridWidth: parent.width - 2 * contentSideMargin
     readonly property real headingBottom: pageHeading.y + pageHeading.height
-    readonly property real firstRowTop: gridTop - (gridRow === 0 ? selectedGrowth : 0)
+    readonly property real firstRowTop: gridTop - selectedGrowth
     readonly property real categoryRailHeight: categoryRow.implicitHeight + 8 * uiScale
     readonly property real gridContentFootprintHeight:
-        libraryCardHeight + gridGap + libraryCardHeight
-        + (gridRow > 0 ? selectedGrowth : 0)
+        libraryCardHeight + gridGap + libraryCardHeight + selectedGrowth
     readonly property real gridTop: contentBottom - gridContentFootprintHeight
     // Keep the catalogue backing boundary separate from the two-row card clip.
     readonly property real gridBottom:
@@ -122,7 +122,7 @@ Item {
     // Keeps stacked-card shader coordinates aligned with the persistent shell surface.
     Item {
         id: librarySurface
-        x: 76 * uiScale
+        x: contentSideMargin
         y: 32 * uiScale
         width: parent.width - 152 * uiScale
         height: parent.height - 48 * uiScale
@@ -131,7 +131,7 @@ Item {
 
     Text {
         id: pageHeading
-        x: 76 * uiScale + surfaceMargin
+        x: contentSideMargin
         opacity: librarySpace.contentOpacity
         y: 76 * uiScale
         text: librarySpace.headingText
@@ -146,12 +146,12 @@ Item {
 
     Item {
         id: categoryViewport
-        x: 120 * uiScale
+        x: contentSideMargin
         opacity: librarySpace.contentOpacity
         y: librarySpace.headingBottom
             + (librarySpace.firstRowTop - librarySpace.headingBottom
                 - librarySpace.categoryRailHeight) / 2
-        width: parent.width - 240 * uiScale
+        width: parent.width - 2 * contentSideMargin
         height: librarySpace.categoryRailHeight
         clip: true
 
@@ -240,7 +240,7 @@ Item {
         id: gridViewport
         opacity: librarySpace.contentOpacity * librarySpace.gameContentOpacity
         visible: librarySpace.gameContentVisible && libraryGames.length > 0
-        x: 76 * uiScale + surfaceMargin - gridLeftInset
+        x: contentSideMargin - gridLeftInset
         y: gridTop - gridTopInset
         width: usableGridWidth + gridLeftInset + gridRightInset
         height: gridRegionHeight + gridTopInset
