@@ -10,7 +10,7 @@ var iconCodepoints = {
     volume: "\uf028",
     volumeMute: "\uf026",
     controller: "\uf11b",
-    collection: "\uf11b",
+    collection: "\ueb9c",
     battery: "\uf240",
     download: "\uf019",
     storage: "\uf0a0",

@@ -433,7 +433,7 @@ Rectangle {
         }
 
         MudosIcon {
-            anchors.centerIn: parent
+            anchors.fill: parent
             visible: !!card.symbolicArtwork
             glyph: card.symbolicArtwork
             semanticColor: card.focusedColor(card.luluPalette.primaryText)

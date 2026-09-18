@@ -235,7 +235,7 @@ Item {
         width: root.cardWidth
         height: root.cardHeight
         displayTitle: "Available to Download"
-        symbolicArtwork: MudosAssetCatalog.icon("collection")
+        symbolicArtwork: MudosAssetCatalog.icon("download")
         artworkRole: "icon"
         artworkSource: ""
         focused: true
