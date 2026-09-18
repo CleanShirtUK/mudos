@@ -1123,6 +1123,28 @@ Window {
         return fromY + (targetY - fromY) * homeCategoryProgress
     }
 
+    function homeCategoryTitleSelectedProgress(index) {
+        if (!homeCategoryTransitioning)
+            return index === selectedCategoryIndex ? 1 : 0
+        if (index === homeCategoryFrom)
+            return 1 - homeCategoryProgress
+        if (index === homeCategoryTarget)
+            return homeCategoryProgress
+        return 0
+    }
+
+    function homeCategoryTitleColor(index) {
+        var progress = homeCategoryTitleSelectedProgress(index)
+        return Qt.rgba(
+            luluPalette.navigationText.r
+                + (luluPalette.headingAccent.r - luluPalette.navigationText.r) * progress,
+            luluPalette.navigationText.g
+                + (luluPalette.headingAccent.g - luluPalette.navigationText.g) * progress,
+            luluPalette.navigationText.b
+                + (luluPalette.headingAccent.b - luluPalette.navigationText.b) * progress,
+            1)
+    }
+
     function homeCategoryChromeOpacity(index) {
         if (!homeCategoryTransitioning)
             return 1
@@ -2448,12 +2470,13 @@ Window {
                             width: implicitWidth
                             height: implicitHeight
                             text: root.domains[index].toUpperCase()
-                            color: luluPalette.headingAccent
+                            color: root.homeCategoryTitleColor(index)
                             font.family: typography.displayFamily
                             font.weight: typography.displayWeight
                             font.pixelSize: root.homeCategoryFontSize
                             font.letterSpacing: 5 * root.uiScale
-                            opacity: 1
+                            opacity: 0.9
+                                + 0.1 * root.homeCategoryTitleSelectedProgress(index)
                             scale: 1
                         }
 
