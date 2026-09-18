@@ -47,15 +47,22 @@ Item {
     readonly property real usableGridWidth: parent.width - 2 * contentSideMargin
     readonly property real headingBottom: pageHeading.y + pageHeading.height
     readonly property real firstRowTop: gridTop - selectedGrowth
-    readonly property real categoryRailHeight: categoryRow.implicitHeight + 8 * uiScale
+    readonly property real categoryRailHeight: categoryGlyphMetrics.height + 8 * uiScale
     readonly property real gridSlotWidth:
         gridColumns * libraryCardWidth + (gridColumns - 1) * gridGap
     readonly property real gridVisualWidth: gridSlotWidth + 2 * gridHorizontalGrowth
     readonly property real contentOriginX: (parent.width - gridVisualWidth) / 2
     readonly property real gridSlotLeft: contentOriginX + gridHorizontalGrowth
-    readonly property real categoryFadeWidth: categoryGlyphMetrics.advanceWidth * 10
-    readonly property real categoryFadeSourceWidth:
-        categoryViewport.width + categoryFadeWidth + categoryGlyphMetrics.advanceWidth
+    readonly property real categoryGlyphAdvance: categoryGlyphMetrics.advanceWidth
+    readonly property real categoryFadeWidth: categoryGlyphAdvance * 10
+    readonly property real categoryRowWidth: {
+        var total = 0
+        for (var i = 0; i < collections.length; ++i) {
+            total += collections[i].label.length * categoryGlyphAdvance
+            if (i > 0) total += categoryGap
+        }
+        return total
+    }
     readonly property real gridContentFootprintHeight:
         libraryCardHeight + gridGap + libraryCardHeight + selectedGrowth
     readonly property real gridTop: contentBottom - gridContentFootprintHeight
@@ -171,10 +178,7 @@ Item {
                 readonly property var selectedCategoryDelegate:
                 categoryRepeater.itemAt(librarySpace.collectionIndex)
             x: selectedCategoryDelegate ? -selectedCategoryDelegate.x : 0
-            // Keep enough source bounds beyond the viewport for glyphs to
-            // travel through the complete fade before the final crop.
-            width: categoryRow.implicitWidth
-                + categoryFadeWidth + categoryGlyphMetrics.advanceWidth
+            width: categoryRowWidth
             height: librarySpace.categoryRailHeight
 
             Behavior on x {
@@ -188,21 +192,46 @@ Item {
                 id: categoryRow
                 anchors.left: parent.left
                 anchors.top: parent.top
+                width: librarySpace.categoryRowWidth
                 spacing: librarySpace.categoryGap
 
                 Repeater {
                     id: categoryRepeater
                     model: librarySpace.collections
-                    delegate: Text {
+                    delegate: Item {
                         required property int index
                         required property var modelData
                         // required property string modelData (legacy string-model contract)
-                        text: modelData.label
-                        horizontalAlignment: Text.AlignHCenter
-                        color: index === collectionIndex ? luluPalette.selectedText : luluPalette.navigationText
-                        font.family: typography ? typography.interfaceFamily : "JetBrains Mono"
-                        font.pixelSize: typography ? typography.size("secondary", 14) : 14 * uiScale
-                        font.bold: index === collectionIndex
+                        readonly property string categoryLabel: modelData.label
+                        readonly property bool categorySelected: index === collectionIndex
+                        readonly property real categoryStateOpacity: 1.0
+                        width: categoryLabel.length * librarySpace.categoryGlyphAdvance
+                        height: categoryGlyphMetrics.height
+
+                        Repeater {
+                            model: categoryLabel.length
+                            delegate: Text {
+                                required property int index
+                                readonly property real glyphCenterX:
+                                    categoryViewport.x + categoryRail.x + parent.x
+                                    + x + width / 2
+                                readonly property real edgeFadeOpacity:
+                                    Math.max(0, Math.min(1,
+                                        (categoryViewport.x + categoryViewport.width - glyphCenterX)
+                                        / librarySpace.categoryFadeWidth))
+                                x: index * librarySpace.categoryGlyphAdvance
+                                width: librarySpace.categoryGlyphAdvance
+                                height: categoryGlyphMetrics.height
+                                text: categoryLabel.charAt(index)
+                                horizontalAlignment: Text.AlignHCenter
+                                color: categorySelected
+                                    ? luluPalette.selectedText : luluPalette.navigationText
+                                opacity: categoryStateOpacity * edgeFadeOpacity
+                                font.family: typography ? typography.interfaceFamily : "JetBrains Mono"
+                                font.pixelSize: typography ? typography.size("secondary", 14) : 14 * uiScale
+                                font.bold: categorySelected
+                            }
+                        }
 
                         Rectangle {
                             visible: index === collectionIndex
@@ -223,35 +252,13 @@ Item {
             }
 
         }
+    }
 
-        TextMetrics {
-            id: categoryGlyphMetrics
-            font.family: typography ? typography.interfaceFamily : "JetBrains Mono"
-            font.pixelSize: typography ? typography.size("secondary", 14) : 14 * uiScale
-            text: "0"
-        }
-
-        // The source is limited to the moving rail's visible viewport. The
-        // shader therefore fades against the real right clipping boundary.
-        ShaderEffectSource {
-            id: categoryRailSource
-            sourceItem: categoryRail
-            sourceRect: Qt.rect(-categoryRail.x, 0,
-                                librarySpace.categoryFadeSourceWidth,
-                                categoryViewport.height)
-            hideSource: true
-            live: true
-        }
-
-        ShaderEffect {
-            id: categoryRailFade
-            anchors.fill: parent
-            property var source: categoryRailSource
-            property real fadeWidth: librarySpace.categoryFadeWidth
-            property vector2d viewportSize: Qt.vector2d(width, height)
-            property real sourceWidth: librarySpace.categoryFadeSourceWidth
-            fragmentShader: "shaders/category-rail-fade.frag.qsb"
-        }
+    TextMetrics {
+        id: categoryGlyphMetrics
+        font.family: typography ? typography.interfaceFamily : "JetBrains Mono"
+        font.pixelSize: typography ? typography.size("secondary", 14) : 14 * uiScale
+        text: "0"
     }
 
     Text {
