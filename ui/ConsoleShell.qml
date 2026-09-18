@@ -1145,6 +1145,22 @@ Window {
             1)
     }
 
+    function homeCategoryTitleOpacityForSelection(index, selectedIndex) {
+        var distance = Math.abs(index - selectedIndex)
+        return Math.max(0.6, 1.0 - distance * 0.1)
+    }
+
+    function homeCategoryTitleOpacity(index) {
+        var fromIndex = homeCategoryTransitioning
+            ? homeCategoryFrom : selectedCategoryIndex
+        var targetIndex = homeCategoryTransitioning
+            ? homeCategoryTarget : selectedCategoryIndex
+        var progress = homeCategoryTransitioning ? homeCategoryProgress : 1
+        var fromOpacity = homeCategoryTitleOpacityForSelection(index, fromIndex)
+        var targetOpacity = homeCategoryTitleOpacityForSelection(index, targetIndex)
+        return fromOpacity + (targetOpacity - fromOpacity) * progress
+    }
+
     function homeCategoryChromeOpacity(index) {
         if (!homeCategoryTransitioning)
             return 1
@@ -2475,8 +2491,7 @@ Window {
                             font.weight: typography.displayWeight
                             font.pixelSize: root.homeCategoryFontSize
                             font.letterSpacing: 5 * root.uiScale
-                            opacity: 0.9
-                                + 0.1 * root.homeCategoryTitleSelectedProgress(index)
+                            opacity: root.homeCategoryTitleOpacity(index)
                             scale: 1
                         }
 
