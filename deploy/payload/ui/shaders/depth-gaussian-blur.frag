@@ -8,23 +8,21 @@ layout(std140, binding = 0) uniform buf {
     float qt_Opacity;
     float blurRadius;
     vec2 sourceTextureSize;
+    vec2 direction;
 };
 layout(binding = 1) uniform sampler2D source;
 
 void main()
 {
-    // A compact 5x5 separable Gaussian footprint. Sampling a dense grid
-    // avoids the visible ghost copies produced by widely separated taps.
-    vec2 stepUv = blurRadius * 0.5 / max(sourceTextureSize, vec2(1.0));
-    const float weights[5] = float[5](0.06136, 0.24477, 0.38774,
-                                      0.24477, 0.06136);
+    // Binomial weights approximate a smooth Gaussian. The nine closely
+    // spaced samples are separable; the caller performs H then V passes.
+    vec2 stepUv = direction * blurRadius * 0.25
+        / max(sourceTextureSize, vec2(1.0));
+    const float weights[9] = float[9](1.0, 8.0, 28.0, 56.0, 70.0,
+                                      56.0, 28.0, 8.0, 1.0);
     vec4 color = vec4(0.0);
-    for (int y = 0; y < 5; ++y) {
-        for (int x = 0; x < 5; ++x) {
-            vec2 offset = vec2(float(x - 2), float(y - 2)) * stepUv;
-            color += texture(source, qt_TexCoord0 + offset)
-                * weights[x] * weights[y];
-        }
-    }
+    for (int i = 0; i < 9; ++i)
+        color += texture(source, qt_TexCoord0 + float(i - 4) * stepUv)
+            * weights[i] / 256.0;
     fragColor = color * qt_Opacity;
 }
