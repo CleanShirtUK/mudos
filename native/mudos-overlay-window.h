@@ -9,6 +9,8 @@ class MudosOverlayWindow : public QQuickWindow
 public:
     explicit MudosOverlayWindow(QWindow *parent = nullptr);
 
+    Q_INVOKABLE bool saveDiagnosticFrame(const QString &path);
+
 protected:
     void showEvent(QShowEvent *event) override;
 

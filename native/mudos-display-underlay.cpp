@@ -221,6 +221,8 @@ MudosDisplayUnderlay::MudosDisplayUnderlay(QQuickItem *parent)
       provider_(std::make_unique<TextureProvider>())
 {
     setFlag(ItemHasContents, true);
+    qInfo() << "MUDOS_DISPLAY_UNDERLAY_PROVIDER_CREATED"
+            << "provider=" << provider_.get();
     connect(this, &QQuickItem::visibleChanged, this, [this] {
         if (isVisible())
             capture_->start();
@@ -240,6 +242,7 @@ void MudosDisplayUnderlay::acceptFrame(const QImage &frame, int sourceStride)
     frame_ = frame;
     frameSize_ = frame.size();
     ++frameCount_;
+    ++textureRevision_;
     const bool strideChanged = frameStride_ != sourceStride;
     frameStride_ = sourceStride;
     available_ = true;
@@ -257,6 +260,7 @@ void MudosDisplayUnderlay::acceptFrame(const QImage &frame, int sourceStride)
         emit frameSizeChanged();
     if (strideChanged)
         emit frameStrideChanged();
+    emit textureRevisionChanged();
     if (frameCount_ == 30)
         frame_.save(QStringLiteral("/tmp/mudos-display-underlay-raw.png"));
     if (availabilityChanged)
@@ -287,6 +291,11 @@ QSGNode *MudosDisplayUnderlay::updatePaintNode(QSGNode *oldNode, UpdatePaintNode
     if (!texture)
         return node;
     provider_->setTexture(texture);
+    if (textureRevision_ <= 3 || textureRevision_ % 60 == 0)
+        qInfo() << "MUDOS_DISPLAY_UNDERLAY_TEXTURE"
+                << "provider=" << provider_.get()
+                << "revision=" << textureRevision_
+                << "size=" << texture->textureSize();
     node->setTexture(texture);
     node->setRect(boundingRect());
     return node;

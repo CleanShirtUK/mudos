@@ -6,6 +6,7 @@ Item {
     property var guideModel
     property var luluPalette
     property var displayUnderlay
+    property string glassMode: "glass"
     property real uiScale: 1
 
     Rectangle {
@@ -16,21 +17,24 @@ Item {
             ? 250 * root.uiScale
                 : Math.max(250 * root.uiScale,
                 110 * root.uiScale + root.guideModel.guideActions.length * 60 * root.uiScale)
-        color: root.luluPalette.guideSurface
+        // The glass item is the panel surface. Keeping the old nearly opaque
+        // guideSurface here hid the sampled underlay.
+        color: "transparent"
         border.color: root.luluPalette.guideBorder
         border.width: 2 * root.uiScale
 
         MudosGlassItem {
+            objectName: "mudosGuideGlass"
             anchors.fill: parent
             anchors.margins: 1 * root.uiScale
             backdrop: root.displayUnderlay
             canonicalSize: root.displayUnderlay.frameSize
             canonicalRect: Qt.rect(panel.x, panel.y, panel.width, panel.height)
             cornerRadius: 10 * root.uiScale
-            refractionPixels: 24 * root.uiScale
-            diffusionPixels: 7 * root.uiScale
-            transmission: 0.8
-            bevelWidthPx: 3 * root.uiScale
+            refractionPixels: root.glassMode === "plain" ? 0 : 24 * root.uiScale
+            diffusionPixels: root.glassMode === "plain" ? 0 : 7 * root.uiScale
+            transmission: 1
+            bevelWidthPx: root.glassMode === "plain" ? 0 : 3 * root.uiScale
         }
 
         Text {

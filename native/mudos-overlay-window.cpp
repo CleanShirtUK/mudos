@@ -13,6 +13,12 @@ MudosOverlayWindow::MudosOverlayWindow(QWindow *parent)
     setFlags(Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint);
 }
 
+bool MudosOverlayWindow::saveDiagnosticFrame(const QString &path)
+{
+    const QImage image = grabWindow();
+    return !image.isNull() && image.save(path);
+}
+
 void MudosOverlayWindow::showEvent(QShowEvent *event)
 {
     if (auto *screen = QGuiApplication::primaryScreen())

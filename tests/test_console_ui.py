@@ -99,6 +99,8 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertIn("sourceStride", capture)
         self.assertIn("mudos-display-underlay-raw.png", capture)
         self.assertIn("setInterceptMode(guideOwnerComposite_, 2)", native)
+        self.assertIn('color: "transparent"', (ROOT / "ui" / "MudosGuidePanel.qml").read_text())
+        self.assertIn("GUIDE_INPUT_COMPOSITE_REBOUND", native)
 
     def test_reset_mudos_uses_the_shared_session_boundary(self) -> None:
         guide = (ROOT / "ui" / "MudosGuide.qml").read_text()

@@ -155,10 +155,19 @@ void copyMaterial(GlassMaterial *material, const MudosGlassItem *item)
         ? material->provider->texture()->normalizedTextureSubRect()
         : QRectF(0, 0, 1, 1);
     static bool loggedTextureBoundary = false;
+    static bool loggedGuideTexture = false;
     const QSGTexture *texture = material->provider ? material->provider->texture() : nullptr;
-    if (!loggedTextureBoundary && texture && texture->textureSize().isValid()) {
-        loggedTextureBoundary = true;
+    const bool guideGlass = item->objectName() == QStringLiteral("mudosGuideGlass");
+    if ((!loggedTextureBoundary || (guideGlass && !loggedGuideTexture))
+            && texture && texture->textureSize().isValid()) {
+        if (guideGlass)
+            loggedGuideTexture = true;
+        else
+            loggedTextureBoundary = true;
         qInfo() << "MUDOS_RENDER_CHAIN_QSG_TEXTURE"
+                << "provider=" << material->provider
+                << "backdrop=" << item->backdrop()
+                << "objectName=" << item->objectName()
                 << "itemSize" << QSizeF(item->width(), item->height())
                 << "textureSize" << (texture ? texture->textureSize() : QSize())
                 << "normalizedSubRect" << material->textureSubRect;

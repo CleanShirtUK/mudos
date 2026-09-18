@@ -340,6 +340,7 @@ public:
     }
 
     const QString &compositePath() const { return compositePath_; }
+    void setCompositePath(const QString &path) { compositePath_ = path; }
 
 public slots:
     void onInputEvent(const QString &event, double value);
@@ -513,7 +514,22 @@ private:
             qWarning() << "InputPlumber mode change failed" << reply.errorMessage();
             return false;
         }
+        QDBusInterface composite(inputService, compositePath,
+                                 QString::fromLatin1(inputInterface),
+                                 QDBusConnection::systemBus());
+        qInfo() << "GUIDE_INPUT_INTERCEPT_READBACK"
+                << compositePath << "requested=" << mode
+                << "actual=" << composite.property("InterceptMode");
         return true;
+    }
+
+    int interceptMode(const QString &compositePath) const
+    {
+        QDBusInterface composite(inputService, compositePath,
+                                 QString::fromLatin1(inputInterface),
+                                 QDBusConnection::systemBus());
+        const QVariant value = composite.property("InterceptMode");
+        return value.isValid() ? value.toInt() : -1;
     }
 
     void clearTarget()
@@ -688,6 +704,9 @@ private:
         }
         targetWindow_ = focusedWindow_;
         targetPid_ = windowProperty(targetWindow_, "_NET_WM_PID");
+        qInfo() << "GUIDE_INPUT_INTERCEPT_BEFORE"
+                << guideOwnerComposite_ << "actual="
+                << interceptMode(guideOwnerComposite_);
         if (!setInterceptMode(guideOwnerComposite_, 2)) {
             restoreInput();
             return false;
@@ -750,8 +769,29 @@ private:
                                      QDBusConnection::systemBus());
             for (const QString &dbusPath : composite.property("DbusDevices").toStringList()) {
                 discovered.insert(dbusPath);
-                if (dbusRelays_.contains(dbusPath))
+                qInfo() << "GUIDE_INPUT_SUBSCRIPTION" << "composite=" << compositePath
+                        << "device=" << dbusPath;
+                if (dbusRelays_.contains(dbusPath)) {
+                    auto *relay = dbusRelays_.value(dbusPath);
+                    const QString previousComposite = relay->compositePath();
+                    relay->setCompositePath(compositePath);
+                    if (guideVisible() && guideOwnerComposite_ == compositePath
+                        && interceptMode(compositePath) != 2) {
+                        qInfo() << "GUIDE_INPUT_INTERCEPT_REAPPLY"
+                                << "composite=" << compositePath
+                                << "actual=" << interceptMode(compositePath);
+                        setInterceptMode(compositePath, 2);
+                    }
+                    if (guideVisible() && guideOwnerComposite_ == previousComposite
+                        && previousComposite != compositePath) {
+                        qInfo() << "GUIDE_INPUT_COMPOSITE_REBOUND"
+                                << "old=" << previousComposite
+                                << "new=" << compositePath;
+                        guideOwnerComposite_ = compositePath;
+                        setInterceptMode(guideOwnerComposite_, 2);
+                    }
                     continue;
+                }
                 auto *relay = new DbusInputRelay(this, compositePath, this);
                 dbusRelays_.insert(dbusPath, relay);
                 QDBusConnection::systemBus().connect(
@@ -855,7 +895,7 @@ private:
     {
         insert("action", QString::fromLatin1(action));
         insert("actionSerial", value("actionSerial").toInt() + 1);
-        if (guideProcess_)
+        if (guideVisible())
             return;
         static const std::pair<const char *, const char *> routes[] = {
             {"up", "controllerUp"}, {"down", "controllerDown"},
@@ -879,7 +919,7 @@ private:
     }
     bool dispatchAllowed() const
     {
-        return window_ && (luluPresented_ || guideProcess_);
+        return window_ && (luluPresented_ || guideVisible());
     }
 
     void setupPresentationObserver()
