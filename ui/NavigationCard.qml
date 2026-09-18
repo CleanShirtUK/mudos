@@ -87,7 +87,7 @@ Item {
         // Selection ownership changes with the logical focus immediately;
         // selectionProgress remains presentation-only for the existing 180 ms
         // focus choreography.
-        focusBrightness: root.selectedOpacityOwner ? 1 : 0.68
+        focusBrightness: root.selectedOpacityOwner ? 1 : 0.84
             displayTitle: root.displayTitle
             symbolicArtwork: root.symbolicArtwork
             artworkRole: root.artworkRole

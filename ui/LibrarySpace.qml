@@ -91,7 +91,7 @@ Item {
     readonly property real gridBottomInset: gridTopInset
     readonly property real gridRowStep: libraryCardHeight + gridGap
     property point surfaceSceneOrigin: Qt.point(0, 0)
-    property real unfocusedBrightness: 0.6
+    property real unfocusedBrightness: 0.8
     readonly property int gridRow: Math.floor(selectedIndex / gridColumns)
     readonly property real gridContentHeight: libraryGames.length
         ? Math.ceil(libraryGames.length / gridColumns) * gridRowStep - gridGap

@@ -118,7 +118,7 @@ Item {
         compactTitleOpacity: root.compactTitleOpacity
         focalLayoutCardWidth: root.focalCardWidth
         presentationState: root.presentationState
-        focusBrightness: root.focused ? 1 : 0.68
+        focusBrightness: root.focused ? 1 : 0.84
         onPlayFeedbackCompleted: root.playFeedbackCompleted(root.game_id)
         liveSceneCoordinates: true
         opticsStage: root.presentationProgress > 0 ? 7 : -1

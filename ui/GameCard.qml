@@ -406,7 +406,7 @@ Rectangle {
             property real borderWidthPx: card.uiScale
             property real borderAlpha: artworkFrame.artworkBorderAlpha
             property real focusBrightness: card.focusBrightness
-        opacity: card.focused ? 1 : 0.68
+        opacity: card.focused ? 1 : 0.84
             visible: !card.iconArtwork
             fragmentShader: "shaders/card-rounded.frag.qsb"
         }
