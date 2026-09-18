@@ -76,7 +76,10 @@ Window {
     readonly property real statusStripRightMargin: homeCategoryRailX
     readonly property real statusStripTop: selectedDomainY
         - (domains.length - 1) * homeCategoryPitch
-    readonly property real expandedShellSideMargin: design(120)
+    readonly property real expandedContentSideMargin: design(120)
+    readonly property real expandedContentInset: design(24)
+    readonly property real expandedShellSideMargin: expandedContentSideMargin
+        - expandedContentInset
     readonly property real expandedSurfaceChromeGap: design(18)
     readonly property real statusStripBottom: statusStripTop + systemStatusStrip.height
     readonly property real expandedHintRowTop: interactionRail.y + expandedHintRow.y
@@ -2564,7 +2567,7 @@ Window {
              canonicalTexture: orbitTexture
              canonicalCoordinateRoot: orbitRenderSource
              canonicalSize: Qt.size(root.width, root.height)
-             contentSideMargin: root.expandedShellSideMargin
+             contentSideMargin: root.expandedContentSideMargin
              firstVisibleRow: root.libraryFirstVisibleRow
              contentBottom: root.expandedContentBottom
              contentOpacity: root.libraryContentOpacity
@@ -2585,7 +2588,7 @@ Window {
             focalCardWidth: root.homeFocalCardWidth
             focalCardHeight: root.homeFocalCardHeight
              compactCardWidth: root.compactCardWidth
-             contentSideMargin: root.expandedShellSideMargin
+             contentSideMargin: root.expandedContentSideMargin
              uiScale: root.uiScale
             typography: typography
             luluPalette: luluPalette
