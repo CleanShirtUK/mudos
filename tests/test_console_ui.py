@@ -382,6 +382,10 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertIn('sourceItem.mapToItem', card_surface)
         self.assertIn('scale: 1 + 0.05', settings_page)
         self.assertIn('horizontalScaleInset', settings_page)
+        self.assertIn('function ensureSelectedVisible()', settings_page)
+        self.assertIn('onSelectedIndexChanged: ensureSelectedVisible()', settings_page)
+        self.assertIn('transformOrigin: Item.Center', settings_page)
+        self.assertIn('transformOrigin: Item.Left', settings_page)
 
         for page_name in (
                 "SystemSpace.qml", "InternetSettings.qml", "StorageSettings.qml",

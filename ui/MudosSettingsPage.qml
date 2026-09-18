@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Effects
 
 Item {
     id: root
@@ -22,8 +23,29 @@ Item {
     readonly property real contentInset: 44 * root.uiScale
     readonly property real horizontalScaleInset: 72 * root.uiScale
     readonly property real nominalRowWidth: root.expandedShellWidth
-        - 2 * root.contentInset - root.horizontalScaleInset
+        - 2 * (root.contentInset + root.horizontalScaleInset)
+    property real scrollY: 0
     signal rowActivated(int index)
+
+    function ensureSelectedVisible() {
+        var step = 58 * root.uiScale + 10 * root.uiScale
+        var top = 4 * root.uiScale + root.selectedIndex * step
+        var bottom = top + 58 * root.uiScale
+        var viewportTop = root.scrollY
+        var viewportBottom = root.scrollY
+            + (7 * 58 * root.uiScale + 6 * 10 * root.uiScale)
+        var maximum = Math.max(0, rowColumn.height + 8 * root.uiScale
+            - (7 * 58 * root.uiScale + 6 * 10 * root.uiScale))
+        if (top < viewportTop)
+            root.scrollY = Math.max(0, top)
+        else if (bottom > viewportBottom)
+            root.scrollY = Math.min(maximum, bottom
+                - (7 * 58 * root.uiScale + 6 * 10 * root.uiScale))
+    }
+
+    onSelectedIndexChanged: ensureSelectedVisible()
+    onRowsChanged: ensureSelectedVisible()
+    Component.onCompleted: ensureSelectedVisible()
 
     LibrarySpatialSurface {
         fullscreenX: root.expandedShellX
@@ -60,8 +82,7 @@ Item {
         clip: true
         contentWidth: width
         contentHeight: rowColumn.height + 8 * root.uiScale
-        contentY: Math.max(0, Math.min(contentHeight - height,
-            root.selectedIndex * (58 * root.uiScale + 10 * root.uiScale)))
+        contentY: root.scrollY
         boundsBehavior: Flickable.StopAtBounds
 
         Column {
@@ -92,11 +113,10 @@ Item {
                     Item {
                         id: visualRow
                         anchors.fill: parent
-                        scale: 1 + 0.05 * rowDelegate.selectionProgress
-                        transformOrigin: Item.Left
-
                         MudosCardSurface {
                             anchors.fill: parent
+                            scale: 1 + 0.05 * rowDelegate.selectionProgress
+                            transformOrigin: Item.Center
                             selectionProgress: rowDelegate.selectionProgress
                             uiScale: root.uiScale
                             luluPalette: root.luluPalette
@@ -106,34 +126,57 @@ Item {
                             mappingItem: rowDelegate
                         }
 
-                        Text {
-                            id: labelText
-                            x: 18 * root.uiScale
-                            anchors.verticalCenter: parent.verticalCenter
-                            width: Math.max(0, parent.width - valueText.width
-                                - 40 * root.uiScale)
-                            text: rowDelegate.modelData.label
-                            color: rowDelegate.index === root.selectedIndex
-                                ? root.luluPalette.primaryText
-                                : root.luluPalette.navigationText
-                            font.family: root.typography.interfaceFamily
-                            font.pixelSize: root.typography.size("body", 18)
-                            elide: Text.ElideRight
-                        }
-                        Text {
-                            id: valueText
-                            anchors.right: parent.right
-                            anchors.rightMargin: 18 * root.uiScale
-                            anchors.verticalCenter: parent.verticalCenter
-                            width: Math.min(implicitWidth, parent.width * 0.48)
-                            text: String(rowDelegate.modelData.value || "")
-                            color: rowDelegate.index === root.selectedIndex
-                                ? root.luluPalette.primaryText
-                                : root.luluPalette.navigationText
-                            font.family: root.typography.interfaceFamily
-                            font.pixelSize: root.typography.size("body", 16)
-                            horizontalAlignment: Text.AlignRight
-                            elide: Text.ElideRight
+                        Item {
+                            id: contentRow
+                            anchors.fill: parent
+                            scale: 1 + 0.05 * rowDelegate.selectionProgress
+                            transformOrigin: Item.Left
+
+                            Text {
+                                id: labelText
+                                x: 18 * root.uiScale
+                                anchors.verticalCenter: parent.verticalCenter
+                                width: Math.max(0, parent.width - valueText.width
+                                    - 40 * root.uiScale)
+                                text: rowDelegate.modelData.label
+                                color: rowDelegate.index === root.selectedIndex
+                                    ? root.luluPalette.primaryText
+                                    : root.luluPalette.navigationText
+                                font.family: root.typography.interfaceFamily
+                                font.pixelSize: root.typography.size("body", 18)
+                                elide: Text.ElideRight
+                                layer.enabled: true
+                                layer.effect: MultiEffect {
+                                    shadowEnabled: true
+                                    shadowColor: "#000000"
+                                    shadowOpacity: 0.35
+                                    shadowBlur: 0.2
+                                    shadowVerticalOffset: 1 * root.uiScale
+                                }
+                            }
+                            Text {
+                                id: valueText
+                                anchors.right: parent.right
+                                anchors.rightMargin: 18 * root.uiScale
+                                anchors.verticalCenter: parent.verticalCenter
+                                width: Math.min(implicitWidth, parent.width * 0.48)
+                                text: String(rowDelegate.modelData.value || "")
+                                color: rowDelegate.index === root.selectedIndex
+                                    ? root.luluPalette.primaryText
+                                    : root.luluPalette.navigationText
+                                font.family: root.typography.interfaceFamily
+                                font.pixelSize: root.typography.size("body", 16)
+                                horizontalAlignment: Text.AlignRight
+                                elide: Text.ElideRight
+                                layer.enabled: true
+                                layer.effect: MultiEffect {
+                                    shadowEnabled: true
+                                    shadowColor: "#000000"
+                                    shadowOpacity: 0.35
+                                    shadowBlur: 0.2
+                                    shadowVerticalOffset: 1 * root.uiScale
+                                }
+                            }
                         }
                     }
 
