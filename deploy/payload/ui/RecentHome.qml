@@ -21,6 +21,7 @@ Item {
     property real focalCardWidth: 760
     property real focalCardHeight: 500
     property real focalScale: 1
+    property real compactCardHeight: 375
     property int playActivationSerial: 0
     property var canonicalTexture
     property var canonicalCoordinateRoot
@@ -33,10 +34,12 @@ Item {
     property real railGap: 18 * uiScale
     property var presentationStartX: []
     property var presentationStartWidth: []
+    property var presentationStartHeight: []
     property var presentationStartProgress: []
     property var presentationStartChrome: []
     property var presentationStartCompactTitle: []
     property bool suppressTransitionCompletion: false
+    property var transitionDiagnosticMarks: ({})
     signal launchRequested(string gameId)
     signal activationRequested(string gameId)
     signal playFeedbackCompleted(string gameId)
@@ -126,6 +129,20 @@ Item {
                                                 focalCardWidth, compactCardWidth)
     }
 
+    function animatedBaseWidth(index) {
+        return animatedDepthForIndex(index) < 1 ? focalCardWidth : compactCardWidth
+    }
+
+    function animatedBaseHeight(index) {
+        return animatedDepthForIndex(index) < 1
+            ? focalCardHeight : compactCardHeight
+    }
+
+    function isFocalTransitionIndex(index) {
+        return transitionAnimation.running
+            && (index === transitionFromIndex || index === selectedIndex)
+    }
+
     function cardBlurRadius(relativeIndex) {
         var depth = Math.min(3, Math.abs(Math.round(relativeIndex)))
         return SpatialDepth.cardBlur(depth)
@@ -139,9 +156,14 @@ Item {
         return relativeIndex === 0 ? focalCardWidth : compactCardWidth
     }
 
+    function railHeight(relativeIndex) {
+        return relativeIndex === 0 ? focalCardHeight : compactCardHeight
+    }
+
     function capturePresentation() {
         var startsX = []
         var startsWidth = []
+        var startsHeight = []
         var startsProgress = []
         var startsChrome = []
         var startsCompactTitle = []
@@ -149,6 +171,7 @@ Item {
             var card = recentRepeater.itemAt(index)
             startsX[index] = card ? card.x : visualRailX(index - selectedIndex)
             startsWidth[index] = card ? card.width : railWidth(index - selectedIndex)
+            startsHeight[index] = card ? card.height : railHeight(index - selectedIndex)
             startsProgress[index] = card ? card.presentationProgress
                                           : (index === selectedIndex ? 1 : 0)
             startsChrome[index] = card ? card.focalChromeOpacity
@@ -158,6 +181,7 @@ Item {
         }
         presentationStartX = startsX
         presentationStartWidth = startsWidth
+        presentationStartHeight = startsHeight
         presentationStartProgress = startsProgress
         presentationStartChrome = startsChrome
         presentationStartCompactTitle = startsCompactTitle
@@ -384,6 +408,7 @@ Item {
                 toRelativeIndex: index - recentHome.selectedIndex
                 startX: recentHome.presentationStartX[index] || 0
                 startWidth: recentHome.presentationStartWidth[index] || 0
+                startHeight: recentHome.presentationStartHeight[index] || 0
                 startProgress: recentHome.presentationStartProgress[index] || 0
                 startChrome: recentHome.presentationStartChrome[index] || 0
                 startCompactTitle: recentHome.presentationStartCompactTitle[index] || 0
@@ -399,6 +424,7 @@ Item {
                 focalCardWidth: recentHome.focalCardWidth
                 focalCardHeight: recentHome.focalCardHeight
                 compactCardWidth: recentHome.compactCardWidth
+                compactCardHeight: recentHome.compactCardHeight
                 focalScale: recentHome.focalScale
                 uiScale: recentHome.uiScale
                 typography: recentHome.typography
@@ -407,9 +433,18 @@ Item {
                 onPlayFeedbackCompleted: recentHome.playFeedbackCompleted(gameId)
                 visible: true
                 z: -recentHome.animatedDepthForIndex(index)
-                width: recentHome.animatedRailWidth(index)
-                height: focalCardHeight
-                x: recentHome.animatedRailX(index)
+                width: recentHome.isFocalTransitionIndex(index)
+                    ? startWidth + (recentHome.railWidth(index - recentHome.selectedIndex)
+                        - startWidth) * railProgress
+                    : recentHome.animatedBaseWidth(index)
+                height: recentHome.isFocalTransitionIndex(index)
+                    ? startHeight + (recentHome.railHeight(index - recentHome.selectedIndex)
+                        - startHeight) * railProgress
+                    : recentHome.animatedBaseHeight(index)
+                x: recentHome.isFocalTransitionIndex(index)
+                    ? startX + (recentHome.railX(index - recentHome.selectedIndex)
+                        - startX) * railProgress
+                    : recentHome.animatedRailX(index)
             }
         }
     }

@@ -36,6 +36,7 @@ Item {
     property real focalCardWidth: 760
     property real focalCardHeight: 500
     property real compactCardWidth: 160
+    property real compactCardHeight: 375
     property real focalScale: 1
     property real uiScale: 1
     property var typography
@@ -44,6 +45,7 @@ Item {
     property bool focused: false
     property real startX: 0
     property real startWidth: 0
+    property real startHeight: 0
     property real startProgress: 0
     property real startChrome: 0
     property real startCompactTitle: 0
@@ -56,10 +58,18 @@ Item {
 
     readonly property real animatedDepth: home
         ? home.animatedDepthForIndex(index) : Math.abs(toRelativeIndex)
-    readonly property real presentationProgress: Math.max(0,
-        Math.min(1, 1 - animatedDepth))
-    readonly property real focalChromeOpacity: presentationProgress
-    readonly property real compactTitleOpacity: 1 - presentationProgress
+    readonly property bool focalTransition: home
+        ? home.isFocalTransitionIndex(index) : false
+    readonly property real targetProgress: focused ? 1 : 0
+    readonly property real presentationProgress: focalTransition
+        ? startProgress + (targetProgress - startProgress) * railProgress
+        : Math.max(0, Math.min(1, 1 - animatedDepth))
+    readonly property real focalChromeOpacity: focalTransition
+        ? startChrome + ((focused ? 1 : 0) - startChrome) * railProgress
+        : presentationProgress
+    readonly property real compactTitleOpacity: focalTransition
+        ? startCompactTitle + ((focused ? 0 : 1) - startCompactTitle) * railProgress
+        : 1 - presentationProgress
     readonly property real targetX: home ? home.railX(toRelativeIndex) : 0
     // This is deliberately composed from the properties that move the live
     // Recent presentation. mapToItem() itself does not notify on ancestor

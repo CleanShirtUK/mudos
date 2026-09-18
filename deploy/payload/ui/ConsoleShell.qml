@@ -86,8 +86,10 @@ Window {
     readonly property real homeFocalCardWidth: Math.min(design(900), width - homeContentRailX - design(40), homeFocalCardHeight * 1.9)
     readonly property real homeCompactCardWidth: compactCardWidth
     readonly property real homeInterCardGap: design(24)
-    readonly property real compactCardWidth: Math.min(design(220), acceptedRecentCardHeight * 0.62)
     readonly property real compactCardHeight: acceptedRecentCardHeight
+    readonly property real compactGameCardAspect: 0.68
+    readonly property real compactCardWidth: Math.min(design(260),
+        compactCardHeight * compactGameCardAspect)
     readonly property real homeContentOriginY: homeHintTopY - acceptedRecentCardHeight - headingCardGap
     readonly property real homeActiveContentOriginY: homeHintTopY - homeFocalCardHeight
         - headingCardGap + homeHeadingCardClearance + homeCompositionOffsetY
@@ -2250,9 +2252,10 @@ Window {
                         presentationCoordinator: presentationCoordinator
                         selectedIndex: root.recentIndex
                         playActivationSerial: root.playActivationSerial
-                        focalCardWidth: root.homeFocalCardWidth
-                        focalCardHeight: root.homeFocalCardHeight
-                        compactCardWidth: root.homeCompactCardWidth
+                         focalCardWidth: root.homeFocalCardWidth
+                         focalCardHeight: root.homeFocalCardHeight
+                         compactCardWidth: root.homeCompactCardWidth
+                         compactCardHeight: root.compactCardHeight
                         railGap: root.homeInterCardGap
                         focalScale: 0.67
                         uiScale: root.uiScale

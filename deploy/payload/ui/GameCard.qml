@@ -56,8 +56,8 @@ Rectangle {
     property real compactTitleOpacity: 1
     property real selectionProgress: focused ? 1 : 0
     property real depthDistance: 0
-    property real depthScale: SpatialDepth.cardScale(depthDistance)
-    property real depthBlurRadius: SpatialDepth.cardBlur(depthDistance)
+    property real depthScale: SpatialDepth.cardScaleAt(depthDistance)
+    property real depthBlurRadius: SpatialDepth.cardBlurAt(depthDistance)
     property int playActivationSerial: 0
     property real playButtonScale: 1
     signal playFeedbackCompleted()
