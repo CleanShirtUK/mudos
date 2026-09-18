@@ -22,6 +22,8 @@ Item {
     property bool rowsVisible: true
     readonly property real contentInset: 44 * root.uiScale
     readonly property real horizontalScaleInset: 72 * root.uiScale
+    readonly property real verticalScaleInset: 6 * root.uiScale
+    readonly property real selectionScale: 1.03
     readonly property real nominalRowWidth: root.expandedShellWidth
         - 2 * root.contentInset - root.horizontalScaleInset
     property real scrollY: 0
@@ -29,12 +31,14 @@ Item {
 
     function ensureSelectedVisible() {
         var step = 58 * root.uiScale + 10 * root.uiScale
-        var top = 4 * root.uiScale + root.selectedIndex * step
+        var top = root.verticalScaleInset + root.selectedIndex * step
         var bottom = top + 58 * root.uiScale
-        var viewportTop = root.scrollY
+        var viewportTop = root.scrollY + root.verticalScaleInset
         var viewportBottom = root.scrollY
             + (7 * 58 * root.uiScale + 6 * 10 * root.uiScale)
-        var maximum = Math.max(0, rowColumn.height + 8 * root.uiScale
+            - root.verticalScaleInset
+        var maximum = Math.max(0, rowColumn.height
+            + 2 * root.verticalScaleInset
             - (7 * 58 * root.uiScale + 6 * 10 * root.uiScale))
         if (top < viewportTop)
             root.scrollY = Math.max(0, top)
@@ -81,13 +85,13 @@ Item {
         visible: root.rowsVisible
         clip: true
         contentWidth: width
-        contentHeight: rowColumn.height + 8 * root.uiScale
+        contentHeight: rowColumn.height + 2 * root.verticalScaleInset
         contentY: root.scrollY
         boundsBehavior: Flickable.StopAtBounds
 
         Column {
             id: rowColumn
-            y: 4 * root.uiScale
+            y: root.verticalScaleInset
             x: root.horizontalScaleInset
             width: root.nominalRowWidth
             spacing: 10 * root.uiScale
@@ -115,7 +119,8 @@ Item {
                         anchors.fill: parent
                         MudosCardSurface {
                             anchors.fill: parent
-                            scale: 1 + 0.05 * rowDelegate.selectionProgress
+                            scale: 1 + (root.selectionScale - 1)
+                                * rowDelegate.selectionProgress
                             transformOrigin: Item.Center
                             selectionProgress: rowDelegate.selectionProgress
                             uiScale: root.uiScale
@@ -158,7 +163,8 @@ Item {
                                 width: contentRow.labelVisualWidth
                                 height: parent.height
                                 anchors.verticalCenter: parent.verticalCenter
-                                scale: 1 + 0.05 * rowDelegate.selectionProgress
+                                scale: 1 + (root.selectionScale - 1)
+                                    * rowDelegate.selectionProgress
                                 transformOrigin: Item.Center
 
                                 Text {
@@ -191,7 +197,8 @@ Item {
                                 width: contentRow.valueVisualWidth
                                 height: parent.height
                                 visible: width > 0
-                                scale: 1 + 0.05 * rowDelegate.selectionProgress
+                                scale: 1 + (root.selectionScale - 1)
+                                    * rowDelegate.selectionProgress
                                 transformOrigin: Item.Center
 
                                 Text {
