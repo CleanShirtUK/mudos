@@ -6,6 +6,7 @@ Item {
     property var guideModel
     property var luluPalette
     property var displayUnderlay
+    property var blurredUnderlay
     property string glassMode: "glass"
     property real uiScale: 1
 
@@ -27,7 +28,8 @@ Item {
             objectName: "mudosGuideGlass"
             anchors.fill: parent
             anchors.margins: 1 * root.uiScale
-            backdrop: root.displayUnderlay
+            backdrop: root.glassMode === "plain"
+                ? root.displayUnderlay : root.blurredUnderlay
             canonicalSize: root.displayUnderlay.frameSize
             canonicalRect: Qt.rect(panel.x, panel.y, panel.width, panel.height)
             cornerRadius: 10 * root.uiScale

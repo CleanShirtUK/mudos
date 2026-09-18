@@ -290,6 +290,8 @@ QSGNode *MudosDisplayUnderlay::updatePaintNode(QSGNode *oldNode, UpdatePaintNode
     auto *texture = window()->createTextureFromImage(frame_);
     if (!texture)
         return node;
+    texture->setFiltering(QSGTexture::Linear);
+    texture->setMipmapFiltering(QSGTexture::None);
     provider_->setTexture(texture);
     if (textureRevision_ <= 3 || textureRevision_ % 60 == 0)
         qInfo() << "MUDOS_DISPLAY_UNDERLAY_TEXTURE"

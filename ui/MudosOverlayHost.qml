@@ -41,12 +41,35 @@ MudosOverlayWindow {
         opacity: 1
     }
 
+    MudosSeparableBlur {
+        id: separableBlur
+        width: displayUnderlay.width
+        height: displayUnderlay.height
+        sourceItem: displayUnderlay
+        sourceTextureSize: displayUnderlay.frameSize
+        blurRadius: 1.5 * root.uiScale
+        stage: displayUnderlay.glassMode === "horizontal" ? 1 : 2
+        visible: displayUnderlay.glassMode !== "raw"
+        opacity: 1
+    }
+
+    ShaderEffectSource {
+        id: blurredUnderlay
+        width: separableBlur.width
+        height: separableBlur.height
+        sourceItem: separableBlur
+        textureSize: displayUnderlay.frameSize
+        live: true
+        visible: false
+    }
+
     MudosGuidePanel {
         visible: root.guideModel.guideVisible && displayUnderlay.glassMode !== "raw"
         anchors.fill: parent
         guideModel: root.guideModel
         luluPalette: root.luluPalette
         displayUnderlay: displayUnderlay
+        blurredUnderlay: blurredUnderlay
         glassMode: displayUnderlay.glassMode
         uiScale: root.uiScale
     }
