@@ -22,8 +22,13 @@ Item {
     property bool rowsVisible: true
     readonly property real contentInset: 44 * root.uiScale
     readonly property real horizontalScaleInset: 72 * root.uiScale
-    readonly property real verticalScaleInset: 6 * root.uiScale
-    readonly property real selectionScale: 1.03
+    readonly property real selectionScale: 1.01
+    readonly property real selectedBorderWidth: 3 * root.uiScale
+    readonly property real selectedGlassEdgeSafety: 3 * root.uiScale
+    readonly property real verticalScaleInset:
+        58 * root.uiScale * (root.selectionScale - 1) / 2
+        + root.selectedBorderWidth * root.selectionScale / 2
+        + root.selectedGlassEdgeSafety
     readonly property real nominalRowWidth: root.expandedShellWidth
         - 2 * root.contentInset - root.horizontalScaleInset
     property real scrollY: 0

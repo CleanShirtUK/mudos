@@ -380,7 +380,7 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertIn('focusedCardSurface', card_surface)
         self.assertIn('while (dependencyItem)', card_surface)
         self.assertIn('sourceItem.mapToItem', card_surface)
-        self.assertIn('selectionScale: 1.03', settings_page)
+        self.assertIn('selectionScale: 1.01', settings_page)
         self.assertIn('root.verticalScaleInset', settings_page)
         self.assertIn('horizontalScaleInset', settings_page)
         self.assertIn('function ensureSelectedVisible()', settings_page)
