@@ -1960,7 +1960,8 @@ Window {
 
     Component.onCompleted: {
         inputSurface.forceActiveFocus()
-        root.applyAcquisitionSnapshot(systemStatus.acquisitionSnapshot)
+        if (systemStatus)
+            root.applyAcquisitionSnapshot(systemStatus.acquisitionSnapshot)
         refreshCatalogue()
         refreshStore()
         presentationCoordinator.beginStartup()
