@@ -2653,9 +2653,8 @@ Window {
 
         SystemSpace {
             anchors.fill: parent
-            visible: root.space === "system"
+            visible: root.space === "system" && !root.systemLanding
                 && root.systemCategories[root.systemCategoryIndex] !== "Network"
-            active: !root.systemLanding
             category: root.systemCategories[root.systemCategoryIndex]
             settings: root.systemSettings
             selectedIndex: root.systemRowIndex
@@ -2665,6 +2664,10 @@ Window {
             canonicalTexture: orbitTexture
             canonicalCoordinateRoot: orbitRenderSource
             canonicalSize: Qt.size(root.width, root.height)
+            expandedShellX: root.expandedShellX
+            expandedShellY: root.expandedShellY
+            expandedShellWidth: root.expandedShellWidth
+            expandedShellHeight: root.expandedShellHeight
             onActionRequested: {
                 if (root.systemCategories[root.systemCategoryIndex] === "Mudos Menu")
                     root.activateMudosAction(key)
