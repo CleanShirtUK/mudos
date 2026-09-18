@@ -509,7 +509,7 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertIn("origin.x: card.width * 0.5", game_card)
         self.assertIn("loops: Animation.Infinite", game_card)
         self.assertIn("duration: 2600", game_card)
-        self.assertIn("duration: 5200", game_card)
+        self.assertIn("duration: 2000", game_card)
         self.assertIn("Easing.InOutSine", game_card)
         self.assertIn("presentationProgress >= 1", game_card)
         self.assertIn("readonly property real headerToGridGap: currentHeaderToGridGap / 2", library_space)

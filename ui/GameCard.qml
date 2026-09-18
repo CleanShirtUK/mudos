@@ -88,7 +88,7 @@ Rectangle {
         running: card.breathingReady
         loops: Animation.Infinite
         NumberAnimation { target: card; property: "breathingScale"; from: 1; to: 1.01; duration: 2600; easing.type: Easing.InOutSine }
-        NumberAnimation { target: card; property: "breathingScale"; from: 1.01; to: 0.99; duration: 5200; easing.type: Easing.InOutSine }
+        NumberAnimation { target: card; property: "breathingScale"; from: 1.01; to: 0.99; duration: 2000; easing.type: Easing.InOutSine }
         NumberAnimation { target: card; property: "breathingScale"; from: 0.99; to: 1; duration: 2600; easing.type: Easing.InOutSine }
         onStopped: {
             if (!card.breathingReady)
