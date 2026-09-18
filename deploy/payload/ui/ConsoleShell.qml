@@ -1134,9 +1134,10 @@ Window {
         console.log("RECENT_NAV", "requested", delta, "result", nextIndex)
         if (nextIndex === recentIndex)
             return
+        var previousIndex = recentIndex
         recentHome.capturePresentation()
         recentIndex = nextIndex
-        recentHome.beginRetarget()
+        recentHome.beginRetarget(previousIndex)
         console.log("RECENT_NAV", "currentRootIndex", recentIndex,
                     "delta", delta, "requestedIndex", nextIndex,
                     "selectedIndex", recentHome.selectedIndex,

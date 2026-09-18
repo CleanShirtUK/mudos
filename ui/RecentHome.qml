@@ -43,20 +43,20 @@ Item {
     signal selectionIndexRequested(int index)
     signal selectionGameChanged(string gameId)
     readonly property int itemCount: recentRepeater.count
+    readonly property real animatedSelectedPosition: transitionFromIndex
+        + (selectedIndex - transitionFromIndex) * transitionProgress
     readonly property real rowRightEdge: {
         var rightEdge = 0
         for (var index = 0; index < recentRepeater.count; index++) {
-            var relativeIndex = index - selectedIndex
             rightEdge = Math.max(rightEdge,
-                                 visualRailX(relativeIndex) + railWidth(relativeIndex))
+                                 animatedRailX(index) + animatedRailWidth(index))
         }
         return rightEdge
     }
     readonly property real rowLeftEdge: {
         var leftEdge = 0
         for (var index = 0; index < recentRepeater.count; index++) {
-            var relativeIndex = index - selectedIndex
-            leftEdge = Math.min(leftEdge, visualRailX(relativeIndex))
+            leftEdge = Math.min(leftEdge, animatedRailX(index))
         }
         return leftEdge
     }
@@ -112,9 +112,27 @@ Item {
             focalCardWidth, compactCardWidth, railGap)
     }
 
+    function animatedDepthForIndex(index) {
+        return Math.abs(index - animatedSelectedPosition)
+    }
+
+    function animatedRailX(index) {
+        return SpatialDepth.projectedXForIndex(index, animatedSelectedPosition,
+            focalCardWidth, compactCardWidth, railGap)
+    }
+
+    function animatedRailWidth(index) {
+        return SpatialDepth.visibleWidthAtDepth(animatedDepthForIndex(index),
+                                                focalCardWidth, compactCardWidth)
+    }
+
     function cardBlurRadius(relativeIndex) {
         var depth = Math.min(3, Math.abs(Math.round(relativeIndex)))
         return SpatialDepth.cardBlur(depth)
+    }
+
+    function cardBlurRadiusForIndex(index) {
+        return SpatialDepth.cardBlurAt(animatedDepthForIndex(index))
     }
 
     function railWidth(relativeIndex) {
@@ -149,13 +167,13 @@ Item {
                     "chrome", startsChrome, "compactTitle", startsCompactTitle)
     }
 
-    function beginRetarget() {
-        transitionFromIndex = selectedIndex
+    function beginRetarget(fromIndex) {
+        transitionFromIndex = fromIndex === undefined ? selectedIndex : fromIndex
         var toX = []
         var toWidth = []
         for (var index = 0; index < recentRepeater.count; index++) {
-            toX[index] = visualRailX(index - selectedIndex)
-            toWidth[index] = railWidth(index - selectedIndex)
+            toX[index] = animatedRailX(index)
+            toWidth[index] = animatedRailWidth(index)
         }
         console.log("RECENT_RETARGET", "target", selectedIndex,
                     "toX", toX, "toWidth", toWidth)
@@ -388,10 +406,10 @@ Item {
                 onActivationRequested: recentHome.activationRequested(gameId)
                 onPlayFeedbackCompleted: recentHome.playFeedbackCompleted(gameId)
                 visible: true
-                width: startWidth
-                    + (recentHome.railWidth(toRelativeIndex) - startWidth) * railProgress
+                z: -recentHome.animatedDepthForIndex(index)
+                width: recentHome.animatedRailWidth(index)
                 height: focalCardHeight
-                x: startX + (recentHome.visualRailX(toRelativeIndex) - startX) * railProgress
+                x: recentHome.animatedRailX(index)
             }
         }
     }

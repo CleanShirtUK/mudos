@@ -54,13 +54,12 @@ Item {
     signal activationRequested(string gameId)
     signal playFeedbackCompleted(string gameId)
 
-    readonly property real targetProgress: focused ? 1 : 0
-    readonly property real presentationProgress: startProgress
-        + (targetProgress - startProgress) * railProgress
-    readonly property real focalChromeOpacity: startChrome
-        + ((focused ? 1 : 0) - startChrome) * railProgress
-    readonly property real compactTitleOpacity: startCompactTitle
-        + ((focused ? 0 : 1) - startCompactTitle) * railProgress
+    readonly property real animatedDepth: home
+        ? home.animatedDepthForIndex(index) : Math.abs(toRelativeIndex)
+    readonly property real presentationProgress: Math.max(0,
+        Math.min(1, 1 - animatedDepth))
+    readonly property real focalChromeOpacity: presentationProgress
+    readonly property real compactTitleOpacity: 1 - presentationProgress
     readonly property real targetX: home ? home.railX(toRelativeIndex) : 0
     // This is deliberately composed from the properties that move the live
     // Recent presentation. mapToItem() itself does not notify on ancestor
@@ -112,7 +111,7 @@ Item {
         anchors.fill: parent
         game: root.gameRecord
         focused: root.focused
-        depthDistance: Math.abs(root.toRelativeIndex)
+        depthDistance: root.animatedDepth
         presentationProgress: root.presentationProgress
         compactEndpointWidth: root.compactCardWidth
         focalChromeOpacity: root.focalChromeOpacity
@@ -124,6 +123,7 @@ Item {
         liveSceneCoordinates: true
         opticsStage: root.presentationProgress > 0 ? 7 : -1
         compact: root.presentationState === "COMPACT"
+        nativeGlassTransparentOutsideMask: !root.focused
         showAction: false
         actionLabel: root.install_state === "available"
             ? "Available to Download" : (root.provider === "steam-store"
@@ -144,9 +144,10 @@ Item {
         anchors.fill: gameCard
         z: 10
         sourceItem: gameCard
-        blurRadius: root.home.cardBlurRadius(root.toRelativeIndex)
+        blurRadius: root.home.cardBlurRadiusForIndex(root.index)
         outputScale: gameCard.depthScale
-        active: !root.focused && gameCard.depthBlurRadius > 0
+        active: root.animatedDepth > 0.001
+            && root.home.cardBlurRadiusForIndex(root.index) > 0.001
     }
 
 
