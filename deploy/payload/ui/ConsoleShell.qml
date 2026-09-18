@@ -77,9 +77,19 @@ Window {
     readonly property real statusStripTop: selectedDomainY
         - (domains.length - 1) * homeCategoryPitch
     readonly property real expandedContentSideMargin: design(120)
-    readonly property real expandedContentInset: design(24)
-    readonly property real expandedShellSideMargin: expandedContentSideMargin
-        - expandedContentInset
+    // Frame the actual six-card visual envelope, using the same inter-card
+    // gap as the backing clearance on both sides.
+    readonly property real expandedGridGap: design(14)
+    readonly property real expandedGridCardWidth:
+        ((width - 2 * expandedContentSideMargin
+            - 5 * expandedGridGap) / 6) * 0.92
+    readonly property real expandedGridSlotWidth:
+        6 * expandedGridCardWidth + 5 * expandedGridGap
+    readonly property real expandedGridVisualWidth:
+        expandedGridSlotWidth
+        + (1.05 - 1.0) * expandedGridCardWidth
+    readonly property real expandedShellSideMargin:
+        (width - expandedGridVisualWidth) / 2 - expandedGridGap
     readonly property real expandedSurfaceChromeGap: design(18)
     readonly property real statusStripBottom: statusStripTop + systemStatusStrip.height
     readonly property real expandedHintRowTop: interactionRail.y + expandedHintRow.y

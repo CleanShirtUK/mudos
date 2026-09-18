@@ -138,7 +138,7 @@ Item {
         id: pageHeading
         x: contentOriginX
         opacity: librarySpace.contentOpacity
-        y: 76 * uiScale
+        y: 81 * uiScale
         text: librarySpace.headingText
         color: luluPalette.headingAccent
         font.family: typography ? typography.majorHeadingFamily : "JetBrains Mono"
