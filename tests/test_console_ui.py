@@ -523,7 +523,7 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertIn("gridTop: contentBottom - gridContentFootprintHeight", library_space)
         self.assertIn("horizontalCardWidth", library_space)
         self.assertIn("libraryCardHeight: libraryCardWidth * 1.55", library_space)
-        self.assertIn("expandedCardScale: 0.94", library_space)
+        self.assertIn("expandedCardScale: 0.92", library_space)
         self.assertIn("* expandedCardScale", library_space)
         self.assertIn("headingBottom: pageHeading.y + pageHeading.height", library_space)
         self.assertIn("firstRowTop: gridTop - selectedGrowth", library_space)

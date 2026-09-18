@@ -43,7 +43,7 @@ Item {
     readonly property real headerToGridGap: currentHeaderToGridGap / 2
     // A shared, restrained presentation reduction creates header breathing
     // room while preserving the card aspect ratio and six-column grid.
-    readonly property real expandedCardScale: 0.94
+    readonly property real expandedCardScale: 0.92
     readonly property real usableGridWidth: parent.width - 2 * contentSideMargin
     readonly property real headingBottom: pageHeading.y + pageHeading.height
     readonly property real firstRowTop: gridTop - selectedGrowth
