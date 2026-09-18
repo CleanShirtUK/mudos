@@ -77,9 +77,13 @@ Window {
     readonly property real statusStripTop: selectedDomainY
         - (domains.length - 1) * homeCategoryPitch
     readonly property real expandedShellSideMargin: design(96)
-    readonly property real expandedShellTop: statusStripTop
-        + systemStatusStrip.height + design(18)
-    readonly property real expandedShellBottom: interactionRail.y - design(18)
+    readonly property real expandedSurfaceChromeGap: design(18)
+    readonly property real statusStripBottom: statusStripTop + systemStatusStrip.height
+    readonly property real expandedHintRowTop: interactionRail.y + expandedHintRow.y
+    readonly property real expandedShellTop: statusStripBottom
+        + expandedSurfaceChromeGap
+    readonly property real expandedShellBottom: expandedHintRowTop
+        - expandedSurfaceChromeGap
     readonly property real expandedShellX: expandedShellSideMargin
     readonly property real expandedShellY: expandedShellTop
     readonly property real expandedShellWidth: width - 2 * expandedShellSideMargin
@@ -2757,6 +2761,7 @@ Window {
             height: root.design(72)
 
             Row {
+                id: expandedHintRow
                 // Size to the visible hints so the complete group, rather
                 // than a content-column box, is centered on the screen.
                 width: implicitWidth
