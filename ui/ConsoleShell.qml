@@ -84,7 +84,9 @@ Window {
     readonly property real homeFocalCardHeight: Math.min(design(500), (height - design(248 + 88)) * 0.82)
     readonly property real homeContentRailX: design(52)
     readonly property real homeFocalCardWidth: Math.min(design(900), width - homeContentRailX - design(40), homeFocalCardHeight * 1.9)
-    readonly property real homeCompactCardWidth: compactCardWidth
+    readonly property real homeNavigationCardWidth: design(248)
+    readonly property real homeNavigationCardHeight: design(170)
+    readonly property real homeCompactCardWidth: homeNavigationCardWidth
     readonly property real homeInterCardGap: design(24)
     readonly property real compactCardHeight: acceptedRecentCardHeight
     readonly property real compactGameCardAspect: 0.68
@@ -2254,7 +2256,7 @@ Window {
                         playActivationSerial: root.playActivationSerial
                          focalCardWidth: root.homeFocalCardWidth
                          focalCardHeight: root.homeFocalCardHeight
-                         compactCardWidth: root.homeCompactCardWidth
+                         compactCardWidth: root.compactCardWidth
                          compactCardHeight: root.compactCardHeight
                         railGap: root.homeInterCardGap
                         focalScale: 0.67
@@ -2299,14 +2301,14 @@ Window {
                         width: libraryReveal.width - root.homeContentRailX
                         height: root.homeFocalCardHeight
                         scale: libraryReveal.visible ? 1 : 0.94
-                         cardHeight: root.compactCardHeight
+                          cardHeight: root.homeNavigationCardHeight
                         uiScale: root.uiScale
                         typography: typography
                         luluPalette: luluPalette
                         canonicalTexture: orbitTexture
                         canonicalCoordinateRoot: orbitRenderSource
                         canonicalSize: Qt.size(root.width, root.height)
-                         compactCardWidth: root.compactCardWidth
+                          compactCardWidth: root.homeNavigationCardWidth
                          presentationCoordinator: presentationCoordinator
                          categoryProgress: root.homeCategoryProgress
                          categoryTransitioning: root.homeCategoryTransitioning
@@ -2341,8 +2343,8 @@ Window {
                      StoreHome {
                          width: storeReveal.width
                         height: root.homeFocalCardHeight
-                        cardWidth: root.compactCardWidth
-                        cardHeight: root.compactCardHeight
+                         cardWidth: root.homeNavigationCardWidth
+                         cardHeight: root.homeNavigationCardHeight
                         uiScale: root.uiScale
                         typography: typography
                         luluPalette: luluPalette
@@ -2377,8 +2379,8 @@ Window {
                         width: systemReveal.width - root.homeContentRailX
                         height: root.homeFocalCardHeight
                         y: 0
-                        cardWidth: root.compactCardWidth
-                        cardHeight: root.compactCardHeight
+                        cardWidth: root.homeNavigationCardWidth
+                        cardHeight: root.homeNavigationCardHeight
                         categories: root.systemCategories
                         selectedIndex: root.systemCategoryIndex
                         uiScale: root.uiScale

@@ -70,9 +70,11 @@ Rectangle {
     property var acquisitionJob: null
     property real focusBrightness: 1
     Behavior on depthScale {
+        enabled: !card.homeCard
         NumberAnimation { duration: 500; easing.type: Easing.OutQuint }
     }
     Behavior on depthBlurRadius {
+        enabled: !card.homeCard
         NumberAnimation { duration: 500; easing.type: Easing.OutQuint }
     }
     Behavior on selectionProgress {

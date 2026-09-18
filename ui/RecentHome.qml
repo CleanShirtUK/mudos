@@ -120,13 +120,27 @@ Item {
     }
 
     function animatedRailX(index) {
-        return SpatialDepth.projectedXForIndex(index, animatedSelectedPosition,
-            focalCardWidth, compactCardWidth, railGap)
+        return positionedRailX(index, animatedSelectedPosition)
     }
 
     function animatedRailWidth(index) {
         return SpatialDepth.visibleWidthAtDepth(animatedDepthForIndex(index),
                                                 focalCardWidth, compactCardWidth)
+    }
+
+    // The projected rail uses rendered (uniformly scaled) widths. Delegates
+    // retain base geometry, so compensate for the centre-origin scale here.
+    function positionedRailX(index, selectedPosition) {
+        var depth = Math.abs(index - selectedPosition)
+        var baseWidth = depth < 1 ? focalCardWidth : compactCardWidth
+        var scale = SpatialDepth.cardScaleAt(depth)
+        return SpatialDepth.projectedXForIndex(index, selectedPosition,
+            focalCardWidth, compactCardWidth, railGap)
+            - (baseWidth - baseWidth * scale) * 0.5
+    }
+
+    function targetRailX(index) {
+        return positionedRailX(index, selectedIndex)
     }
 
     function animatedBaseWidth(index) {
@@ -196,7 +210,7 @@ Item {
         var toX = []
         var toWidth = []
         for (var index = 0; index < recentRepeater.count; index++) {
-            toX[index] = animatedRailX(index)
+            toX[index] = positionedRailX(index, selectedIndex)
             toWidth[index] = animatedRailWidth(index)
         }
         console.log("RECENT_RETARGET", "target", selectedIndex,
@@ -442,9 +456,9 @@ Item {
                         - startHeight) * railProgress
                     : recentHome.animatedBaseHeight(index)
                 x: recentHome.isFocalTransitionIndex(index)
-                    ? startX + (recentHome.railX(index - recentHome.selectedIndex)
+                    ? startX + (recentHome.targetRailX(index)
                         - startX) * railProgress
-                    : recentHome.animatedRailX(index)
+                    : recentHome.positionedRailX(index, recentHome.animatedSelectedPosition)
             }
         }
     }
