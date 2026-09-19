@@ -37,7 +37,6 @@
 #include "catalogue-model.h"
 #include "recent-model.h"
 #include "mudos-glass-item.h"
-#include "mudos-display-underlay.h"
 #include "mudos-overlay-window.h"
 
 namespace {
@@ -430,13 +429,6 @@ public:
         return group.isEmpty() ? QStringLiteral("all") : group;
     }
 
-    Q_INVOKABLE bool showDiagnosticGuide()
-    {
-        if (guideVisible())
-            return true;
-        guideOwnerComposite_ = currentCompositePath();
-        return !guideOwnerComposite_.isEmpty() && startGuide();
-    }
 
 private slots:
     void onSessionStateChanged(const QString &stateJson)
@@ -540,22 +532,6 @@ private:
         return value.isValid() ? value.toInt() : -1;
     }
 
-    QString currentCompositePath() const
-    {
-        QDBusInterface manager(inputService,
-                               "/org/shadowblip/InputPlumber/Manager",
-                               "org.shadowblip.InputManager",
-                               QDBusConnection::systemBus());
-        const QString path = manager.property("GamepadOrder").toStringList().value(0);
-        if (!path.isEmpty())
-            return path;
-        if (!dbusRelays_.isEmpty())
-            return dbusRelays_.constBegin().value()->compositePath();
-        // Diagnostic launch only: the live path is still validated by the
-        // relay discovery path; this fallback lets pixel diagnostics run when
-        // the manager has not published GamepadOrder yet.
-        return QStringLiteral("/org/shadowblip/InputPlumber/CompositeDevice0");
-    }
 
     void clearTarget()
     {
@@ -1122,7 +1098,6 @@ int main(int argc, char **argv)
 {
     QGuiApplication application(argc, argv);
     qmlRegisterType<MudosGlassItem>("Mudos.Poc", 1, 0, "MudosGlassItem");
-    qmlRegisterType<MudosDisplayUnderlay>("Mudos.Poc", 1, 0, "MudosDisplayUnderlay");
     qmlRegisterType<MudosOverlayWindow>("Mudos.Poc", 1, 0, "MudosOverlayWindow");
     QQmlApplicationEngine engine;
     ControllerBridge controller(nullptr, &application);
@@ -1151,11 +1126,6 @@ int main(int argc, char **argv)
         return EXIT_FAILURE;
 
     window->show();
-    if (qEnvironmentVariableIsSet("LULU_GUIDE_DIAGNOSTIC_VISIBLE")) {
-        QTimer::singleShot(1500, &application, [&controller] {
-            qInfo() << "GUIDE_DIAGNOSTIC_SHOW" << controller.showDiagnosticGuide();
-        });
-    }
     return application.exec();
 }
 

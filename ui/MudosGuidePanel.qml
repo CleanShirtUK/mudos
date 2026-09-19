@@ -1,77 +1,109 @@
 import QtQuick
-import Mudos.Poc 1.0
+import QtQuick.Effects
 
 Item {
     id: root
     property var guideModel
     property var luluPalette
-    property var displayUnderlay
-    property var blurredUnderlay
-    property string glassMode: "glass"
+    property var typography
     property real uiScale: 1
+
+    readonly property real rowHeight: 58 * uiScale
+    readonly property real rowGap: 10 * uiScale
+    readonly property real rowWidth: 472 * uiScale
 
     Rectangle {
         id: panel
         anchors.centerIn: parent
         width: 520 * root.uiScale
-        height: root.guideModel.guideConfirmationPending
-            ? 250 * root.uiScale
-                : Math.max(250 * root.uiScale,
-                110 * root.uiScale + root.guideModel.guideActions.length * 60 * root.uiScale)
-        // The glass item is the panel surface. Keeping the old nearly opaque
-        // guideSurface here hid the sampled underlay.
-        color: "transparent"
-        border.color: root.luluPalette.guideBorder
-        border.width: 2 * root.uiScale
-
-        MudosGlassItem {
-            objectName: "mudosGuideGlass"
-            anchors.fill: parent
-            anchors.margins: 1 * root.uiScale
-            backdrop: root.glassMode === "plain"
-                ? root.displayUnderlay : root.blurredUnderlay
-            canonicalSize: root.displayUnderlay.frameSize
-            canonicalRect: Qt.rect(panel.x, panel.y, panel.width, panel.height)
-            cornerRadius: 10 * root.uiScale
-            refractionPixels: root.glassMode === "plain" || root.glassMode === "minimal"
-                ? 0 : 24 * root.uiScale
-            diffusionPixels: root.glassMode === "plain" || root.glassMode === "minimal"
-                ? 0 : 7 * root.uiScale
-            transmission: 1
-            bevelWidthPx: root.glassMode === "plain" || root.glassMode === "minimal"
-                ? 0 : 3 * root.uiScale
-            directSample: root.glassMode === "plain"
-        }
-
-        Text {
-            x: 24 * root.uiScale
-            y: 18 * root.uiScale
-            text: root.guideModel.guideConfirmationPending ? "Confirm" : "Guide"
-            color: root.luluPalette.primaryText
-            font.pixelSize: 28 * root.uiScale
-        }
+        height: Math.max(250 * root.uiScale,
+            110 * root.uiScale + root.guideModel.guideActions.length
+                * (root.rowHeight + root.rowGap))
+        radius: 10 * root.uiScale
+        color: root.luluPalette.overlaySurface
+        border.color: root.luluPalette.glassBorder
+        border.width: root.uiScale
 
         Column {
-            x: 24 * root.uiScale
-            y: 62 * root.uiScale
-            spacing: 12 * root.uiScale
-            Repeater {
-                model: root.guideModel.guideConfirmationPending
-                    ? [{label: "Cancel"}, {label: root.guideModel.guideConfirmationAction}]
-                    : root.guideModel.guideActions
-                delegate: Rectangle {
-                    width: 472 * root.uiScale
-                    height: 48 * root.uiScale
-                    color: index === root.guideModel.selection
-                        ? root.luluPalette.guideBorder : root.luluPalette.guideItemSurface
-                    Text {
-                        anchors.fill: parent
-                        anchors.leftMargin: 14 * root.uiScale
-                        text: modelData.label
-                        color: index === root.guideModel.selection
-                            ? root.luluPalette.guideSelectedText : root.luluPalette.primaryText
-                        font.pixelSize: 18 * root.uiScale
-                        verticalAlignment: Text.AlignVCenter
+            anchors.fill: parent
+            anchors.margins: 24 * root.uiScale
+            spacing: 18 * root.uiScale
+
+            Text {
+                text: root.guideModel.guideConfirmationPending ? "CONFIRM" : "GUIDE"
+                color: root.luluPalette.headingAccent
+                font.family: root.typography.majorHeadingFamily
+                font.weight: root.typography.majorHeadingWeight
+                font.pixelSize: root.typography.size("section", 30)
+                font.letterSpacing: 5 * root.uiScale
+                layer.enabled: true
+                layer.effect: MultiEffect {
+                    shadowEnabled: true
+                    shadowColor: "#000000"
+                    shadowOpacity: 0.35
+                    shadowBlur: 0.2
+                    shadowVerticalOffset: 1 * root.uiScale
+                }
+            }
+
+            Column {
+                width: root.rowWidth
+                spacing: root.rowGap
+                Repeater {
+                    model: root.guideModel.guideConfirmationPending
+                        ? [{label: "Cancel"},
+                           {label: root.guideModel.guideConfirmationAction}]
+                        : root.guideModel.guideActions
+                    delegate: Item {
+                        required property int index
+                        required property var modelData
+                        width: root.rowWidth
+                        height: root.rowHeight
+                        z: index === root.guideModel.selection ? 1 : 0
+                        property real selectionProgress:
+                            index === root.guideModel.selection ? 1 : 0
+                        Behavior on selectionProgress {
+                            NumberAnimation {
+                                duration: 180
+                                easing.type: Easing.OutQuint
+                            }
+                        }
+
+                        Rectangle {
+                            anchors.fill: parent
+                            scale: 1 + 0.01 * parent.selectionProgress
+                            transformOrigin: Item.Center
+                            radius: 8 * root.uiScale
+                            color: parent.selectionProgress > 0
+                                ? root.luluPalette.focusedCardSurface
+                                : root.luluPalette.cardSurface
+                            border.color: parent.selectionProgress > 0
+                                ? root.luluPalette.focusIndicator
+                                : root.luluPalette.glassBorder
+                            border.width: root.uiScale
+
+                            Text {
+                                anchors.fill: parent
+                                anchors.leftMargin: 18 * root.uiScale
+                                anchors.rightMargin: 18 * root.uiScale
+                                text: parent.parent.modelData.label
+                                color: parent.parent.selectionProgress > 0
+                                    ? root.luluPalette.primaryText
+                                    : root.luluPalette.navigationText
+                                font.family: root.typography.interfaceFamily
+                                font.pixelSize: root.typography.size("body", 18)
+                                verticalAlignment: Text.AlignVCenter
+                                elide: Text.ElideRight
+                                layer.enabled: true
+                                layer.effect: MultiEffect {
+                                    shadowEnabled: true
+                                    shadowColor: "#000000"
+                                    shadowOpacity: 0.35
+                                    shadowBlur: 0.2
+                                    shadowVerticalOffset: 1 * root.uiScale
+                                }
+                            }
+                        }
                     }
                 }
             }

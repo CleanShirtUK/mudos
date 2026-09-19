@@ -1,5 +1,5 @@
 import QtQuick
-import Mudos.Poc 1.0
+import QtQuick.Effects
 
 Item {
     id: options
@@ -15,7 +15,6 @@ Item {
     property real uiScale: 1
     property var typography
     property var luluPalette
-    property var displayUnderlay
     signal activated()
     signal backed()
     signal queryEdited(string value)
@@ -40,27 +39,11 @@ Item {
         anchors.top: parent.top
         anchors.bottom: parent.bottom
         width: Math.min(parent.width * 0.48, 560 * options.uiScale)
-        color: Qt.rgba(options.luluPalette.overlaySurface.r,
-            options.luluPalette.overlaySurface.g,
-            options.luluPalette.overlaySurface.b, 0.68)
-        border.color: options.luluPalette.focusIndicator
+        color: options.luluPalette.overlaySurface
+        border.color: options.luluPalette.glassBorder
         border.width: options.uiScale
+        radius: 10 * options.uiScale
         clip: true
-
-        MudosGlassItem {
-            anchors.fill: parent
-            anchors.margins: 1
-            backdrop: options.displayUnderlay
-            canonicalSize: options.displayUnderlay.frameSize.width > 0
-                ? options.displayUnderlay.frameSize
-                : Qt.size(options.width, options.height)
-            canonicalRect: Qt.rect(panel.x, panel.y, panel.width, panel.height)
-            cornerRadius: 10 * options.uiScale
-            refractionPixels: 24 * options.uiScale
-            diffusionPixels: 7 * options.uiScale
-            transmission: 0.8
-            bevelWidthPx: 3 * options.uiScale
-        }
 
         Column {
             anchors.fill: parent
@@ -69,9 +52,19 @@ Item {
 
             Text {
                 text: "GAME OPTIONS"
-                color: options.luluPalette.accent
-                font.family: options.typography.interfaceFamily
-                font.pixelSize: options.typography.size("hint", 14)
+                color: options.luluPalette.headingAccent
+                font.family: options.typography.majorHeadingFamily
+                font.weight: options.typography.majorHeadingWeight
+                font.pixelSize: options.typography.size("section", 30)
+                font.letterSpacing: 5 * options.uiScale
+                layer.enabled: true
+                layer.effect: MultiEffect {
+                    shadowEnabled: true
+                    shadowColor: "#000000"
+                    shadowOpacity: 0.35
+                    shadowBlur: 0.2
+                    shadowVerticalOffset: 1 * options.uiScale
+                }
             }
             Text {
                 text: options.game ? options.game.title : ""
@@ -81,6 +74,14 @@ Item {
                 font.pixelSize: options.typography.size("display", 34)
                 width: parent.width
                 elide: Text.ElideRight
+                layer.enabled: true
+                layer.effect: MultiEffect {
+                    shadowEnabled: true
+                    shadowColor: "#000000"
+                    shadowOpacity: 0.35
+                    shadowBlur: 0.2
+                    shadowVerticalOffset: 1 * options.uiScale
+                }
             }
 
             Text {
@@ -160,18 +161,28 @@ Item {
                     required property string modelData
                     width: entryList.width
                     height: 54 * options.uiScale
+                    scale: index === options.selectedIndex ? 1.01 : 1
+                    transformOrigin: Item.Center
                     radius: 8 * options.uiScale
-                    color: index === options.selectedIndex ? options.luluPalette.focusIndicator : options.luluPalette.cardSurface
-                    border.color: index === options.selectedIndex ? options.luluPalette.accent : options.luluPalette.glassBorder
+                    color: index === options.selectedIndex ? options.luluPalette.focusedCardSurface : options.luluPalette.cardSurface
+                    border.color: index === options.selectedIndex ? options.luluPalette.focusIndicator : options.luluPalette.glassBorder
                     border.width: options.uiScale
                     Text {
                         anchors.fill: parent
                         anchors.leftMargin: 18 * options.uiScale
                         text: parent.modelData
-                        color: index === options.selectedIndex ? options.luluPalette.selectedText : options.luluPalette.primaryText
+                        color: index === options.selectedIndex ? options.luluPalette.primaryText : options.luluPalette.navigationText
                         font.family: options.typography.interfaceFamily
                         font.pixelSize: options.typography.size("body", 18)
                         verticalAlignment: Text.AlignVCenter
+                        layer.enabled: true
+                        layer.effect: MultiEffect {
+                            shadowEnabled: true
+                            shadowColor: "#000000"
+                            shadowOpacity: 0.35
+                            shadowBlur: 0.2
+                            shadowVerticalOffset: 1 * options.uiScale
+                        }
                     }
                 }
             }
@@ -189,8 +200,10 @@ Item {
                     width: resultList.width
                     height: 62 * options.uiScale
                     radius: 8 * options.uiScale
-                    color: index === options.selectedIndex ? options.luluPalette.focusIndicator : options.luluPalette.cardSurface
-                    border.color: index === options.selectedIndex ? options.luluPalette.accent : options.luluPalette.glassBorder
+                    scale: index === options.selectedIndex ? 1.01 : 1
+                    transformOrigin: Item.Center
+                    color: index === options.selectedIndex ? options.luluPalette.focusedCardSurface : options.luluPalette.cardSurface
+                    border.color: index === options.selectedIndex ? options.luluPalette.focusIndicator : options.luluPalette.glassBorder
                     border.width: options.uiScale
                     Column {
                         anchors.fill: parent
@@ -198,11 +211,19 @@ Item {
                         spacing: 3 * options.uiScale
                         Text {
                             text: modelData.title + "  [" + modelData.id + "]"
-                            color: options.luluPalette.primaryText
+                            color: index === options.selectedIndex ? options.luluPalette.primaryText : options.luluPalette.navigationText
                             font.family: options.typography.interfaceFamily
                             font.pixelSize: options.typography.size("body", 16)
                             elide: Text.ElideRight
                             width: parent.width
+                            layer.enabled: true
+                            layer.effect: MultiEffect {
+                                shadowEnabled: true
+                                shadowColor: "#000000"
+                                shadowOpacity: 0.35
+                                shadowBlur: 0.2
+                                shadowVerticalOffset: 1 * options.uiScale
+                            }
                         }
                         Text {
                             text: modelData.platforms && modelData.platforms.length

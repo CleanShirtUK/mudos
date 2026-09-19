@@ -75,7 +75,6 @@ public:
     QVector2D edgeLightDirection{1, -1};
     qreal cornerRadius = 0;
     bool transparentOutsideMask = false;
-    bool directSample = false;
 };
 
 void putFloat(QByteArray &data, int offset, float value)
@@ -94,7 +93,7 @@ bool GlassShader::updateUniformData(RenderState &state, QSGMaterial *newMaterial
 {
     auto *material = static_cast<GlassMaterial *>(newMaterial);
     QByteArray *data = state.uniformData();
-    data->resize(192);
+    data->resize(176);
     const QMatrix4x4 matrix = state.combinedMatrix();
     std::memcpy(data->data(), matrix.constData(), 16 * sizeof(float));
     putFloat(*data, 64, state.opacity());
@@ -119,7 +118,6 @@ bool GlassShader::updateUniformData(RenderState &state, QSGMaterial *newMaterial
     putFloat(*data, 164, material->textureSubRect.y());
     putFloat(*data, 168, material->textureSubRect.width());
     putFloat(*data, 172, material->textureSubRect.height());
-    putFloat(*data, 176, material->directSample ? 1.0f : 0.0f);
     if (material->surfaceSize.width() > 700) {
         static bool loggedGuideUniforms = false;
         if (!loggedGuideUniforms) {
@@ -172,7 +170,6 @@ void copyMaterial(GlassMaterial *material, const MudosGlassItem *item)
     material->edgeLightDirection = item->edgeLightDirection();
     material->cornerRadius = item->cornerRadius();
     material->transparentOutsideMask = item->transparentOutsideMask();
-    material->directSample = item->directSample();
     material->provider = item->backdrop() && item->backdrop()->isTextureProvider()
         ? item->backdrop()->textureProvider() : nullptr;
     material->textureSubRect = material->provider && material->provider->texture()
