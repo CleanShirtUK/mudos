@@ -7,6 +7,8 @@ if [ "$(id -u)" -ne 0 ]; then
     exec sudo -n "$0" "$@"
 fi
 
+logger -t lulu-steamcmd "event=provision-start root=${LULU_STEAMCMD_ROOT:-/var/lib/lulu/steamcmd}" 2>/dev/null || true
+
 root=${LULU_STEAMCMD_ROOT:-/var/lib/lulu/steamcmd}
 user=${LULU_STEAMCMD_USER:-lulu}
 url=${LULU_STEAMCMD_URL:-https://steamcdn-a.akamaihd.net/client/installer/steamcmd_linux.tar.gz}
@@ -20,6 +22,7 @@ install -d -o "$user" -g "$user" -m 0755 "$(dirname "$root")"
 
 if [ -x "$root/steamcmd.sh" ]; then
     echo "SteamCMD already provisioned at $root/steamcmd.sh"
+    logger -t lulu-steamcmd "event=provision-skip root=$root" 2>/dev/null || true
     exit 0
 fi
 
@@ -50,3 +53,4 @@ chown -R "$user:$user" "$root"
 runuser -u "$user" -- env HOME="$(getent passwd "$user" | cut -d: -f6)" \
     "$root/steamcmd.sh" +quit >/dev/null
 echo "provisioned and verified $root/steamcmd.sh"
+logger -t lulu-steamcmd "event=provision-complete root=$root" 2>/dev/null || true

@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import logging
 import os
 from pathlib import Path
 
@@ -29,6 +30,7 @@ DESCRIPTOR = ServiceDescriptor(
     owned_state=("job snapshots", "job lifecycle", "provider scheduling", "cancellation"),
     notes=("Provider adapters execute work; this service owns normalized state.",),
 )
+LOGGER = logging.getLogger("lulu.acquisitiond")
 
 
 class AcquisitionInterface(ServiceInterface):
@@ -96,6 +98,7 @@ class AcquisitionInterface(ServiceInterface):
 
 
 async def serve(bus_type: BusType = BusType.SESSION) -> None:
+    LOGGER.info("acquisitiond_lifecycle event=start pid=%s uid=%s", os.getpid(), os.geteuid())
     bus = await MessageBus(bus_type=bus_type).connect()
     database = Path(os.environ.get("LULU_ACQUISITION_DB", str(PATHS.data_root / "acquisition.sqlite3")))
     store = AcquisitionStore(database)
@@ -140,6 +143,8 @@ async def serve(bus_type: BusType = BusType.SESSION) -> None:
 
 
 def main() -> None:
+    logging.basicConfig(level=logging.INFO,
+                        format="%(asctime)s %(levelname)s %(name)s %(message)s")
     parser = argparse.ArgumentParser()
     parser.add_argument("--system-bus", action="store_true")
     args = parser.parse_args()

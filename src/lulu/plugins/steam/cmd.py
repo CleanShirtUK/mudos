@@ -11,8 +11,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 import asyncio
 import json
+import logging
 import os
 from pathlib import Path
+import pwd
 import re
 import signal
 import shutil
@@ -24,6 +26,9 @@ from ...jobs import DownloadJob, JobState
 from ...job_manager import JobExecutionError, JobReporter
 from ...paths import PATHS
 from ...credential import CredentialBroker, CredentialInput, SecretStore
+
+
+LOGGER = logging.getLogger("lulu.steamcmd")
 
 
 class SteamCmdError(JobExecutionError):
@@ -207,6 +212,79 @@ class SteamCmdExecutor:
         return candidate
 
     @staticmethod
+    def _metadata(path: Path) -> dict[str, object]:
+        """Return filesystem identity only; never read the file."""
+        try:
+            stat = path.stat()
+            return {
+                "exists": True,
+                "inode": stat.st_ino,
+                "size": stat.st_size,
+                "mtime_ns": stat.st_mtime_ns,
+                "ctime_ns": stat.st_ctime_ns,
+                "owner": pwd.getpwuid(stat.st_uid).pw_name,
+                "group": str(stat.st_gid),
+                "mode": oct(stat.st_mode & 0o7777),
+            }
+        except (FileNotFoundError, PermissionError, KeyError, OSError):
+            return {"exists": False}
+
+    def _cache_snapshot(self) -> dict[str, object]:
+        home = Path(os.environ.get("HOME", str(Path.home()))).expanduser()
+        steam_root = home / ".steam"
+        cache = {
+            "steam_root": str(steam_root),
+            "steam_root_exists": steam_root.is_dir(),
+            "steam_token": self._metadata(steam_root / "steam.token"),
+            "registry_vdf": self._metadata(steam_root / "registry.vdf"),
+        }
+        executable = Path(self.executable).expanduser()
+        return {
+            "uid": os.geteuid(),
+            "user": pwd.getpwuid(os.geteuid()).pw_name,
+            "home": str(home),
+            "steamcmd_root": str(PATHS.steamcmd_root),
+            "executable": str(executable),
+            "executable_metadata": self._metadata(executable),
+            "cache": cache,
+        }
+
+    @staticmethod
+    def _cache_events(before: dict[str, object], after: dict[str, object]) -> list[str]:
+        events: list[str] = []
+        before_cache = before["cache"]
+        after_cache = after["cache"]
+        assert isinstance(before_cache, dict) and isinstance(after_cache, dict)
+        for label, key in (("steam.token", "steam_token"), ("registry.vdf", "registry_vdf")):
+            old = before_cache[key]
+            new = after_cache[key]
+            assert isinstance(old, dict) and isinstance(new, dict)
+            if not old.get("exists") and new.get("exists"):
+                events.append(f"{label} created")
+            elif old.get("exists") and not new.get("exists"):
+                events.append(f"{label} deleted")
+            elif old.get("inode") != new.get("inode"):
+                events.append(f"{label} replaced inode {old.get('inode')} -> {new.get('inode')}")
+            elif old.get("mtime_ns") != new.get("mtime_ns"):
+                events.append(f"{label} mtime changed")
+        return events
+
+    @staticmethod
+    def _diagnostic(record: dict[str, object]) -> None:
+        # JSON is deliberately limited to metadata and normalized observations.
+        def redact(value: object, key: str = "") -> object:
+            if any(word in key.casefold() for word in ("password", "secret", "cookie", "credential_value")):
+                return "[REDACTED]"
+            if isinstance(value, dict):
+                return {str(child_key): redact(child_value, str(child_key))
+                        for child_key, child_value in value.items()}
+            if isinstance(value, list):
+                return [redact(child) for child in value]
+            return value
+
+        LOGGER.info("steamcmd_lifecycle %s", json.dumps(redact(record), sort_keys=True))
+
+    @staticmethod
     def _app_id(identity: str) -> str:
         value = identity.removeprefix("steam:")
         if not value.isdecimal() or int(value) < 1:
@@ -235,11 +313,30 @@ class SteamCmdExecutor:
         command = self.command(app_id)
         command[0] = self._require_executable()
         self.install_dir.mkdir(parents=True, exist_ok=True)
+        before = self._cache_snapshot()
+        diagnostic: dict[str, object] = {
+            "job_id": job.job_id,
+            "app_id": app_id,
+            "pid": None,
+            "login_mode": "cached candidate",
+            "cached_credentials_reported": False,
+            "password_prompt_observed": False,
+            "guard_prompt_observed": False,
+            "login_success": False,
+            "exit_code": None,
+            "exit_signal": None,
+            "quit_requested": True,
+            "normal_quit": False,
+            "client_version": None,
+            "cache_before": before,
+        }
+        self._diagnostic({"event": "start", **diagnostic})
         process = await asyncio.create_subprocess_exec(
             *command, stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
             start_new_session=True,
         )
+        diagnostic["pid"] = getattr(process, "pid", None)
         success = False
         finalizing = False
 
@@ -251,12 +348,24 @@ class SteamCmdExecutor:
             while (chunk := await stream.read(256)):
                 buffer += chunk.decode(errors="replace")
                 lower = buffer.casefold()
+                version_match = re.search(r"client version:\s*([0-9]+)", lower)
+                if version_match:
+                    diagnostic["client_version"] = version_match.group(1)
+                if "logging in using cached credentials" in lower:
+                    diagnostic["cached_credentials_reported"] = True
+                    diagnostic["login_success"] = True
+                if "logged in ok" in lower:
+                    diagnostic["login_success"] = True
                 # SteamCMD emits its password prompt without a newline.
                 if not prompt_seen and ("password:" in lower or "password " in lower):
+                    diagnostic["password_prompt_observed"] = True
+                    diagnostic["login_mode"] = "credential supplied"
                     await self._answer(CredentialInput.SECRET, "SteamCMD password", "Password", process)
                     prompt_seen = True
                     buffer = ""
                 if not challenge_seen and ("guard code" in lower or "two-factor" in lower or "authenticator" in lower):
+                    diagnostic["guard_prompt_observed"] = True
+                    diagnostic["login_mode"] = "interactive required"
                     await self._answer(CredentialInput.CODE, "Steam Guard", "Authentication code", process,
                                        min_length=5, max_length=5)
                     challenge_seen = True
@@ -294,6 +403,16 @@ class SteamCmdExecutor:
                         raise SteamCmdError("steamcmd-failure", "SteamCMD reported a download failure",
                                             details={"provider_message": observation.message})
 
+        def record_exit(returncode: int | None) -> None:
+            diagnostic["exit_code"] = returncode if returncode is not None and returncode >= 0 else None
+            diagnostic["exit_signal"] = -returncode if returncode is not None and returncode < 0 else None
+            diagnostic["normal_quit"] = returncode == 0 and success
+            after = self._cache_snapshot()
+            diagnostic["cache_after"] = after
+            diagnostic["cache_events"] = self._cache_events(before, after)
+            diagnostic["login_success"] = bool(diagnostic["login_success"] or success)
+            self._diagnostic({"event": "exit", **diagnostic})
+
         try:
             await asyncio.wait_for(asyncio.gather(consume(process.stdout), consume(process.stderr)), timeout=120)
         except asyncio.CancelledError:
@@ -303,6 +422,7 @@ class SteamCmdExecutor:
                 except ProcessLookupError:
                     pass
             await process.wait()
+            record_exit(process.returncode)
             raise
         except Exception:
             # Parser/authentication failures are terminal for this operation;
@@ -314,8 +434,10 @@ class SteamCmdExecutor:
                 except ProcessLookupError:
                     pass
             await process.wait()
+            record_exit(process.returncode)
             raise
         returncode = await process.wait()
+        record_exit(returncode)
         if returncode != 0 or not success:
             raise SteamCmdError("steamcmd-failure", "SteamCMD did not complete successfully",
                                 details={"exit_code": returncode, "success_result": success,
@@ -329,6 +451,21 @@ class SteamCmdExecutor:
             self._require_executable(), "+login", self.account, "+quit",
             stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE, start_new_session=True)
+        before = self._cache_snapshot()
+        diagnostic: dict[str, object] = {
+            "event": "start",
+            "operation": "authenticate",
+            "pid": getattr(process, "pid", None),
+            "login_mode": "cached candidate",
+            "cached_credentials_reported": False,
+            "password_prompt_observed": False,
+            "guard_prompt_observed": False,
+            "login_success": False,
+            "quit_requested": True,
+            "normal_quit": False,
+            "cache_before": before,
+        }
+        self._diagnostic(diagnostic)
         password = self.secrets.get("steam", "password")
         authenticated = False
         challenge = False
@@ -339,13 +476,22 @@ class SteamCmdExecutor:
             while (chunk := await stream.read(256)):
                 text = chunk.decode(errors="replace")
                 lower = text.casefold()
+                if "logging in using cached credentials" in lower:
+                    diagnostic["cached_credentials_reported"] = True
+                    diagnostic["login_success"] = True
+                if "logged in ok" in lower:
+                    diagnostic["login_success"] = True
                 if ("password:" in lower or "password " in lower) and not password_sent:
+                    diagnostic["password_prompt_observed"] = True
+                    diagnostic["login_mode"] = "credential supplied"
                     if process.stdin is None or password is None:
                         raise SteamCmdError("authentication-required", "SteamCMD password is required")
                     process.stdin.write((password + "\n").encode())
                     await process.stdin.drain()
                     password_sent = True
                 elif "guard code" in lower or "two-factor" in lower or "authenticator" in lower:
+                    diagnostic["guard_prompt_observed"] = True
+                    diagnostic["login_mode"] = "interactive required"
                     challenge = True
                 elif "logged in ok" in lower or "logging in using cached credentials" in lower:
                     authenticated = True
@@ -360,7 +506,27 @@ class SteamCmdExecutor:
                 except ProcessLookupError:
                     pass
             await process.wait()
+            returncode = process.returncode
+            diagnostic.update({
+                "event": "exit",
+                "exit_code": returncode if returncode is not None and returncode >= 0 else None,
+                "exit_signal": -returncode if returncode is not None and returncode < 0 else None,
+                "cache_after": self._cache_snapshot(),
+            })
+            diagnostic["cache_events"] = self._cache_events(before, diagnostic["cache_after"])
+            self._diagnostic(diagnostic)
             raise
+        after = self._cache_snapshot()
+        diagnostic.update({
+            "event": "exit",
+            "exit_code": returncode if returncode >= 0 else None,
+            "exit_signal": -returncode if returncode < 0 else None,
+            "normal_quit": returncode == 0 and bool(authenticated),
+            "cache_after": after,
+            "cache_events": self._cache_events(before, after),
+            "login_success": bool(diagnostic["login_success"] or authenticated),
+        })
+        self._diagnostic(diagnostic)
         if challenge:
             raise SteamCmdError("challenge-required", "SteamCMD requires a Steam Guard code")
         if returncode != 0 or not authenticated:

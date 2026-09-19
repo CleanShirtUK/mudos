@@ -511,6 +511,7 @@ async def _wait_for_stop(stop_event: asyncio.Event) -> None:
 
 
 async def serve(bus_type: BusType = BusType.SESSION, bootstrap_shell: bool = False) -> None:
+    LOGGER.info("session_lifecycle event=start pid=%s uid=%s", os.getpid(), os.geteuid())
     bus = await MessageBus(bus_type=bus_type).connect()
     model = SessionStateModel()
     interface = ConsoleSessionInterface(model)
@@ -531,6 +532,7 @@ async def serve(bus_type: BusType = BusType.SESSION, bootstrap_shell: bool = Fal
     await _wait_for_stop(stop_event)
     await interface.stop_controller_monitor()
     await interface.supervisor.stop()
+    LOGGER.info("session_lifecycle event=stop pid=%s", os.getpid())
     bus.disconnect()
 
 

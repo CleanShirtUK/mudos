@@ -76,6 +76,56 @@ class SteamCmdExecutorTests(unittest.TestCase):
             path.write_text(json.dumps({"263980": "windows", "42": "linux", "bad": "console"}))
             self.assertEqual(load_platforms(path), {"263980": "windows", "42": "linux"})
 
+    def test_cache_snapshot_records_metadata_without_contents(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            home = Path(directory)
+            steam = home / ".steam"
+            steam.mkdir()
+            token = steam / "steam.token"
+            registry = steam / "registry.vdf"
+            token.write_bytes(b"secret-token")
+            registry.write_text('"User" "private"\n')
+            executor = SteamCmdExecutor(executable="/bin/true", account="user")
+            with patch.dict("os.environ", {"HOME": str(home)}):
+                snapshot = executor._cache_snapshot()
+            self.assertTrue(snapshot["cache"]["steam_token"]["exists"])
+            self.assertIn("inode", snapshot["cache"]["steam_token"])
+            self.assertNotIn("secret-token", json.dumps(snapshot))
+            self.assertNotIn("private", json.dumps(snapshot))
+
+    def test_cache_events_detect_absent_replacement_mtime_and_registry(self) -> None:
+        absent = {"exists": False}
+        old_token = {"exists": True, "inode": 10, "mtime_ns": 1}
+        new_token = {"exists": True, "inode": 11, "mtime_ns": 2}
+        old_registry = {"exists": True, "inode": 20, "mtime_ns": 3}
+        new_registry = {"exists": True, "inode": 20, "mtime_ns": 4}
+        before = {"cache": {"steam_token": absent, "registry_vdf": absent}}
+        after = {"cache": {"steam_token": old_token, "registry_vdf": new_registry}}
+        events = SteamCmdExecutor._cache_events(before, after)
+        self.assertIn("steam.token created", events)
+        self.assertIn("registry.vdf created", events)
+        before = {"cache": {"steam_token": old_token, "registry_vdf": old_registry}}
+        after = {"cache": {"steam_token": new_token, "registry_vdf": new_registry}}
+        events = SteamCmdExecutor._cache_events(before, after)
+        self.assertIn("steam.token replaced inode 10 -> 11", events)
+        self.assertIn("registry.vdf mtime changed", events)
+
+    def test_lifecycle_diagnostic_is_redacted_and_exit_is_correlated(self) -> None:
+        with self.assertLogs("lulu.steamcmd", level="INFO") as captured:
+            SteamCmdExecutor._diagnostic({"event": "exit", "secret": "must-not-appear",
+                                          "cache_events": ["steam.token mtime changed"]})
+        self.assertIn("steamcmd_lifecycle", captured.output[0])
+        self.assertNotIn("must-not-appear", captured.output[0])
+
+    def test_runtime_and_provisioning_paths_do_not_touch_steam_home_state(self) -> None:
+        root = Path(__file__).parents[1]
+        runtime = (root / "scripts/dev-runtime.sh").read_text()
+        provision = (root / "scripts/provision-steamcmd.sh").read_text()
+        self.assertNotIn(".steam", runtime)
+        self.assertNotIn(".steam", provision)
+        self.assertNotIn("steam.token", runtime + provision)
+        self.assertNotIn("registry.vdf", runtime + provision)
+
     def test_platform_resolver_prefers_linux_then_windows_and_fails_closed(self) -> None:
         responses = {
             "42": b'{"42":{"success":true,"data":{"platforms":{"linux":true,"windows":true}}}}',

@@ -22,6 +22,7 @@ if [ "$(id -u)" -ne 0 ]; then
 fi
 
 refresh() {
+    logger -t lulu-runtime "event=refresh-start source=$repo_root target=$runtime" 2>/dev/null || true
     head=$(git -C "$repo_root" rev-parse HEAD)
     branch=$(git -C "$repo_root" branch --show-current)
     status=$(git -C "$repo_root" status --porcelain --untracked-files=all)
@@ -86,6 +87,7 @@ Environment=PYTHONPATH=$runtime/lib
 EOF
     systemctl daemon-reload
     systemctl restart lulu-acquisition.service lulu-consoled.service lulu-session@2.service
+    logger -t lulu-runtime "event=refresh-complete target=$runtime head=$head" 2>/dev/null || true
     echo "refreshed non-promotable dev runtime: $runtime"
 }
 
