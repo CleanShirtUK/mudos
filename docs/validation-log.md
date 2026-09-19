@@ -76,10 +76,10 @@ not implied to have passed.
 
 ## Provider-owned uninstall flow
 
-- Commit: pending
-- Automated validation: pending
-- Local disposable-ROM backend validation: pending
-- RomM provenance preservation: pending
-- Steam provider automated validation: pending
+- Commits: `4db1c41`, `939c341`
+- Automated validation: PASS; 367 tests passed
+- Local disposable-ROM backend validation: PASS; temporary single-file and dedicated-directory fixtures were removed through `JobOperation.REMOVE`; outside-root, root/platform-root, symlink escape, neighbor preservation, and missing-path cases passed
+- RomM provenance preservation: PASS by provider-boundary tests/design; removal resolves linked local content and never calls RomM mutation APIs
+- Steam provider automated validation: PASS; provider-native `app_uninstall` command construction, canonical manifest ownership check, conflict handling, and no-filesystem-fallback tests passed
 - Physical Game Options validation: pending
-- Live Steam uninstall/reinstall: pending explicit acceptance cycle
+- Live Steam uninstall/reinstall: pending; this host currently has no Steam entitlement configuration or installed manifest, so no real title was selected
