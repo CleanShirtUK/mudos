@@ -4,9 +4,10 @@ import Mudos.Poc 1.0
 
     MudosOverlayWindow {
     id: root
-    visible: guideModel.guideVisible || game !== null
+    visible: guideModel.guideVisible || game !== null || overlayClearPending
     property var guideModel
     property var game: null
+    property bool overlayClearPending: false
     property string view: "menu"
     property int selectedIndex: 0
     property var results: []
@@ -22,6 +23,27 @@ import Mudos.Poc 1.0
     signal gameMoved(int delta)
     signal queryEdited(string value)
     signal titleEdited(string value)
+
+    function requestOverlayClear() {
+        if (root.guideModel.guideVisible || root.game !== null
+                || root.overlayClearPending)
+            return
+        root.overlayClearPending = true
+        console.info("GUIDE_OVERLAY_CLEAR requested")
+        root.requestUpdate()
+    }
+
+    function finishOverlayClear() {
+        if (!root.overlayClearPending || root.guideModel.guideVisible
+                || root.game !== null)
+            return
+        console.info("GUIDE_OVERLAY_CLEAR frameSwapped")
+        root.overlayClearPending = false
+        console.info("GUIDE_OVERLAY_HIDE")
+    }
+
+    onFrameSwapped: root.finishOverlayClear()
+    onGameChanged: root.requestOverlayClear()
 
     function logGuidePanelState(stage) {
         var panel = guidePanel
@@ -40,6 +62,7 @@ import Mudos.Poc 1.0
         target: root.guideModel
         function onGuideVisibleChanged() {
             root.logGuidePanelState("modelChanged")
+            root.requestOverlayClear()
         }
     }
 
