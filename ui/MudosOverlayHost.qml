@@ -23,24 +23,40 @@ import Mudos.Poc 1.0
     signal queryEdited(string value)
     signal titleEdited(string value)
 
-    // Dismissal is driven by the native Guide model. Ensure the real external
-    // overlay window leaves the focus stack along with the visual panel.
-    onVisibleChanged: {
-        if (!root.visible) {
-            console.info("GUIDE_B_TRACE stage=OverlayHost action=hide visible_before=false")
-            root.hide()
-            console.info("GUIDE_B_TRACE stage=OverlayHost action=hide visible_after="
-                         + root.visible)
+    function logGuidePanelState(stage) {
+        var panel = guidePanel
+        console.info("GUIDE_PANEL_STATE stage=" + stage
+                     + " modelVisible=" + root.guideModel.guideVisible
+                     + " panelVisible=" + (panel ? panel.visible : "unknown")
+                     + " opacity=" + (panel ? panel.opacity : "unknown")
+                     + " enabled=" + (panel ? panel.enabled : "unknown")
+                     + " parentVisible=" + (panel && panel.parent
+                         ? panel.parent.visible : "unknown")
+                     + " hostVisible=" + root.visible
+                     + " hostObject=" + root.objectName)
+    }
+
+    Connections {
+        target: root.guideModel
+        function onGuideVisibleChanged() {
+            root.logGuidePanelState("modelChanged")
         }
     }
 
     MudosGuidePanel {
+        id: guidePanel
+        objectName: "mudosGuidePanel"
         visible: root.guideModel.guideVisible
+        enabled: root.guideModel.guideVisible
         anchors.fill: parent
         guideModel: root.guideModel
         luluPalette: root.luluPalette
         typography: root.typography
         uiScale: root.uiScale
+
+        Component.onCompleted: root.logGuidePanelState("completed")
+        onVisibleChanged: root.logGuidePanelState("visibleChanged")
+        onEnabledChanged: root.logGuidePanelState("enabledChanged")
     }
 
     GameOptions {
