@@ -446,7 +446,9 @@ Window {
                 storeError = "Available titles unavailable"
             }
         }
-        request.open("GET", apiUrl + "/available?provider=romm")
+        // Available to Download is the combined installable catalogue. Provider
+        // filtering belongs to the catalogue boundary, not this presentation.
+        request.open("GET", apiUrl + "/available")
         request.send()
     }
 

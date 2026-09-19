@@ -626,7 +626,10 @@ class ApiHandler(BaseHTTPRequestHandler):
                 self._respond(503, {"error": str(error)})
             return
         if urlparse(self.path).path == "/available":
-            provider = parse_qs(urlparse(self.path).query).get("provider", ["romm"])[0]
+            # The Available to Download surface is the combined installable
+            # catalogue. Provider-specific filtering remains available to
+            # callers that explicitly request it.
+            provider = parse_qs(urlparse(self.path).query).get("provider", [""])[0]
             try:
                 self._respond(200, self.bridge.call(self.bridge.list_available_games(provider)))
             except Exception as error:  # pragma: no cover - live IPC failure path

@@ -1,6 +1,4 @@
 import QtQuick
-import "MudosAssetCatalog.js" as MudosAssetCatalog
-
 Item {
     id: root
     property real cardHeight: 0
@@ -54,13 +52,6 @@ Item {
                 continue
             seen[gameId] = true
             result.push(game)
-        }
-        // Keep the delegated commerce surface in every expanded category.
-        if (root.cardWidth === 0) {
-            if (scope === "all")
-                result.push({game_id: "steam-store", title: "Steam Store",
-                             artwork_url: Qt.resolvedUrl(MudosAssetCatalog.suppliedArtwork("store")),
-                             artwork_suppressed: false, provider: "steam-store"})
         }
         return result
     }
@@ -211,7 +202,6 @@ Item {
         headingText: "AVAILABLE TO DOWNLOAD"
         emptyText: root.errorMessage !== "" ? root.errorMessage : "No games available"
         contentOpacity: root.contentOpacity
-        specialCardId: "steam-store"
         actionLabel: "Download"
         uiScale: root.uiScale
         typography: root.typography
@@ -221,7 +211,6 @@ Item {
         canonicalSize: root.canonicalSize
         onCollectionChanged: root.categoryIndex = index
             onLaunchRequested: root.activateGame(game, acquisitionJob)
-        onSpecialActivated: root.steamStoreRequested()
         onCategoryContentHidden: root.displayCategoryIndex = root.categoryIndex
     }
 

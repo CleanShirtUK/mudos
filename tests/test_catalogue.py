@@ -54,6 +54,19 @@ class CatalogueTests(unittest.TestCase):
 
         self.assertEqual([game.game_id for game in available], ["romm:43"])
 
+    def test_combined_available_catalogue_contains_steam_and_romm_sources(self) -> None:
+        romm = RommGame(43, "F-Zero", 1, "snes", "SNES", "F-Zero.sfc", ".sfc", 10, "", False)
+        with tempfile.TemporaryDirectory() as directory:
+            store = CatalogueStore(Path(directory) / "catalogue.sqlite3")
+            store.reconcile_romm([
+                CatalogueGame.from_romm(romm),
+                CatalogueGame.from_romm(romm, app_id="263980"),
+            ])
+            available = store.list_available_games()
+
+        self.assertEqual({game.provider for game in available}, {"romm", "steam"})
+        self.assertEqual({game.game_id for game in available}, {"romm:43", "steam:263980"})
+
     def test_romm_steam_platform_survives_runtime_identity_and_available_query(self) -> None:
         first = RommGame(272, "BEEP", 7, "steam", "Steam", "104200-beep.json", ".json", 10, "", False,
                          (RommFile(2720, "104200-beep.json"),))
