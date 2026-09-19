@@ -740,6 +740,10 @@ Window {
     }
 
     function openSelectedGameOptions() {
+        if (space === "downloads" && downloadsHomeRef) {
+            downloadsHomeRef.requestCancel()
+            return
+        }
         if (gameOptionsOpen)
             return
         if (selectedGameForOptions)
@@ -1285,6 +1289,27 @@ Window {
         message = ""
     }
 
+    function openDownloadsGlobal() {
+        if (space !== "downloads")
+            openDownloads(space)
+    }
+
+    function controllerOptions() {
+        openSelectedGameOptions()
+    }
+
+    function pauseAcquisition(jobId) {
+        request("/acquisition/pause/" + encodeURIComponent(jobId), "POST", "", function() {}, "Pause failed")
+    }
+
+    function resumeAcquisition(jobId) {
+        request("/acquisition/resume/" + encodeURIComponent(jobId), "POST", "", function() {}, "Resume failed")
+    }
+
+    function cancelAcquisition(jobId) {
+        request("/acquisition/cancel/" + encodeURIComponent(jobId), "POST", "", function() {}, "Cancel failed")
+    }
+
     function launchGame(game) {
         if (!game)
             return
@@ -1439,6 +1464,9 @@ Window {
             root.applyAcquisitionSnapshot(systemStatus.acquisitionSnapshot)
         }, "Retry failed")
     }
+
+    // Legacy retry action remains service-owned for failed-job recovery:
+    // root.retryAcquisition(jobId) -> /acquisition/retry/<job_id>.
 
     function openSteamStore() {
         var generation = ++launchGeneration
@@ -1776,6 +1804,15 @@ Window {
             cancelLaunch()
             return
         }
+        if (space === "downloads") {
+            if (downloadsHomeRef && downloadsHomeRef.confirmationPending) {
+                downloadsHomeRef.confirmationPending = false
+                return
+            }
+            space = downloadsReturnSpace || "home"
+            message = ""
+            return
+        }
         if (gameOptionsOpen) {
             if (gameOptionsView === "menu")
                 closeGameOptions()
@@ -1841,9 +1878,6 @@ Window {
             libraryTransitionAnimation.restart()
             libraryContentFadeOut.restart()
             homeFadeIn.restart()
-            message = ""
-        } else if (space === "downloads") {
-            space = downloadsReturnSpace || "home"
             message = ""
         } else {
             message = ""
@@ -2140,8 +2174,14 @@ Window {
                 return
             }
             if (event.key === Qt.Key_X) {
-                if (selectedGameForOptions)
-                    openGameOptions(selectedGameForOptions)
+                openSelectedGameOptions()
+                event.accepted = true
+                return
+            }
+            if (event.key === Qt.Key_Y) {
+                if (credentialRequest.status !== "requested" && credentialRequest.status !== "waiting"
+                        && space !== "downloads")
+                    openDownloads(space)
                 event.accepted = true
                 return
             }
@@ -2624,6 +2664,7 @@ Window {
             id: downloadsHome
             anchors.fill: parent
             visible: root.space === "downloads"
+            z: 90
             snapshot: systemStatus.acquisitionSnapshot
             uiScale: root.uiScale
             typography: typography
@@ -2631,8 +2672,9 @@ Window {
             canonicalTexture: orbitTexture
             canonicalCoordinateRoot: orbitRenderSource
             canonicalSize: Qt.size(root.width, root.height)
-            onRetryRequested: root.retryAcquisition(jobId)
-            onBackRequested: root.back()
+            onPauseRequested: root.pauseAcquisition(jobId)
+            onResumeRequested: root.resumeAcquisition(jobId)
+            onCancelRequested: root.cancelAcquisition(jobId)
             Component.onCompleted: root.downloadsHomeRef = downloadsHome
         }
 

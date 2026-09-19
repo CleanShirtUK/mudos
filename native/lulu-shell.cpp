@@ -739,6 +739,7 @@ private:
                     {SDL_GAMEPAD_BUTTON_DPAD_LEFT, "left"}, {SDL_GAMEPAD_BUTTON_DPAD_RIGHT, "right"},
                     {SDL_GAMEPAD_BUTTON_SOUTH, "confirm"}, {SDL_GAMEPAD_BUTTON_EAST, "back"},
                     {SDL_GAMEPAD_BUTTON_WEST, "options"},
+                    {SDL_GAMEPAD_BUTTON_NORTH, "downloads"},
                     {SDL_GAMEPAD_BUTTON_LEFT_SHOULDER, "leftShoulder"},
                     {SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER, "rightShoulder"},
                 };
@@ -763,7 +764,7 @@ private:
             {"up", "controllerUp"}, {"down", "controllerDown"},
             {"left", "controllerLeft"}, {"right", "controllerRight"},
             {"confirm", "activate"}, {"back", "back"},
-            {"options", "openSelectedGameOptions"},
+            {"options", "openSelectedGameOptions"}, {"downloads", "openDownloadsGlobal"},
             {"leftShoulder", "controllerShoulder"},
             {"rightShoulder", "controllerShoulder"},
         };

@@ -238,6 +238,7 @@ class SteamCmdExecutor:
         process = await asyncio.create_subprocess_exec(
             *command, stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+            start_new_session=True,
         )
         success = False
         finalizing = False
@@ -295,6 +296,14 @@ class SteamCmdExecutor:
 
         try:
             await asyncio.wait_for(asyncio.gather(consume(process.stdout), consume(process.stderr)), timeout=120)
+        except asyncio.CancelledError:
+            if process.returncode is None:
+                try:
+                    os.killpg(process.pid, signal.SIGTERM)
+                except ProcessLookupError:
+                    pass
+            await process.wait()
+            raise
         except Exception:
             # Parser/authentication failures are terminal for this operation;
             # do not leave a SteamCMD child behind. This is not job
@@ -361,7 +370,10 @@ class SteamCmdExecutor:
         return {"status": "authenticated"}
 
     async def cancel(self, job: DownloadJob) -> None:
-        raise SteamCmdError("cancellation-unsupported", "Steam acquisition cancellation is unavailable")
+        # JobManager owns the task cancellation boundary.  SteamCMD is placed
+        # in its own process group so the executor's cancellation cleanup can
+        # terminate the complete provider operation without QML process control.
+        return None
 
     async def _answer(self, input_type: CredentialInput, title: str, prompt: str,
                       process: asyncio.subprocess.Process, *, min_length: int = 0,

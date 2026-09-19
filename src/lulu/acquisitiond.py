@@ -57,7 +57,8 @@ class AcquisitionInterface(ServiceInterface):
     @method()
     def SubmitJob(self, provider: "s", content_identity: "s", title: "s") -> "s":
         try:
-            return self.manager.submit(provider, content_identity, title).job_id
+            return self.manager.submit(provider, content_identity, title,
+                                       cancellation_supported=True).job_id
         except ValueError as error:
             raise DBusError("org.lulu.Acquisition.Error.Unavailable", str(error)) from error
 
@@ -65,6 +66,20 @@ class AcquisitionInterface(ServiceInterface):
     async def CancelJob(self, job_id: "s") -> "":
         try:
             await self.manager.cancel(job_id)
+        except KeyError as error:
+            raise DBusError("org.lulu.Acquisition.Error.UnknownJob", str(error)) from error
+
+    @method()
+    async def PauseJob(self, job_id: "s") -> "":
+        try:
+            await self.manager.pause(job_id)
+        except KeyError as error:
+            raise DBusError("org.lulu.Acquisition.Error.UnknownJob", str(error)) from error
+
+    @method()
+    def ResumeJob(self, job_id: "s") -> "":
+        try:
+            self.manager.resume(job_id)
         except KeyError as error:
             raise DBusError("org.lulu.Acquisition.Error.UnknownJob", str(error)) from error
 

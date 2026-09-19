@@ -77,13 +77,13 @@ class DownloadJob:
             error = JobError("provider-failure", error, retryable=self.retryable)
         allowed = {
             JobState.QUEUED: {JobState.STARTING, JobState.TRANSFERRING, JobState.CANCELLED},
-            JobState.STARTING: {JobState.TRANSFERRING, JobState.FINALIZING,
+            JobState.STARTING: {JobState.TRANSFERRING, JobState.PAUSED, JobState.FINALIZING,
                                 JobState.CANCELLING, JobState.FAILED},
             JobState.TRANSFERRING: {JobState.PAUSED, JobState.FINALIZING,
                                     JobState.CANCELLING, JobState.FAILED},
             JobState.FINALIZING: {JobState.COMPLETED, JobState.CANCELLING,
                                   JobState.FAILED},
-            JobState.PAUSED: {JobState.TRANSFERRING, JobState.CANCELLING,
+            JobState.PAUSED: {JobState.QUEUED, JobState.TRANSFERRING, JobState.CANCELLING,
                               JobState.FAILED},
             JobState.CANCELLING: {JobState.CANCELLED, JobState.FAILED},
             JobState.FAILED: {JobState.QUEUED, JobState.CANCELLED},

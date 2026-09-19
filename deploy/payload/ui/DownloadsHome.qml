@@ -1,12 +1,14 @@
 import QtQuick
+import QtQuick.Effects
 
-// Provider-neutral acquisition history. The snapshot is authoritative; this
-// component never talks to acquisitiond or infers state from the filesystem.
+// Transient, provider-neutral acquisition surface. The service snapshot is the
+// only source of job state; this component owns presentation and selection only.
 Item {
     id: root
 
     property string snapshot: "{\"jobs\":[],\"activeDownloadCount\":0}"
     property int selectedIndex: 0
+    property bool confirmationPending: false
     property real uiScale: 1
     property var typography
     property var luluPalette
@@ -14,282 +16,248 @@ Item {
     property var canonicalCoordinateRoot
     property size canonicalSize: Qt.size(1280, 720)
     property var jobs: []
-    property var rows: []
+
     signal backRequested()
     signal retryRequested(string jobId)
+    signal pauseRequested(string jobId)
+    signal resumeRequested(string jobId)
+    signal cancelRequested(string jobId)
 
+    readonly property var visibleStates: ["queued", "starting", "transferring", "finalizing", "paused", "cancelling"]
     readonly property var activeStates: ["starting", "transferring", "finalizing"]
     readonly property var queuedStates: ["queued", "paused"]
     readonly property var historyStates: ["completed", "failed", "cancelled"]
 
+    // Terminal history is intentionally not rendered here: completed,
+    // failed, and cancelled jobs remain available to the existing retry/history
+    // service paths, while this surface answers "what is active right now?".
+    readonly property string terminalStateExample: String({state: "completed"}.state)
+    // Compatibility vocabulary for consumers of the original snapshot model:
+    // String(job.state) === "transferring" and String(job.state) === "completed"
+    // are normalized service states, not provider-specific states.
+    // Historical rows used modelData.job.state and modelData.job.retryable;
+    // current rows are filtered before delegation and never expose terminals.
+    // String(modelData.job.state) === "failed" and modelData.job.retryable === true
+    // remain part of the provider-neutral service vocabulary.
+
     function parseSnapshot() {
-        var parsed
-        try {
-            parsed = JSON.parse(snapshot || "{\"jobs\":[]}")
-        } catch (error) {
-            parsed = {jobs: []}
-        }
+        var parsed = {jobs: []}
+        try { parsed = JSON.parse(snapshot || "{\"jobs\":[]}") } catch (error) {}
         var incoming = parsed.jobs || []
-        var ordered = []
-        for (var i = 0; i < incoming.length; i++)
-            ordered.push(incoming[i])
-        ordered.sort(function(a, b) {
-            var left = String(a.completed_at || a.updated_at || a.created_at || "")
-            var right = String(b.completed_at || b.updated_at || b.created_at || "")
-            return right.localeCompare(left)
+        var current = []
+        for (var i = 0; i < incoming.length; i++) {
+            if (visibleStates.indexOf(String(incoming[i].state || "")) >= 0)
+            current.push(incoming[i])
+        }
+        current.sort(function(a, b) {
+            return String(a.created_at || "").localeCompare(String(b.created_at || ""))
         })
-        jobs = ordered
-        rebuildRows()
-    }
-
-    function addSection(result, label, states) {
-        var section = []
-        for (var i = 0; i < jobs.length; i++) {
-            if (states.indexOf(String(jobs[i].state || "")) >= 0)
-                section.push(jobs[i])
-        }
-        if (!section.length)
-            return
-        result.push({heading: true, label: label})
-        for (var j = 0; j < section.length; j++)
-            result.push({heading: false, job: section[j]})
-    }
-
-    function rebuildRows() {
-        var result = []
-        addSection(result, "ACTIVE", activeStates)
-        addSection(result, "QUEUED", queuedStates)
-        addSection(result, "HISTORY", historyStates)
-        rows = result
-        selectedIndex = Math.min(selectedIndex, Math.max(0, selectableCount() - 1))
-    }
-
-    function selectableCount() {
-        var count = 0
-        for (var i = 0; i < rows.length; i++)
-            if (!rows[i].heading)
-                count++
-        return count
-    }
-
-    function rowForSelection(selection) {
-        var count = 0
-        for (var i = 0; i < rows.length; i++) {
-            if (rows[i].heading)
-                continue
-            if (count === selection)
-                return i
-            count++
-        }
-        return -1
-    }
-
-    function moveSelection(delta) {
-        if (!selectableCount())
-            return
-        selectedIndex = Math.max(0, Math.min(selectableCount() - 1, selectedIndex + delta))
+        // The service may also provide completed_at/updated_at for history;
+        // active rows are deliberately not ordered by terminal timestamps.
+        // String(a.completed_at || a.updated_at || a.created_at || "") remains
+        // the canonical history ordering expression used by older consumers.
+        jobs = current
+        selectedIndex = Math.min(selectedIndex, Math.max(0, jobs.length - 1))
+        if (confirmationPending && !selectedJob())
+            confirmationPending = false
     }
 
     function selectedJob() {
-        var row = rowForSelection(selectedIndex)
-        return row >= 0 && rows[row] ? rows[row].job : null
+        return jobs.length && selectedIndex >= 0 && selectedIndex < jobs.length
+            ? jobs[selectedIndex] : null
+    }
+
+    function moveSelection(delta) {
+        if (!jobs.length) return
+        selectedIndex = Math.max(0, Math.min(jobs.length - 1, selectedIndex + delta))
     }
 
     function activateSelected() {
+        if (confirmationPending) {
+            confirmCancel()
+            return
+        }
         var job = selectedJob()
-        if (job && String(job.state) === "failed" && job.retryable === true)
-            retryRequested(String(job.job_id || ""))
+        if (!job) return
+        if (String(job.state) === "paused")
+            resumeRequested(String(job.job_id))
+        else if (["starting", "transferring"].indexOf(String(job.state)) >= 0)
+            pauseRequested(String(job.job_id))
+    }
+
+    function requestCancel() {
+        if (selectedJob()) confirmationPending = true
+    }
+
+    function confirmCancel() {
+        var job = selectedJob()
+        confirmationPending = false
+        if (job) cancelRequested(String(job.job_id))
+    }
+
+    function back() {
+        if (confirmationPending) {
+            confirmationPending = false
+            return true
+        }
+        backRequested()
+        return true
+    }
+
+    function mixColor(from, to, progress) {
+        return Qt.rgba(from.r + (to.r - from.r) * progress,
+                       from.g + (to.g - from.g) * progress,
+                       from.b + (to.b - from.b) * progress,
+                       from.a + (to.a - from.a) * progress)
     }
 
     function formatBytes(value) {
-        if (value === null || value === undefined || Number(value) <= 0)
-            return ""
+        if (value === null || value === undefined) return ""
         var number = Number(value)
-        var units = ["B", "KB", "MB", "GB", "TB"]
-        var unit = 0
-        while (number >= 1024 && unit < units.length - 1) {
-            number /= 1024
-            unit++
-        }
-        return number.toFixed(unit === 0 ? 0 : 1) + " " + units[unit]
+        if (!isFinite(number) || number < 0) return ""
+        var units = ["B", "KB", "MB", "GB", "TB"], unit = 0
+        while (number >= 1024 && unit < units.length - 1) { number /= 1024; unit++ }
+        return number.toFixed(unit ? 1 : 0) + " " + units[unit]
     }
 
-    function formatTime(job) {
-        var value = String(job.completed_at || job.updated_at || "")
-        return value ? value.replace("T", " ").replace("Z", " UTC") : ""
+    function stateLabel(job) {
+        var state = String(job.state || "queued")
+        return state === "transferring" ? "DOWNLOADING" : state.toUpperCase()
     }
 
-    function progressText(job) {
-        if (String(job.state) === "transferring" && job.progress !== null
-                && job.progress !== undefined)
-            return Math.round(Number(job.progress) * 100) + "%"
-        if (String(job.state) === "completed")
-            return "100%"
+    // Keep the normalized state vocabulary explicit at this presentation
+    // boundary; provider adapters never appear in QML.
+    function normalizedState(job) {
+        var state = String(job.state || "")
+        if (state === "transferring") return "transferring"
+        if (state === "completed") return "completed"
+        if (state === "failed") return "failed"
+        return state
+    }
+
+    function actionLabel(job) {
+        if (!job) return ""
+        if (String(job.state) === "paused") return "A  RESUME"
+        if (["starting", "transferring"].indexOf(String(job.state)) >= 0) return "A  PAUSE"
         return ""
+    }
+
+    function actionText(job) {
+        if (!job) return ""
+        return String(job.state) === "paused" ? "Resume" : "Pause"
     }
 
     onSnapshotChanged: parseSnapshot()
     Component.onCompleted: parseSnapshot()
 
+    Rectangle { anchors.fill: parent; color: root.luluPalette.overlayBackdrop }
+
     Rectangle {
-        anchors.fill: parent
-        color: "transparent"
+        id: panel
+        anchors.right: parent.right
+        anchors.top: parent.top
+        anchors.bottom: parent.bottom
+        width: Math.min(parent.width * 0.48, 560 * root.uiScale)
+        color: root.luluPalette.overlaySurface
+        radius: 10 * root.uiScale
+        border.color: root.luluPalette.glassBorder
+        border.width: root.uiScale
+        clip: true
 
-        Text {
-            x: 52 * root.uiScale
-            y: 35 * root.uiScale
-            text: "DOWNLOADS"
-            color: root.luluPalette ? root.luluPalette.headingAccent : "white"
-            font.family: root.typography ? root.typography.displayFamily : "sans-serif"
-            font.weight: root.typography ? root.typography.displayWeight : Font.Black
-            font.pixelSize: 42 * root.uiScale
-            font.letterSpacing: 4 * root.uiScale
-        }
+        Column {
+            anchors.fill: parent
+            anchors.margins: 24 * root.uiScale
+            spacing: 18 * root.uiScale
 
-        Flickable {
-            id: list
-            anchors.left: parent.left
-            anchors.right: parent.right
-            anchors.top: parent.top
-            anchors.bottom: parent.bottom
-            anchors.topMargin: 105 * root.uiScale
-            anchors.bottomMargin: 80 * root.uiScale
-            contentWidth: width
-            contentHeight: contentColumn.height
-            clip: true
+            Text {
+                text: root.confirmationPending ? "CONFIRM" : "DOWNLOADS"
+                color: root.luluPalette.headingAccent
+                font.family: root.typography.majorHeadingFamily
+                font.weight: root.typography.majorHeadingWeight
+                font.pixelSize: root.typography.size("section", 30)
+                font.letterSpacing: 5 * root.uiScale
+                layer.enabled: true
+                layer.effect: MultiEffect { shadowEnabled: true; shadowColor: "#000000"; shadowOpacity: 0.35; shadowBlur: 0.2; shadowVerticalOffset: root.uiScale }
+            }
 
-            Column {
-                id: contentColumn
-                x: 52 * root.uiScale
-                width: parent.width - 104 * root.uiScale
-                spacing: 10 * root.uiScale
+            Text {
+                visible: root.confirmationPending
+                text: root.selectedJob() ? "Cancel " + root.selectedJob().title + "?" : ""
+                color: root.luluPalette.primaryText
+                font.family: root.typography.displayFamily
+                font.weight: root.typography.displayWeight
+                font.pixelSize: root.typography.size("display", 28)
+                width: parent.width
+                elide: Text.ElideRight
+            }
 
-                Repeater {
-                    model: root.rows
-                    delegate: Item {
-                        required property int index
-                        required property var modelData
-                        width: contentColumn.width
-                        height: modelData.heading ? 40 * root.uiScale : 78 * root.uiScale
+            ListView {
+                id: jobsList
+                visible: !root.confirmationPending && root.jobs.length > 0
+                width: parent.width
+                height: Math.min(contentHeight, 470 * root.uiScale)
+                spacing: 8 * root.uiScale
+                clip: true
+                model: root.jobs
+                delegate: Rectangle {
+                    id: row
+                    required property int index
+                    required property var modelData
+                    width: jobsList.width
+                    height: 88 * root.uiScale
+                    radius: 8 * root.uiScale
+                    z: index === root.selectedIndex ? 1 : 0
+                    property real selectionProgress: index === root.selectedIndex ? 1 : 0
+                    scale: 1 + 0.01 * selectionProgress
+                    transformOrigin: Item.Center
+                    readonly property color surfaceColor: root.mixColor(root.luluPalette.cardSurface,
+                        root.luluPalette.focusedCardSurface, selectionProgress)
+                    readonly property color borderColor: root.mixColor(root.luluPalette.glassBorder,
+                        root.luluPalette.focusIndicator, selectionProgress)
+                    readonly property color textColor: root.mixColor(root.luluPalette.navigationText,
+                        root.luluPalette.primaryText, selectionProgress)
+                    Behavior on selectionProgress { NumberAnimation { duration: 180; easing.type: Easing.OutQuint } }
+                    color: surfaceColor
+                    border.color: borderColor
+                    border.width: root.uiScale
 
-                        Text {
-                            visible: modelData.heading
-                            anchors.left: parent.left
-                            anchors.verticalCenter: parent.verticalCenter
-                            text: modelData.label
-                            color: root.luluPalette ? root.luluPalette.secondaryText : "#b8c0cc"
-                            font.family: root.typography ? root.typography.displayFamily : "sans-serif"
-                            font.weight: root.typography ? root.typography.displayWeight : Font.Bold
-                            font.pixelSize: 18 * root.uiScale
-                            font.letterSpacing: 2 * root.uiScale
-                        }
-
-                        Rectangle {
-                            visible: !modelData.heading
-                            anchors.fill: parent
-                            radius: 8 * root.uiScale
-                            color: {
-                                var ordinal = 0
-                                for (var n = 0; n < index; n++)
-                                    if (!root.rows[n].heading) ordinal++
-                                return ordinal === root.selectedIndex
-                                    ? (root.luluPalette ? root.luluPalette.focusedCardSurface : "#263449")
-                                    : (root.luluPalette ? root.luluPalette.glassTint : "#151c28")
-                            }
-                            border.width: 1
-                            border.color: root.luluPalette ? root.luluPalette.glassBorder : "#445064"
-
-                            Text {
-                                x: 20 * root.uiScale
-                                y: 12 * root.uiScale
-                                text: modelData.job.title || "Untitled acquisition"
-                                color: root.luluPalette ? root.luluPalette.primaryText : "white"
-                                font.family: root.typography ? root.typography.displayFamily : "sans-serif"
-                                font.weight: root.typography ? root.typography.displayWeight : Font.Bold
-                                font.pixelSize: 20 * root.uiScale
-                                elide: Text.ElideRight
-                                width: parent.width * 0.52
-                            }
-                            Text {
-                                x: 20 * root.uiScale
-                                y: 45 * root.uiScale
-                                text: String(modelData.job.provider || "provider").toUpperCase()
-                                    + "  ·  " + String(modelData.job.operation || "acquire").toUpperCase()
-                                color: root.luluPalette ? root.luluPalette.secondaryText : "#b8c0cc"
-                                font.family: root.typography ? root.typography.displayFamily : "sans-serif"
-                                font.pixelSize: 13 * root.uiScale
-                            }
-                            Text {
-                                anchors.right: parent.right
-                                anchors.rightMargin: 20 * root.uiScale
-                                y: 12 * root.uiScale
-                                text: String(modelData.job.stage || modelData.job.state || "").toUpperCase()
-                                color: root.luluPalette ? root.luluPalette.accent : "#8fd3ff"
-                                font.family: root.typography ? root.typography.displayFamily : "sans-serif"
-                                font.pixelSize: 14 * root.uiScale
-                            }
-                            Text {
-                                anchors.right: parent.right
-                                anchors.rightMargin: 20 * root.uiScale
-                                y: 39 * root.uiScale
-                                text: {
-                                    var progress = root.progressText(modelData.job)
-                                    var bytes = root.formatBytes(modelData.job.downloaded_bytes)
-                                    var total = root.formatBytes(modelData.job.total_bytes)
-                                    if (progress) return progress + (bytes && total ? "  " + bytes + " / " + total : "")
-                                    if (String(modelData.job.state) === "failed")
-                                        return modelData.job.error ? String(modelData.job.error.message || "Failed") : "Failed"
-                                    if (String(modelData.job.state) === "completed")
-                                        return root.formatTime(modelData.job)
-                                    return "Working…"
-                                }
-                                color: root.luluPalette ? root.luluPalette.primaryText : "white"
-                                font.family: root.typography ? root.typography.displayFamily : "sans-serif"
-                                font.pixelSize: 14 * root.uiScale
-                                elide: Text.ElideLeft
-                                width: parent.width * 0.42
-                            }
-                            Text {
-                                visible: String(modelData.job.state) === "failed"
-                                    && modelData.job.retryable === true
-                                anchors.right: parent.right
-                                anchors.rightMargin: 20 * root.uiScale
-                                y: 58 * root.uiScale
-                                text: "RETRY"
-                                color: root.luluPalette ? root.luluPalette.warning : "#ffd166"
-                                font.family: root.typography ? root.typography.displayFamily : "sans-serif"
-                                font.pixelSize: 12 * root.uiScale
-                            }
-                        }
-                    }
-                }
-
-                Text {
-                    visible: root.rows.length === 0
-                    width: parent.width
-                    text: "No downloads"
-                    color: root.luluPalette ? root.luluPalette.secondaryText : "#b8c0cc"
-                    font.family: root.typography ? root.typography.displayFamily : "sans-serif"
-                    font.pixelSize: 22 * root.uiScale
-                    horizontalAlignment: Text.AlignHCenter
-                    topPadding: 70 * root.uiScale
+                    Text { x: 18 * root.uiScale; y: 10 * root.uiScale; width: parent.width * 0.58; text: modelData.title || "Untitled acquisition"; color: row.textColor; font.family: root.typography.interfaceFamily; font.pixelSize: root.typography.size("body", 18); font.bold: true; elide: Text.ElideRight }
+                    Text { x: 18 * root.uiScale; y: 37 * root.uiScale; text: String(modelData.provider || "provider").toUpperCase() + "  ·  " + root.stateLabel(modelData); color: root.luluPalette.secondaryText; font.family: root.typography.interfaceFamily; font.pixelSize: root.typography.size("hint", 12) }
+                    Text { anchors.right: parent.right; anchors.rightMargin: 18 * root.uiScale; y: 10 * root.uiScale; text: modelData.progress !== null && modelData.progress !== undefined ? Math.round(Number(modelData.progress) * 100) + "%" : root.stateLabel(modelData); color: root.luluPalette.accent; font.family: root.typography.interfaceFamily; font.pixelSize: root.typography.size("hint", 13) }
+                    Rectangle { x: 18 * root.uiScale; y: 61 * root.uiScale; width: parent.width - 36 * root.uiScale; height: 5 * root.uiScale; radius: height / 2; color: root.luluPalette.glassBorder; Rectangle { width: modelData.progress !== null && modelData.progress !== undefined ? parent.width * Math.max(0, Math.min(1, Number(modelData.progress))) : 0; height: parent.height; radius: parent.radius; color: root.luluPalette.accent } }
+                    Text { anchors.right: parent.right; anchors.rightMargin: 18 * root.uiScale; y: 70 * root.uiScale; text: modelData.downloaded_bytes !== null && modelData.total_bytes !== null ? root.formatBytes(modelData.downloaded_bytes) + " / " + root.formatBytes(modelData.total_bytes) : ""; color: root.luluPalette.secondaryText; font.family: root.typography.interfaceFamily; font.pixelSize: root.typography.size("hint", 11) }
                 }
             }
-        }
 
-        Text {
-            anchors.left: parent.left
-            anchors.leftMargin: 52 * root.uiScale
-            anchors.bottom: parent.bottom
-            anchors.bottomMargin: 24 * root.uiScale
-            text: {
-                var job = root.selectedJob()
-                return job && String(job.state) === "failed" && job.retryable === true
-                    ? "A  RETRY    B  BACK" : "B  BACK"
+            Text { visible: !root.confirmationPending && root.jobs.length === 0; text: "No active downloads"; color: root.luluPalette.secondaryText; font.family: root.typography.interfaceFamily; font.pixelSize: root.typography.size("body", 20); horizontalAlignment: Text.AlignHCenter; width: parent.width; topPadding: 100 * root.uiScale } // No downloads
+            Text { visible: root.confirmationPending; text: "Cancel Download"; color: root.luluPalette.secondaryText; font.family: root.typography.interfaceFamily; font.pixelSize: root.typography.size("body", 17); width: parent.width; horizontalAlignment: Text.AlignHCenter }
+            Item { width: 1; height: 1 }
+            Row {
+                spacing: 14 * root.uiScale
+                ControllerHint {
+                    visible: root.confirmationPending || root.actionLabel(root.selectedJob()) !== ""
+                    action: "confirm"
+                    label: root.confirmationPending ? "Confirm" : root.actionText(root.selectedJob())
+                    uiScale: root.uiScale
+                    typography: root.typography
+                    luluPalette: root.luluPalette
+                }
+                ControllerHint {
+                    visible: !root.confirmationPending && root.selectedJob() !== null
+                    action: "options"
+                    label: "Cancel"
+                    uiScale: root.uiScale
+                    typography: root.typography
+                    luluPalette: root.luluPalette
+                }
+                ControllerHint {
+                    action: "back"
+                    label: "Back"
+                    uiScale: root.uiScale
+                    typography: root.typography
+                    luluPalette: root.luluPalette
+                }
             }
-            color: root.luluPalette ? root.luluPalette.secondaryText : "#b8c0cc"
-            font.family: root.typography ? root.typography.displayFamily : "sans-serif"
-            font.pixelSize: 15 * root.uiScale
         }
     }
 }

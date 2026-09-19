@@ -239,6 +239,19 @@ class ConsoleUiBridge:
             raise RuntimeError("acquisition service is unavailable")
         return {"token": await self.acquisitiond.call_retry_job(job_id)}
 
+    async def acquisition_action(self, action: str, job_id: str) -> dict[str, str]:
+        if self.acquisitiond is None:
+            raise RuntimeError("acquisition service is unavailable")
+        if action == "pause":
+            await self.acquisitiond.call_pause_job(job_id)
+        elif action == "resume":
+            await self.acquisitiond.call_resume_job(job_id)
+        elif action == "cancel":
+            await self.acquisitiond.call_cancel_job(job_id)
+        else:
+            raise ValueError("unknown acquisition action")
+        return {"status": action}
+
     async def clear_requested_surface(self) -> dict[str, str]:
         await self.sessiond.call_clear_requested_surface()
         return {"status": "cleared"}
@@ -756,6 +769,15 @@ class ApiHandler(BaseHTTPRequestHandler):
             try:
                 job_id = unquote(path.removeprefix("/acquisition/retry/"))
                 self._respond(200, self.bridge.call(self.bridge.retry_acquisition(job_id), timeout=20))
+            except Exception as error:
+                self._respond(409, {"error": str(error) or type(error).__name__})
+            return
+        if path.startswith("/acquisition/"):
+            try:
+                parts = path.split("/")
+                action, job_id = parts[2], unquote("/".join(parts[3:]))
+                self._respond(200, self.bridge.call(
+                    self.bridge.acquisition_action(action, job_id), timeout=20))
             except Exception as error:
                 self._respond(409, {"error": str(error) or type(error).__name__})
             return
