@@ -1,6 +1,5 @@
 import QtQuick
 import QtQuick.Window
-import Mudos.Poc 1.0
 
 Window {
     id: root
