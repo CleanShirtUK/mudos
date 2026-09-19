@@ -994,6 +994,13 @@ private:
                 scanGamepads();
             } else if (event.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN) {
                 const bool allowed = dispatchAllowed();
+                qInfo() << "MUDOS_INPUT"
+                        << "event=button_down"
+                        << "button=" << static_cast<int>(event.gbutton.button)
+                        << "allowed=" << allowed
+                        << "luluPresented=" << luluPresented_
+                        << "guideVisible=" << guideVisible()
+                        << "controller=" << value("controllerIdentity");
                 if (!allowed)
                     continue;
                 static const std::pair<SDL_GamepadButton, const char *> routes[] = {
@@ -1017,6 +1024,9 @@ private:
 private:
     void publish(const char *action)
     {
+        qInfo() << "MUDOS_INPUT" << "event=publish" << "action=" << action
+                << "luluPresented=" << luluPresented_
+                << "guideVisible=" << guideVisible();
         insert("action", QString::fromLatin1(action));
         insert("actionSerial", value("actionSerial").toInt() + 1);
         if (guideVisible())
@@ -1031,6 +1041,8 @@ private:
         };
         for (const auto &[name, function] : routes) {
             if (qstrcmp(name, action) == 0) {
+                qInfo() << "MUDOS_NAV" << "action=" << action
+                        << "dispatch=" << function;
                 if (qstrcmp(function, "controllerShoulder") == 0) {
                     const int delta = qstrcmp(action, "leftShoulder") == 0 ? -1 : 1;
                     QMetaObject::invokeMethod(window_, function, Q_ARG(QVariant, delta));
