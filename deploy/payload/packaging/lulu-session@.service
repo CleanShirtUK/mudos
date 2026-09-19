@@ -1,7 +1,7 @@
 [Unit]
 Description=Lulu graphical console session on VT %i
 Requires=seatd.service user-runtime-dir@958.service user@958.service
-Wants=inputplumber.service
+Wants=inputplumber.service lulu-osk@%i.service
 PartOf=inputplumber.service
 After=seatd.service inputplumber.service systemd-logind.service systemd-user-sessions.service user-runtime-dir@958.service user@958.service
 Conflicts=getty@tty%i.service

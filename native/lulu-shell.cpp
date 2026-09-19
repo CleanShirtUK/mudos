@@ -9,6 +9,7 @@
 #include <QDBusObjectPath>
 #include <QDBusServiceWatcher>
 #include <QDBusConnectionInterface>
+#include <QDBusPendingCallWatcher>
 #include <QProcess>
 #include <QQmlContext>
 #include <QQmlPropertyMap>
@@ -381,7 +382,7 @@ public:
         connect(&dbusDiscoveryTimer_, &QTimer::timeout,
                 this, &ControllerBridge::refreshDbusSubscriptions);
         dbusDiscoveryTimer_.start();
-        keyboardOwnershipTimer_.setInterval(100);
+        keyboardOwnershipTimer_.setInterval(250);
         connect(&keyboardOwnershipTimer_, &QTimer::timeout,
                 this, &ControllerBridge::refreshKeyboardOwnership);
         keyboardOwnershipTimer_.start();
@@ -524,6 +525,10 @@ private:
 
     void handleInputEvent(const QString &compositePath, const QString &event, double value)
     {
+        // A request in flight is already an exclusive ownership transition.
+        // Discard the event; never let it cross into the next owner.
+        if (oskRequestPending_)
+            return;
         // OSK mode owns the intercepted D-Bus stream. The bridge consumes it
         // and feeds the private gamepad-osk device; Guide must not also act.
         if (oskActive_)
@@ -612,19 +617,34 @@ private:
         return true;
     }
 
-    bool showKeyboard()
+    void showKeyboard()
     {
+        if (oskActive_ || oskRequestPending_)
+            return;
+        pendingGuide_ = false;
+        guideChordConsumed_ = false;
+        guideOwnerComposite_.clear();
+        oskRequestPending_ = true;
         QDBusInterface consoled(QStringLiteral("org.lulu.Consoled"),
                                  QStringLiteral("/org/lulu/Console"),
                                  QStringLiteral("org.lulu.Console"),
                                  QDBusConnection::sessionBus());
-        const auto reply = consoled.call(QStringLiteral("ShowKeyboard"));
-        if (reply.type() == QDBusMessage::ErrorMessage) {
-            qWarning() << "Guide chord OSK show failed" << reply.errorMessage();
-            return false;
-        }
-        oskActive_ = true;
-        return true;
+        auto *watcher = new QDBusPendingCallWatcher(
+            consoled.asyncCall(QStringLiteral("ShowKeyboard")), this);
+        connect(watcher, &QDBusPendingCallWatcher::finished, this,
+                [this](QDBusPendingCallWatcher *finished) {
+                    const QDBusMessage reply = finished->reply();
+                    oskRequestPending_ = false;
+                    if (reply.type() == QDBusMessage::ErrorMessage) {
+                        qWarning() << "Guide chord OSK show failed" << reply.errorMessage();
+                        oskActive_ = false;
+                    } else {
+                        oskActive_ = !reply.arguments().isEmpty()
+                            && reply.arguments().constFirst().toBool();
+                        rearmRequired_ = oskActive_;
+                    }
+                    finished->deleteLater();
+                });
     }
 
     void refreshKeyboardOwnership()
@@ -633,9 +653,23 @@ private:
                                 QStringLiteral("/org/lulu/Console"),
                                 QStringLiteral("org.lulu.Console"),
                                 QDBusConnection::sessionBus());
-        const auto reply = consoled.call(QStringLiteral("KeyboardVisible"));
-        if (reply.type() == QDBusMessage::ReplyMessage && !reply.arguments().isEmpty())
-            oskActive_ = reply.arguments().constFirst().toBool();
+        if (oskRequestPending_)
+            return;
+        auto *watcher = new QDBusPendingCallWatcher(
+            consoled.asyncCall(QStringLiteral("KeyboardVisible")), this);
+        connect(watcher, &QDBusPendingCallWatcher::finished, this,
+                [this](QDBusPendingCallWatcher *finished) {
+                    const QDBusMessage reply = finished->reply();
+                    if (reply.type() == QDBusMessage::ReplyMessage
+                        && !reply.arguments().isEmpty())
+                    {
+                        const bool wasActive = oskActive_;
+                        oskActive_ = reply.arguments().constFirst().toBool();
+                        if (wasActive && !oskActive_)
+                            rearmRequired_ = true;
+                    }
+                    finished->deleteLater();
+                });
     }
 
     void refreshDbusSubscriptions()
@@ -710,6 +744,9 @@ private:
 
     void poll()
     {
+        if (rearmRequired_ && !oskActive_ && !oskRequestPending_
+            && controllerButtonsReleased())
+            rearmRequired_ = false;
         SDL_Event event;
         while (SDL_PollEvent(&event)) {
             if (event.type == SDL_EVENT_GAMEPAD_ADDED && !gamepad_) {
@@ -731,6 +768,8 @@ private:
                 // navigation slot immediately for failover.
                 scanGamepads();
             } else if (event.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN) {
+                if (rearmRequired_)
+                    continue;
                 const bool allowed = dispatchAllowed();
                 if (!allowed)
                     continue;
@@ -782,7 +821,21 @@ private:
     }
     bool dispatchAllowed() const
     {
-        return window_ && (luluPresented_ || guideProcess_);
+        return window_ && !oskActive_ && !oskRequestPending_ && !rearmRequired_
+            && (luluPresented_ || guideProcess_);
+    }
+
+    bool controllerButtonsReleased() const
+    {
+        if (!gamepad_)
+            return true;
+        for (const auto button : {SDL_GAMEPAD_BUTTON_SOUTH, SDL_GAMEPAD_BUTTON_EAST,
+                                  SDL_GAMEPAD_BUTTON_WEST, SDL_GAMEPAD_BUTTON_NORTH,
+                                  SDL_GAMEPAD_BUTTON_DPAD_UP, SDL_GAMEPAD_BUTTON_DPAD_DOWN,
+                                  SDL_GAMEPAD_BUTTON_DPAD_LEFT, SDL_GAMEPAD_BUTTON_DPAD_RIGHT})
+            if (SDL_GetGamepadButton(gamepad_, button))
+                return false;
+        return true;
     }
 
     void setupPresentationObserver()
@@ -920,6 +973,8 @@ private:
     bool pendingGuide_ = false;
     bool guideChordConsumed_ = false;
     bool oskActive_ = false;
+    bool oskRequestPending_ = false;
+    bool rearmRequired_ = false;
     SDL_Gamepad *gamepad_ = nullptr;
     int gamepadSlot_ = 0;
     int navigationPlayer_ = 1;

@@ -470,6 +470,7 @@ class ConsoleSessionInterface(ServiceInterface):
         return "reset-requested"
 
     async def _reset_mudos(self) -> None:
+        LOGGER.warning("session stop attribution source=ResetMudos reason=controlled-reset")
         await self.stop_controller_monitor()
         await self.supervisor.stop()
         os.kill(os.getpid(), os_signal.SIGTERM)
@@ -521,7 +522,8 @@ async def serve(bus_type: BusType = BusType.SESSION, bootstrap_shell: bool = Fal
     stop_event = asyncio.Event()
     loop = asyncio.get_running_loop()
     def request_stop(stop_signal: os_signal.Signals) -> None:
-        LOGGER.info("sessiond received stop signal=%s", stop_signal.name)
+        LOGGER.warning("session stop attribution source=process-signal signal=%s pid=%s ppid=%s",
+                       stop_signal.name, os.getpid(), os.getppid())
         stop_event.set()
 
     for stop_signal in (os_signal.SIGINT, os_signal.SIGTERM):

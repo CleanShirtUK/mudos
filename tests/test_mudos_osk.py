@@ -45,6 +45,8 @@ class MudosOskProvisioningTests(unittest.TestCase):
         self.assertIn("WAYLAND_DISPLAY=", wrapper)
         self.assertIn("mudos-osk-bridge", wrapper)
         self.assertNotIn("--layer-shell", wrapper)
+        session = (ROOT / "packaging/lulu-session@.service").read_text()
+        self.assertIn("lulu-osk@%i.service", session)
 
     def test_bridge_uses_existing_normalized_actions_and_private_device(self) -> None:
         bridge = (ROOT / "scripts/mudos-osk-bridge").read_text()
@@ -65,6 +67,14 @@ class MudosOskProvisioningTests(unittest.TestCase):
         self.assertIn("KeyboardVisible", consoled)
         self.assertIn("ShowKeyboard", consoled)
         self.assertIn("HideKeyboard", consoled)
+        self.assertIn("mudos-osk-bridge.sock", wrapper)
+        self.assertNotIn("--toggle", wrapper)
+        self.assertNotIn("xdotool", wrapper)
+
+    def test_keyboard_boundary_never_uses_unmanaged_raw_device(self) -> None:
+        wrapper = (ROOT / "scripts/mudos-keyboard").read_text()
+        self.assertNotIn("--toggle", wrapper)
+        self.assertNotIn("/dev/input/event", wrapper)
 
 
 if __name__ == "__main__":

@@ -15,7 +15,7 @@ class GuideChordSourceTests(unittest.TestCase):
         chord = 'event == QStringLiteral("ui_context") && pendingGuide_'
         self.assertIn(chord, self.source)
         self.assertIn("guideChordConsumed_ = true", self.source)
-        self.assertIn('consoled.call(QStringLiteral("ShowKeyboard"))', self.source)
+        self.assertIn('consoled.asyncCall(QStringLiteral("ShowKeyboard"))', self.source)
         self.assertIn('if (value == 0.0)\n                return;', self.source)
         self.assertNotIn('pendingGuide_ && event.gbutton.button == SDL_GAMEPAD_BUTTON_WEST', self.source)
 

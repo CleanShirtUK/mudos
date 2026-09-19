@@ -173,6 +173,50 @@ class Bridge:
         self.awaiting_show_until = 0.0
         self.composite_path: str | None = None
         self.topology_event: asyncio.Event | None = None
+        self.control_server: asyncio.AbstractServer | None = None
+        self.control_path = os.environ.get(
+            "LULU_OSK_BRIDGE_SOCKET",
+            os.path.join(os.environ.get("XDG_RUNTIME_DIR", "/run/user/958"),
+                         "mudos-osk-bridge.sock"),
+        )
+        self.visibility_event = asyncio.Event()
+
+    async def _control_client(self, reader: asyncio.StreamReader,
+                              writer: asyncio.StreamWriter) -> None:
+        try:
+            command = (await asyncio.wait_for(reader.readline(), 2)).decode().strip()
+            if command not in {"show", "hide", "status"}:
+                raise RuntimeError("unknown keyboard operation")
+            if command in {"show", "hide"}:
+                if self.process is None or self.process.returncode is not None:
+                    raise RuntimeError("Mudos OSK child is not running")
+                want_visible = command == "show"
+                if visible() != want_visible:
+                    result = await asyncio.wait_for(
+                        asyncio.create_subprocess_exec(self.binary, "--toggle"), 2)
+                    if await result.wait() != 0:
+                        raise RuntimeError("Mudos OSK toggle failed")
+                deadline = time.monotonic() + 2.0
+                while time.monotonic() < deadline:
+                    if visible() == want_visible and (not want_visible or self.active):
+                        break
+                    self.visibility_event.clear()
+                    try:
+                        await asyncio.wait_for(self.visibility_event.wait(), .25)
+                    except asyncio.TimeoutError:
+                        pass
+                if visible() != want_visible or (want_visible and not self.active):
+                    raise RuntimeError("Mudos OSK did not become ready")
+            state = "visible" if visible() else "hidden"
+            writer.write(("ok " + state + "\n").encode())
+        except Exception as error:
+            writer.write(("error " + str(error) + "\n").encode())
+        finally:
+            try:
+                await writer.drain()
+            finally:
+                writer.close()
+                await writer.wait_closed()
 
     def dpad_event(self, direction: str, value: float) -> None:
         self.dpad[direction] = value != 0
@@ -336,6 +380,7 @@ class Bridge:
                     self.composite_path = None
                     self.mode_restored = False
                 was_visible = is_visible
+                self.visibility_event.set()
                 try:
                     await asyncio.wait_for(self.topology_event.wait(), timeout=2.0)
                     self.topology_event.clear()
@@ -359,6 +404,13 @@ class Bridge:
                 except asyncio.TimeoutError:
                     self.process.kill()
             bus.disconnect()
+            if self.control_server:
+                self.control_server.close()
+                await self.control_server.wait_closed()
+            try:
+                os.unlink(self.control_path)
+            except FileNotFoundError:
+                pass
             self.pad.close()
 
 
@@ -367,7 +419,14 @@ async def main() -> int:
         print(f"usage: {sys.argv[0]} GAMEPAD_OSK CONFIG", file=sys.stderr)
         return 2
     try:
-        await Bridge(sys.argv[1], sys.argv[2]).run()
+        bridge = Bridge(sys.argv[1], sys.argv[2])
+        try:
+            os.unlink(bridge.control_path)
+        except FileNotFoundError:
+            pass
+        bridge.control_server = await asyncio.start_unix_server(
+            bridge._control_client, path=bridge.control_path)
+        await bridge.run()
     except (OSError, RuntimeError, asyncio.CancelledError) as error:
         print(f"Mudos OSK bridge failed: {error}", file=sys.stderr)
         return 1

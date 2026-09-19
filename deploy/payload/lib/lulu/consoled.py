@@ -544,8 +544,23 @@ LOGGER = logging.getLogger("lulu.consoled")
 def _keyboard_boundary(action: str) -> bool:
     """Call the provider-neutral Mudos keyboard boundary."""
     root = Path(os.environ.get("LULU_INSTALL_ROOT", "/opt/lulu/current"))
+    if action == "status":
+        socket_path = Path(os.environ.get("XDG_RUNTIME_DIR", "/run/user/958")) / "mudos-osk-bridge.sock"
+        try:
+            import socket
+            with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
+                client.settimeout(1.0)
+                client.connect(socket_path)
+                client.sendall(b"status\n")
+                reply = client.recv(64).decode().strip()
+            if reply.startswith("ok "):
+                return reply[3:] == "visible"
+            raise RuntimeError(reply.removeprefix("error ") or "keyboard status failed")
+        except (OSError, TimeoutError) as error:
+            raise RuntimeError("Mudos OSK bridge is not available") from error
     command = root / "scripts" / "mudos-keyboard"
-    result = subprocess.run([str(command), action], check=False, capture_output=True, text=True)
+    result = subprocess.run([str(command), action], check=False, capture_output=True,
+                            text=True, timeout=3)
     if result.returncode:
         raise RuntimeError(result.stderr.strip() or f"keyboard {action} failed")
     return result.stdout.strip() == "visible"

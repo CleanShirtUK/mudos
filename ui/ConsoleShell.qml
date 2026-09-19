@@ -946,6 +946,13 @@ Window {
                     root.credentialKeyboardShown = true
                 }, "Keyboard unavailable", undefined, function() {
                     root.credentialKeyboardShowAttempted = false
+                    root.message = "Credential input unavailable"
+                    if (root.credentialRequest.status === "requested"
+                            || root.credentialRequest.status === "waiting") {
+                        root.request("/credential/cancel", "POST",
+                                     JSON.stringify({id: root.credentialRequest.id}),
+                                     function(data) { root.credentialRequest = data })
+                    }
                 })
             }
         }
@@ -2169,6 +2176,14 @@ Window {
         focus: true
 
         Keys.onPressed: function(event) {
+            // Credential text entry is the sole Mudos controller owner. The
+            // TextInput receives its own generated keyboard events; shell
+            // shortcuts must be consumed and never replayed after handoff.
+            if (root.credentialRequest.status === "requested"
+                    || root.credentialRequest.status === "waiting") {
+                event.accepted = true
+                return
+            }
             if (root.homeLaunchGated) {
                 event.accepted = true
                 return
