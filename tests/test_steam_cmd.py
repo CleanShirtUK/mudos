@@ -175,16 +175,28 @@ class SteamCmdExecutorTests(unittest.TestCase):
             executor = SteamCmdExecutor(executable="/bin/true", account="user", platforms={"263980": "windows"}, install_dir=Path(tempfile.gettempdir()) / "lulu-steam-test")
             manager.register_executor("steam", executor)
             job = manager.submit("steam", "steam:263980", "Out There Somewhere")
-            with patch("asyncio.create_subprocess_exec", new=AsyncMock(return_value=process)):
+            with patch("asyncio.create_subprocess_exec", new=AsyncMock(return_value=process)), \
+                    patch.object(executor, "_finalize_staged_install", return_value=Path("/games/out")):
                 await manager._tasks[job.job_id]
             result = manager.jobs[job.job_id]
             self.assertEqual(result.state, JobState.COMPLETED)
             self.assertEqual(result.progress, 1.0)
             self.assertIsNone(result.downloaded_bytes)
             self.assertIsNone(result.total_bytes)
-
         asyncio.run(exercise())
 
+    def test_safe_install_directory_rejects_traversal(self) -> None:
+        common = Path("/games/steamapps/common")
+        with self.assertRaisesRegex(Exception, "installdir"):
+            SteamCmdExecutor._safe_install_directory(common, "../outside")
+        with self.assertRaisesRegex(Exception, "installdir"):
+            SteamCmdExecutor._safe_install_directory(common, "/absolute")
+
+    def test_install_command_accepts_provider_owned_staging_path(self) -> None:
+        executor = SteamCmdExecutor(account="user", platforms={"42": "linux"})
+        command = executor.command("42", force_install_dir=Path("/games/.mudos-staging/job"))
+        self.assertEqual(command[command.index("+force_install_dir") + 1],
+                         "/games/.mudos-staging/job")
 
 if __name__ == "__main__":
     unittest.main()

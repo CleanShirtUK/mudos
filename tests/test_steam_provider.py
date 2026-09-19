@@ -382,6 +382,7 @@ class SteamProviderTests(unittest.TestCase):
             root = Path(directory) / "Steam"
             apps = root / "steamapps"
             apps.mkdir(parents=True)
+            (apps / "common" / "Super Meat Boy").mkdir(parents=True)
             (apps / "libraryfolders.vdf").write_text(
                 f'"libraryfolders" {{ "0" {{ "path" "{root}" }} }}'
             )

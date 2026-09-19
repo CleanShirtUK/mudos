@@ -161,11 +161,22 @@ class SteamProvider:
                     app = self._parse_vdf(manifest.read_text(errors="replace")).get("AppState", {})
                     if not self._is_launchable_app(app):
                         continue
+                    install_dir = Path(str(app["installdir"]))
+                    if install_dir.is_absolute() or ".." in install_dir.parts:
+                        continue
+                    content = (library_root / "steamapps" / "common" / install_dir).resolve(strict=False)
+                    common = (library_root / "steamapps" / "common").resolve(strict=False)
+                    try:
+                        content.relative_to(common)
+                    except ValueError:
+                        continue
+                    if content == common or not content.is_dir():
+                        continue
                     games.append(
                         InstalledSteamGame(
                             app_id=str(app["appid"]),
                             title=str(app["name"]),
-                            install_dir=str(library_root / "steamapps" / "common" / app["installdir"]),
+                            install_dir=str(content),
                             library_root=str(library_root),
                             size_on_disk=int(app.get("SizeOnDisk", 0)),
                             last_played=int(app.get("LastPlayed", 0)),

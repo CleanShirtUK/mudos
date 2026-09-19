@@ -291,7 +291,7 @@ class SteamCmdExecutor:
             raise SteamCmdError("invalid-content-identity", "Steam content identity is not a valid AppID")
         return value
 
-    def command(self, app_id: str) -> list[str]:
+    def command(self, app_id: str, *, force_install_dir: Path | None = None) -> list[str]:
         platform = self.platforms.get(app_id)
         if platform not in {"windows", "linux"}:
             raise SteamCmdError("unknown-platform", f"Steam platform is unknown for AppID {app_id}")
@@ -300,9 +300,67 @@ class SteamCmdExecutor:
         command = [self.executable]
         if platform == "windows":
             command += ["+@sSteamCmdForcePlatformType", "windows"]
-        command += ["+force_install_dir", str(self.install_dir), "+login", self.account,
+        command += ["+force_install_dir", str(force_install_dir or self.install_dir), "+login", self.account,
                     "+app_update", app_id, "validate", "+quit"]
         return command
+
+    @staticmethod
+    def _safe_install_directory(common: Path, value: object) -> Path:
+        name = str(value or "").strip()
+        if not name or Path(name).is_absolute() or name in {".", ".."}:
+            raise SteamCmdError("invalid-install-directory", "Steam installdir is invalid")
+        candidate = (common / name).resolve(strict=False)
+        try:
+            candidate.relative_to(common.resolve(strict=False))
+        except ValueError as error:
+            raise SteamCmdError("invalid-install-directory", "Steam installdir escapes the library") from error
+        if candidate == common.resolve(strict=False):
+            raise SteamCmdError("invalid-install-directory", "Steam installdir is the library root")
+        return candidate
+
+    def _finalize_staged_install(self, app_id: str, staging: Path) -> Path:
+        manifest = staging / "steamapps" / f"appmanifest_{app_id}.acf"
+        if not manifest.is_file():
+            raise SteamCmdError("manifest-missing", "SteamCMD did not produce an app manifest")
+        try:
+            app = self._parse_manifest(manifest)
+        except (OSError, ValueError) as error:
+            raise SteamCmdError("manifest-invalid", "Steam app manifest is invalid") from error
+        if str(app.get("appid", "")) != app_id:
+            raise SteamCmdError("manifest-mismatch", "Steam app manifest AppID does not match the request")
+        common = (self.install_dir / "steamapps" / "common").resolve(strict=False)
+        common.mkdir(parents=True, exist_ok=True)
+        target = self._safe_install_directory(common, app.get("installdir"))
+        if target.is_symlink():
+            raise SteamCmdError("unsafe-install-directory", "Steam install directory is a symlink")
+        target.mkdir(parents=True, exist_ok=True)
+        payload_entries = [item for item in staging.iterdir() if item.name != "steamapps"]
+        if not payload_entries:
+            raise SteamCmdError("payload-missing", "SteamCMD produced no application payload")
+        for item in payload_entries:
+            destination = target / item.name
+            if item.is_symlink():
+                resolved = item.resolve(strict=False)
+                try:
+                    resolved.relative_to(staging.resolve(strict=False))
+                except ValueError as error:
+                    raise SteamCmdError("unsafe-payload", "Steam payload symlink escapes staging") from error
+            if item.is_dir() and not item.is_symlink():
+                shutil.copytree(item, destination, dirs_exist_ok=True, symlinks=True)
+            else:
+                shutil.copy2(item, destination, follow_symlinks=False)
+        final_manifest = self.install_dir / "steamapps" / f"appmanifest_{app_id}.acf"
+        os.replace(manifest, final_manifest)
+        shutil.rmtree(staging, ignore_errors=True)
+        return target
+
+    @staticmethod
+    def _parse_manifest(path: Path) -> dict[str, object]:
+        from .provider import SteamProvider
+        value = SteamProvider._parse_vdf(path.read_text(errors="replace")).get("AppState", {})
+        if not isinstance(value, dict):
+            raise ValueError("AppState is not an object")
+        return value
 
     def uninstall_command(self, app_id: str) -> list[str]:
         """Build SteamCMD's provider-native uninstall operation.
@@ -361,9 +419,13 @@ class SteamCmdExecutor:
             from .provider import SteamProvider, InstalledSteamGame
             app = SteamProvider._parse_vdf(manifest.read_text(errors="replace")).get("AppState", {})
             if isinstance(app, dict) and SteamProvider._is_launchable_app(app):
+                content = self._safe_install_directory(
+                    self.install_dir / "steamapps" / "common", app.get("installdir"))
+                if not content.is_dir():
+                    return None
                 return InstalledSteamGame(
                     app_id=app_id, title=str(app["name"]),
-                    install_dir=str(self.install_dir / "steamapps" / "common" / app["installdir"]),
+                    install_dir=str(content),
                     library_root=str(self.install_dir), size_on_disk=int(app.get("SizeOnDisk", 0)),
                     last_played=int(app.get("LastPlayed", 0)),
                 )
@@ -389,7 +451,11 @@ class SteamCmdExecutor:
             platform = await asyncio.to_thread(self.platform_resolver.resolve, app_id)
             if platform is not None:
                 self.platforms[app_id] = platform
-        command = self.command(app_id)
+        staging = self.install_dir / ".mudos-steam-staging" / job.job_id
+        if staging.exists():
+            raise SteamCmdError("staging-conflict", "Steam acquisition staging directory already exists")
+        staging.mkdir(parents=True, exist_ok=False)
+        command = self.command(app_id, force_install_dir=staging)
         command[0] = self._require_executable()
         self.install_dir.mkdir(parents=True, exist_ok=True)
         before = self._cache_snapshot()
@@ -521,6 +587,7 @@ class SteamCmdExecutor:
             raise SteamCmdError("steamcmd-failure", "SteamCMD did not complete successfully",
                                 details={"exit_code": returncode, "success_result": success,
                                          "finalizing_seen": finalizing})
+        await asyncio.to_thread(self._finalize_staged_install, app_id, staging)
 
     async def authenticate(self) -> dict[str, str]:
         """Verify SteamCMD acquisition authentication without secret argv/env."""
