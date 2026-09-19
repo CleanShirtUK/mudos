@@ -23,6 +23,14 @@ Window {
         id: typography
     }
 
+    function mixColor(from, to, progress) {
+        return Qt.rgba(
+            from.r + (to.r - from.r) * progress,
+            from.g + (to.g - from.g) * progress,
+            from.b + (to.b - from.b) * progress,
+            from.a + (to.a - from.a) * progress)
+    }
+
     Rectangle {
         id: panel
         anchors.centerIn: parent
@@ -67,6 +75,15 @@ Window {
                     height: 58
                     z: index === guideModel.selection ? 1 : 0
                     property real selectionProgress: index === guideModel.selection ? 1 : 0
+                    readonly property color surfaceColor: root.mixColor(
+                        luluPalette.cardSurface, luluPalette.focusedCardSurface,
+                        selectionProgress)
+                    readonly property color borderColor: root.mixColor(
+                        luluPalette.glassBorder, luluPalette.focusIndicator,
+                        selectionProgress)
+                    readonly property color textColor: root.mixColor(
+                        luluPalette.navigationText, luluPalette.primaryText,
+                        selectionProgress)
                     Behavior on selectionProgress {
                         NumberAnimation {
                             duration: 180
@@ -79,10 +96,8 @@ Window {
                         scale: 1 + 0.01 * parent.selectionProgress
                         transformOrigin: Item.Center
                         radius: 8
-                        color: parent.selectionProgress > 0
-                            ? luluPalette.focusedCardSurface : luluPalette.cardSurface
-                        border.color: parent.selectionProgress > 0
-                            ? luluPalette.focusIndicator : luluPalette.glassBorder
+                        color: parent.surfaceColor
+                        border.color: parent.borderColor
                         border.width: 1
 
                         Text {
@@ -90,8 +105,7 @@ Window {
                             anchors.leftMargin: 18
                             anchors.rightMargin: 18
                             text: parent.parent.modelData.label
-                            color: parent.parent.selectionProgress > 0
-                                ? luluPalette.primaryText : luluPalette.navigationText
+                            color: parent.parent.textColor
                             font.family: typography.interfaceFamily
                             font.pixelSize: typography.size("body", 18)
                             verticalAlignment: Text.AlignVCenter
