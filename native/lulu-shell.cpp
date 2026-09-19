@@ -585,10 +585,12 @@ private:
     {
         const xcb_window_t restoreWindow = targetWindow_;
         const QString restoredComposite = guideOwnerComposite_;
+        const uint restoreMode = preGuideInterceptMode_ >= 0
+            ? static_cast<uint>(preGuideInterceptMode_) : 1u;
         if (!restoredComposite.isEmpty())
             logRoutingState(restoredComposite, "before-restore");
         if (!restoredComposite.isEmpty())
-            setInterceptMode(guideOwnerComposite_, 1);
+            setInterceptMode(restoredComposite, restoreMode);
         guideOwnerComposite_.clear();
         clearTarget();
         if (restoreWindow != XCB_WINDOW_NONE) {
@@ -604,6 +606,7 @@ private:
         }
         if (restoreWindow != XCB_WINDOW_NONE && !restoredComposite.isEmpty())
             logRoutingState(restoredComposite, "after-restore");
+        preGuideInterceptMode_ = -1;
     }
 
     bool guideVisible() const
@@ -697,7 +700,8 @@ private:
             qInfo() << "GUIDE_EDGE_TRACE" << "seq=" << sequence
                     << "timestamp=" << QDateTime::currentMSecsSinceEpoch()
                     << "event=" << event << "value=" << value
-                    << "guideVisible=" << guideVisible();
+                    << "guideVisible=" << guideVisible()
+                    << "interceptMode=" << interceptMode(compositePath);
         }
         if (event == QStringLiteral("ui_back") || event == QStringLiteral("cancel")
             || event == QStringLiteral("back")) {
@@ -740,9 +744,13 @@ private:
                     return;
                 }
                 if (!pendingGuide_) {
+                    preGuideInterceptMode_ = interceptMode(compositePath);
                     pendingGuide_ = true;
                     guideChordConsumed_ = false;
                     guideOwnerComposite_ = compositePath;
+                    logRoutingState(compositePath, "pre-guide-snapshot");
+                    qInfo() << "GUIDE_ROUTING_STATE" << "phase=pre-guide-focus"
+                            << "window=" << actualFocusWindow();
                 }
                 return;
             }
@@ -1170,6 +1178,7 @@ private:
     QTimer keyboardOwnershipTimer_;
     QHash<QString, DbusInputRelay *> dbusRelays_;
     QString guideOwnerComposite_;
+    int preGuideInterceptMode_ = -1;
     bool pendingGuide_ = false;
     bool guideChordConsumed_ = false;
     bool oskActive_ = false;
