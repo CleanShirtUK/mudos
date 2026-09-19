@@ -59,9 +59,9 @@ Item {
                         required property var modelData
                         width: root.rowWidth
                         height: root.rowHeight
-                        z: index === root.guideModel.selection ? 1 : 0
+                        z: index === root.guideModel.guideSelection ? 1 : 0
                         property real selectionProgress:
-                            index === root.guideModel.selection ? 1 : 0
+                            index === root.guideModel.guideSelection ? 1 : 0
                         Behavior on selectionProgress {
                             NumberAnimation {
                                 duration: 180

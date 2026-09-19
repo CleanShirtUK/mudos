@@ -118,18 +118,6 @@ bool GlassShader::updateUniformData(RenderState &state, QSGMaterial *newMaterial
     putFloat(*data, 164, material->textureSubRect.y());
     putFloat(*data, 168, material->textureSubRect.width());
     putFloat(*data, 172, material->textureSubRect.height());
-    if (material->surfaceSize.width() > 700) {
-        static bool loggedGuideUniforms = false;
-        if (!loggedGuideUniforms) {
-            loggedGuideUniforms = true;
-            qInfo() << "MUDOS_GLASS_UNIFORMS"
-                    << "origin=" << material->canonicalRect
-                    << "scene=" << material->surfaceSize
-                    << "canonical=" << material->canonicalSize
-                    << "opacity=" << state.opacity()
-                    << "transmission=" << material->transmission;
-        }
-    }
     return true;
 }
 
@@ -139,15 +127,6 @@ void GlassShader::updateSampledImage(RenderState &, int binding, QSGTexture **te
     if (binding == 1) {
         auto *material = static_cast<GlassMaterial *>(newMaterial);
         *texture = material->provider ? material->provider->texture() : nullptr;
-        static bool loggedSampleBinding = false;
-        if (!loggedSampleBinding) {
-            loggedSampleBinding = true;
-            qInfo() << "MUDOS_GLASS_SAMPLE_BINDING"
-                    << "binding=" << binding
-                    << "provider=" << material->provider
-                    << "texture=" << *texture
-                    << "size=" << (*texture ? (*texture)->textureSize() : QSize());
-        }
     }
 }
 
@@ -175,35 +154,6 @@ void copyMaterial(GlassMaterial *material, const MudosGlassItem *item)
     material->textureSubRect = material->provider && material->provider->texture()
         ? material->provider->texture()->normalizedTextureSubRect()
         : QRectF(0, 0, 1, 1);
-    if (item->objectName() == QStringLiteral("mudosGuideGlass")) {
-        static bool loggedGuideMaterial = false;
-        if (!loggedGuideMaterial) {
-            loggedGuideMaterial = true;
-            qInfo() << "MUDOS_GLASS_MATERIAL"
-                    << "origin=" << material->canonicalRect
-                    << "surface=" << material->surfaceSize
-                    << "canonical=" << material->canonicalSize
-                    << "provider=" << material->provider;
-        }
-    }
-    static bool loggedTextureBoundary = false;
-    static bool loggedGuideTexture = false;
-    const QSGTexture *texture = material->provider ? material->provider->texture() : nullptr;
-    const bool guideGlass = item->objectName() == QStringLiteral("mudosGuideGlass");
-    if ((!loggedTextureBoundary || (guideGlass && !loggedGuideTexture))
-            && texture && texture->textureSize().isValid()) {
-        if (guideGlass)
-            loggedGuideTexture = true;
-        else
-            loggedTextureBoundary = true;
-        qInfo() << "MUDOS_RENDER_CHAIN_QSG_TEXTURE"
-                << "provider=" << material->provider
-                << "backdrop=" << item->backdrop()
-                << "objectName=" << item->objectName()
-                << "itemSize" << QSizeF(item->width(), item->height())
-                << "textureSize" << (texture ? texture->textureSize() : QSize())
-                << "normalizedSubRect" << material->textureSubRect;
-    }
 }
 
 } // namespace

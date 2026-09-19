@@ -82,6 +82,20 @@ vec2 surfaceGradient(vec2 uv, vec2 size, float radius)
     return gradient / (2.0 * stepUv);
 }
 
+vec4 diffuseSample(vec2 centerUv, vec2 radiusUv)
+{
+    const float weights[5] = float[5](0.0625, 0.25, 0.375, 0.25, 0.0625);
+    vec4 sampleSum = vec4(0.0);
+    for (int y = 0; y < 5; ++y) {
+        for (int x = 0; x < 5; ++x) {
+            vec2 offset = vec2(float(x - 2), float(y - 2)) * radiusUv * 0.5;
+            vec2 sampleUv = clamp(centerUv + offset, vec2(0.0), vec2(1.0));
+            sampleSum += texture(source, sampleUv) * weights[x] * weights[y];
+        }
+    }
+    return sampleSum;
+}
+
 void main()
 {
     vec2 uv = qt_TexCoord0;
@@ -97,16 +111,17 @@ void main()
     vec3 rayBlue = refract(incident, normal,
                            1.0 / max(u_ior + u_dispersionIor, 1.001));
     vec2 displacedUv = baseUv + rayGreen.xy * u_refractionPixels / u_canonicalSize;
+    vec2 diffusionRadius = vec2(u_diffusionPixels) / u_canonicalSize;
     vec4 canonicalBackdrop = texture(source, baseUv) * qt_Opacity;
     if (u_dispersionIor > 0.0) {
         vec2 redUv = baseUv + rayRed.xy * u_refractionPixels / u_canonicalSize;
         vec2 blueUv = baseUv + rayBlue.xy * u_refractionPixels / u_canonicalSize;
-        vec4 redSample = texture(source, clamp(redUv, vec2(0.0), vec2(1.0)));
-        vec4 greenSample = texture(source, clamp(displacedUv, vec2(0.0), vec2(1.0)));
-        vec4 blueSample = texture(source, clamp(blueUv, vec2(0.0), vec2(1.0)));
+        vec4 redSample = diffuseSample(redUv, diffusionRadius);
+        vec4 greenSample = diffuseSample(displacedUv, diffusionRadius);
+        vec4 blueSample = diffuseSample(blueUv, diffusionRadius);
         fragColor = vec4(redSample.r, greenSample.g, blueSample.b, greenSample.a) * qt_Opacity;
     } else {
-        fragColor = texture(source, clamp(displacedUv, vec2(0.0), vec2(1.0))) * qt_Opacity;
+        fragColor = diffuseSample(displacedUv, diffusionRadius) * qt_Opacity;
     }
     fragColor.rgb *= clamp(u_transmission, 0.0, 1.0);
 
@@ -114,7 +129,7 @@ void main()
 
     if (u_sceneLightStrength > 0.0) {
         vec2 lightFilterRadius = vec2(u_sceneLightPixels) / u_canonicalSize;
-        vec3 sceneEnergy = texture(source, clamp(baseUv, vec2(0.0), vec2(1.0))).rgb;
+        vec3 sceneEnergy = diffuseSample(baseUv, lightFilterRadius).rgb;
         float normalResponse = clamp(0.25 + 0.75 * (1.0 - normal.z), 0.0, 1.0);
         float illumination = sceneLuminance(sceneEnergy) * normalResponse;
         fragColor.rgb += vec3(illumination * u_sceneLightStrength);

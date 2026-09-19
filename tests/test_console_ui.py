@@ -100,6 +100,7 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertIn("focusedCardSurface", guide_panel)
         self.assertIn("navigationText", guide_panel)
         self.assertIn("majorHeadingFamily", guide_panel)
+        self.assertIn("guideModel.guideSelection", guide_panel)
         self.assertIn("focusedCardSurface", options)
         self.assertIn("navigationText", options)
         self.assertIn("GUIDE_INPUT_LIFECYCLE", native)
