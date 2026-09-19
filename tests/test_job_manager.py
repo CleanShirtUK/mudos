@@ -111,6 +111,26 @@ class JobDomainTests(unittest.TestCase):
             self.assertEqual(result.error.code, "provider-failure")
         asyncio.run(exercise())
 
+    def test_retire_only_failed_jobs_is_idempotent_and_preserves_retry_lineage(self) -> None:
+        async def exercise() -> None:
+            executor = ControlledExecutor()
+            manager = JobManager()
+            manager.register_executor("fake", executor)
+            failed = DownloadJob("failed", "fake", "Title", content_identity="fake:1",
+                                 state=JobState.FAILED, stage="failed")
+            manager.jobs[failed.job_id] = failed
+            retry = manager.retry(failed.job_id)
+            self.assertFalse(manager.jobs[failed.job_id].retired)
+            retired = manager.retire(failed.job_id)
+            self.assertTrue(retired.retired)
+            self.assertEqual(manager.jobs[retry.job_id].parent_job_id, failed.job_id)
+            self.assertTrue(manager.retire(failed.job_id).retired)
+            with self.assertRaises(ValueError):
+                manager.retire(retry.job_id)
+            executor.release.set()
+            await manager._tasks[retry.job_id]
+        asyncio.run(exercise())
+
     def test_duplicate_active_content_identity_returns_existing_job(self) -> None:
         async def exercise() -> None:
             executor = ControlledExecutor()

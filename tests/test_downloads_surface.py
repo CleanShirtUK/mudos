@@ -44,7 +44,20 @@ class DownloadsSurfaceTests(unittest.TestCase):
         self.assertIn('retryRequested(String(job.job_id))', self.qml)
         self.assertIn('return "A  RETRY"', self.qml)
         self.assertIn('text: root.failureReason(modelData)', self.qml)
-        self.assertIn('String(root.selectedJob().state) !== "failed"', self.qml)
+        self.assertIn('String(root.selectedJob().state) === "failed"', self.qml)
+
+    def test_failed_rows_can_be_cleared_without_active_job_clear_path(self) -> None:
+        for token in ('clearRequested', 'String(job.state) === "failed"',
+                      'clearAcquisition(jobId)', '/acquisition/clear/'):
+            self.assertIn(token, self.qml + self.shell + self.bridge)
+        self.assertIn('def clear_acquisition', self.bridge)
+
+    def test_list_view_follows_selection_and_accounts_for_scale(self) -> None:
+        for token in ('positionViewAtIndex', 'currentIndex: root.selectedIndex',
+                      'ListView.StrictlyEnforceRange', 'preferredHighlightBegin',
+                      'preferredHighlightEnd', 'scale: 1 + 0.01 * selectionProgress',
+                      'topMargin:', 'bottomMargin:'):
+            self.assertIn(token, self.qml)
 
     def test_old_steam_download_delegation_is_absent(self) -> None:
         for path in (ROOT / "src", ROOT / "native", ROOT / "scripts", ROOT / "ui"):

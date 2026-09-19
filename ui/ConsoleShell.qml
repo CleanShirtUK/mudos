@@ -1345,6 +1345,12 @@ Window {
         request("/acquisition/cancel/" + encodeURIComponent(jobId), "POST", "", function() {}, "Cancel failed")
     }
 
+    function clearAcquisition(jobId) {
+        request("/acquisition/clear/" + encodeURIComponent(jobId), "POST", "", function() {
+            root.refreshAcquisitionJobs()
+        }, "Clear failed")
+    }
+
     function launchGame(game) {
         if (!game)
             return
@@ -2719,6 +2725,7 @@ Window {
              onPauseRequested: root.pauseAcquisition(jobId)
              onResumeRequested: root.resumeAcquisition(jobId)
              onCancelRequested: root.cancelAcquisition(jobId)
+             onClearRequested: root.clearAcquisition(jobId)
              onRetryRequested: root.retryAcquisition(jobId)
             Component.onCompleted: root.downloadsHomeRef = downloadsHome
         }

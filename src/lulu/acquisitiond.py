@@ -135,6 +135,15 @@ class AcquisitionInterface(ServiceInterface):
         except (KeyError, ValueError) as error:
             raise DBusError("org.lulu.Acquisition.Error.Unavailable", str(error)) from error
 
+    @method()
+    def ClearFailedJob(self, job_id: "s") -> "":
+        try:
+            self.manager.retire(job_id)
+        except KeyError as error:
+            raise DBusError("org.lulu.Acquisition.Error.UnknownJob", str(error)) from error
+        except ValueError as error:
+            raise DBusError("org.lulu.Acquisition.Error.Unavailable", str(error)) from error
+
     @signal()
     def StateChanged(self, snapshot: "s") -> "s":
         return snapshot

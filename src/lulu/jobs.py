@@ -74,6 +74,7 @@ class DownloadJob:
     attempt: int = 1
     parent_job_id: str | None = None
     recovery_reason: str | None = None
+    retired: bool = False
 
     @property
     def is_active(self) -> bool:

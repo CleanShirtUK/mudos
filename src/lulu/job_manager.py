@@ -139,6 +139,18 @@ class JobManager:
             parent_job_id=previous.job_id,
         )
 
+    def retire(self, job_id: str) -> DownloadJob:
+        """Hide a failed attempt without deleting its retry lineage or history."""
+        job = self._require(job_id)
+        if job.state != JobState.FAILED:
+            raise ValueError("only failed jobs can be retired")
+        if job.retired:
+            return job
+        from dataclasses import replace
+        self.jobs[job_id] = replace(job, retired=True, updated_at=utc_now())
+        self._publish()
+        return self.jobs[job_id]
+
     def transition(self, job_id: str, state: JobState, *,
                    stage: str | None = None,
                    error: JobError | None = None) -> DownloadJob:

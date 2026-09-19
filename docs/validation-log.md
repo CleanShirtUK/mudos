@@ -68,6 +68,30 @@ not implied to have passed.
 - Provider/live-service validation: pending
 - Notes: physical controller/UI acceptance remains outstanding
 
+## Downloads retirement and controller viewport
+
+- Commit: `599c3dc`
+- Backend semantics: `ClearFailedJob` marks only a terminal `failed` job as
+  `retired`; the job row, error diagnostics, attempt number, and
+  `parent_job_id` retry linkage remain persisted. The operation is idempotent
+  and rejects queued, active, paused, cancelling, completed, and cancelled
+  jobs.
+- UI/controller action: X/options is `Clear` for a selected failed job; A
+  remains `Retry`. Active and queued rows continue to expose only their normal
+  pause/resume/cancel actions.
+- Automated validation: pending final commit; coverage includes retirement
+  persistence, retry lineage preservation, idempotent clear, terminal-state
+  rejection, filtered retired rows, ListView selection following, and scaled
+  card viewport margins.
+- Physical validation sequence: open Downloads with Y; create or select a
+  failed job; press X and verify `Clear`, then verify the row disappears; press
+  X again or revisit the surface and verify no error; retry a separate older
+  failed attempt and verify clearing the older row leaves the newer attempt;
+  select the first row, repeatedly press Down through the last row, verify each
+  card follows into view without clipping, then press Up back to the first row;
+  verify first and last selected cards are fully visible; press B and reopen
+  Downloads to verify normal back behavior and sensible selection/scroll state.
+
 ## Managed OSK / credential ownership
 
 - Commits: `75d67c7`, `f5c33d8`, `fb23a9c`

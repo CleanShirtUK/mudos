@@ -21,7 +21,8 @@ Item {
     signal retryRequested(string jobId)
     signal pauseRequested(string jobId)
     signal resumeRequested(string jobId)
-    signal cancelRequested(string jobId)
+signal cancelRequested(string jobId)
+    signal clearRequested(string jobId)
 
     readonly property var visibleStates: ["queued", "starting", "transferring", "finalizing", "paused", "cancelling", "failed"]
     readonly property var activeStates: ["starting", "transferring", "finalizing"]
@@ -46,7 +47,7 @@ Item {
         var incoming = parsed.jobs || []
         var current = []
         for (var i = 0; i < incoming.length; i++) {
-            if (visibleStates.indexOf(String(incoming[i].state || "")) >= 0)
+            if (!incoming[i].retired && visibleStates.indexOf(String(incoming[i].state || "")) >= 0)
             current.push(incoming[i])
         }
         current.sort(function(a, b) {
@@ -70,6 +71,8 @@ Item {
     function moveSelection(delta) {
         if (!jobs.length) return
         selectedIndex = Math.max(0, Math.min(jobs.length - 1, selectedIndex + delta))
+        jobsList.currentIndex = selectedIndex
+        jobsList.positionViewAtIndex(selectedIndex, ListView.Contain)
     }
 
     function activateSelected() {
@@ -89,6 +92,10 @@ Item {
 
     function requestCancel() {
         var job = selectedJob()
+        if (job && String(job.state) === "failed") {
+            clearRequested(String(job.job_id))
+            return
+        }
         if (job && ["queued", "starting", "transferring", "finalizing", "paused", "cancelling"].indexOf(String(job.state)) >= 0)
             confirmationPending = true
     }
@@ -213,9 +220,19 @@ Item {
                 id: jobsList
                 visible: !root.confirmationPending && root.jobs.length > 0
                 width: parent.width
-                height: Math.min(contentHeight, 470 * root.uiScale)
+                height: Math.min(contentHeight + 8 * root.uiScale, 470 * root.uiScale)
                 spacing: 8 * root.uiScale
                 clip: true
+                topMargin: 4 * root.uiScale
+                bottomMargin: 4 * root.uiScale
+                currentIndex: root.selectedIndex
+                highlightRangeMode: ListView.StrictlyEnforceRange
+                preferredHighlightBegin: 4 * root.uiScale
+                preferredHighlightEnd: height - 4 * root.uiScale
+                onCurrentIndexChanged: {
+                    if (root.selectedIndex !== currentIndex)
+                        root.selectedIndex = currentIndex
+                }
                 model: root.jobs
                 delegate: Rectangle {
                     id: row
@@ -256,15 +273,15 @@ Item {
                 ControllerHint {
                     visible: root.confirmationPending || root.actionLabel(root.selectedJob()) !== ""
                     action: "confirm"
-                    label: root.confirmationPending ? "Confirm" : root.actionText(root.selectedJob())
+                        label: root.confirmationPending ? "Confirm" : root.actionText(root.selectedJob())
                     uiScale: root.uiScale
                     typography: root.typography
                     luluPalette: root.luluPalette
                 }
                 ControllerHint {
-                     visible: !root.confirmationPending && root.selectedJob() !== null && String(root.selectedJob().state) !== "failed"
-                    action: "options"
-                    label: "Cancel"
+                     visible: !root.confirmationPending && root.selectedJob() !== null
+                     action: "options"
+                     label: String(root.selectedJob().state) === "failed" ? "Clear" : "Cancel"
                     uiScale: root.uiScale
                     typography: root.typography
                     luluPalette: root.luluPalette

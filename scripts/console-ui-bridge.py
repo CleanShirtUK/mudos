@@ -239,6 +239,12 @@ class ConsoleUiBridge:
             raise RuntimeError("acquisition service is unavailable")
         return {"token": await self.acquisitiond.call_retry_job(job_id)}
 
+    async def clear_acquisition(self, job_id: str) -> dict[str, str]:
+        if self.acquisitiond is None:
+            raise RuntimeError("acquisition service is unavailable")
+        await self.acquisitiond.call_clear_failed_job(job_id)
+        return {"status": "cleared"}
+
     async def acquisition_action(self, action: str, job_id: str) -> dict[str, str]:
         if self.acquisitiond is None:
             raise RuntimeError("acquisition service is unavailable")
@@ -815,6 +821,13 @@ class ApiHandler(BaseHTTPRequestHandler):
             try:
                 job_id = unquote(path.removeprefix("/acquisition/retry/"))
                 self._respond(200, self.bridge.call(self.bridge.retry_acquisition(job_id), timeout=20))
+            except Exception as error:
+                self._respond(409, {"error": str(error) or type(error).__name__})
+            return
+        if path.startswith("/acquisition/clear/"):
+            try:
+                job_id = unquote(path.removeprefix("/acquisition/clear/"))
+                self._respond(200, self.bridge.call(self.bridge.clear_acquisition(job_id), timeout=20))
             except Exception as error:
                 self._respond(409, {"error": str(error) or type(error).__name__})
             return

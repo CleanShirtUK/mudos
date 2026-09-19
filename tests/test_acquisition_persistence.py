@@ -99,6 +99,20 @@ class AcquisitionPersistenceTests(unittest.TestCase):
                 manager.store.close()
         asyncio.run(exercise())
 
+    def test_retired_failed_attempt_persists_without_retiring_retry(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "acquisition.sqlite3"
+            store = AcquisitionStore(path)
+            failed = DownloadJob("failed", "fake", "Title", content_identity="fake:1",
+                                 state=JobState.FAILED, stage="failed", retired=True)
+            retry = DownloadJob("retry", "fake", "Title", content_identity="fake:1",
+                                parent_job_id="failed", attempt=2)
+            store.save_all([failed, retry])
+            restored = {job.job_id: job for job in AcquisitionStore(path).load()}
+            self.assertTrue(restored["failed"].retired)
+            self.assertFalse(restored["retry"].retired)
+            self.assertEqual(restored["retry"].parent_job_id, "failed")
+
     def test_retention_and_corrupt_rows_fail_safe(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "acquisition.sqlite3"

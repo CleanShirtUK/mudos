@@ -135,6 +135,15 @@ class AcquisitionInterface(ServiceInterface):
         except (KeyError, ValueError) as error:
             raise DBusError("org.lulu.Acquisition.Error.Unavailable", str(error)) from error
 
+    @method()
+    def ClearFailedJob(self, job_id: "s") -> "":
+        try:
+            self.manager.retire(job_id)
+        except KeyError as error:
+            raise DBusError("org.lulu.Acquisition.Error.UnknownJob", str(error)) from error
+        except ValueError as error:
+            raise DBusError("org.lulu.Acquisition.Error.Unavailable", str(error)) from error
+
     @signal()
     def StateChanged(self, snapshot: "s") -> "s":
         return snapshot
@@ -176,7 +185,8 @@ async def serve(bus_type: BusType = BusType.SESSION) -> None:
                     consoled = proxy.get_interface("org.lulu.Console")
                     request = json.loads(await consoled.call_begin_owned_credential_request(
                         title, prompt, input_type.value, input_type is CredentialInput.SECRET,
-                        min_length, max_length, owner_id, json.dumps(owner, sort_keys=True)))
+                        min_length, max_length, owner_id, json.dumps(owner, sort_keys=True),
+                        json.dumps(["enter-code"] if input_type is CredentialInput.WAITING else [])))
                     request_id = request["id"]
                     try:
                         while True:
