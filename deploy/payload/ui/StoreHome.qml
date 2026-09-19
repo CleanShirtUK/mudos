@@ -178,12 +178,7 @@ Item {
             downloadsRequested()
         else if ((selectedGame.provider === "steam" || selectedGame.provider === "romm")
                  && ["queued", "starting", "transferring", "finalizing", "paused", "cancelling"].indexOf(acquisitionState) < 0
-                 && (acquisitionState !== "failed"
-                     || !(acquisitionJob && acquisitionJob.error) && !game.acquisition_error
-                     || (acquisitionJob && acquisitionJob.error
-                         ? acquisitionJob.error.retryable === true
-                         : game.acquisition_error.retryable === true))
-                 && String(selectedGame.provider_id).match(/^[1-9][0-9]*$/))
+                  && String(selectedGame.provider_id).match(/^[1-9][0-9]*$/))
             // installGameRequested(game) preserves the existing generic Store signal boundary.
             installGameRequested(selectedGame)
     }

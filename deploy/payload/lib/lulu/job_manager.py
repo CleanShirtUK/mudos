@@ -118,8 +118,8 @@ class JobManager:
 
     def retry(self, job_id: str) -> DownloadJob:
         previous = self._require(job_id)
-        if previous.state != JobState.FAILED or not previous.retryable:
-            raise ValueError("job is not retryable")
+        if previous.state != JobState.FAILED:
+            raise ValueError("job is not failed")
         return self.submit(
             previous.provider, previous.content_identity, previous.title,
             operation=previous.operation,
@@ -154,13 +154,40 @@ class JobManager:
             return job
         if job.state in {JobState.QUEUED, JobState.FAILED}:
             return self.transition(job_id, JobState.CANCELLED, stage="cancelled")
+        if job.state == JobState.PAUSED:
+            return self.transition(job_id, JobState.CANCELLED, stage="cancelled")
         if job.state not in {JobState.STARTING, JobState.TRANSFERRING,
-                             JobState.FINALIZING, JobState.PAUSED}:
+                             JobState.FINALIZING}:
             return job
         self.transition(job_id, JobState.CANCELLING, stage="cancelling")
-        await self.executors[job.provider].cancel(self.jobs[job_id])
+        task = self._tasks.get(job_id)
+        if task is not None:
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
         if self.jobs[job_id].state == JobState.CANCELLING:
             self.transition(job_id, JobState.CANCELLED, stage="cancelled")
+        return self.jobs[job_id]
+
+    async def pause(self, job_id: str) -> DownloadJob:
+        job = self._require(job_id)
+        if not job.cancellation_supported:
+            return job
+        if job.state not in {JobState.STARTING, JobState.TRANSFERRING}:
+            return job
+        self.transition(job_id, JobState.PAUSED, stage="paused")
+        task = self._tasks.get(job_id)
+        if task is not None:
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+        return self.jobs[job_id]
+
+    def resume(self, job_id: str) -> DownloadJob:
+        job = self._require(job_id)
+        if job.state != JobState.PAUSED:
+            return job
+        self.transition(job_id, JobState.QUEUED, stage="queued")
+        self._queues[job.provider].append(job_id)
+        self._pump(job.provider)
         return self.jobs[job_id]
 
     def _pump(self, provider: str) -> None:

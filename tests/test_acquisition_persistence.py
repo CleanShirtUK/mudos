@@ -6,7 +6,7 @@ from pathlib import Path
 
 from lulu.acquisition_store import AcquisitionStore
 from lulu.job_manager import JobManager, JobReporter
-from lulu.jobs import DownloadJob, JobState
+from lulu.jobs import DownloadJob, JobError, JobState
 
 
 class HoldingExecutor:
@@ -83,7 +83,8 @@ class AcquisitionPersistenceTests(unittest.TestCase):
                 store = AcquisitionStore(path)
                 failed = DownloadJob("failed", "fake", "Title", content_identity="fake:1",
                                      state=JobState.FAILED, stage="failed",
-                                     error=None, completed_at="2026-01-01T00:00:00.000Z")
+                                     error=JobError("auth", "sensitive detail", retryable=False),
+                                     completed_at="2026-01-01T00:00:00.000Z")
                 store.save_all([failed])
                 executor = HoldingExecutor()
                 manager = JobManager(store=AcquisitionStore(path))

@@ -38,6 +38,14 @@ class DownloadsSurfaceTests(unittest.TestCase):
         self.assertIn('target = "mudos:downloads"', (ROOT / "config/guide/mudos.toml").read_text())
         self.assertIn('label = "Open Downloads"', (ROOT / "config/guide/mudos.toml").read_text())
 
+    def test_failed_rows_are_visible_and_retry_only(self) -> None:
+        self.assertIn('"failed"]', self.qml)
+        self.assertIn('String(job.state) === "failed"', self.qml)
+        self.assertIn('retryRequested(String(job.job_id))', self.qml)
+        self.assertIn('return "A  RETRY"', self.qml)
+        self.assertIn('text: root.failureReason(modelData)', self.qml)
+        self.assertIn('String(root.selectedJob().state) !== "failed"', self.qml)
+
     def test_old_steam_download_delegation_is_absent(self) -> None:
         for path in (ROOT / "src", ROOT / "native", ROOT / "scripts", ROOT / "ui"):
             for file in path.rglob("*"):

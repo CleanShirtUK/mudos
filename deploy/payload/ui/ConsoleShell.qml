@@ -2687,9 +2687,10 @@ Window {
             canonicalTexture: orbitTexture
             canonicalCoordinateRoot: orbitRenderSource
             canonicalSize: Qt.size(root.width, root.height)
-            onPauseRequested: root.pauseAcquisition(jobId)
-            onResumeRequested: root.resumeAcquisition(jobId)
-            onCancelRequested: root.cancelAcquisition(jobId)
+             onPauseRequested: root.pauseAcquisition(jobId)
+             onResumeRequested: root.resumeAcquisition(jobId)
+             onCancelRequested: root.cancelAcquisition(jobId)
+             onRetryRequested: root.retryAcquisition(jobId)
             Component.onCompleted: root.downloadsHomeRef = downloadsHome
         }
 

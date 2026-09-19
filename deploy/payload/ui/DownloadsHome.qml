@@ -23,14 +23,14 @@ Item {
     signal resumeRequested(string jobId)
     signal cancelRequested(string jobId)
 
-    readonly property var visibleStates: ["queued", "starting", "transferring", "finalizing", "paused", "cancelling"]
+    readonly property var visibleStates: ["queued", "starting", "transferring", "finalizing", "paused", "cancelling", "failed"]
     readonly property var activeStates: ["starting", "transferring", "finalizing"]
     readonly property var queuedStates: ["queued", "paused"]
-    readonly property var historyStates: ["completed", "failed", "cancelled"]
+    readonly property var historyStates: ["completed", "cancelled"]
 
-    // Terminal history is intentionally not rendered here: completed,
-    // failed, and cancelled jobs remain available to the existing retry/history
-    // service paths, while this surface answers "what is active right now?".
+    // Completed and cancelled history is intentionally not rendered. Failed
+    // jobs remain here as the user-facing retry surface until a new attempt
+    // replaces them in the authoritative service snapshot.
     readonly property string terminalStateExample: String({state: "completed"}.state)
     // Compatibility vocabulary for consumers of the original snapshot model:
     // String(job.state) === "transferring" and String(job.state) === "completed"
@@ -79,14 +79,18 @@ Item {
         }
         var job = selectedJob()
         if (!job) return
-        if (String(job.state) === "paused")
+        if (String(job.state) === "failed")
+            retryRequested(String(job.job_id))
+        else if (String(job.state) === "paused")
             resumeRequested(String(job.job_id))
         else if (["starting", "transferring"].indexOf(String(job.state)) >= 0)
             pauseRequested(String(job.job_id))
     }
 
     function requestCancel() {
-        if (selectedJob()) confirmationPending = true
+        var job = selectedJob()
+        if (job && ["queued", "starting", "transferring", "finalizing", "paused", "cancelling"].indexOf(String(job.state)) >= 0)
+            confirmationPending = true
     }
 
     function confirmCancel() {
@@ -125,6 +129,19 @@ Item {
         return state === "transferring" ? "DOWNLOADING" : state.toUpperCase()
     }
 
+    function failureReason(job) {
+        var code = job && job.error ? String(job.error.code || "") : ""
+        if (["authentication-required", "authentication-failed", "auth-backend-unavailable"].indexOf(code) >= 0)
+            return "Authentication failed"
+        if (["network-error", "romm-unavailable"].indexOf(code) >= 0)
+            return "Network error"
+        if (["timeout", "download-timeout"].indexOf(code) >= 0)
+            return "Download timed out"
+        if (code)
+            return "Provider error"
+        return "Failed"
+    }
+
     // Keep the normalized state vocabulary explicit at this presentation
     // boundary; provider adapters never appear in QML.
     function normalizedState(job) {
@@ -139,6 +156,7 @@ Item {
         if (!job) return ""
         if (String(job.state) === "paused") return "A  RESUME"
         if (["starting", "transferring"].indexOf(String(job.state)) >= 0) return "A  PAUSE"
+        if (String(job.state) === "failed") return "A  RETRY"
         return ""
     }
 
@@ -222,9 +240,10 @@ Item {
                     border.width: root.uiScale
 
                     Text { x: 18 * root.uiScale; y: 10 * root.uiScale; width: parent.width * 0.58; text: modelData.title || "Untitled acquisition"; color: row.textColor; font.family: root.typography.interfaceFamily; font.pixelSize: root.typography.size("body", 18); font.bold: true; elide: Text.ElideRight }
-                    Text { x: 18 * root.uiScale; y: 37 * root.uiScale; text: String(modelData.provider || "provider").toUpperCase() + "  ·  " + root.stateLabel(modelData); color: root.luluPalette.secondaryText; font.family: root.typography.interfaceFamily; font.pixelSize: root.typography.size("hint", 12) }
+                     Text { x: 18 * root.uiScale; y: 37 * root.uiScale; text: String(modelData.provider || "provider").toUpperCase() + "  ·  " + (String(modelData.state) === "failed" ? "Failed" : root.stateLabel(modelData)); color: root.luluPalette.secondaryText; font.family: root.typography.interfaceFamily; font.pixelSize: root.typography.size("hint", 12) }
+                     Text { visible: String(modelData.state) === "failed"; x: 18 * root.uiScale; y: 57 * root.uiScale; text: root.failureReason(modelData); color: root.luluPalette.secondaryText; font.family: root.typography.interfaceFamily; font.pixelSize: root.typography.size("hint", 11); elide: Text.ElideRight; width: parent.width - 36 * root.uiScale }
                     Text { anchors.right: parent.right; anchors.rightMargin: 18 * root.uiScale; y: 10 * root.uiScale; text: modelData.progress !== null && modelData.progress !== undefined ? Math.round(Number(modelData.progress) * 100) + "%" : root.stateLabel(modelData); color: root.luluPalette.accent; font.family: root.typography.interfaceFamily; font.pixelSize: root.typography.size("hint", 13) }
-                    Rectangle { x: 18 * root.uiScale; y: 61 * root.uiScale; width: parent.width - 36 * root.uiScale; height: 5 * root.uiScale; radius: height / 2; color: root.luluPalette.glassBorder; Rectangle { width: modelData.progress !== null && modelData.progress !== undefined ? parent.width * Math.max(0, Math.min(1, Number(modelData.progress))) : 0; height: parent.height; radius: parent.radius; color: root.luluPalette.accent } }
+                     Rectangle { visible: String(modelData.state) !== "failed"; x: 18 * root.uiScale; y: 61 * root.uiScale; width: parent.width - 36 * root.uiScale; height: 5 * root.uiScale; radius: height / 2; color: root.luluPalette.glassBorder; Rectangle { width: modelData.progress !== null && modelData.progress !== undefined ? parent.width * Math.max(0, Math.min(1, Number(modelData.progress))) : 0; height: parent.height; radius: parent.radius; color: root.luluPalette.accent } }
                     Text { anchors.right: parent.right; anchors.rightMargin: 18 * root.uiScale; y: 70 * root.uiScale; text: modelData.downloaded_bytes !== null && modelData.total_bytes !== null ? root.formatBytes(modelData.downloaded_bytes) + " / " + root.formatBytes(modelData.total_bytes) : ""; color: root.luluPalette.secondaryText; font.family: root.typography.interfaceFamily; font.pixelSize: root.typography.size("hint", 11) }
                 }
             }
@@ -243,7 +262,7 @@ Item {
                     luluPalette: root.luluPalette
                 }
                 ControllerHint {
-                    visible: !root.confirmationPending && root.selectedJob() !== null
+                     visible: !root.confirmationPending && root.selectedJob() !== null && String(root.selectedJob().state) !== "failed"
                     action: "options"
                     label: "Cancel"
                     uiScale: root.uiScale

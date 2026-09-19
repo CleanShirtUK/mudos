@@ -118,8 +118,8 @@ class JobManager:
 
     def retry(self, job_id: str) -> DownloadJob:
         previous = self._require(job_id)
-        if previous.state != JobState.FAILED or not previous.retryable:
-            raise ValueError("job is not retryable")
+        if previous.state != JobState.FAILED:
+            raise ValueError("job is not failed")
         return self.submit(
             previous.provider, previous.content_identity, previous.title,
             operation=previous.operation,
