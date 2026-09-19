@@ -62,6 +62,9 @@ EOF
     mv "$staging" "$runtime"
     mkdir -p "$(dirname "$session_dropin")" "$(dirname "$consoled_dropin")" "$(dirname "$acquisition_dropin")"
     cat > "$session_dropin" <<EOF
+[Unit]
+Wants=lulu-osk@%i.service
+
 [Service]
 Environment=LULU_INSTALL_ROOT=$runtime
 Environment=PYTHONPATH=$runtime/lib
