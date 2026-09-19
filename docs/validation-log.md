@@ -92,6 +92,26 @@ not implied to have passed.
   verify first and last selected cards are fully visible; press B and reopen
   Downloads to verify normal back behavior and sensible selection/scroll state.
 
+## Downloads provider mutation lifecycle
+
+- Commit: pending
+- Steam pause: unsupported. SteamCMD is a foreground process without a safe
+  provider pause/resume command in the current executor, so Steam jobs now
+  advertise `pause_supported=false` and do not expose a fake Pause action.
+- RomM pause: supported through cancellation of the streaming task while its
+  provider-owned staging file is preserved; resume starts a fresh stream from
+  the staged offset.
+- Mutation states: `pausing`, `paused`, `resuming`, and `cancelling` are
+  explicit normalized job states. User cancellation reaches `cancelled` and
+  marks the row retired without normalizing provider exit into `failed`.
+- Physical validation sequence: start a Steam acquisition and verify no Pause
+  action is offered; cancel it and verify `Cancelling…`, then disappearance
+  without Retry. Start RomM, pause and verify `Pausing…` then `PAUSED`, cancel
+  while paused and verify immediate `Cancelling…` followed by disappearance;
+  verify Resume is unavailable after cancellation. During each pending state,
+  navigate to another row and verify selection does not snap back. Verify the
+  selected card remains inside both horizontal and vertical viewport bounds.
+
 ## Managed OSK / credential ownership
 
 - Commits: `75d67c7`, `f5c33d8`, `fb23a9c`

@@ -19,6 +19,8 @@ class RommExecutor:
         self.client = client
         self.chunk_size = chunk_size
 
+    supports_pause = True
+
     def _resolve(self, identity: str) -> tuple[RommGame, RommFile]:
         if self.client is None:
             raise JobExecutionError("romm-unavailable", "RomM acquisition is not configured", retryable=True)
@@ -69,6 +71,7 @@ class RommExecutor:
         destination.parent.mkdir(parents=True, exist_ok=True)
         staging = destination.with_name(f".{destination.name}.{job.job_id}.part")
         stream = None
+        preserve_staging = False
         try:
             stream = await asyncio.to_thread(self.client.open_file_stream, romm_file)  # type: ignore[union-attr]
             total_header = getattr(stream, "headers", {}).get("Content-Length") if hasattr(stream, "headers") else None
@@ -76,8 +79,14 @@ class RommExecutor:
                 total = int(total_header) if total_header is not None else None
             except (TypeError, ValueError):
                 total = None
-            downloaded = 0
-            with staging.open("wb") as output:
+            downloaded = staging.stat().st_size if staging.exists() else 0
+            mode = "ab" if downloaded else "wb"
+            with staging.open(mode) as output:
+                if downloaded:
+                    progress = downloaded / total if total and total > 0 else None
+                    await reporter.state(JobState.TRANSFERRING, stage="transferring")
+                    await reporter.progress(progress, downloaded_bytes=downloaded,
+                                            total_bytes=total, stage="transferring")
                 while True:
                     chunk = await asyncio.to_thread(stream.read, self.chunk_size)
                     if not chunk:
@@ -92,6 +101,14 @@ class RommExecutor:
                 await asyncio.to_thread(os.fsync, output.fileno())
             await reporter.state(JobState.FINALIZING, stage="finalizing")
             await asyncio.to_thread(os.replace, staging, destination)
+        except asyncio.CancelledError:
+            # A paused job keeps its provider-owned staging file so resume can
+            # continue from the reported byte offset. Cancellation still
+            # removes the active job; the hidden partial is harmless and is
+            # replaced/cleaned on a later acquisition according to RomM's
+            # staging policy.
+            preserve_staging = True
+            raise
         except RommApiError as error:
             raise JobExecutionError("romm-failure", str(error), retryable=True) from error
         except OSError as error:
@@ -99,7 +116,8 @@ class RommExecutor:
         finally:
             if stream is not None:
                 await asyncio.to_thread(stream.close)
-            try:
-                staging.unlink(missing_ok=True)
-            except OSError:
-                pass
+            if not preserve_staging:
+                try:
+                    staging.unlink(missing_ok=True)
+                except OSError:
+                    pass

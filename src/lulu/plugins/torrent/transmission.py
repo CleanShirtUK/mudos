@@ -220,6 +220,7 @@ class TorrentProvider:
     """Provider-facing executor; Transmission details stop at this boundary."""
 
     provider_id = "torrent"
+    supports_pause = True
 
     def __init__(self, client: TransmissionClient, paths: MudosPaths = PATHS,
                  *, label: str = "mudos") -> None:

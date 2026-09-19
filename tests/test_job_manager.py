@@ -98,6 +98,37 @@ class JobDomainTests(unittest.TestCase):
             self.assertEqual(manager.active_download_count, 0)
         asyncio.run(exercise())
 
+    def test_paused_provider_cancel_is_immediate_and_not_failure(self) -> None:
+        async def exercise() -> None:
+            executor = ControlledExecutor()
+            manager = JobManager()
+            manager.register_executor("romm", executor)
+            job = manager.submit("romm", "romm:1", "ROM", cancellation_supported=True,
+                                 pause_supported=True)
+            await asyncio.sleep(0)
+            await manager.pause(job.job_id)
+            self.assertEqual(manager.jobs[job.job_id].state, JobState.PAUSED)
+            cancelled = await manager.cancel(job.job_id)
+            self.assertEqual(cancelled.state, JobState.CANCELLED)
+            self.assertTrue(cancelled.retired)
+            self.assertNotEqual(cancelled.state, JobState.FAILED)
+            self.assertFalse(manager.jobs[job.job_id].pause_supported is False)
+            self.assertEqual(await manager.cancel(job.job_id), cancelled)
+        asyncio.run(exercise())
+
+    def test_unsupported_pause_does_not_mutate_job(self) -> None:
+        async def exercise() -> None:
+            executor = ControlledExecutor()
+            manager = JobManager()
+            manager.register_executor("steam", executor)
+            job = manager.submit("steam", "steam:1", "Steam", cancellation_supported=True)
+            await asyncio.sleep(0)
+            result = await manager.pause(job.job_id)
+            self.assertEqual(result.state, JobState.TRANSFERRING)
+            self.assertFalse(result.pause_supported)
+            await manager.cancel(job.job_id)
+        asyncio.run(exercise())
+
     def test_failure_is_normalized(self) -> None:
         async def exercise() -> None:
             executor = ControlledExecutor(fail=True)

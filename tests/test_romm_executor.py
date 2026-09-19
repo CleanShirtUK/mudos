@@ -31,6 +31,9 @@ class FakeRomm:
 
 
 class RommExecutorTests(unittest.TestCase):
+    def test_romm_pause_uses_staging_task_lifecycle(self) -> None:
+        self.assertTrue(RommExecutor(None).supports_pause)
+
     def test_streams_to_canonical_staging_path_and_completes(self) -> None:
         async def exercise() -> None:
             with tempfile.TemporaryDirectory() as directory:

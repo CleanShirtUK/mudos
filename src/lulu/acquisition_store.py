@@ -62,6 +62,7 @@ class AcquisitionStore:
                  artifact_files_json TEXT,
                  seeding INTEGER NOT NULL DEFAULT 0
                  , retired INTEGER NOT NULL DEFAULT 0
+                 , pause_supported INTEGER NOT NULL DEFAULT 0
             );
             CREATE INDEX IF NOT EXISTS acquisition_jobs_updated
                 ON acquisition_jobs(updated_at DESC);
@@ -76,6 +77,7 @@ class AcquisitionStore:
             "deletion_policy": "TEXT NOT NULL DEFAULT 'preserve-partial'",
             "artifact_files_json": "TEXT", "seeding": "INTEGER NOT NULL DEFAULT 0",
             "retired": "INTEGER NOT NULL DEFAULT 0",
+            "pause_supported": "INTEGER NOT NULL DEFAULT 0",
         }
         with self._connection:
             for name, declaration in additions.items():
@@ -111,8 +113,8 @@ class AcquisitionStore:
                         created_at, started_at, updated_at, completed_at, attempt,
                          parent_job_id, recovery_reason, backend, destination, completion_path,
                          download_rate, upload_rate, eta_seconds, provider_state, ownership_label,
-                         deletion_policy, artifact_files_json, seeding, retired
-                     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                         deletion_policy, artifact_files_json, seeding, retired, pause_supported
+                     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT(job_id) DO UPDATE SET
                         provider=excluded.provider, content_identity=excluded.content_identity,
                         title=excluded.title, operation=excluded.operation, state=excluded.state,
@@ -129,7 +131,8 @@ class AcquisitionStore:
                          upload_rate=excluded.upload_rate, eta_seconds=excluded.eta_seconds,
                          provider_state=excluded.provider_state, ownership_label=excluded.ownership_label,
                           deletion_policy=excluded.deletion_policy, artifact_files_json=excluded.artifact_files_json,
-                          seeding=excluded.seeding, retired=excluded.retired""",
+                          seeding=excluded.seeding, retired=excluded.retired,
+                          pause_supported=excluded.pause_supported""",
                     self._encode(job),
                 )
             self._connection.execute(
@@ -162,7 +165,8 @@ class AcquisitionStore:
         for job in jobs:
             if job.state in {
                     JobState.STARTING, JobState.TRANSFERRING,
-                    JobState.FINALIZING, JobState.CANCELLING,
+                    JobState.FINALIZING, JobState.PAUSING,
+                    JobState.RESUMING, JobState.CANCELLING,
             }:
                 now = utc_now()
                 job = replace(job, state=JobState.QUEUED, stage="queued", updated_at=now,
@@ -188,6 +192,7 @@ class AcquisitionStore:
             job.completion_path, job.download_rate, job.upload_rate, job.eta_seconds,
             job.provider_state, job.ownership_label, job.deletion_policy,
             json.dumps(list(job.artifact_files), sort_keys=True), int(job.seeding), int(job.retired),
+            int(job.pause_supported),
         )
 
     @staticmethod
@@ -215,4 +220,5 @@ class AcquisitionStore:
             artifact_files=tuple(json.loads(row["artifact_files_json"] or "[]")),
             seeding=bool(row["seeding"]),
             retired=bool(row["retired"]),
+            pause_supported=bool(row["pause_supported"]),
         )

@@ -166,6 +166,7 @@ def load_platforms(path: Path | None = None) -> dict[str, str]:
 
 
 class SteamCmdExecutor:
+    supports_pause = False
     """Execute one SteamCMD AppID operation; cancellation is unsupported."""
 
     def __init__(self, *, executable: str | None = None, account: str | None = None,

@@ -59,6 +59,17 @@ class DownloadsSurfaceTests(unittest.TestCase):
                       'topMargin:', 'bottomMargin:'):
             self.assertIn(token, self.qml)
 
+    def test_pending_mutations_and_stable_identity_selection_are_explicit(self) -> None:
+        for token in ('"pausing"', '"resuming"', '"cancelling"', 'Pausing…',
+                      'Resuming…', 'Cancelling…', 'selectedJobId',
+                      'pause_supported', 'currentIndex: root.selectedIndex'):
+            self.assertIn(token, self.qml)
+
+    def test_pause_is_capability_gated_and_cancelled_rows_are_not_visible(self) -> None:
+        self.assertIn('!incoming[i].retired', self.qml)
+        self.assertIn('job.pause_supported', self.qml)
+        self.assertNotIn('"cancelled"', self.qml.split('readonly property var visibleStates', 1)[1].split('\n', 1)[0])
+
     def test_old_steam_download_delegation_is_absent(self) -> None:
         for path in (ROOT / "src", ROOT / "native", ROOT / "scripts", ROOT / "ui"):
             for file in path.rglob("*"):

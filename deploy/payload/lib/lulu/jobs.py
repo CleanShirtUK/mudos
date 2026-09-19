@@ -19,6 +19,8 @@ class JobState(StrEnum):
     RUNNING = "transferring"
     FINALIZING = "finalizing"
     PAUSED = "paused"
+    PAUSING = "pausing"
+    RESUMING = "resuming"
     CANCELLING = "cancelling"
     COMPLETED = "completed"
     FAILED = "failed"
@@ -55,6 +57,7 @@ class DownloadJob:
     error: JobError | None = None
     retryable: bool = True
     cancellation_supported: bool = False
+    pause_supported: bool = False
     provider_job_id: str | None = None
     backend: str | None = None
     destination: str | None = None
@@ -79,7 +82,8 @@ class DownloadJob:
     @property
     def is_active(self) -> bool:
         return self.state in {
-            JobState.STARTING, JobState.TRANSFERRING, JobState.FINALIZING
+            JobState.STARTING, JobState.TRANSFERRING, JobState.FINALIZING,
+            JobState.PAUSING, JobState.RESUMING, JobState.CANCELLING,
         }
 
     def transition(self, state: JobState, *, progress: float | None = None,
@@ -89,14 +93,17 @@ class DownloadJob:
             error = JobError("provider-failure", error, retryable=self.retryable)
         allowed = {
             JobState.QUEUED: {JobState.STARTING, JobState.TRANSFERRING, JobState.CANCELLED},
-            JobState.STARTING: {JobState.TRANSFERRING, JobState.PAUSED, JobState.FINALIZING,
+            JobState.STARTING: {JobState.TRANSFERRING, JobState.PAUSING, JobState.PAUSED, JobState.FINALIZING,
                                 JobState.CANCELLING, JobState.FAILED},
-            JobState.TRANSFERRING: {JobState.PAUSED, JobState.FINALIZING,
-                                    JobState.CANCELLING, JobState.FAILED},
+            JobState.TRANSFERRING: {JobState.PAUSING, JobState.PAUSED, JobState.FINALIZING,
+                                   JobState.CANCELLING, JobState.FAILED},
             JobState.FINALIZING: {JobState.COMPLETED, JobState.CANCELLING,
                                   JobState.FAILED},
-            JobState.PAUSED: {JobState.QUEUED, JobState.TRANSFERRING, JobState.CANCELLING,
+            JobState.PAUSED: {JobState.RESUMING, JobState.QUEUED, JobState.TRANSFERRING, JobState.CANCELLING,
                               JobState.FAILED},
+            JobState.PAUSING: {JobState.PAUSED, JobState.CANCELLING, JobState.FAILED},
+            JobState.RESUMING: {JobState.STARTING, JobState.QUEUED, JobState.TRANSFERRING,
+                                JobState.CANCELLING, JobState.FAILED},
             JobState.CANCELLING: {JobState.CANCELLED, JobState.FAILED},
             JobState.FAILED: {JobState.QUEUED, JobState.CANCELLED},
             JobState.COMPLETED: set(),

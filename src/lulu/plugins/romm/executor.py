@@ -19,6 +19,8 @@ class RommExecutor:
         self.client = client
         self.chunk_size = chunk_size
 
+    supports_pause = True
+
     def _resolve(self, identity: str) -> tuple[RommGame, RommFile]:
         if self.client is None:
             raise JobExecutionError("romm-unavailable", "RomM acquisition is not configured", retryable=True)

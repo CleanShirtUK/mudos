@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from collections import defaultdict, deque
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from typing import Awaitable, Callable, Protocol
 from uuid import uuid4
 
@@ -92,6 +92,7 @@ class JobManager:
     def submit(self, provider: str, content_identity: str, title: str, *,
                operation: JobOperation = JobOperation.ACQUIRE,
                cancellation_supported: bool = False,
+               pause_supported: bool = False,
                provider_job_id: str | None = None, attempt: int = 1,
                parent_job_id: str | None = None) -> DownloadJob:
         if provider not in self.executors:
@@ -101,22 +102,25 @@ class JobManager:
                     and existing.content_identity == content_identity
                     and existing.operation != operation
                     and existing.state in {
-                        JobState.QUEUED, JobState.STARTING, JobState.TRANSFERRING,
-                        JobState.FINALIZING, JobState.PAUSED, JobState.CANCELLING,
+                         JobState.QUEUED, JobState.STARTING, JobState.TRANSFERRING,
+                         JobState.FINALIZING, JobState.PAUSED, JobState.PAUSING,
+                         JobState.RESUMING, JobState.CANCELLING,
                     }):
                 raise ValueError("content has an active conflicting operation")
             if (existing.provider == provider
                     and existing.content_identity == content_identity
                     and existing.operation == operation
                     and existing.state in {
-                        JobState.QUEUED, JobState.STARTING, JobState.TRANSFERRING,
-                        JobState.FINALIZING, JobState.PAUSED, JobState.CANCELLING,
+                         JobState.QUEUED, JobState.STARTING, JobState.TRANSFERRING,
+                         JobState.FINALIZING, JobState.PAUSED, JobState.PAUSING,
+                         JobState.RESUMING, JobState.CANCELLING,
                     }):
                 return existing
         job = DownloadJob(
             job_id=f"job-{uuid4().hex}", provider=provider, title=title,
             content_identity=content_identity, operation=operation,
             cancellation_supported=cancellation_supported,
+            pause_supported=pause_supported,
             provider_job_id=provider_job_id,
             created_at=utc_now(), updated_at=utc_now(), attempt=attempt,
             parent_job_id=parent_job_id,
@@ -135,6 +139,7 @@ class JobManager:
             previous.provider, previous.content_identity, previous.title,
             operation=previous.operation,
             cancellation_supported=previous.cancellation_supported,
+            pause_supported=previous.pause_supported,
             attempt=previous.attempt + 1,
             parent_job_id=previous.job_id,
         )
@@ -191,13 +196,20 @@ class JobManager:
             cancel = getattr(executor, "cancel", None)
             if cancel is not None:
                 await cancel(job)
-            return self.transition(job_id, JobState.CANCELLED, stage="cancelled")
-        if job.state == JobState.PAUSED:
+            return self._cancelled(job_id)
+        if job.state == JobState.CANCELLING:
+            return job
+        if job.state in {JobState.PAUSED, JobState.PAUSING, JobState.RESUMING}:
+            self.transition(job_id, JobState.CANCELLING, stage="cancelling")
             executor = self.executors.get(job.provider)
             cancel = getattr(executor, "cancel", None)
             if cancel is not None:
                 await cancel(job)
-            return self.transition(job_id, JobState.CANCELLED, stage="cancelled")
+            task = self._tasks.get(job_id)
+            if task is not None:
+                task.cancel()
+                await asyncio.gather(task, return_exceptions=True)
+            return self._cancelled(job_id)
         if job.state not in {JobState.STARTING, JobState.TRANSFERRING,
                              JobState.FINALIZING}:
             return job
@@ -210,30 +222,50 @@ class JobManager:
             task.cancel()
             await asyncio.gather(task, return_exceptions=True)
         if self.jobs[job_id].state == JobState.CANCELLING:
-            self.transition(job_id, JobState.CANCELLED, stage="cancelled")
+            self._cancelled(job_id)
         return self.jobs[job_id]
 
     async def pause(self, job_id: str) -> DownloadJob:
         job = self._require(job_id)
-        if not job.cancellation_supported:
+        if not job.pause_supported:
+            return job
+        if job.state in {JobState.PAUSING, JobState.PAUSED}:
             return job
         if job.state not in {JobState.STARTING, JobState.TRANSFERRING}:
             return job
-        self.transition(job_id, JobState.PAUSED, stage="paused")
+        self.transition(job_id, JobState.PAUSING, stage="pausing")
         executor = self.executors.get(job.provider)
         pause = getattr(executor, "pause", None)
-        if pause is not None:
-            await pause(job.provider_job_id) if job.provider_job_id else None
-        task = self._tasks.get(job_id)
-        if task is not None:
-            task.cancel()
-            await asyncio.gather(task, return_exceptions=True)
+        try:
+            if pause is not None and job.provider_job_id:
+                await pause(job.provider_job_id)
+            task = self._tasks.get(job_id)
+            if pause is None and task is not None:
+                task.cancel()
+                await asyncio.gather(task, return_exceptions=True)
+            if self.jobs[job_id].state == JobState.PAUSING:
+                self.transition(job_id, JobState.PAUSED, stage="paused")
+        except Exception as error:
+            if self.jobs[job_id].state == JobState.PAUSING:
+                self.transition(job_id, JobState.TRANSFERRING, stage="transferring",
+                                error=JobError("pause-failed", str(error), retryable=True))
+        return self.jobs[job_id]
+
+    def _cancelled(self, job_id: str) -> DownloadJob:
+        if self.jobs[job_id].state != JobState.CANCELLED:
+            self.transition(job_id, JobState.CANCELLED, stage="cancelled")
+        if not self.jobs[job_id].retired:
+            self.jobs[job_id] = replace(self.jobs[job_id], retired=True, updated_at=utc_now())
+            self._publish()
         return self.jobs[job_id]
 
     def resume(self, job_id: str) -> DownloadJob:
         job = self._require(job_id)
         if job.state != JobState.PAUSED:
             return job
+        if not job.pause_supported:
+            return job
+        self.transition(job_id, JobState.RESUMING, stage="resuming")
         self.transition(job_id, JobState.QUEUED, stage="queued")
         self._queues[job.provider].append(job_id)
         self._pump(job.provider)
@@ -267,12 +299,16 @@ class JobManager:
             if self.jobs[job_id].state == JobState.CANCELLING:
                 self.transition(job_id, JobState.CANCELLED, stage="cancelled")
         except JobExecutionError as error:
-            if self.jobs[job_id].state not in {JobState.CANCELLED, JobState.COMPLETED}:
+            if self.jobs[job_id].state == JobState.CANCELLING:
+                self._cancelled(job_id)
+            elif self.jobs[job_id].state not in {JobState.CANCELLED, JobState.COMPLETED}:
                 self.transition(job_id, JobState.FAILED, stage="failed", error=JobError(
                     error.code, str(error), retryable=error.retryable, details=error.details,
                 ))
         except Exception as error:  # provider failures are normalized here
-            if self.jobs[job_id].state not in {JobState.CANCELLED, JobState.COMPLETED}:
+            if self.jobs[job_id].state == JobState.CANCELLING:
+                self._cancelled(job_id)
+            elif self.jobs[job_id].state not in {JobState.CANCELLED, JobState.COMPLETED}:
                 self.transition(job_id, JobState.FAILED, stage="failed", error=JobError(
                     "provider-failure", str(error), retryable=self.jobs[job_id].retryable,
                 ))

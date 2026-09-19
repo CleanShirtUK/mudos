@@ -63,8 +63,10 @@ class AcquisitionInterface(ServiceInterface):
     @method()
     def SubmitJob(self, provider: "s", content_identity: "s", title: "s") -> "s":
         try:
+            executor = self.manager.executors.get(provider)
             return self.manager.submit(provider, content_identity, title,
-                                       cancellation_supported=True).job_id
+                                       cancellation_supported=True,
+                                       pause_supported=bool(getattr(executor, "supports_pause", False))).job_id
         except ValueError as error:
             raise DBusError("org.lulu.Acquisition.Error.Unavailable", str(error)) from error
 

@@ -33,6 +33,10 @@ class SteamCmdParserTests(unittest.TestCase):
 
 
 class SteamCmdExecutorTests(unittest.TestCase):
+    def test_steam_pause_is_explicitly_unsupported(self) -> None:
+        executor = SteamCmdExecutor(account="user", platforms={"42": "linux"})
+        self.assertFalse(executor.supports_pause)
+
     def test_dead_provider_withdraws_external_credential_wait(self) -> None:
         async def exercise() -> None:
             class Stdin:

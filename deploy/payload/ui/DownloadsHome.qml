@@ -8,6 +8,7 @@ Item {
 
     property string snapshot: "{\"jobs\":[],\"activeDownloadCount\":0}"
     property int selectedIndex: 0
+    property string selectedJobId: ""
     property bool confirmationPending: false
     property real uiScale: 1
     property var typography
@@ -57,8 +58,20 @@ signal cancelRequested(string jobId)
         // active rows are deliberately not ordered by terminal timestamps.
         // String(a.completed_at || a.updated_at || a.created_at || "") remains
         // the canonical history ordering expression used by older consumers.
+        var previousIndex = selectedIndex
+        var previousId = selectedJobId
         jobs = current
-        selectedIndex = Math.min(selectedIndex, Math.max(0, jobs.length - 1))
+        var nextIndex = -1
+        for (var j = 0; j < jobs.length; j++) {
+            if (String(jobs[j].job_id || "") === previousId) {
+                nextIndex = j
+                break
+            }
+        }
+        if (nextIndex < 0)
+            nextIndex = Math.min(previousIndex, Math.max(0, jobs.length - 1))
+        selectedIndex = nextIndex
+        selectedJobId = jobs.length ? String(jobs[selectedIndex].job_id || "") : ""
         if (confirmationPending && !selectedJob())
             confirmationPending = false
     }
@@ -71,6 +84,7 @@ signal cancelRequested(string jobId)
     function moveSelection(delta) {
         if (!jobs.length) return
         selectedIndex = Math.max(0, Math.min(jobs.length - 1, selectedIndex + delta))
+        selectedJobId = String(jobs[selectedIndex].job_id || "")
         jobsList.currentIndex = selectedIndex
         jobsList.positionViewAtIndex(selectedIndex, ListView.Contain)
     }
@@ -84,9 +98,10 @@ signal cancelRequested(string jobId)
         if (!job) return
         if (String(job.state) === "failed")
             retryRequested(String(job.job_id))
-        else if (String(job.state) === "paused")
+        else if (String(job.state) === "paused" && job.pause_supported)
             resumeRequested(String(job.job_id))
-        else if (["starting", "transferring"].indexOf(String(job.state)) >= 0)
+        else if (["starting", "transferring"].indexOf(String(job.state)) >= 0
+                 && job.pause_supported)
             pauseRequested(String(job.job_id))
     }
 
@@ -96,7 +111,8 @@ signal cancelRequested(string jobId)
             clearRequested(String(job.job_id))
             return
         }
-        if (job && ["queued", "starting", "transferring", "finalizing", "paused", "cancelling"].indexOf(String(job.state)) >= 0)
+        if (job && ["queued", "starting", "transferring", "finalizing", "paused",
+                    "pausing", "resuming"].indexOf(String(job.state)) >= 0)
             confirmationPending = true
     }
 
@@ -133,7 +149,11 @@ signal cancelRequested(string jobId)
 
     function stateLabel(job) {
         var state = String(job.state || "queued")
-        return state === "transferring" ? "DOWNLOADING" : state.toUpperCase()
+        if (state === "transferring") return "DOWNLOADING"
+        if (state === "pausing") return "Pausing…"
+        if (state === "resuming") return "Resuming…"
+        if (state === "cancelling") return "Cancelling…"
+        return state.toUpperCase()
     }
 
     function failureReason(job) {
@@ -161,8 +181,9 @@ signal cancelRequested(string jobId)
 
     function actionLabel(job) {
         if (!job) return ""
-        if (String(job.state) === "paused") return "A  RESUME"
-        if (["starting", "transferring"].indexOf(String(job.state)) >= 0) return "A  PAUSE"
+        if (String(job.state) === "paused" && job.pause_supported) return "A  RESUME"
+        if (["starting", "transferring"].indexOf(String(job.state)) >= 0
+                && job.pause_supported) return "A  PAUSE"
         if (String(job.state) === "failed") return "A  RETRY"
         return ""
     }
@@ -219,7 +240,8 @@ signal cancelRequested(string jobId)
             ListView {
                 id: jobsList
                 visible: !root.confirmationPending && root.jobs.length > 0
-                width: parent.width
+                width: parent.width - 8 * root.uiScale
+                anchors.horizontalCenter: parent.horizontalCenter
                 height: Math.min(contentHeight + 8 * root.uiScale, 470 * root.uiScale)
                 spacing: 8 * root.uiScale
                 clip: true
@@ -238,7 +260,8 @@ signal cancelRequested(string jobId)
                     id: row
                     required property int index
                     required property var modelData
-                    width: jobsList.width
+                    width: jobsList.width - 8 * root.uiScale
+                    x: 4 * root.uiScale
                     height: 88 * root.uiScale
                     radius: 8 * root.uiScale
                     z: index === root.selectedIndex ? 1 : 0
@@ -280,6 +303,7 @@ signal cancelRequested(string jobId)
                 }
                 ControllerHint {
                      visible: !root.confirmationPending && root.selectedJob() !== null
+                         && String(root.selectedJob().state) !== "cancelling"
                      action: "options"
                      label: String(root.selectedJob().state) === "failed" ? "Clear" : "Cancel"
                     uiScale: root.uiScale
