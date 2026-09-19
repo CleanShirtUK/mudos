@@ -70,7 +70,7 @@ not implied to have passed.
 
 ## Downloads retirement and controller viewport
 
-- Commit: `599c3dc`
+- Commit: `d11fb5c`
 - Backend semantics: `ClearFailedJob` marks only a terminal `failed` job as
   `retired`; the job row, error diagnostics, attempt number, and
   `parent_job_id` retry linkage remain persisted. The operation is idempotent
@@ -79,7 +79,7 @@ not implied to have passed.
 - UI/controller action: X/options is `Clear` for a selected failed job; A
   remains `Retry`. Active and queued rows continue to expose only their normal
   pause/resume/cancel actions.
-- Automated validation: pending final commit; coverage includes retirement
+- Automated validation: PASS; coverage includes retirement
   persistence, retry lineage preservation, idempotent clear, terminal-state
   rejection, filtered retired rows, ListView selection following, and scaled
   card viewport margins.
