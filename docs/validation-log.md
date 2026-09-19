@@ -84,10 +84,9 @@ not implied to have passed.
   paused, completed, missing, and non-owned torrents have deterministic
   outcomes. Recovered provider capability metadata is restored by executor
   registration.
-- Test fixture: the public-domain Big Buck Bunny torrent,
-  `dd8255ecdc7ca55fb0bbf81323d87062db1f6d1c`, previously validated through
-  Transmission. New physical validation remains pending after this provider
-  audit.
+- Test fixture: the Blender Foundation Creative Commons Big Buck Bunny
+  torrent, `dd8255ecdc7ca55fb0bbf81323d87062db1f6d1c`. New physical
+  end-to-end validation remains pending after this provider audit.
 - Physical validation sequence: submit the fixture through acquisitiond; verify
   it appears in global Downloads; observe progress/rates; Pause; Resume;
   restart the Mudos graphical session; restart acquisitiond and verify hash
