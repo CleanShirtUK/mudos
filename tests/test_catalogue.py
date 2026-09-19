@@ -86,6 +86,17 @@ class CatalogueTests(unittest.TestCase):
         self.assertEqual([game.game_id for game in available], ["steam:104200"])
         self.assertEqual(available[0].install_state, "available")
 
+    def test_native_steam_row_remains_available_when_entitlement_refresh_is_unavailable(self) -> None:
+        installed = InstalledSteamGame("263980", "Out There Somewhere", "/games/out", "/games", 1, 0)
+        with tempfile.TemporaryDirectory() as directory:
+            store = CatalogueStore(Path(directory) / "catalogue.sqlite3")
+            store.reconcile_steam(FakeSteamProvider([installed]))
+            store.reconcile_steam(FakeSteamProvider([]))
+            game = store.get_game("steam:263980")
+            self.assertEqual(game.install_state, "available")
+            self.assertEqual(game.availability_state, "available")
+            self.assertEqual(store.list_available_games("steam")[0].game_id, "steam:263980")
+
     def test_romm_steam_title_match_is_migrated_to_appid_path(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             store = CatalogueStore(Path(directory) / "catalogue.sqlite3")
@@ -248,7 +259,8 @@ class CatalogueTests(unittest.TestCase):
             store.reconcile_steam(FakeSteamProvider([]))
 
         self.assertEqual(store.last_write_counts, {"insert": 0, "update": 1, "delete": 0})
-        self.assertEqual(store.last_deltas[0].changed_fields, ("install_state", "launchable"))
+        self.assertEqual(store.last_deltas[0].changed_fields,
+                         ("availability_state", "install_dir", "install_state", "launchable"))
 
     def test_unchanged_local_reconcile_has_no_write_or_delta(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

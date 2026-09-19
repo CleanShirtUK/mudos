@@ -573,7 +573,8 @@ class CatalogueStore:
             for current in existing:
                 if current.game_id not in incoming_ids and not current.provider_record_id:
                     self._apply_existing_locked(
-                        current, replace(current, install_state="missing", launchable=False), deltas)
+                        current, replace(current, install_state="available", launchable=False,
+                                         install_dir="", availability_state="available"), deltas)
                 elif current.game_id not in incoming_ids and current.provider_record_id:
                     # Legacy RomM Steam observations remain owned/available;
                     # they are not local-install observations.
