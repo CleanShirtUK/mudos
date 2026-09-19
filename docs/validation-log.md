@@ -6,6 +6,7 @@ not implied to have passed.
 
 ## Torrent provider / Transmission
 
+- Commit: `599a68c`
 - Implementation: provider-owned Transmission 4.1 JSON-RPC adapter, durable
   torrent telemetry/artifact fields, restart reconciliation, path-safe delete,
   and provider configuration/provisioning.
