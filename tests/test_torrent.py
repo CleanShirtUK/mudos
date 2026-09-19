@@ -73,8 +73,28 @@ class TransmissionClientTests(unittest.TestCase):
             self.assertEqual(call.call_args.args[1]["priority_low"], [1])
         asyncio.run(exercise())
 
+    def test_remove_can_request_payload_deletion(self):
+        async def exercise():
+            client = TransmissionClient(TransmissionConfig())
+            with patch.object(client, "call", return_value={}) as call:
+                await client.remove("abc", delete_local_data=True)
+            self.assertEqual(call.call_args.args[0], "torrent_remove")
+            self.assertTrue(call.call_args.args[1]["delete_local_data"])
+        asyncio.run(exercise())
+
 
 class TorrentSafetyTests(unittest.TestCase):
+    def test_mudos_ownership_sidecar_records_job_identity(self):
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            paths = MudosPaths(base / "Games", base / "config", base / "data", base / "cache", base / "run")
+            provider = TorrentProvider(object(), paths)  # type: ignore[arg-type]
+            job = DownloadJob("job-1", "torrent", "Game", content_identity="magnet:?xt=urn:btih:abc")
+            provider._record_ownership(job, "abcdef12")
+            value = json.loads((paths.torrent_ownership_root / "abcdef12.json").read_text())
+            self.assertEqual(value["job_id"], "job-1")
+            self.assertEqual(value["label"], "mudos")
+
     def test_delete_path_requires_owned_torrent_root(self):
         with tempfile.TemporaryDirectory() as directory:
             base = Path(directory)

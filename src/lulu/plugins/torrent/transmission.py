@@ -12,6 +12,7 @@ from dataclasses import dataclass
 import json
 import logging
 from pathlib import Path
+import re
 import urllib.error
 import urllib.request
 from typing import Any, Mapping
@@ -182,8 +183,9 @@ class TransmissionClient:
     async def resume(self, hash_string: str) -> None:
         await self.call("torrent_start", {"ids": [hash_string]})
 
-    async def remove(self, hash_string: str) -> None:
-        await self.call("torrent_remove", {"ids": [hash_string], "delete_local_data": False})
+    async def remove(self, hash_string: str, *, delete_local_data: bool = False) -> None:
+        await self.call("torrent_remove", {"ids": [hash_string],
+                                            "delete_local_data": delete_local_data})
 
     def _normalize(self, item: Mapping[str, Any]) -> TorrentDownload:
         status = _int(item.get("status"))
@@ -228,6 +230,21 @@ class TorrentProvider:
 
     def _roots(self) -> tuple[Path, Path]:
         return self.paths.torrent_incomplete_root.resolve(strict=False), self.paths.torrent_complete_root.resolve(strict=False)
+
+    def _ownership_path(self, hash_string: str) -> Path:
+        if not re.fullmatch(r"[0-9a-fA-F]{8,64}", hash_string):
+            raise JobExecutionError("invalid-torrent-hash", "Transmission torrent hash is invalid", retryable=False)
+        return self.paths.torrent_ownership_root / f"{hash_string.lower()}.json"
+
+    def _record_ownership(self, job: DownloadJob, hash_string: str) -> None:
+        path = self._ownership_path(hash_string)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        temporary = path.with_suffix(".json.tmp")
+        temporary.write_text(json.dumps({
+            "hash": hash_string.lower(), "label": self.label, "job_id": job.job_id,
+            "provider": job.provider, "content_identity": job.content_identity,
+        }, sort_keys=True) + "\n")
+        temporary.replace(path)
 
     async def get_download(self, hash_string: str) -> TorrentDownload | None:
         return await self.client.get(hash_string)
@@ -304,15 +321,18 @@ class TorrentProvider:
             torrent = await self.client.get(hash_string)
             if torrent is None:
                 raise JobExecutionError("add-failed", "added torrent could not be inspected", retryable=True)
+            self._record_ownership(job, hash_string)
             await reporter.metadata(provider_job_id=hash_string, backend="transmission", destination=destination,
                                     ownership_label=self.label, deletion_policy="preserve-partial")
+        else:
+            self._record_ownership(job, torrent.hash_string)
         await reporter.metadata(provider_job_id=torrent.hash_string, backend="transmission",
-                                destination=torrent.destination, provider_state=torrent.provider_state,
+                                destination=torrent.destination, provider_state=torrent.state,
                                 ownership_label=self.label, artifact_files=tuple({"index": f.index, "name": f.name,
                                 "length": f.length, "completed": f.completed, "wanted": f.wanted,
                                 "priority": f.priority} for f in torrent.files), seeding=torrent.seeding)
         if torrent.state == "paused":
-            if job.state == JobState.QUEUED:
+            if job.state == JobState.QUEUED and job.provider_state != "paused":
                 await self.client.resume(torrent.hash_string)
                 torrent = await self.client.get(torrent.hash_string)
                 if torrent is None:
@@ -326,7 +346,7 @@ class TorrentProvider:
             await reporter.state(JobState.TRANSFERRING, stage="transferring")
             await reporter.progress(torrent.progress, downloaded_bytes=torrent.downloaded_bytes,
                                     total_bytes=torrent.total_bytes, stage="transferring")
-            await reporter.metadata(provider_state=torrent.provider_state, download_rate=torrent.download_rate,
+            await reporter.metadata(provider_state=torrent.state, download_rate=torrent.download_rate,
                                     upload_rate=torrent.upload_rate, eta_seconds=torrent.eta_seconds,
                                     seeding=torrent.seeding)
             await asyncio.sleep(1)
@@ -347,7 +367,7 @@ class TorrentProvider:
         # state explicitly before reporting completion.
         if job.state == JobState.STARTING:
             await reporter.state(JobState.TRANSFERRING, stage="transferring")
-        await reporter.metadata(completion_path=completion, provider_state=torrent.provider_state,
+        await reporter.metadata(completion_path=completion, provider_state=torrent.state,
                                 download_rate=torrent.download_rate, upload_rate=torrent.upload_rate,
                                 eta_seconds=0, seeding=torrent.seeding)
         await reporter.progress(1.0, downloaded_bytes=torrent.total_bytes, total_bytes=torrent.total_bytes,
@@ -367,7 +387,7 @@ class TorrentProvider:
         if job.ownership_label != self.label:
             raise JobExecutionError("ownership-unknown", "download ownership label is not authoritative", retryable=False)
         if job.provider_job_id:
-            await self.client.remove(job.provider_job_id)
+            await self.client.remove(job.provider_job_id, delete_local_data=True)
         candidates = [job.completion_path or (torrent.completion_path if torrent else None)]
         for value in candidates:
             if not value:
@@ -378,3 +398,5 @@ class TorrentProvider:
                 shutil.rmtree(path)
             elif path.exists():
                 path.unlink()
+        if job.provider_job_id:
+            self._ownership_path(job.provider_job_id).unlink(missing_ok=True)

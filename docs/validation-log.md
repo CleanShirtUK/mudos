@@ -48,6 +48,54 @@ not implied to have passed.
 - Visual validation: pending; no styled UI work was performed. Existing
   provider-neutral Downloads UI remains the only presentation surface.
 
+- Current implementation audit: PASS; Transmission 4.1.3-2 is provisioned as
+  `lulu-transmission.service` with localhost-only authenticated RPC on
+  `127.0.0.1:9091`. Mudos uses the `mudos` Transmission label and writes a
+  hash-keyed ownership sidecar under `.acquisition/torrents/ownership/` with
+  job/provider/content identity. Hashes, not numeric Transmission IDs, remain
+  the persisted provider identity. Completed torrents are marked downloaded
+  while Transmission may continue seeding; delete-local-data plumbing is
+  available separately from normal cancellation. Physical end-to-end fixture
+  validation remains pending.
+
+## Mudos Transmission provider backlog completion
+
+- Commit: see repository history for the implementation commit
+- Package: Arch `transmission-cli 4.1.3-2`; daemon unit:
+  `lulu-transmission.service`, running as `lulu-transmission` with state in
+  `/var/lib/lulu-transmission`.
+- RPC: authenticated JSON-RPC 2.0 on `127.0.0.1:9091/transmission/rpc`,
+  whitelist and host-whitelist restricted to localhost. Credentials are mode
+  0600 in the daemon settings and mirrored through `SecretStore`; no external
+  RPC bind is configured.
+- Acquisition layout:
+  `/home/lulu/Games/.acquisition/torrents/{incomplete,complete,metainfo,ownership}`.
+  Transmission receives `complete` as its download directory and uses its
+  separate incomplete directory for staging. Completion means downloaded;
+  seeding may continue after the Mudos job is completed.
+- Ownership: every Mudos torrent carries the `mudos` Transmission label and a
+  hash-keyed JSON sidecar in `ownership/` containing hash, Mudos job ID,
+  provider, and content identity. Unlabelled torrents are never adopted.
+- Normalized API: `TransmissionClient` owns RPC/session negotiation and
+  normalizes hashes, state, progress, rates, files, errors, pause/resume, and
+  remove operations. `TorrentProvider` is the JobManager executor boundary.
+  Numeric Transmission IDs are never persisted.
+- Recovery: persisted hashes are reconciled through `torrent_get`; active,
+  paused, completed, missing, and non-owned torrents have deterministic
+  outcomes. Recovered provider capability metadata is restored by executor
+  registration.
+- Test fixture: the public-domain Big Buck Bunny torrent,
+  `dd8255ecdc7ca55fb0bbf81323d87062db1f6d1c`, previously validated through
+  Transmission. New physical validation remains pending after this provider
+  audit.
+- Physical validation sequence: submit the fixture through acquisitiond; verify
+  it appears in global Downloads; observe progress/rates; Pause; Resume;
+  restart the Mudos graphical session; restart acquisitiond and verify hash
+  reconciliation; complete and verify downloaded/completed while seeding may
+  continue; submit a second fixture, Cancel, and verify cancelled disappears
+  without Failed/Retry; exercise provider remove-without-delete and the
+  backend delete-local-data path separately.
+
 ## Controller reconnect hardening
 
 - Commits: `1f1992a`

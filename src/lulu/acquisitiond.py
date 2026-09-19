@@ -124,9 +124,9 @@ class AcquisitionInterface(ServiceInterface):
             raise DBusError("org.lulu.Acquisition.Error.UnknownJob", str(error)) from error
 
     @method()
-    def ResumeJob(self, job_id: "s") -> "":
+    async def ResumeJob(self, job_id: "s") -> "":
         try:
-            self.manager.resume(job_id)
+            await self.manager.resume(job_id)
         except KeyError as error:
             raise DBusError("org.lulu.Acquisition.Error.UnknownJob", str(error)) from error
 

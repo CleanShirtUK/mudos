@@ -80,10 +80,14 @@ class JobManager:
             raise ValueError(f"executor already registered: {provider}")
         self.executors[provider] = executor
         self.provider_limits[provider] = limit
+        capability_changed = False
         if getattr(executor, "supports_pause", False):
             for job_id, job in tuple(self.jobs.items()):
                 if job.provider == provider and not job.pause_supported:
                     self.jobs[job_id] = replace(job, pause_supported=True, updated_at=utc_now())
+                    capability_changed = True
+        if capability_changed:
+            self._publish()
         self._pump(provider)
 
     @property
@@ -263,13 +267,23 @@ class JobManager:
             self._publish()
         return self.jobs[job_id]
 
-    def resume(self, job_id: str) -> DownloadJob:
+    async def resume(self, job_id: str) -> DownloadJob:
         job = self._require(job_id)
         if job.state != JobState.PAUSED:
             return job
         if not job.pause_supported:
             return job
         self.transition(job_id, JobState.RESUMING, stage="resuming")
+        executor = self.executors.get(job.provider)
+        resume = getattr(executor, "resume", None)
+        try:
+            if resume is not None and job.provider_job_id:
+                await resume(job.provider_job_id)
+        except Exception as error:
+            if self.jobs[job_id].state == JobState.RESUMING:
+                self.transition(job_id, JobState.PAUSED, stage="paused",
+                                error=JobError("resume-failed", str(error), retryable=True))
+            return self.jobs[job_id]
         self.transition(job_id, JobState.QUEUED, stage="queued")
         self._queues[job.provider].append(job_id)
         self._pump(job.provider)

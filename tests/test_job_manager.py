@@ -1,4 +1,6 @@
 import asyncio
+from pathlib import Path
+import tempfile
 import unittest
 
 from lulu.job_manager import JobCancelled, JobManager, JobReporter
@@ -40,7 +42,32 @@ class ControlledExecutor:
         self.cancelled.set()
 
 
+class ControlledExecutorWithPause(ControlledExecutor):
+    supports_pause = True
+
+
 class JobDomainTests(unittest.TestCase):
+    def test_provider_pause_capability_is_persisted_on_recovery(self) -> None:
+        async def exercise() -> None:
+            from lulu.acquisition_store import AcquisitionStore
+
+            with tempfile.TemporaryDirectory() as directory:
+                store = AcquisitionStore(Path(directory) / "jobs.sqlite")
+                recovered = DownloadJob("job-1", "torrent", "Torrent",
+                                        content_identity="magnet:1",
+                                        cancellation_supported=True)
+                store.save_all([recovered])
+                manager = JobManager(store=store)
+                manager.register_executor("torrent", ControlledExecutorWithPause())
+                self.assertTrue(manager.jobs[recovered.job_id].pause_supported)
+                store.close()
+
+                reopened = AcquisitionStore(Path(directory) / "jobs.sqlite")
+                persisted = {job.job_id: job for job in reopened.load()}[recovered.job_id]
+                self.assertTrue(persisted.pause_supported)
+                reopened.close()
+
+        asyncio.run(exercise())
     def test_transition_and_validation(self) -> None:
         job = DownloadJob("job-1", "fake", "Title", content_identity="fake:1",
                           operation=JobOperation.INSTALL)
