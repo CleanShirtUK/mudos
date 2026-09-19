@@ -10,41 +10,11 @@
 MudosOverlayWindow::MudosOverlayWindow(QWindow *parent)
     : QQuickWindow(parent)
 {
-    setObjectName(QStringLiteral("mudosOverlayHostWindow"));
     auto format = QSurfaceFormat::defaultFormat();
     format.setAlphaBufferSize(8);
     setFormat(format);
     setColor(Qt::transparent);
     setFlags(Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint);
-    connect(this, &QWindow::visibilityChanged, this, [this](QWindow::Visibility visibility) {
-        if (!isVisible()) {
-            qInfo() << "GUIDE_WINDOW_CLOSE"
-                    << "object=" << this << "objectName=" << objectName()
-                    << "title=" << title() << "winId=" << winId()
-                    << "visible_after=" << isVisible()
-                    << "visibility=" << visibility << "active=" << isActive()
-                    << "geometry=" << geometry();
-        }
-        qInfo() << "GUIDE_WINDOW_STATE"
-                << "object=" << this
-                << "objectName=" << objectName()
-                << "title=" << title()
-                << "winId=" << winId()
-                << "visible=" << isVisible()
-                << "visibility=" << visibility
-                << "active=" << isActive()
-                << "geometry=" << geometry();
-    });
-    connect(this, &QWindow::activeChanged, this, [this]() {
-        qInfo() << "GUIDE_WINDOW_STATE"
-                << "object=" << this
-                << "objectName=" << objectName()
-                << "winId=" << winId()
-                << "visible=" << isVisible()
-                << "visibility=" << visibility()
-                << "active=" << isActive()
-                << "geometry=" << geometry();
-    });
 }
 
 void MudosOverlayWindow::showEvent(QShowEvent *event)
@@ -53,15 +23,6 @@ void MudosOverlayWindow::showEvent(QShowEvent *event)
         setGeometry(screen->geometry());
     QQuickWindow::showEvent(event);
     markExternalOverlay();
-    qInfo() << "GUIDE_WINDOW_OPEN"
-            << "object=" << this
-            << "objectName=" << objectName()
-            << "title=" << title()
-            << "winId=" << winId()
-            << "visible=" << isVisible()
-            << "visibility=" << visibility()
-            << "active=" << isActive()
-            << "geometry=" << geometry();
 }
 
 void MudosOverlayWindow::markExternalOverlay()
@@ -79,7 +40,4 @@ void MudosOverlayWindow::markExternalOverlay()
                         XCB_ATOM_CARDINAL, 32, 1, &value);
     free(reply);
     xcb_flush(x11->connection());
-    qInfo() << "GUIDE_WINDOW_EXTERNAL_OVERLAY"
-            << "object=" << this << "winId=" << winId()
-            << "property=GAMESCOPE_EXTERNAL_OVERLAY" << "value=1";
 }

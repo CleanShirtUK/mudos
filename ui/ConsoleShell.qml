@@ -2791,7 +2791,6 @@ Window {
         }
 
         MudosOverlayHost {
-            guideModel: controllerBridge
             game: root.gameOptionsGame
             view: root.gameOptionsView
             selectedIndex: root.gameOptionsIndex

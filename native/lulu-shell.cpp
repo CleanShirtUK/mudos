@@ -22,9 +22,7 @@
 #include <QHash>
 #include <QSet>
 #include <QJsonDocument>
-#include <QJsonArray>
 #include <QJsonObject>
-#include <QDateTime>
 #include <algorithm>
 
 #include <SDL3/SDL.h>
@@ -340,7 +338,6 @@ public:
     }
 
     const QString &compositePath() const { return compositePath_; }
-    void setCompositePath(const QString &path) { compositePath_ = path; }
 
 public slots:
     void onInputEvent(const QString &event, double value);
@@ -360,13 +357,7 @@ public:
         : QQmlPropertyMap(this, parent), window_(window)
     {
         const bool initialized = SDL_Init(SDL_INIT_GAMEPAD);
-        qInfo() << "MUDOS_INPUT_INIT"
-                << "pid=" << QCoreApplication::applicationPid()
-                << "commit=" << qEnvironmentVariable("LULU_BUILD_ID",
-                                                       "sdl-routing-diagnostics")
-                << "executable=" << QCoreApplication::applicationFilePath()
-                << "sdlRevision=" << SDL_GetRevision()
-                << "controllerSubsystemInitialized=" << initialized;
+        qInfo() << "controller SDL init" << initialized;
         insert("controllerConnected", false);
         insert("controllerIndex", -1);
         insert("controllerIdentity", QString());
@@ -375,11 +366,6 @@ public:
         insert("luluPresented", false);
         insert("requestedSurface", QString());
         insert("guideSelection", 0);
-        insert("guideVisible", false);
-        insert("guideActions", QVariantList());
-        insert("guideConfirmationPending", false);
-        insert("guideConfirmationAction", QString());
-        insert("guideConfirmationId", QString());
         insert("controllers", QVariantList());
         insert("launchOverlayEnabled",
                qEnvironmentVariable("LULU_LAUNCH_OVERLAY_ENABLED", "true")
@@ -435,7 +421,6 @@ public:
         QFile::remove(path);
         return group.isEmpty() ? QStringLiteral("all") : group;
     }
-
 
 private slots:
     void onSessionStateChanged(const QString &stateJson)
@@ -521,65 +506,8 @@ private:
             qWarning() << "InputPlumber mode change failed" << reply.errorMessage();
             return false;
         }
-        QDBusInterface composite(inputService, compositePath,
-                                 QString::fromLatin1(inputInterface),
-                                 QDBusConnection::systemBus());
-        qInfo() << "GUIDE_INPUT_INTERCEPT_READBACK"
-                << compositePath << "requested=" << mode
-                << "actual=" << composite.property("InterceptMode");
         return true;
     }
-
-    int interceptMode(const QString &compositePath) const
-    {
-        QDBusInterface composite(inputService, compositePath,
-                                 QString::fromLatin1(inputInterface),
-                                 QDBusConnection::systemBus());
-        const QVariant value = composite.property("InterceptMode");
-        return value.isValid() ? value.toInt() : -1;
-    }
-
-    void logRoutingState(const QString &compositePath, const char *phase)
-    {
-        QDBusInterface composite(inputService, compositePath,
-                                 QString::fromLatin1(inputInterface),
-                                 QDBusConnection::systemBus());
-        qInfo() << "GUIDE_ROUTING_STATE" << "phase=" << phase
-                << "composite=" << compositePath
-                << "interceptMode=" << composite.property("InterceptMode")
-                << "profile=" << composite.property("ProfileName")
-                << "profilePath=" << composite.property("ProfilePath")
-                << "source=" << composite.property("SourceDevicePaths")
-                << "targets=" << composite.property("TargetDevices")
-                << "filtered=" << composite.property("FilteredEvents")
-                << "enabled=" << composite.property("Enabled");
-        const auto targets = composite.property("TargetDevices").toStringList();
-        for (const QString &targetPath : targets) {
-            QDBusInterface target(inputService, targetPath, QStringLiteral("org.shadowblip.Input.Target"),
-                                  QDBusConnection::systemBus());
-            qInfo() << "GUIDE_ROUTING_TARGET" << "phase=" << phase
-                    << "path=" << targetPath
-                    << "name=" << target.property("Name")
-                    << "type=" << target.property("DeviceType")
-                    << "enabled=" << target.property("Enabled");
-        }
-    }
-
-    uint32_t actualFocusWindow() const
-    {
-        auto *x11 = qGuiApp->nativeInterface<QNativeInterface::QX11Application>();
-        if (!x11 || !x11->connection())
-            return 0;
-        xcb_get_input_focus_cookie_t cookie = xcb_get_input_focus(x11->connection());
-        xcb_get_input_focus_reply_t *reply = xcb_get_input_focus_reply(
-            x11->connection(), cookie, nullptr);
-        if (!reply)
-            return 0;
-        const uint32_t focus = reply->focus;
-        free(reply);
-        return focus;
-    }
-
 
     void clearTarget()
     {
@@ -589,149 +517,18 @@ private:
 
     void restoreInput()
     {
-        const xcb_window_t restoreWindow = targetWindow_;
-        const QString restoredComposite = guideOwnerComposite_;
-        const uint restoreMode = preGuideInterceptMode_ >= 0
-            ? static_cast<uint>(preGuideInterceptMode_) : 1u;
-        if (!restoredComposite.isEmpty())
-            logRoutingState(restoredComposite, "before-restore");
-        if (!restoredComposite.isEmpty())
-            setInterceptMode(restoredComposite, restoreMode);
+        if (!guideOwnerComposite_.isEmpty())
+            setInterceptMode(guideOwnerComposite_, 1);
         guideOwnerComposite_.clear();
         clearTarget();
-        if (restoreWindow != XCB_WINDOW_NONE) {
-            auto *x11 = qGuiApp->nativeInterface<QNativeInterface::QX11Application>();
-            if (x11 && x11->connection()) {
-                xcb_set_input_focus(x11->connection(), XCB_INPUT_FOCUS_NONE,
-                                    restoreWindow, XCB_CURRENT_TIME);
-                xcb_flush(x11->connection());
-                qInfo() << "GUIDE_INPUT_LIFECYCLE" << "restore-focus"
-                        << "window=" << restoreWindow
-                        << "actualFocus=" << actualFocusWindow();
-            }
-        }
-        if (restoreWindow != XCB_WINDOW_NONE && !restoredComposite.isEmpty())
-            logRoutingState(restoredComposite, "after-restore");
-        preGuideInterceptMode_ = -1;
-    }
-
-    bool guideVisible() const
-    {
-        return value(QStringLiteral("guideVisible")).toBool();
-    }
-
-    void moveGuide(int delta)
-    {
-        const auto actions = value(QStringLiteral("guideActions")).toList();
-        const int count = value(QStringLiteral("guideConfirmationPending")).toBool() ? 2 : actions.size();
-        if (count < 1)
-            return;
-        const int next = std::clamp(value(QStringLiteral("guideSelection")).toInt() + delta, 0, count - 1);
-        insert(QStringLiteral("guideSelection"), next);
-        qInfo() << "GUIDE_INPUT_EVENT" << "stage=GuideNavigation"
-                << "action=" << (delta < 0 ? "up" : "down")
-                << "selection=" << next;
-    }
-
-    void backGuide()
-    {
-        qInfo() << "GUIDE_B_TRACE" << "stage=GuideModel" << "action=backGuide"
-                << "entered=true" << "visible_before=" << guideVisible();
-        if (value(QStringLiteral("guideConfirmationPending")).toBool()) {
-            insert(QStringLiteral("guideConfirmationPending"), false);
-            insert(QStringLiteral("guideSelection"), 0);
-            qInfo() << "GUIDE_B_TRACE" << "stage=GuideModel"
-                    << "action=backGuide" << "dismissed=false"
-                    << "reason=confirmation";
-            return;
-        }
-        insert(QStringLiteral("guideVisible"), false);
-        qInfo() << "GUIDE_B_TRACE" << "stage=GuideModel"
-                << "action=backGuide" << "dismissed=true"
-                << "visible_after=" << guideVisible();
-        restoreInput();
-    }
-
-    void acceptGuide()
-    {
-        const int selection = value(QStringLiteral("guideSelection")).toInt();
-        if (value(QStringLiteral("guideConfirmationPending")).toBool()) {
-            if (selection == 0) {
-                backGuide();
-            } else {
-                executeGuideAction(value(QStringLiteral("guideConfirmationId")).toString());
-            }
-            return;
-        }
-        const auto actions = value(QStringLiteral("guideActions")).toList();
-        if (selection < 0 || selection >= actions.size())
-            return;
-        const auto action = actions.at(selection).toMap();
-        if (action.value(QStringLiteral("confirm")).toBool()) {
-            insert(QStringLiteral("guideConfirmationId"), action.value(QStringLiteral("id")));
-            insert(QStringLiteral("guideConfirmationAction"), action.value(QStringLiteral("label")));
-            insert(QStringLiteral("guideConfirmationPending"), true);
-            insert(QStringLiteral("guideSelection"), 1);
-            return;
-        }
-        executeGuideAction(action.value(QStringLiteral("id")).toString());
-    }
-
-    void executeGuideAction(const QString &id)
-    {
-        QDBusInterface consoled("org.lulu.Consoled", "/org/lulu/Console",
-                                "org.lulu.Console", QDBusConnection::sessionBus());
-        const auto reply = consoled.call("ExecuteGuideAction", id);
-        if (reply.type() == QDBusMessage::ErrorMessage)
-            return;
-        const QString target = reply.arguments().value(0).toString();
-        if (target == QStringLiteral("process-group-terminate")) {
-            const auto group = ::getpgid(static_cast<pid_t>(targetPid_));
-            if (group > 1)
-                ::kill(-group, SIGTERM);
-        } else if (target.startsWith(QStringLiteral("command:"))) {
-            const auto command = QProcess::splitCommand(target.mid(8));
-            if (!command.isEmpty())
-                QProcess::startDetached(command.constFirst(), command.mid(1));
-        }
-        insert(QStringLiteral("guideVisible"), false);
-        restoreInput();
     }
 
     void handleInputEvent(const QString &compositePath, const QString &event, double value)
     {
-        const quint64 sequence = ++inputSequence_;
-        if (event == QStringLiteral("ui_up") || event == QStringLiteral("ui_down")
-            || event == QStringLiteral("ui_back") || event == QStringLiteral("ui_guide")) {
-            qInfo() << "GUIDE_EDGE_TRACE" << "seq=" << sequence
-                    << "timestamp=" << QDateTime::currentMSecsSinceEpoch()
-                    << "event=" << event << "value=" << value
-                    << "guideVisible=" << guideVisible()
-                    << "interceptMode=" << interceptMode(compositePath);
-        }
-        if (event == QStringLiteral("ui_back") || event == QStringLiteral("cancel")
-            || event == QStringLiteral("back")) {
-            qInfo() << "GUIDE_B_TRACE" << "stage=ControllerBridge"
-                    << "event=" << event << "raw=unavailable"
-                    << "value=" << value << "composite=" << compositePath
-                    << "guideVisible=" << guideVisible();
-        }
-        qInfo() << "GUIDE_INPUT_EVENT" << "stage=ControllerBridge"
-                << "composite=" << compositePath << "event=" << event
-                << "value=" << value << "guideVisible=" << guideVisible();
-        if (guideVisible() || event == QStringLiteral("ui_guide"))
-            qInfo() << "GUIDE_INPUT" << compositePath << event << value
-                    << "visible=" << guideVisible();
         // OSK mode owns the intercepted D-Bus stream. The bridge consumes it
         // and feeds the private gamepad-osk device; Guide must not also act.
         if (oskActive_)
-        {
-            if (!guideVisible() && (event == QStringLiteral("ui_up")
-                || event == QStringLiteral("ui_down")))
-                qInfo() << "GUIDE_POST_DISMISS" << "event=" << event
-                        << "guideVisible=false" << "consumed=true" << "reason=osk";
             return;
-        }
         if (event == QStringLiteral("ui_context") && pendingGuide_
             && compositePath == guideOwnerComposite_) {
             if (value == 1.0) {
@@ -746,17 +543,14 @@ private:
         }
         if (event == QStringLiteral("ui_guide")) {
             if (value == 1.0) {
-                if (guideVisible() && compositePath == guideOwnerComposite_) {
+                if (guideProcess_ && compositePath == guideOwnerComposite_) {
+                    guideProcess_->write("ui_guide edge=down\n");
                     return;
                 }
                 if (!pendingGuide_) {
-                    preGuideInterceptMode_ = interceptMode(compositePath);
                     pendingGuide_ = true;
                     guideChordConsumed_ = false;
                     guideOwnerComposite_ = compositePath;
-                    logRoutingState(compositePath, "pre-guide-snapshot");
-                    qInfo() << "GUIDE_ROUTING_STATE" << "phase=pre-guide-focus"
-                            << "window=" << actualFocusWindow();
                 }
                 return;
             }
@@ -771,43 +565,19 @@ private:
                 }
                 return;
             }
-            if (!guideVisible() || compositePath != guideOwnerComposite_)
+            if (!(guideProcess_ && compositePath == guideOwnerComposite_))
                 return;
         }
         if (value != 1.0 && value != 0.0)
             return;
-        if (guideVisible() && compositePath == guideOwnerComposite_
-            && (event == QStringLiteral("ui_back") || event == QStringLiteral("cancel")
-                || event == QStringLiteral("back"))) {
-            qInfo() << "GUIDE_B_TRACE" << "stage=SemanticMapping"
-                    << "event=" << event
-                    << "mapping=" << (event == QStringLiteral("ui_back")
-                                           ? "backGuide" : "none")
-                    << "value=" << value;
-        }
-        if (guideVisible() && compositePath == guideOwnerComposite_
+        if (guideProcess_ && compositePath == guideOwnerComposite_
             && (event == QStringLiteral("ui_guide")
                               || event == QStringLiteral("ui_up")
                               || event == QStringLiteral("ui_down")
                               || event == QStringLiteral("ui_accept")
                               || event == QStringLiteral("ui_back"))) {
-            if (value != 1.0)
-                return;
-            if (event == QStringLiteral("ui_up"))
-                moveGuide(-1);
-            else if (event == QStringLiteral("ui_down"))
-                moveGuide(1);
-            else if (event == QStringLiteral("ui_accept"))
-                acceptGuide();
-            else if (event == QStringLiteral("ui_back")) {
-                backGuide();
-            }
-        }
-        if (!guideVisible() && (event == QStringLiteral("ui_up")
-            || event == QStringLiteral("ui_down"))) {
-            qInfo() << "GUIDE_POST_DISMISS" << "event=" << event
-                    << "value=" << value << "guideVisible=false"
-                    << "consumed=false" << "route=normal-inputplumber";
+            const char *edge = value == 1.0 ? "down" : "up";
+            guideProcess_->write(event.toUtf8() + " edge=" + edge + '\n');
         }
     }
 
@@ -817,44 +587,29 @@ private:
             guideProcess_->deleteLater();
             guideProcess_ = nullptr;
         }
-        insert(QStringLiteral("guideVisible"), false);
         restoreInput();
     }
 
     bool startGuide()
     {
-        if (guideVisible() || !presentationConnection_ || !focusedWindow_ || !window_) {
+        if (guideProcess_ || !presentationConnection_ || !focusedWindow_ || !window_) {
             restoreInput();
             return false;
         }
         targetWindow_ = focusedWindow_;
         targetPid_ = windowProperty(targetWindow_, "_NET_WM_PID");
-        qInfo() << "GUIDE_INPUT_LIFECYCLE" << "start"
-                << "composite=" << guideOwnerComposite_
-                << "interceptMode=" << interceptMode(guideOwnerComposite_);
-        logRoutingState(guideOwnerComposite_, "before-guide");
-        QVariantList actions;
-        QDBusInterface consoled("org.lulu.Consoled", "/org/lulu/Console",
-                                "org.lulu.Console", QDBusConnection::sessionBus());
-        const auto reply = consoled.call("GetGuideActions");
-        if (reply.type() == QDBusMessage::ReplyMessage && !reply.arguments().isEmpty()) {
-            const auto array = QJsonDocument::fromJson(
-                reply.arguments().constFirst().toString().toUtf8()).array();
-            for (const auto &value : array)
-                actions.append(value.toObject().toVariantMap());
-        }
-        insert(QStringLiteral("guideActions"), actions);
-        insert(QStringLiteral("guideSelection"), 0);
-        insert(QStringLiteral("guideConfirmationPending"), false);
-        insert(QStringLiteral("guideVisible"), true);
-        if (!setInterceptMode(guideOwnerComposite_, 2)) {
-            insert(QStringLiteral("guideVisible"), false);
-            restoreInput();
+        guideProcess_ = new QProcess(this);
+        connect(guideProcess_, &QProcess::finished, this,
+                [this](int, QProcess::ExitStatus) { finishGuide(); });
+        const QString guideExecutable = qEnvironmentVariable(
+            "LULU_GUIDE_EXECUTABLE", "/opt/lulu/bin/mudos-guide");
+        guideProcess_->start(guideExecutable, {
+            QString::number(targetWindow_), QString::number(targetPid_)
+        });
+        if (!guideProcess_->waitForStarted(1000)) {
+            finishGuide();
             return false;
         }
-        qInfo() << "GUIDE_INPUT_LIFECYCLE" << "active"
-                << "interceptMode=" << interceptMode(guideOwnerComposite_);
-        logRoutingState(guideOwnerComposite_, "guide-active");
         return true;
     }
 
@@ -898,30 +653,8 @@ private:
                                      QDBusConnection::systemBus());
             for (const QString &dbusPath : composite.property("DbusDevices").toStringList()) {
                 discovered.insert(dbusPath);
-                qInfo() << "GUIDE_INPUT_SUBSCRIPTION" << "composite=" << compositePath
-                        << "device=" << dbusPath;
-                if (dbusRelays_.contains(dbusPath)) {
-                    auto *relay = dbusRelays_.value(dbusPath);
-                    const QString previousComposite = relay->compositePath();
-                    relay->setCompositePath(compositePath);
-                    if (guideVisible() && guideOwnerComposite_ == compositePath
-                        && interceptMode(compositePath) != 2) {
-                        qInfo() << "GUIDE_INPUT_INTERCEPT_REAPPLY"
-                                << "composite=" << compositePath
-                                << "actual=" << interceptMode(compositePath);
-                        setInterceptMode(compositePath, 2);
-                    }
-                    if (guideVisible() && guideOwnerComposite_ == previousComposite
-                        && previousComposite != compositePath) {
-                        qInfo() << "GUIDE_INPUT_COMPOSITE_REBOUND"
-                                << "old=" << previousComposite
-                                << "new=" << compositePath;
-                        guideOwnerComposite_ = compositePath;
-                        qInfo() << "GUIDE_INPUT_LIFECYCLE"
-                                << "rebound-interceptMode=" << interceptMode(compositePath);
-                    }
+                if (dbusRelays_.contains(dbusPath))
                     continue;
-                }
                 auto *relay = new DbusInputRelay(this, compositePath, this);
                 dbusRelays_.insert(dbusPath, relay);
                 QDBusConnection::systemBus().connect(
@@ -980,30 +713,17 @@ private:
     {
         SDL_Event event;
         while (SDL_PollEvent(&event)) {
-            if (event.type == SDL_EVENT_GAMEPAD_ADDED) {
-                qInfo() << "MUDOS_SDL_DEVICE" << "event=GAMEPAD_ADDED"
-                        << "instance=" << event.gdevice.which
-                        << "hasOpenGamepad=" << (gamepad_ != nullptr);
-                if (gamepad_)
-                    continue;
+            if (event.type == SDL_EVENT_GAMEPAD_ADDED && !gamepad_) {
                 gamepad_ = SDL_OpenGamepad(event.gdevice.which);
                 if (gamepad_) {
-                    qInfo() << "MUDOS_SDL_DEVICE" << "event=GAMEPAD_OPENED"
-                            << "instance=" << event.gdevice.which
-                            << "name=" << SDL_GetGamepadName(gamepad_);
                     insert("controllerConnected", true);
                     insert("controllerIndex", 1);
                     insert("controllerIdentity", QString::fromUtf8(SDL_GetGamepadName(gamepad_)));
                 }
-            } else if (event.type == SDL_EVENT_GAMEPAD_REMOVED) {
-                qInfo() << "MUDOS_SDL_DEVICE" << "event=GAMEPAD_REMOVED"
-                        << "instance=" << event.gdevice.which
-                        << "openInstance=" << (gamepad_ ? SDL_GetGamepadID(gamepad_) : 0);
-                if (!gamepad_ || event.gdevice.which != SDL_GetGamepadID(gamepad_))
-                    continue;
+            } else if (event.type == SDL_EVENT_GAMEPAD_REMOVED && gamepad_
+                       && event.gdevice.which == SDL_GetGamepadID(gamepad_)) {
                 SDL_CloseGamepad(gamepad_);
                 gamepad_ = nullptr;
-                qInfo() << "MUDOS_SDL_DEVICE" << "event=GAMEPAD_CLOSED";
                 insert("controllerConnected", false);
                 insert("controllerIndex", -1);
                 insert("controllerIdentity", QString());
@@ -1011,19 +731,8 @@ private:
                 // the selected device disappears; reopen the current
                 // navigation slot immediately for failover.
                 scanGamepads();
-            } else if (event.type == SDL_EVENT_GAMEPAD_REMAPPED) {
-                qInfo() << "MUDOS_SDL_DEVICE" << "event=GAMEPAD_REMAPPED"
-                        << "instance=" << event.gdevice.which
-                        << "openInstance=" << (gamepad_ ? SDL_GetGamepadID(gamepad_) : 0);
             } else if (event.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN) {
                 const bool allowed = dispatchAllowed();
-                qInfo() << "MUDOS_INPUT"
-                        << "event=button_down"
-                        << "button=" << static_cast<int>(event.gbutton.button)
-                        << "allowed=" << allowed
-                        << "luluPresented=" << luluPresented_
-                        << "guideVisible=" << guideVisible()
-                        << "controller=" << value("controllerIdentity");
                 if (!allowed)
                     continue;
                 static const std::pair<SDL_GamepadButton, const char *> routes[] = {
@@ -1047,12 +756,9 @@ private:
 private:
     void publish(const char *action)
     {
-        qInfo() << "MUDOS_INPUT" << "event=publish" << "action=" << action
-                << "luluPresented=" << luluPresented_
-                << "guideVisible=" << guideVisible();
         insert("action", QString::fromLatin1(action));
         insert("actionSerial", value("actionSerial").toInt() + 1);
-        if (guideVisible())
+        if (guideProcess_)
             return;
         static const std::pair<const char *, const char *> routes[] = {
             {"up", "controllerUp"}, {"down", "controllerDown"},
@@ -1064,8 +770,6 @@ private:
         };
         for (const auto &[name, function] : routes) {
             if (qstrcmp(name, action) == 0) {
-                qInfo() << "MUDOS_NAV" << "action=" << action
-                        << "dispatch=" << function;
                 if (qstrcmp(function, "controllerShoulder") == 0) {
                     const int delta = qstrcmp(action, "leftShoulder") == 0 ? -1 : 1;
                     QMetaObject::invokeMethod(window_, function, Q_ARG(QVariant, delta));
@@ -1078,7 +782,7 @@ private:
     }
     bool dispatchAllowed() const
     {
-        return window_ && (luluPresented_ || guideVisible());
+        return window_ && (luluPresented_ || guideProcess_);
     }
 
     void setupPresentationObserver()
@@ -1213,11 +917,9 @@ private:
     QTimer keyboardOwnershipTimer_;
     QHash<QString, DbusInputRelay *> dbusRelays_;
     QString guideOwnerComposite_;
-    int preGuideInterceptMode_ = -1;
     bool pendingGuide_ = false;
     bool guideChordConsumed_ = false;
     bool oskActive_ = false;
-    quint64 inputSequence_ = 0;
     SDL_Gamepad *gamepad_ = nullptr;
     int gamepadSlot_ = 0;
     int navigationPlayer_ = 1;
@@ -1225,12 +927,6 @@ private:
 
 void DbusInputRelay::onInputEvent(const QString &event, double value)
 {
-    if (event == QStringLiteral("ui_back") || event == QStringLiteral("cancel")
-        || event == QStringLiteral("back")) {
-        qInfo() << "GUIDE_B_TRACE" << "stage=InputPlumber"
-                << "event=" << event << "raw=unavailable" << "value=" << value
-                << "composite=" << compositePath_;
-    }
     owner_->onDbusInputEvent(compositePath_, event, value);
 }
 

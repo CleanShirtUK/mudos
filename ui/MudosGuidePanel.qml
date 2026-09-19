@@ -8,6 +8,19 @@ Item {
     property var typography
     property real uiScale: 1
 
+    readonly property var actions: guideModel
+        ? (guideModel.guideActions !== undefined
+            ? guideModel.guideActions : guideModel.actions) : []
+    readonly property int selection: guideModel
+        ? (guideModel.guideSelection !== undefined
+            ? guideModel.guideSelection : guideModel.selection) : 0
+    readonly property bool confirmationPending: guideModel
+        ? (guideModel.guideConfirmationPending !== undefined
+            ? guideModel.guideConfirmationPending : guideModel.confirmationPending) : false
+    readonly property string confirmationAction: guideModel
+        ? (guideModel.guideConfirmationAction !== undefined
+            ? guideModel.guideConfirmationAction : guideModel.confirmationAction) : ""
+
     readonly property real rowHeight: 58 * uiScale
     readonly property real rowGap: 10 * uiScale
     readonly property real rowWidth: 472 * uiScale
@@ -17,7 +30,7 @@ Item {
         anchors.centerIn: parent
         width: 520 * root.uiScale
         height: Math.max(250 * root.uiScale,
-            110 * root.uiScale + root.guideModel.guideActions.length
+            110 * root.uiScale + root.actions.length
                 * (root.rowHeight + root.rowGap))
         radius: 10 * root.uiScale
         color: root.luluPalette.overlaySurface
@@ -30,7 +43,7 @@ Item {
             spacing: 18 * root.uiScale
 
             Text {
-                text: root.guideModel.guideConfirmationPending ? "CONFIRM" : "GUIDE"
+                text: root.confirmationPending ? "CONFIRM" : "GUIDE"
                 color: root.luluPalette.headingAccent
                 font.family: root.typography.majorHeadingFamily
                 font.weight: root.typography.majorHeadingWeight
@@ -50,18 +63,18 @@ Item {
                 width: root.rowWidth
                 spacing: root.rowGap
                 Repeater {
-                    model: root.guideModel.guideConfirmationPending
+                    model: root.confirmationPending
                         ? [{label: "Cancel"},
-                           {label: root.guideModel.guideConfirmationAction}]
-                        : root.guideModel.guideActions
+                           {label: root.confirmationAction}]
+                        : root.actions
                     delegate: Item {
                         required property int index
                         required property var modelData
                         width: root.rowWidth
                         height: root.rowHeight
-                        z: index === root.guideModel.guideSelection ? 1 : 0
+                        z: index === root.selection ? 1 : 0
                         property real selectionProgress:
-                            index === root.guideModel.guideSelection ? 1 : 0
+                            index === root.selection ? 1 : 0
                         Behavior on selectionProgress {
                             NumberAnimation {
                                 duration: 180

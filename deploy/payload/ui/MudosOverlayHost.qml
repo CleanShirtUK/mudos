@@ -1,13 +1,10 @@
 import QtQuick
-import QtQuick.Window
 import Mudos.Poc 1.0
 
-    MudosOverlayWindow {
+MudosOverlayWindow {
     id: root
-    visible: guideModel.guideVisible || game !== null || overlayClearPending
-    property var guideModel
+    visible: game !== null
     property var game: null
-    property bool overlayClearPending: false
     property string view: "menu"
     property int selectedIndex: 0
     property var results: []
@@ -24,66 +21,8 @@ import Mudos.Poc 1.0
     signal queryEdited(string value)
     signal titleEdited(string value)
 
-    function requestOverlayClear() {
-        if (root.guideModel.guideVisible || root.game !== null
-                || root.overlayClearPending)
-            return
-        root.overlayClearPending = true
-        console.info("GUIDE_OVERLAY_CLEAR requested")
-        root.requestUpdate()
-    }
-
-    function finishOverlayClear() {
-        if (!root.overlayClearPending || root.guideModel.guideVisible
-                || root.game !== null)
-            return
-        console.info("GUIDE_OVERLAY_CLEAR frameSwapped")
-        root.overlayClearPending = false
-        console.info("GUIDE_OVERLAY_HIDE")
-    }
-
-    onFrameSwapped: root.finishOverlayClear()
-    onGameChanged: root.requestOverlayClear()
-
-    function logGuidePanelState(stage) {
-        var panel = guidePanel
-        console.info("GUIDE_PANEL_STATE stage=" + stage
-                     + " modelVisible=" + root.guideModel.guideVisible
-                     + " panelVisible=" + (panel ? panel.visible : "unknown")
-                     + " opacity=" + (panel ? panel.opacity : "unknown")
-                     + " enabled=" + (panel ? panel.enabled : "unknown")
-                     + " parentVisible=" + (panel && panel.parent
-                         ? panel.parent.visible : "unknown")
-                     + " hostVisible=" + root.visible
-                     + " hostObject=" + root.objectName)
-    }
-
-    Connections {
-        target: root.guideModel
-        function onGuideVisibleChanged() {
-            root.logGuidePanelState("modelChanged")
-            root.requestOverlayClear()
-        }
-    }
-
-    MudosGuidePanel {
-        id: guidePanel
-        objectName: "mudosGuidePanel"
-        visible: root.guideModel.guideVisible
-        enabled: root.guideModel.guideVisible
-        anchors.fill: parent
-        guideModel: root.guideModel
-        luluPalette: root.luluPalette
-        typography: root.typography
-        uiScale: root.uiScale
-
-        Component.onCompleted: root.logGuidePanelState("completed")
-        onVisibleChanged: root.logGuidePanelState("visibleChanged")
-        onEnabledChanged: root.logGuidePanelState("enabledChanged")
-    }
-
     GameOptions {
-        visible: root.game !== null && !root.guideModel.guideVisible
+        visible: root.game !== null
         anchors.fill: parent
         game: root.game
         view: root.view
