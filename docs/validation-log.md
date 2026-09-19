@@ -56,9 +56,9 @@ not implied to have passed.
 
 ## Provider/API configuration foundation
 
-- Commit: pending
-- Automated validation: pending
-- Runtime activated: pending
+- Commit: `83a0fc4`
+- Automated validation: PASS; configuration-focused tests and full suite passed
+- Runtime activated: PASS; mutable development runtime refreshed
 - Physical/controller validation: not applicable
 - Visual validation: not applicable
 - Provider/live-service validation: not attempted
