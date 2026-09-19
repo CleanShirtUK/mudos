@@ -1,4 +1,6 @@
 from pathlib import Path
+import asyncio
+from types import SimpleNamespace
 import unittest
 from importlib.machinery import SourceFileLoader
 
@@ -78,13 +80,65 @@ class MudosOskBridgeTests(unittest.TestCase):
         source = (ROOT / "scripts/mudos-osk-bridge").read_text()
         self.assertIn("finally:", source)
         self.assertIn("self.pad.reset()", source)
-        self.assertIn("await set_intercept_mode(bus, 1)", source)
+        self.assertIn("await set_intercept_mode(bus, self.composite_path, 1)", source)
         self.assertIn("self.process.terminate()", source)
         self.assertIn("self.process.kill()", source)
         self.assertIn("mode_restored", source)
         self.assertIn("source_present", source)
         self.assertIn("awaiting_show_until", source)
-        self.assertIn("await set_intercept_mode(bus, 2)", source)
+        self.assertIn("await set_intercept_mode(bus, self.composite_path, 2)", source)
+
+    def test_composite_is_discovered_from_gamepad_order_not_fixed_index(self):
+        source = (ROOT / "scripts/mudos-osk-bridge").read_text()
+        self.assertIn('member="Get", signature="ss"', source)
+        self.assertIn('body=[INPUT_MANAGER_INTERFACE, "GamepadOrder"]', source)
+        self.assertIn("self.composite_path: str | None", source)
+        self.assertNotIn('COMPOSITE_PATH = "/org/shadowblip/InputPlumber/CompositeDevice0"', source)
+
+    def test_missing_composite_keeps_bridge_alive_and_waits_for_topology(self):
+        source = (ROOT / "scripts/mudos-osk-bridge").read_text()
+        self.assertIn("self.composite_path = desired", source)
+        self.assertIn("if desired is None:", source)
+        self.assertIn("await asyncio.wait_for(self.topology_event.wait(), timeout=2.0)", source)
+        self.assertNotIn("self.process.terminate()\n                    break", source)
+
+    def test_topology_and_service_owner_signals_wake_reconciliation(self):
+        source = (ROOT / "scripts/mudos-osk-bridge").read_text()
+        self.assertIn('member=\'PropertiesChanged\'', source)
+        self.assertIn('member=\'NameOwnerChanged\'', source)
+        self.assertIn('message.body[0] == INPUT_SERVICE', source)
+
+    def test_reconciliation_is_idle_without_a_composite_and_binds_any_path(self):
+        class FakeBus:
+            def __init__(self, order):
+                self.order = order
+                self.calls = []
+
+            async def call(self, message):
+                self.calls.append(message)
+                if message.member == "Get":
+                    return SimpleNamespace(message_type=SimpleNamespace(name="METHOD_RETURN"),
+                                           body=[SimpleNamespace(value=self.order)])
+                return SimpleNamespace(message_type=SimpleNamespace(name="METHOD_RETURN"), body=[])
+
+        mapper = object.__new__(self.bridge.Bridge)
+        mapper.pad = FakePad()
+        mapper.active = False
+        mapper.composite_path = None
+        mapper.mode_restored = False
+        mapper.source_present = True
+        mapper.awaiting_show_until = 0
+
+        empty = FakeBus([])
+        asyncio.run(mapper._reconcile_composite(empty, False))
+        self.assertIsNone(mapper.composite_path)
+        self.assertEqual(len(empty.calls), 1)
+
+        replacement = FakeBus(["/org/shadowblip/InputPlumber/CompositeDevice7"])
+        asyncio.run(mapper._reconcile_composite(replacement, False))
+        self.assertEqual(mapper.composite_path,
+                         "/org/shadowblip/InputPlumber/CompositeDevice7")
+        self.assertTrue(mapper.mode_restored)
 
     def test_private_device_is_not_the_inputplumber_xbox_identity(self):
         source = (ROOT / "scripts/mudos-osk-bridge").read_text()

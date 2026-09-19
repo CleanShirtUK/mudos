@@ -17,11 +17,14 @@ from dbus_next import BusType, Message, Variant
 from dbus_next.aio import MessageBus
 
 INPUT_SERVICE = "org.shadowblip.InputPlumber"
-COMPOSITE_PATH = "/org/shadowblip/InputPlumber/CompositeDevice0"
+MANAGER_PATH = "/org/shadowblip/InputPlumber/Manager"
+INPUT_MANAGER_INTERFACE = "org.shadowblip.InputManager"
 DBUS_PATH = "/org/shadowblip/InputPlumber/devices/target/dbus0"
 COMPOSITE_INTERFACE = "org.shadowblip.Input.CompositeDevice"
 PROPERTIES_INTERFACE = "org.freedesktop.DBus.Properties"
 DBUS_INTERFACE = "org.shadowblip.Input.DBusDevice"
+DBUS_DAEMON_INTERFACE = "org.freedesktop.DBus"
+DBUS_DAEMON_PATH = "/org/freedesktop/DBus"
 
 EV_SYN = 0
 EV_KEY = 1
@@ -147,9 +150,9 @@ def visible() -> bool:
     return False
 
 
-async def set_intercept_mode(bus: MessageBus, mode: int) -> None:
+async def set_intercept_mode(bus: MessageBus, object_path: str, mode: int) -> None:
     reply = await bus.call(Message(
-        destination=INPUT_SERVICE, path=COMPOSITE_PATH,
+        destination=INPUT_SERVICE, path=object_path,
         interface=PROPERTIES_INTERFACE, member="Set", signature="ssv",
         body=[COMPOSITE_INTERFACE, "InterceptMode", Variant("u", mode)],
     ))
@@ -168,6 +171,8 @@ class Bridge:
         self.mode_restored = False
         self.source_present = True
         self.awaiting_show_until = 0.0
+        self.composite_path: str | None = None
+        self.topology_event: asyncio.Event | None = None
 
     def dpad_event(self, direction: str, value: float) -> None:
         self.dpad[direction] = value != 0
@@ -203,7 +208,15 @@ class Bridge:
             self.pad.axis(ABS_RZ, round(max(0.0, min(1.0, value)) * 255))
 
     def on_properties(self, message: Message) -> None:
-        if message.path != COMPOSITE_PATH or len(message.body) < 2:
+        if len(message.body) < 2:
+            return
+        if message.path == MANAGER_PATH:
+            changed = message.body[1]
+            changed = changed if isinstance(changed, dict) else {}
+            if "GamepadOrder" in changed and self.topology_event is not None:
+                self.topology_event.set()
+            return
+        if message.path != self.composite_path:
             return
         changed = message.body[1]
         changed = changed if isinstance(changed, dict) else {}
@@ -216,20 +229,84 @@ class Bridge:
             value = getattr(mode, "value", mode)
             if value == 2:
                 self.mode_restored = False
-                self.awaiting_show_until = time.monotonic() + 2.0
+            self.awaiting_show_until = time.monotonic() + 2.0
+
+    async def _current_composite(self, bus: MessageBus) -> str | None:
+        """Return the current live composite, or None when no controller exists."""
+        reply = await bus.call(Message(
+            destination=INPUT_SERVICE, path=MANAGER_PATH,
+            interface=PROPERTIES_INTERFACE, member="Get", signature="ss",
+            body=[INPUT_MANAGER_INTERFACE, "GamepadOrder"],
+        ))
+        if reply.message_type.name == "ERROR" or not reply.body:
+            return None
+        value = getattr(reply.body[0], "value", reply.body[0])
+        if not isinstance(value, (list, tuple)):
+            return None
+        for path in value:
+            if isinstance(path, str) and path.startswith(
+                    "/org/shadowblip/InputPlumber/CompositeDevice"):
+                return path
+        return None
+
+    async def _reconcile_composite(self, bus: MessageBus, visible_now: bool) -> None:
+        """Bind the OSK to the current topology without assuming an object path."""
+        try:
+            desired = await self._current_composite(bus)
+        except Exception:
+            desired = None
+        if desired == self.composite_path:
+            return
+
+        self.active = False
+        self.pad.reset()
+        self.composite_path = desired
+        self.mode_restored = False
+        if desired is None:
+            return
+        try:
+            # A recreated composite does not inherit the old mode.
+            await set_intercept_mode(bus, desired, 1)
+            if visible_now:
+                await set_intercept_mode(bus, desired, 2)
+                self.active = True
+            else:
+                self.mode_restored = True
+        except Exception:
+            # The object may disappear between GamepadOrder and Set. Leave the
+            # bridge healthy and let the next reconciliation bind the replacement.
+            self.composite_path = None
+            self.mode_restored = False
 
     async def run(self) -> None:
         bus = await MessageBus(bus_type=BusType.SYSTEM).connect()
+        self.topology_event = asyncio.Event()
         bus._add_match_rule(
             "type='signal',sender='org.shadowblip.InputPlumber',"
             f"path='{DBUS_PATH}',interface='{DBUS_INTERFACE}',member='InputEvent'"
         )
         bus._add_match_rule(
             "type='signal',sender='org.shadowblip.InputPlumber',"
-            f"path='{COMPOSITE_PATH}',interface='{PROPERTIES_INTERFACE}',member='PropertiesChanged'"
+            f"path='{MANAGER_PATH}',interface='{PROPERTIES_INTERFACE}',member='PropertiesChanged'"
+        )
+        bus._add_match_rule(
+            "type='signal',sender='org.freedesktop.DBus',"
+            f"path='{DBUS_DAEMON_PATH}',interface='{DBUS_DAEMON_INTERFACE}',"
+            "member='NameOwnerChanged'"
         )
         bus.add_message_handler(self.on_input)
         bus.add_message_handler(self.on_properties)
+
+        def on_bus_signal(message: Message) -> None:
+            if (message.path == DBUS_DAEMON_PATH and len(message.body) >= 1
+                    and message.body[0] == INPUT_SERVICE and self.topology_event is not None):
+                self.active = False
+                self.pad.reset()
+                self.composite_path = None
+                self.mode_restored = False
+                self.topology_event.set()
+
+        bus.add_message_handler(on_bus_signal)
         event_path = self.pad.event_path()
         self.process = await asyncio.create_subprocess_exec(
             self.binary, "--daemon", "--device", event_path, "--config", self.config,
@@ -237,42 +314,44 @@ class Bridge:
         was_visible = False
         try:
             while self.process.returncode is None:
-                if not self.source_present:
-                    self.active = False
-                    self.pad.reset()
-                    await set_intercept_mode(bus, 1)
-                    self.process.terminate()
-                    break
                 is_visible = visible()
-                if is_visible and not was_visible:
-                    # The OSK owns the intercepted controller stream while its
-                    # window is visible. Without this transition, InputPlumber
-                    # remains in shell mode and the first navigation events are
-                    # discarded by lulu-shell.
-                    await set_intercept_mode(bus, 2)
-                    self.active = True
-                    self.mode_restored = False
-                elif not is_visible and was_visible:
+                await self._reconcile_composite(bus, is_visible)
+                try:
+                    if self.composite_path is not None and is_visible and not was_visible:
+                        await set_intercept_mode(bus, self.composite_path, 2)
+                        self.active = True
+                        self.mode_restored = False
+                    elif self.composite_path is not None and not is_visible and was_visible:
+                        self.active = False
+                        self.pad.reset()
+                        await set_intercept_mode(bus, self.composite_path, 1)
+                        self.mode_restored = True
+                    elif (self.composite_path is not None and not is_visible and not self.mode_restored
+                          and time.monotonic() >= self.awaiting_show_until):
+                        await set_intercept_mode(bus, self.composite_path, 1)
+                        self.mode_restored = True
+                except Exception:
                     self.active = False
                     self.pad.reset()
-                    await set_intercept_mode(bus, 1)
-                    self.mode_restored = True
-                elif (not is_visible and not self.mode_restored
-                      and time.monotonic() >= self.awaiting_show_until):
-                    await set_intercept_mode(bus, 1)
-                    self.mode_restored = True
+                    self.composite_path = None
+                    self.mode_restored = False
                 was_visible = is_visible
-                await asyncio.sleep(0.1)
+                try:
+                    await asyncio.wait_for(self.topology_event.wait(), timeout=2.0)
+                    self.topology_event.clear()
+                except asyncio.TimeoutError:
+                    pass
                 if self.process.returncode is not None:
                     break
         finally:
             self.active = False
             self.dpad = {key: False for key in self.dpad}
             self.pad.reset()
-            try:
-                await set_intercept_mode(bus, 1)
-            except Exception:
-                pass
+            if self.composite_path is not None:
+                try:
+                    await set_intercept_mode(bus, self.composite_path, 1)
+                except Exception:
+                    pass
             if self.process and self.process.returncode is None:
                 self.process.terminate()
                 try:
