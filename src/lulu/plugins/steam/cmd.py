@@ -309,7 +309,10 @@ class SteamCmdExecutor:
         name = str(value or "").strip()
         if not name or Path(name).is_absolute() or name in {".", ".."}:
             raise SteamCmdError("invalid-install-directory", "Steam installdir is invalid")
-        candidate = (common / name).resolve(strict=False)
+        raw = common / name
+        if raw.is_symlink():
+            raise SteamCmdError("unsafe-install-directory", "Steam install directory is a symlink")
+        candidate = raw.resolve(strict=False)
         try:
             candidate.relative_to(common.resolve(strict=False))
         except ValueError as error:

@@ -211,6 +211,37 @@ class SteamCmdExecutorTests(unittest.TestCase):
             executor = SteamCmdExecutor(account="user", platforms={"42": "linux"}, install_dir=root)
             self.assertEqual(executor._existing_update_target("42"), target.resolve())
 
+    def test_update_run_passes_existing_payload_to_force_install_dir(self) -> None:
+        async def exercise() -> None:
+            with tempfile.TemporaryDirectory() as directory:
+                root = Path(directory) / "Steam"
+                target = root / "steamapps/common/Example"
+                target.mkdir(parents=True)
+                manifest = root / "steamapps/appmanifest_42.acf"
+                manifest.write_text(
+                    '"AppState" { "appid" "42" "name" "Example" '
+                    '"StateFlags" "4" "installdir" "Example" }'
+                )
+                class Process:
+                    returncode = 0
+                    stdout = asyncio.StreamReader()
+                    stderr = asyncio.StreamReader()
+                    async def wait(self): return self.returncode
+                process = Process()
+                process.stdout.feed_data(b"Success! App '42' fully installed.\n")
+                process.stdout.feed_eof(); process.stderr.feed_eof()
+                executor = SteamCmdExecutor(executable="/bin/true", account="user",
+                                             platforms={"42": "linux"}, install_dir=root)
+                manager = JobManager(); manager.register_executor("steam", executor)
+                job = manager.submit("steam", "steam:42", "Example")
+                with patch("asyncio.create_subprocess_exec", new=AsyncMock(return_value=process)), \
+                        patch.object(executor, "command", wraps=executor.command) as command, \
+                        patch.object(executor, "_finalize_staged_install") as finalize:
+                    await manager._tasks[job.job_id]
+                self.assertEqual(command.call_args.kwargs["force_install_dir"], target.resolve())
+                finalize.assert_not_called()
+        asyncio.run(exercise())
+
     def test_missing_manifest_does_not_trust_arbitrary_common_directory(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory) / "Steam"
