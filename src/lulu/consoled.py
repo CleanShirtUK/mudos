@@ -1,6 +1,7 @@
 """Unified game catalogue and game/content intent boundary."""
 
 import asyncio
+import ast
 from dataclasses import replace
 import logging
 import os
@@ -600,9 +601,9 @@ def _mudos_provider_device_indices() -> dict[int, int]:
         capture_output=True,
         text=True,
     ).stdout
-    state_json = json.loads(state.removeprefix("s ").strip())
-    if isinstance(state_json, str):
-        state_json = json.loads(state_json)
+    # busctl prints a D-Bus string using C-style quoting, not JSON quoting.
+    # JSON embedded in that string can contain apostrophes and escaped quotes.
+    state_json = _parse_busctl_json_string(state)
     assignments = state_json.get("controller", {}).get("controllers", {})
     result: dict[int, int] = {}
     for runtime_path, _persistent_id, target_index in slots:
@@ -612,6 +613,15 @@ def _mudos_provider_device_indices() -> dict[int, int]:
     if not result:
         raise RuntimeError("Mudos has no assigned InputPlumber gamepad slots")
     return result
+
+
+def _parse_busctl_json_string(output: str) -> dict[str, object]:
+    """Decode the JSON string returned by ``busctl call ... GetState``."""
+    value = ast.literal_eval(output.removeprefix("s ").strip())
+    decoded = json.loads(value if isinstance(value, str) else value)
+    if not isinstance(decoded, dict):
+        raise ValueError("ConsoleSessiond state is not an object")
+    return decoded
 
 
 def _retroarch_child_config(device_indices: dict[int, int]) -> str:

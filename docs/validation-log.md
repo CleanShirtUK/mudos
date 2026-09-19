@@ -4,6 +4,29 @@ This append-only log is authoritative for later hands-on validation. `PASS`
 means the stated evidence exists; pending physical or live-service checks are
 not implied to have passed.
 
+## Emulator/controller regression repair
+
+- Automated validation: PASS; `PYTHONPATH=src pytest -q` reports 402 passed.
+- Eden policy: restored the live InputPlumber SDL GUID
+  `030081b85e0400008e02000001000000` and Nintendo face-button translation
+  (`A=1`, `B=0`, `X=3`, `Y=2`). This remains an Eden-native profile and does
+  not alter RetroArch's working autoconfig.
+- Dolphin policy: profiles are now written below the provider's `--user/Config`
+  root, use the stable SDL gamepad name, configure GameCube Port 1, and expose
+  an emulated Classic Controller for Wii. Profile generation is idempotent and
+  preserves logical player indices.
+- RetroArch lifecycle: fixed D-Bus `busctl` state decoding when prior launch
+  metadata contains apostrophes (for example `Tony Hawk's`). This was a
+  pre-process-launch rejection on the second attempt; the child process itself
+  exited cleanly and no forced-kill workaround was added. Automated coverage
+  protects the repeat-launch state parser and profile policy.
+- Regression boundaries: Eden face-button/GUID policy traces to `59969e5`;
+  Dolphin's native-root/config-path issue traces to `77824bb`/`8de4eee`;
+  RetroArch repeat-launch failure is a later shared `busctl` serialization
+  boundary, not an emulator-specific controller regression.
+- Physical validation: pending after deployment; must cover Eden, Dolphin,
+  PCSX2, and RetroArch repeated launch/exit without restarting Mudos.
+
 ## Torrent provider / Transmission
 
 - Commit: `599a68c`

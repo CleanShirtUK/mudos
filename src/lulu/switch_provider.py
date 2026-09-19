@@ -4,18 +4,16 @@ from pathlib import Path
 import os
 
 from .paths import PATHS
+from .controller_policy import MUDOS_XBOX360_SDL_GUID, NINTENDO_FACE_BUTTONS
 
 
 # InputPlumber's virtual Xbox 360 target as reported by SDL2.
-DEFAULT_XBOX360_GUID = "030000005e0400008e02000001000000"
+DEFAULT_XBOX360_GUID = MUDOS_XBOX360_SDL_GUID
 
 # SDL's standard gamepad order. Eden's SDL backend consumes these values in
 # the serialized input parameter packages.
 _BUTTONS = {
-    "a": 0,
-    "b": 1,
-    "x": 2,
-    "y": 3,
+    **NINTENDO_FACE_BUTTONS,
     "l": 4,
     "r": 5,
     "minus": 6,
@@ -90,22 +88,16 @@ class SwitchProvider:
     def _update_active_config(self, profile: str) -> None:
         path = self.active_config_path
         source = path.read_text(encoding="utf-8") if path.exists() else "[Controls]\n"
-        updates = {
-            line.split("=", 1)[0]: line for line in profile.splitlines()[1:] if "=" in line
-        }
         lines = source.splitlines()
         start = next((index for index, line in enumerate(lines) if line == "[Controls]"), None)
         if start is None:
             lines.extend(["", "[Controls]"])
             start = len(lines) - 1
         end = next((index for index in range(start + 1, len(lines)) if lines[index].startswith("[")), len(lines))
-        seen = set()
-        for index in range(start + 1, end):
-            key = lines[index].split("=", 1)[0] if "=" in lines[index] else ""
-            if key in updates:
-                lines[index] = updates[key]
-                seen.add(key)
-        lines[end:end] = [updates[key] for key in updates if key not in seen]
+        # Replace the owned Controls section rather than merging it. A merge
+        # leaves old keyboard/player slots active after a controller count or
+        # identity change, allowing Eden to fall back to keyboard input.
+        lines[start:end] = profile.splitlines()
         path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
     def launch_arguments(

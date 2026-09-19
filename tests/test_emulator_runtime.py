@@ -4,7 +4,7 @@ from pathlib import Path
 
 from lulu.emulator_runtime import EmulatorRuntimeAdapter
 from lulu.controller_provisioning import ensure_provider_controller_config
-from lulu.consoled import _retroarch_child_config
+from lulu.consoled import _parse_busctl_json_string, _retroarch_child_config
 from lulu.local_content import LocalContentGame
 from lulu.switch_provider import SwitchProvider
 from lulu.paths import PATHS
@@ -92,17 +92,16 @@ class EmulatorRuntimeTests(unittest.TestCase):
             second_content = second.read_text()
 
         self.assertEqual(intent.arguments, ("--appimage-extract-and-run", "--config", str(second), "-f", "--fullscreen", "--game", "/fixture/game.nsp"))
-        self.assertIn('player_0_button_b="engine:sdl,guid:030000005e0400008e02000001000000,port:0,button:1"', config)
-        self.assertIn('player_0_button_x="engine:sdl,guid:030000005e0400008e02000001000000,port:0,button:2"', config)
-        self.assertIn('player_0_button_y="engine:sdl,guid:030000005e0400008e02000001000000,port:0,button:3"', config)
-        self.assertIn('player_0_button_a="engine:sdl,guid:030000005e0400008e02000001000000,port:0,button:0"', config)
-        self.assertIn('player_0_button_zl="engine:sdl,guid:030000005e0400008e02000001000000,port:0,axis:2,threshold:0.5,invert:+"', config)
+        self.assertIn('player_0_button_a="engine:sdl,guid:030081b85e0400008e02000001000000,port:0,button:1"', config)
+        self.assertIn('player_0_button_b="engine:sdl,guid:030081b85e0400008e02000001000000,port:0,button:0"', config)
+        self.assertIn('player_0_button_x="engine:sdl,guid:030081b85e0400008e02000001000000,port:0,button:3"', config)
+        self.assertIn('player_0_button_y="engine:sdl,guid:030081b85e0400008e02000001000000,port:0,button:2"', config)
         self.assertIn("player_0_type=0", config)
         self.assertIn("player_0_connected=true", config)
         self.assertIn("player_0_connected\\default=false", config)
         self.assertNotIn("player_0_connect=", config)
         self.assertEqual(config, second_content)
-        self.assertIn('player_0_lstick="engine:sdl,guid:030000005e0400008e02000001000000,port:0,axis_x:0,axis_y:1,offset_x:-0.000000,offset_y:0.000000,invert_x:+,invert_y:+,deadzone:0.150000"', config)
+        self.assertIn('player_0_lstick="engine:sdl,guid:030081b85e0400008e02000001000000,port:0,axis_x:0,axis_y:1,offset_x:-0.000000,offset_y:0.000000,invert_x:+,invert_y:+,deadzone:0.150000"', config)
 
     def test_switch_profile_follows_assigned_controller_indices(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -111,9 +110,9 @@ class EmulatorRuntimeTests(unittest.TestCase):
             config = provider.ensure_controller_config(device_indices={1: 0, 2: 2, 3: 1})
             content = config.read_text()
 
-        self.assertIn("player_0_button_a=\"engine:sdl,guid:030000005e0400008e02000001000000,port:0,button:0\"", content)
-        self.assertIn("player_1_button_a=\"engine:sdl,guid:030000005e0400008e02000001000000,port:2,button:0\"", content)
-        self.assertIn("player_2_button_a=\"engine:sdl,guid:030000005e0400008e02000001000000,port:1,button:0\"", content)
+        self.assertIn("player_0_button_a=\"engine:sdl,guid:030081b85e0400008e02000001000000,port:0,button:1\"", content)
+        self.assertIn("player_1_button_a=\"engine:sdl,guid:030081b85e0400008e02000001000000,port:2,button:1\"", content)
+        self.assertIn("player_2_button_a=\"engine:sdl,guid:030081b85e0400008e02000001000000,port:1,button:1\"", content)
         self.assertNotIn("player_3_", content)
 
     def test_pcsx2_intent_uses_controller_first_direct_boot(self) -> None:
@@ -157,21 +156,34 @@ class EmulatorRuntimeTests(unittest.TestCase):
             content = path.read_text()
 
             self.assertIn("Device = SDL/0/Xbox 360 Controller", content)
-            self.assertIn("Buttons/A = `Button A`", content)
+            self.assertIn("Buttons/A = `Button B`", content)
             self.assertIn("Main Stick/Up = `Left Y+`", content)
             self.assertIn("Triggers/L-Analog = `Trigger L`", content)
             self.assertIn("Main Stick/Calibration = 100.00", content)
             self.assertIn("[GCPad2]", content)
             self.assertIn("Device = SDL/1/Xbox 360 Controller", content)
 
-            dolphin = Path(directory) / "dolphin-emu" / "Dolphin.ini"
+            dolphin = Path(directory) / "dolphin-emu" / "Config" / "Dolphin.ini"
             dolphin_content = dolphin.read_text()
             self.assertIn("SIDevice0 = 6", dolphin_content)
-            self.assertIn("WiimoteSource0 = 0", dolphin_content)
+            self.assertIn("WiimoteSource0 = 1", dolphin_content)
 
-            wiimote = Path(directory) / "dolphin-emu" / "WiimoteNew.ini"
+            wiimote = Path(directory) / "dolphin-emu" / "Config" / "WiimoteNew.ini"
             wiimote_content = wiimote.read_text()
-            self.assertNotIn("[Wiimote1]", wiimote_content)
+            self.assertIn("[Wiimote1]", wiimote_content)
+            self.assertIn("Extension = Classic Controller", wiimote_content)
+            self.assertIn("Classic/Buttons/A = `Button B`", wiimote_content)
+
+    def test_retroarch_state_parser_survives_apostrophes_for_repeat_launches(self) -> None:
+        state = {
+            "controller": {"controllers": {}},
+            "last_result": {"argv": ["/usr/bin/pcsx2-qt", "Tony Hawk's Underground.iso"]},
+        }
+        import json
+
+        encoded = json.dumps(state).replace("'", "\\u0027")
+        decoded = _parse_busctl_json_string("s " + repr(encoded))
+        self.assertEqual(decoded, state)
 
     def test_provider_profiles_follow_logical_player_device_indices(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

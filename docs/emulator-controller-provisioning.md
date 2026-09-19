@@ -29,17 +29,20 @@ The profile is written to the service user's
 
 ## Dolphin
 
-Dolphin's native GameCube profile is `GCPadNew.ini`. The first profile selects
-`SDL/0/Xbox 360 Controller` and uses Dolphin's SDL semantic controls
-for face buttons, shoulders, sticks, triggers, d-pad, and Start.
+Dolphin's native GameCube profile is `Config/GCPadNew.ini`. The first profile
+selects `SDL/0/Xbox 360 Controller` and uses Dolphin's SDL semantic controls
+for face buttons, shoulders, sticks, triggers, d-pad, and Start. The Nintendo
+face-button convention is shared with Eden: A/B and X/Y are translated from
+the Xbox-style virtual target.
 
-The profile is written to the service user's `~/.config/dolphin-emu/GCPadNew.ini`
-and preserves other controller slots and unrelated settings.
+The profile is written below the `--user` root at
+`~/.config/lulu/providers/dolphin/config/Config/GCPadNew.ini` and preserves
+other controller slots and unrelated settings.
 
-For the current Wii validation path, Dolphin's GameCube Port 1 is explicitly set
-to a standard GameCube controller with `SIDevice0 = 6` in `Dolphin.ini`, and
-`WiimoteSource0 = 0` keeps Wii Remote 1 unbound. No virtual controller is
-provisioned through both input paths.
+For the Wii validation path, Dolphin's GameCube Port 1 is explicitly set to a
+standard GameCube controller with `SIDevice0 = 6`. Wii Remote 1 is emulated
+(`WiimoteSource0 = 1`) with a Classic Controller extension, using the same
+stable SDL gamepad identity. A physical Wii Remote is not required.
 
 ## Provisioning Boundary
 
