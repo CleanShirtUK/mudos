@@ -109,6 +109,40 @@ class SteamCmdExecutorTests(unittest.TestCase):
 
         asyncio.run(exercise())
 
+    def test_cancelled_external_guard_wait_withdraws_callback(self) -> None:
+        async def exercise() -> None:
+            class Process:
+                pid = 88
+                stdin = type("Stdin", (), {"write": lambda *_: None,
+                                            "drain": AsyncMock()})()
+
+                async def wait(self) -> int:
+                    await asyncio.Event().wait()
+                    return 0
+
+            withdrawn = asyncio.Event()
+
+            async def request(*_args):
+                try:
+                    await asyncio.Event().wait()
+                finally:
+                    withdrawn.set()
+                return "never"
+
+            executor = SteamCmdExecutor(account="user", platforms={"42": "linux"},
+                                        request_credential=request)
+            task = asyncio.create_task(executor._answer(
+                CredentialInput.WAITING, "Steam Guard", "Approve", Process(),
+                owner={"provider": "steam", "job_id": "job-cancel", "auth_id": "auth-cancel",
+                       "pid": 88}, write_to_process=False))
+            await asyncio.sleep(0)
+            task.cancel()
+            with self.assertRaises(asyncio.CancelledError):
+                await task
+            self.assertTrue(withdrawn.is_set())
+
+        asyncio.run(exercise())
+
     def test_platform_policy_and_deterministic_commands(self) -> None:
         windows = SteamCmdExecutor(account="user", platforms={"263980": "windows"}, install_dir=Path("/games/Steam"))
         self.assertEqual(windows.command("263980"), [

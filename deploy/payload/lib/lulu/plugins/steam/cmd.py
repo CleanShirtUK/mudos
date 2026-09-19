@@ -604,9 +604,11 @@ class SteamCmdExecutor:
         success = False
         finalizing = False
         guard_task: asyncio.Task[str] | None = None
+        auth_active = False
+        auth_changed = asyncio.Event()
 
         async def consume(stream: asyncio.StreamReader) -> None:
-            nonlocal success, finalizing, guard_task
+            nonlocal success, finalizing, guard_task, auth_active
             buffer = ""
             prompt_seen = False
             while (chunk := await stream.read(256)):
@@ -624,22 +626,38 @@ class SteamCmdExecutor:
                 if not prompt_seen and ("password:" in lower or "password " in lower):
                     diagnostic["password_prompt_observed"] = True
                     diagnostic["login_mode"] = "credential supplied"
-                    await self._answer(CredentialInput.SECRET, "SteamCMD password", "Password", process,
-                                       owner={"provider": "steam", "job_id": job.job_id,
-                                              "auth_id": auth_id, "pid": process.pid,
-                                              "operation": "acquire"})
+                    auth_active = True
+                    try:
+                        await self._answer(CredentialInput.SECRET, "SteamCMD password", "Password", process,
+                                           owner={"provider": "steam", "job_id": job.job_id,
+                                                  "auth_id": auth_id, "pid": process.pid,
+                                                  "operation": "acquire"})
+                    finally:
+                        auth_active = False
+                        auth_changed.set()
                     prompt_seen = True
                     buffer = ""
-                if guard_task is None and ("guard code" in lower or "two-factor" in lower
-                                           or "authenticator" in lower or "steam guard" in lower):
+                if (guard_task is None and not diagnostic["login_success"] and not success
+                        and ("guard code" in lower or "two-factor" in lower
+                             or "authenticator" in lower or "steam guard" in lower
+                             or "mobile authenticator" in lower or "verification code" in lower
+                             or "waiting for approval" in lower or "approve this login" in lower)):
                     diagnostic["guard_prompt_observed"] = True
                     diagnostic["login_mode"] = "interactive required"
+                    auth_active = True
                     guard_task = asyncio.create_task(self._guard_interaction(
                         process, job.job_id, auth_id, process.pid))
+                    def guard_finished(_task: asyncio.Task[str]) -> None:
+                        nonlocal auth_active
+                        auth_active = False
+                        auth_changed.set()
+                    guard_task.add_done_callback(guard_finished)
                     buffer = ""
                 if guard_task is not None and guard_task.done():
                     await guard_task
                     guard_task = None
+                    auth_active = False
+                    auth_changed.set()
                 while "\n" in buffer:
                     text, buffer = buffer.split("\n", 1)
                     observation = self.parser.parse(text)
@@ -665,6 +683,8 @@ class SteamCmdExecutor:
                             guard_task.cancel()
                             await asyncio.gather(guard_task, return_exceptions=True)
                             guard_task = None
+                            auth_active = False
+                            auth_changed.set()
                         if not finalizing:
                             await reporter.state(JobState.FINALIZING, stage="finalizing")
                     elif observation.kind == "authentication-required":
@@ -688,7 +708,24 @@ class SteamCmdExecutor:
             self._diagnostic({"event": "exit", **diagnostic})
 
         try:
-            await asyncio.wait_for(asyncio.gather(consume(process.stdout), consume(process.stderr)), timeout=120)
+            consume_tasks = {asyncio.create_task(consume(process.stdout)),
+                             asyncio.create_task(consume(process.stderr))}
+            deadline = asyncio.get_running_loop().time() + 120
+            while consume_tasks:
+                remaining = max(0.0, deadline - asyncio.get_running_loop().time())
+                done, _ = await asyncio.wait(consume_tasks, timeout=remaining)
+                if not done:
+                    if auth_active:
+                        auth_changed.clear()
+                        await auth_changed.wait()
+                        deadline = asyncio.get_running_loop().time() + 120
+                        continue
+                    raise asyncio.TimeoutError
+                for task in done:
+                    consume_tasks.remove(task)
+                    await task
+                if not auth_active:
+                    deadline = asyncio.get_running_loop().time() + 120
         except asyncio.CancelledError:
             if guard_task is not None and not guard_task.done():
                 guard_task.cancel()
@@ -874,6 +911,9 @@ class SteamCmdExecutor:
                         raise SteamCmdError("provider-exited", "SteamCMD exited while awaiting credentials")
                     value = await value_task
                 finally:
+                    if not value_task.done():
+                        value_task.cancel()
+                    await asyncio.gather(value_task, return_exceptions=True)
                     if not exit_task.done():
                         exit_task.cancel()
                     await asyncio.gather(exit_task, return_exceptions=True)
