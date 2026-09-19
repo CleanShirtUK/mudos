@@ -402,6 +402,20 @@ class SteamProviderTests(unittest.TestCase):
             "40800", "Super Meat Boy", str(root / "steamapps/common/Super Meat Boy"),
             str(root), 123, 9,
         )])
+
+    def test_manifest_without_payload_is_not_installed(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "Steam"
+            apps = root / "steamapps"
+            apps.mkdir(parents=True)
+            (apps / "libraryfolders.vdf").write_text(
+                f'"libraryfolders" {{ "0" {{ "path" "{root}" }} }}'
+            )
+            (apps / "appmanifest_42.acf").write_text(
+                '"AppState" { "appid" "42" "name" "Example" '
+                '"StateFlags" "4" "installdir" "Example" }'
+            )
+            self.assertEqual(SteamProvider().list_installed((root,)), [])
     def test_environment_markers_are_decoded(self) -> None:
         with patch.object(Path, "read_bytes", return_value=b"SteamAppId=40800\0DISPLAY=:0\0"):
             self.assertEqual(SteamProvider._environment(1), {"SteamAppId": "40800", "DISPLAY": ":0"})

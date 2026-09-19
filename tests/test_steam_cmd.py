@@ -198,5 +198,69 @@ class SteamCmdExecutorTests(unittest.TestCase):
         self.assertEqual(command[command.index("+force_install_dir") + 1],
                          "/games/.mudos-staging/job")
 
+    def test_existing_manifest_selects_direct_update_target(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "Steam"
+            manifest_dir = root / "steamapps"
+            target = manifest_dir / "common" / "Example"
+            target.mkdir(parents=True)
+            (manifest_dir / "appmanifest_42.acf").write_text(
+                '"AppState" { "appid" "42" "name" "Example" '
+                '"StateFlags" "4" "installdir" "Example" }'
+            )
+            executor = SteamCmdExecutor(account="user", platforms={"42": "linux"}, install_dir=root)
+            self.assertEqual(executor._existing_update_target("42"), target.resolve())
+
+    def test_missing_manifest_does_not_trust_arbitrary_common_directory(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "Steam"
+            (root / "steamapps/common/Example").mkdir(parents=True)
+            executor = SteamCmdExecutor(account="user", platforms={"42": "linux"}, install_dir=root)
+            self.assertIsNone(executor._existing_update_target("42"))
+
+    def test_fresh_promotion_renames_payload_and_manifest_atomically(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "Steam"
+            staging = root / ".mudos-steam-staging/job-1/payload"
+            (staging / "steamapps").mkdir(parents=True)
+            (staging / "game.bin").write_text("payload")
+            (staging / "steamapps/appmanifest_42.acf").write_text(
+                '"AppState" { "appid" "42" "name" "Example" '
+                '"StateFlags" "4" "installdir" "Example" }'
+            )
+            executor = SteamCmdExecutor(account="user", platforms={"42": "linux"}, install_dir=root)
+            target = executor._finalize_staged_install("42", staging)
+            self.assertEqual(target, (root / "steamapps/common/Example").resolve())
+            self.assertTrue((target / "game.bin").is_file())
+            self.assertTrue((root / "steamapps/appmanifest_42.acf").is_file())
+            self.assertFalse((root / ".mudos-steam-staging/job-1").exists())
+
+    def test_fresh_promotion_never_overwrites_existing_install(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "Steam"
+            target = root / "steamapps/common/Example"
+            target.mkdir(parents=True)
+            (target / "keep.bin").write_text("keep")
+            staging = root / ".mudos-steam-staging/job-2/payload"
+            (staging / "steamapps").mkdir(parents=True)
+            (staging / "game.bin").write_text("new")
+            (staging / "steamapps/appmanifest_42.acf").write_text(
+                '"AppState" { "appid" "42" "name" "Example" '
+                '"StateFlags" "4" "installdir" "Example" }'
+            )
+            executor = SteamCmdExecutor(account="user", platforms={"42": "linux"}, install_dir=root)
+            with self.assertRaisesRegex(Exception, "existing install"):
+                executor._finalize_staged_install("42", staging)
+            self.assertTrue((target / "keep.bin").is_file())
+
+    def test_staging_cleanup_is_job_attributable(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "Steam"
+            stale = root / ".mudos-steam-staging/job-3/payload"
+            stale.mkdir(parents=True)
+            executor = SteamCmdExecutor(account="user", platforms={"42": "linux"}, install_dir=root)
+            executor.cleanup_staging("job-3")
+            self.assertFalse(stale.parent.exists())
+
 if __name__ == "__main__":
     unittest.main()

@@ -331,28 +331,60 @@ class SteamCmdExecutor:
         common = (self.install_dir / "steamapps" / "common").resolve(strict=False)
         common.mkdir(parents=True, exist_ok=True)
         target = self._safe_install_directory(common, app.get("installdir"))
-        if target.is_symlink():
-            raise SteamCmdError("unsafe-install-directory", "Steam install directory is a symlink")
-        target.mkdir(parents=True, exist_ok=True)
+        if target.exists():
+            raise SteamCmdError("install-directory-exists", "Fresh Steam promotion would overwrite an existing install")
         payload_entries = [item for item in staging.iterdir() if item.name != "steamapps"]
         if not payload_entries:
             raise SteamCmdError("payload-missing", "SteamCMD produced no application payload")
         for item in payload_entries:
-            destination = target / item.name
             if item.is_symlink():
                 resolved = item.resolve(strict=False)
                 try:
                     resolved.relative_to(staging.resolve(strict=False))
                 except ValueError as error:
                     raise SteamCmdError("unsafe-payload", "Steam payload symlink escapes staging") from error
-            if item.is_dir() and not item.is_symlink():
-                shutil.copytree(item, destination, dirs_exist_ok=True, symlinks=True)
-            else:
-                shutil.copy2(item, destination, follow_symlinks=False)
+        # Staging lives below the canonical library, so this is normally an
+        # atomic same-filesystem promotion rather than a second full copy.
+        os.replace(staging, target)
+        promoted_manifest = target / "steamapps" / f"appmanifest_{app_id}.acf"
         final_manifest = self.install_dir / "steamapps" / f"appmanifest_{app_id}.acf"
-        os.replace(manifest, final_manifest)
-        shutil.rmtree(staging, ignore_errors=True)
+        try:
+            os.replace(promoted_manifest, final_manifest)
+            nested_steamapps = target / "steamapps"
+            if nested_steamapps.exists():
+                nested_steamapps.rmdir()
+        except Exception:
+            # If manifest promotion fails, restore the directory to its
+            # attributable staging location instead of damaging another game.
+            try:
+                os.replace(target, staging)
+            except OSError:
+                pass
+            raise
+        shutil.rmtree(staging.parent, ignore_errors=True)
         return target
+
+    def _existing_update_target(self, app_id: str) -> Path | None:
+        manifest = self.install_dir / "steamapps" / f"appmanifest_{app_id}.acf"
+        if not manifest.exists():
+            return None
+        try:
+            app = self._parse_manifest(manifest)
+        except (OSError, ValueError) as error:
+            raise SteamCmdError("manifest-invalid", "Existing Steam app manifest is invalid") from error
+        if str(app.get("appid", "")) != app_id:
+            raise SteamCmdError("manifest-mismatch", "Existing Steam manifest AppID does not match the request")
+        target = self._safe_install_directory(self.install_dir / "steamapps" / "common", app.get("installdir"))
+        if target.is_symlink():
+            raise SteamCmdError("unsafe-install-directory", "Existing Steam install directory is a symlink")
+        return target if target.is_dir() else None
+
+    def cleanup_staging(self, job_id: str) -> None:
+        if not job_id or Path(job_id).name != job_id or Path(job_id).is_absolute() or ".." in Path(job_id).parts:
+            raise ValueError("invalid Steam staging job ID")
+        path = self.install_dir / ".mudos-steam-staging" / job_id
+        path.resolve(strict=False).relative_to((self.install_dir / ".mudos-steam-staging").resolve(strict=False))
+        shutil.rmtree(path, ignore_errors=True)
 
     @staticmethod
     def _parse_manifest(path: Path) -> dict[str, object]:
@@ -519,11 +551,16 @@ class SteamCmdExecutor:
             platform = await asyncio.to_thread(self.platform_resolver.resolve, app_id)
             if platform is not None:
                 self.platforms[app_id] = platform
-        staging = self.install_dir / ".mudos-steam-staging" / job.job_id
-        if staging.exists():
-            raise SteamCmdError("staging-conflict", "Steam acquisition staging directory already exists")
-        staging.mkdir(parents=True, exist_ok=False)
-        command = self.command(app_id, force_install_dir=staging)
+        update_target = await asyncio.to_thread(self._existing_update_target, app_id)
+        staging: Path | None = None
+        force_install_dir = update_target
+        if update_target is None:
+            staging = self.install_dir / ".mudos-steam-staging" / job.job_id / "payload"
+            if staging.parent.exists():
+                raise SteamCmdError("staging-conflict", "Steam acquisition staging directory already exists")
+            staging.mkdir(parents=True, exist_ok=False)
+            force_install_dir = staging
+        command = self.command(app_id, force_install_dir=force_install_dir)
         command[0] = self._require_executable()
         self.install_dir.mkdir(parents=True, exist_ok=True)
         before = self._cache_snapshot()
@@ -655,7 +692,10 @@ class SteamCmdExecutor:
             raise SteamCmdError("steamcmd-failure", "SteamCMD did not complete successfully",
                                 details={"exit_code": returncode, "success_result": success,
                                          "finalizing_seen": finalizing})
-        await asyncio.to_thread(self._finalize_staged_install, app_id, staging)
+        if staging is not None:
+            await asyncio.to_thread(self._finalize_staged_install, app_id, staging)
+        else:
+            await asyncio.to_thread(self._existing_update_target, app_id)
 
     async def authenticate(self) -> dict[str, str]:
         """Verify SteamCMD acquisition authentication without secret argv/env."""
