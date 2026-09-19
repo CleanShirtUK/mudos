@@ -76,7 +76,7 @@ not implied to have passed.
 
 ## Provider-owned uninstall flow
 
-- Commits: `4db1c41`, `939c341`
+- Commits: `4db1c41`, `939c341`, `b4bd2fb`
 - Automated validation: PASS; 367 tests passed
 - Local disposable-ROM backend validation: PASS; temporary single-file and dedicated-directory fixtures were removed through `JobOperation.REMOVE`; outside-root, root/platform-root, symlink escape, neighbor preservation, and missing-path cases passed
 - RomM provenance preservation: PASS by provider-boundary tests/design; removal resolves linked local content and never calls RomM mutation APIs
