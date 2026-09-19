@@ -1201,8 +1201,34 @@ class ConsoleInterface(ServiceInterface):
             raise DBusError("org.lulu.Console.Error.CredentialUnavailable", str(error)) from error
 
     @method()
+    async def BeginOwnedCredentialRequest(self, title: "s", prompt: "s", input_type: "s",
+                                          secret: "b", min_length: "u", max_length: "u",
+                                          owner_id: "s", owner_json: "s") -> "s":
+        try:
+            owner = json.loads(owner_json) if owner_json else {}
+            if not isinstance(owner, dict):
+                raise ValueError("credential owner metadata must be an object")
+            request = await self.credentials.request(
+                title, prompt, CredentialInput(input_type), secret=secret,
+                min_length=min_length, max_length=max_length, owner_id=owner_id,
+                owner=owner,
+            )
+            return json.dumps(request.public_state(), separators=(",", ":"))
+        except (RuntimeError, ValueError, TypeError) as error:
+            raise DBusError("org.lulu.Console.Error.CredentialUnavailable", str(error)) from error
+
+    @method()
     def GetCredentialState(self) -> "s":
         return json.dumps(self.credentials.state(), separators=(",", ":"))
+
+    @method()
+    async def WithdrawOwnedCredentialRequest(self, request_id: "s", owner_id: "s",
+                                             message: "s") -> "s":
+        try:
+            await self.credentials.withdraw(request_id, owner_id, message)
+            return json.dumps(self.credentials.state(), separators=(",", ":"))
+        except (KeyError, PermissionError, ValueError) as error:
+            raise DBusError("org.lulu.Console.Error.CredentialUnavailable", str(error)) from error
 
     @method()
     def GetPluginSecretStatus(self, plugin_id: "s", name: "s") -> "s":

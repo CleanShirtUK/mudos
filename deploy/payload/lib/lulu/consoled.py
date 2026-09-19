@@ -29,6 +29,7 @@ from .emulation import PLATFORMS, current_rom_root, ensure_storage
 from .inputplumber import InputPlumberClient
 from .local_content import LocalContentProvider
 from .metadata import MetadataMatcher, SteamGridDBMetadata, clean_local_title
+from .metadata_enrichment import MetadataEnrichmentService
 from .network_manager import NetworkManagerAdapter
 from .audio_manager import AudioManagerAdapter
 from .display_manager import DisplayManagerAdapter
@@ -94,6 +95,7 @@ class ConsoleCatalog:
         self.romm_artwork = LocalArtworkCache()
         self.metadata = metadata or SteamGridDBMetadata()
         self.matcher = MetadataMatcher(self.metadata)
+        self.enrichment = MetadataEnrichmentService(self.store)
         self.steam_entitlements = steam_entitlements or next(
             (item for item in self._plugins.with_capability("installed_catalogue")
              if hasattr(item, "has_snapshot")), None)
@@ -434,6 +436,13 @@ class ConsoleCatalog:
                 self.last_delta_batches.append(tuple(metadata_deltas))
             LOGGER.info("catalogue stage completed name=metadata items=%d sqlite_commit=complete",
                         metadata_count)
+        if "metadata-enrichment" in selected:
+            LOGGER.info("catalogue stage started name=metadata-enrichment")
+            deltas = self.enrichment.enrich_all()
+            if deltas:
+                self.last_delta_batches.append(deltas)
+            LOGGER.info("catalogue stage completed name=metadata-enrichment items=%d",
+                        len(deltas))
         if "artwork" in selected:
             LOGGER.info("catalogue stage started name=artwork")
             games = self.store.list_catalogue_games()
@@ -455,6 +464,13 @@ class ConsoleCatalog:
         result = [game.as_dict() for game in self.store.list_games()]
         LOGGER.info("catalogue refresh worker completed games=%d sqlite_read=complete", len(result))
         return result
+
+    def enrich_metadata(self, game_id: str | None = None, *, force: bool = False) -> int:
+        games = [self.store.get_game(game_id)] if game_id else self.store.list_catalogue_games()
+        deltas = self.enrichment.enrich_all([game for game in games if game is not None], force=force)
+        if deltas:
+            self.last_delta_batches.append(deltas)
+        return len(deltas)
 
     def set_metadata_match(self, game_id: str, provider: str, metadata_game_id: str,
                            canonical_title: str) -> CatalogueDelta | None:
@@ -1041,6 +1057,14 @@ class ConsoleInterface(ServiceInterface):
         count = await self.refresh_catalogue(set(stages))
         return count
 
+    @method()
+    async def RefreshMetadata(self, game_id: "s", force: "b") -> "u":
+        """Run optional external enrichment in the catalogue worker boundary."""
+        count = await asyncio.to_thread(self.catalogue.enrich_metadata, game_id or None, force=force)
+        self._publish_delta_batches(getattr(self.catalogue, "last_delta_batches", []))
+        self.CatalogueChanged()
+        return count
+
     async def refresh_catalogue(self, stages: set[str] | None = None, source: str = "api") -> int:
         """Run one refresh at a time and share it across callers."""
         LOGGER.info("catalogue refresh requested source=%s", source)
@@ -1177,8 +1201,34 @@ class ConsoleInterface(ServiceInterface):
             raise DBusError("org.lulu.Console.Error.CredentialUnavailable", str(error)) from error
 
     @method()
+    async def BeginOwnedCredentialRequest(self, title: "s", prompt: "s", input_type: "s",
+                                          secret: "b", min_length: "u", max_length: "u",
+                                          owner_id: "s", owner_json: "s") -> "s":
+        try:
+            owner = json.loads(owner_json) if owner_json else {}
+            if not isinstance(owner, dict):
+                raise ValueError("credential owner metadata must be an object")
+            request = await self.credentials.request(
+                title, prompt, CredentialInput(input_type), secret=secret,
+                min_length=min_length, max_length=max_length, owner_id=owner_id,
+                owner=owner,
+            )
+            return json.dumps(request.public_state(), separators=(",", ":"))
+        except (RuntimeError, ValueError, TypeError) as error:
+            raise DBusError("org.lulu.Console.Error.CredentialUnavailable", str(error)) from error
+
+    @method()
     def GetCredentialState(self) -> "s":
         return json.dumps(self.credentials.state(), separators=(",", ":"))
+
+    @method()
+    async def WithdrawOwnedCredentialRequest(self, request_id: "s", owner_id: "s",
+                                             message: "s") -> "s":
+        try:
+            await self.credentials.withdraw(request_id, owner_id, message)
+            return json.dumps(self.credentials.state(), separators=(",", ":"))
+        except (KeyError, PermissionError, ValueError) as error:
+            raise DBusError("org.lulu.Console.Error.CredentialUnavailable", str(error)) from error
 
     @method()
     def GetPluginSecretStatus(self, plugin_id: "s", name: "s") -> "s":

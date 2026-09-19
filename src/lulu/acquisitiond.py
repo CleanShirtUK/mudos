@@ -162,22 +162,38 @@ async def serve(bus_type: BusType = BusType.SESSION) -> None:
         if isinstance(item, dict) and item.get("provider") and item.get("executor"):
             executor = item["executor"]
             if hasattr(executor, "request_credential"):
+                provider_name = str(item["provider"])
                 async def request_credential(input_type: CredentialInput, title: str, prompt: str,
-                                             min_length: int, max_length: int) -> str:
+                                             min_length: int, max_length: int,
+                                             owner: dict[str, object] | None = None) -> str:
+                    owner = dict(owner or {})
+                    owner.setdefault("provider", provider_name)
+                    owner_id = f"{owner['provider']}:{owner.get('job_id', '')}"
+                    owner["owner_id"] = owner_id
+                    request_id = ""
                     introspection = await bus.introspect("org.lulu.Consoled", "/org/lulu/Console")
                     proxy = bus.get_proxy_object("org.lulu.Consoled", "/org/lulu/Console", introspection)
                     consoled = proxy.get_interface("org.lulu.Console")
-                    request = json.loads(await consoled.call_begin_credential_request(
+                    request = json.loads(await consoled.call_begin_owned_credential_request(
                         title, prompt, input_type.value, input_type is CredentialInput.SECRET,
-                        min_length, max_length))
+                        min_length, max_length, owner_id, json.dumps(owner, sort_keys=True)))
                     request_id = request["id"]
-                    while True:
-                        state = json.loads(await consoled.call_get_credential_state())
-                        if state.get("status") == "submitted":
-                            return await consoled.call_take_credential_value(request_id)
-                        if state.get("status") in {"cancelled", "failed"}:
-                            raise RuntimeError("credential request ended")
-                        await asyncio.sleep(0.25)
+                    try:
+                        while True:
+                            state = json.loads(await consoled.call_get_credential_state())
+                            if state.get("id") != request_id:
+                                raise RuntimeError("credential request was replaced")
+                            if state.get("status") == "submitted":
+                                return await consoled.call_take_credential_value(request_id)
+                            if state.get("status") in {"cancelled", "failed"}:
+                                raise RuntimeError("credential request ended")
+                            await asyncio.sleep(0.25)
+                    finally:
+                        try:
+                            await consoled.call_withdraw_owned_credential_request(
+                                request_id, owner_id, "provider request ended")
+                        except Exception:
+                            pass
                 executor.request_credential = request_credential
             manager.register_executor(item["provider"], executor, limit=int(item.get("limit", 1)))
     interface = AcquisitionInterface(manager, catalogue)

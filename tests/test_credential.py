@@ -42,6 +42,29 @@ class CredentialBrokerTests(unittest.TestCase):
             self.assertNotIn(invalid, str(broker.state()))
         asyncio.run(scenario())
 
+    def test_owned_request_withdrawal_rejects_stale_submission_and_allows_new_owner(self) -> None:
+        async def scenario():
+            broker = CredentialBroker()
+            first = await broker.request(
+                "SteamCMD", "Password", CredentialInput.SECRET,
+                owner_id="steam:job-1", owner={"job_id": "job-1", "pid": 41},
+            )
+            self.assertEqual(broker.state()["owner_id"], "steam:job-1")
+            with self.assertRaises(PermissionError):
+                await broker.withdraw(first.request.request_id, "steam:job-2")
+            await broker.withdraw(first.request.request_id, "steam:job-1", "provider exited")
+            with self.assertRaises(ValueError):
+                await broker.submit(first.request.request_id, "stale")
+            second = await broker.request(
+                "SteamCMD", "Password", CredentialInput.SECRET,
+                owner_id="steam:job-2", owner={"job_id": "job-2", "pid": 42},
+            )
+            with self.assertRaises(KeyError):
+                await broker.submit(first.request.request_id, "must-not-reach-new-request")
+            await broker.submit(second.request.request_id, "current")
+            self.assertEqual(await broker.take_value(second.request.request_id), "current")
+        asyncio.run(scenario())
+
     def test_secret_store_uses_encrypted_backend_and_never_exposes_status_value(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

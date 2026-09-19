@@ -49,6 +49,8 @@ class CredentialRequest:
     max_length: int = 4096
     choices: tuple[str, ...] = ()
     help_text: str = ""
+    owner_id: str = ""
+    owner: dict[str, object] = field(default_factory=dict)
 
 
 @dataclass(slots=True)
@@ -64,7 +66,8 @@ class CredentialSession:
                 "secret": self.request.secret, "min_length": self.request.min_length,
                 "max_length": self.request.max_length, "choices": self.request.choices,
                 "help_text": self.request.help_text, "status": self.status.value,
-                "message": self.message}
+                "message": self.message, "owner_id": self.request.owner_id,
+                "owner": self.request.owner}
 
 
 class CredentialBroker:
@@ -82,7 +85,8 @@ class CredentialBroker:
     async def request(self, title: str, prompt: str, input_type: CredentialInput,
                       *, secret: bool = False, min_length: int = 0,
                       max_length: int = 4096, choices: tuple[str, ...] = (),
-                      help_text: str = "") -> CredentialSession:
+                      help_text: str = "", owner_id: str = "",
+                      owner: dict[str, object] | None = None) -> CredentialSession:
         async with self._lock:
             if self._active is not None and self._active.status in {
                     CredentialStatus.REQUESTED, CredentialStatus.WAITING}:
@@ -90,7 +94,8 @@ class CredentialBroker:
             if input_type is CredentialInput.SECRET:
                 secret = True
             request = CredentialRequest(uuid4().hex, title, prompt, input_type, secret,
-                                        min_length, max_length, choices, help_text)
+                                         min_length, max_length, choices, help_text,
+                                         owner_id, dict(owner or {}))
             self._active = CredentialSession(request)
             self._changed.set()
             return self._active
@@ -141,6 +146,19 @@ class CredentialBroker:
 
     async def cancel(self, request_id: str) -> None:
         await self.update(request_id, CredentialStatus.CANCELLED)
+
+    async def withdraw(self, request_id: str, owner_id: str = "",
+                       message: str = "") -> None:
+        async with self._lock:
+            session = self._require(request_id)
+            if owner_id and session.request.owner_id != owner_id:
+                raise PermissionError("credential request owner mismatch")
+            if session.status in {CredentialStatus.REQUESTED, CredentialStatus.WAITING,
+                                  CredentialStatus.SUBMITTED}:
+                session.status = CredentialStatus.CANCELLED
+                session.message = message or "credential request owner ended"
+                session._value = None
+                self._changed.set()
 
     def _require(self, request_id: str) -> CredentialSession:
         if self._active is None or self._active.request.request_id != request_id:

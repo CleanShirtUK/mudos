@@ -11,8 +11,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 import asyncio
 import json
+import logging
 import os
 from pathlib import Path
+import pwd
 import re
 import signal
 import shutil
@@ -24,6 +26,9 @@ from ...jobs import DownloadJob, JobState
 from ...job_manager import JobExecutionError, JobReporter
 from ...paths import PATHS
 from ...credential import CredentialBroker, CredentialInput, SecretStore
+
+
+LOGGER = logging.getLogger("lulu.steamcmd")
 
 
 class SteamCmdError(JobExecutionError):
@@ -207,13 +212,86 @@ class SteamCmdExecutor:
         return candidate
 
     @staticmethod
+    def _metadata(path: Path) -> dict[str, object]:
+        """Return filesystem identity only; never read the file."""
+        try:
+            stat = path.stat()
+            return {
+                "exists": True,
+                "inode": stat.st_ino,
+                "size": stat.st_size,
+                "mtime_ns": stat.st_mtime_ns,
+                "ctime_ns": stat.st_ctime_ns,
+                "owner": pwd.getpwuid(stat.st_uid).pw_name,
+                "group": str(stat.st_gid),
+                "mode": oct(stat.st_mode & 0o7777),
+            }
+        except (FileNotFoundError, PermissionError, KeyError, OSError):
+            return {"exists": False}
+
+    def _cache_snapshot(self) -> dict[str, object]:
+        home = Path(os.environ.get("HOME", str(Path.home()))).expanduser()
+        steam_root = home / ".steam"
+        cache = {
+            "steam_root": str(steam_root),
+            "steam_root_exists": steam_root.is_dir(),
+            "steam_token": self._metadata(steam_root / "steam.token"),
+            "registry_vdf": self._metadata(steam_root / "registry.vdf"),
+        }
+        executable = Path(self.executable).expanduser()
+        return {
+            "uid": os.geteuid(),
+            "user": pwd.getpwuid(os.geteuid()).pw_name,
+            "home": str(home),
+            "steamcmd_root": str(PATHS.steamcmd_root),
+            "executable": str(executable),
+            "executable_metadata": self._metadata(executable),
+            "cache": cache,
+        }
+
+    @staticmethod
+    def _cache_events(before: dict[str, object], after: dict[str, object]) -> list[str]:
+        events: list[str] = []
+        before_cache = before["cache"]
+        after_cache = after["cache"]
+        assert isinstance(before_cache, dict) and isinstance(after_cache, dict)
+        for label, key in (("steam.token", "steam_token"), ("registry.vdf", "registry_vdf")):
+            old = before_cache[key]
+            new = after_cache[key]
+            assert isinstance(old, dict) and isinstance(new, dict)
+            if not old.get("exists") and new.get("exists"):
+                events.append(f"{label} created")
+            elif old.get("exists") and not new.get("exists"):
+                events.append(f"{label} deleted")
+            elif old.get("inode") != new.get("inode"):
+                events.append(f"{label} replaced inode {old.get('inode')} -> {new.get('inode')}")
+            elif old.get("mtime_ns") != new.get("mtime_ns"):
+                events.append(f"{label} mtime changed")
+        return events
+
+    @staticmethod
+    def _diagnostic(record: dict[str, object]) -> None:
+        # JSON is deliberately limited to metadata and normalized observations.
+        def redact(value: object, key: str = "") -> object:
+            if any(word in key.casefold() for word in ("password", "secret", "cookie", "credential_value")):
+                return "[REDACTED]"
+            if isinstance(value, dict):
+                return {str(child_key): redact(child_value, str(child_key))
+                        for child_key, child_value in value.items()}
+            if isinstance(value, list):
+                return [redact(child) for child in value]
+            return value
+
+        LOGGER.info("steamcmd_lifecycle %s", json.dumps(redact(record), sort_keys=True))
+
+    @staticmethod
     def _app_id(identity: str) -> str:
         value = identity.removeprefix("steam:")
         if not value.isdecimal() or int(value) < 1:
             raise SteamCmdError("invalid-content-identity", "Steam content identity is not a valid AppID")
         return value
 
-    def command(self, app_id: str) -> list[str]:
+    def command(self, app_id: str, *, force_install_dir: Path | None = None) -> list[str]:
         platform = self.platforms.get(app_id)
         if platform not in {"windows", "linux"}:
             raise SteamCmdError("unknown-platform", f"Steam platform is unknown for AppID {app_id}")
@@ -222,23 +300,300 @@ class SteamCmdExecutor:
         command = [self.executable]
         if platform == "windows":
             command += ["+@sSteamCmdForcePlatformType", "windows"]
-        command += ["+force_install_dir", str(self.install_dir), "+login", self.account,
+        command += ["+force_install_dir", str(force_install_dir or self.install_dir), "+login", self.account,
                     "+app_update", app_id, "validate", "+quit"]
         return command
 
+    @staticmethod
+    def _safe_install_directory(common: Path, value: object) -> Path:
+        name = str(value or "").strip()
+        if not name or Path(name).is_absolute() or name in {".", ".."}:
+            raise SteamCmdError("invalid-install-directory", "Steam installdir is invalid")
+        raw = common / name
+        if raw.is_symlink():
+            raise SteamCmdError("unsafe-install-directory", "Steam install directory is a symlink")
+        candidate = raw.resolve(strict=False)
+        try:
+            candidate.relative_to(common.resolve(strict=False))
+        except ValueError as error:
+            raise SteamCmdError("invalid-install-directory", "Steam installdir escapes the library") from error
+        if candidate == common.resolve(strict=False):
+            raise SteamCmdError("invalid-install-directory", "Steam installdir is the library root")
+        return candidate
+
+    def _finalize_staged_install(self, app_id: str, staging: Path) -> Path:
+        manifest = staging / "steamapps" / f"appmanifest_{app_id}.acf"
+        if not manifest.is_file():
+            raise SteamCmdError("manifest-missing", "SteamCMD did not produce an app manifest")
+        try:
+            app = self._parse_manifest(manifest)
+        except (OSError, ValueError) as error:
+            raise SteamCmdError("manifest-invalid", "Steam app manifest is invalid") from error
+        if str(app.get("appid", "")) != app_id:
+            raise SteamCmdError("manifest-mismatch", "Steam app manifest AppID does not match the request")
+        common = (self.install_dir / "steamapps" / "common").resolve(strict=False)
+        common.mkdir(parents=True, exist_ok=True)
+        target = self._safe_install_directory(common, app.get("installdir"))
+        if target.exists():
+            raise SteamCmdError("install-directory-exists", "Fresh Steam promotion would overwrite an existing install")
+        payload_entries = [item for item in staging.iterdir() if item.name != "steamapps"]
+        if not payload_entries:
+            raise SteamCmdError("payload-missing", "SteamCMD produced no application payload")
+        for item in payload_entries:
+            if item.is_symlink():
+                resolved = item.resolve(strict=False)
+                try:
+                    resolved.relative_to(staging.resolve(strict=False))
+                except ValueError as error:
+                    raise SteamCmdError("unsafe-payload", "Steam payload symlink escapes staging") from error
+        # Staging lives below the canonical library, so this is normally an
+        # atomic same-filesystem promotion rather than a second full copy.
+        os.replace(staging, target)
+        promoted_manifest = target / "steamapps" / f"appmanifest_{app_id}.acf"
+        final_manifest = self.install_dir / "steamapps" / f"appmanifest_{app_id}.acf"
+        try:
+            os.replace(promoted_manifest, final_manifest)
+            nested_steamapps = target / "steamapps"
+            if nested_steamapps.exists():
+                nested_steamapps.rmdir()
+        except Exception:
+            # If manifest promotion fails, restore the directory to its
+            # attributable staging location instead of damaging another game.
+            try:
+                os.replace(target, staging)
+            except OSError:
+                pass
+            raise
+        shutil.rmtree(staging.parent, ignore_errors=True)
+        return target
+
+    def _existing_update_target(self, app_id: str) -> Path | None:
+        manifest = self.install_dir / "steamapps" / f"appmanifest_{app_id}.acf"
+        if not manifest.exists():
+            return None
+        try:
+            app = self._parse_manifest(manifest)
+        except (OSError, ValueError) as error:
+            raise SteamCmdError("manifest-invalid", "Existing Steam app manifest is invalid") from error
+        if str(app.get("appid", "")) != app_id:
+            raise SteamCmdError("manifest-mismatch", "Existing Steam manifest AppID does not match the request")
+        target = self._safe_install_directory(self.install_dir / "steamapps" / "common", app.get("installdir"))
+        if target.is_symlink():
+            raise SteamCmdError("unsafe-install-directory", "Existing Steam install directory is a symlink")
+        return target if target.is_dir() else None
+
+    def cleanup_staging(self, job_id: str) -> None:
+        if not job_id or Path(job_id).name != job_id or Path(job_id).is_absolute() or ".." in Path(job_id).parts:
+            raise ValueError("invalid Steam staging job ID")
+        path = self.install_dir / ".mudos-steam-staging" / job_id
+        path.resolve(strict=False).relative_to((self.install_dir / ".mudos-steam-staging").resolve(strict=False))
+        shutil.rmtree(path, ignore_errors=True)
+
+    @staticmethod
+    def _parse_manifest(path: Path) -> dict[str, object]:
+        from .provider import SteamProvider
+        value = SteamProvider._parse_vdf(path.read_text(errors="replace")).get("AppState", {})
+        if not isinstance(value, dict):
+            raise ValueError("AppState is not an object")
+        return value
+
+    def uninstall_command(self, app_id: str) -> list[str]:
+        """Build SteamCMD's provider-native uninstall operation.
+
+        SteamCMD updates the app manifest and owns the Steam library mutation;
+        Mudos deliberately never removes Steam files directly.
+        """
+        platform = self.platforms.get(app_id)
+        if platform not in {"windows", "linux"}:
+            raise SteamCmdError("unknown-platform", f"Steam platform is unknown for AppID {app_id}")
+        if not self.account:
+            raise SteamCmdError("authentication-required", "Steam download authentication required")
+        command = [self.executable]
+        if platform == "windows":
+            command += ["+@sSteamCmdForcePlatformType", "windows"]
+        command += ["+login", self.account, "+app_uninstall", app_id, "+quit"]
+        return command
+
+    async def uninstall(self, job: DownloadJob, reporter: JobReporter) -> None:
+        app_id = self._app_id(job.content_identity)
+        installed = await asyncio.to_thread(self._installed_owned_app, app_id)
+        if installed is None:
+            raise SteamCmdError("not-installed", "Steam title is not installed in the Mudos library")
+        if app_id not in self.platforms:
+            platform = await asyncio.to_thread(self.platform_resolver.resolve, app_id)
+            if platform is not None:
+                self.platforms[app_id] = platform
+        command = self.uninstall_command(app_id)
+        command[0] = self._require_executable()
+        await reporter.state(JobState.STARTING, stage="removing")
+        before = self._cache_snapshot()
+        diagnostic: dict[str, object] = {
+            "event": "start", "operation": "uninstall", "job_id": job.job_id,
+            "app_id": app_id, "pid": None, "login_mode": "cached candidate",
+            "cached_credentials_reported": False, "password_prompt_observed": False,
+            "guard_prompt_observed": False, "login_success": False,
+            "quit_requested": True, "normal_quit": False, "cache_before": before,
+        }
+        self._diagnostic(diagnostic)
+        process = None
+        password_sent = False
+        guard_sent = False
+
+        async def consume(stream: asyncio.StreamReader) -> None:
+            nonlocal password_sent, guard_sent
+            buffer = ""
+            while (chunk := await stream.read(256)):
+                buffer += chunk.decode(errors="replace")
+                lower = buffer.casefold()
+                if "logging in using cached credentials" in lower:
+                    diagnostic["cached_credentials_reported"] = True
+                    diagnostic["login_success"] = True
+                if not password_sent and ("password:" in lower or "password " in lower):
+                    diagnostic["password_prompt_observed"] = True
+                    diagnostic["login_mode"] = "credential supplied"
+                    await self._answer(CredentialInput.SECRET, "Steam uninstall password", "Password", process,
+                                       owner={"provider": "steam", "job_id": job.job_id,
+                                              "pid": process.pid, "operation": "uninstall"})
+                    password_sent = True
+                    buffer = ""
+                if not guard_sent and ("guard code" in lower or "two-factor" in lower or "authenticator" in lower):
+                    diagnostic["guard_prompt_observed"] = True
+                    diagnostic["login_mode"] = "interactive required"
+                    await self._answer(CredentialInput.CODE, "Steam Guard", "Authentication code", process,
+                                       min_length=5, max_length=5,
+                                       owner={"provider": "steam", "job_id": job.job_id,
+                                              "pid": process.pid, "operation": "uninstall"})
+                    guard_sent = True
+                    buffer = ""
+
+        try:
+            process = await asyncio.create_subprocess_exec(
+                *command, stdin=asyncio.subprocess.PIPE,
+                stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+                start_new_session=True,
+            )
+            diagnostic["pid"] = getattr(process, "pid", None)
+            await asyncio.wait_for(asyncio.gather(consume(process.stdout), consume(process.stderr)), timeout=120)
+            returncode = await process.wait()
+        except asyncio.TimeoutError as error:
+            if process is not None and process.returncode is None:
+                process.kill()
+            if process is not None:
+                await process.wait()
+            diagnostic["exit_code"] = process.returncode if process is not None else None
+            diagnostic["cache_after"] = self._cache_snapshot()
+            self._diagnostic({"event": "exit", **diagnostic})
+            raise SteamCmdError("provider-timeout", "Steam uninstall timed out", retryable=True) from error
+        except asyncio.CancelledError:
+            if process is not None and process.returncode is None:
+                try:
+                    os.killpg(process.pid, signal.SIGTERM)
+                except ProcessLookupError:
+                    pass
+            if process is not None:
+                await process.wait()
+            raise
+        except OSError as error:
+            raise SteamCmdError("provider-failure", "Steam uninstall could not start", retryable=True) from error
+        except Exception:
+            if process is not None and process.returncode is None:
+                try:
+                    os.killpg(process.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+            if process is not None:
+                await process.wait()
+            diagnostic["exit_code"] = process.returncode if process is not None else None
+            diagnostic["cache_after"] = self._cache_snapshot()
+            self._diagnostic({"event": "exit", **diagnostic})
+            raise
+        diagnostic["exit_code"] = returncode if returncode >= 0 else None
+        diagnostic["exit_signal"] = -returncode if returncode < 0 else None
+        diagnostic["normal_quit"] = returncode == 0
+        diagnostic["login_success"] = bool(diagnostic["login_success"] or returncode == 0)
+        diagnostic["cache_after"] = self._cache_snapshot()
+        diagnostic["cache_events"] = self._cache_events(before, diagnostic["cache_after"])
+        self._diagnostic({"event": "exit", **diagnostic})
+        if returncode != 0:
+            raise SteamCmdError("provider-failure", "Steam uninstall failed", details={"exit_code": returncode})
+        await reporter.state(JobState.FINALIZING, stage="finalizing")
+
+    def _installed_owned_app(self, app_id: str) -> InstalledSteamGame | None:
+        # The canonical library manifest is the authoritative ownership
+        # boundary for removal. Do not accept an arbitrary path from a job.
+        manifest = self.install_dir / "steamapps" / f"appmanifest_{app_id}.acf"
+        try:
+            from .provider import SteamProvider, InstalledSteamGame
+            app = SteamProvider._parse_vdf(manifest.read_text(errors="replace")).get("AppState", {})
+            if isinstance(app, dict) and SteamProvider._is_launchable_app(app):
+                content = self._safe_install_directory(
+                    self.install_dir / "steamapps" / "common", app.get("installdir"))
+                if not content.is_dir():
+                    return None
+                return InstalledSteamGame(
+                    app_id=app_id, title=str(app["name"]),
+                    install_dir=str(content),
+                    library_root=str(self.install_dir), size_on_disk=int(app.get("SizeOnDisk", 0)),
+                    last_played=int(app.get("LastPlayed", 0)),
+                )
+        except (FileNotFoundError, OSError, TypeError, ValueError):
+            pass
+        for game in self._provider_installed_games():
+            if game.app_id == app_id and Path(game.library_root).resolve() == Path(self.install_dir).resolve():
+                return game
+        return None
+
+    def _provider_installed_games(self) -> list[InstalledSteamGame]:
+        # Import locally to keep the command executor independent of the
+        # session Steam client adapter and easy to fixture in tests.
+        from .provider import SteamProvider
+        return SteamProvider().list_installed(roots=(self.install_dir,))
+
     async def run(self, job: DownloadJob, reporter: JobReporter) -> None:
+        if job.operation.value == "remove":
+            await self.uninstall(job, reporter)
+            return
         app_id = self._app_id(job.content_identity)
         if app_id not in self.platforms:
             platform = await asyncio.to_thread(self.platform_resolver.resolve, app_id)
             if platform is not None:
                 self.platforms[app_id] = platform
-        command = self.command(app_id)
+        update_target = await asyncio.to_thread(self._existing_update_target, app_id)
+        staging: Path | None = None
+        force_install_dir = update_target
+        if update_target is None:
+            staging = self.install_dir / ".mudos-steam-staging" / job.job_id / "payload"
+            if staging.parent.exists():
+                raise SteamCmdError("staging-conflict", "Steam acquisition staging directory already exists")
+            staging.mkdir(parents=True, exist_ok=False)
+            force_install_dir = staging
+        command = self.command(app_id, force_install_dir=force_install_dir)
         command[0] = self._require_executable()
         self.install_dir.mkdir(parents=True, exist_ok=True)
+        before = self._cache_snapshot()
+        diagnostic: dict[str, object] = {
+            "job_id": job.job_id,
+            "app_id": app_id,
+            "pid": None,
+            "login_mode": "cached candidate",
+            "cached_credentials_reported": False,
+            "password_prompt_observed": False,
+            "guard_prompt_observed": False,
+            "login_success": False,
+            "exit_code": None,
+            "exit_signal": None,
+            "quit_requested": True,
+            "normal_quit": False,
+            "client_version": None,
+            "cache_before": before,
+        }
+        self._diagnostic({"event": "start", **diagnostic})
         process = await asyncio.create_subprocess_exec(
             *command, stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+            start_new_session=True,
         )
+        diagnostic["pid"] = getattr(process, "pid", None)
         success = False
         finalizing = False
 
@@ -250,14 +605,30 @@ class SteamCmdExecutor:
             while (chunk := await stream.read(256)):
                 buffer += chunk.decode(errors="replace")
                 lower = buffer.casefold()
+                version_match = re.search(r"client version:\s*([0-9]+)", lower)
+                if version_match:
+                    diagnostic["client_version"] = version_match.group(1)
+                if "logging in using cached credentials" in lower:
+                    diagnostic["cached_credentials_reported"] = True
+                    diagnostic["login_success"] = True
+                if "logged in ok" in lower:
+                    diagnostic["login_success"] = True
                 # SteamCMD emits its password prompt without a newline.
                 if not prompt_seen and ("password:" in lower or "password " in lower):
-                    await self._answer(CredentialInput.SECRET, "SteamCMD password", "Password", process)
+                    diagnostic["password_prompt_observed"] = True
+                    diagnostic["login_mode"] = "credential supplied"
+                    await self._answer(CredentialInput.SECRET, "SteamCMD password", "Password", process,
+                                       owner={"provider": "steam", "job_id": job.job_id,
+                                              "pid": process.pid, "operation": "acquire"})
                     prompt_seen = True
                     buffer = ""
                 if not challenge_seen and ("guard code" in lower or "two-factor" in lower or "authenticator" in lower):
+                    diagnostic["guard_prompt_observed"] = True
+                    diagnostic["login_mode"] = "interactive required"
                     await self._answer(CredentialInput.CODE, "Steam Guard", "Authentication code", process,
-                                       min_length=5, max_length=5)
+                                       min_length=5, max_length=5,
+                                       owner={"provider": "steam", "job_id": job.job_id,
+                                              "pid": process.pid, "operation": "acquire"})
                     challenge_seen = True
                     buffer = ""
                 while "\n" in buffer:
@@ -293,8 +664,27 @@ class SteamCmdExecutor:
                         raise SteamCmdError("steamcmd-failure", "SteamCMD reported a download failure",
                                             details={"provider_message": observation.message})
 
+        def record_exit(returncode: int | None) -> None:
+            diagnostic["exit_code"] = returncode if returncode is not None and returncode >= 0 else None
+            diagnostic["exit_signal"] = -returncode if returncode is not None and returncode < 0 else None
+            diagnostic["normal_quit"] = returncode == 0 and success
+            after = self._cache_snapshot()
+            diagnostic["cache_after"] = after
+            diagnostic["cache_events"] = self._cache_events(before, after)
+            diagnostic["login_success"] = bool(diagnostic["login_success"] or success)
+            self._diagnostic({"event": "exit", **diagnostic})
+
         try:
             await asyncio.wait_for(asyncio.gather(consume(process.stdout), consume(process.stderr)), timeout=120)
+        except asyncio.CancelledError:
+            if process.returncode is None:
+                try:
+                    os.killpg(process.pid, signal.SIGTERM)
+                except ProcessLookupError:
+                    pass
+            await process.wait()
+            record_exit(process.returncode)
+            raise
         except Exception:
             # Parser/authentication failures are terminal for this operation;
             # do not leave a SteamCMD child behind. This is not job
@@ -305,12 +695,18 @@ class SteamCmdExecutor:
                 except ProcessLookupError:
                     pass
             await process.wait()
+            record_exit(process.returncode)
             raise
         returncode = await process.wait()
+        record_exit(returncode)
         if returncode != 0 or not success:
             raise SteamCmdError("steamcmd-failure", "SteamCMD did not complete successfully",
                                 details={"exit_code": returncode, "success_result": success,
                                          "finalizing_seen": finalizing})
+        if staging is not None:
+            await asyncio.to_thread(self._finalize_staged_install, app_id, staging)
+        else:
+            await asyncio.to_thread(self._existing_update_target, app_id)
 
     async def authenticate(self) -> dict[str, str]:
         """Verify SteamCMD acquisition authentication without secret argv/env."""
@@ -320,6 +716,21 @@ class SteamCmdExecutor:
             self._require_executable(), "+login", self.account, "+quit",
             stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE, start_new_session=True)
+        before = self._cache_snapshot()
+        diagnostic: dict[str, object] = {
+            "event": "start",
+            "operation": "authenticate",
+            "pid": getattr(process, "pid", None),
+            "login_mode": "cached candidate",
+            "cached_credentials_reported": False,
+            "password_prompt_observed": False,
+            "guard_prompt_observed": False,
+            "login_success": False,
+            "quit_requested": True,
+            "normal_quit": False,
+            "cache_before": before,
+        }
+        self._diagnostic(diagnostic)
         password = self.secrets.get("steam", "password")
         authenticated = False
         challenge = False
@@ -330,13 +741,22 @@ class SteamCmdExecutor:
             while (chunk := await stream.read(256)):
                 text = chunk.decode(errors="replace")
                 lower = text.casefold()
+                if "logging in using cached credentials" in lower:
+                    diagnostic["cached_credentials_reported"] = True
+                    diagnostic["login_success"] = True
+                if "logged in ok" in lower:
+                    diagnostic["login_success"] = True
                 if ("password:" in lower or "password " in lower) and not password_sent:
+                    diagnostic["password_prompt_observed"] = True
+                    diagnostic["login_mode"] = "credential supplied"
                     if process.stdin is None or password is None:
                         raise SteamCmdError("authentication-required", "SteamCMD password is required")
                     process.stdin.write((password + "\n").encode())
                     await process.stdin.drain()
                     password_sent = True
                 elif "guard code" in lower or "two-factor" in lower or "authenticator" in lower:
+                    diagnostic["guard_prompt_observed"] = True
+                    diagnostic["login_mode"] = "interactive required"
                     challenge = True
                 elif "logged in ok" in lower or "logging in using cached credentials" in lower:
                     authenticated = True
@@ -351,7 +771,27 @@ class SteamCmdExecutor:
                 except ProcessLookupError:
                     pass
             await process.wait()
+            returncode = process.returncode
+            diagnostic.update({
+                "event": "exit",
+                "exit_code": returncode if returncode is not None and returncode >= 0 else None,
+                "exit_signal": -returncode if returncode is not None and returncode < 0 else None,
+                "cache_after": self._cache_snapshot(),
+            })
+            diagnostic["cache_events"] = self._cache_events(before, diagnostic["cache_after"])
+            self._diagnostic(diagnostic)
             raise
+        after = self._cache_snapshot()
+        diagnostic.update({
+            "event": "exit",
+            "exit_code": returncode if returncode >= 0 else None,
+            "exit_signal": -returncode if returncode < 0 else None,
+            "normal_quit": returncode == 0 and bool(authenticated),
+            "cache_after": after,
+            "cache_events": self._cache_events(before, after),
+            "login_success": bool(diagnostic["login_success"] or authenticated),
+        })
+        self._diagnostic(diagnostic)
         if challenge:
             raise SteamCmdError("challenge-required", "SteamCMD requires a Steam Guard code")
         if returncode != 0 or not authenticated:
@@ -361,28 +801,75 @@ class SteamCmdExecutor:
         return {"status": "authenticated"}
 
     async def cancel(self, job: DownloadJob) -> None:
-        raise SteamCmdError("cancellation-unsupported", "Steam acquisition cancellation is unavailable")
+        # JobManager owns the task cancellation boundary.  SteamCMD is placed
+        # in its own process group so the executor's cancellation cleanup can
+        # terminate the complete provider operation without QML process control.
+        return None
 
     async def _answer(self, input_type: CredentialInput, title: str, prompt: str,
                       process: asyncio.subprocess.Process, *, min_length: int = 0,
-                      max_length: int = 4096) -> None:
+                      max_length: int = 4096,
+                      owner: dict[str, object] | None = None) -> None:
         if process.stdin is None:
             raise SteamCmdError("auth-backend-unavailable", "SteamCMD input channel unavailable")
+        request_id: str | None = None
         try:
             if self.request_credential is not None:
-                value = await self.request_credential(input_type, title, prompt, min_length, max_length)
+                async def external_value() -> str:
+                    return await self.request_credential(
+                        input_type, title, prompt, min_length, max_length, owner or {})
+                value_task = asyncio.create_task(external_value())
+                exit_task = asyncio.create_task(process.wait())
+                try:
+                    done, _ = await asyncio.wait({value_task, exit_task}, timeout=300,
+                                                 return_when=asyncio.FIRST_COMPLETED)
+                    if not done:
+                        value_task.cancel()
+                        await asyncio.gather(value_task, return_exceptions=True)
+                        raise asyncio.TimeoutError
+                    if exit_task in done:
+                        value_task.cancel()
+                        await asyncio.gather(value_task, return_exceptions=True)
+                        raise SteamCmdError("provider-exited", "SteamCMD exited while awaiting credentials")
+                    value = await value_task
+                finally:
+                    if not exit_task.done():
+                        exit_task.cancel()
+                    await asyncio.gather(exit_task, return_exceptions=True)
             elif input_type is CredentialInput.SECRET and self.secrets.configured("steam", "password"):
                 value = self.secrets.get("steam", "password") or ""
             else:
                 request = await self.credentials.request(title, prompt, input_type,
                                                          secret=input_type is CredentialInput.SECRET,
                                                          min_length=min_length, max_length=max_length)
-                value = await self.credentials.wait_for_submission(request.request.request_id)
+                request_id = request.request.request_id
+                async def local_value() -> str:
+                    return await self.credentials.wait_for_submission(request_id)
+                value_task = asyncio.create_task(local_value())
+                exit_task = asyncio.create_task(process.wait())
+                done, _ = await asyncio.wait({value_task, exit_task},
+                                             return_when=asyncio.FIRST_COMPLETED)
+                if exit_task in done:
+                    value_task.cancel()
+                    await asyncio.gather(value_task, return_exceptions=True)
+                    raise SteamCmdError("provider-exited", "SteamCMD exited while awaiting credentials")
+                exit_task.cancel()
+                await asyncio.gather(exit_task, return_exceptions=True)
+                value = await value_task
             process.stdin.write((value + "\n").encode())
             await process.stdin.drain()
             if input_type is CredentialInput.SECRET and value:
                 # SteamCMD normally writes its own issued cache after login;
                 # do not retain the raw password once it has been supplied.
                 self.secrets.clear("steam", "password")
+        except asyncio.TimeoutError as error:
+            raise SteamCmdError("authentication-timeout", "Steam credential request timed out",
+                                retryable=True) from error
         except (RuntimeError, KeyError, ValueError) as error:
             raise SteamCmdError("authentication-cancelled", "Steam authentication was cancelled") from error
+        finally:
+            if request_id is not None:
+                try:
+                    await self.credentials.cancel(request_id)
+                except (KeyError, RuntimeError):
+                    pass

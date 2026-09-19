@@ -7,7 +7,8 @@ from unittest.mock import AsyncMock, patch
 
 from lulu.job_manager import JobManager
 from lulu.jobs import JobState
-from lulu.steam_cmd import SteamCmdExecutor, SteamCmdParser, SteamPlatformResolver, load_platforms
+from lulu.credential import CredentialInput
+from lulu.steam_cmd import SteamCmdError, SteamCmdExecutor, SteamCmdParser, SteamPlatformResolver, load_platforms
 
 
 class SteamCmdParserTests(unittest.TestCase):
@@ -32,6 +33,40 @@ class SteamCmdParserTests(unittest.TestCase):
 
 
 class SteamCmdExecutorTests(unittest.TestCase):
+    def test_dead_provider_withdraws_external_credential_wait(self) -> None:
+        async def exercise() -> None:
+            class Stdin:
+                def write(self, _value: bytes) -> None:
+                    raise AssertionError("dead provider must not receive credentials")
+
+                async def drain(self) -> None:
+                    raise AssertionError("dead provider must not receive credentials")
+
+            class DeadProcess:
+                pid = 24157
+                stdin = Stdin()
+
+                async def wait(self) -> int:
+                    return -9
+
+            pending = asyncio.Event()
+
+            async def request(*_args):
+                await pending.wait()
+                return "never"
+
+            executor = SteamCmdExecutor(account="user", platforms={"42": "linux"},
+                                        request_credential=request)
+            with self.assertRaises(SteamCmdError) as error:
+                await executor._answer(
+                    input_type=CredentialInput.SECRET,
+                    title="SteamCMD password", prompt="Password", process=DeadProcess(),
+                    owner={"provider": "steam", "job_id": "job-dead", "pid": 24157},
+                )
+            self.assertEqual(error.exception.code, "provider-exited")
+
+        asyncio.run(exercise())
+
     def test_platform_policy_and_deterministic_commands(self) -> None:
         windows = SteamCmdExecutor(account="user", platforms={"263980": "windows"}, install_dir=Path("/games/Steam"))
         self.assertEqual(windows.command("263980"), [
