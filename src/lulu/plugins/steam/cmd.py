@@ -350,6 +350,21 @@ class SteamCmdExecutor:
         await reporter.state(JobState.FINALIZING, stage="finalizing")
 
     def _installed_owned_app(self, app_id: str) -> InstalledSteamGame | None:
+        # The canonical library manifest is the authoritative ownership
+        # boundary for removal. Do not accept an arbitrary path from a job.
+        manifest = self.install_dir / "steamapps" / f"appmanifest_{app_id}.acf"
+        try:
+            from .provider import SteamProvider, InstalledSteamGame
+            app = SteamProvider._parse_vdf(manifest.read_text(errors="replace")).get("AppState", {})
+            if isinstance(app, dict) and SteamProvider._is_launchable_app(app):
+                return InstalledSteamGame(
+                    app_id=app_id, title=str(app["name"]),
+                    install_dir=str(self.install_dir / "steamapps" / "common" / app["installdir"]),
+                    library_root=str(self.install_dir), size_on_disk=int(app.get("SizeOnDisk", 0)),
+                    last_played=int(app.get("LastPlayed", 0)),
+                )
+        except (FileNotFoundError, OSError, TypeError, ValueError):
+            pass
         for game in self._provider_installed_games():
             if game.app_id == app_id and Path(game.library_root).resolve() == Path(self.install_dir).resolve():
                 return game
