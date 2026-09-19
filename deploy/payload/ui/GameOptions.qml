@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Effects
 
 Item {
     id: options
@@ -18,6 +19,14 @@ Item {
     signal backed()
     signal queryEdited(string value)
     signal titleEdited(string value)
+
+    function mixColor(from, to, progress) {
+        return Qt.rgba(
+            from.r + (to.r - from.r) * progress,
+            from.g + (to.g - from.g) * progress,
+            from.b + (to.b - from.b) * progress,
+            from.a + (to.a - from.a) * progress)
+    }
 
     readonly property var menuEntries: ["Change Match", "Edit Metadata"]
     readonly property var editEntries: ["Edit Title", "Clear Title Override",
@@ -39,20 +48,31 @@ Item {
         anchors.bottom: parent.bottom
         width: Math.min(parent.width * 0.48, 560 * options.uiScale)
         color: options.luluPalette.overlaySurface
-        border.color: options.luluPalette.focusIndicator
+        radius: 10 * options.uiScale
+        border.color: options.luluPalette.glassBorder
         border.width: options.uiScale
         clip: true
 
         Column {
             anchors.fill: parent
-            anchors.margins: 32 * options.uiScale
+            anchors.margins: 24 * options.uiScale
             spacing: 18 * options.uiScale
 
             Text {
                 text: "GAME OPTIONS"
-                color: options.luluPalette.accent
-                font.family: options.typography.interfaceFamily
-                font.pixelSize: options.typography.size("hint", 14)
+                color: options.luluPalette.headingAccent
+                font.family: options.typography.majorHeadingFamily
+                font.weight: options.typography.majorHeadingWeight
+                font.pixelSize: options.typography.size("section", 30)
+                font.letterSpacing: 5 * options.uiScale
+                layer.enabled: true
+                layer.effect: MultiEffect {
+                    shadowEnabled: true
+                    shadowColor: "#000000"
+                    shadowOpacity: 0.35
+                    shadowBlur: 0.2
+                    shadowVerticalOffset: 1 * options.uiScale
+                }
             }
             Text {
                 text: options.game ? options.game.title : ""
@@ -137,22 +157,51 @@ Item {
                 spacing: 8 * options.uiScale
                 model: options.view === "menu" ? options.menuEntries : options.editEntries
                 delegate: Rectangle {
+                    id: rowDelegate
                     required property int index
                     required property string modelData
                     width: entryList.width
-                    height: 54 * options.uiScale
+                    height: 58 * options.uiScale
                     radius: 8 * options.uiScale
-                    color: index === options.selectedIndex ? options.luluPalette.focusIndicator : options.luluPalette.cardSurface
-                    border.color: index === options.selectedIndex ? options.luluPalette.accent : options.luluPalette.glassBorder
+                    z: index === options.selectedIndex ? 1 : 0
+                    property real selectionProgress: index === options.selectedIndex ? 1 : 0
+                    scale: 1 + 0.01 * selectionProgress
+                    transformOrigin: Item.Center
+                    readonly property color surfaceColor: options.mixColor(
+                        options.luluPalette.cardSurface, options.luluPalette.focusedCardSurface,
+                        selectionProgress)
+                    readonly property color rowBorderColor: options.mixColor(
+                        options.luluPalette.glassBorder, options.luluPalette.focusIndicator,
+                        selectionProgress)
+                    readonly property color textColor: options.mixColor(
+                        options.luluPalette.navigationText, options.luluPalette.primaryText,
+                        selectionProgress)
+                    Behavior on selectionProgress {
+                        NumberAnimation {
+                            duration: 180
+                            easing.type: Easing.OutQuint
+                        }
+                    }
+                    color: surfaceColor
+                    border.color: rowBorderColor
                     border.width: options.uiScale
                     Text {
                         anchors.fill: parent
                         anchors.leftMargin: 18 * options.uiScale
-                        text: parent.modelData
-                        color: index === options.selectedIndex ? options.luluPalette.selectedText : options.luluPalette.primaryText
+                        text: rowDelegate.modelData
+                        color: rowDelegate.textColor
                         font.family: options.typography.interfaceFamily
                         font.pixelSize: options.typography.size("body", 18)
                         verticalAlignment: Text.AlignVCenter
+                        elide: Text.ElideRight
+                        layer.enabled: true
+                        layer.effect: MultiEffect {
+                            shadowEnabled: true
+                            shadowColor: "#000000"
+                            shadowOpacity: 0.35
+                            shadowBlur: 0.2
+                            shadowVerticalOffset: 1 * options.uiScale
+                        }
                     }
                 }
             }
@@ -165,32 +214,62 @@ Item {
                 spacing: 8 * options.uiScale
                 model: options.results
                 delegate: Rectangle {
+                    id: resultRow
                     required property int index
                     required property var modelData
                     width: resultList.width
-                    height: 62 * options.uiScale
+                    height: 58 * options.uiScale
                     radius: 8 * options.uiScale
-                    color: index === options.selectedIndex ? options.luluPalette.focusIndicator : options.luluPalette.cardSurface
-                    border.color: index === options.selectedIndex ? options.luluPalette.accent : options.luluPalette.glassBorder
+                    z: index === options.selectedIndex ? 1 : 0
+                    property real selectionProgress: index === options.selectedIndex ? 1 : 0
+                    scale: 1 + 0.01 * selectionProgress
+                    transformOrigin: Item.Center
+                    readonly property color surfaceColor: options.mixColor(
+                        options.luluPalette.cardSurface, options.luluPalette.focusedCardSurface,
+                        selectionProgress)
+                    readonly property color rowBorderColor: options.mixColor(
+                        options.luluPalette.glassBorder, options.luluPalette.focusIndicator,
+                        selectionProgress)
+                    readonly property color textColor: options.mixColor(
+                        options.luluPalette.navigationText, options.luluPalette.primaryText,
+                        selectionProgress)
+                    Behavior on selectionProgress {
+                        NumberAnimation {
+                            duration: 180
+                            easing.type: Easing.OutQuint
+                        }
+                    }
+                    color: surfaceColor
+                    border.color: rowBorderColor
                     border.width: options.uiScale
                     Column {
                         anchors.fill: parent
                         anchors.margins: 10 * options.uiScale
                         spacing: 3 * options.uiScale
                         Text {
-                            text: modelData.title + "  [" + modelData.id + "]"
-                            color: options.luluPalette.primaryText
+                            text: resultRow.modelData.title + "  [" + resultRow.modelData.id + "]"
+                            color: resultRow.textColor
                             font.family: options.typography.interfaceFamily
-                            font.pixelSize: options.typography.size("body", 16)
+                            font.pixelSize: options.typography.size("body", 18)
                             elide: Text.ElideRight
                             width: parent.width
+                            layer.enabled: true
+                            layer.effect: MultiEffect {
+                                shadowEnabled: true
+                                shadowColor: "#000000"
+                                shadowOpacity: 0.35
+                                shadowBlur: 0.2
+                                shadowVerticalOffset: 1 * options.uiScale
+                            }
                         }
                         Text {
-                            text: modelData.platforms && modelData.platforms.length
-                                ? modelData.platforms.join(", ") : "Platform metadata unavailable"
-                            color: options.luluPalette.secondaryText
+                            text: resultRow.modelData.platforms && resultRow.modelData.platforms.length
+                                ? resultRow.modelData.platforms.join(", ") : "Platform metadata unavailable"
+                            color: resultRow.textColor
                             font.family: options.typography.interfaceFamily
                             font.pixelSize: options.typography.size("hint", 12)
+                            elide: Text.ElideRight
+                            width: parent.width
                         }
                     }
                 }
