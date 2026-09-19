@@ -56,6 +56,17 @@ class DownloadJob:
     retryable: bool = True
     cancellation_supported: bool = False
     provider_job_id: str | None = None
+    backend: str | None = None
+    destination: str | None = None
+    completion_path: str | None = None
+    download_rate: int | None = None
+    upload_rate: int | None = None
+    eta_seconds: int | None = None
+    provider_state: str | None = None
+    ownership_label: str | None = None
+    deletion_policy: str = "preserve-partial"
+    artifact_files: tuple[dict[str, object], ...] = ()
+    seeding: bool = False
     created_at: str = field(default_factory=utc_now)
     started_at: str | None = None
     updated_at: str = field(default_factory=utc_now)
@@ -101,8 +112,7 @@ class DownloadJob:
             completed_at = completed_at or now
         if state == self.state:
             if state == JobState.FINALIZING:
-                return replace(self, progress=None, downloaded_bytes=None,
-                               total_bytes=None, stage=stage or self.stage,
+                return replace(self, stage=stage or self.stage,
                                error=error, started_at=started_at,
                                completed_at=completed_at, updated_at=now)
             return replace(self, progress=progress if progress is not None else self.progress,
@@ -113,11 +123,10 @@ class DownloadJob:
             raise ValueError(f"invalid job transition: {self.state} -> {state}")
         if state == JobState.COMPLETED and self.progress not in (None, 1.0):
             raise ValueError("completed job must have unknown or complete progress")
-        finalizing = state == JobState.FINALIZING
         return replace(self, state=state,
-                       progress=None if finalizing else (progress if progress is not None else self.progress),
-                       downloaded_bytes=None if finalizing else self.downloaded_bytes,
-                       total_bytes=None if finalizing else self.total_bytes,
+                       progress=progress if progress is not None else self.progress,
+                       downloaded_bytes=self.downloaded_bytes,
+                       total_bytes=self.total_bytes,
                        stage=stage or self.stage, error=error,
                        started_at=started_at, completed_at=completed_at,
                        updated_at=now)

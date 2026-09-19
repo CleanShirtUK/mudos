@@ -110,6 +110,26 @@ class MudosPaths:
         return self.steamcmd_root / "steamcmd.sh"
 
     @property
+    def torrent_root(self) -> Path:
+        return self.game_install_root / ".acquisition/torrents"
+
+    @property
+    def torrent_incomplete_root(self) -> Path:
+        return self.torrent_root / "incomplete"
+
+    @property
+    def torrent_complete_root(self) -> Path:
+        return self.torrent_root / "complete"
+
+    @property
+    def torrent_metainfo_root(self) -> Path:
+        return self.torrent_root / "metainfo"
+
+    @property
+    def torrent_ownership_root(self) -> Path:
+        return self.torrent_root / "ownership"
+
+    @property
     def recordings(self) -> Path:
         return self.home / "Recordings"
 

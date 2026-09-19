@@ -4,6 +4,49 @@ This append-only log is authoritative for later hands-on validation. `PASS`
 means the stated evidence exists; pending physical or live-service checks are
 not implied to have passed.
 
+## Torrent provider / Transmission
+
+- Implementation: provider-owned Transmission 4.1 JSON-RPC adapter, durable
+  torrent telemetry/artifact fields, restart reconciliation, path-safe delete,
+  and provider configuration/provisioning.
+- Provisioned version: `transmission-cli 4.1.3-2` from the Arch `extra`
+  repository.
+- Service: `lulu-transmission.service`, dedicated `lulu-transmission` user,
+  enabled and active. RPC listens on `127.0.0.1:9091` and rejects unauthenticated
+  requests with HTTP 401. Credentials are generated once and stored through
+  `SecretStore`; working daemon settings are not tracked.
+- Storage: `/home/lulu/Games/.acquisition/torrents/{incomplete,complete,metainfo,ownership}`.
+  Transmission's daemon incomplete directory is separate from the completed
+  per-torrent destination. No Steam, ROM, Lutris, or installed-game root is used.
+- Automated validation: PASS; full suite and Transmission-focused tests pass.
+  Coverage includes JSON-RPC 409 session negotiation, authentication headers,
+  magnet/metainfo addition, duplicate hashes, normalization, file selection,
+  restart queue recovery, status/progress/rates/ETA fields, ownership and
+  traversal/symlink/outside-root deletion safety.
+- Live magnet: PASS using the public-domain Big Buck Bunny test torrent
+  (`dd8255ecdc7ca55fb0bbf81323d87062db1f6d1c`). It was added through the
+  acquisition D-Bus service, received the `mudos` label, appeared in the
+  normalized Downloads snapshot, reported progress/rates/ETA, and completed
+  at the canonical complete root.
+- Live pause/resume: PASS; pause stopped transfer and resume continued the
+  same stable hash.
+- Live completion: PASS; Mudos marked the acquisition `completed` while the
+  daemon remained in provider seeding state. No catalogue/import/install action
+  was performed.
+- Restart recovery: PASS for Transmission daemon restart during an active
+  acquisition; the job retained its hash and resumed observation after the
+  daemon returned. acquisitiond service restart also requeued active jobs for
+  provider reconciliation rather than converting them to generic failures.
+- Remove/delete: PASS; remove deleted the daemon record while preserving the
+  completed payload, and DeleteDownload removed only the labelled Mudos payload.
+  An outside-root path was refused. Provider roots have an ACL for the Mudos
+  service user because Transmission controls its own file modes.
+- Questarr: pending future integration. The ownership contract is label-based:
+  Mudos persists hashes and uses `mudos`; future Questarr jobs may use `questarr`.
+  Mudos does not enumerate or delete unowned daemon torrents.
+- Visual validation: pending; no styled UI work was performed. Existing
+  provider-neutral Downloads UI remains the only presentation surface.
+
 ## Controller reconnect hardening
 
 - Commits: `1f1992a`

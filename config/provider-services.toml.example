@@ -34,4 +34,13 @@ timeout = 4.0
 # [providers.lutris]
 # [providers.flatpak]
 # [providers.torrent]
+# enabled = false
+# backend = "transmission"
+# endpoint = "http://127.0.0.1:9091/transmission/rpc"
+# timeout_seconds = 10
+# label = "mudos"
+#
+# [providers.torrent.secrets]
+# username = "torrent/rpc-username"
+# password = "torrent/rpc-password"
 # [providers.usenet]

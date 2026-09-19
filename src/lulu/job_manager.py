@@ -49,6 +49,9 @@ class JobReporter:
     async def state(self, state: JobState, *, stage: str | None = None) -> DownloadJob:
         return self._manager.transition(self._job_id, state, stage=stage)
 
+    async def metadata(self, **values: object) -> DownloadJob:
+        return self._manager.update_metadata(self._job_id, **values)
+
 
 class JobManager:
     """In-memory manager; persistence can be added without changing its API."""
@@ -144,6 +147,17 @@ class JobManager:
         self._publish()
         return self.jobs[job_id]
 
+    def update_metadata(self, job_id: str, **values: object) -> DownloadJob:
+        job = self._require(job_id)
+        allowed = set(DownloadJob.__dataclass_fields__)
+        unknown = set(values) - allowed
+        if unknown:
+            raise ValueError(f"unknown job metadata: {sorted(unknown)}")
+        from dataclasses import replace
+        self.jobs[job_id] = replace(job, **values, updated_at=utc_now())
+        self._publish()
+        return self.jobs[job_id]
+
     def update_progress(self, job_id: str, progress: float | None = None, *,
                         downloaded_bytes: int | None = None,
                         total_bytes: int | None = None,
@@ -161,13 +175,24 @@ class JobManager:
         if not job.cancellation_supported:
             return job
         if job.state in {JobState.QUEUED, JobState.FAILED}:
+            executor = self.executors.get(job.provider)
+            cancel = getattr(executor, "cancel", None)
+            if cancel is not None:
+                await cancel(job)
             return self.transition(job_id, JobState.CANCELLED, stage="cancelled")
         if job.state == JobState.PAUSED:
+            executor = self.executors.get(job.provider)
+            cancel = getattr(executor, "cancel", None)
+            if cancel is not None:
+                await cancel(job)
             return self.transition(job_id, JobState.CANCELLED, stage="cancelled")
         if job.state not in {JobState.STARTING, JobState.TRANSFERRING,
                              JobState.FINALIZING}:
             return job
         self.transition(job_id, JobState.CANCELLING, stage="cancelling")
+        executor = self.executors.get(job.provider)
+        if executor is not None:
+            await executor.cancel(job)
         task = self._tasks.get(job_id)
         if task is not None:
             task.cancel()
@@ -183,6 +208,10 @@ class JobManager:
         if job.state not in {JobState.STARTING, JobState.TRANSFERRING}:
             return job
         self.transition(job_id, JobState.PAUSED, stage="paused")
+        executor = self.executors.get(job.provider)
+        pause = getattr(executor, "pause", None)
+        if pause is not None:
+            await pause(job.provider_job_id) if job.provider_job_id else None
         task = self._tasks.get(job_id)
         if task is not None:
             task.cancel()
@@ -218,7 +247,9 @@ class JobManager:
             if self.jobs[job_id].state == JobState.TRANSFERRING:
                 self.transition(job_id, JobState.FINALIZING, stage="finalizing")
             if self.jobs[job_id].state == JobState.FINALIZING:
-                self.update_progress(job_id, 1.0, stage="completed")
+                current = self.jobs[job_id]
+                self.update_progress(job_id, 1.0, downloaded_bytes=current.downloaded_bytes,
+                                     total_bytes=current.total_bytes, stage="completed")
                 self.transition(job_id, JobState.COMPLETED, stage="completed")
         except JobCancelled:
             if self.jobs[job_id].state == JobState.CANCELLING:

@@ -1,0 +1,7 @@
+id = "torrent"
+name = "Torrent downloader"
+version = "1"
+api_version = 1
+
+[capabilities]
+acquisition = true

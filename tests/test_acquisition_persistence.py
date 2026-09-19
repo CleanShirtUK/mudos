@@ -47,7 +47,7 @@ class AcquisitionPersistenceTests(unittest.TestCase):
             reopened.close()
             store.close()
 
-    def test_active_jobs_recover_as_retryable_interrupted_failures(self) -> None:
+    def test_active_jobs_recover_as_queued_for_provider_reconciliation(self) -> None:
         async def exercise() -> None:
           with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "acquisition.sqlite3"
@@ -58,9 +58,8 @@ class AcquisitionPersistenceTests(unittest.TestCase):
             store.save_all([active, queued])
             reopened = AcquisitionStore(path)
             recovered = {job.job_id: job for job in reopened.load()}
-            self.assertEqual(recovered["active"].state, JobState.FAILED)
-            self.assertEqual(recovered["active"].error.code, "interrupted-restart")
-            self.assertTrue(recovered["active"].error.retryable)
+            self.assertEqual(recovered["active"].state, JobState.QUEUED)
+            self.assertIsNone(recovered["active"].error)
             self.assertEqual(recovered["active"].recovery_reason, "service-restart")
             self.assertEqual(recovered["queued"].state, JobState.QUEUED)
             reopened.close()
@@ -69,9 +68,9 @@ class AcquisitionPersistenceTests(unittest.TestCase):
             manager.register_executor("fake", executor)
             await asyncio.sleep(0)
             await asyncio.sleep(0)
-            self.assertIn("queued", executor.started)
+            self.assertIn("active", executor.started)
             executor.release.set()
-            await manager._tasks["queued"]
+            await manager._tasks["active"]
             manager.store.close()
             store.close()
         asyncio.run(exercise())
@@ -109,7 +108,7 @@ class AcquisitionPersistenceTests(unittest.TestCase):
                                 completed_at=f"2026-01-01T00:00:0{i}.000Z") for i in range(3)]
             store.save_all(jobs)
             with sqlite3.connect(path) as connection:
-                connection.execute("INSERT INTO acquisition_jobs VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                connection.execute("INSERT INTO acquisition_jobs (job_id, provider, content_identity, title, operation, state, progress, downloaded_bytes, total_bytes, stage, error_json, retryable, cancellation_supported, provider_job_id, created_at, started_at, updated_at, completed_at, attempt, parent_job_id, recovery_reason) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                                     ("bad", "fake", "bad", "bad", "not-an-operation", "queued", None, None, None,
                                     "queued", "{bad", 1, 0, None, "bad", None, "bad", "bad", 1, None, None))
             reopened = AcquisitionStore(path, history_limit=2)
