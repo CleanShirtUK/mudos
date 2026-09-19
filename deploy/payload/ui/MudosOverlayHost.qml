@@ -2,7 +2,7 @@ import QtQuick
 import QtQuick.Window
 import Mudos.Poc 1.0
 
-MudosOverlayWindow {
+    MudosOverlayWindow {
     id: root
     visible: guideModel.guideVisible || game !== null
     property var guideModel
