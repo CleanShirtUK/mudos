@@ -391,24 +391,92 @@ class SteamCmdExecutor:
         command = self.uninstall_command(app_id)
         command[0] = self._require_executable()
         await reporter.state(JobState.STARTING, stage="removing")
+        before = self._cache_snapshot()
+        diagnostic: dict[str, object] = {
+            "event": "start", "operation": "uninstall", "job_id": job.job_id,
+            "app_id": app_id, "pid": None, "login_mode": "cached candidate",
+            "cached_credentials_reported": False, "password_prompt_observed": False,
+            "guard_prompt_observed": False, "login_success": False,
+            "quit_requested": True, "normal_quit": False, "cache_before": before,
+        }
+        self._diagnostic(diagnostic)
         process = None
+        password_sent = False
+        guard_sent = False
+
+        async def consume(stream: asyncio.StreamReader) -> None:
+            nonlocal password_sent, guard_sent
+            buffer = ""
+            while (chunk := await stream.read(256)):
+                buffer += chunk.decode(errors="replace")
+                lower = buffer.casefold()
+                if "logging in using cached credentials" in lower:
+                    diagnostic["cached_credentials_reported"] = True
+                    diagnostic["login_success"] = True
+                if not password_sent and ("password:" in lower or "password " in lower):
+                    diagnostic["password_prompt_observed"] = True
+                    diagnostic["login_mode"] = "credential supplied"
+                    await self._answer(CredentialInput.SECRET, "Steam uninstall password", "Password", process)
+                    password_sent = True
+                    buffer = ""
+                if not guard_sent and ("guard code" in lower or "two-factor" in lower or "authenticator" in lower):
+                    diagnostic["guard_prompt_observed"] = True
+                    diagnostic["login_mode"] = "interactive required"
+                    await self._answer(CredentialInput.CODE, "Steam Guard", "Authentication code", process,
+                                       min_length=5, max_length=5)
+                    guard_sent = True
+                    buffer = ""
+
         try:
             process = await asyncio.create_subprocess_exec(
-                *command, stdin=asyncio.subprocess.DEVNULL,
+                *command, stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
                 start_new_session=True,
             )
-            stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=120)
+            diagnostic["pid"] = getattr(process, "pid", None)
+            await asyncio.wait_for(asyncio.gather(consume(process.stdout), consume(process.stderr)), timeout=120)
+            returncode = await process.wait()
         except asyncio.TimeoutError as error:
             if process is not None and process.returncode is None:
                 process.kill()
             if process is not None:
                 await process.wait()
+            diagnostic["exit_code"] = process.returncode if process is not None else None
+            diagnostic["cache_after"] = self._cache_snapshot()
+            self._diagnostic({"event": "exit", **diagnostic})
             raise SteamCmdError("provider-timeout", "Steam uninstall timed out", retryable=True) from error
+        except asyncio.CancelledError:
+            if process is not None and process.returncode is None:
+                try:
+                    os.killpg(process.pid, signal.SIGTERM)
+                except ProcessLookupError:
+                    pass
+            if process is not None:
+                await process.wait()
+            raise
         except OSError as error:
             raise SteamCmdError("provider-failure", "Steam uninstall could not start", retryable=True) from error
-        if process.returncode != 0:
-            raise SteamCmdError("provider-failure", "Steam uninstall failed", details={"exit_code": process.returncode})
+        except Exception:
+            if process is not None and process.returncode is None:
+                try:
+                    os.killpg(process.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+            if process is not None:
+                await process.wait()
+            diagnostic["exit_code"] = process.returncode if process is not None else None
+            diagnostic["cache_after"] = self._cache_snapshot()
+            self._diagnostic({"event": "exit", **diagnostic})
+            raise
+        diagnostic["exit_code"] = returncode if returncode >= 0 else None
+        diagnostic["exit_signal"] = -returncode if returncode < 0 else None
+        diagnostic["normal_quit"] = returncode == 0
+        diagnostic["login_success"] = bool(diagnostic["login_success"] or returncode == 0)
+        diagnostic["cache_after"] = self._cache_snapshot()
+        diagnostic["cache_events"] = self._cache_events(before, diagnostic["cache_after"])
+        self._diagnostic({"event": "exit", **diagnostic})
+        if returncode != 0:
+            raise SteamCmdError("provider-failure", "Steam uninstall failed", details={"exit_code": returncode})
         await reporter.state(JobState.FINALIZING, stage="finalizing")
 
     def _installed_owned_app(self, app_id: str) -> InstalledSteamGame | None:
