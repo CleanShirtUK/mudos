@@ -124,6 +124,19 @@ Item {
         return number.toFixed(unit ? 1 : 0) + " " + units[unit]
     }
 
+    function formatRate(value) {
+        if (value === null || value === undefined || Number(value) <= 0) return ""
+        return formatBytes(Number(value)) + "/s"
+    }
+
+    function formatEta(value) {
+        if (value === null || value === undefined || Number(value) < 0) return ""
+        var seconds = Number(value)
+        if (seconds < 60) return Math.round(seconds) + "s"
+        if (seconds < 3600) return Math.floor(seconds / 60) + "m"
+        return Math.floor(seconds / 3600) + "h " + Math.floor((seconds % 3600) / 60) + "m"
+    }
+
     function stateLabel(job) {
         var state = String(job.state || "queued")
         return state === "transferring" ? "DOWNLOADING" : state.toUpperCase()
@@ -244,7 +257,8 @@ Item {
                      Text { visible: String(modelData.state) === "failed"; x: 18 * root.uiScale; y: 57 * root.uiScale; text: root.failureReason(modelData); color: root.luluPalette.secondaryText; font.family: root.typography.interfaceFamily; font.pixelSize: root.typography.size("hint", 11); elide: Text.ElideRight; width: parent.width - 36 * root.uiScale }
                     Text { anchors.right: parent.right; anchors.rightMargin: 18 * root.uiScale; y: 10 * root.uiScale; text: modelData.progress !== null && modelData.progress !== undefined ? Math.round(Number(modelData.progress) * 100) + "%" : root.stateLabel(modelData); color: root.luluPalette.accent; font.family: root.typography.interfaceFamily; font.pixelSize: root.typography.size("hint", 13) }
                      Rectangle { visible: String(modelData.state) !== "failed"; x: 18 * root.uiScale; y: 61 * root.uiScale; width: parent.width - 36 * root.uiScale; height: 5 * root.uiScale; radius: height / 2; color: root.luluPalette.glassBorder; Rectangle { width: modelData.progress !== null && modelData.progress !== undefined ? parent.width * Math.max(0, Math.min(1, Number(modelData.progress))) : 0; height: parent.height; radius: parent.radius; color: root.luluPalette.accent } }
-                    Text { anchors.right: parent.right; anchors.rightMargin: 18 * root.uiScale; y: 70 * root.uiScale; text: modelData.downloaded_bytes !== null && modelData.total_bytes !== null ? root.formatBytes(modelData.downloaded_bytes) + " / " + root.formatBytes(modelData.total_bytes) : ""; color: root.luluPalette.secondaryText; font.family: root.typography.interfaceFamily; font.pixelSize: root.typography.size("hint", 11) }
+                     Text { x: 18 * root.uiScale; y: 70 * root.uiScale; text: [root.formatRate(modelData.download_rate), modelData.eta_seconds !== null && modelData.eta_seconds !== undefined ? "ETA " + root.formatEta(modelData.eta_seconds) : ""].filter(function(value) { return value !== "" }).join("  ·  "); color: root.luluPalette.secondaryText; font.family: root.typography.interfaceFamily; font.pixelSize: root.typography.size("hint", 11) }
+                     Text { anchors.right: parent.right; anchors.rightMargin: 18 * root.uiScale; y: 70 * root.uiScale; text: modelData.downloaded_bytes !== null && modelData.total_bytes !== null ? root.formatBytes(modelData.downloaded_bytes) + " / " + root.formatBytes(modelData.total_bytes) : ""; color: root.luluPalette.secondaryText; font.family: root.typography.interfaceFamily; font.pixelSize: root.typography.size("hint", 11) }
                 }
             }
 
