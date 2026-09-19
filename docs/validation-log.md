@@ -94,7 +94,7 @@ not implied to have passed.
 
 ## Downloads provider mutation lifecycle
 
-- Commit: pending
+- Commit: `6b9d086`
 - Steam pause: unsupported. SteamCMD is a foreground process without a safe
   provider pause/resume command in the current executor, so Steam jobs now
   advertise `pause_supported=false` and do not expose a fake Pause action.
