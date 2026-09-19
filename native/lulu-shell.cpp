@@ -578,12 +578,20 @@ private:
 
     void backGuide()
     {
+        qInfo() << "GUIDE_B_TRACE" << "stage=GuideModel" << "action=backGuide"
+                << "entered=true" << "visible_before=" << guideVisible();
         if (value(QStringLiteral("guideConfirmationPending")).toBool()) {
             insert(QStringLiteral("guideConfirmationPending"), false);
             insert(QStringLiteral("guideSelection"), 0);
+            qInfo() << "GUIDE_B_TRACE" << "stage=GuideModel"
+                    << "action=backGuide" << "dismissed=false"
+                    << "reason=confirmation";
             return;
         }
         insert(QStringLiteral("guideVisible"), false);
+        qInfo() << "GUIDE_B_TRACE" << "stage=GuideModel"
+                << "action=backGuide" << "dismissed=true"
+                << "visible_after=" << guideVisible();
         restoreInput();
     }
 
@@ -635,6 +643,13 @@ private:
 
     void handleInputEvent(const QString &compositePath, const QString &event, double value)
     {
+        if (event == QStringLiteral("ui_back") || event == QStringLiteral("cancel")
+            || event == QStringLiteral("back")) {
+            qInfo() << "GUIDE_B_TRACE" << "stage=ControllerBridge"
+                    << "event=" << event << "raw=unavailable"
+                    << "value=" << value << "composite=" << compositePath
+                    << "guideVisible=" << guideVisible();
+        }
         qInfo() << "GUIDE_INPUT_EVENT" << "stage=ControllerBridge"
                 << "composite=" << compositePath << "event=" << event
                 << "value=" << value << "guideVisible=" << guideVisible();
@@ -686,6 +701,15 @@ private:
         if (value != 1.0 && value != 0.0)
             return;
         if (guideVisible() && compositePath == guideOwnerComposite_
+            && (event == QStringLiteral("ui_back") || event == QStringLiteral("cancel")
+                || event == QStringLiteral("back"))) {
+            qInfo() << "GUIDE_B_TRACE" << "stage=SemanticMapping"
+                    << "event=" << event
+                    << "mapping=" << (event == QStringLiteral("ui_back")
+                                           ? "backGuide" : "none")
+                    << "value=" << value;
+        }
+        if (guideVisible() && compositePath == guideOwnerComposite_
             && (event == QStringLiteral("ui_guide")
                               || event == QStringLiteral("ui_up")
                               || event == QStringLiteral("ui_down")
@@ -699,8 +723,9 @@ private:
                 moveGuide(1);
             else if (event == QStringLiteral("ui_accept"))
                 acceptGuide();
-            else if (event == QStringLiteral("ui_back"))
+            else if (event == QStringLiteral("ui_back")) {
                 backGuide();
+            }
         }
     }
 
@@ -1085,6 +1110,12 @@ private:
 
 void DbusInputRelay::onInputEvent(const QString &event, double value)
 {
+    if (event == QStringLiteral("ui_back") || event == QStringLiteral("cancel")
+        || event == QStringLiteral("back")) {
+        qInfo() << "GUIDE_B_TRACE" << "stage=InputPlumber"
+                << "event=" << event << "raw=unavailable" << "value=" << value
+                << "composite=" << compositePath_;
+    }
     owner_->onDbusInputEvent(compositePath_, event, value);
 }
 

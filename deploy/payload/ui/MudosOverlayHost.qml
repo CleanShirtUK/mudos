@@ -26,8 +26,12 @@ MudosOverlayWindow {
     // Dismissal is driven by the native Guide model. Ensure the real external
     // overlay window leaves the focus stack along with the visual panel.
     onVisibleChanged: {
-        if (!root.visible)
+        if (!root.visible) {
+            console.info("GUIDE_B_TRACE stage=OverlayHost action=hide visible_before=false")
             root.hide()
+            console.info("GUIDE_B_TRACE stage=OverlayHost action=hide visible_after="
+                         + root.visible)
+        }
     }
 
     MudosGuidePanel {
