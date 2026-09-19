@@ -22,6 +22,7 @@
 #include <QHash>
 #include <QSet>
 #include <QJsonDocument>
+#include <QJsonArray>
 #include <QJsonObject>
 #include <algorithm>
 
@@ -583,11 +584,17 @@ private:
 
     void finishGuide()
     {
+        const qint64 pid = guideProcess_ ? guideProcess_->processId() : 0;
+        qInfo() << "GUIDE_PROCESS" << "finished pid=" << pid;
         if (guideProcess_) {
             guideProcess_->deleteLater();
             guideProcess_ = nullptr;
         }
         restoreInput();
+        qInfo() << "GUIDE_RESTORE complete"
+                << "luluPresented=" << luluPresented_
+                << "focusedWindow=" << focusedWindow_
+                << "requestedSurface=" << value("requestedSurface");
     }
 
     bool startGuide()
@@ -598,6 +605,15 @@ private:
         }
         targetWindow_ = focusedWindow_;
         targetPid_ = windowProperty(targetWindow_, "_NET_WM_PID");
+        QDBusInterface consoled("org.lulu.Consoled", "/org/lulu/Console",
+                                "org.lulu.Console", QDBusConnection::sessionBus());
+        const auto actionsReply = consoled.call("GetGuideActions");
+        int actionCount = 0;
+        if (actionsReply.type() == QDBusMessage::ReplyMessage && !actionsReply.arguments().isEmpty())
+            actionCount = QJsonDocument::fromJson(
+                actionsReply.arguments().constFirst().toString().toUtf8()).array().size();
+        qInfo() << "GUIDE_MODEL_SOURCE" << "actions=" << actionCount
+                << "surface=" << value("requestedSurface");
         guideProcess_ = new QProcess(this);
         connect(guideProcess_, &QProcess::finished, this,
                 [this](int, QProcess::ExitStatus) { finishGuide(); });
@@ -606,10 +622,13 @@ private:
         guideProcess_->start(guideExecutable, {
             QString::number(targetWindow_), QString::number(targetPid_)
         });
+        qInfo() << "GUIDE_PROCESS launch pid=pending"
+                << "targetWindow=" << targetWindow_ << "targetPid=" << targetPid_;
         if (!guideProcess_->waitForStarted(1000)) {
             finishGuide();
             return false;
         }
+        qInfo() << "GUIDE_PROCESS launch pid=" << guideProcess_->processId();
         return true;
     }
 

@@ -134,6 +134,7 @@ private:
                 viewModel_->insert("confirmationPending", false);
                 viewModel_->insert("selection", 0);
             } else {
+                qInfo() << "GUIDE_STANDALONE_DISMISS";
                 QCoreApplication::quit();
             }
         } else if (action == QStringLiteral("ui_guide")) {
@@ -302,6 +303,7 @@ int main(int argc, char **argv)
             actions.append(action);
         }
     }
+    qInfo() << "GUIDE_MODEL_RECEIVED" << "actions=" << actions.size();
 
     QGuiApplication application(argc, argv);
     QQmlPropertyMap viewModel;
@@ -325,5 +327,10 @@ int main(int argc, char **argv)
     if (!guide.prepare())
         return EXIT_FAILURE;
     window->show();
+    qInfo() << "GUIDE_STANDALONE_READY" << "actions=" << actions.size()
+            << "window=" << window->winId();
+    QObject::connect(&application, &QCoreApplication::aboutToQuit, [] {
+        qInfo() << "GUIDE_STANDALONE_EXIT";
+    });
     return application.exec();
 }
