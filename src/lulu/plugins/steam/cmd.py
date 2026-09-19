@@ -21,6 +21,7 @@ import shutil
 import tomllib
 from typing import Callable, Mapping
 from urllib.request import Request, urlopen
+from uuid import uuid4
 
 from ...jobs import DownloadJob, JobState
 from ...job_manager import JobExecutionError, JobReporter
@@ -427,12 +428,14 @@ class SteamCmdExecutor:
         command[0] = self._require_executable()
         await reporter.state(JobState.STARTING, stage="removing")
         before = self._cache_snapshot()
+        auth_id = uuid4().hex
         diagnostic: dict[str, object] = {
             "event": "start", "operation": "uninstall", "job_id": job.job_id,
             "app_id": app_id, "pid": None, "login_mode": "cached candidate",
             "cached_credentials_reported": False, "password_prompt_observed": False,
             "guard_prompt_observed": False, "login_success": False,
             "quit_requested": True, "normal_quit": False, "cache_before": before,
+            "auth_id": auth_id,
         }
         self._diagnostic(diagnostic)
         process = None
@@ -452,8 +455,9 @@ class SteamCmdExecutor:
                     diagnostic["password_prompt_observed"] = True
                     diagnostic["login_mode"] = "credential supplied"
                     await self._answer(CredentialInput.SECRET, "Steam uninstall password", "Password", process,
-                                       owner={"provider": "steam", "job_id": job.job_id,
-                                              "pid": process.pid, "operation": "uninstall"})
+                        owner={"provider": "steam", "job_id": job.job_id,
+                                               "auth_id": auth_id, "pid": process.pid,
+                                               "operation": "uninstall"})
                     password_sent = True
                     buffer = ""
                 if not guard_sent and ("guard code" in lower or "two-factor" in lower or "authenticator" in lower):
@@ -461,8 +465,9 @@ class SteamCmdExecutor:
                     diagnostic["login_mode"] = "interactive required"
                     await self._answer(CredentialInput.CODE, "Steam Guard", "Authentication code", process,
                                        min_length=5, max_length=5,
-                                       owner={"provider": "steam", "job_id": job.job_id,
-                                              "pid": process.pid, "operation": "uninstall"})
+                        owner={"provider": "steam", "job_id": job.job_id,
+                                               "auth_id": auth_id, "pid": process.pid,
+                                               "operation": "uninstall"})
                     guard_sent = True
                     buffer = ""
 
@@ -587,6 +592,8 @@ class SteamCmdExecutor:
             "client_version": None,
             "cache_before": before,
         }
+        auth_id = uuid4().hex
+        diagnostic["auth_id"] = auth_id
         self._diagnostic({"event": "start", **diagnostic})
         process = await asyncio.create_subprocess_exec(
             *command, stdin=asyncio.subprocess.PIPE,
@@ -596,12 +603,12 @@ class SteamCmdExecutor:
         diagnostic["pid"] = getattr(process, "pid", None)
         success = False
         finalizing = False
+        guard_task: asyncio.Task[str] | None = None
 
         async def consume(stream: asyncio.StreamReader) -> None:
-            nonlocal success, finalizing
+            nonlocal success, finalizing, guard_task
             buffer = ""
             prompt_seen = False
-            challenge_seen = False
             while (chunk := await stream.read(256)):
                 buffer += chunk.decode(errors="replace")
                 lower = buffer.casefold()
@@ -619,18 +626,20 @@ class SteamCmdExecutor:
                     diagnostic["login_mode"] = "credential supplied"
                     await self._answer(CredentialInput.SECRET, "SteamCMD password", "Password", process,
                                        owner={"provider": "steam", "job_id": job.job_id,
-                                              "pid": process.pid, "operation": "acquire"})
+                                              "auth_id": auth_id, "pid": process.pid,
+                                              "operation": "acquire"})
                     prompt_seen = True
                     buffer = ""
-                if not challenge_seen and ("guard code" in lower or "two-factor" in lower or "authenticator" in lower):
+                if guard_task is None and ("guard code" in lower or "two-factor" in lower
+                                           or "authenticator" in lower or "steam guard" in lower):
                     diagnostic["guard_prompt_observed"] = True
                     diagnostic["login_mode"] = "interactive required"
-                    await self._answer(CredentialInput.CODE, "Steam Guard", "Authentication code", process,
-                                       min_length=5, max_length=5,
-                                       owner={"provider": "steam", "job_id": job.job_id,
-                                              "pid": process.pid, "operation": "acquire"})
-                    challenge_seen = True
+                    guard_task = asyncio.create_task(self._guard_interaction(
+                        process, job.job_id, auth_id, process.pid))
                     buffer = ""
+                if guard_task is not None and guard_task.done():
+                    await guard_task
+                    guard_task = None
                 while "\n" in buffer:
                     text, buffer = buffer.split("\n", 1)
                     observation = self.parser.parse(text)
@@ -652,6 +661,10 @@ class SteamCmdExecutor:
                                                 stage="finalizing")
                     elif observation.kind == "success":
                         success = True
+                        if guard_task is not None and not guard_task.done():
+                            guard_task.cancel()
+                            await asyncio.gather(guard_task, return_exceptions=True)
+                            guard_task = None
                         if not finalizing:
                             await reporter.state(JobState.FINALIZING, stage="finalizing")
                     elif observation.kind == "authentication-required":
@@ -677,6 +690,9 @@ class SteamCmdExecutor:
         try:
             await asyncio.wait_for(asyncio.gather(consume(process.stdout), consume(process.stderr)), timeout=120)
         except asyncio.CancelledError:
+            if guard_task is not None and not guard_task.done():
+                guard_task.cancel()
+                await asyncio.gather(guard_task, return_exceptions=True)
             if process.returncode is None:
                 try:
                     os.killpg(process.pid, signal.SIGTERM)
@@ -695,6 +711,9 @@ class SteamCmdExecutor:
                 except ProcessLookupError:
                     pass
             await process.wait()
+            if guard_task is not None and not guard_task.done():
+                guard_task.cancel()
+                await asyncio.gather(guard_task, return_exceptions=True)
             record_exit(process.returncode)
             raise
         returncode = await process.wait()
@@ -806,13 +825,35 @@ class SteamCmdExecutor:
         # terminate the complete provider operation without QML process control.
         return None
 
+    async def _guard_interaction(self, process: asyncio.subprocess.Process, job_id: str,
+                                 auth_id: str, pid: int) -> str:
+        owner = {"provider": "steam", "job_id": job_id, "auth_id": auth_id,
+                 "pid": pid, "operation": "acquire"}
+        choice = await self._answer(
+            CredentialInput.WAITING, "Steam Guard",
+            "Approve this login in the Steam mobile app.", process,
+            owner=owner, write_to_process=False,
+        )
+        if choice != "enter-code":
+            raise SteamCmdError("authentication-cancelled", "Steam Guard approval was cancelled")
+        return await self._answer(
+            CredentialInput.CODE, "Steam Guard", "Authentication code", process,
+            min_length=5, max_length=64, owner=owner,
+        )
+
     async def _answer(self, input_type: CredentialInput, title: str, prompt: str,
                       process: asyncio.subprocess.Process, *, min_length: int = 0,
                       max_length: int = 4096,
-                      owner: dict[str, object] | None = None) -> None:
+                      owner: dict[str, object] | None = None,
+                      write_to_process: bool = True) -> str:
         if process.stdin is None:
             raise SteamCmdError("auth-backend-unavailable", "SteamCMD input channel unavailable")
         request_id: str | None = None
+        owner_metadata = dict(owner or {})
+        owner_id = str(owner_metadata.get("owner_id") or ":".join(
+            str(owner_metadata.get(key, ""))
+            for key in ("provider", "job_id", "auth_id")
+        ).rstrip(":"))
         try:
             if self.request_credential is not None:
                 async def external_value() -> str:
@@ -841,14 +882,20 @@ class SteamCmdExecutor:
             else:
                 request = await self.credentials.request(title, prompt, input_type,
                                                          secret=input_type is CredentialInput.SECRET,
-                                                         min_length=min_length, max_length=max_length)
+                                                         min_length=min_length, max_length=max_length,
+                                                         owner_id=owner_id,
+                                                         owner=owner_metadata)
                 request_id = request.request.request_id
                 async def local_value() -> str:
                     return await self.credentials.wait_for_submission(request_id)
                 value_task = asyncio.create_task(local_value())
                 exit_task = asyncio.create_task(process.wait())
-                done, _ = await asyncio.wait({value_task, exit_task},
+                done, _ = await asyncio.wait({value_task, exit_task}, timeout=300,
                                              return_when=asyncio.FIRST_COMPLETED)
+                if not done:
+                    value_task.cancel()
+                    await asyncio.gather(value_task, return_exceptions=True)
+                    raise asyncio.TimeoutError
                 if exit_task in done:
                     value_task.cancel()
                     await asyncio.gather(value_task, return_exceptions=True)
@@ -856,8 +903,9 @@ class SteamCmdExecutor:
                 exit_task.cancel()
                 await asyncio.gather(exit_task, return_exceptions=True)
                 value = await value_task
-            process.stdin.write((value + "\n").encode())
-            await process.stdin.drain()
+            if write_to_process:
+                process.stdin.write((value + "\n").encode())
+                await process.stdin.drain()
             if input_type is CredentialInput.SECRET and value:
                 # SteamCMD normally writes its own issued cache after login;
                 # do not retain the raw password once it has been supplied.
@@ -870,6 +918,8 @@ class SteamCmdExecutor:
         finally:
             if request_id is not None:
                 try:
-                    await self.credentials.cancel(request_id)
-                except (KeyError, RuntimeError):
+                    await self.credentials.withdraw(request_id, owner_id,
+                                                    "Steam authentication request ended")
+                except (KeyError, PermissionError, RuntimeError):
                     pass
+        return value

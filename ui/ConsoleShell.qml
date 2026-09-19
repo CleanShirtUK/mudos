@@ -955,6 +955,14 @@ Window {
         repeat: true
         running: root.credentialRequest.status === "requested" || root.credentialRequest.status === "waiting"
         onTriggered: {
+            if (root.credentialRequest.input_type === "waiting") {
+                if (root.credentialKeyboardShown) {
+                    root.request("/keyboard/hide", "POST", "", function() {
+                        root.credentialKeyboardShown = false
+                    })
+                }
+                return
+            }
             credentialInput.forceActiveFocus()
             if (!root.credentialKeyboardShown && !root.credentialKeyboardShowAttempted) {
                 root.credentialKeyboardShowAttempted = true
@@ -995,6 +1003,7 @@ Window {
             height: 70
             focus: parent.visible
             echoMode: root.credentialRequest.secret ? TextInput.Password : TextInput.Normal
+            visible: root.credentialRequest.input_type !== "waiting"
             text: root.credentialValue
             color: luluPalette.primaryText
             font.pixelSize: 28
@@ -1004,7 +1013,10 @@ Window {
         Text {
             anchors.centerIn: parent
             anchors.verticalCenterOffset: 100
-            text: root.credentialRequest.status === "waiting" ? "Waiting…  A: continue   B: cancel" : "A: submit   B: cancel"
+            text: root.credentialRequest.input_type === "waiting"
+                ? "A: Enter Code Instead   B: Cancel"
+                : (root.credentialRequest.status === "waiting"
+                    ? "Waiting…  A: continue   B: cancel" : "A: submit   B: cancel")
             color: luluPalette.secondaryText
             font.pixelSize: 20
         }
@@ -1612,8 +1624,9 @@ Window {
 
     function activate() {
         if (credentialRequest.status === "requested" || credentialRequest.status === "waiting") {
-            root.lastCredentialValue = credentialValue
-            root.request("/credential/submit", "POST", JSON.stringify({id: credentialRequest.id, value: credentialValue}),
+            root.lastCredentialValue = credentialRequest.input_type === "waiting"
+                ? "enter-code" : credentialValue
+            root.request("/credential/submit", "POST", JSON.stringify({id: credentialRequest.id, value: root.lastCredentialValue}),
                          function(data) {
                              var target = credentialTarget
                              credentialValue = ""

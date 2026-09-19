@@ -67,6 +67,48 @@ class SteamCmdExecutorTests(unittest.TestCase):
 
         asyncio.run(exercise())
 
+    def test_guard_wait_can_fall_back_to_code_in_same_auth_transaction(self) -> None:
+        async def exercise() -> None:
+            class Stdin:
+                def __init__(self) -> None:
+                    self.values: list[bytes] = []
+
+                def write(self, value: bytes) -> None:
+                    self.values.append(value)
+
+                async def drain(self) -> None:
+                    return None
+
+            class LiveProcess:
+                pid = 77
+
+                def __init__(self) -> None:
+                    self.stdin = Stdin()
+                    self.stop = asyncio.Event()
+
+                async def wait(self) -> int:
+                    await self.stop.wait()
+                    return 0
+
+            process = LiveProcess()
+            requests: list[tuple[CredentialInput, dict[str, object]]] = []
+
+            async def request(input_type, _title, _prompt, _minimum, _maximum, owner):
+                requests.append((input_type, owner))
+                return "enter-code" if input_type is CredentialInput.WAITING else "abcde"
+
+            executor = SteamCmdExecutor(account="user", platforms={"42": "linux"},
+                                        request_credential=request)
+            result = await executor._guard_interaction(process, "job-guard", "auth-1", 77)
+            self.assertEqual(result, "abcde")
+            self.assertEqual([item[0] for item in requests],
+                             [CredentialInput.WAITING, CredentialInput.CODE])
+            self.assertEqual(requests[0][1], requests[1][1])
+            self.assertEqual(process.stdin.values, [b"abcde\n"])
+            process.stop.set()
+
+        asyncio.run(exercise())
+
     def test_platform_policy_and_deterministic_commands(self) -> None:
         windows = SteamCmdExecutor(account="user", platforms={"263980": "windows"}, install_dir=Path("/games/Steam"))
         self.assertEqual(windows.command("263980"), [

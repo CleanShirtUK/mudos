@@ -1203,15 +1203,19 @@ class ConsoleInterface(ServiceInterface):
     @method()
     async def BeginOwnedCredentialRequest(self, title: "s", prompt: "s", input_type: "s",
                                           secret: "b", min_length: "u", max_length: "u",
-                                          owner_id: "s", owner_json: "s") -> "s":
+                                          owner_id: "s", owner_json: "s",
+                                          choices_json: "s") -> "s":
         try:
             owner = json.loads(owner_json) if owner_json else {}
             if not isinstance(owner, dict):
                 raise ValueError("credential owner metadata must be an object")
+            choices = json.loads(choices_json) if choices_json else []
+            if not isinstance(choices, list) or not all(isinstance(item, str) for item in choices):
+                raise ValueError("credential choices must be a string list")
             request = await self.credentials.request(
                 title, prompt, CredentialInput(input_type), secret=secret,
                 min_length=min_length, max_length=max_length, owner_id=owner_id,
-                owner=owner,
+                owner=owner, choices=tuple(choices),
             )
             return json.dumps(request.public_state(), separators=(",", ":"))
         except (RuntimeError, ValueError, TypeError) as error:
