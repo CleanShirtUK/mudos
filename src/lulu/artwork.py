@@ -4,13 +4,13 @@ from dataclasses import dataclass, field
 import hashlib
 import json
 import logging
-import os
 from pathlib import Path
 import urllib.error
 import urllib.parse
 import urllib.request
 
 from .paths import PATHS
+from .provider_config import ProviderConfigurationService
 
 
 @dataclass(slots=True)
@@ -56,9 +56,13 @@ class SteamGridDBArtwork:
     cache_dir: Path | None = None
     timeout: float = 4.0
     _logger: logging.Logger = field(init=False, repr=False)
+    endpoint: str = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
-        self.api_key = self.api_key or os.environ.get("LULU_STEAMGRIDDB_API_KEY")
+        config = ProviderConfigurationService.from_environment().provider("metadata.steamgriddb")
+        if self.api_key is None:
+            self.api_key = config.secret("api_key") if config.configured else None
+        self.endpoint = str(config.get("endpoint", "https://www.steamgriddb.com/api")).rstrip("/")
         self.cache_dir = self.cache_dir or PATHS.artwork_cache
         self._logger = logging.getLogger("lulu.artwork")
 
@@ -114,7 +118,7 @@ class SteamGridDBArtwork:
 
     def _request_json(self, path: str) -> dict[str, object]:
         request = urllib.request.Request(
-            "https://www.steamgriddb.com/api" + path,
+            self.endpoint + path,
             headers={"Authorization": f"Bearer {self.api_key}", "User-Agent": "Lulu/1"},
         )
         with urllib.request.urlopen(request, timeout=self.timeout) as response:

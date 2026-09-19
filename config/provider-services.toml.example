@@ -1,0 +1,24 @@
+# Mudos optional provider/service configuration.
+#
+# Precedence: built-in safe defaults, /etc/lulu/provider-services.toml,
+# $XDG_CONFIG_HOME/lulu/provider-services.toml, then the file named by
+# LULU_PROVIDER_CONFIG (development/testing override).
+#
+# Secret values never belong in this file. Store them with SecretStore and put
+# only a namespace/name reference in the secrets table.
+
+[metadata.steamgriddb]
+enabled = false
+endpoint = "https://www.steamgriddb.com/api"
+timeout = 4.0
+
+[metadata.steamgriddb.secrets]
+api_key = "steamgriddb/api-key"
+
+# Future services use the same namespace boundary, when implemented:
+# [metadata.igdb]
+# [metadata.protondb]
+# [providers.lutris]
+# [providers.flatpak]
+# [providers.torrent]
+# [providers.usenet]

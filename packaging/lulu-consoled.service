@@ -23,8 +23,6 @@ Environment=DISPLAY=:0
 Environment=XAUTHORITY=/home/lulu/.Xauthority
 Environment=WAYLAND_DISPLAY=gamescope-0
 Environment=PULSE_SERVER=unix:/run/user/958/pulse/native
-# Optional secret is supplied by a systemd drop-in, never in this unit.
-EnvironmentFile=-/etc/lulu/steamgriddb.env
 ExecStart=/usr/bin/python -m lulu.consoled
 Restart=on-failure
 RestartSec=2s

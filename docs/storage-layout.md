@@ -21,9 +21,11 @@ The following files remain root-owned because they are host/session inputs and
 must be available before the Lulu user session is initialized:
 
 - `presentation.conf`: root-installed display/session policy consumed by the systemd session unit.
-- `steamgriddb.env`: optional root-owned secret supplied through a systemd drop-in-compatible environment file.
+- `provider-services.toml`: optional root-owned site configuration for external services; it contains no secret values.
 
-No normal Lulu user or provider configuration belongs in `/etc/lulu`.
+User-level provider configuration belongs under `/home/lulu/.config/lulu`; only
+the optional site-level provider configuration belongs in `/etc/lulu`. External
+service secrets belong in the encrypted `SecretStore`, not an environment file.
 
 ## Compatibility Symlinks
 

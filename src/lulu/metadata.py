@@ -7,7 +7,6 @@ from datetime import datetime, timezone
 import hashlib
 import json
 import logging
-import os
 import re
 import time
 from pathlib import Path
@@ -16,6 +15,7 @@ import urllib.parse
 import urllib.request
 
 from .paths import PATHS
+from .provider_config import ProviderConfigurationService
 
 
 NOISE_WORDS = {
@@ -119,7 +119,9 @@ class SteamGridDBMetadata:
 
     def __init__(self, api_key: str | None = None, cache_dir: Path | None = None,
                  timeout: float = 4.0, now: callable = time.time) -> None:
-        self.api_key = api_key or os.environ.get("LULU_STEAMGRIDDB_API_KEY")
+        config = ProviderConfigurationService.from_environment().provider("metadata.steamgriddb")
+        self.api_key = api_key if api_key is not None else (config.secret("api_key") if config.configured else None)
+        self.endpoint = str(config.get("endpoint", "https://www.steamgriddb.com/api")).rstrip("/")
         self.cache_dir = cache_dir or PATHS.metadata_cache
         self.timeout = timeout
         self.now = now
@@ -186,7 +188,7 @@ class SteamGridDBMetadata:
 
     def _request_json(self, path: str) -> dict[str, object]:
         request = urllib.request.Request(
-            "https://www.steamgriddb.com/api" + path,
+            self.endpoint + path,
             headers={"Authorization": f"Bearer {self.api_key}", "User-Agent": "Lulu/1"},
         )
         with urllib.request.urlopen(request, timeout=self.timeout) as response:
