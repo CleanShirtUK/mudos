@@ -326,6 +326,10 @@ class SteamCmdExecutor:
         installed = await asyncio.to_thread(self._installed_owned_app, app_id)
         if installed is None:
             raise SteamCmdError("not-installed", "Steam title is not installed in the Mudos library")
+        if app_id not in self.platforms:
+            platform = await asyncio.to_thread(self.platform_resolver.resolve, app_id)
+            if platform is not None:
+                self.platforms[app_id] = platform
         command = self.uninstall_command(app_id)
         command[0] = self._require_executable()
         await reporter.state(JobState.STARTING, stage="removing")
