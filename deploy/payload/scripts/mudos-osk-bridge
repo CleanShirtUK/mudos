@@ -198,14 +198,14 @@ class Bridge:
                         raise RuntimeError("Mudos OSK toggle failed")
                 deadline = time.monotonic() + 2.0
                 while time.monotonic() < deadline:
-                    if visible() == want_visible and (not want_visible or self.active):
+                    if visible() == want_visible and self.active == want_visible:
                         break
                     self.visibility_event.clear()
                     try:
                         await asyncio.wait_for(self.visibility_event.wait(), .25)
                     except asyncio.TimeoutError:
                         pass
-                if visible() != want_visible or (want_visible and not self.active):
+                if visible() != want_visible or self.active != want_visible:
                     raise RuntimeError("Mudos OSK did not become ready")
             state = "visible" if visible() else "hidden"
             writer.write(("ok " + state + "\n").encode())
