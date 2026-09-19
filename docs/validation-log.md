@@ -56,18 +56,18 @@ not implied to have passed.
 
 ## IGDB metadata enrichment
 
-- Commit: pending
-- Automated validation: pending
+- Commit: `6721edf`
+- Automated validation: PASS; 362-test suite passed
 - Runtime activated: PASS; mutable development runtime refreshed
 - Physical/controller validation: not applicable
 - Visual validation: not applicable
 - Provider/live-service validation: pending live IGDB credentials and sample verification
-- Notes: mocked architecture validation will be recorded with the implementation commit
+- Notes: live IGDB credentials and sample verification remain pending
 
 ## ProtonDB metadata enrichment
 
-- Commit: pending
-- Automated validation: pending
+- Commit: `6721edf`
+- Automated validation: PASS; 362-test suite passed
 - Runtime activated: pending
 - Physical/controller validation: not applicable
 - Visual validation: pending future metadata presentation
