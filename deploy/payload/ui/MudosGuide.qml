@@ -69,6 +69,7 @@ Window {
             Repeater {
                 model: confirmationPending ? [{label: "Cancel"}, {label: confirmationAction}] : guideModel.actions
                 delegate: Item {
+                    id: rowDelegate
                     required property int index
                     required property var modelData
                     width: 472
@@ -104,8 +105,8 @@ Window {
                             anchors.fill: parent
                             anchors.leftMargin: 18
                             anchors.rightMargin: 18
-                            text: parent.parent.modelData.label
-                            color: parent.parent.textColor
+                            text: rowDelegate.modelData.label
+                            color: rowDelegate.textColor
                             font.family: typography.interfaceFamily
                             font.pixelSize: typography.size("body", 18)
                             verticalAlignment: Text.AlignVCenter
