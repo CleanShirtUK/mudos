@@ -360,7 +360,13 @@ public:
         : QQmlPropertyMap(this, parent), window_(window)
     {
         const bool initialized = SDL_Init(SDL_INIT_GAMEPAD);
-        qInfo() << "controller SDL init" << initialized;
+        qInfo() << "MUDOS_INPUT_INIT"
+                << "pid=" << QCoreApplication::applicationPid()
+                << "commit=" << qEnvironmentVariable("LULU_BUILD_ID",
+                                                       "sdl-routing-diagnostics")
+                << "executable=" << QCoreApplication::applicationFilePath()
+                << "sdlRevision=" << SDL_GetRevision()
+                << "controllerSubsystemInitialized=" << initialized;
         insert("controllerConnected", false);
         insert("controllerIndex", -1);
         insert("controllerIdentity", QString());
@@ -974,17 +980,30 @@ private:
     {
         SDL_Event event;
         while (SDL_PollEvent(&event)) {
-            if (event.type == SDL_EVENT_GAMEPAD_ADDED && !gamepad_) {
+            if (event.type == SDL_EVENT_GAMEPAD_ADDED) {
+                qInfo() << "MUDOS_SDL_DEVICE" << "event=GAMEPAD_ADDED"
+                        << "instance=" << event.gdevice.which
+                        << "hasOpenGamepad=" << (gamepad_ != nullptr);
+                if (gamepad_)
+                    continue;
                 gamepad_ = SDL_OpenGamepad(event.gdevice.which);
                 if (gamepad_) {
+                    qInfo() << "MUDOS_SDL_DEVICE" << "event=GAMEPAD_OPENED"
+                            << "instance=" << event.gdevice.which
+                            << "name=" << SDL_GetGamepadName(gamepad_);
                     insert("controllerConnected", true);
                     insert("controllerIndex", 1);
                     insert("controllerIdentity", QString::fromUtf8(SDL_GetGamepadName(gamepad_)));
                 }
-            } else if (event.type == SDL_EVENT_GAMEPAD_REMOVED && gamepad_
-                       && event.gdevice.which == SDL_GetGamepadID(gamepad_)) {
+            } else if (event.type == SDL_EVENT_GAMEPAD_REMOVED) {
+                qInfo() << "MUDOS_SDL_DEVICE" << "event=GAMEPAD_REMOVED"
+                        << "instance=" << event.gdevice.which
+                        << "openInstance=" << (gamepad_ ? SDL_GetGamepadID(gamepad_) : 0);
+                if (!gamepad_ || event.gdevice.which != SDL_GetGamepadID(gamepad_))
+                    continue;
                 SDL_CloseGamepad(gamepad_);
                 gamepad_ = nullptr;
+                qInfo() << "MUDOS_SDL_DEVICE" << "event=GAMEPAD_CLOSED";
                 insert("controllerConnected", false);
                 insert("controllerIndex", -1);
                 insert("controllerIdentity", QString());
@@ -992,6 +1011,10 @@ private:
                 // the selected device disappears; reopen the current
                 // navigation slot immediately for failover.
                 scanGamepads();
+            } else if (event.type == SDL_EVENT_GAMEPAD_REMAPPED) {
+                qInfo() << "MUDOS_SDL_DEVICE" << "event=GAMEPAD_REMAPPED"
+                        << "instance=" << event.gdevice.which
+                        << "openInstance=" << (gamepad_ ? SDL_GetGamepadID(gamepad_) : 0);
             } else if (event.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN) {
                 const bool allowed = dispatchAllowed();
                 qInfo() << "MUDOS_INPUT"
