@@ -71,5 +71,5 @@ not implied to have passed.
 - Runtime activated: PASS; mutable development runtime refreshed
 - Physical/controller validation: not applicable
 - Visual validation: pending future metadata presentation
-- Provider/live-service validation: pending endpoint sample verification
-- Notes: AppID-only scope; no ROM/title matching
+- Provider/live-service validation: PASS; unauthenticated endpoint sample AppID `220` returned tier `platinum`, confidence `strong`, score `0.91`
+- Notes: AppID-only scope; no ROM/title matching. Catalogue integration remains pending live configured run.
