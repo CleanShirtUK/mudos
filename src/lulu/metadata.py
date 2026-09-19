@@ -339,7 +339,13 @@ def presentation_metadata(candidate: MetadataCandidate) -> dict[str, object]:
     except (TypeError, ValueError):
         release_year = None
     result: dict[str, object] = {"genres": genres, "release_date": release_date, "release_year": release_year}
-    for key in ("total_playtime", "local_multiplayer", "online_multiplayer", "game_mode", "protondb_rating"):
+    for key in ("summary", "developer", "publisher", "franchise", "collection", "igdb_id",
+                "total_playtime", "local_multiplayer", "online_multiplayer", "game_mode", "protondb_rating"):
         if key in raw and raw[key] is not None:
             result[key] = raw[key]
+    for key in ("game_modes", "platforms"):
+        values = raw.get(key, [])
+        if isinstance(values, list):
+            result[key] = [str(item.get("name", "")).strip() if isinstance(item, dict) else str(item).strip()
+                           for item in values if str(item).strip()]
     return result

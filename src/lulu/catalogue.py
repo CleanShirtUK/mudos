@@ -84,6 +84,22 @@ class CatalogueGame:
     artwork_source_url: str = ""
     metadata_resolver_version: int = 0
     installed_game_id: str = ""
+    summary: str = ""
+    game_modes: tuple[str, ...] = ()
+    developer: str = ""
+    publisher: str = ""
+    platforms: tuple[str, ...] = ()
+    franchise: str = ""
+    collection: str = ""
+    igdb_id: str = ""
+    igdb_fetched_at: int | None = None
+    protondb_tier: str | None = None
+    protondb_confidence: str | None = None
+    protondb_score: float | None = None
+    protondb_trending_tier: str | None = None
+    protondb_best_tier: str | None = None
+    protondb_report_count: int | None = None
+    protondb_fetched_at: int | None = None
 
     @classmethod
     def from_steam(cls, game: InstalledSteamGame) -> "CatalogueGame":
@@ -163,6 +179,8 @@ class CatalogueGame:
     def as_dict(self) -> dict[str, object]:
         value = asdict(self)
         value["genres"] = list(self.genres)
+        value["game_modes"] = list(self.game_modes)
+        value["platforms"] = list(self.platforms)
         return value
 
 
@@ -192,7 +210,20 @@ SELECT_COLUMNS = (
     + ", availability_state, provider_record_id, content_identity, catalogue_source, genres, "
       "release_date, release_year, total_playtime, local_multiplayer, online_multiplayer, "
       "game_mode, protondb_rating, last_seen_at, last_synced_at, artwork_source_url"
-       ", metadata_resolver_version, installed_game_id"
+       ", metadata_resolver_version, installed_game_id, summary, game_modes, developer, publisher, platforms, "
+       "franchise, collection, igdb_id, igdb_fetched_at, protondb_tier, protondb_confidence, protondb_score, "
+       "protondb_trending_tier, protondb_best_tier, protondb_report_count, protondb_fetched_at"
+)
+SELECT_FIELD_ORDER = (
+    "game_id", "provider", "provider_id", "title", "platform", "install_state", "launchable",
+    "install_dir", "artwork_url", "last_played", "runtime", "platform_label", *IDENTITY_COLUMNS, "availability_state",
+    "provider_record_id", "content_identity", "catalogue_source", "genres", "release_date",
+    "release_year", "total_playtime", "local_multiplayer", "online_multiplayer", "game_mode",
+    "protondb_rating", "last_seen_at", "last_synced_at", "artwork_source_url",
+    "metadata_resolver_version", "installed_game_id", "summary", "game_modes", "developer",
+    "publisher", "platforms", "franchise", "collection", "igdb_id", "igdb_fetched_at", "protondb_tier",
+    "protondb_confidence", "protondb_score", "protondb_trending_tier", "protondb_best_tier",
+    "protondb_report_count", "protondb_fetched_at",
 )
 
 
@@ -229,10 +260,27 @@ class CatalogueStore:
                        "local_multiplayer": "INTEGER", "online_multiplayer": "INTEGER", "game_mode": "TEXT",
                         "protondb_rating": "TEXT", "last_seen_at": "INTEGER", "last_synced_at": "INTEGER",
                         "artwork_source_url": "TEXT NOT NULL DEFAULT ''", "metadata_resolver_version": "INTEGER NOT NULL DEFAULT 0",
-                        "installed_game_id": "TEXT NOT NULL DEFAULT ''"}
+                       "installed_game_id": "TEXT NOT NULL DEFAULT ''", "summary": "TEXT NOT NULL DEFAULT ''",
+                       "game_modes": "TEXT NOT NULL DEFAULT '[]'", "developer": "TEXT NOT NULL DEFAULT ''",
+                       "publisher": "TEXT NOT NULL DEFAULT ''", "platforms": "TEXT NOT NULL DEFAULT '[]'",
+                       "franchise": "TEXT NOT NULL DEFAULT ''", "collection": "TEXT NOT NULL DEFAULT ''",
+                       "igdb_id": "TEXT NOT NULL DEFAULT ''", "igdb_fetched_at": "INTEGER",
+                       "protondb_tier": "TEXT", "protondb_confidence": "TEXT", "protondb_score": "REAL",
+                       "protondb_trending_tier": "TEXT", "protondb_best_tier": "TEXT",
+                       "protondb_report_count": "INTEGER", "protondb_fetched_at": "INTEGER"}
         for name, definition in migrations.items():
             if name not in columns:
                 self.connection.execute(f"ALTER TABLE games ADD COLUMN {name} {definition}")
+        self.connection.commit()
+        self.connection.execute(
+            """CREATE TABLE IF NOT EXISTS metadata_enrichment (
+                provider TEXT NOT NULL, game_id TEXT NOT NULL, external_id TEXT NOT NULL,
+                fetched_at INTEGER NOT NULL, source_updated_at INTEGER, match_method TEXT NOT NULL,
+                confidence REAL NOT NULL DEFAULT 0, status TEXT NOT NULL, normalized_json TEXT NOT NULL,
+                PRIMARY KEY(provider, game_id),
+                FOREIGN KEY(game_id) REFERENCES games(game_id)
+            )"""
+        )
         self.connection.commit()
 
     @contextmanager
@@ -273,7 +321,7 @@ class CatalogueStore:
     @staticmethod
     def _field_value(game: CatalogueGame, name: str) -> object:
         value = getattr(game, name)
-        return list(value) if name == "genres" else value
+        return list(value) if name in {"genres", "game_modes", "platforms"} else value
 
     @classmethod
     def meaningful_changes(cls, before: CatalogueGame, after: CatalogueGame) -> tuple[str, ...]:
@@ -284,7 +332,7 @@ class CatalogueStore:
 
     @staticmethod
     def _sql_value(name: str, value: object) -> object:
-        return json.dumps(value, sort_keys=True) if name == "genres" else value
+        return json.dumps(value, sort_keys=True) if name in {"genres", "game_modes", "platforms"} else value
 
     def _commit_if_direct(self) -> None:
         if self._transaction_depth == 0:
@@ -371,6 +419,22 @@ class CatalogueStore:
             online_multiplayer=existing.online_multiplayer if existing.online_multiplayer is not None else incoming.online_multiplayer,
             game_mode=existing.game_mode if existing.game_mode is not None else incoming.game_mode,
             protondb_rating=existing.protondb_rating if existing.protondb_rating is not None else incoming.protondb_rating,
+            summary=existing.summary or incoming.summary,
+            game_modes=existing.game_modes or incoming.game_modes,
+            developer=existing.developer or incoming.developer,
+            publisher=existing.publisher or incoming.publisher,
+            platforms=existing.platforms or incoming.platforms,
+            franchise=existing.franchise or incoming.franchise,
+            collection=existing.collection or incoming.collection,
+            igdb_id=existing.igdb_id or incoming.igdb_id,
+            igdb_fetched_at=existing.igdb_fetched_at or incoming.igdb_fetched_at,
+            protondb_tier=existing.protondb_tier or incoming.protondb_tier,
+            protondb_confidence=existing.protondb_confidence or incoming.protondb_confidence,
+            protondb_score=existing.protondb_score if existing.protondb_score is not None else incoming.protondb_score,
+            protondb_trending_tier=existing.protondb_trending_tier or incoming.protondb_trending_tier,
+            protondb_best_tier=existing.protondb_best_tier or incoming.protondb_best_tier,
+            protondb_report_count=existing.protondb_report_count if existing.protondb_report_count is not None else incoming.protondb_report_count,
+            protondb_fetched_at=existing.protondb_fetched_at or incoming.protondb_fetched_at,
             normalized_search_title=incoming.normalized_search_title,
             metadata_resolver_version=existing.metadata_resolver_version if preserve_metadata else incoming.metadata_resolver_version,
             title=existing.title if preserve_title else incoming.title,
@@ -626,10 +690,12 @@ class CatalogueStore:
             games = []
             for row in self.connection.execute(query, parameters):
                 values = list(row)
-                try:
-                    values[28] = tuple(json.loads(values[28] or "[]"))
-                except (TypeError, ValueError, json.JSONDecodeError):
-                    values[28] = ()
+                for name in ("genres", "game_modes", "platforms"):
+                    index = SELECT_FIELD_ORDER.index(name)
+                    try:
+                        values[index] = tuple(json.loads(values[index] or "[]"))
+                    except (TypeError, ValueError, json.JSONDecodeError):
+                        values[index] = ()
                 games.append(CatalogueGame(*values))
             return games
 
@@ -734,6 +800,14 @@ class CatalogueStore:
             online_multiplayer=presentation.get("online_multiplayer") if presentation.get("online_multiplayer") is not None else existing.online_multiplayer,
             game_mode=presentation.get("game_mode") or existing.game_mode,
             protondb_rating=presentation.get("protondb_rating") or existing.protondb_rating,
+            summary=presentation.get("summary") or existing.summary,
+            game_modes=tuple(presentation.get("game_modes", ())) or existing.game_modes,
+            developer=presentation.get("developer") or existing.developer,
+            publisher=presentation.get("publisher") or existing.publisher,
+            platforms=tuple(presentation.get("platforms", ())) or existing.platforms,
+            franchise=presentation.get("franchise") or existing.franchise,
+            collection=presentation.get("collection") or existing.collection,
+            igdb_id=str(presentation.get("igdb_id") or existing.igdb_id),
             metadata_resolver_version=METADATA_RESOLVER_VERSION,
             artwork_url="",
         )
@@ -762,6 +836,73 @@ class CatalogueStore:
         with self.atomic():
             self._start_operation()
             delta = self._apply_existing_locked(existing, after)
+        self._finish_operation([delta] if delta else [])
+        return delta
+
+    def enrichment_record(self, provider: str, game_id: str) -> dict[str, object] | None:
+        row = self.connection.execute(
+            "SELECT external_id, fetched_at, source_updated_at, match_method, confidence, status, normalized_json "
+            "FROM metadata_enrichment WHERE provider=? AND game_id=?", (provider, game_id)
+        ).fetchone()
+        if row is None:
+            return None
+        try:
+            normalized = json.loads(row[6])
+        except (TypeError, ValueError, json.JSONDecodeError):
+            normalized = {}
+        return {"provider": provider, "game_id": game_id, "external_id": row[0],
+                "fetched_at": row[1], "source_updated_at": row[2], "match_method": row[3],
+                "confidence": row[4], "status": row[5], "normalized": normalized}
+
+    def enrichment_is_fresh(self, provider: str, game_id: str, ttl: int,
+                            now: int | None = None) -> bool:
+        record = self.enrichment_record(provider, game_id)
+        return bool(record and int(record["fetched_at"]) + ttl > (int(time.time()) if now is None else now))
+
+    def apply_enrichment(self, provider: str, game_id: str, external_id: str,
+                         normalized: dict[str, object], *, match_method: str,
+                         confidence: float, source_updated_at: int | None = None,
+                         fetched_at: int | None = None, status: str = "matched") -> CatalogueDelta | None:
+        existing = self.get_game(game_id)
+        if existing is None:
+            return None
+        fetched = int(time.time()) if fetched_at is None else fetched_at
+        after = replace(
+            existing,
+            summary=str(normalized.get("summary") or existing.summary),
+            release_date=str(normalized.get("release_date") or existing.release_date) if normalized.get("release_date") or existing.release_date else None,
+            release_year=int(normalized["release_year"]) if normalized.get("release_year") is not None else existing.release_year,
+            genres=tuple(str(item) for item in normalized.get("genres", ())) or existing.genres,
+            game_modes=tuple(str(item) for item in normalized.get("game_modes", ())) or existing.game_modes,
+            developer=str(normalized.get("developer") or existing.developer),
+            publisher=str(normalized.get("publisher") or existing.publisher),
+            platforms=tuple(str(item) for item in normalized.get("platforms", ())) or existing.platforms,
+            franchise=str(normalized.get("franchise") or existing.franchise),
+            collection=str(normalized.get("collection") or existing.collection),
+            igdb_id=str(external_id) if provider == "igdb" else existing.igdb_id,
+            igdb_fetched_at=fetched if provider == "igdb" else existing.igdb_fetched_at,
+            protondb_tier=str(normalized.get("tier") or existing.protondb_tier) if provider == "protondb" else existing.protondb_tier,
+            protondb_confidence=str(normalized.get("confidence") or existing.protondb_confidence) if provider == "protondb" else existing.protondb_confidence,
+            protondb_score=float(normalized["score"]) if provider == "protondb" and normalized.get("score") is not None else existing.protondb_score,
+            protondb_trending_tier=str(normalized.get("trending_tier") or existing.protondb_trending_tier) if provider == "protondb" else existing.protondb_trending_tier,
+            protondb_best_tier=str(normalized.get("best_tier") or existing.protondb_best_tier) if provider == "protondb" else existing.protondb_best_tier,
+            protondb_report_count=int(normalized["report_count"]) if provider == "protondb" and normalized.get("report_count") is not None else existing.protondb_report_count,
+            protondb_fetched_at=fetched if provider == "protondb" else existing.protondb_fetched_at,
+            protondb_rating=(str(normalized.get("tier")) if provider == "protondb" and normalized.get("tier") else existing.protondb_rating),
+        )
+        with self.atomic():
+            self._start_operation()
+            delta = self._apply_existing_locked(existing, after)
+            self.connection.execute(
+                "INSERT INTO metadata_enrichment(provider, game_id, external_id, fetched_at, source_updated_at, "
+                "match_method, confidence, status, normalized_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) "
+                "ON CONFLICT(provider, game_id) DO UPDATE SET external_id=excluded.external_id, "
+                "fetched_at=excluded.fetched_at, source_updated_at=excluded.source_updated_at, "
+                "match_method=excluded.match_method, confidence=excluded.confidence, status=excluded.status, "
+                "normalized_json=excluded.normalized_json",
+                (provider, game_id, external_id, fetched, source_updated_at, match_method, confidence,
+                status, json.dumps(normalized, sort_keys=True)),
+            )
         self._finish_operation([delta] if delta else [])
         return delta
 

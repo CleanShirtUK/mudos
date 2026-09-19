@@ -54,12 +54,22 @@ not implied to have passed.
 - Provider/live-service validation: awaiting natural recurrence of unexpected authentication request
 - Notes: no test login was performed
 
-## Provider/API configuration foundation
+## IGDB metadata enrichment
 
-- Commit: `83a0fc4`
-- Automated validation: PASS; configuration-focused tests and full suite passed
+- Commit: pending
+- Automated validation: pending
 - Runtime activated: PASS; mutable development runtime refreshed
 - Physical/controller validation: not applicable
 - Visual validation: not applicable
-- Provider/live-service validation: not attempted
-- Notes: configuration architecture only; no metadata enrichment implemented
+- Provider/live-service validation: pending live IGDB credentials and sample verification
+- Notes: mocked architecture validation will be recorded with the implementation commit
+
+## ProtonDB metadata enrichment
+
+- Commit: pending
+- Automated validation: pending
+- Runtime activated: pending
+- Physical/controller validation: not applicable
+- Visual validation: pending future metadata presentation
+- Provider/live-service validation: pending endpoint sample verification
+- Notes: AppID-only scope; no ROM/title matching

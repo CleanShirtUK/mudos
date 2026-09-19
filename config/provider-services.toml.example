@@ -15,9 +15,22 @@ timeout = 4.0
 [metadata.steamgriddb.secrets]
 api_key = "steamgriddb/api-key"
 
-# Future services use the same namespace boundary, when implemented:
-# [metadata.igdb]
-# [metadata.protondb]
+[metadata.igdb]
+enabled = false
+client_id = ""
+endpoint = "https://api.igdb.com/v4"
+auth_endpoint = "https://id.twitch.tv/oauth2/token"
+timeout = 5.0
+
+[metadata.igdb.secrets]
+client_secret = "igdb/client-secret"
+
+[metadata.protondb]
+enabled = false
+endpoint = "https://www.protondb.com/api/v1/reports/summaries"
+timeout = 4.0
+
+# Future services use the same namespace boundary when implemented:
 # [providers.lutris]
 # [providers.flatpak]
 # [providers.torrent]
