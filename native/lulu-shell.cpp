@@ -541,10 +541,21 @@ private:
 
     void restoreInput()
     {
+        const xcb_window_t restoreWindow = targetWindow_;
         if (!guideOwnerComposite_.isEmpty())
             setInterceptMode(guideOwnerComposite_, 1);
         guideOwnerComposite_.clear();
         clearTarget();
+        if (restoreWindow != XCB_WINDOW_NONE) {
+            auto *x11 = qGuiApp->nativeInterface<QNativeInterface::QX11Application>();
+            if (x11 && x11->connection()) {
+                xcb_set_input_focus(x11->connection(), XCB_INPUT_FOCUS_NONE,
+                                    restoreWindow, XCB_CURRENT_TIME);
+                xcb_flush(x11->connection());
+                qInfo() << "GUIDE_INPUT_LIFECYCLE" << "restore-focus"
+                        << "window=" << restoreWindow;
+            }
+        }
     }
 
     bool guideVisible() const
@@ -728,6 +739,13 @@ private:
         insert(QStringLiteral("guideSelection"), 0);
         insert(QStringLiteral("guideConfirmationPending"), false);
         insert(QStringLiteral("guideVisible"), true);
+        if (!setInterceptMode(guideOwnerComposite_, 2)) {
+            insert(QStringLiteral("guideVisible"), false);
+            restoreInput();
+            return false;
+        }
+        qInfo() << "GUIDE_INPUT_LIFECYCLE" << "active"
+                << "interceptMode=" << interceptMode(guideOwnerComposite_);
         return true;
     }
 

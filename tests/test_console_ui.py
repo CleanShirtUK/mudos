@@ -104,7 +104,9 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertIn("focusedCardSurface", options)
         self.assertIn("navigationText", options)
         self.assertIn("GUIDE_INPUT_LIFECYCLE", native)
-        self.assertNotIn("setInterceptMode(guideOwnerComposite_, 2)", native)
+        self.assertIn("setInterceptMode(guideOwnerComposite_, 2)", native)
+        self.assertIn('"restore-focus"', native)
+        self.assertIn("onVisibleChanged", host)
         self.assertIn("GUIDE_INPUT_COMPOSITE_REBOUND", native)
 
     def test_reset_mudos_uses_the_shared_session_boundary(self) -> None:

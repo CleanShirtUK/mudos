@@ -23,6 +23,13 @@ MudosOverlayWindow {
     signal queryEdited(string value)
     signal titleEdited(string value)
 
+    // Dismissal is driven by the native Guide model. Ensure the real external
+    // overlay window leaves the focus stack along with the visual panel.
+    onVisibleChanged: {
+        if (!root.visible)
+            root.hide()
+    }
+
     MudosGuidePanel {
         visible: root.guideModel.guideVisible
         anchors.fill: parent
