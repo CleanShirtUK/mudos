@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Effects
 import QtQuick.Window
 
 Window {
@@ -18,41 +19,95 @@ Window {
         id: luluPalette
     }
 
+    Typography {
+        id: typography
+    }
+
     Rectangle {
+        id: panel
         anchors.centerIn: parent
         width: 520
-        height: confirmationPending ? 250 : Math.max(250, 110 + (guideModel.actions.length * 60))
-        color: luluPalette.guideSurface
-        border.color: luluPalette.guideBorder
-        border.width: 2
-
-        Text {
-            x: 24
-            y: 18
-            text: confirmationPending ? "Confirm" : "Guide"
-            color: luluPalette.primaryText
-            font.pixelSize: 28
-        }
+        height: Math.max(250, 110 + guideModel.actions.length * 68)
+        radius: 10
+        color: luluPalette.overlaySurface
+        border.color: luluPalette.glassBorder
+        border.width: 1
 
         Column {
-            x: 24
-            y: 62
-            spacing: 12
+            anchors.fill: parent
+            anchors.margins: 24
+            spacing: 18
+
+            Text {
+                text: confirmationPending ? "CONFIRM" : "GUIDE"
+                color: luluPalette.headingAccent
+                font.family: typography.majorHeadingFamily
+                font.weight: typography.majorHeadingWeight
+                font.pixelSize: typography.size("section", 30)
+                font.letterSpacing: 5
+                layer.enabled: true
+                layer.effect: MultiEffect {
+                    shadowEnabled: true
+                    shadowColor: "#000000"
+                    shadowOpacity: 0.35
+                    shadowBlur: 0.2
+                    shadowVerticalOffset: 1
+                }
+            }
+
+            Column {
+                width: 472
+                spacing: 10
             Repeater {
                 model: confirmationPending ? [{label: "Cancel"}, {label: confirmationAction}] : guideModel.actions
-                delegate: Rectangle {
+                delegate: Item {
+                    required property int index
+                    required property var modelData
                     width: 472
-                    height: 48
-                    color: index === guideModel.selection ? luluPalette.guideBorder : luluPalette.guideItemSurface
-                    Text {
+                    height: 58
+                    z: index === guideModel.selection ? 1 : 0
+                    property real selectionProgress: index === guideModel.selection ? 1 : 0
+                    Behavior on selectionProgress {
+                        NumberAnimation {
+                            duration: 180
+                            easing.type: Easing.OutQuint
+                        }
+                    }
+
+                    Rectangle {
                         anchors.fill: parent
-                        anchors.leftMargin: 14
-                        text: modelData.label
-                        color: index === guideModel.selection ? luluPalette.guideSelectedText : luluPalette.primaryText
-                        font.pixelSize: 18
-                        verticalAlignment: Text.AlignVCenter
+                        scale: 1 + 0.01 * parent.selectionProgress
+                        transformOrigin: Item.Center
+                        radius: 8
+                        color: parent.selectionProgress > 0
+                            ? luluPalette.focusedCardSurface : luluPalette.cardSurface
+                        border.color: parent.selectionProgress > 0
+                            ? luluPalette.focusIndicator : luluPalette.glassBorder
+                        border.width: 1
+
+                        Text {
+                            anchors.fill: parent
+                            anchors.leftMargin: 18
+                            anchors.rightMargin: 18
+                            text: parent.parent.modelData.label
+                            color: parent.parent.selectionProgress > 0
+                                ? luluPalette.primaryText : luluPalette.navigationText
+                            font.family: typography.interfaceFamily
+                            font.pixelSize: typography.size("body", 18)
+                            verticalAlignment: Text.AlignVCenter
+                            elide: Text.ElideRight
+                            layer.enabled: true
+                            layer.effect: MultiEffect {
+                                shadowEnabled: true
+                                shadowColor: "#000000"
+                                shadowOpacity: 0.35
+                                shadowBlur: 0.2
+                                shadowVerticalOffset: 1
+                            }
+                        }
                     }
                 }
+            }
             }
         }
     }
