@@ -96,6 +96,14 @@ class JobManager:
         for existing in self.jobs.values():
             if (existing.provider == provider
                     and existing.content_identity == content_identity
+                    and existing.operation != operation
+                    and existing.state in {
+                        JobState.QUEUED, JobState.STARTING, JobState.TRANSFERRING,
+                        JobState.FINALIZING, JobState.PAUSED, JobState.CANCELLING,
+                    }):
+                raise ValueError("content has an active conflicting operation")
+            if (existing.provider == provider
+                    and existing.content_identity == content_identity
                     and existing.operation == operation
                     and existing.state in {
                         JobState.QUEUED, JobState.STARTING, JobState.TRANSFERRING,

@@ -73,3 +73,13 @@ not implied to have passed.
 - Visual validation: pending future metadata presentation
 - Provider/live-service validation: PASS; unauthenticated endpoint sample AppID `220` returned tier `platinum`, confidence `strong`, score `0.91`
 - Notes: AppID-only scope; no ROM/title matching. Catalogue integration remains pending live configured run.
+
+## Provider-owned uninstall flow
+
+- Commit: pending
+- Automated validation: pending
+- Local disposable-ROM backend validation: pending
+- RomM provenance preservation: pending
+- Steam provider automated validation: pending
+- Physical Game Options validation: pending
+- Live Steam uninstall/reinstall: pending explicit acceptance cycle

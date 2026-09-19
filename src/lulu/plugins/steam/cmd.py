@@ -304,7 +304,67 @@ class SteamCmdExecutor:
                     "+app_update", app_id, "validate", "+quit"]
         return command
 
+    def uninstall_command(self, app_id: str) -> list[str]:
+        """Build SteamCMD's provider-native uninstall operation.
+
+        SteamCMD updates the app manifest and owns the Steam library mutation;
+        Mudos deliberately never removes Steam files directly.
+        """
+        platform = self.platforms.get(app_id)
+        if platform not in {"windows", "linux"}:
+            raise SteamCmdError("unknown-platform", f"Steam platform is unknown for AppID {app_id}")
+        if not self.account:
+            raise SteamCmdError("authentication-required", "Steam download authentication required")
+        command = [self.executable]
+        if platform == "windows":
+            command += ["+@sSteamCmdForcePlatformType", "windows"]
+        command += ["+login", self.account, "+app_uninstall", app_id, "+quit"]
+        return command
+
+    async def uninstall(self, job: DownloadJob, reporter: JobReporter) -> None:
+        app_id = self._app_id(job.content_identity)
+        installed = await asyncio.to_thread(self._installed_owned_app, app_id)
+        if installed is None:
+            raise SteamCmdError("not-installed", "Steam title is not installed in the Mudos library")
+        command = self.uninstall_command(app_id)
+        command[0] = self._require_executable()
+        await reporter.state(JobState.STARTING, stage="removing")
+        process = None
+        try:
+            process = await asyncio.create_subprocess_exec(
+                *command, stdin=asyncio.subprocess.DEVNULL,
+                stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+                start_new_session=True,
+            )
+            stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=120)
+        except asyncio.TimeoutError as error:
+            if process is not None and process.returncode is None:
+                process.kill()
+            if process is not None:
+                await process.wait()
+            raise SteamCmdError("provider-timeout", "Steam uninstall timed out", retryable=True) from error
+        except OSError as error:
+            raise SteamCmdError("provider-failure", "Steam uninstall could not start", retryable=True) from error
+        if process.returncode != 0:
+            raise SteamCmdError("provider-failure", "Steam uninstall failed", details={"exit_code": process.returncode})
+        await reporter.state(JobState.FINALIZING, stage="finalizing")
+
+    def _installed_owned_app(self, app_id: str) -> InstalledSteamGame | None:
+        for game in self._provider_installed_games():
+            if game.app_id == app_id and Path(game.library_root).resolve() == Path(self.install_dir).resolve():
+                return game
+        return None
+
+    def _provider_installed_games(self) -> list[InstalledSteamGame]:
+        # Import locally to keep the command executor independent of the
+        # session Steam client adapter and easy to fixture in tests.
+        from .provider import SteamProvider
+        return SteamProvider().list_installed(roots=(self.install_dir,))
+
     async def run(self, job: DownloadJob, reporter: JobReporter) -> None:
+        if job.operation.value == "remove":
+            await self.uninstall(job, reporter)
+            return
         app_id = self._app_id(job.content_identity)
         if app_id not in self.platforms:
             platform = await asyncio.to_thread(self.platform_resolver.resolve, app_id)

@@ -19,6 +19,9 @@ from .acquisition_store import AcquisitionStore
 from .paths import PATHS
 from .plugins import PluginRegistry
 from .credential import CredentialInput
+from .catalogue import CatalogueStore
+from .local_uninstall import LocalUninstallExecutor
+from .jobs import JobOperation
 
 
 BUS_NAME = "org.lulu.Acquisitiond"
@@ -34,9 +37,10 @@ LOGGER = logging.getLogger("lulu.acquisitiond")
 
 
 class AcquisitionInterface(ServiceInterface):
-    def __init__(self, manager: JobManager) -> None:
+    def __init__(self, manager: JobManager, catalogue: CatalogueStore) -> None:
         super().__init__(INTERFACE_NAME)
         self.manager = manager
+        self.catalogue = catalogue
         manager._on_change = self._publish
 
     def _snapshot(self) -> str:
@@ -63,6 +67,45 @@ class AcquisitionInterface(ServiceInterface):
                                        cancellation_supported=True).job_id
         except ValueError as error:
             raise DBusError("org.lulu.Acquisition.Error.Unavailable", str(error)) from error
+
+    def _uninstall_target(self, game_id: str) -> tuple[object, str, str, str]:
+        game = self.catalogue.get_game(game_id)
+        if game is None:
+            raise DBusError("org.lulu.Acquisition.Error.NotFound", "game was not found")
+        target = game
+        if game.provider == "romm" and game.installed_game_id:
+            target = self.catalogue.get_game(game.installed_game_id) or game
+        if target.install_state != "installed":
+            raise DBusError("org.lulu.Acquisition.Error.NotInstalled", "game is not installed")
+        provider = str(target.provider)
+        identity = str(target.game_id if provider == "local" else f"steam:{target.provider_id}")
+        executor = self.manager.executors.get(provider)
+        if executor is None or not hasattr(executor, "uninstall"):
+            raise DBusError("org.lulu.Acquisition.Error.Unsupported", "uninstall is not supported")
+        return target, provider, identity, str(target.title)
+
+    @method()
+    def CanUninstall(self, game_id: "s") -> "s":
+        try:
+            target, provider, identity, title = self._uninstall_target(game_id)
+            description = "Remove local installed content" if provider == "local" else "Remove Steam installation"
+            return json.dumps({"supported": True, "installed": True, "provider": provider,
+                               "operation": "remove", "description": description,
+                               "target_game_id": target.game_id}, sort_keys=True)
+        except DBusError:
+            return json.dumps({"supported": False, "installed": False}, sort_keys=True)
+
+    @method()
+    def UninstallGame(self, game_id: "s") -> "s":
+        try:
+            target, provider, identity, title = self._uninstall_target(game_id)
+            return self.manager.submit(provider, identity, title,
+                                       operation=JobOperation.REMOVE,
+                                       cancellation_supported=False).job_id
+        except DBusError:
+            raise
+        except ValueError as error:
+            raise DBusError("org.lulu.Acquisition.Error.Conflict", str(error)) from error
 
     @method()
     async def CancelJob(self, job_id: "s") -> "":
@@ -113,6 +156,8 @@ async def serve(bus_type: BusType = BusType.SESSION) -> None:
         item["provider"]: int(item.get("limit", 1)) for item in contributions
         if isinstance(item, dict) and item.get("provider")
     }, store=store)
+    catalogue = CatalogueStore(PATHS.catalogue_db)
+    manager.register_executor("local", LocalUninstallExecutor(catalogue), limit=1)
     for item in contributions:
         if isinstance(item, dict) and item.get("provider") and item.get("executor"):
             executor = item["executor"]
@@ -135,7 +180,7 @@ async def serve(bus_type: BusType = BusType.SESSION) -> None:
                         await asyncio.sleep(0.25)
                 executor.request_credential = request_credential
             manager.register_executor(item["provider"], executor, limit=int(item.get("limit", 1)))
-    interface = AcquisitionInterface(manager)
+    interface = AcquisitionInterface(manager, catalogue)
     bus.export(OBJECT_PATH, interface)
     await bus.request_name(BUS_NAME)
     interface.StateChanged(interface._snapshot())

@@ -44,6 +44,13 @@ class SteamCmdExecutorTests(unittest.TestCase):
         with self.assertRaisesRegex(Exception, "unknown"):
             linux.command("263980")
 
+    def test_uninstall_is_provider_native_and_does_not_use_rm(self) -> None:
+        executor = SteamCmdExecutor(account="user", platforms={"42": "linux"},
+                                    install_dir=Path("/games/Steam"))
+        command = executor.uninstall_command("42")
+        self.assertEqual(command[-5:], ["+login", "user", "+app_uninstall", "42", "+quit"])
+        self.assertNotIn("rm", " ".join(command))
+
     def test_executable_resolution_override_and_canonical(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             executable = Path(directory) / "steamcmd.sh"

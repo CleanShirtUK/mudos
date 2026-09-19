@@ -241,6 +241,7 @@ Window {
     property int gameOptionsIndex: 0
     property string gameOptionsGameId: ""
     property var gameOptionsGame: null
+    property var uninstallCapability: ({supported: false, installed: false})
     property var metadataResults: []
     property string metadataQuery: ""
     property string metadataTitleDraft: ""
@@ -757,14 +758,19 @@ Window {
         gameOptionsGameId = String(game.game_id)
         gameOptionsView = "menu"
         gameOptionsIndex = 0
+        uninstallCapability = ({supported: false, installed: false})
         metadataError = ""
         gameOptionsOpen = true
+        request("/uninstall/capability/" + encodeURIComponent(gameOptionsGameId), "GET", "", function(data) {
+            uninstallCapability = data || ({supported: false, installed: false})
+        }, "Uninstall capability unavailable")
     }
 
     function closeGameOptions() {
         gameOptionsOpen = false
         gameOptionsGame = null
         gameOptionsGameId = ""
+        uninstallCapability = ({supported: false, installed: false})
         metadataResults = []
         metadataError = ""
     }
@@ -803,11 +809,19 @@ Window {
                 gameOptionsView = "search"
                 gameOptionsIndex = 0
                 metadataSearch()
-            } else {
+            } else if (gameOptionsIndex === 1) {
                 metadataTitleDraft = gameOptionsGame.display_title_override || gameOptionsGame.title
                 gameOptionsView = "edit"
                 gameOptionsIndex = 0
+            } else if (gameOptionsIndex === 2 && uninstallCapability.supported) {
+                gameOptionsView = "confirm"
+                gameOptionsIndex = 0
             }
+        } else if (gameOptionsView === "confirm") {
+            request("/uninstall/" + encodeURIComponent(gameOptionsGameId), "POST", "", function(data) {
+                closeGameOptions()
+                refreshCatalogue()
+            }, "Uninstall failed")
         } else if (gameOptionsView === "edit") {
             if (gameOptionsIndex === 0) {
                 metadataTitleDraft = gameOptionsGame.display_title_override || gameOptionsGame.title
@@ -849,7 +863,7 @@ Window {
     }
 
     function moveGameOptions(delta) {
-        var count = gameOptionsView === "menu" ? 2
+        var count = gameOptionsView === "menu" ? (uninstallCapability.supported ? 3 : 2)
             : gameOptionsView === "edit" ? 3 : metadataResults.length
         if (gameOptionsView === "title")
             return
@@ -2848,10 +2862,11 @@ Window {
             onBackRequested: root.back()
         }
 
-        GameOptions {
+            GameOptions {
             game: root.gameOptionsGame
             view: root.gameOptionsView
-            selectedIndex: root.gameOptionsIndex
+                selectedIndex: root.gameOptionsIndex
+                uninstallSupported: root.uninstallCapability.supported === true
             results: root.metadataResults
             query: root.metadataQuery
             titleDraft: root.metadataTitleDraft
@@ -2860,7 +2875,7 @@ Window {
             uiScale: root.uiScale
             typography: typography
             luluPalette: luluPalette
-            onActivated: root.activateGameOptions()
+                onActivated: root.activateGameOptions()
             onBacked: root.back()
             onQueryEdited: root.metadataQuery = value
             onTitleEdited: root.metadataTitleDraft = value

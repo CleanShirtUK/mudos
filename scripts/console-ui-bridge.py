@@ -296,6 +296,35 @@ class ConsoleUiBridge:
         self.launch_logs.note("Lulu", f"{provider} acquisition submitted identity={content_identity} job_id={job_id}")
         return {"token": job_id}
 
+    async def uninstall_capability(self, game_id: str) -> dict[str, object]:
+        if self.acquisitiond is None:
+            return {"supported": False, "installed": False}
+        return json.loads(await self.acquisitiond.call_can_uninstall(game_id))
+
+    async def uninstall_game(self, game_id: str) -> dict[str, str]:
+        if self.acquisitiond is None:
+            raise RuntimeError("acquisition service is unavailable")
+        job_id = await self.acquisitiond.call_uninstall_game(game_id)
+        asyncio.create_task(self._refresh_after_removal(job_id))
+        return {"token": job_id}
+
+    async def _refresh_after_removal(self, job_id: str) -> None:
+        try:
+            for _ in range(180):
+                snapshot = json.loads(await self.acquisitiond.call_get_snapshot())
+                job = next((item for item in snapshot.get("jobs", [])
+                            if item.get("job_id") == job_id), None)
+                if job is None:
+                    return
+                if job.get("state") == "completed":
+                    await self.consoled.call_refresh_stages(["steam", "local", "romm"])
+                    return
+                if job.get("state") in {"failed", "cancelled"}:
+                    return
+                await asyncio.sleep(1)
+        except Exception:
+            LOGGER.exception("uninstall catalogue refresh failed job_id=%s", job_id)
+
     async def _refresh_after_acquisition(self, job_id: str, provider: str) -> None:
         """Rejoin completed provider content with the local catalogue."""
         try:
@@ -612,6 +641,13 @@ class ApiHandler(BaseHTTPRequestHandler):
             except Exception as error:  # pragma: no cover - live IPC failure path
                 self._respond(503, {"error": str(error)})
             return
+        if urlparse(self.path).path.startswith("/uninstall/capability/"):
+            try:
+                game_id = unquote(urlparse(self.path).path.removeprefix("/uninstall/capability/"))
+                self._respond(200, self.bridge.call(self.bridge.uninstall_capability(game_id), timeout=20))
+            except Exception as error:
+                self._respond(409, {"error": str(error) or type(error).__name__})
+            return
         scope = parse_qs(urlparse(self.path).query).get("scope", ["recent"])[0]
         try:
             self._respond(200, self.bridge.call(self.bridge.list_games(scope)))
@@ -757,6 +793,13 @@ class ApiHandler(BaseHTTPRequestHandler):
                     return
                 self._respond(200, {"ok": True})
             except Exception as error:  # pragma: no cover - live IPC failure path
+                self._respond(409, {"error": str(error) or type(error).__name__})
+            return
+        if path.startswith("/uninstall/"):
+            try:
+                game_id = unquote(path.removeprefix("/uninstall/"))
+                self._respond(200, self.bridge.call(self.bridge.uninstall_game(game_id), timeout=20))
+            except Exception as error:
                 self._respond(409, {"error": str(error) or type(error).__name__})
             return
         if path == "/cancel":

@@ -12,6 +12,7 @@ Item {
     property string titleDraft: ""
     property string errorMessage: ""
     property bool busy: false
+    property bool uninstallSupported: false
     property real uiScale: 1
     property var typography
     property var luluPalette
@@ -19,6 +20,7 @@ Item {
     signal backed()
     signal queryEdited(string value)
     signal titleEdited(string value)
+    signal uninstallRequested()
 
     function mixColor(from, to, progress) {
         return Qt.rgba(
@@ -28,7 +30,9 @@ Item {
             from.a + (to.a - from.a) * progress)
     }
 
-    readonly property var menuEntries: ["Change Match", "Edit Metadata"]
+    readonly property var menuEntries: uninstallSupported
+        ? ["Change Match", "Edit Metadata", "Uninstall"]
+        : ["Change Match", "Edit Metadata"]
     readonly property var editEntries: ["Edit Title", "Clear Title Override",
         game && game.artwork_suppressed ? "Restore Image" : "Remove Image"]
 
@@ -85,8 +89,8 @@ Item {
             }
 
             Text {
-                visible: options.view === "search"
-                text: "Change Match  /  Search SGDB"
+                visible: options.view === "search" || options.view === "confirm"
+                text: options.view === "confirm" ? "UNINSTALL?  This removes the local installed content." : "Change Match  /  Search SGDB"
                 color: options.luluPalette.secondaryText
                 font.family: options.typography.interfaceFamily
                 font.pixelSize: options.typography.size("body", 15)
@@ -277,7 +281,7 @@ Item {
 
             Item { width: 1; height: 1 }
             Text {
-                        text: options.view === "search" ? "Choose    Back" : "Select    Back"
+                        text: options.view === "search" ? "Choose    Back" : options.view === "confirm" ? "Confirm    Back" : "Select    Back"
                 color: options.luluPalette.secondaryText
                 font.family: options.typography.interfaceFamily
                 font.pixelSize: options.typography.size("hint", 14)
