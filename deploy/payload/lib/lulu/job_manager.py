@@ -80,6 +80,10 @@ class JobManager:
             raise ValueError(f"executor already registered: {provider}")
         self.executors[provider] = executor
         self.provider_limits[provider] = limit
+        if getattr(executor, "supports_pause", False):
+            for job_id, job in tuple(self.jobs.items()):
+                if job.provider == provider and not job.pause_supported:
+                    self.jobs[job_id] = replace(job, pause_supported=True, updated_at=utc_now())
         self._pump(provider)
 
     @property
