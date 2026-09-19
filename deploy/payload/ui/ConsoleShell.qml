@@ -1102,10 +1102,14 @@ Window {
     }
 
     function moveDomain(delta) {
+        var oldIndex = desiredCategoryIndex
         if (space !== "home")
             return
         var nextIndex = Math.max(0, Math.min(domains.length - 1,
                                              desiredCategoryIndex + delta))
+        console.log("MUDOS_REAL_NAV", delta < 0 ? "up" : "down",
+                    "old=" + oldIndex, "new=" + nextIndex,
+                    "space=" + space)
         if (nextIndex === desiredCategoryIndex)
             return
         desiredCategoryIndex = nextIndex
@@ -2135,6 +2139,12 @@ Window {
         focus: true
 
         Keys.onPressed: function(event) {
+            if (event.key === Qt.Key_Up || event.key === Qt.Key_Down
+                    || event.key === Qt.Key_Left || event.key === Qt.Key_Right) {
+                console.log("MUDOS_KEY_INPUT", "key=" + event.key,
+                            "space=" + root.space,
+                            "focus=" + inputSurface.activeFocus)
+            }
             if (root.homeLaunchGated) {
                 event.accepted = true
                 return
