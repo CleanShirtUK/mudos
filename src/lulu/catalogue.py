@@ -83,6 +83,7 @@ class CatalogueGame:
     last_synced_at: int | None = None
     artwork_source_url: str = ""
     metadata_resolver_version: int = 0
+    installed_game_id: str = ""
 
     @classmethod
     def from_steam(cls, game: InstalledSteamGame) -> "CatalogueGame":
@@ -191,7 +192,7 @@ SELECT_COLUMNS = (
     + ", availability_state, provider_record_id, content_identity, catalogue_source, genres, "
       "release_date, release_year, total_playtime, local_multiplayer, online_multiplayer, "
       "game_mode, protondb_rating, last_seen_at, last_synced_at, artwork_source_url"
-      ", metadata_resolver_version"
+       ", metadata_resolver_version, installed_game_id"
 )
 
 
@@ -226,8 +227,9 @@ class CatalogueStore:
                        "catalogue_source": "TEXT NOT NULL DEFAULT ''", "genres": "TEXT NOT NULL DEFAULT '[]'",
                        "release_date": "TEXT", "release_year": "INTEGER", "total_playtime": "INTEGER",
                        "local_multiplayer": "INTEGER", "online_multiplayer": "INTEGER", "game_mode": "TEXT",
-                       "protondb_rating": "TEXT", "last_seen_at": "INTEGER", "last_synced_at": "INTEGER",
-                       "artwork_source_url": "TEXT NOT NULL DEFAULT ''", "metadata_resolver_version": "INTEGER NOT NULL DEFAULT 0"}
+                        "protondb_rating": "TEXT", "last_seen_at": "INTEGER", "last_synced_at": "INTEGER",
+                        "artwork_source_url": "TEXT NOT NULL DEFAULT ''", "metadata_resolver_version": "INTEGER NOT NULL DEFAULT 0",
+                        "installed_game_id": "TEXT NOT NULL DEFAULT ''"}
         for name, definition in migrations.items():
             if name not in columns:
                 self.connection.execute(f"ALTER TABLE games ADD COLUMN {name} {definition}")
@@ -292,6 +294,57 @@ class CatalogueStore:
         with self.lock:
             return self._upsert_locked(game)
 
+    @staticmethod
+    def _romm_filename(game: CatalogueGame) -> str:
+        return Path(game.content_identity or game.source_title or game.title).name.casefold()
+
+    def _matching_local_locked(self, game: CatalogueGame) -> CatalogueGame | None:
+        """Find the installed local file represented by one RomM record."""
+        locals_ = self._rows(
+            f"SELECT {SELECT_COLUMNS} FROM games "
+            "WHERE provider='local' AND install_state='installed'"
+        )
+        filename = self._romm_filename(game)
+        expected = (PATHS.rom_root / game.platform / filename).resolve()
+        for local in locals_:
+            try:
+                if Path(local.install_dir).resolve() == expected:
+                    return local
+            except OSError:
+                continue
+        # Compatibility with records created before canonical destination
+        # matching was introduced.  This remains platform/filename based and
+        # never uses the displayed title.
+        for local in locals_:
+            if local.platform.casefold() == game.platform.casefold() and \
+                    Path(local.install_dir).name.casefold() == filename:
+                return local
+        return None
+
+    def _associate_romm_locked(self, romm: CatalogueGame, local: CatalogueGame,
+                               deltas: list[CatalogueDelta]) -> None:
+        linked = replace(
+            romm,
+            install_state="installed", launchable=local.launchable,
+            install_dir=local.install_dir, availability_state="installed",
+            installed_game_id=local.game_id,
+        )
+        self._apply_existing_locked(romm, linked, deltas)
+        merged_played = max(local.last_played, romm.last_played)
+        if merged_played > local.last_played:
+            self._apply_existing_locked(local, replace(local, last_played=merged_played), deltas)
+
+    def _unassociate_romm_locked(self, romm: CatalogueGame,
+                                 deltas: list[CatalogueDelta]) -> None:
+        if not romm.installed_game_id and romm.install_state != "installed":
+            return
+        self._apply_existing_locked(
+            romm,
+            replace(romm, installed_game_id="", install_state="available",
+                    launchable=False, install_dir="", availability_state="available"),
+            deltas,
+        )
+
     def _merged_game(self, existing: CatalogueGame, incoming: CatalogueGame) -> CatalogueGame:
         installed = existing.install_state == "installed"
         preserve_metadata = bool(existing.metadata_provider)
@@ -325,6 +378,7 @@ class CatalogueStore:
             last_played=max(existing.last_played, incoming.last_played),
             last_seen_at=existing.last_seen_at,
             last_synced_at=existing.last_synced_at,
+            installed_game_id=incoming.installed_game_id,
         )
 
     def _upsert_locked(self, game: CatalogueGame, deltas: list[CatalogueDelta] | None = None) -> CatalogueDelta | None:
@@ -523,30 +577,12 @@ class CatalogueStore:
                         current, replace(current, install_state="missing", launchable=False), deltas)
             for game in games:
                 self._upsert_locked(game, deltas)
-            # A staged ROM is represented by both the local provider record
-            # and its remote RomM record. Reconcile Store availability by the
-            # canonical platform and filename after local discovery.
-            installed_files = {
-                (game.platform.casefold(), Path(game.source_title).name.casefold()): game
-                for game in games if game.install_state == "installed"
-            }
             for current in self._rows(f"SELECT {SELECT_COLUMNS} FROM games WHERE provider='romm'"):
-                key = (current.platform.casefold(), Path(current.content_identity).name.casefold())
-                local = installed_files.get(key)
+                local = self._matching_local_locked(current)
                 if local is not None:
-                    self._apply_existing_locked(
-                        current,
-                        replace(current, install_state="installed", launchable=local.launchable,
-                                install_dir=local.install_dir, availability_state="installed"),
-                        deltas,
-                    )
-                elif current.install_state == "installed":
-                    self._apply_existing_locked(
-                        current,
-                        replace(current, install_state="available", launchable=False,
-                                install_dir="", availability_state="available"),
-                        deltas,
-                    )
+                    self._associate_romm_locked(current, local, deltas)
+                else:
+                    self._unassociate_romm_locked(current, deltas)
         self._finish_operation(deltas)
         return games
 
@@ -556,6 +592,21 @@ class CatalogueStore:
         deltas: list[CatalogueDelta] = []
         self._start_operation()
         with self.atomic(rollback=mode == "upsert-rollback"):
+            associated: list[CatalogueGame] = []
+            for game in games:
+                local = self._matching_local_locked(game)
+                if local is None:
+                    associated.append(game)
+                else:
+                    associated.append(replace(
+                        game, install_state="installed", launchable=local.launchable,
+                        install_dir=local.install_dir, availability_state="installed",
+                        installed_game_id=local.game_id,
+                    ))
+                    if local.last_played < game.last_played:
+                        self._apply_existing_locked(
+                            local, replace(local, last_played=game.last_played), deltas)
+            games = associated
             if mode in {"full", "mark"}:
                 existing = self._rows(f"SELECT {SELECT_COLUMNS} FROM games WHERE provider='romm'")
                 incoming_ids = {game.game_id for game in games}
@@ -582,11 +633,22 @@ class CatalogueStore:
                 games.append(CatalogueGame(*values))
             return games
 
+    @staticmethod
+    def _installed_presentation_where() -> str:
+        return (
+            "install_state='installed' AND NOT ("
+            "provider='romm' AND installed_game_id<>'' AND EXISTS ("
+            "SELECT 1 FROM games AS linked_local "
+            "WHERE linked_local.game_id=games.installed_game_id "
+            "AND linked_local.provider='local' AND linked_local.install_state='installed'"
+            "))"
+        )
+
     def list_games(self, scope: str = "all") -> list[CatalogueGame]:
-        query = f"SELECT {SELECT_COLUMNS} FROM games WHERE install_state='installed'"
+        query = f"SELECT {SELECT_COLUMNS} FROM games WHERE {self._installed_presentation_where()}"
         parameters: tuple[object, ...] = ()
         if scope == "pc":
-            query += " AND provider!='local'"
+            query += " AND provider='steam'"
         elif scope == "steam":
             query += " AND provider=?"; parameters = ("steam",)
         elif scope.startswith("platform:"):
@@ -597,7 +659,10 @@ class CatalogueStore:
         return self._rows(f"SELECT {SELECT_COLUMNS} FROM games ORDER BY title COLLATE NOCASE")
 
     def list_recent(self) -> list[CatalogueGame]:
-        return self._rows(f"SELECT {SELECT_COLUMNS} FROM games WHERE install_state='installed' AND last_played>0 ORDER BY last_played DESC")
+        return self._rows(
+            f"SELECT {SELECT_COLUMNS} FROM games WHERE {self._installed_presentation_where()} "
+            "AND last_played>0 ORDER BY last_played DESC"
+        )
 
     def list_available_games(self, provider: str | None = None) -> list[CatalogueGame]:
         query = f"SELECT {SELECT_COLUMNS} FROM games WHERE availability_state='available'"
@@ -611,6 +676,9 @@ class CatalogueStore:
             else:
                 query += " AND provider=?"
                 parameters = (provider,)
+        query += " AND NOT (provider='romm' AND installed_game_id<>'' AND EXISTS ("
+        query += "SELECT 1 FROM games AS linked_local WHERE linked_local.game_id=games.installed_game_id "
+        query += "AND linked_local.provider='local' AND linked_local.install_state='installed'))"
         return self._rows(query + " ORDER BY title COLLATE NOCASE", parameters)
 
     def get_game(self, game_id: str) -> CatalogueGame | None:

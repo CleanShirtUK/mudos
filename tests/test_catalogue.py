@@ -301,6 +301,86 @@ class CatalogueTests(unittest.TestCase):
         self.assertEqual(store.list_games("platform:nes")[0].title, "Mario")
         self.assertEqual(store.list_platforms(), [("nes", "Nintendo Entertainment System")])
 
+    def test_romm_links_to_local_without_duplicate_library_cards_or_title_dedupe(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "roms"
+            (root / "switch").mkdir(parents=True)
+            base = root / "switch" / "Mario Kart 8 Deluxe.nsp"
+            dlc = root / "switch" / "Mario Kart 8 Deluxe DLC.nsp"
+            base.write_bytes(b"base")
+            dlc.write_bytes(b"dlc")
+            store = CatalogueStore(Path(directory) / "catalogue.sqlite3")
+            provider = LocalContentProvider({"switch": Path("/usr/bin/true")})
+            store.reconcile_local(provider, root)
+            local = {game.source_title: game for game in store.list_games()}
+            romm_games = [
+                CatalogueGame.from_romm(RommGame(
+                    243, "Mario Kart 8 Deluxe", 1, "switch", "Switch",
+                    base.name, ".nsp", base.stat().st_size, "", False,
+                    (RommFile(2430, base.name),)
+                )),
+                CatalogueGame.from_romm(RommGame(
+                    245, "Mario Kart 8 Deluxe", 1, "switch", "Switch",
+                    dlc.name, ".nsp", dlc.stat().st_size, "", False,
+                    (RommFile(2450, dlc.name),)
+                )),
+            ]
+            store.reconcile_romm(romm_games)
+            visible = store.list_games()
+
+            self.assertEqual({game.provider for game in visible}, {"local"})
+            self.assertEqual({game.game_id for game in visible}, set(local[name].game_id for name in local))
+            self.assertEqual(len(visible), 2)
+            self.assertEqual(store.get_game("romm:243").installed_game_id, local[base.name].game_id)
+            self.assertEqual(store.get_game("romm:245").installed_game_id, local[dlc.name].game_id)
+            self.assertEqual(store.list_available_games("romm"), [])
+
+            store.reconcile_romm(romm_games)
+            self.assertEqual(len(store.list_games()), 2)
+
+    def test_missing_local_file_clears_romm_association_and_restores_store_availability(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "roms"
+            (root / "nes").mkdir(parents=True)
+            content = root / "nes" / "Mario.nes"
+            content.write_bytes(b"fixture")
+            store = CatalogueStore(Path(directory) / "catalogue.sqlite3")
+            provider = LocalContentProvider({"nes": Path("/usr/bin/true")})
+            store.reconcile_local(provider, root)
+            romm = CatalogueGame.from_romm(RommGame(
+                186, "Mario", 1, "nes", "NES", content.name, ".nes", content.stat().st_size,
+                "", False, (RommFile(1860, content.name),)
+            ))
+            store.reconcile_romm([romm])
+            local_id = next(game.game_id for game in store.list_games() if game.provider == "local")
+            self.assertEqual(store.get_game("romm:186").installed_game_id, local_id)
+
+            content.unlink()
+            store.reconcile_local(provider, root)
+            remote = store.get_game("romm:186")
+
+        self.assertEqual(remote.installed_game_id, "")
+        self.assertEqual(remote.install_state, "available")
+        self.assertEqual(remote.availability_state, "available")
+        self.assertEqual([game.game_id for game in store.list_available_games("romm")], ["romm:186"])
+        self.assertEqual(store.list_games(), [])
+
+    def test_local_only_rom_remains_visible_and_steam_identity_is_unchanged(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "roms"
+            (root / "nes").mkdir(parents=True)
+            (root / "nes" / "Local Only.nes").write_bytes(b"fixture")
+            store = CatalogueStore(Path(directory) / "catalogue.sqlite3")
+            store.reconcile_steam(FakeSteamProvider([
+                InstalledSteamGame("40800", "Super Meat Boy", "/games/Super Meat Boy", "/games", 1, 0)
+            ]))
+            store.reconcile_local(LocalContentProvider({"nes": Path("/usr/bin/true")}), root)
+            games = store.list_games()
+
+        self.assertEqual({game.provider for game in games}, {"local", "steam"})
+        self.assertEqual(store.get_game("steam:40800").provider_id, "40800")
+        self.assertEqual(store.get_game("steam:40800").game_id, "steam:40800")
+
     def test_user_presentation_and_artwork_overrides_survive_rescan(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory) / "roms"

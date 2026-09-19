@@ -72,6 +72,18 @@ private slots:
         QCOMPARE(recent.gameIdAt(0), QStringLiteral("steam:b"));
     }
 
+    void recentHidesLinkedRommPresentationRow()
+    {
+        CatalogueModel source;
+        RecentModel recent(&source);
+        QVERIFY(source.loadSnapshot(43, R"([
+            {"game_id":"local:ps2:1","provider":"local","install_state":"installed","last_played":20},
+            {"game_id":"romm:228","provider":"romm","install_state":"installed","last_played":30,"installed_game_id":"local:ps2:1"}
+        ])"));
+        QCOMPARE(recent.rowCount(), 1);
+        QCOMPARE(recent.gameIdAt(0), QStringLiteral("local:ps2:1"));
+    }
+
     void recentExposesAtMostEightEntries()
     {
         CatalogueModel source;

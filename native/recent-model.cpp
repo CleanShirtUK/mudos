@@ -53,9 +53,16 @@ QString RecentModel::gameIdAt(int row) const
 bool RecentModel::eligible(const QString &gameId) const
 {
     const QVariantMap record = source_->game(gameId);
-    return !record.isEmpty()
-        && record.value(QStringLiteral("install_state")).toString() == QStringLiteral("installed")
-        && record.value(QStringLiteral("last_played")).toLongLong() > 0;
+    if (record.isEmpty()
+        || record.value(QStringLiteral("install_state")).toString() != QStringLiteral("installed")
+        || record.value(QStringLiteral("last_played")).toLongLong() <= 0)
+        return false;
+    const QString installedGameId = record.value(QStringLiteral("installed_game_id")).toString();
+    if (installedGameId.isEmpty())
+        return true;
+    const QVariantMap linked = source_->game(installedGameId);
+    return linked.isEmpty()
+        || linked.value(QStringLiteral("install_state")).toString() != QStringLiteral("installed");
 }
 
 qint64 RecentModel::lastPlayed(const QString &gameId) const

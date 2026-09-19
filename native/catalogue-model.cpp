@@ -36,6 +36,7 @@ const QVector<QPair<const char *, const char *>> roleFields = {
     {"protondb_rating", "protondb_rating"}, {"last_seen_at", "last_seen_at"},
     {"last_synced_at", "last_synced_at"}, {"artwork_source_url", "artwork_source_url"},
     {"metadata_resolver_version", "metadata_resolver_version"},
+    {"installed_game_id", "installed_game_id"},
 };
 }
 

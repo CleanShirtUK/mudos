@@ -26,7 +26,8 @@ public:
         ProviderRecordIdRole, ContentIdentityRole, CatalogueSourceRole, GenresRole,
         ReleaseDateRole, ReleaseYearRole, TotalPlaytimeRole, LocalMultiplayerRole,
         OnlineMultiplayerRole, GameModeRole, ProtondbRatingRole, LastSeenAtRole,
-        LastSyncedAtRole, ArtworkSourceUrlRole, MetadataResolverVersionRole
+        LastSyncedAtRole, ArtworkSourceUrlRole, MetadataResolverVersionRole,
+        InstalledGameIdRole
     };
     Q_ENUM(Role)
 
