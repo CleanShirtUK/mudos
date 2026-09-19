@@ -24,6 +24,7 @@
 #include <QJsonDocument>
 #include <QJsonArray>
 #include <QJsonObject>
+#include <QDateTime>
 #include <algorithm>
 
 #include <SDL3/SDL.h>
@@ -532,6 +533,47 @@ private:
         return value.isValid() ? value.toInt() : -1;
     }
 
+    void logRoutingState(const QString &compositePath, const char *phase)
+    {
+        QDBusInterface composite(inputService, compositePath,
+                                 QString::fromLatin1(inputInterface),
+                                 QDBusConnection::systemBus());
+        qInfo() << "GUIDE_ROUTING_STATE" << "phase=" << phase
+                << "composite=" << compositePath
+                << "interceptMode=" << composite.property("InterceptMode")
+                << "profile=" << composite.property("ProfileName")
+                << "profilePath=" << composite.property("ProfilePath")
+                << "source=" << composite.property("SourceDevicePaths")
+                << "targets=" << composite.property("TargetDevices")
+                << "filtered=" << composite.property("FilteredEvents")
+                << "enabled=" << composite.property("Enabled");
+        const auto targets = composite.property("TargetDevices").toStringList();
+        for (const QString &targetPath : targets) {
+            QDBusInterface target(inputService, targetPath, QStringLiteral("org.shadowblip.Input.Target"),
+                                  QDBusConnection::systemBus());
+            qInfo() << "GUIDE_ROUTING_TARGET" << "phase=" << phase
+                    << "path=" << targetPath
+                    << "name=" << target.property("Name")
+                    << "type=" << target.property("DeviceType")
+                    << "enabled=" << target.property("Enabled");
+        }
+    }
+
+    uint32_t actualFocusWindow() const
+    {
+        auto *x11 = qGuiApp->nativeInterface<QNativeInterface::QX11Application>();
+        if (!x11 || !x11->connection())
+            return 0;
+        xcb_get_input_focus_cookie_t cookie = xcb_get_input_focus(x11->connection());
+        xcb_get_input_focus_reply_t *reply = xcb_get_input_focus_reply(
+            x11->connection(), cookie, nullptr);
+        if (!reply)
+            return 0;
+        const uint32_t focus = reply->focus;
+        free(reply);
+        return focus;
+    }
+
 
     void clearTarget()
     {
@@ -542,7 +584,10 @@ private:
     void restoreInput()
     {
         const xcb_window_t restoreWindow = targetWindow_;
-        if (!guideOwnerComposite_.isEmpty())
+        const QString restoredComposite = guideOwnerComposite_;
+        if (!restoredComposite.isEmpty())
+            logRoutingState(restoredComposite, "before-restore");
+        if (!restoredComposite.isEmpty())
             setInterceptMode(guideOwnerComposite_, 1);
         guideOwnerComposite_.clear();
         clearTarget();
@@ -553,9 +598,12 @@ private:
                                     restoreWindow, XCB_CURRENT_TIME);
                 xcb_flush(x11->connection());
                 qInfo() << "GUIDE_INPUT_LIFECYCLE" << "restore-focus"
-                        << "window=" << restoreWindow;
+                        << "window=" << restoreWindow
+                        << "actualFocus=" << actualFocusWindow();
             }
         }
+        if (restoreWindow != XCB_WINDOW_NONE && !restoredComposite.isEmpty())
+            logRoutingState(restoredComposite, "after-restore");
     }
 
     bool guideVisible() const
@@ -643,6 +691,14 @@ private:
 
     void handleInputEvent(const QString &compositePath, const QString &event, double value)
     {
+        const quint64 sequence = ++inputSequence_;
+        if (event == QStringLiteral("ui_up") || event == QStringLiteral("ui_down")
+            || event == QStringLiteral("ui_back") || event == QStringLiteral("ui_guide")) {
+            qInfo() << "GUIDE_EDGE_TRACE" << "seq=" << sequence
+                    << "timestamp=" << QDateTime::currentMSecsSinceEpoch()
+                    << "event=" << event << "value=" << value
+                    << "guideVisible=" << guideVisible();
+        }
         if (event == QStringLiteral("ui_back") || event == QStringLiteral("cancel")
             || event == QStringLiteral("back")) {
             qInfo() << "GUIDE_B_TRACE" << "stage=ControllerBridge"
@@ -659,7 +715,13 @@ private:
         // OSK mode owns the intercepted D-Bus stream. The bridge consumes it
         // and feeds the private gamepad-osk device; Guide must not also act.
         if (oskActive_)
+        {
+            if (!guideVisible() && (event == QStringLiteral("ui_up")
+                || event == QStringLiteral("ui_down")))
+                qInfo() << "GUIDE_POST_DISMISS" << "event=" << event
+                        << "guideVisible=false" << "consumed=true" << "reason=osk";
             return;
+        }
         if (event == QStringLiteral("ui_context") && pendingGuide_
             && compositePath == guideOwnerComposite_) {
             if (value == 1.0) {
@@ -727,6 +789,12 @@ private:
                 backGuide();
             }
         }
+        if (!guideVisible() && (event == QStringLiteral("ui_up")
+            || event == QStringLiteral("ui_down"))) {
+            qInfo() << "GUIDE_POST_DISMISS" << "event=" << event
+                    << "value=" << value << "guideVisible=false"
+                    << "consumed=false" << "route=normal-inputplumber";
+        }
     }
 
     void finishGuide()
@@ -750,6 +818,7 @@ private:
         qInfo() << "GUIDE_INPUT_LIFECYCLE" << "start"
                 << "composite=" << guideOwnerComposite_
                 << "interceptMode=" << interceptMode(guideOwnerComposite_);
+        logRoutingState(guideOwnerComposite_, "before-guide");
         QVariantList actions;
         QDBusInterface consoled("org.lulu.Consoled", "/org/lulu/Console",
                                 "org.lulu.Console", QDBusConnection::sessionBus());
@@ -771,6 +840,7 @@ private:
         }
         qInfo() << "GUIDE_INPUT_LIFECYCLE" << "active"
                 << "interceptMode=" << interceptMode(guideOwnerComposite_);
+        logRoutingState(guideOwnerComposite_, "guide-active");
         return true;
     }
 
@@ -1103,6 +1173,7 @@ private:
     bool pendingGuide_ = false;
     bool guideChordConsumed_ = false;
     bool oskActive_ = false;
+    quint64 inputSequence_ = 0;
     SDL_Gamepad *gamepad_ = nullptr;
     int gamepadSlot_ = 0;
     int navigationPlayer_ = 1;
