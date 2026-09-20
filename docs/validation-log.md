@@ -27,6 +27,45 @@ not implied to have passed.
 - Physical validation: pending after deployment; must cover Eden, Dolphin,
   PCSX2, and RetroArch repeated launch/exit without restarting Mudos.
 
+## Eden multi-controller archaeology
+
+- Historical last-known-good multi-controller implementation: `789550f`
+  (`feat: assign multiple controllers to Eden`), refined by `20bb85e`,
+  `63b8016`, `6adc08b`, `e6831d3`, and `a04f86a`. The modularisation boundary
+  was `77824bb`; it changed the provider/config root but did not intentionally
+  change the Eden slot contract.
+- The exact Nintendo face-button profile is recoverable from
+  `59969e5^:src/lulu/switch_provider.py` (the parent of the later SDL mapping
+  change). For each populated slot it used `type=0`,
+  `connected\\default=false`, `connected=true`, and:
+  `A=button:1`, `B=button:0`, `X=button:3`, `Y=button:2`. The same values
+  were emitted for every player, not only Player 1.
+- Historical three-player effective config was written to the active
+  `~/.config/eden/qt-config.ini` immediately before launch, with the reusable
+  source profile at `~/.config/eden/lulu-switch.ini`. Its three SDL prefixes
+  were identical except for `port:0`, `port:1`, and `port:2`, all using GUID
+  `030081b85e0400008e02000001000000` and `engine:sdl`.
+- Historical non-face bindings were also explicit: `L=9`, `R=10`, minus `4`,
+  plus `6`, stick clicks `7/8`, d-pad buttons `11/12/13/14`, ZL/ZR axes `4/5`,
+  and sticks axes `0/1` and `2/3`. The current provider now restores this
+  native shape instead of the later raw-Xbox button/axis rewrite.
+- Live inventory: three composites are present as
+  `CompositeDevice0/1/2`, all persistent identity `045e_0291`; SDL exposes
+  three `Xbox 360 Controller` devices with the same GUID and indices `0/1/2`.
+  Sessiond assigns them to Mudos players `1/2/3`; CompositeDevice0 remains the
+  navigation controller. No duplicate physical assignment was observed.
+- Current-vs-historical cause: the reported raw Player 1 mapping and keyboard
+  Players 2/3 came from the active Eden profile not representing the full
+  historical slot policy. The restored generator now emits each connected
+  player as a separate `type=0` SDL slot, with distinct `port` values and the
+  Nintendo face mapping, and replaces stale Controls entries so keyboard slots
+  cannot survive a reload.
+- Exact face-button diff: the pre-repair current generator emitted
+  `A=button:0`, `B=button:1`, `X=button:2`, `Y=button:3`; the historical and
+  restored contract emits `A=button:1`, `B=button:0`, `X=button:3`,
+  `Y=button:2`. This diff is identical for Players 1, 2, and 3; only the SDL
+  port changes (`0`, `1`, `2`).
+
 ## Torrent provider / Transmission
 
 - Commit: `599a68c`

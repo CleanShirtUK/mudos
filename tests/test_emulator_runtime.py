@@ -101,7 +101,7 @@ class EmulatorRuntimeTests(unittest.TestCase):
         self.assertIn("player_0_connected\\default=false", config)
         self.assertNotIn("player_0_connect=", config)
         self.assertEqual(config, second_content)
-        self.assertIn('player_0_lstick="engine:sdl,guid:030081b85e0400008e02000001000000,port:0,axis_x:0,axis_y:1,offset_x:-0.000000,offset_y:0.000000,invert_x:+,invert_y:+,deadzone:0.150000"', config)
+        self.assertIn('player_0_lstick="engine:sdl,guid:030081b85e0400008e02000001000000,port:0,axis_x:0,axis_y:1,invert_x:+,invert_y:+"', config)
 
     def test_switch_profile_follows_assigned_controller_indices(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -114,6 +114,35 @@ class EmulatorRuntimeTests(unittest.TestCase):
         self.assertIn("player_1_button_a=\"engine:sdl,guid:030081b85e0400008e02000001000000,port:2,button:1\"", content)
         self.assertIn("player_2_button_a=\"engine:sdl,guid:030081b85e0400008e02000001000000,port:1,button:1\"", content)
         self.assertNotIn("player_3_", content)
+
+    def test_switch_three_player_profile_has_unique_gamepads_and_nintendo_mapping(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            provider = SwitchProvider(Path(directory) / "eden-cli", Path(directory) / "eden")
+            path = provider.ensure_controller_config(3, {1: 0, 2: 1, 3: 2})
+            content = path.read_text()
+
+        for player, port in enumerate((0, 1, 2)):
+            for name, button in (("a", 1), ("b", 0), ("x", 3), ("y", 2)):
+                self.assertIn(
+                    f'player_{player}_button_{name}="engine:sdl,guid:030081b85e0400008e02000001000000,port:{port},button:{button}"',
+                    content,
+                )
+            self.assertIn(f"player_{player}_type=0", content)
+            self.assertIn(f"player_{player}_connected=true", content)
+            self.assertNotIn(f"player_{player}_button_a=\"engine:keyboard", content)
+        self.assertNotIn("player_3_", content)
+
+    def test_switch_reload_removes_stale_keyboard_and_unpopulated_slots(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            provider = SwitchProvider(Path(directory) / "eden-cli", Path(directory) / "eden")
+            provider.ensure_controller_config(3, {1: 0, 2: 1, 3: 2})
+            path = provider.ensure_controller_config(1, {1: 0})
+            content = path.read_text()
+
+        self.assertIn("player_0_type=0", content)
+        self.assertNotIn("player_1_", content)
+        self.assertNotIn("player_2_", content)
+        self.assertNotIn("engine:keyboard", content)
 
     def test_pcsx2_intent_uses_controller_first_direct_boot(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

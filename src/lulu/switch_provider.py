@@ -14,15 +14,19 @@ DEFAULT_XBOX360_GUID = MUDOS_XBOX360_SDL_GUID
 # the serialized input parameter packages.
 _BUTTONS = {
     **NINTENDO_FACE_BUTTONS,
-    "l": 4,
-    "r": 5,
-    "minus": 6,
-    "plus": 7,
-    "lstick": 9,
-    "rstick": 10,
+    "l": 9,
+    "r": 10,
+    "minus": 4,
+    "plus": 6,
+    "lstick": 7,
+    "rstick": 8,
+    "dpad_up": 11,
+    "dpad_down": 12,
+    "dpad_left": 13,
+    "dpad_right": 14,
 }
-_AXES = {"zl": 2, "zr": 5}
-_DPAD = {"ddup": "up", "ddown": "down", "dleft": "left", "dright": "right"}
+_AXES = {"zl": 4, "zr": 5}
+_BUTTON_KEYS = {"dpad_up": "ddup", "dpad_down": "ddown", "dpad_left": "dleft", "dpad_right": "dright"}
 
 
 def _config_root() -> Path:
@@ -68,15 +72,13 @@ class SwitchProvider:
             sections.append(f"player_{config_player}_connected\\default=false")
             sections.append(f"player_{config_player}_connected=true")
             for name, button in _BUTTONS.items():
-                key = name
+                key = _BUTTON_KEYS.get(name, name)
                 sections.append(f'player_{config_player}_button_{key}="{prefix},button:{button}"')
             for name, axis in _AXES.items():
                 sections.append(f'player_{config_player}_button_{name}="{prefix},axis:{axis},threshold:0.5,invert:+"')
-            for key, direction in _DPAD.items():
-                sections.append(f'player_{config_player}_button_{key}="{prefix},direction:{direction},hat:0"')
             sections.extend([
-                f'player_{config_player}_lstick="{prefix},axis_x:0,axis_y:1,offset_x:-0.000000,offset_y:0.000000,invert_x:+,invert_y:+,deadzone:0.150000"',
-                f'player_{config_player}_rstick="{prefix},axis_x:3,axis_y:4,offset_x:-0.000000,offset_y:0.000000,invert_x:+,invert_y:+,deadzone:0.150000"',
+                f'player_{config_player}_lstick="{prefix},axis_x:0,axis_y:1,invert_x:+,invert_y:+"',
+                f'player_{config_player}_rstick="{prefix},axis_x:2,axis_y:3,invert_x:+,invert_y:+"',
             ])
         content = "\n".join(sections) + "\n"
         self.config_path.parent.mkdir(parents=True, exist_ok=True)
