@@ -160,6 +160,8 @@ class EmulatorRuntimeTests(unittest.TestCase):
         self.assertTrue(source_exists)
         self.assertIn("player_0_button_dup=", content)
         self.assertIn("engine:sdl,port:0,guid:", content)
+        self.assertIn("player_0_button_dup=\"engine:sdl,port:0,guid:", content)
+        self.assertIn("hat:0,direction:up\"", content)
 
     def test_pcsx2_intent_uses_controller_first_direct_boot(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
