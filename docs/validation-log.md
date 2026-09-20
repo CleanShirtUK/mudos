@@ -77,9 +77,8 @@ not implied to have passed.
 
 ## Eden face-button override / Player 4 capability
 
-- Latest requested runtime policy reverses the historical face values for the
-  installed Eden build: every slot now emits `A=button:0`, `B=button:1`,
-  `X=button:2`, `Y=button:3`.
+- Latest requested runtime policy restores the Nintendo face values: every slot
+  now emits `A=button:1`, `B=button:0`, `X=button:3`, `Y=button:2`.
 - The canonical Eden profile is also provisioned with Player 4 as an SDL
   gamepad on `port:3`, using the same stable GUID and face policy, even when
   no fourth physical controller is currently connected.
