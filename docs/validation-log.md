@@ -85,6 +85,47 @@ not implied to have passed.
 - This is a requested configuration change, not a physical validation result;
   Mario Kart verification remains pending.
 
+## Eden persisted-profile archaeology
+
+- The missing-profile hypothesis is confirmed by the surviving pre-modularisation
+  runtime snapshot. Its provider defined `PROFILE_NAME = "mudos-xbox360"`,
+  installed the profile at `~/.config/eden/input/mudos-xbox360.ini`, and
+  launched Eden with `-input-profile mudos-xbox360`.
+- The profile artifact survives at:
+  `/home/lulu/.config/eden/input/mudos-xbox360.ini`. An identical read-only
+  copy exists in the historical reference tree at
+  `/home/lulu/old-reference-releases.20260913/d25d28f766ce26f91f5c131633036309b039d4d9-90cc4e723e42/config/eden/input/mudos-xbox360.ini`.
+  Both have SHA-256
+  `07f7e3a5dbe6d3b5a5453b8bb3276d6165cc3d96975a047b6697c681887b3184`.
+- The profile is a native `[Controls]` single-controller preset. Relevant
+  values are the shared SDL GUID
+  `030081b85e0400008e02000001000000`, `port:0`, Nintendo face mapping
+  `A=button:1`, `B=button:0`, `X=button:3`, `Y=button:2`, SDL trigger axes,
+  hat d-pad directions, and native stick definitions.
+- The historical `qt-config.ini` snapshot contains the missing binding:
+  `player_0_profile_name=mudos-xbox360` (with `player_0_profile_name\default=false`).
+  Players 1–9 otherwise have empty profile names. This is an indirect
+  player-slot-to-profile reference; the profile mappings are not duplicated in
+  each player slot.
+- Current `/home/lulu/.config/eden/qt-config.ini` has no nonempty
+  `player_*_profile_name` binding. Current Mudos instead writes inline
+  `player_*_button_*` values and does not pass `-input-profile`.
+- Historical filesystem layout relevant to this mechanism was:
+  `~/.config/eden/qt-config.ini`, `~/.config/eden/input/mudos-xbox360.ini`,
+  and title overrides under `~/.config/eden/custom/`. No separate Eden
+  controller-profile artifact exists in the repository’s tracked git trees or
+  in the immutable `/opt/lulu/releases` payloads. The surviving profile is
+  machine/runtime state, not a committed source asset.
+- The provider source containing this profile-install, profile-selection, and
+  `-input-profile` mechanism exists in the historical reference snapshot, but
+  no reachable git commit contains `PROFILE_NAME`, `profile_asset_path`, or
+  `-input-profile`. Therefore the exact commit where this behavior disappeared
+  cannot be established from repository history; it was already absent from the
+  tracked source by the earliest reachable provider commits around `588f476`.
+- No implementation change was made. The profile was preserved in place and
+  the immutable release was not modified. Restoring this mechanism is the next
+  narrow implementation candidate, pending explicit approval.
+
 ## Eden multi-controller archaeology
 
 - Historical last-known-good multi-controller implementation: `789550f`
