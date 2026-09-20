@@ -92,10 +92,10 @@ class EmulatorRuntimeTests(unittest.TestCase):
             second_content = second.read_text()
 
         self.assertEqual(intent.arguments, ("--appimage-extract-and-run", "--config", str(second), "-f", "--fullscreen", "--game", "/fixture/game.nsp"))
-        self.assertIn('player_0_button_a="engine:sdl,port:0,guid:030081b85e0400008e02000001000000,button:1"', config)
-        self.assertIn('player_0_button_b="engine:sdl,port:0,guid:030081b85e0400008e02000001000000,button:0"', config)
-        self.assertIn('player_0_button_x="engine:sdl,port:0,guid:030081b85e0400008e02000001000000,button:3"', config)
-        self.assertIn('player_0_button_y="engine:sdl,port:0,guid:030081b85e0400008e02000001000000,button:2"', config)
+        self.assertIn('player_0_button_a="engine:sdl,port:0,guid:030081b85e0400008e02000001000000,button:0"', config)
+        self.assertIn('player_0_button_b="engine:sdl,port:0,guid:030081b85e0400008e02000001000000,button:1"', config)
+        self.assertIn('player_0_button_x="engine:sdl,port:0,guid:030081b85e0400008e02000001000000,button:2"', config)
+        self.assertIn('player_0_button_y="engine:sdl,port:0,guid:030081b85e0400008e02000001000000,button:3"', config)
         self.assertIn("player_0_type=0", config)
         self.assertIn("player_0_connected=true", config)
         self.assertIn("player_0_connected\\default=false", config)
@@ -110,9 +110,9 @@ class EmulatorRuntimeTests(unittest.TestCase):
             config = provider.ensure_controller_config(device_indices={1: 0, 2: 2, 3: 1})
             content = config.read_text()
 
-        self.assertIn("player_0_button_a=\"engine:sdl,port:0,guid:030081b85e0400008e02000001000000,button:1\"", content)
-        self.assertIn("player_1_button_a=\"engine:sdl,port:2,guid:030081b85e0400008e02000001000000,button:1\"", content)
-        self.assertIn("player_2_button_a=\"engine:sdl,port:1,guid:030081b85e0400008e02000001000000,button:1\"", content)
+        self.assertIn("player_0_button_a=\"engine:sdl,port:0,guid:030081b85e0400008e02000001000000,button:0\"", content)
+        self.assertIn("player_1_button_a=\"engine:sdl,port:2,guid:030081b85e0400008e02000001000000,button:0\"", content)
+        self.assertIn("player_2_button_a=\"engine:sdl,port:1,guid:030081b85e0400008e02000001000000,button:0\"", content)
         self.assertNotIn("player_3_", content)
 
     def test_switch_three_player_profile_has_unique_gamepads_and_nintendo_mapping(self) -> None:
@@ -122,7 +122,7 @@ class EmulatorRuntimeTests(unittest.TestCase):
             content = path.read_text()
 
         for player, port in enumerate((0, 1, 2)):
-            for name, button in (("a", 1), ("b", 0), ("x", 3), ("y", 2)):
+            for name, button in (("a", 0), ("b", 1), ("x", 2), ("y", 3)):
                 self.assertIn(
                     f'player_{player}_button_{name}="engine:sdl,port:{port},guid:030081b85e0400008e02000001000000,button:{button}"',
                     content,

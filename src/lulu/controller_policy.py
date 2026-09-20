@@ -3,13 +3,14 @@
 # SDL reports the InputPlumber virtual Xbox target with this stable GUID.
 MUDOS_XBOX360_SDL_GUID = "030081b85e0400008e02000001000000"
 
-# Nintendo-family logical face buttons on the standard Xbox-style target.
-# Eden and Dolphin consume the same policy through different native formats.
+# Eden 0.2.x applies its own face-button interpretation to these bindings.
+# The inverse of the historical swap is required for the requested physical
+# A/B and X/Y behaviour in the installed build.
 NINTENDO_FACE_BUTTONS = {
-    "a": 1,  # physical Xbox B
-    "b": 0,  # physical Xbox A
-    "x": 3,  # physical Xbox Y
-    "y": 2,  # physical Xbox X
+    "a": 0,
+    "b": 1,
+    "x": 2,
+    "y": 3,
 }
 
 

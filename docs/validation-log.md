@@ -75,6 +75,17 @@ not implied to have passed.
   3 donor, cold restart, and then the unchanged Mudos launch wrapper.
 - No source or deployed runtime change was made for this donor-capture phase.
 
+## Eden face-button override / Player 4 capability
+
+- Latest requested runtime policy reverses the historical face values for the
+  installed Eden build: every slot now emits `A=button:0`, `B=button:1`,
+  `X=button:2`, `Y=button:3`.
+- The canonical Eden profile is also provisioned with Player 4 as an SDL
+  gamepad on `port:3`, using the same stable GUID and face policy, even when
+  no fourth physical controller is currently connected.
+- This is a requested configuration change, not a physical validation result;
+  Mario Kart verification remains pending.
+
 ## Eden multi-controller archaeology
 
 - Historical last-known-good multi-controller implementation: `789550f`
