@@ -53,6 +53,28 @@ not implied to have passed.
   selector order and `dup` schema, and still removes stale keyboard slots.
 - Physical validation after this current-build fix remains pending.
 
+## Eden native-donor capture pending
+
+- Latest physical result: FAIL; the generated canonical Eden profile still
+  does not produce working independent Player 2/3 input or the expected
+  Nintendo face behaviour. No further controller-generator change is justified
+  without a physically verified Eden-written donor.
+- Failing-state backup: `/tmp/opencode-eden-failing-20260920012437`.
+- Preserved launch command:
+  `/usr/bin/eden --appimage-extract-and-run --config
+  /home/lulu/.config/eden/qt-config.ini -f --fullscreen --game
+  /home/lulu/Games/ROMs/switch/Mario Kart 8 Deluxe
+  [0100152000022000][v0].nsp`.
+- At capture time InputPlumber exposed `CompositeDevice0/1/2`, SDL indices
+  `0/1/2`, and sessiond assigned Mudos players `1/2/3`; CompositeDevice0 was
+  the navigation controller. This rules out missing live inventory as the
+  immediate explanation.
+- Existing Eden snapshots were preserved for comparison, but none is accepted
+  as a current physically working donor. A hands-on Eden GUI sequence is still
+  required: Player 1 donor, Nintendo face-button donor, Player 2 donor, Player
+  3 donor, cold restart, and then the unchanged Mudos launch wrapper.
+- No source or deployed runtime change was made for this donor-capture phase.
+
 ## Eden multi-controller archaeology
 
 - Historical last-known-good multi-controller implementation: `789550f`
