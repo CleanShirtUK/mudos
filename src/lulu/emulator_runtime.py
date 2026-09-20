@@ -30,7 +30,10 @@ class EmulatorRuntimeAdapter:
                  config_root: Path | None = None) -> None:
         self.runtime_paths = runtime_paths
         self.core_paths = core_paths or {}
-        self.switch_provider = switch_provider or SwitchProvider()
+        self.switch_provider = switch_provider or SwitchProvider(
+            config_root=(config_root / "eden" / "config") if config_root else None,
+            active_config_root=Path.home() / ".config" / "eden" if config_root else None,
+        )
         self.providers = providers or load_providers()
         self.platforms = load_platforms()
         self.config_root = config_root

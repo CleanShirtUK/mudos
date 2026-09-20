@@ -39,9 +39,15 @@ def _config_root() -> Path:
 class SwitchProvider:
     """Build Eden's direct-launch arguments and owned controller profile."""
 
-    def __init__(self, executable: str | Path | None = None, config_root: Path | None = None) -> None:
+    def __init__(
+        self,
+        executable: str | Path | None = None,
+        config_root: Path | None = None,
+        active_config_root: Path | None = None,
+    ) -> None:
         self.executable = str(executable or os.environ.get("LULU_EDEN", "/usr/bin/eden"))
         self.config_root = config_root or _config_root()
+        self.active_config_root = active_config_root or self.config_root
 
     @property
     def config_path(self) -> Path:
@@ -49,7 +55,7 @@ class SwitchProvider:
 
     @property
     def active_config_path(self) -> Path:
-        return self.config_root / "qt-config.ini"
+        return self.active_config_root / "qt-config.ini"
 
     def ensure_controller_config(
         self,
@@ -67,12 +73,15 @@ class SwitchProvider:
         sections = ["[Controls]"]
         for player in range(1, player_count + 1):
             config_player = player - 1
-            prefix = f'engine:sdl,guid:{guid},port:{device_indices.get(player, player - 1)}'
+            # Eden 0.2.x writes the SDL selector in port,guid order. The
+            # parser is semantically key/value based, but matching the native
+            # donor avoids relying on the older serialized ordering.
+            prefix = f'engine:sdl,port:{device_indices.get(player, player - 1)},guid:{guid}'
             sections.append(f"player_{config_player}_type=0")
             sections.append(f"player_{config_player}_connected\\default=false")
             sections.append(f"player_{config_player}_connected=true")
             for name, button in _BUTTONS.items():
-                key = _BUTTON_KEYS.get(name, name)
+                key = _BUTTON_KEYS.get(name, name).replace("ddup", "dup")
                 sections.append(f'player_{config_player}_button_{key}="{prefix},button:{button}"')
             for name, axis in _AXES.items():
                 sections.append(f'player_{config_player}_button_{name}="{prefix},axis:{axis},threshold:0.5,invert:+"')
@@ -89,6 +98,7 @@ class SwitchProvider:
 
     def _update_active_config(self, profile: str) -> None:
         path = self.active_config_path
+        path.parent.mkdir(parents=True, exist_ok=True)
         source = path.read_text(encoding="utf-8") if path.exists() else "[Controls]\n"
         lines = source.splitlines()
         start = next((index for index, line in enumerate(lines) if line == "[Controls]"), None)

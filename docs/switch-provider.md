@@ -4,7 +4,10 @@ Mudos uses the maintained Linux build of [Eden](https://eden-emu.dev/) through
 `eden-cli`. Eden supports direct game paths, an alternate configuration file,
 fullscreen startup, and SDL gamepad input. Mudos writes the deterministic
 source profile to the provider-owned `lulu-switch.ini` and applies the same
-`[Controls]` section to the active `qt-config.ini` immediately before launch.
+`[Controls]` section to Eden's actual native file
+`~/.config/eden/qt-config.ini` immediately before launch. The command-line
+`--config` argument is retained for launch compatibility, but Eden 0.2.x
+resolves its native configuration from that canonical path.
 Each connected player is emitted as an Eden-native SDL slot (`type=0`) with a
 distinct SDL port; no unpopulated slot is left as a keyboard mapping.
 `LULU_SWITCH_SDL_GUID` overrides the default Xbox 360 SDL GUID when hardware

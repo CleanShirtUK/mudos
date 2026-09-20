@@ -92,16 +92,16 @@ class EmulatorRuntimeTests(unittest.TestCase):
             second_content = second.read_text()
 
         self.assertEqual(intent.arguments, ("--appimage-extract-and-run", "--config", str(second), "-f", "--fullscreen", "--game", "/fixture/game.nsp"))
-        self.assertIn('player_0_button_a="engine:sdl,guid:030081b85e0400008e02000001000000,port:0,button:1"', config)
-        self.assertIn('player_0_button_b="engine:sdl,guid:030081b85e0400008e02000001000000,port:0,button:0"', config)
-        self.assertIn('player_0_button_x="engine:sdl,guid:030081b85e0400008e02000001000000,port:0,button:3"', config)
-        self.assertIn('player_0_button_y="engine:sdl,guid:030081b85e0400008e02000001000000,port:0,button:2"', config)
+        self.assertIn('player_0_button_a="engine:sdl,port:0,guid:030081b85e0400008e02000001000000,button:1"', config)
+        self.assertIn('player_0_button_b="engine:sdl,port:0,guid:030081b85e0400008e02000001000000,button:0"', config)
+        self.assertIn('player_0_button_x="engine:sdl,port:0,guid:030081b85e0400008e02000001000000,button:3"', config)
+        self.assertIn('player_0_button_y="engine:sdl,port:0,guid:030081b85e0400008e02000001000000,button:2"', config)
         self.assertIn("player_0_type=0", config)
         self.assertIn("player_0_connected=true", config)
         self.assertIn("player_0_connected\\default=false", config)
         self.assertNotIn("player_0_connect=", config)
         self.assertEqual(config, second_content)
-        self.assertIn('player_0_lstick="engine:sdl,guid:030081b85e0400008e02000001000000,port:0,axis_x:0,axis_y:1,invert_x:+,invert_y:+"', config)
+        self.assertIn('player_0_lstick="engine:sdl,port:0,guid:030081b85e0400008e02000001000000,axis_x:0,axis_y:1,invert_x:+,invert_y:+"', config)
 
     def test_switch_profile_follows_assigned_controller_indices(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -110,9 +110,9 @@ class EmulatorRuntimeTests(unittest.TestCase):
             config = provider.ensure_controller_config(device_indices={1: 0, 2: 2, 3: 1})
             content = config.read_text()
 
-        self.assertIn("player_0_button_a=\"engine:sdl,guid:030081b85e0400008e02000001000000,port:0,button:1\"", content)
-        self.assertIn("player_1_button_a=\"engine:sdl,guid:030081b85e0400008e02000001000000,port:2,button:1\"", content)
-        self.assertIn("player_2_button_a=\"engine:sdl,guid:030081b85e0400008e02000001000000,port:1,button:1\"", content)
+        self.assertIn("player_0_button_a=\"engine:sdl,port:0,guid:030081b85e0400008e02000001000000,button:1\"", content)
+        self.assertIn("player_1_button_a=\"engine:sdl,port:2,guid:030081b85e0400008e02000001000000,button:1\"", content)
+        self.assertIn("player_2_button_a=\"engine:sdl,port:1,guid:030081b85e0400008e02000001000000,button:1\"", content)
         self.assertNotIn("player_3_", content)
 
     def test_switch_three_player_profile_has_unique_gamepads_and_nintendo_mapping(self) -> None:
@@ -124,7 +124,7 @@ class EmulatorRuntimeTests(unittest.TestCase):
         for player, port in enumerate((0, 1, 2)):
             for name, button in (("a", 1), ("b", 0), ("x", 3), ("y", 2)):
                 self.assertIn(
-                    f'player_{player}_button_{name}="engine:sdl,guid:030081b85e0400008e02000001000000,port:{port},button:{button}"',
+                    f'player_{player}_button_{name}="engine:sdl,port:{port},guid:030081b85e0400008e02000001000000,button:{button}"',
                     content,
                 )
             self.assertIn(f"player_{player}_type=0", content)
@@ -143,6 +143,23 @@ class EmulatorRuntimeTests(unittest.TestCase):
         self.assertNotIn("player_1_", content)
         self.assertNotIn("player_2_", content)
         self.assertNotIn("engine:keyboard", content)
+
+    def test_switch_writes_current_eden_native_config_root(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            provider = SwitchProvider(
+                root / "eden-cli",
+                root / "provider-config",
+                root / "native-eden",
+            )
+            active = provider.ensure_controller_config(1, {1: 0})
+            content = active.read_text()
+            source_exists = (root / "provider-config" / "lulu-switch.ini").is_file()
+
+        self.assertEqual(active, root / "native-eden" / "qt-config.ini")
+        self.assertTrue(source_exists)
+        self.assertIn("player_0_button_dup=", content)
+        self.assertIn("engine:sdl,port:0,guid:", content)
 
     def test_pcsx2_intent_uses_controller_first_direct_boot(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

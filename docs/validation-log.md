@@ -27,6 +27,32 @@ not implied to have passed.
 - Physical validation: pending after deployment; must cover Eden, Dolphin,
   PCSX2, and RetroArch repeated launch/exit without restarting Mudos.
 
+## Eden current-build configuration investigation
+
+- Installed build: `eden-bin 0.2.1-1`, `/opt/eden-bin/eden-bin.AppImage`, SHA-256
+  `2fae658397daf13c118082a3eb65d61a6519967b5e22e6667756baecf6000c5a`.
+- SDL evidence: indices `0/1/2` are all `Xbox 360 Controller`, each with GUID
+  `030081b85e0400008e02000001000000`, 15 buttons, 6 axes, and the live SDL
+  mapping `a:b0,b:b1,x:b2,y:b3`. Thus physical Xbox A/B/X/Y are raw SDL
+  buttons `0/1/2/3`; the desired Nintendo action requires Eden bindings
+  `A=1,B=0,X=3,Y=2`.
+- `strace` launch evidence: Eden opened and rewrote
+  `/home/lulu/.config/eden/qt-config.ini` and its title override under
+  `/home/lulu/.config/eden/custom/0100152000022000.ini`. It did not open the
+  Mudos-generated `/home/lulu/.config/lulu/providers/eden/config/qt-config.ini`
+  passed in the command line. The `--config` argument therefore does not select
+  that file in this installed build.
+- Current native donor shape: Eden's canonical file uses
+  `engine:sdl,port:N,guid:GUID,...`, `player_N_type`, connected/default metadata,
+  and current d-pad key `player_N_button_dup` (not the historical `ddup`). Its
+  stale donor values were raw Xbox face bindings and the older GUID, explaining
+  both the unswapped face buttons and why the generated Mudos profile had no
+  effect.
+- Fix: the Eden adapter now writes the provider profile and the actual native
+  `/home/lulu/.config/eden/qt-config.ini`, renders the current `port,guid`
+  selector order and `dup` schema, and still removes stale keyboard slots.
+- Physical validation after this current-build fix remains pending.
+
 ## Eden multi-controller archaeology
 
 - Historical last-known-good multi-controller implementation: `789550f`
