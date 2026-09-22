@@ -1,0 +1,32 @@
+id = "questarr"
+name = "Questarr"
+version = "1"
+api_version = 1
+kind = "plugin"
+providers = ["questarr"]
+description = "Game discovery and acquisition orchestration."
+types = ["catalogue", "acquisition", "service", "store"]
+
+[capabilities]
+service = true
+store = true
+
+[dependencies]
+requires_all = ["lutris"]
+requires_any = [["torrent", "usenet"]]
+
+[[store_cards]]
+id = "questarr"
+label = "Questarr"
+url = "http://127.0.0.1:5000/"
+glyph = "questarr"
+browser_profile = "questarr"
+removable = false
+
+[[services]]
+id = "questarr"
+name = "Questarr"
+description = "Find and manage downloadable games."
+url = "http://127.0.0.1:5000/"
+health = "questarr"
+configurable = false

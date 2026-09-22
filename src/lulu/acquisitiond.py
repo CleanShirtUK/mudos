@@ -40,10 +40,11 @@ LOGGER = logging.getLogger("lulu.acquisitiond")
 
 
 class AcquisitionInterface(ServiceInterface):
-    def __init__(self, manager: JobManager, catalogue: CatalogueStore) -> None:
+    def __init__(self, manager: JobManager, catalogue: CatalogueStore, plugins: PluginRegistry) -> None:
         super().__init__(INTERFACE_NAME)
         self.manager = manager
         self.catalogue = catalogue
+        self.plugins = plugins
         manager._on_change = self._publish
 
     def _snapshot(self) -> str:
@@ -72,6 +73,45 @@ class AcquisitionInterface(ServiceInterface):
                                        pause_supported=bool(getattr(executor, "supports_pause", False))).job_id
         except ValueError as error:
             raise DBusError("org.lulu.Acquisition.Error.Unavailable", str(error)) from error
+
+    @method()
+    async def SubmitBrowserHandoff(self, uri: "s", source_origin: "s") -> "s":
+        """Resolve a claimed browser URI through the generic handoff registry."""
+        claim = self.plugins.claim_browser_handoff(uri, source_origin)
+        if claim is None:
+            raise DBusError("org.lulu.Acquisition.Error.Unsupported", "No enabled component claims this browser URI")
+        component_id, declaration, backend, trusted = claim
+        if not trusted:
+            raise DBusError("org.lulu.Acquisition.Error.ConfirmationRequired",
+                            "This browser source requires explicit confirmation")
+        prepare = getattr(backend, "prepare_browser_handoff", None)
+        if prepare is None:
+            raise DBusError("org.lulu.Acquisition.Error.Unsupported", "The component cannot consume this handoff")
+        try:
+            prepared = await prepare(uri)
+            application_id = str(prepared["application_id"])
+            title = str(prepared.get("title") or application_id)
+            source_path = str(prepared["path"])
+            provider = component_id
+            identity = f"{provider}:{application_id}"
+            installed = getattr(backend, "installed", None)
+            live_installed = None
+            if callable(installed):
+                live_installed = {
+                    str(item.application_id) for item in await installed(user=True)
+                }
+            if live_installed is None or application_id in live_installed:
+                existing = next((job for job in self.manager.snapshot()
+                                 if job.provider == provider and job.content_identity == identity
+                                 and job.operation == JobOperation.INSTALL
+                                 and job.state.value == "completed"), None)
+                if existing is not None:
+                    return "existing:" + existing.job_id
+            return self.manager.submit(provider, identity, title, operation=JobOperation.INSTALL,
+                                       provider_job_id=source_path, cancellation_supported=True,
+                                       pause_supported=False).job_id
+        except (KeyError, ValueError, TypeError) as error:
+            raise DBusError("org.lulu.Acquisition.Error.InvalidSource", str(error)) from error
 
     @method()
     def SubmitContentSet(self, provider: "s", content_identities: "as", title: "s") -> "s":
@@ -124,7 +164,7 @@ class AcquisitionInterface(ServiceInterface):
         provider = str(target.provider)
         identity = str(target.game_id if provider == "local" else f"{provider}:{target.provider_id}")
         executor = self.manager.executors.get(provider)
-        if executor is None or not hasattr(executor, "uninstall"):
+        if executor is None or not getattr(executor, "supports_uninstall", False):
             raise DBusError("org.lulu.Acquisition.Error.Unsupported", "uninstall is not supported")
         return target, provider, identity, str(target.title)
 
@@ -134,7 +174,8 @@ class AcquisitionInterface(ServiceInterface):
             target, provider, identity, title = self._uninstall_target(game_id)
             description = ("Remove local installed content" if provider == "local"
                            else "Remove Lutris installation" if provider == "lutris"
-                           else "Remove Steam installation")
+                           else "Remove Steam installation" if provider == "steam"
+                           else "Remove provider application")
             return json.dumps({"supported": True, "installed": True, "provider": provider,
                                "operation": "remove", "description": description,
                                "target_game_id": target.game_id}, sort_keys=True)
@@ -262,7 +303,7 @@ async def serve(bus_type: BusType = BusType.SESSION) -> None:
                 LOGGER.exception("external acquisition reconciliation failed")
             await asyncio.sleep(3)
     asyncio.create_task(reconcile_external_loop())
-    interface = AcquisitionInterface(manager, catalogue)
+    interface = AcquisitionInterface(manager, catalogue, plugins)
     bus.export(OBJECT_PATH, interface)
     await bus.request_name(BUS_NAME)
     interface.StateChanged(interface._snapshot())

@@ -132,6 +132,29 @@ class CatalogueGame:
         )
 
     @classmethod
+    def from_component_app(cls, app: object) -> "CatalogueGame":
+        """Normalize an external component application without naming its adapter."""
+        value = app if isinstance(app, dict) else {
+            key: getattr(app, key, "") for key in (
+                "application_id", "name", "summary", "version", "branch", "remote",
+                "installed", "icon", "categories",
+            )
+        }
+        application_id = str(value.get("application_id", "")).strip()
+        title = str(value.get("name", application_id)).strip() or application_id
+        installed = bool(value.get("installed", False))
+        categories = tuple(str(item) for item in value.get("categories", ()))
+        return cls(
+            game_id=f"flatpak:{application_id}", provider="flatpak", provider_id=application_id,
+            title=title, platform="Linux", install_state="installed" if installed else "available",
+            launchable=installed, install_dir=str(Path.home() / ".var" / "app" / application_id),
+            artwork_url=str(value.get("icon", "")), last_played=0, runtime=str(value.get("branch", "")),
+            source_title=title, summary=str(value.get("summary", "")), genres=categories,
+            availability_state="installed" if installed else "available", provider_record_id=application_id,
+            content_identity=application_id, catalogue_source="flatpak",
+        )
+
+    @classmethod
     def from_steam_entitlement(cls, entitlement: SteamEntitlement,
                                installed: InstalledSteamGame | None = None) -> "CatalogueGame":
         return cls(
@@ -707,6 +730,32 @@ class CatalogueStore:
         self._finish_operation(deltas)
         return game
 
+    def reconcile_component_apps(self, provider: str, games: list[CatalogueGame]) -> list[CatalogueGame]:
+        """Reconcile a component-owned snapshot by stable provider identity."""
+        deltas: list[CatalogueDelta] = []
+        incoming = {game.game_id for game in games}
+        self._start_operation()
+        with self.atomic():
+            for current in self._rows("SELECT %s FROM games WHERE provider=?" % SELECT_COLUMNS, (provider,)):
+                if current.game_id not in incoming:
+                    self._apply_existing_locked(current, replace(current, install_state="available",
+                                             launchable=False, install_dir="",
+                                             availability_state="available"), deltas)
+            for game in games:
+                current = self.get_game(game.game_id)
+                if current is None:
+                    self._upsert_locked(game, deltas)
+                    continue
+                # Component snapshots explicitly report installed state. Do
+                # not let the generic merge preserve a stale installed flag
+                # after a provider-native uninstall.
+                baseline = replace(current, install_state=game.install_state,
+                                   launchable=game.launchable, install_dir=game.install_dir,
+                                   availability_state=game.availability_state)
+                self._apply_existing_locked(current, self._merged_game(baseline, game), deltas)
+        self._finish_operation(deltas)
+        return games
+
     def register_lutris_source(self, source: PcInstallSource) -> CatalogueGame:
         """Expose a completed source as the same canonical install identity."""
         game = replace(CatalogueGame.from_lutris(
@@ -821,7 +870,9 @@ class CatalogueStore:
         query = f"SELECT {SELECT_COLUMNS} FROM games WHERE {self._installed_presentation_where()}"
         parameters: tuple[object, ...] = ()
         if scope == "pc":
-            query += " AND provider='steam'"
+            # PC Games includes native Linux applications managed by enabled
+            # providers (currently Steam and Flatpak), not only Steam rows.
+            query += " AND provider IN ('steam', 'flatpak')"
         elif scope == "steam":
             query += " AND provider=?"; parameters = ("steam",)
         elif scope.startswith("platform:"):

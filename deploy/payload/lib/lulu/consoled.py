@@ -43,8 +43,9 @@ from .system_settings import CATEGORIES as SYSTEM_CATEGORIES, SystemSettingsProv
 from .paths import PATHS
 from .platforms import load_platforms
 from .providers import GuideAction, NativeConfigAdapter, load_base_guide, load_mudos_guide, load_providers
-from .plugins import PluginRegistry
-from .credential import CredentialBroker, CredentialInput, CredentialStatus, SecretStore
+from .plugins import ComponentRegistry, PluginRegistry
+from .credential import (CredentialBroker, CredentialInput, CredentialPresentation,
+                          CredentialStatus, SecretStore)
 from .web_credentials import WebCredentialStore
 
 
@@ -122,7 +123,7 @@ class ConsoleCatalog:
         )
 
     def refresh(self, stages: set[str] | None = None) -> list[dict[str, object]]:
-        all_stages = {"steam", "local", "romm", "romm-artwork", "metadata", "artwork"}
+        all_stages = {"steam", "local", "romm", "components", "romm-artwork", "metadata", "artwork"}
         selected = all_stages if stages is None else set(stages)
         self.last_delta_batches = []
         LOGGER.info("catalogue refresh worker started stages=%s", ",".join(sorted(selected)) or "none")
@@ -189,6 +190,23 @@ class ConsoleCatalog:
             if self.store.last_deltas:
                 self.last_delta_batches.append(self.store.last_deltas)
             LOGGER.info("catalogue stage completed name=local sqlite_commit=complete")
+        if "components" in selected:
+            for source in self._plugins.with_capability("catalogue"):
+                if not hasattr(source, "reconcile") or not getattr(source, "provider_id", ""):
+                    continue
+                try:
+                    LOGGER.info("catalogue stage started name=component provider=%s", source.provider_id)
+                    applications = asyncio.run(source.reconcile())
+                    games = [CatalogueGame.from_component_app(item) for item in applications
+                             if bool(getattr(item, "game", False))]
+                    self.store.reconcile_component_apps(str(source.provider_id), games)
+                    if self.store.last_deltas:
+                        self.last_delta_batches.append(self.store.last_deltas)
+                    LOGGER.info("catalogue stage completed name=component provider=%s games=%d",
+                                source.provider_id, len(games))
+                except Exception as error:
+                    LOGGER.info("component catalogue unavailable provider=%s error=%s",
+                                source.provider_id, type(error).__name__)
         romm_stages = {
             "romm", "romm-readonly", "romm-reconcile-only", "romm-presentation-only",
             "romm-reconcile-mark-only", "romm-reconcile-upsert-only",
@@ -744,6 +762,8 @@ class ConsoleInterface(ServiceInterface):
             plugin_root = installed_plugins
         self._plugins = PluginRegistry(plugin_root)
         self._plugins.discover()
+        self._components = ComponentRegistry(self._plugins)
+        self._components.discover()
         self._base_guide = load_base_guide()
         self._mudos_guide = load_mudos_guide()
         self._platforms = load_platforms()
@@ -788,6 +808,11 @@ class ConsoleInterface(ServiceInterface):
         provider_actions = self._providers.guide_actions(provider.provider_id, context) if provider is not None else ()
         # Provider actions lead, including Quit; Mudos-owned actions follow.
         actions = list(provider_actions)
+        if context == "game" and not actions and state.get("active_identity"):
+            # Generic launch-capable components need not be copied into the
+            # legacy provider TOML tree just to expose process-group Quit.
+            actions.append(GuideAction("process-group-quit", "Quit", "quit",
+                                       "process-group-terminate", ("game",), False, 90))
         if context == "browser":
             actions.append(GuideAction("browser-quit", "Quit", "quit", "browser:quit", ("browser",), False, 1))
         actions.extend(action for action in self._base_guide if context in action.contexts)
@@ -798,6 +823,11 @@ class ConsoleInterface(ServiceInterface):
         } for action in actions], separators=(",", ":"))
 
     @method()
+    def GetComponentRegistry(self) -> "s":
+        """Expose one safe descriptor API for future OOBE/Admin setup flows."""
+        return json.dumps(self._components.setup_records(self.secrets), sort_keys=True, separators=(",", ":"))
+
+    @method()
     async def ExecuteGuideAction(self, action_id: "s") -> "s":
         """Execute system-owned Guide actions; return provider targets to the helper."""
         if action_id == "browser-quit":
@@ -806,6 +836,11 @@ class ConsoleInterface(ServiceInterface):
                 raise ValueError("browser is not active")
             await self.sessiond.call_set_delegated_surface("")
             return "executed"
+        if action_id == "process-group-quit":
+            state = json.loads(await self.sessiond.call_get_state())
+            if not state.get("active_identity"):
+                raise ValueError("no owned process is active")
+            return "process-group-terminate"
         action = next((item for item in self._base_guide if item.action_id == action_id), None)
         if action is None:
             action = next((item for item in self._mudos_guide if item.action_id == action_id), None)
@@ -820,6 +855,8 @@ class ConsoleInterface(ServiceInterface):
                 await self.sessiond.call_shutdown()
             elif action.target == "mudos:downloads":
                 await self.sessiond.call_request_mudos_downloads()
+            elif action.target == "process-group-terminate":
+                return action.target
             elif action.target == "browser:quit":
                 await self.sessiond.call_set_delegated_surface("")
             else:
@@ -1275,11 +1312,12 @@ class ConsoleInterface(ServiceInterface):
     @method()
     async def BeginCredentialRequest(self, title: "s", prompt: "s", input_type: "s",
                                      secret: "b", min_length: "u", max_length: "u",
-                                     multiline: "b") -> "s":
+                                     multiline: "b", presentation: "s") -> "s":
         try:
             request = await self.credentials.request(title, prompt, CredentialInput(input_type),
-                                                     secret=secret, min_length=min_length,
-                                                      max_length=max_length, multiline=multiline)
+                                                       secret=secret, min_length=min_length,
+                                                       max_length=max_length, multiline=multiline,
+                                                       presentation=CredentialPresentation(presentation or "prompted"))
             return json.dumps(request.public_state(), separators=(",", ":"))
         except (RuntimeError, ValueError) as error:
             raise DBusError("org.lulu.Console.Error.CredentialUnavailable", str(error)) from error
@@ -1294,7 +1332,17 @@ class ConsoleInterface(ServiceInterface):
     @method()
     def SaveWebCredential(self, profile_id: "s", origin: "s", username: "s", password: "s") -> "s":
         try:
-            return json.dumps(self.web_credentials.save(profile_id, origin, username, password), separators=(",", ":"))
+            result = self.web_credentials.save(profile_id, origin, username, password)
+            if profile_id == "questarr":
+                # Credential persistence is complete before this asynchronous
+                # trigger is submitted.  The UI does not wait for Questarr's
+                # network reconciliation.
+                subprocess.Popen(
+                    ["systemctl", "start", "lulu-questarr-reconcile.service"],
+                    stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL, close_fds=True,
+                )
+            return json.dumps(result, separators=(",", ":"))
         except ValueError as error:
             raise DBusError("org.lulu.Console.Error.WebCredentialUnavailable", str(error)) from error
 
@@ -1309,7 +1357,7 @@ class ConsoleInterface(ServiceInterface):
     async def BeginOwnedCredentialRequest(self, title: "s", prompt: "s", input_type: "s",
                                           secret: "b", min_length: "u", max_length: "u",
                                           owner_id: "s", owner_json: "s",
-                                          choices_json: "s", multiline: "b") -> "s":
+                                           choices_json: "s", multiline: "b", presentation: "s") -> "s":
         try:
             owner = json.loads(owner_json) if owner_json else {}
             if not isinstance(owner, dict):
@@ -1320,7 +1368,8 @@ class ConsoleInterface(ServiceInterface):
             request = await self.credentials.request(
                 title, prompt, CredentialInput(input_type), secret=secret,
                 min_length=min_length, max_length=max_length, owner_id=owner_id,
-                owner=owner, choices=tuple(choices), multiline=multiline,
+                 owner=owner, choices=tuple(choices), multiline=multiline,
+                 presentation=CredentialPresentation(presentation or "prompted"),
             )
             return json.dumps(request.public_state(), separators=(",", ":"))
         except (RuntimeError, ValueError, TypeError) as error:
@@ -1384,12 +1433,11 @@ class ConsoleInterface(ServiceInterface):
             from .plugins.romm import RommConfig
             RommConfig.save_url(value)
         elif plugin_id == "steam" and name == "username":
-            path = PATHS.plugins_root / "steam" / "settings.toml"
-            path.parent.mkdir(parents=True, exist_ok=True)
-            temporary = path.with_name(".settings.toml.tmp")
-            temporary.write_text("[settings]\nusername = " + json.dumps(value.strip()) + "\n")
-            os.chmod(temporary, 0o600)
-            os.replace(temporary, path)
+            if not value.strip():
+                raise DBusError("org.lulu.Console.Error.InvalidPluginSetting", "Steam username cannot be empty")
+            # Steam credentials are plugin-owned SecretStore slots. Guard
+            # codes continue through CredentialBroker and never reach here.
+            self.secrets.put("steam", "username", value.strip())
         else:
             raise DBusError("org.lulu.Console.Error.InvalidPluginSetting", "unsupported plugin setting")
         return json.dumps({"saved": True}, separators=(",", ":"))
@@ -1452,6 +1500,25 @@ class ConsoleInterface(ServiceInterface):
         if game is None or not game.launchable:
             raise ValueError("game is not installed and launchable")
         LOGGER.info("launch dispatch game_id=%s provider=%s provider_id=%s", game_id, game.provider, game.provider_id)
+        for launcher in self._plugins.with_capability("launch"):
+            provider_ids = tuple(getattr(launcher, "provider_ids", ()))
+            if game.provider not in provider_ids or not hasattr(launcher, "launch_command"):
+                continue
+            command = launcher.launch_command(game.provider_id)
+            if self.sessiond is None:
+                raise ValueError("console session is unavailable")
+            context = {
+                key: os.environ[key] for key in (
+                    "DISPLAY", "WAYLAND_DISPLAY", "XDG_RUNTIME_DIR", "XDG_SESSION_TYPE",
+                    "DBUS_SESSION_BUS_ADDRESS", "XAUTHORITY", "HOME", "USER",
+                ) if os.environ.get(key)
+            }
+            await self.sessiond.call_set_delegated_launch_context(json.dumps(context, sort_keys=True))
+            token = await self.sessiond.call_request_game_launch(game.game_id, command, timeout_ms)
+            delta = self.catalogue.store.mark_played(game.game_id)
+            self._publish_delta(delta)
+            self.CatalogueChanged()
+            return token
         if game.provider == "steam":
             details_uri = self.catalogue.provider.open_game_details(game.provider_id)
             launch_uri = self.catalogue.provider.launch_gamepad_title(game.provider_id)
@@ -1462,6 +1529,26 @@ class ConsoleInterface(ServiceInterface):
                 launch_uri,
             )
             return details_uri
+        if game.provider == "lutris":
+            from .lutris_adapter import LutrisAdapter
+            script = PATHS.cache_home / "lutris" / f"mudos-{game.provider_id}.sh"
+            await asyncio.to_thread(LutrisAdapter().output_script, game.provider_id, script)
+            if self.sessiond is None:
+                raise ValueError("console session is unavailable")
+            context = {
+                key: os.environ[key] for key in (
+                    "DISPLAY", "WAYLAND_DISPLAY", "XDG_RUNTIME_DIR", "XDG_SESSION_TYPE",
+                    "DBUS_SESSION_BUS_ADDRESS", "XAUTHORITY", "HOME", "USER",
+                ) if os.environ.get(key)
+            }
+            await self.sessiond.call_set_delegated_launch_context(json.dumps(context, sort_keys=True))
+            token = await self.sessiond.call_request_game_launch(
+                game.game_id, ["/usr/bin/env", "bash", str(script)], timeout_ms
+            )
+            delta = self.catalogue.store.mark_played(game.game_id)
+            self._publish_delta(delta)
+            self.CatalogueChanged()
+            return token
         if game.provider == "local" and self.local_runtime is not None:
             device_indices = None
             if game.platform == "switch":

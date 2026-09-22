@@ -1,23 +1,18 @@
-"""Lulu service-boundary foundation.
-
-Transport, persistence, and external integrations are intentionally not part of
-this initial substrate.
-"""
-
-from .contracts import (
-    InputMode,
-    Lifecycle,
-    Overlay,
-    Presentation,
-    Role,
-    ServiceDescriptor,
+"""Mudos plugin framework public API."""
+from .core import (
+    BUILTIN_COMPONENTS, PLUGIN_API_VERSION, ComponentDescriptor, ComponentRegistry,
+    ConfigurationField, DependencyPlan, DependencySpec,
+    BrowserHandoffContribution,
+    PluginContext, PluginManifest, PluginRecord, PluginRegistry,
+    PluginSecretBoundary, ProvisioningRequirement, SecretRequirement,
+    ServiceContribution, StoreCardContribution,
 )
 
 __all__ = [
-    "InputMode",
-    "Lifecycle",
-    "Overlay",
-    "Presentation",
-    "Role",
-    "ServiceDescriptor",
+    "BUILTIN_COMPONENTS", "PLUGIN_API_VERSION", "ComponentDescriptor", "ComponentRegistry",
+    "ConfigurationField", "DependencyPlan", "DependencySpec",
+    "BrowserHandoffContribution",
+    "PluginContext", "PluginManifest", "PluginRecord", "PluginRegistry",
+    "PluginSecretBoundary", "ProvisioningRequirement", "SecretRequirement",
+    "ServiceContribution", "StoreCardContribution",
 ]

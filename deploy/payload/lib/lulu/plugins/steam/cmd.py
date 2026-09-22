@@ -176,12 +176,21 @@ class SteamCmdExecutor:
                  credentials: CredentialBroker | None = None,
                  request_credential: object | None = None) -> None:
         self.executable = executable or os.environ.get("LULU_STEAMCMD") or str(PATHS.steamcmd_executable)
+        self.secrets = SecretStore()
         self.account = account or os.environ.get("LULU_STEAM_ACCOUNT", "")
+        if not self.account:
+            self.account = self.secrets.get("steam", "username") or ""
         if not self.account:
             try:
                 path = PATHS.plugins_root / "steam" / "settings.toml"
                 with path.open("rb") as stream:
-                    self.account = str(tomllib.load(stream).get("settings", {}).get("username", "")).strip()
+                    legacy_account = str(tomllib.load(stream).get("settings", {}).get("username", "")).strip()
+                    if legacy_account:
+                        # One-way compatibility migration. New writes use the
+                        # plugin SecretStore boundary; the legacy file is not
+                        # treated as authoritative after this process starts.
+                        self.secrets.put("steam", "username", legacy_account)
+                        self.account = legacy_account
             except (FileNotFoundError, OSError, tomllib.TOMLDecodeError, AttributeError):
                 pass
         configured_library = os.environ.get("LULU_STEAM_LIBRARY")
@@ -194,7 +203,6 @@ class SteamCmdExecutor:
         self.parser = parser or SteamCmdParser()
         self.credentials = credentials or CredentialBroker()
         self.request_credential = request_credential
-        self.secrets = SecretStore()
 
     def _require_executable(self) -> str:
         """Resolve only the explicit override or the canonical Mudos path."""

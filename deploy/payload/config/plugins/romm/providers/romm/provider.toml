@@ -1,0 +1,10 @@
+id = "romm"
+name = "RomM"
+[capabilities]
+library = true
+acquire = true
+[platforms]
+supported = []
+[config]
+strategy = "direct"
+directory = "config"

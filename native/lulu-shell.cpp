@@ -1,6 +1,7 @@
 #include <QGuiApplication>
 #include <QDebug>
 #include <QFile>
+#include <QDir>
 #include <QDBusConnection>
 #include <QDBusInterface>
 #include <QDBusMessage>
@@ -144,6 +145,48 @@ private:
         settings.sync();
     }
     QVariantList bookmarks_;
+};
+
+class PluginStoreCardBridge final : public QObject
+{
+    Q_OBJECT
+    Q_PROPERTY(QVariantList cards READ cards NOTIFY cardsChanged)
+public:
+    explicit PluginStoreCardBridge(QObject *parent = nullptr) : QObject(parent) { reload(); }
+
+    QVariantList cards() const { return cards_; }
+
+signals:
+    void cardsChanged();
+
+private:
+    void reload()
+    {
+        QVariantList next;
+        const QString root = QString::fromUtf8(qgetenv("LULU_INSTALL_ROOT"));
+        const QDir plugins(root.isEmpty() ? QDir::currentPath() + QStringLiteral("/config/plugins")
+                                          : root + QStringLiteral("/config/plugins"));
+        const QStringList pluginDirs = plugins.entryList(QDir::Dirs | QDir::NoDotAndDotDot, QDir::Name);
+        for (const QString &pluginDir : pluginDirs) {
+            QFile file(plugins.filePath(pluginDir + QStringLiteral("/store-card.json")));
+            if (!file.open(QIODevice::ReadOnly)) continue;
+            const QJsonDocument document = QJsonDocument::fromJson(file.readAll());
+            if (!document.isObject()) continue;
+            const QJsonObject object = document.object();
+            if (object.value(QStringLiteral("id")).toString().isEmpty()
+                || object.value(QStringLiteral("label")).toString().isEmpty()
+                || object.value(QStringLiteral("url")).toString().isEmpty()) continue;
+            QVariantMap card;
+            for (auto it = object.begin(); it != object.end(); ++it)
+                card.insert(it.key(), it.value().toVariant());
+            card.insert(QStringLiteral("kind"), QStringLiteral("store"));
+            card.insert(QStringLiteral("removable"), false);
+            next.append(card);
+        }
+        if (next != cards_) { cards_ = next; emit cardsChanged(); }
+    }
+
+    QVariantList cards_;
 };
 
 class SystemStatusBridge final : public QObject
@@ -1293,6 +1336,7 @@ int main(int argc, char **argv)
     CatalogueModel catalogueModel(&application);
     RecentModel recentModel(&catalogueModel, &application);
     StoreBookmarkBridge storeBookmarks(&application);
+    PluginStoreCardBridge pluginStoreCards(&application);
     engine.rootContext()->setContextProperty("controllerBridge", &controller);
     engine.rootContext()->setContextProperty("systemStatus", &systemStatus);
     // The native catalogue model is authoritative for the migrated Recent
@@ -1300,6 +1344,7 @@ int main(int argc, char **argv)
     engine.rootContext()->setContextProperty("catalogueModel", &catalogueModel);
     engine.rootContext()->setContextProperty("recentModel", &recentModel);
     engine.rootContext()->setContextProperty("bookmarkStore", &storeBookmarks);
+    engine.rootContext()->setContextProperty("pluginStoreCardsBridge", &pluginStoreCards);
     const QString qmlPath = qEnvironmentVariable("LULU_UI_FILE", "/opt/lulu/ui/ConsoleShell.qml");
     engine.load(QUrl::fromLocalFile(qmlPath));
 

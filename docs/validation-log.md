@@ -750,6 +750,26 @@ not implied to have passed.
 - Full suite: 541 passed, 6 subtests. Runtime deployed to
   `/opt/lulu/dev-current`.
 
+## Mudos component/plugin modularisation checkpoint
+
+- Added the unified Component Registry boundary. Built-in emulator providers
+  remain built-in descriptors; Steam, Questarr, RomM, and Lutris remain genuine
+  plugin deployment boundaries; Transmission and NZBGet are service components.
+- Added directional dependency resolution, shared configuration/secret schema,
+  safe setup metadata, service/provisioning declarations, and Store-card
+  contributions. Questarr requires Lutris plus one downloader; reverse
+  selection does not occur.
+- Removed Steam/Questarr Store card definitions from StoreHome. The native shell
+  consumes declarative component cards, while user bookmarks remain separate.
+- SteamCMD now prefers the authoritative `steam/username` SecretStore slot and
+  uses the existing secure `steam/password` path. Steam Guard remains ephemeral.
+  No safe supported Steam GUI credential-injection mechanism was found, so GUI
+  login remains interactive.
+- Validation includes synthetic built-in and synthetic plugin components using
+  the same registry, schema, dependency, secret, and Store-card APIs. No
+  immutable release was modified; deployment is limited to the mutable
+  development runtime.
+
 ## Downloads
 
 - Commit: `423418f`
@@ -1733,3 +1753,111 @@ restart may be required for InputPlumber to publish a newly created target.
 - Controller-native Install remains disabled pending a production recipe
   policy for marking graphical `execute` commands and a complete real
   Acquisitiond Guide-cancellation integration test.
+
+## Initial Flatpak provider plugin
+
+- Reconnaissance on the live CachyOS appliance found no `flatpak` executable,
+  libflatpak library, or `gi.repository.Flatpak` typelib. There was no system
+  or lulu-user Flatpak installation, remote, runtime, or application to
+  migrate. No Flatpak state or download state was changed.
+- Added the Flatpak adapter boundary, user-scope ownership policy, stable
+  `flatpak:<application-id>` identity, system/user duplicate reconciliation,
+  AppStream metadata hooks, game-category filtering, update commit comparison,
+  cancellation/reconciliation semantics, application-data-preserving
+  uninstall, and generic supervised launch capability.
+- Added the `flatpak` plugin component with Flathub Store contribution,
+  provisioning requirements, generic Admin/Services metadata, and idempotent
+  controlled provisioning script. StoreHome, ComponentRegistry setup
+  enumeration, and generic session code require no Flatpak-specific UI branch.
+- Flathub browser install handoff was left for a future generic artifact
+  capability; no DOM scraping was introduced. Real OpenTTD validation remains
+  blocked until the native Flatpak dependency is provisioned.
+
+## Flatpak live completion validation
+
+- Provisioned through `scripts/provision-flatpak.sh`: Flatpak `1:1.18.2-1.1`,
+  Python GObject `3.56.3-1`, libflatpak GI namespace `1.18`; supporting
+  packages were `ostree 2026.4-1`, `libmalcontent 0.14.0-4`, and
+  `composefs 1.0.8-1.1`.
+- Flathub was added idempotently to the lulu user scope. A second provisioning
+  run left the remote set unchanged; no system remote or application was
+  removed. No graphical software centre was installed.
+- Native GI discovery read the real Flathub AppStream catalog and found
+  `org.openttd.OpenTTD` with summary, `stable`, `x86_64`, Flathub origin,
+  `Game`/`Simulation` categories, commit, and icon URL. Classification came
+  from AppStream categories, not an OpenTTD exception.
+- Native `Flatpak.Transaction` was used for the real Mudos JobManager path.
+  The install ran as one parent acquisition job, reached transferring and
+  finalizing, downloaded 161,162,832 bytes, resolved runtimes internally, and
+  reconciled to user-scope installation. The second install was submitted
+  through Acquisitiond after a clean provider uninstall.
+- Catalogue reconciliation produced exactly one
+  `flatpak:org.openttd.OpenTTD` record with provider `flatpak`, user scope,
+  Flathub remote, stable branch, installed state, and launchable state. After
+  uninstall it reconciled to available/not-installed; after reinstall it
+  returned to the same identity without duplication.
+- ProcessSupervisor launch was exercised through sessiond with
+  `flatpak run org.openttd.OpenTTD`. The observed tree was an owned Flatpak
+  `bwrap` group containing the session helper/proxy and `openttd`; its PGID
+  matched the Mudos launch identity. Guide exposed the generic process-group
+  Quit action and the Guide helper termination path removed the sandbox and
+  returned the session to shell. No unrelated Flatpak process was targeted.
+- The fixture presented through the existing X11/XWayland-compatible session
+  path. No native external-Wayland delegation was claimed or redesigned.
+- Normal Mudos uninstall removed the application deployment but did not pass
+  `--delete-data`; `~/.var/app/org.openttd.OpenTTD` remained. Shared runtimes
+  were not cleaned up automatically. Reinstall preserved the same provider
+  identity and data directory.
+- Native update inspection compared immutable installed and remote commits; the
+  live fixture was current, so no artificial downgrade was performed. Native
+  transaction cancellation and partial-operation reconciliation are covered by
+  adapter semantics/tests; no bandwidth-wasting cancellation was forced after
+  the completed fixture transaction.
+- Flathub's real Install route redirects to a generic
+  `flatpak+https://dl.flathub.org/repo/appstream/<application-id>.flatpakref`
+  URI. No DOM scraping or Flathub-specific WebEngine branch was added; a
+  reusable browser artifact/URI handoff remains follow-up work.
+- Changed the declarative Flathub card fallback glyph to Nerd Font `f324`.
+
+## Generic browser handoff validation
+
+- The pre-change physical failure was traced to an external `flatpak+https`
+  launch escaping Mudos; the live process evidence included `/usr/bin/xdg-open
+  flatpak+https://...flatpakref` and the software-manager helper. No
+  Acquisitiond job or catalogue record was created.
+- Added declarative `BrowserHandoffContribution` registry metadata with schemes,
+  handler ID, artifact types, and trusted source origins. Flatpak claims only
+  `flatpak+https` from the Flathub Store origin; disabled components no longer
+  claim it. Synthetic registry coverage proves an unrelated scheme can be
+  claimed without a provider branch in browser code.
+- MudosBrowser now reports generic external navigation requests, including
+  disposition and source origin, and ignores/rejects the external navigation
+  instead of falling through to a desktop handler. The bridge delegates to the
+  generic registry and returns immediate `Preparing installation…` feedback.
+- Acquisitiond stages and validates the HTTPS flatpakref, enforces a 2 MiB
+  limit, rejects malformed refs/non-HTTPS repositories, and submits the same
+  Flatpak JobManager/native transaction path used by normal installs. Duplicate
+  URI submissions resolve to the same stable provider identity/job conflict.
+- A live SuperTux handoff through the bridge produced one parent job,
+  transferred 316,022,046 bytes, completed natively, and reconciled
+  `flatpak:org.supertuxproject.SuperTux` as an installed Game/ActionGame/
+  ArcadeGame catalogue entry. The fixture launched successfully through
+  ProcessSupervisor as `bwrap` → `supertux2`; it was left installed.
+- The remaining physical acceptance step is to repeat the click from the
+  Flathub page after the final dev-runtime refresh, confirming the QML
+  navigation signal rather than the direct bridge probe.
+
+## Browser handoff event correction
+
+- Physical retry exposed the exact failure: Qt emitted the external navigation
+  callback, but this Qt build does not expose `QUrl.scheme` as a QML property.
+  The handler threw `TypeError` before dispatch, and the old fallback launched
+  `/usr/bin/xdg-open flatpak+https://...` / `shelly-ui`.
+- The handler now derives the scheme from `QUrl.toString()`. The live bridge
+  then accepted the handoff and created the normal Flatpak job. The first
+  accepted SuperTux repeat correctly failed only because SuperTux was already
+  installed; expected cancelled navigation was surfaced as `net::ERR_ABORTED`.
+- Suppressed that expected navigation error and made completed-install
+  handoffs idempotent. Repeated SuperTux handoff now returns `Already installed`
+  without creating another job.
+- Full suite after the correction: 556 passed, 6 subtests passed.

@@ -15,9 +15,11 @@ class BrowserStoreLifecycleTests(unittest.TestCase):
 
     def test_home_store_cards_are_not_catalogue_cards(self) -> None:
         self.assertIn('title: "Available to Download"', self.store)
-        self.assertIn('title: "Steam"', self.store)
         self.assertIn('title: "Add New Store"', self.store)
         self.assertIn("function homeCards()", self.store)
+        self.assertIn("pluginStores", self.store)
+        self.assertNotIn('id: "steam", title: "Steam"', self.store)
+        self.assertNotIn('id: "questarr", title: "Questarr"', self.store)
         self.assertNotIn('scope === "stores"', self.store)
 
     def test_browser_enters_and_restores_compatibility_surface(self) -> None:
@@ -32,6 +34,13 @@ class BrowserStoreLifecycleTests(unittest.TestCase):
         self.assertIn("goBackOrClose", self.shell)
         self.assertIn("if (view.canGoBack)", self.browser)
         self.assertIn("releasePage", self.browser)
+
+    def test_external_browser_navigation_uses_generic_handoff_bridge(self) -> None:
+        self.assertIn("externalNavigationRequested", self.browser)
+        self.assertIn("onNavigationRequested", self.browser)
+        self.assertIn('request("/browser-handoff"', self.shell)
+        self.assertNotIn("flatpak+https", self.browser)
+        self.assertNotIn("flathub", self.browser)
 
     def test_global_downloads_suspends_and_resumes_browser(self) -> None:
         self.assertIn("browserSuspended = true", self.shell)

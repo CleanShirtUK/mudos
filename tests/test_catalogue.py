@@ -326,6 +326,24 @@ class CatalogueTests(unittest.TestCase):
         self.assertEqual(store.list_games("platform:nes")[0].title, "Mario")
         self.assertEqual(store.list_platforms(), [("nes", "Nintendo Entertainment System")])
 
+    def test_component_snapshot_clears_stale_installed_state(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = CatalogueStore(Path(directory) / "catalogue.sqlite3")
+            app = {
+                "application_id": "org.example.Game", "name": "Example Game",
+                "installed": True, "categories": ("Game",),
+            }
+            store.reconcile_component_apps("flatpak", [CatalogueGame.from_component_app(app)])
+            app["installed"] = False
+            store.reconcile_component_apps("flatpak", [CatalogueGame.from_component_app(app)])
+
+            game = store.get_game("flatpak:org.example.Game")
+
+        assert game is not None
+        self.assertEqual(game.install_state, "available")
+        self.assertFalse(game.launchable)
+        self.assertEqual(store.list_games("pc"), [])
+
     def test_romm_links_to_local_without_duplicate_library_cards_or_title_dedupe(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory) / "roms"

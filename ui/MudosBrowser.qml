@@ -11,6 +11,9 @@ Item {
     property bool editableCaptureLocked: false
     property string trustedProfile: ""
     property string trustedOrigin: ""
+    property bool suppressExternalNavigationError: false
+    property string externalActionMessage: ""
+    property string lastWebUrl: ""
     // One consistent Mudos browser scale; WebEngine rerenders page layout,
     // unlike a QML view transform which would leave text physically small.
     property real pageZoom: 1.25
@@ -19,11 +22,32 @@ Item {
     signal editableTargetUnavailable()
     signal trustedLoginForm(var details)
     signal trustedCredentialsCaptured(var details)
+    signal externalNavigationRequested(string targetUrl, string sourceOrigin, string disposition)
 
     function open(url) {
         errorMessage = ""
+        externalActionMessage = ""
         view.url = url
         view.forceActiveFocus()
+    }
+    function currentOrigin() {
+        try { return (new URL(view.url.toString())).origin }
+        catch (error) { return "" }
+    }
+    function setExternalActionMessage(value) { externalActionMessage = value || "" }
+    function dispatchExternalNavigation(target, disposition) {
+        var scheme = target.split(":")[0].toLowerCase()
+        if (scheme === "http" || scheme === "https" || scheme === "about")
+            return false
+        root.suppressExternalNavigationError = true
+        root.externalActionMessage = "Preparing installation…"
+        var origin = root.currentOrigin()
+        if ((!origin || origin === "null") && root.lastWebUrl) {
+            try { origin = (new URL(root.lastWebUrl)).origin }
+            catch (error) { origin = "" }
+        }
+        root.externalNavigationRequested(target, origin, disposition)
+        return true
     }
     function applyTrustedCredentials(username, password) {
         if (!trustedProfile || !trustedOrigin)
@@ -199,6 +223,28 @@ Item {
                 onAccepted: { view.url = text; view.forceActiveFocus() }
             }
         }
+        Rectangle {
+            anchors.right: parent.right
+            anchors.rightMargin: 12
+            anchors.verticalCenter: parent.verticalCenter
+            width: Math.min(parent.width * 0.32, 520)
+            height: 44
+            radius: 6
+            color: "#202734"
+            visible: root.externalActionMessage !== ""
+            z: 3
+            Text {
+                anchors.fill: parent
+                anchors.leftMargin: 12
+                anchors.rightMargin: 12
+                text: root.externalActionMessage
+                color: "white"
+                font.pixelSize: 18
+                verticalAlignment: Text.AlignVCenter
+                horizontalAlignment: Text.AlignHCenter
+                elide: Text.ElideRight
+            }
+        }
     }
     WebEngineView {
         id: view
@@ -209,7 +255,14 @@ Item {
         settings.spatialNavigationEnabled: true
         focus: true
         onUrlChanged: {
-            root.address = url.toString()
+            var changedUrl = url.toString()
+            if (root.dispatchExternalNavigation(changedUrl, "url-changed")) {
+                if (root.lastWebUrl)
+                    view.url = root.lastWebUrl
+                return
+            }
+            root.lastWebUrl = changedUrl
+            root.address = changedUrl
             var sameTrustedOrigin = false
             if (root.trustedOrigin !== "") {
                 try { sameTrustedOrigin = (new URL(url.toString())).origin === root.trustedOrigin }
@@ -225,26 +278,58 @@ Item {
                 view.runJavaScript("window.__mudosLoginHooked=false;window.__mudosLoginSeen=false;window.__mudosLoginSubmitted=false;window.__mudosCredentialCandidate=null;window.__mudosCredentialCaptureSent=false;window.__mudosAutofillRequested=false;window.__mudosExplicitEditableActivation=null")
         }
         onLoadingChanged: function(loadRequest) {
-            if (loadRequest.status === WebEngineLoadRequest.LoadFailedStatus)
-                root.errorMessage = loadRequest.errorString
-            else if (loadRequest.status === WebEngineLoadRequest.LoadSucceededStatus) {
+            if (loadRequest.errorString)
+                if (root.suppressExternalNavigationError) {
+                    root.suppressExternalNavigationError = false
+                    root.errorMessage = ""
+                } else {
+                    root.errorMessage = loadRequest.errorString
+                }
+            else {
                 root.errorMessage = ""
                 view.runJavaScript("window.__mudosEditableActivationHooks=false")
             }
         }
         onNewWindowRequested: function(request) {
-            if (request.requestedUrl.scheme === "http" || request.requestedUrl.scheme === "https") {
+            var target = request.requestedUrl.toString()
+            var scheme = target.split(":")[0].toLowerCase()
+            if (scheme === "http" || scheme === "https") {
                 request.openIn(view)
             } else {
-                root.errorMessage = "Unsupported link: " + request.requestedUrl.scheme
+                root.dispatchExternalNavigation(target, "new-window")
                 request.reject()
             }
+        }
+        onNavigationRequested: function(request) {
+            var target = request.url.toString()
+            var scheme = target.split(":")[0].toLowerCase()
+            if (scheme === "http" || scheme === "https")
+                return
+            root.dispatchExternalNavigation(target, "navigation")
+            request.action = WebEngineNavigationRequest.IgnoreRequest
         }
     }
     Rectangle {
         anchors.centerIn: view; visible: root.errorMessage !== ""
         color: "#d02028"; radius: 4; width: Math.min(parent.width - 80, 900); height: 70
         Text { anchors.centerIn: parent; text: root.errorMessage; color: "white"; font.pixelSize: 18 }
+    }
+    Rectangle {
+        anchors.horizontalCenter: view.horizontalCenter
+        anchors.bottom: view.bottom
+        anchors.bottomMargin: 36
+        visible: root.externalActionMessage !== ""
+        color: "#202734ee"
+        radius: 8
+        width: Math.min(view.width - 80, 720)
+        height: 58
+        z: 4
+        Text {
+            anchors.centerIn: parent
+            text: root.externalActionMessage
+            color: "white"
+            font.pixelSize: 20
+        }
     }
     Component.onCompleted: open(initialUrl)
 }

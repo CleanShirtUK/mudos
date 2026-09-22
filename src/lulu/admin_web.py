@@ -25,6 +25,7 @@ from typing import Any
 from .credential import SecretStore
 from .provider_config import ProviderConfigurationService
 from .paths import PATHS
+from .plugins import ComponentRegistry, PluginRegistry
 
 LOGGER = logging.getLogger("lulu.admin")
 
@@ -204,6 +205,14 @@ class AdminApp:
         self.secrets = SecretStore()
         self.sessions: dict[str, tuple[float, str]] = {}
         self.config = ProviderConfigurationService.from_environment(secrets=self.secrets)
+        plugin_root = PATHS.plugins_root
+        installed_plugins = PATHS.install_root / "config" / "plugins"
+        if (not plugin_root.is_dir() or not any(plugin_root.glob("*/plugin.toml"))) and installed_plugins.is_dir():
+            plugin_root = installed_plugins
+        self.plugins = PluginRegistry(plugin_root)
+        self.plugins.discover()
+        self.components = ComponentRegistry(self.plugins)
+        self.components.discover()
 
     def password_configured(self) -> bool:
         return self.secrets.configured(ADMIN_NAMESPACE, ADMIN_SECRET)
@@ -233,7 +242,12 @@ class AdminApp:
 
     def provider_rows(self) -> list[dict[str, object]]:
         rows = []
-        for provider_id, name in PROVIDERS:
+        declared = list(PROVIDERS)
+        known = {provider_id for provider_id, _ in declared}
+        declared.extend((component.component_id, component.name)
+                        for component in self.components.all()
+                        if component.component_id not in known and component.provider_ids)
+        for provider_id, name in declared:
             config = self.config.provider(provider_id)
             rows.append({"id": provider_id, "name": name, "status": config.status,
                          "secrets": {key: config.secret_available(key) for key in config.secret_refs}})
@@ -297,6 +311,11 @@ class AdminApp:
                 return True, "Transmission RPC healthy"
             except Exception:
                 return False, "Transmission RPC unavailable or not authenticated"
+        for provider in self.plugins.with_capability("provider"):
+            if provider_id in tuple(getattr(provider, "provider_ids", ())):
+                if not getattr(provider, "available", False):
+                    return False, "The provider is not installed"
+                return True, "Provider is available"
         return False, "No normalized health check is available for this provider"
 
 
@@ -425,7 +444,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
     def _provider_form(self, provider_id: str) -> None:
         config = APP.config.provider(provider_id); csrf = APP.session(self._token()) or ""
         title, description, explanation = PROVIDER_META.get(provider_id, (provider_id, "", ""))
-        if provider_id not in dict(PROVIDERS):
+        if provider_id in {component.component_id for component in APP.components.all()}:
+            component = APP.components.get(provider_id)
+            title, description, explanation = component.name, component.description, component.description
+        component_ids = {component.component_id for component in APP.components.all()}
+        if provider_id not in dict(PROVIDERS) and provider_id not in component_ids:
             self._send(_page("Not found", '<div class="notice error"><strong>Integration not found</strong><p>Choose an integration from the list.</p></div><a class="button" href="/integrations">Back to integrations</a>', active="integrations"), 404); return
         if provider_id == "providers.torrent":
             fields = (_field("Username", "username", config.secret("username") or "", help_text="The account name used by Mudos and the Transmission Web UI.", required=True)
@@ -577,6 +600,20 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
     def _services(self) -> None:
         rows = "".join(f'<div class="service-row"><div><div class="card-head"><h3>{html.escape(name)}</h3>{_badge(APP.service_state(unit))}</div><p>{html.escape(_service_description(key))}</p>{_badge(APP.service_health(s))}</div><a class="button button-secondary" href="{html.escape(_service_url(self,s))}">Open</a></div>' for s in SERVICES for key,name,unit,*_ in [s])
+        known = {service[0] for service in SERVICES}
+        generic_rows = []
+        for component in APP.components.all():
+            if not component.enabled:
+                continue
+            for service in component.services:
+                if service.service_id in known:
+                    continue
+                link = (f'<a class="button button-secondary" href="{html.escape(service.url)}">Open</a>'
+                        if service.url else "")
+                generic_rows.append(
+                    f'<div class="service-row"><div><div class="card-head"><h3>{html.escape(service.name)}</h3>'
+                    f'{_badge("active")}</div><p>{html.escape(service.description)}</p></div>{link}</div>')
+        rows += "".join(generic_rows)
         self._send(_page("Services", f'<div class="service-list">{rows}</div>', subtitle="Open the appliance services you use every day. Editing stays on Integrations.", active="services"))
 
     def _system(self) -> None:

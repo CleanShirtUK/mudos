@@ -214,6 +214,7 @@ Window {
     property var libraryGames: []
     property var storeAvailableGames: []
     property var storeBookmarks: bookmarkStore ? bookmarkStore.bookmarks : []
+    property var pluginStoreCards: pluginStoreCardsBridge ? pluginStoreCardsBridge.cards : []
     property bool browserVisible: false
     property bool browserSuspended: false
     property string browserLaunchId: ""
@@ -371,7 +372,7 @@ Window {
         request.onreadystatechange = function() {
             if (request.readyState !== XMLHttpRequest.DONE)
                 return
-            if (request.status === 200)
+            if (request.status === 200 || request.status === 202)
                 callback(JSON.parse(request.responseText))
             else if (failureMessage && (generation === undefined || generation === launchGeneration)) {
                 message = failureMessage || "Catalogue unavailable"
@@ -1602,7 +1603,7 @@ Window {
         if (space !== "home" || selectedCategoryIndex !== 1 || !storeHomeLandingRef)
             return false
         var card = storeHomeLandingRef.homeCards()[storeHomeLandingRef.homeSelectedIndex]
-        if (!card || card.kind !== "store" || card.id === "steam" || card.id === "questarr")
+        if (!card || card.kind !== "store" || card.removable === false)
             return false
         if (pendingStoreRemovalId !== card.id) {
             pendingStoreRemovalId = card.id
@@ -2013,7 +2014,7 @@ Window {
                         root.message = "Steam sign-in surface opened"
                     }, "Plugin sign-in failed")
                 else if (selectedKey === "plugin.steamcmd.username")
-                    root.beginPluginCredential("steam", "username", "SteamCMD Username", "Username", "setting", false)
+                    root.beginPluginCredential("steam", "username", "Steam username", "Username", "secret", true)
                 else if (selectedKey === "plugin.steamcmd.password")
                     root.beginPluginCredential("steam", "password", "SteamCMD Password", "Password", "secret", true)
                 else if (selectedKey === "plugin.steamcmd.password.clear")
@@ -2925,8 +2926,9 @@ Window {
                          categoryTransitioning: root.homeCategoryTransitioning
                          categoryFrom: root.homeCategoryFrom
                          categoryTarget: root.homeCategoryTarget
-                         categoryDirection: root.homeCategoryDirection
-                         categoryMotionVelocity: root.homeCategoryPresentationVelocity(1)
+                          categoryDirection: root.homeCategoryDirection
+                          categoryMotionVelocity: root.homeCategoryPresentationVelocity(1)
+                          pluginStores: root.pluginStoreCards
                          onSteamStoreRequested: root.openSteamStore()
                          onHomeDownloadRequested: root.activate()
                           onHomeStoreRequested: function(id, name, url) { root.launchHomeStore(id, name, url) }
@@ -3108,6 +3110,7 @@ Window {
             availableGames: root.storeAvailableGames
              acquisitionJobs: root.acquisitionJobs
              stores: root.storeBookmarks
+             pluginStores: root.pluginStoreCards
             categories: root.storeCategories
             focalCardWidth: root.homeFocalCardWidth
             focalCardHeight: root.homeFocalCardHeight
@@ -3142,9 +3145,19 @@ Window {
                         && root.credentialRequest.status !== "waiting")
                     root.request("/keyboard/hide", "POST", "", function() {})
             }
-            onTrustedLoginForm: function(details) { root.trustedWebCredentialRequest(details) }
-            onTrustedCredentialsCaptured: function(details) { root.trustedWebCredentialCaptured(details) }
-        }
+             onTrustedLoginForm: function(details) { root.trustedWebCredentialRequest(details) }
+             onTrustedCredentialsCaptured: function(details) { root.trustedWebCredentialCaptured(details) }
+             onExternalNavigationRequested: function(targetUrl, sourceOrigin, disposition) {
+                 browserSurface.setExternalActionMessage("Preparing installation…")
+                 root.message = "Preparing installation…"
+                 root.request("/browser-handoff", "POST", JSON.stringify({
+                     uri: targetUrl, source_origin: sourceOrigin, disposition: disposition
+                 }), function(data) {
+                     browserSurface.setExternalActionMessage(data.message || "Installation queued")
+                     root.message = data.message || "Installation queued"
+                 }, "Mudos could not accept this browser action")
+             }
+         }
 
         DownloadsHome {
             id: downloadsHome

@@ -258,6 +258,17 @@ class ConsoleUiBridge:
             raise ValueError("unknown acquisition action")
         return {"status": action}
 
+    async def browser_handoff(self, uri: str, source_origin: str) -> dict[str, str]:
+        if self.acquisitiond is None:
+            raise RuntimeError("acquisition service is unavailable")
+        job_id = await self.acquisitiond.call_submit_browser_handoff(uri, source_origin)
+        LOGGER.info("browser handoff accepted origin=%s uri=%s job_id=%s", source_origin, uri, job_id)
+        if str(job_id).startswith("existing:"):
+            return {"job_id": str(job_id).removeprefix("existing:"), "status": "already-installed",
+                    "message": "Already installed"}
+        asyncio.create_task(self._refresh_after_acquisition(job_id, "flatpak"))
+        return {"job_id": job_id, "status": "accepted", "message": "Preparing installation…"}
+
     async def clear_requested_surface(self) -> dict[str, str]:
         await self.sessiond.call_clear_requested_surface()
         return {"status": "cleared"}
@@ -271,7 +282,7 @@ class ConsoleUiBridge:
     async def install_game(self, game_id: str) -> dict[str, str]:
         if self.acquisitiond is None:
             raise RuntimeError("acquisition service is unavailable")
-        rows = await self.list_available_games("romm")
+        rows = await self.list_available_games("")
         selected = next((row for row in rows if str(row.get("game_id", "")) == game_id), None)
         if selected is None:
             raise ValueError("game is not available to acquire")
@@ -285,6 +296,14 @@ class ConsoleUiBridge:
             if not rom_id.isdecimal() or int(rom_id) < 1:
                 raise ValueError("RomM content identity is invalid")
             content_identity = f"romm:{rom_id}"
+        elif provider == "lutris":
+            content_identity = str(selected.get("content_identity", ""))
+            if not content_identity:
+                raise ValueError("PC source identity is missing")
+            job_id = await self.acquisitiond.call_submit_pc_install(content_identity, title)
+            asyncio.create_task(self._refresh_after_acquisition(job_id, provider))
+            self.launch_logs.note("Lulu", f"{provider} installation submitted identity={content_identity} job_id={job_id}")
+            return {"token": job_id}
         else:
             raise ValueError("game provider is not acquirable")
         existing_snapshot = await self.acquisition()
@@ -323,7 +342,7 @@ class ConsoleUiBridge:
                 if job is None:
                     return
                 if job.get("state") == "completed":
-                    await self.consoled.call_refresh_stages(["steam", "local", "romm"])
+                    await self.consoled.call_refresh_stages(["steam", "local", "romm", "components"])
                     return
                 if job.get("state") in {"failed", "cancelled"}:
                     return
@@ -341,7 +360,8 @@ class ConsoleUiBridge:
                 if job is None or job.get("state") in {"failed", "cancelled"}:
                     return
                 if job.get("state") == "completed":
-                    stages = ["steam"] if provider == "steam" else ["local"]
+                    stages = (["steam"] if provider == "steam" else
+                              ["components"] if provider == "flatpak" else ["local"])
                     await self.consoled.call_refresh_stages(stages)
                     return
                 await asyncio.sleep(1)
@@ -919,6 +939,16 @@ class ApiHandler(BaseHTTPRequestHandler):
                     self.bridge.set_browser_surface(bool(payload.get("active", False)))))
             except Exception as error:
                 self._respond(409, {"error": str(error)})
+            return
+        if path == "/browser-handoff":
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+                payload = json.loads(self.rfile.read(length) or b"{}")
+                result = self.bridge.call(self.bridge.browser_handoff(
+                    str(payload.get("uri", "")), str(payload.get("source_origin", ""))), timeout=25)
+                self._respond(202, result)
+            except Exception as error:
+                self._respond(409, {"error": str(error) or type(error).__name__})
             return
         if path == "/store/steam":
             try:

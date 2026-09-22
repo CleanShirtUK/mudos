@@ -13,9 +13,10 @@ class QuestarrIntegrationTests(unittest.TestCase):
     def test_fixed_home_card_uses_existing_browser_store_path(self) -> None:
         store = (ROOT / "ui/StoreHome.qml").read_text()
         shell = (ROOT / "ui/ConsoleShell.qml").read_text()
-        self.assertIn('id: "questarr", title: "Questarr"', store)
-        self.assertIn('url: "http://127.0.0.1:5000/"', store)
-        self.assertNotIn('id: "questarr", title: "Questarr", kind: "store", url: "http://mudos.local:5000/"', store)
+        card = (ROOT / "config/plugins/questarr/store-card.json").read_text()
+        self.assertIn('"id":"questarr"', card)
+        self.assertIn('"url":"http://127.0.0.1:5000/"', card)
+        self.assertNotIn('id: "questarr", title: "Questarr"', store)
         admin = (ROOT / "src/lulu/admin_web.py").read_text()
         self.assertIn('("questarr", "Questarr", "lulu-questarr.service", "http", 5000, "/", True', admin)
         self.assertIn("function launchHomeStore", shell)

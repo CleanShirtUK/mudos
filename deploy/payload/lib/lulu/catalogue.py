@@ -15,6 +15,8 @@ from .paths import PATHS
 from .plugins.romm.client import RommGame
 from .plugins.steam.provider import InstalledSteamGame, SteamProvider
 from .plugins.steam.entitlements import SteamEntitlement
+from .switch_content import parent_name
+from .pc_install import PcInstallSource
 
 
 @dataclass(frozen=True, slots=True)
@@ -84,6 +86,26 @@ class CatalogueGame:
     artwork_source_url: str = ""
     metadata_resolver_version: int = 0
     installed_game_id: str = ""
+    summary: str = ""
+    game_modes: tuple[str, ...] = ()
+    developer: str = ""
+    publisher: str = ""
+    platforms: tuple[str, ...] = ()
+    franchise: str = ""
+    collection: str = ""
+    igdb_id: str = ""
+    igdb_fetched_at: int | None = None
+    protondb_tier: str | None = None
+    protondb_confidence: str | None = None
+    protondb_score: float | None = None
+    protondb_trending_tier: str | None = None
+    protondb_best_tier: str | None = None
+    protondb_report_count: int | None = None
+    protondb_fetched_at: int | None = None
+    component_paths: tuple[str, ...] = ()
+    component_roles: tuple[str, ...] = ()
+    component_title_ids: tuple[str, ...] = ()
+    mudos_owned: bool = False
 
     @classmethod
     def from_steam(cls, game: InstalledSteamGame) -> "CatalogueGame":
@@ -93,6 +115,43 @@ class CatalogueGame:
             install_dir=game.install_dir, artwork_url=game.artwork_url, last_played=game.last_played,
             source_title=game.title, normalized_search_title=clean_local_title(game.title),
             catalogue_source="steam",
+        )
+
+    @classmethod
+    def from_lutris(cls, registration: dict[str, object], source: PcInstallSource) -> "CatalogueGame":
+        slug = str(registration.get("slug") or source.canonical_game_id)
+        title = str(registration.get("title") or source.title)
+        return cls(
+            game_id=f"lutris:{source.lutris_slug or source.canonical_game_id}", provider="lutris", provider_id=str(registration.get("lutris_id", slug)),
+            title=title, platform="PC", install_state="installed", launchable=True,
+            install_dir=str(registration.get("directory", "")), artwork_url="", last_played=0,
+            runtime=str(registration.get("runner", "")), source_title=source.title,
+            normalized_search_title=clean_local_title(title), availability_state="installed",
+            provider_record_id=str(registration.get("config_id", "")), content_identity=source.source_id,
+            catalogue_source=source.provenance,
+        )
+
+    @classmethod
+    def from_component_app(cls, app: object) -> "CatalogueGame":
+        """Normalize an external component application without naming its adapter."""
+        value = app if isinstance(app, dict) else {
+            key: getattr(app, key, "") for key in (
+                "application_id", "name", "summary", "version", "branch", "remote",
+                "installed", "icon", "categories",
+            )
+        }
+        application_id = str(value.get("application_id", "")).strip()
+        title = str(value.get("name", application_id)).strip() or application_id
+        installed = bool(value.get("installed", False))
+        categories = tuple(str(item) for item in value.get("categories", ()))
+        return cls(
+            game_id=f"flatpak:{application_id}", provider="flatpak", provider_id=application_id,
+            title=title, platform="Linux", install_state="installed" if installed else "available",
+            launchable=installed, install_dir=str(Path.home() / ".var" / "app" / application_id),
+            artwork_url=str(value.get("icon", "")), last_played=0, runtime=str(value.get("branch", "")),
+            source_title=title, summary=str(value.get("summary", "")), genres=categories,
+            availability_state="installed" if installed else "available", provider_record_id=application_id,
+            content_identity=application_id, catalogue_source="flatpak",
         )
 
     @classmethod
@@ -122,7 +181,10 @@ class CatalogueGame:
             launchable=game.launchable, install_dir=game.content_path, artwork_url="",
             last_played=0, runtime=game.runtime, platform_label=game.platform_label,
             source_title=source_title, normalized_search_title=clean_local_title(source_title),
-            catalogue_source="local",
+            catalogue_source="local", component_paths=getattr(game, "component_paths", ()),
+            component_roles=getattr(game, "component_roles", ()),
+            component_title_ids=getattr(game, "component_title_ids", ()),
+            mudos_owned=bool(getattr(game, "mudos_owned", True)),
         )
 
     @classmethod
@@ -163,6 +225,11 @@ class CatalogueGame:
     def as_dict(self) -> dict[str, object]:
         value = asdict(self)
         value["genres"] = list(self.genres)
+        value["game_modes"] = list(self.game_modes)
+        value["platforms"] = list(self.platforms)
+        value["component_paths"] = list(self.component_paths)
+        value["component_roles"] = list(self.component_roles)
+        value["component_title_ids"] = list(self.component_title_ids)
         return value
 
 
@@ -191,8 +258,23 @@ SELECT_COLUMNS = (
     "artwork_url, last_played, runtime, platform_label, " + ", ".join(IDENTITY_COLUMNS)
     + ", availability_state, provider_record_id, content_identity, catalogue_source, genres, "
       "release_date, release_year, total_playtime, local_multiplayer, online_multiplayer, "
-      "game_mode, protondb_rating, last_seen_at, last_synced_at, artwork_source_url"
-       ", metadata_resolver_version, installed_game_id"
+       "game_mode, protondb_rating, last_seen_at, last_synced_at, artwork_source_url"
+       ", metadata_resolver_version, installed_game_id, summary, game_modes, developer, publisher, platforms, "
+       "franchise, collection, igdb_id, igdb_fetched_at, protondb_tier, protondb_confidence, protondb_score, "
+        "protondb_trending_tier, protondb_best_tier, protondb_report_count, protondb_fetched_at, "
+        "component_paths, component_roles, component_title_ids, mudos_owned"
+)
+SELECT_FIELD_ORDER = (
+    "game_id", "provider", "provider_id", "title", "platform", "install_state", "launchable",
+    "install_dir", "artwork_url", "last_played", "runtime", "platform_label", *IDENTITY_COLUMNS, "availability_state",
+    "provider_record_id", "content_identity", "catalogue_source", "genres", "release_date",
+    "release_year", "total_playtime", "local_multiplayer", "online_multiplayer", "game_mode",
+    "protondb_rating", "last_seen_at", "last_synced_at", "artwork_source_url",
+    "metadata_resolver_version", "installed_game_id", "summary", "game_modes", "developer",
+    "publisher", "platforms", "franchise", "collection", "igdb_id", "igdb_fetched_at", "protondb_tier",
+    "protondb_confidence", "protondb_score", "protondb_trending_tier", "protondb_best_tier",
+     "protondb_report_count", "protondb_fetched_at", "component_paths", "component_roles",
+     "component_title_ids", "mudos_owned",
 )
 
 
@@ -229,10 +311,31 @@ class CatalogueStore:
                        "local_multiplayer": "INTEGER", "online_multiplayer": "INTEGER", "game_mode": "TEXT",
                         "protondb_rating": "TEXT", "last_seen_at": "INTEGER", "last_synced_at": "INTEGER",
                         "artwork_source_url": "TEXT NOT NULL DEFAULT ''", "metadata_resolver_version": "INTEGER NOT NULL DEFAULT 0",
-                        "installed_game_id": "TEXT NOT NULL DEFAULT ''"}
+                       "installed_game_id": "TEXT NOT NULL DEFAULT ''", "summary": "TEXT NOT NULL DEFAULT ''",
+                       "game_modes": "TEXT NOT NULL DEFAULT '[]'", "developer": "TEXT NOT NULL DEFAULT ''",
+                       "publisher": "TEXT NOT NULL DEFAULT ''", "platforms": "TEXT NOT NULL DEFAULT '[]'",
+                       "franchise": "TEXT NOT NULL DEFAULT ''", "collection": "TEXT NOT NULL DEFAULT ''",
+                       "igdb_id": "TEXT NOT NULL DEFAULT ''", "igdb_fetched_at": "INTEGER",
+                       "protondb_tier": "TEXT", "protondb_confidence": "TEXT", "protondb_score": "REAL",
+                       "protondb_trending_tier": "TEXT", "protondb_best_tier": "TEXT",
+                        "protondb_report_count": "INTEGER", "protondb_fetched_at": "INTEGER",
+                        "component_paths": "TEXT NOT NULL DEFAULT '[]'",
+                        "component_roles": "TEXT NOT NULL DEFAULT '[]'",
+                        "component_title_ids": "TEXT NOT NULL DEFAULT '[]'",
+                        "mudos_owned": "INTEGER NOT NULL DEFAULT 0"}
         for name, definition in migrations.items():
             if name not in columns:
                 self.connection.execute(f"ALTER TABLE games ADD COLUMN {name} {definition}")
+        self.connection.commit()
+        self.connection.execute(
+            """CREATE TABLE IF NOT EXISTS metadata_enrichment (
+                provider TEXT NOT NULL, game_id TEXT NOT NULL, external_id TEXT NOT NULL,
+                fetched_at INTEGER NOT NULL, source_updated_at INTEGER, match_method TEXT NOT NULL,
+                confidence REAL NOT NULL DEFAULT 0, status TEXT NOT NULL, normalized_json TEXT NOT NULL,
+                PRIMARY KEY(provider, game_id),
+                FOREIGN KEY(game_id) REFERENCES games(game_id)
+            )"""
+        )
         self.connection.commit()
 
     @contextmanager
@@ -273,7 +376,8 @@ class CatalogueStore:
     @staticmethod
     def _field_value(game: CatalogueGame, name: str) -> object:
         value = getattr(game, name)
-        return list(value) if name == "genres" else value
+        return list(value) if name in {"genres", "game_modes", "platforms", "component_paths",
+                                      "component_roles", "component_title_ids"} else value
 
     @classmethod
     def meaningful_changes(cls, before: CatalogueGame, after: CatalogueGame) -> tuple[str, ...]:
@@ -284,7 +388,10 @@ class CatalogueStore:
 
     @staticmethod
     def _sql_value(name: str, value: object) -> object:
-        return json.dumps(value, sort_keys=True) if name == "genres" else value
+        return json.dumps(value, sort_keys=True) if name in {
+            "genres", "game_modes", "platforms", "component_paths", "component_roles",
+            "component_title_ids",
+        } else value
 
     def _commit_if_direct(self) -> None:
         if self._transaction_depth == 0:
@@ -319,6 +426,12 @@ class CatalogueStore:
             if local.platform.casefold() == game.platform.casefold() and \
                     Path(local.install_dir).name.casefold() == filename:
                 return local
+        if game.platform.casefold() == "switch":
+            expected_parent = parent_name(filename)
+            for local in locals_:
+                if local.platform.casefold() == "switch" and \
+                        parent_name(local.source_title or local.install_dir) == expected_parent:
+                    return local
         return None
 
     def _associate_romm_locked(self, romm: CatalogueGame, local: CatalogueGame,
@@ -363,6 +476,10 @@ class CatalogueStore:
             provider_record_id=incoming.provider_record_id,
             content_identity=incoming.content_identity,
             catalogue_source=incoming.catalogue_source,
+            component_paths=incoming.component_paths or existing.component_paths,
+            component_roles=incoming.component_roles or existing.component_roles,
+            component_title_ids=incoming.component_title_ids or existing.component_title_ids,
+            mudos_owned=incoming.mudos_owned or existing.mudos_owned,
             genres=existing.genres if existing.genres else incoming.genres,
             release_date=existing.release_date if existing.release_date is not None else incoming.release_date,
             release_year=existing.release_year if existing.release_year is not None else incoming.release_year,
@@ -371,6 +488,22 @@ class CatalogueStore:
             online_multiplayer=existing.online_multiplayer if existing.online_multiplayer is not None else incoming.online_multiplayer,
             game_mode=existing.game_mode if existing.game_mode is not None else incoming.game_mode,
             protondb_rating=existing.protondb_rating if existing.protondb_rating is not None else incoming.protondb_rating,
+            summary=existing.summary or incoming.summary,
+            game_modes=existing.game_modes or incoming.game_modes,
+            developer=existing.developer or incoming.developer,
+            publisher=existing.publisher or incoming.publisher,
+            platforms=existing.platforms or incoming.platforms,
+            franchise=existing.franchise or incoming.franchise,
+            collection=existing.collection or incoming.collection,
+            igdb_id=existing.igdb_id or incoming.igdb_id,
+            igdb_fetched_at=existing.igdb_fetched_at or incoming.igdb_fetched_at,
+            protondb_tier=existing.protondb_tier or incoming.protondb_tier,
+            protondb_confidence=existing.protondb_confidence or incoming.protondb_confidence,
+            protondb_score=existing.protondb_score if existing.protondb_score is not None else incoming.protondb_score,
+            protondb_trending_tier=existing.protondb_trending_tier or incoming.protondb_trending_tier,
+            protondb_best_tier=existing.protondb_best_tier or incoming.protondb_best_tier,
+            protondb_report_count=existing.protondb_report_count if existing.protondb_report_count is not None else incoming.protondb_report_count,
+            protondb_fetched_at=existing.protondb_fetched_at or incoming.protondb_fetched_at,
             normalized_search_title=incoming.normalized_search_title,
             metadata_resolver_version=existing.metadata_resolver_version if preserve_metadata else incoming.metadata_resolver_version,
             title=existing.title if preserve_title else incoming.title,
@@ -509,7 +642,8 @@ class CatalogueStore:
             for current in existing:
                 if current.game_id not in incoming_ids and not current.provider_record_id:
                     self._apply_existing_locked(
-                        current, replace(current, install_state="missing", launchable=False), deltas)
+                        current, replace(current, install_state="available", launchable=False,
+                                         install_dir="", availability_state="available"), deltas)
                 elif current.game_id not in incoming_ids and current.provider_record_id:
                     # Legacy RomM Steam observations remain owned/available;
                     # they are not local-install observations.
@@ -586,9 +720,94 @@ class CatalogueStore:
         self._finish_operation(deltas)
         return games
 
+    def reconcile_lutris(self, registration: dict[str, object], source: PcInstallSource) -> CatalogueGame:
+        """Upsert one Mudos-managed Lutris registration without a duplicate source card."""
+        game = CatalogueGame.from_lutris(registration, source)
+        deltas: list[CatalogueDelta] = []
+        self._start_operation()
+        with self.atomic():
+            self._upsert_locked(game, deltas)
+        self._finish_operation(deltas)
+        return game
+
+    def reconcile_component_apps(self, provider: str, games: list[CatalogueGame]) -> list[CatalogueGame]:
+        """Reconcile a component-owned snapshot by stable provider identity."""
+        deltas: list[CatalogueDelta] = []
+        incoming = {game.game_id for game in games}
+        self._start_operation()
+        with self.atomic():
+            for current in self._rows("SELECT %s FROM games WHERE provider=?" % SELECT_COLUMNS, (provider,)):
+                if current.game_id not in incoming:
+                    self._apply_existing_locked(current, replace(current, install_state="available",
+                                             launchable=False, install_dir="",
+                                             availability_state="available"), deltas)
+            for game in games:
+                current = self.get_game(game.game_id)
+                if current is None:
+                    self._upsert_locked(game, deltas)
+                    continue
+                # Component snapshots explicitly report installed state. Do
+                # not let the generic merge preserve a stale installed flag
+                # after a provider-native uninstall.
+                baseline = replace(current, install_state=game.install_state,
+                                   launchable=game.launchable, install_dir=game.install_dir,
+                                   availability_state=game.availability_state)
+                self._apply_existing_locked(current, self._merged_game(baseline, game), deltas)
+        self._finish_operation(deltas)
+        return games
+
+    def register_lutris_source(self, source: PcInstallSource) -> CatalogueGame:
+        """Expose a completed source as the same canonical install identity."""
+        game = replace(CatalogueGame.from_lutris(
+            {"slug": source.lutris_slug or source.canonical_game_id,
+             "title": source.title, "runner": "wine" if source.source_type.value in
+             {"windows-installer", "msi-installer"} else "linux",
+             "lutris_id": source.source_id, "directory": ""}, source),
+                       install_state="available", launchable=False,
+                       availability_state="available", install_dir="",
+                       provider_id=source.source_id)
+        deltas: list[CatalogueDelta] = []
+        self._start_operation()
+        with self.atomic():
+            self._upsert_locked(game, deltas)
+        self._finish_operation(deltas)
+        return game
+
+    def mark_lutris_uninstalled(self, provider_id: str) -> CatalogueGame | None:
+        rows = self._rows(f"SELECT {SELECT_COLUMNS} FROM games WHERE provider='lutris' AND provider_id=?",
+                          (str(provider_id),))
+        if not rows:
+            return None
+        current = rows[0]
+        updated = replace(current, install_state="available", launchable=False, install_dir="",
+                          availability_state="available")
+        deltas: list[CatalogueDelta] = []
+        self._start_operation()
+        with self.atomic():
+            self._apply_existing_locked(current, updated, deltas)
+        self._finish_operation(deltas)
+        return updated
+
     def reconcile_romm(self, games: list[CatalogueGame], mode: str = "full") -> list[CatalogueGame]:
         """Apply a complete, already-fetched RomM snapshot atomically."""
         games = list({game.game_id: game for game in games}.values())
+        # Switch component records are one provider content set. Keep one
+        # catalogue identity while retaining all RomM record IDs as source
+        # provenance; component downloads remain provider-level records.
+        switch_groups: dict[tuple[str, str], list[CatalogueGame]] = {}
+        other_games: list[CatalogueGame] = []
+        for game in games:
+            if game.platform.casefold() == "switch":
+                switch_groups.setdefault((game.platform.casefold(), game.title.casefold()), []).append(game)
+            else:
+                other_games.append(game)
+        collapsed: list[CatalogueGame] = list(other_games)
+        for group in switch_groups.values():
+            base = next((item for item in group if not any(token in item.content_identity.casefold()
+                        for token in ("update", "patch", "dlc", "booster"))), group[0])
+            collapsed.append(replace(base, provider_record_id=",".join(item.provider_record_id for item in group),
+                                     content_identity=base.content_identity))
+        games = collapsed
         deltas: list[CatalogueDelta] = []
         self._start_operation()
         with self.atomic(rollback=mode == "upsert-rollback"):
@@ -626,10 +845,13 @@ class CatalogueStore:
             games = []
             for row in self.connection.execute(query, parameters):
                 values = list(row)
-                try:
-                    values[28] = tuple(json.loads(values[28] or "[]"))
-                except (TypeError, ValueError, json.JSONDecodeError):
-                    values[28] = ()
+                for name in ("genres", "game_modes", "platforms", "component_paths",
+                             "component_roles", "component_title_ids"):
+                    index = SELECT_FIELD_ORDER.index(name)
+                    try:
+                        values[index] = tuple(json.loads(values[index] or "[]"))
+                    except (TypeError, ValueError, json.JSONDecodeError):
+                        values[index] = ()
                 games.append(CatalogueGame(*values))
             return games
 
@@ -648,7 +870,9 @@ class CatalogueStore:
         query = f"SELECT {SELECT_COLUMNS} FROM games WHERE {self._installed_presentation_where()}"
         parameters: tuple[object, ...] = ()
         if scope == "pc":
-            query += " AND provider='steam'"
+            # PC Games includes native Linux applications managed by enabled
+            # providers (currently Steam and Flatpak), not only Steam rows.
+            query += " AND provider IN ('steam', 'flatpak')"
         elif scope == "steam":
             query += " AND provider=?"; parameters = ("steam",)
         elif scope.startswith("platform:"):
@@ -734,6 +958,14 @@ class CatalogueStore:
             online_multiplayer=presentation.get("online_multiplayer") if presentation.get("online_multiplayer") is not None else existing.online_multiplayer,
             game_mode=presentation.get("game_mode") or existing.game_mode,
             protondb_rating=presentation.get("protondb_rating") or existing.protondb_rating,
+            summary=presentation.get("summary") or existing.summary,
+            game_modes=tuple(presentation.get("game_modes", ())) or existing.game_modes,
+            developer=presentation.get("developer") or existing.developer,
+            publisher=presentation.get("publisher") or existing.publisher,
+            platforms=tuple(presentation.get("platforms", ())) or existing.platforms,
+            franchise=presentation.get("franchise") or existing.franchise,
+            collection=presentation.get("collection") or existing.collection,
+            igdb_id=str(presentation.get("igdb_id") or existing.igdb_id),
             metadata_resolver_version=METADATA_RESOLVER_VERSION,
             artwork_url="",
         )
@@ -762,6 +994,73 @@ class CatalogueStore:
         with self.atomic():
             self._start_operation()
             delta = self._apply_existing_locked(existing, after)
+        self._finish_operation([delta] if delta else [])
+        return delta
+
+    def enrichment_record(self, provider: str, game_id: str) -> dict[str, object] | None:
+        row = self.connection.execute(
+            "SELECT external_id, fetched_at, source_updated_at, match_method, confidence, status, normalized_json "
+            "FROM metadata_enrichment WHERE provider=? AND game_id=?", (provider, game_id)
+        ).fetchone()
+        if row is None:
+            return None
+        try:
+            normalized = json.loads(row[6])
+        except (TypeError, ValueError, json.JSONDecodeError):
+            normalized = {}
+        return {"provider": provider, "game_id": game_id, "external_id": row[0],
+                "fetched_at": row[1], "source_updated_at": row[2], "match_method": row[3],
+                "confidence": row[4], "status": row[5], "normalized": normalized}
+
+    def enrichment_is_fresh(self, provider: str, game_id: str, ttl: int,
+                            now: int | None = None) -> bool:
+        record = self.enrichment_record(provider, game_id)
+        return bool(record and int(record["fetched_at"]) + ttl > (int(time.time()) if now is None else now))
+
+    def apply_enrichment(self, provider: str, game_id: str, external_id: str,
+                         normalized: dict[str, object], *, match_method: str,
+                         confidence: float, source_updated_at: int | None = None,
+                         fetched_at: int | None = None, status: str = "matched") -> CatalogueDelta | None:
+        existing = self.get_game(game_id)
+        if existing is None:
+            return None
+        fetched = int(time.time()) if fetched_at is None else fetched_at
+        after = replace(
+            existing,
+            summary=existing.summary or str(normalized.get("summary") or ""),
+            release_date=existing.release_date or (str(normalized["release_date"]) if normalized.get("release_date") else None),
+            release_year=existing.release_year if existing.release_year is not None else (int(normalized["release_year"]) if normalized.get("release_year") is not None else None),
+            genres=existing.genres or tuple(str(item) for item in normalized.get("genres", ())),
+            game_modes=existing.game_modes or tuple(str(item) for item in normalized.get("game_modes", ())),
+            developer=existing.developer or str(normalized.get("developer") or ""),
+            publisher=existing.publisher or str(normalized.get("publisher") or ""),
+            platforms=existing.platforms or tuple(str(item) for item in normalized.get("platforms", ())),
+            franchise=existing.franchise or str(normalized.get("franchise") or ""),
+            collection=existing.collection or str(normalized.get("collection") or ""),
+            igdb_id=str(external_id) if provider == "igdb" else existing.igdb_id,
+            igdb_fetched_at=fetched if provider == "igdb" else existing.igdb_fetched_at,
+            protondb_tier=str(normalized.get("tier") or existing.protondb_tier) if provider == "protondb" else existing.protondb_tier,
+            protondb_confidence=str(normalized.get("confidence") or existing.protondb_confidence) if provider == "protondb" else existing.protondb_confidence,
+            protondb_score=float(normalized["score"]) if provider == "protondb" and normalized.get("score") is not None else existing.protondb_score,
+            protondb_trending_tier=str(normalized.get("trending_tier") or existing.protondb_trending_tier) if provider == "protondb" else existing.protondb_trending_tier,
+            protondb_best_tier=str(normalized.get("best_tier") or existing.protondb_best_tier) if provider == "protondb" else existing.protondb_best_tier,
+            protondb_report_count=int(normalized["report_count"]) if provider == "protondb" and normalized.get("report_count") is not None else existing.protondb_report_count,
+            protondb_fetched_at=fetched if provider == "protondb" else existing.protondb_fetched_at,
+            protondb_rating=(str(normalized.get("tier")) if provider == "protondb" and normalized.get("tier") else existing.protondb_rating),
+        )
+        with self.atomic():
+            self._start_operation()
+            delta = self._apply_existing_locked(existing, after)
+            self.connection.execute(
+                "INSERT INTO metadata_enrichment(provider, game_id, external_id, fetched_at, source_updated_at, "
+                "match_method, confidence, status, normalized_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) "
+                "ON CONFLICT(provider, game_id) DO UPDATE SET external_id=excluded.external_id, "
+                "fetched_at=excluded.fetched_at, source_updated_at=excluded.source_updated_at, "
+                "match_method=excluded.match_method, confidence=excluded.confidence, status=excluded.status, "
+                "normalized_json=excluded.normalized_json",
+                (provider, game_id, external_id, fetched, source_updated_at, match_method, confidence,
+                status, json.dumps(normalized, sort_keys=True)),
+            )
         self._finish_operation([delta] if delta else [])
         return delta
 

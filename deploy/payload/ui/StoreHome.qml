@@ -33,6 +33,7 @@ Item {
     property real categoryMotionVelocity: 0
     property var displayCards: []
     property var stores: []
+    property var pluginStores: []
     property int homeSelectedIndex: 0
     property var homeSelectionStart: []
     property var homePresentationStartX: []
@@ -206,13 +207,16 @@ Item {
     }
 
     function homeCards() {
-        var cards = [{id: "available", title: "Available to Download", kind: "catalogue"},
-            {id: "steam", title: "Steam", kind: "store", url: "https://store.steampowered.com/"},
-            {id: "questarr", title: "Questarr", kind: "store", url: "http://127.0.0.1:5000/"}]
+        var cards = [{id: "available", title: "Available to Download", kind: "catalogue"}]
+        for (var pluginIndex = 0; pluginIndex < pluginStores.length; pluginIndex++) {
+            var pluginStore = pluginStores[pluginIndex]
+            cards.push({id: String(pluginStore.id), title: String(pluginStore.label), kind: "store",
+                url: String(pluginStore.url), removable: false, glyph: pluginStore.glyph || ""})
+        }
         for (var index = 0; index < stores.length; index++) {
             var store = stores[index]
             cards.push({id: String(store.id), title: String(store.display_name), kind: "store",
-                url: String(store.url)})
+                url: String(store.url), removable: true})
         }
         cards.push({id: "add", title: "Add New Store", kind: "add"})
         return cards
@@ -253,7 +257,7 @@ Item {
 
     function optionsSelected() {
         var card = homeCards()[homeSelectedIndex]
-        if (card && card.kind === "store" && card.id !== "steam" && card.id !== "questarr")
+        if (card && card.kind === "store" && card.removable !== false)
             homeStoreOptionsRequested(card)
     }
 
