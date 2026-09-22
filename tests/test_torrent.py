@@ -8,6 +8,7 @@ from unittest.mock import patch
 
 from lulu.plugins.torrent.transmission import (
     TransmissionClient, TransmissionConfig, TorrentProvider,
+    TorrentDownload,
 )
 from lulu.jobs import DownloadJob
 from lulu.paths import MudosPaths
@@ -84,6 +85,19 @@ class TransmissionClientTests(unittest.TestCase):
 
 
 class TorrentSafetyTests(unittest.TestCase):
+    def test_external_discovery_uses_hash_and_preserves_questarr_origin(self):
+        item = TorrentDownload("ABCDEF12", "Manual", "/downloads", (), .5, 5, 10, 2, 0,
+                               None, "transferring", "4", None, ("questarr",), False, False)
+        class FakeClient:
+            async def list_all(self): return (item,)
+        async def exercise():
+            provider = TorrentProvider(FakeClient())  # type: ignore[arg-type]
+            records = await provider.discover_external()
+            self.assertEqual(records[0].content_identity, "transmission:abcdef12")
+            self.assertEqual(records[0].origin, "questarr")
+            self.assertEqual(records[0].provenance, "questarr")
+        asyncio.run(exercise())
+
     def test_mudos_ownership_sidecar_records_job_identity(self):
         with tempfile.TemporaryDirectory() as directory:
             base = Path(directory)

@@ -1,0 +1,27 @@
+[Unit]
+Description=Mudos administration Web UI
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=lulu
+Group=lulu
+Environment=PYTHONPATH=/opt/lulu/current/lib
+Environment=LULU_INSTALL_ROOT=/opt/lulu/current
+Environment=HOME=/home/lulu
+Environment=XDG_CONFIG_HOME=/home/lulu/.config
+Environment=XDG_DATA_HOME=/home/lulu/.local/share
+ExecStart=/usr/bin/python -m lulu.admin_web
+Restart=on-failure
+RestartSec=3
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=read-only
+ReadWritePaths=/home/lulu/.config/lulu /home/lulu/.local/share/lulu /var/lib/nzbget /var/lib/lulu-transmission
+
+[Install]
+WantedBy=multi-user.target

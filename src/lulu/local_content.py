@@ -7,6 +7,7 @@ import re
 
 from .emulation import PLATFORMS, PlatformDefinition
 from .metadata import clean_local_title
+from .switch_content import SwitchContentRole, parent_name, role_from_unstructured_name, title_id
 
 
 @dataclass(frozen=True, slots=True)
@@ -21,6 +22,10 @@ class LocalContentGame:
     runtime: str = ""
     platform_label: str = ""
     source_title: str = ""
+    component_paths: tuple[str, ...] = ()
+    component_roles: tuple[str, ...] = ()
+    component_title_ids: tuple[str, ...] = ()
+    mudos_owned: bool = True
 
 
 class LocalContentProvider:
@@ -41,9 +46,12 @@ class LocalContentProvider:
         games: list[LocalContentGame] = []
         for platform, definition in PLATFORMS.items():
             platform_root = root / platform
-            for content in sorted(platform_root.iterdir() if platform_root.is_dir() else ()):
-                if content.suffix.lower() not in definition.extensions or not content.is_file():
-                    continue
+            contents = [content for content in sorted(platform_root.iterdir() if platform_root.is_dir() else ())
+                        if content.suffix.lower() in definition.extensions and content.is_file()]
+            if platform == "switch":
+                games.extend(self._list_switch(contents, root, definition))
+                continue
+            for content in contents:
                 valid, reason = self._content_status(platform, content)
                 runtime_ready = self.runtime_paths.get(platform, Path()).is_file()
                 bios_ready = self._bios_ready(platform, definition)
@@ -67,6 +75,39 @@ class LocalContentProvider:
                     )
                 )
         return sorted(games, key=lambda game: game.title.casefold())
+
+    def _list_switch(self, contents: list[Path], root: Path,
+                     definition: PlatformDefinition) -> list[LocalContentGame]:
+        groups: dict[str, list[Path]] = {}
+        for content in contents:
+            key = parent_name(content.name)
+            # A missing/ambiguous parent is deliberately left as its own game;
+            # it must not be destructively merged with an unrelated title.
+            groups.setdefault(key or content.name.casefold(), []).append(content)
+        result: list[LocalContentGame] = []
+        for key, members in groups.items():
+            members.sort(key=lambda path: 0 if (role_from_unstructured_name(path.name) or SwitchContentRole.BASE)
+                         == SwitchContentRole.BASE else 1)
+            base = next((path for path in members
+                         if (role_from_unstructured_name(path.name) or SwitchContentRole.BASE)
+                         == SwitchContentRole.BASE), members[0])
+            valid, reason = self._content_status("switch", base)
+            runtime_ready = self.runtime_paths.get("switch", Path()).is_file()
+            launchable = valid and runtime_ready
+            if valid and not runtime_ready:
+                reason = "runtime-missing"
+            roles = tuple((role_from_unstructured_name(path.name) or SwitchContentRole.BASE).value
+                          for path in members)
+            ids = tuple(value for value in (title_id(path.name) for path in members) if value)
+            result.append(LocalContentGame(
+                content_id=self._content_id("switch", Path(base).relative_to(root)),
+                title=clean_local_title(base.name), platform="switch", content_path=str(base),
+                launchable=launchable, install_state="installed" if valid else "invalid",
+                reason=reason, runtime=definition.runtime, platform_label=definition.label,
+                source_title=base.name, component_paths=tuple(str(path) for path in members),
+                component_roles=roles, component_title_ids=ids, mudos_owned=True,
+            ))
+        return result
 
     def _bios_ready(self, platform: str, definition: PlatformDefinition) -> bool:
         if definition.bios_subdirectory is None:

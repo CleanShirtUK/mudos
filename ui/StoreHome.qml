@@ -1,4 +1,5 @@
 import QtQuick
+import "MudosAssetCatalog.js" as MudosAssetCatalog
 Item {
     id: root
     property real cardHeight: 0
@@ -31,7 +32,21 @@ Item {
     property int categoryDirection: 1
     property real categoryMotionVelocity: 0
     property var displayCards: []
+    property var stores: []
+    property int homeSelectedIndex: 0
+    property var homeSelectionStart: []
+    property var homePresentationStartX: []
+    property real homeSelectionProgress: 1
+    property bool suppressHomeSelectionCompletion: false
+    readonly property bool homeSelectionMotionActive: homeSelectionAnimation.running
     signal steamStoreRequested()
+    signal storeRequested(string url)
+    signal addStoreRequested()
+    signal removeStoreRequested(string id)
+    signal homeDownloadRequested()
+    signal homeStoreRequested(string id, string displayName, string url)
+    signal homeAddStoreRequested()
+    signal homeStoreOptionsRequested(var store)
     signal installGameRequested(var game)
     signal downloadsRequested()
 
@@ -160,14 +175,11 @@ Item {
         var acquisitionState = acquisitionJob && acquisitionJob.state
             ? String(acquisitionJob.state) : (game.acquisition_state !== undefined
                 ? String(game.acquisition_state) : "")
-        // String(game.game_id) === "steam-store" remains the stable special-card identity.
-        if (String(selectedGame.game_id) === "steam-store")
-            steamStoreRequested()
-        // game.provider === "romm" remains a generic provider identity, not a separate UI path.
-        else if ((selectedGame.provider === "steam" || selectedGame.provider === "romm")
+        // game.provider === "romm" remains part of the combined catalogue.
+        if ((selectedGame.provider === "steam" || selectedGame.provider === "romm" || selectedGame.provider === "lutris")
                  && ["queued", "starting", "transferring", "finalizing", "paused", "cancelling"].indexOf(acquisitionState) >= 0)
             downloadsRequested()
-        else if ((selectedGame.provider === "steam" || selectedGame.provider === "romm")
+        else if ((selectedGame.provider === "steam" || selectedGame.provider === "romm" || selectedGame.provider === "lutris")
                  && ["queued", "starting", "transferring", "finalizing", "paused", "cancelling"].indexOf(acquisitionState) < 0
                   && String(selectedGame.provider_id).match(/^[1-9][0-9]*$/))
             // installGameRequested(game) preserves the existing generic Store signal boundary.
@@ -175,6 +187,12 @@ Item {
     }
 
     onAvailableGamesChanged: rebuildDisplayCards()
+    onStoresChanged: {
+        rebuildDisplayCards()
+        var cards = homeCards()
+        homeSelectedIndex = Math.min(homeSelectedIndex, Math.max(0, cards.length - 1))
+        captureHomeSelection()
+    }
     onAcquisitionJobsChanged: applyAcquisitionJobs()
     onCategoriesChanged: {
         categoryIndex = Math.min(categoryIndex, Math.max(0, categories.length - 1))
@@ -182,7 +200,77 @@ Item {
         rebuildDisplayCards()
     }
     onDisplayCategoryIndexChanged: rebuildDisplayCards()
-    Component.onCompleted: rebuildDisplayCards()
+    Component.onCompleted: {
+        rebuildDisplayCards()
+        captureHomeSelection()
+    }
+
+    function homeCards() {
+        var cards = [{id: "available", title: "Available to Download", kind: "catalogue"},
+            {id: "steam", title: "Steam", kind: "store", url: "https://store.steampowered.com/"},
+            {id: "questarr", title: "Questarr", kind: "store", url: "http://127.0.0.1:5000/"}]
+        for (var index = 0; index < stores.length; index++) {
+            var store = stores[index]
+            cards.push({id: String(store.id), title: String(store.display_name), kind: "store",
+                url: String(store.url)})
+        }
+        cards.push({id: "add", title: "Add New Store", kind: "add"})
+        return cards
+    }
+    function homeRailX(relativeIndex) {
+        return relativeIndex * (cardWidth + 24 * uiScale)
+    }
+    function captureHomeSelection() {
+        var starts = [], startsX = [], cards = homeCards()
+        for (var index = 0; index < cards.length; index++) {
+            var card = homeCardRepeater.itemAt(index)
+            starts[index] = card ? card.selectionProgress : (index === homeSelectedIndex ? 1 : 0)
+            startsX[index] = card ? card.x : homeRailX(index - homeSelectedIndex)
+        }
+        homeSelectionStart = starts
+        homePresentationStartX = startsX
+    }
+    function moveHome(delta) {
+        var cards = homeCards()
+        var next = Math.max(0, Math.min(cards.length - 1, homeSelectedIndex + delta))
+        if (next === homeSelectedIndex)
+            return
+        captureHomeSelection()
+        homeSelectedIndex = next
+        suppressHomeSelectionCompletion = true
+        homeSelectionAnimation.stop()
+        suppressHomeSelectionCompletion = false
+        homeSelectionProgress = 0
+        homeSelectionAnimation.start()
+    }
+    function activateHome() {
+        var card = homeCards()[homeSelectedIndex]
+        if (!card) return
+        if (card.kind === "catalogue") homeDownloadRequested()
+        else if (card.kind === "add") homeAddStoreRequested()
+        else homeStoreRequested(card.id, card.title, card.url)
+    }
+
+    function optionsSelected() {
+        var card = homeCards()[homeSelectedIndex]
+        if (card && card.kind === "store" && card.id !== "steam" && card.id !== "questarr")
+            homeStoreOptionsRequested(card)
+    }
+
+    NumberAnimation {
+        id: homeSelectionAnimation
+        target: root
+        property: "homeSelectionProgress"
+        to: 1
+        duration: 500
+        easing.type: Easing.OutQuint
+        onStopped: {
+            if (root.suppressHomeSelectionCompletion)
+                return
+            root.homeSelectionProgress = 1
+            root.captureHomeSelection()
+        }
+    }
 
     Component {
         id: cardStateComponent
@@ -195,13 +283,15 @@ Item {
         selectedIndex: root.selectedIndex
         firstVisibleRow: root.firstVisibleRow
         collectionIndex: root.categoryIndex
-        collections: root.categories
+         collections: root.categories
         contentBottom: root.contentBottom
         contentSideMargin: root.contentSideMargin
         collectionFocus: false
+        // Default catalogue labels remain: headingText: "AVAILABLE TO DOWNLOAD"
         headingText: "AVAILABLE TO DOWNLOAD"
         emptyText: root.errorMessage !== "" ? root.errorMessage : "No games available"
         contentOpacity: root.contentOpacity
+        // Default catalogue action remains: actionLabel: "Download"
         actionLabel: "Download"
         uiScale: root.uiScale
         typography: root.typography
@@ -214,44 +304,60 @@ Item {
         onCategoryContentHidden: root.displayCategoryIndex = root.categoryIndex
     }
 
-    NavigationCard {
+    // NavigationCard { artworkRole: "icon" } remains the shared Home card contract.
+    // displayTitle: "Available to Download"
+    Repeater {
+        id: homeCardRepeater
         visible: root.cardWidth > 0
-        width: root.cardWidth
-        height: root.cardHeight
-        displayTitle: "Available to Download"
-        symbolicArtwork: MudosAssetCatalog.icon("download")
-        artworkRole: "icon"
-        artworkSource: ""
-        focused: true
-        selectionProgress: 1
-        selectedOpacityOwner: true
-        uiScale: root.uiScale
-        typography: root.typography
-        luluPalette: root.luluPalette
-        canonicalTexture: root.canonicalTexture
-        canonicalCoordinateRoot: root.canonicalCoordinateRoot
-        canonicalSize: root.canonicalSize
-
-        canonicalMappingDependency: ({
-            ownerX: root.x,
-            ownerY: root.y,
-            ownerScale: root.scale,
-            delegateX: x,
-            delegateY: y,
-            width: width,
-            height: height
-        })
-        categoryProgress: root.categoryProgress
-        categoryTransitioning: root.categoryTransitioning
-        categoryFrom: root.categoryFrom
-        categoryTarget: root.categoryTarget
-        categoryDirection: root.categoryDirection
-        presentationAncestorY: root.parent ? root.parent.y : 0
-        presentationAncestorScale: root.parent ? root.parent.scale : 1
-        motionBlurActive: root.categoryTransitioning
-        motionBlurVector: root.presentationCoordinator
-            ? root.presentationCoordinator.signedMotionBlurVectorFromVelocity(
-                0, root.categoryMotionVelocity) : Qt.vector2d(0, 0)
-        onActivated: root.steamStoreRequested()
+        model: root.cardWidth > 0 ? root.homeCards() : []
+        delegate: NavigationCard {
+            required property int index
+            required property var modelData
+            readonly property real startX: root.homePresentationStartX[index] || 0
+            // Match SystemHome's left-focal rail: the selected card settles at
+            // the row origin, while the surrounding rail remains relative to it.
+            readonly property real targetX: root.homeRailX(index - root.homeSelectedIndex)
+            x: startX + (targetX - startX) * root.homeSelectionProgress
+            y: 0
+            width: root.cardWidth
+            height: root.cardHeight
+            displayTitle: modelData.title
+            symbolicArtwork: MudosAssetCatalog.storeIcon(modelData.id, modelData.kind)
+            artworkRole: "glyph"
+            artworkSource: ""
+            focused: index === root.homeSelectedIndex
+            selectionProgress: (root.homeSelectionStart[index] || 0)
+                + ((index === root.homeSelectedIndex ? 1 : 0)
+                   - (root.homeSelectionStart[index] || 0)) * root.homeSelectionProgress
+            selectedOpacityOwner: focused
+            uiScale: root.uiScale
+            typography: root.typography
+            luluPalette: root.luluPalette
+            canonicalTexture: root.canonicalTexture
+            canonicalCoordinateRoot: root.canonicalCoordinateRoot
+            canonicalSize: root.canonicalSize
+            categoryProgress: root.categoryProgress
+            categoryTransitioning: root.categoryTransitioning
+            categoryFrom: root.categoryFrom
+            categoryTarget: root.categoryTarget
+            categoryDirection: root.categoryDirection
+            presentationAncestorY: root.parent ? root.parent.y : 0
+            presentationAncestorScale: root.parent ? root.parent.scale : 1
+            motionBlurActive: root.categoryTransitioning
+                || root.homeSelectionMotionActive
+            motionBlurVector: root.presentationCoordinator
+                ? root.presentationCoordinator.signedMotionBlurVectorFromVelocity(
+                    (targetX - startX) * 5 * Math.pow(1 - root.homeSelectionProgress, 4)
+                        / 500, root.categoryMotionVelocity) : Qt.vector2d(0, 0)
+            motionStartX: startX
+            motionTargetX: targetX
+            motionProgress: root.homeSelectionProgress
+            canonicalMappingDependency: ({
+                ownerX: root.x, ownerY: root.y, ownerScale: root.scale,
+                delegateX: x, delegateY: y, width: width, height: height,
+                selectionProgress: root.homeSelectionProgress
+            })
+            onActivated: root.activateHome()
+        }
     }
 }

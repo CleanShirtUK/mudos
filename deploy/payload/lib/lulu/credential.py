@@ -51,6 +51,7 @@ class CredentialRequest:
     help_text: str = ""
     owner_id: str = ""
     owner: dict[str, object] = field(default_factory=dict)
+    multiline: bool = False
 
 
 @dataclass(slots=True)
@@ -67,7 +68,7 @@ class CredentialSession:
                 "max_length": self.request.max_length, "choices": self.request.choices,
                 "help_text": self.request.help_text, "status": self.status.value,
                 "message": self.message, "owner_id": self.request.owner_id,
-                "owner": self.request.owner}
+                "owner": self.request.owner, "multiline": self.request.multiline}
 
 
 class CredentialBroker:
@@ -86,7 +87,8 @@ class CredentialBroker:
                       *, secret: bool = False, min_length: int = 0,
                       max_length: int = 4096, choices: tuple[str, ...] = (),
                       help_text: str = "", owner_id: str = "",
-                      owner: dict[str, object] | None = None) -> CredentialSession:
+                      owner: dict[str, object] | None = None,
+                      multiline: bool = False) -> CredentialSession:
         async with self._lock:
             if self._active is not None and self._active.status in {
                     CredentialStatus.REQUESTED, CredentialStatus.WAITING}:
@@ -95,7 +97,7 @@ class CredentialBroker:
                 secret = True
             request = CredentialRequest(uuid4().hex, title, prompt, input_type, secret,
                                          min_length, max_length, choices, help_text,
-                                         owner_id, dict(owner or {}))
+                                          owner_id, dict(owner or {}), multiline)
             self._active = CredentialSession(request)
             self._changed.set()
             return self._active
@@ -184,7 +186,12 @@ class SecretStore:
         self.creds = creds
 
     def _path(self, namespace: str, name: str) -> Path:
-        if not namespace or not name or any(part in namespace + name for part in "/\\\0"):
+        namespace_parts = namespace.split("/") if namespace else []
+        if (not namespace_parts or not name
+                or any(not part or part in {".", ".."} or "\\" in part or "\0" in part
+                       for part in namespace_parts)
+                or any(part in {".", ".."} or "\0" in part for part in name.split("/"))
+                or "/" in name or "\\" in name):
             raise ValueError("invalid secret name")
         return self.root / namespace / f"{name}.cred"
 

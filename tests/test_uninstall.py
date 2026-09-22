@@ -19,6 +19,34 @@ def local_game(path: Path) -> CatalogueGame:
 
 
 class LocalUninstallTests(unittest.TestCase):
+    def test_switch_remove_job_removes_owned_component_set_only(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "ROMs"
+            switch = root / "switch"; switch.mkdir(parents=True)
+            base, dlc = switch / "Mario.nsp", switch / "Mario DLC.nsp"
+            neighbor, save = switch / "Other.nsp", Path(directory) / "save.dat"
+            for path in (base, dlc, neighbor): path.write_text(path.name)
+            save.write_text("save")
+            game = CatalogueGame(
+                game_id="local:switch:mario", provider="local", provider_id="local:switch:mario",
+                title="Mario", platform="switch", install_state="installed", launchable=True,
+                install_dir=str(base), artwork_url="", last_played=0, catalogue_source="local",
+                component_paths=(str(base), str(dlc)), component_roles=("base", "dlc"),
+                component_title_ids=("0100000000000000", "0100000000000001"), mudos_owned=True,
+            )
+            store = CatalogueStore(Path(directory) / "catalogue.sqlite3")
+            store._upsert(game); store.connection.commit()
+            manager = JobManager(); manager.register_executor("local", LocalUninstallExecutor(store, root))
+
+            async def run() -> None:
+                job = manager.submit("local", game.game_id, game.title, operation=JobOperation.REMOVE)
+                await manager._tasks[job.job_id]
+                self.assertEqual(manager.jobs[job.job_id].state, JobState.COMPLETED)
+
+            asyncio.run(run())
+            self.assertFalse(base.exists()); self.assertFalse(dlc.exists())
+            self.assertTrue(neighbor.exists()); self.assertTrue(save.exists())
+
     def test_file_is_removed_through_remove_job(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory) / "ROMs"

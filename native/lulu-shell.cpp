@@ -20,14 +20,21 @@
 #include <QTimer>
 #include <qnativeinterface.h>
 #include <QUrl>
+#include <QSettings>
+#include <QUuid>
+#include <QVariantList>
 #include <QHash>
 #include <QSet>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QJsonArray>
 #include <algorithm>
+#include <QtWebEngineQuick/QtWebEngineQuick>
 
 #include <SDL3/SDL.h>
 #include <xcb/xcb.h>
+#include <xcb/xcb_keysyms.h>
+#include <X11/keysym.h>
 
 #include <cstdlib>
 #include <csignal>
@@ -39,6 +46,105 @@
 #include "mudos-glass-item.h"
 
 namespace {
+
+class StoreBookmarkBridge final : public QObject
+{
+    Q_OBJECT
+    Q_PROPERTY(QVariantList bookmarks READ bookmarks NOTIFY bookmarksChanged)
+public:
+    explicit StoreBookmarkBridge(QObject *parent = nullptr) : QObject(parent) { reload(); }
+
+    QVariantList bookmarks() const { return bookmarks_; }
+
+    Q_INVOKABLE bool addBookmark(const QString &rawUrl)
+    {
+        QString value = rawUrl.trimmed();
+        if (value.isEmpty()) return false;
+        if (!value.contains(QStringLiteral("://"))) value.prepend(QStringLiteral("https://"));
+        const QUrl url(value);
+        if (!url.isValid() || (url.scheme() != QStringLiteral("http") && url.scheme() != QStringLiteral("https"))
+            || url.host().isEmpty()) return false;
+        for (const QVariant &item : bookmarks_)
+            if (item.toMap().value(QStringLiteral("url")).toString() == url.toString()) return true;
+        QVariantMap item;
+        item.insert(QStringLiteral("id"), QUuid::createUuid().toString(QUuid::WithoutBraces));
+        item.insert(QStringLiteral("url"), url.toString());
+        item.insert(QStringLiteral("display_name"), url.host());
+        bookmarks_.append(item);
+        save();
+        emit bookmarksChanged();
+        return true;
+    }
+
+    Q_INVOKABLE void removeBookmark(const QString &id)
+    {
+        for (int i = bookmarks_.size() - 1; i >= 0; --i)
+            if (bookmarks_[i].toMap().value(QStringLiteral("id")).toString() == id) bookmarks_.removeAt(i);
+        save();
+        emit bookmarksChanged();
+    }
+
+    Q_INVOKABLE bool updateBookmarkName(const QString &id, const QString &rawName)
+    {
+        const QString name = rawName.trimmed();
+        if (name.isEmpty() || name.size() > 128) return false;
+        for (QVariant &item : bookmarks_) {
+            QVariantMap value = item.toMap();
+            if (value.value(QStringLiteral("id")).toString() == id) {
+                value.insert(QStringLiteral("display_name"), name);
+                item = value;
+                save();
+                emit bookmarksChanged();
+                return true;
+            }
+        }
+        return false;
+    }
+
+    Q_INVOKABLE bool updateBookmarkUrl(const QString &id, const QString &rawUrl)
+    {
+        QString value = rawUrl.trimmed();
+        if (value.isEmpty()) return false;
+        if (!value.contains(QStringLiteral("://"))) value.prepend(QStringLiteral("https://"));
+        const QUrl url(value);
+        if (!url.isValid() || (url.scheme() != QStringLiteral("http") && url.scheme() != QStringLiteral("https"))
+            || url.host().isEmpty()) return false;
+        for (const QVariant &item : bookmarks_)
+            if (item.toMap().value(QStringLiteral("id")).toString() != id
+                && item.toMap().value(QStringLiteral("url")).toString() == url.toString()) return false;
+        for (QVariant &item : bookmarks_) {
+            QVariantMap bookmark = item.toMap();
+            if (bookmark.value(QStringLiteral("id")).toString() == id) {
+                bookmark.insert(QStringLiteral("url"), url.toString());
+                item = bookmark;
+                save();
+                emit bookmarksChanged();
+                return true;
+            }
+        }
+        return false;
+    }
+
+signals:
+    void bookmarksChanged();
+
+private:
+    void reload()
+    {
+        QSettings settings(QSettings::IniFormat, QSettings::UserScope, QStringLiteral("Mudos"), QStringLiteral("lulu"));
+        const auto value = settings.value(QStringLiteral("stores/bookmarks")).toJsonArray();
+        for (const auto &entry : value) bookmarks_.append(entry.toObject().toVariantMap());
+    }
+    void save()
+    {
+        QJsonArray array;
+        for (const QVariant &entry : bookmarks_) array.append(QJsonObject::fromVariantMap(entry.toMap()));
+        QSettings settings(QSettings::IniFormat, QSettings::UserScope, QStringLiteral("Mudos"), QStringLiteral("lulu"));
+        settings.setValue(QStringLiteral("stores/bookmarks"), array);
+        settings.sync();
+    }
+    QVariantList bookmarks_;
+};
 
 class SystemStatusBridge final : public QObject
 {
@@ -363,6 +469,7 @@ public:
         insert("controllerIdentity", QString());
         insert("action", QString());
         insert("actionSerial", 0);
+        insert("textEntryShortcutSerial", 0);
         insert("luluPresented", false);
         insert("requestedSurface", QString());
         insert("guideSelection", 0);
@@ -397,8 +504,7 @@ public:
     {
         if (presentationConnection_)
             xcb_disconnect(presentationConnection_);
-        if (gamepad_)
-            SDL_CloseGamepad(gamepad_);
+        closeGamepads();
         SDL_QuitSubSystem(SDL_INIT_GAMEPAD);
     }
 
@@ -457,6 +563,10 @@ private:
             .toObject().value(QStringLiteral("controllers")).toObject();
         const QString navigationId = document.object().value(QStringLiteral("controller"))
             .toObject().value(QStringLiteral("navigation_controller_id")).toString();
+        const QString navigationMode = document.object().value(QStringLiteral("controller"))
+            .toObject().value(QStringLiteral("navigation_mode"))
+            .toString(QStringLiteral("all"));
+        navigationAll_ = navigationMode == QStringLiteral("all");
         QVariantList controllers;
         for (auto iterator = controllerRoot.constBegin(); iterator != controllerRoot.constEnd(); ++iterator) {
             const QJsonObject value = iterator.value().toObject();
@@ -490,6 +600,7 @@ private:
                 < right.toMap().value(QStringLiteral("index")).toInt();
         });
         insert(QStringLiteral("controllers"), controllers);
+        selectNavigationGamepad();
     }
 
     static constexpr const char *inputService = "org.shadowblip.InputPlumber";
@@ -517,10 +628,65 @@ private:
 
     void restoreInput()
     {
+        releaseGuideKeyboard();
         if (!guideOwnerComposite_.isEmpty())
             setInterceptMode(guideOwnerComposite_, 1);
         guideOwnerComposite_.clear();
         clearTarget();
+    }
+
+    void captureGuideKeyboard()
+    {
+        if (!presentationConnection_ || globalGuideRoot_ == XCB_WINDOW_NONE)
+            return;
+        const auto keySymbols = xcb_key_symbols_alloc(presentationConnection_);
+        if (!keySymbols)
+            return;
+        const struct KeyAction { xcb_keysym_t symbol; const char *action; } keys[] = {
+            {XK_Up, "ui_up"}, {XK_Down, "ui_down"},
+            {XK_Left, "ui_left"}, {XK_Right, "ui_right"},
+            {XK_Return, "ui_accept"}, {XK_KP_Enter, "ui_accept"},
+            {XK_Escape, "ui_back"}, {XK_BackSpace, "ui_back"},
+        };
+        for (const auto &key : keys) {
+            const auto keycodes = xcb_key_symbols_get_keycode(keySymbols, key.symbol);
+            if (!keycodes || keycodes[0] == XCB_NO_SYMBOL) {
+                free(keycodes);
+                continue;
+            }
+            const auto keycode = keycodes[0];
+            const auto cookie = xcb_grab_key_checked(
+                presentationConnection_, 1, globalGuideRoot_, XCB_MOD_MASK_ANY,
+                keycode, XCB_GRAB_MODE_ASYNC, XCB_GRAB_MODE_ASYNC);
+            if (auto *error = xcb_request_check(presentationConnection_, cookie)) {
+                qWarning() << "Guide global key grab failed" << key.action << error->error_code;
+                free(error);
+            } else {
+                guideKeyboardActions_.insert(keycode, QString::fromLatin1(key.action));
+            }
+            free(keycodes);
+        }
+        xcb_key_symbols_free(keySymbols);
+        xcb_flush(presentationConnection_);
+    }
+
+    void releaseGuideKeyboard()
+    {
+        if (!presentationConnection_ || globalGuideRoot_ == XCB_WINDOW_NONE)
+            return;
+        for (auto iterator = guideKeyboardActions_.cbegin();
+             iterator != guideKeyboardActions_.cend(); ++iterator)
+            xcb_ungrab_key(presentationConnection_, iterator.key(), globalGuideRoot_, XCB_MOD_MASK_ANY);
+        guideKeyboardActions_.clear();
+        xcb_flush(presentationConnection_);
+    }
+
+    void sendGuideKeyboardAction(const QString &action)
+    {
+        if (!guideProcess_)
+            return;
+        guideProcess_->write(action.toUtf8() + " edge=down\n");
+        guideProcess_->write(action.toUtf8() + " edge=up\n");
     }
 
     void handleInputEvent(const QString &compositePath, const QString &event, double value)
@@ -596,7 +762,9 @@ private:
 
     bool startGuide()
     {
-        if (guideProcess_ || !presentationConnection_ || !focusedWindow_ || !window_) {
+        if (guideProcess_)
+            return true;
+        if (!presentationConnection_ || !focusedWindow_ || !window_) {
             restoreInput();
             return false;
         }
@@ -614,6 +782,7 @@ private:
             finishGuide();
             return false;
         }
+        captureGuideKeyboard();
         return true;
     }
 
@@ -624,6 +793,8 @@ private:
         pendingGuide_ = false;
         guideChordConsumed_ = false;
         guideOwnerComposite_.clear();
+        insert("textEntryShortcutSerial",
+               value(QStringLiteral("textEntryShortcutSerial")).toInt() + 1);
         oskRequestPending_ = true;
         QDBusInterface consoled(QStringLiteral("org.lulu.Consoled"),
                                  QStringLiteral("/org/lulu/Console"),
@@ -713,13 +884,26 @@ private:
 
     void scanGamepads()
     {
+        closeGamepads();
         int count = 0;
         SDL_JoystickID *ids = SDL_GetGamepads(&count);
         qInfo() << "SDL gamepad scan count=" << count;
         if (ids && count > 0) {
             const int requested = std::max(0, std::min(navigationPlayer_ - 1, count - 1));
             gamepadSlot_ = requested;
-            gamepad_ = SDL_OpenGamepad(ids[requested]);
+            if (navigationAll_) {
+                for (int index = 0; index < count; ++index) {
+                    if (auto *gamepad = SDL_OpenGamepad(ids[index])) {
+                        allGamepads_.insert(ids[index], gamepad);
+                        if (!gamepad_)
+                            gamepad_ = gamepad;
+                        qInfo() << "SDL all-navigation gamepad opened"
+                                << SDL_GetGamepadName(gamepad);
+                    }
+                }
+            } else {
+                gamepad_ = SDL_OpenGamepad(ids[requested]);
+            }
             if (gamepad_) {
                 qInfo() << "SDL gamepad opened" << SDL_GetGamepadName(gamepad_);
                 insert("controllerConnected", true);
@@ -732,6 +916,11 @@ private:
 
     void selectNavigationGamepad()
     {
+        if (navigationAll_) {
+            if (allGamepads_.isEmpty())
+                scanGamepads();
+            return;
+        }
         if (!gamepad_)
             return;
         const int requested = std::max(0, navigationPlayer_ - 1);
@@ -749,12 +938,34 @@ private:
             rearmRequired_ = false;
         SDL_Event event;
         while (SDL_PollEvent(&event)) {
-            if (event.type == SDL_EVENT_GAMEPAD_ADDED && !gamepad_) {
+            if (event.type == SDL_EVENT_GAMEPAD_ADDED && navigationAll_) {
+                if (auto *gamepad = SDL_OpenGamepad(event.gdevice.which)) {
+                    allGamepads_.insert(event.gdevice.which, gamepad);
+                    if (!gamepad_)
+                        gamepad_ = gamepad;
+                    insert("controllerConnected", true);
+                }
+            } else if (event.type == SDL_EVENT_GAMEPAD_ADDED && !gamepad_) {
                 gamepad_ = SDL_OpenGamepad(event.gdevice.which);
                 if (gamepad_) {
                     insert("controllerConnected", true);
                     insert("controllerIndex", 1);
                     insert("controllerIdentity", QString::fromUtf8(SDL_GetGamepadName(gamepad_)));
+                }
+            } else if (event.type == SDL_EVENT_GAMEPAD_REMOVED && navigationAll_) {
+                auto iterator = allGamepads_.find(event.gdevice.which);
+                if (iterator != allGamepads_.end()) {
+                    if (iterator.value() == gamepad_)
+                        gamepad_ = nullptr;
+                    SDL_CloseGamepad(iterator.value());
+                    allGamepads_.erase(iterator);
+                }
+                if (!gamepad_ && !allGamepads_.isEmpty())
+                    gamepad_ = allGamepads_.constBegin().value();
+                if (allGamepads_.isEmpty()) {
+                    insert("controllerConnected", false);
+                    insert("controllerIndex", -1);
+                    insert("controllerIdentity", QString());
                 }
             } else if (event.type == SDL_EVENT_GAMEPAD_REMOVED && gamepad_
                        && event.gdevice.which == SDL_GetGamepadID(gamepad_)) {
@@ -768,6 +979,9 @@ private:
                 // navigation slot immediately for failover.
                 scanGamepads();
             } else if (event.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN) {
+                if (!navigationAll_ && (!gamepad_
+                    || event.gbutton.which != SDL_GetGamepadID(gamepad_)))
+                    continue;
                 if (rearmRequired_)
                     continue;
                 const bool allowed = dispatchAllowed();
@@ -827,6 +1041,16 @@ private:
 
     bool controllerButtonsReleased() const
     {
+        if (navigationAll_) {
+            for (auto *gamepad : allGamepads_)
+                for (const auto button : {SDL_GAMEPAD_BUTTON_SOUTH, SDL_GAMEPAD_BUTTON_EAST,
+                                          SDL_GAMEPAD_BUTTON_WEST, SDL_GAMEPAD_BUTTON_NORTH,
+                                          SDL_GAMEPAD_BUTTON_DPAD_UP, SDL_GAMEPAD_BUTTON_DPAD_DOWN,
+                                          SDL_GAMEPAD_BUTTON_DPAD_LEFT, SDL_GAMEPAD_BUTTON_DPAD_RIGHT})
+                    if (SDL_GetGamepadButton(gamepad, button))
+                        return false;
+            return true;
+        }
         if (!gamepad_)
             return true;
         for (const auto button : {SDL_GAMEPAD_BUTTON_SOUTH, SDL_GAMEPAD_BUTTON_EAST,
@@ -858,6 +1082,25 @@ private:
             return;
         }
         presentationRoot_ = screen->root;
+
+        const auto keySymbols = xcb_key_symbols_alloc(presentationConnection_);
+        if (keySymbols) {
+            const auto keycodes = xcb_key_symbols_get_keycode(keySymbols, XK_g);
+            if (keycodes && keycodes[0] != XCB_NO_SYMBOL) {
+                globalGuideKeycode_ = keycodes[0];
+                globalGuideRoot_ = presentationRoot_;
+                xcb_grab_key(presentationConnection_, 1, globalGuideRoot_,
+                             XCB_MOD_MASK_CONTROL | XCB_MOD_MASK_1,
+                             globalGuideKeycode_, XCB_GRAB_MODE_ASYNC,
+                             XCB_GRAB_MODE_ASYNC);
+                xcb_grab_key(presentationConnection_, 1, globalGuideRoot_,
+                             XCB_MOD_MASK_CONTROL | XCB_MOD_MASK_1 | XCB_MOD_MASK_2,
+                             globalGuideKeycode_, XCB_GRAB_MODE_ASYNC,
+                             XCB_GRAB_MODE_ASYNC);
+            }
+            free(keycodes);
+            xcb_key_symbols_free(keySymbols);
+        }
 
         const xcb_intern_atom_cookie_t cookie =
             xcb_intern_atom(presentationConnection_, 0, sizeof("GAMESCOPE_FOCUSED_WINDOW") - 1,
@@ -896,7 +1139,19 @@ private:
             if (!event)
                 break;
             const uint8_t responseType = event->response_type & ~0x80;
-            if (responseType == XCB_PROPERTY_NOTIFY) {
+            if (responseType == XCB_KEY_PRESS) {
+                const auto *key = reinterpret_cast<const xcb_key_press_event_t *>(event);
+                const uint16_t modifiers = key->state &
+                    (XCB_MOD_MASK_SHIFT | XCB_MOD_MASK_LOCK | XCB_MOD_MASK_CONTROL |
+                     XCB_MOD_MASK_1 | XCB_MOD_MASK_2 | XCB_MOD_MASK_3 | XCB_MOD_MASK_4 |
+                     XCB_MOD_MASK_5);
+                const uint16_t expected = XCB_MOD_MASK_CONTROL | XCB_MOD_MASK_1;
+                if (key->detail == globalGuideKeycode_
+                    && (modifiers == expected || modifiers == (expected | XCB_MOD_MASK_2)))
+                    startGuide();
+                else if (guideProcess_ && guideKeyboardActions_.contains(key->detail))
+                    sendGuideKeyboardAction(guideKeyboardActions_.value(key->detail));
+            } else if (responseType == XCB_PROPERTY_NOTIFY) {
                 const auto *property = reinterpret_cast<const xcb_property_notify_event_t *>(event);
                 if (property->window == presentationRoot_ && property->atom == presentationAtom_) {
                     updatePresentationState();
@@ -959,6 +1214,8 @@ private:
     static constexpr const char *dbusInterface = "org.shadowblip.Input.DBusDevice";
     xcb_connection_t *presentationConnection_ = nullptr;
     xcb_window_t presentationRoot_ = XCB_WINDOW_NONE;
+    uint8_t globalGuideKeycode_ = XCB_NO_SYMBOL;
+    xcb_window_t globalGuideRoot_ = XCB_WINDOW_NONE;
     xcb_atom_t presentationAtom_ = XCB_ATOM_NONE;
     QSocketNotifier *presentationNotifier_ = nullptr;
     bool luluPresented_ = false;
@@ -969,6 +1226,8 @@ private:
     QTimer dbusDiscoveryTimer_;
     QTimer keyboardOwnershipTimer_;
     QHash<QString, DbusInputRelay *> dbusRelays_;
+    QHash<SDL_JoystickID, SDL_Gamepad *> allGamepads_;
+    QHash<uint8_t, QString> guideKeyboardActions_;
     QString guideOwnerComposite_;
     bool pendingGuide_ = false;
     bool guideChordConsumed_ = false;
@@ -978,6 +1237,19 @@ private:
     SDL_Gamepad *gamepad_ = nullptr;
     int gamepadSlot_ = 0;
     int navigationPlayer_ = 1;
+    bool navigationAll_ = true;
+
+    void closeGamepads()
+    {
+        const bool selectedIsTracked = gamepad_
+            && allGamepads_.values().contains(gamepad_);
+        for (auto *gamepad : allGamepads_)
+            SDL_CloseGamepad(gamepad);
+        allGamepads_.clear();
+        if (gamepad_ && !selectedIsTracked)
+            SDL_CloseGamepad(gamepad_);
+        gamepad_ = nullptr;
+    }
 };
 
 void DbusInputRelay::onInputEvent(const QString &event, double value)
@@ -1011,6 +1283,8 @@ bool setSteamGame(QQuickWindow *window)
 
 int main(int argc, char **argv)
 {
+    QCoreApplication::setAttribute(Qt::AA_ShareOpenGLContexts);
+    QtWebEngineQuick::initialize();
     QGuiApplication application(argc, argv);
     qmlRegisterType<MudosGlassItem>("Mudos.Poc", 1, 0, "MudosGlassItem");
     QQmlApplicationEngine engine;
@@ -1018,12 +1292,14 @@ int main(int argc, char **argv)
     SystemStatusBridge systemStatus(&application);
     CatalogueModel catalogueModel(&application);
     RecentModel recentModel(&catalogueModel, &application);
+    StoreBookmarkBridge storeBookmarks(&application);
     engine.rootContext()->setContextProperty("controllerBridge", &controller);
     engine.rootContext()->setContextProperty("systemStatus", &systemStatus);
     // The native catalogue model is authoritative for the migrated Recent
     // consumer; Library and Store remain on their existing snapshot paths.
     engine.rootContext()->setContextProperty("catalogueModel", &catalogueModel);
     engine.rootContext()->setContextProperty("recentModel", &recentModel);
+    engine.rootContext()->setContextProperty("bookmarkStore", &storeBookmarks);
     const QString qmlPath = qEnvironmentVariable("LULU_UI_FILE", "/opt/lulu/ui/ConsoleShell.qml");
     engine.load(QUrl::fromLocalFile(qmlPath));
 

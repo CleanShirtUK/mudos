@@ -29,10 +29,9 @@ Rectangle {
     property string actionLabel: "Play"
     property url artworkSource: ""
     property string artworkRole: "raster"
-    // The supplied fallback asset belongs at this normal artwork-pipeline path.
-    property url fallbackArtworkSource: Qt.resolvedUrl(MudosAssetCatalog.suppliedArtwork("fallback"))
     property string presentationId: ""
     property string symbolicArtwork: ""
+    property bool artworkLoadFailed: false
     property bool identitySampling: false
     property bool liveSceneCoordinates: false
     // Recent supplies the authoritative row/delegate presentation inputs.
@@ -248,8 +247,12 @@ Rectangle {
     readonly property url displayedArtworkSource: String(card.artworkSource).length > 0
         ? card.artworkSource
         : (card.game && !card.game.artwork_suppressed && card.game.artwork_url
-            ? card.game.artwork_url : card.fallbackArtworkSource)
-    readonly property bool iconArtwork: card.artworkRole === "icon" || !!card.symbolicArtwork
+            ? card.game.artwork_url : "")
+    readonly property string displayedSymbolicArtwork: card.symbolicArtwork
+        || (String(card.displayedArtworkSource).length === 0 || card.artworkLoadFailed
+            ? MudosAssetCatalog.icon("fallback") : "")
+    readonly property bool iconArtwork: card.artworkRole === "icon"
+        || !!card.displayedSymbolicArtwork
     readonly property real focalMargin: 30 * focalScale * uiScale
     readonly property real focalMetadataGlyphColumnWidth: 18 * focalScale * uiScale
     readonly property real compactMargin: 14 * uiScale
@@ -388,6 +391,8 @@ Rectangle {
             asynchronous: true
             retainWhileLoading: false
             visible: !card.iconArtwork
+            onStatusChanged: if (status === Image.Error) card.artworkLoadFailed = true
+            onSourceChanged: card.artworkLoadFailed = false
         }
 
         ShaderEffectSource {
@@ -420,13 +425,13 @@ Rectangle {
             fillMode: Image.PreserveAspectFit
             asynchronous: true
             retainWhileLoading: false
-            visible: card.iconArtwork && !card.symbolicArtwork
+            visible: card.iconArtwork && !card.displayedSymbolicArtwork
         }
 
         MultiEffect {
             anchors.fill: iconArtworkSource
             source: iconArtworkSource
-            visible: card.iconArtwork && !card.symbolicArtwork
+            visible: card.iconArtwork && !card.displayedSymbolicArtwork
             z: 1
             colorization: 1.0
             colorizationColor: card.focusedColor(card.luluPalette.primaryText)
@@ -434,8 +439,8 @@ Rectangle {
 
         MudosIcon {
             anchors.fill: parent
-            visible: !!card.symbolicArtwork
-            glyph: card.symbolicArtwork
+            visible: !!card.displayedSymbolicArtwork
+            glyph: card.displayedSymbolicArtwork
             semanticColor: card.focusedColor(card.luluPalette.primaryText)
             typography: card.typography
             iconSize: card.typography.size("display", 88)

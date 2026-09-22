@@ -68,6 +68,32 @@ def _read_layer(path: Path) -> dict[str, object]:
         return {}
 
 
+def _toml_string(value: object) -> str:
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, int) and not isinstance(value, bool):
+        return str(value)
+    if isinstance(value, float):
+        return str(value)
+    if isinstance(value, str):
+        return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
+    raise ValueError(f"unsupported provider configuration value: {type(value).__name__}")
+
+
+def _toml_dump(value: Mapping[str, object], prefix: str = "") -> str:
+    lines: list[str] = []
+    scalars = {key: child for key, child in value.items() if not isinstance(child, dict)}
+    for key, child in scalars.items():
+        if isinstance(child, (str, int, float, bool)):
+            lines.append(f"{key} = {_toml_string(child)}")
+    tables = [(key, child) for key, child in value.items() if isinstance(child, dict)]
+    for key, child in tables:
+        name = f"{prefix}.{key}" if prefix else key
+        if lines:
+            lines.append("")
+        lines.append(f"[{name}]")
+        lines.extend(_toml_dump(child, name).splitlines())
+    return "\n".join(lines) + ("\n" if lines else "")
 @dataclass(frozen=True, slots=True)
 class ProviderConfiguration:
     """Safe view of one provider/service namespace."""
@@ -174,3 +200,56 @@ class ProviderConfigurationService:
 
     def diagnostics(self, provider_id: str) -> dict[str, object]:
         return self.provider(provider_id).diagnostics()
+
+    def update_provider(self, provider_id: str, values: Mapping[str, object],
+                        secrets: Mapping[str, str] | None = None,
+                        clear_secrets: set[str] | None = None) -> ProviderConfiguration:
+        """Update the user layer without exposing or writing secret values.
+
+        This is the shared mutation boundary for OOBE, controller tooling and
+        the admin frontend. Secret values go directly to SecretStore; the TOML
+        layer contains references only.
+        """
+        try:
+            raw = tomllib.loads(self.user_path.read_text()) if self.user_path.exists() else {}
+        except (OSError, tomllib.TOMLDecodeError):
+            raw = {}
+        merged_refs = dict(self.provider(provider_id).secret_refs)
+        node: dict[str, object] = raw
+        parts = provider_id.split(".")
+        for part in parts[:-1]:
+            child = node.get(part)
+            if not isinstance(child, dict):
+                child = {}
+                node[part] = child
+            node = child
+        current = node.get(parts[-1])
+        provider = current if isinstance(current, dict) else {}
+        node[parts[-1]] = provider
+        for key, value in values.items():
+            if key not in {"password", "secret", "api_key", "token"}:
+                provider[key] = value
+        secret_refs = provider.setdefault("secrets", {})
+        if not isinstance(secret_refs, dict):
+            secret_refs = {}
+            provider["secrets"] = secret_refs
+        for name, value in (secrets or {}).items():
+            if value:
+                reference = secret_refs.get(name)
+                if not isinstance(reference, str) or "/" not in reference:
+                    reference = merged_refs.get(name)
+                if not isinstance(reference, str) or "/" not in reference:
+                    reference = f"{parts[0]}/{parts[0]}-{name.replace('_', '-')}"
+                secret_refs[name] = reference
+                namespace, _, secret_name = reference.partition("/")
+                self.secrets.put(namespace, secret_name, value)
+        for name in clear_secrets or set():
+            reference = secret_refs.get(name)
+            if isinstance(reference, str) and "/" in reference:
+                namespace, _, secret_name = reference.partition("/")
+                self.secrets.clear(namespace, secret_name)
+        self.user_path.parent.mkdir(parents=True, exist_ok=True)
+        self.user_path.write_text(_toml_dump(raw))
+        os.chmod(self.user_path, 0o640)
+        self._config, self._sources = self._load()
+        return self.provider(provider_id)

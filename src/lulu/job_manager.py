@@ -10,6 +10,7 @@ from uuid import uuid4
 
 from .jobs import DownloadJob, JobError, JobOperation, JobState, utc_now
 from .acquisition_store import AcquisitionStore
+from .jobs import ExternalAcquisition
 
 
 class JobCancelled(Exception):
@@ -288,6 +289,51 @@ class JobManager:
         self._queues[job.provider].append(job_id)
         self._pump(job.provider)
         return self.jobs[job_id]
+
+    async def reconcile_external(self) -> None:
+        """Import and refresh provider-managed jobs submitted outside Mudos."""
+        for provider, executor in self.executors.items():
+            discover = getattr(executor, "discover_external", None)
+            if discover is None:
+                continue
+            records: tuple[ExternalAcquisition, ...] = await discover()
+            seen: set[str] = set()
+            for record in records:
+                seen.add(record.content_identity)
+                existing = next((job for job in self.jobs.values()
+                                 if job.content_identity == record.content_identity
+                                 and job.provider == provider), None)
+                if existing is None:
+                    self.jobs[f"external-{record.content_identity.rsplit(':', 1)[-1]}"] = DownloadJob(
+                        job_id=f"external-{record.content_identity.rsplit(':', 1)[-1]}",
+                        provider=provider, title=record.title,
+                        content_identity=record.content_identity, state=record.state,
+                        progress=record.progress, downloaded_bytes=record.downloaded_bytes,
+                        total_bytes=record.total_bytes, stage=record.stage,
+                        cancellation_supported=True, pause_supported=True,
+                        provider_job_id=record.provider_job_id, backend=record.backend,
+                        destination=record.destination, download_rate=record.rate,
+                        provider_state=record.provider_state,
+                        artifact_files=(record.metadata,) if record.metadata else (),
+                        ownership_label=record.provenance, origin=record.origin,
+                        created_at=utc_now(), updated_at=utc_now(),
+                    )
+                else:
+                    self.jobs[existing.job_id] = replace(existing, title=record.title,
+                        state=record.state, progress=record.progress,
+                        downloaded_bytes=record.downloaded_bytes, total_bytes=record.total_bytes,
+                        stage=record.stage, provider_job_id=record.provider_job_id,
+                        destination=record.destination, download_rate=record.rate,
+                        provider_state=record.provider_state, updated_at=utc_now(),
+                        artifact_files=(record.metadata,) if record.metadata else existing.artifact_files,
+                        error=None if record.state != JobState.FAILED else existing.error)
+            for job_id, job in tuple(self.jobs.items()):
+                if job.provider == provider and job.origin != "mudos" \
+                        and job.content_identity not in seen \
+                        and job.state not in {JobState.COMPLETED, JobState.FAILED, JobState.CANCELLED}:
+                    self._cancelled(job_id)
+            if records or seen:
+                self._publish()
 
     def _pump(self, provider: str) -> None:
         limit = self.provider_limits.get(provider, 1)

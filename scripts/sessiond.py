@@ -327,6 +327,13 @@ class ConsoleSessionInterface(ServiceInterface):
             raise self._error(ValueError(f"invalid input mode: {mode}")) from error
         self.StateChanged(self._state_json())
 
+    @method()
+    def SetDelegatedSurface(self, surface: "s") -> "":
+        if surface not in {"", "browser"}:
+            raise self._error(ValueError("invalid delegated surface"))
+        self.model.state.delegated_surface = surface or None
+        self.StateChanged(self._state_json())
+
     @signal()
     def StateChanged(self, state: "s") -> "s":
         return state

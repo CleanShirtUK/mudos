@@ -130,6 +130,26 @@ class MudosPaths:
         return self.torrent_root / "ownership"
 
     @property
+    def usenet_root(self) -> Path:
+        return self.game_install_root / ".acquisition/usenet"
+
+    @property
+    def usenet_incomplete_root(self) -> Path:
+        return self.usenet_root / "incomplete"
+
+    @property
+    def usenet_complete_root(self) -> Path:
+        return self.usenet_root / "complete"
+
+    @property
+    def usenet_nzb_root(self) -> Path:
+        return self.usenet_root / "nzb"
+
+    @property
+    def usenet_ownership_root(self) -> Path:
+        return self.usenet_root / "ownership"
+
+    @property
     def recordings(self) -> Path:
         return self.home / "Recordings"
 

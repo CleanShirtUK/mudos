@@ -37,6 +37,46 @@ mapping:
     target_events:
       - keyboard: KeyRight
       - dbus: ui_right
+  - name: Right stick scroll up
+    source_event:
+      gamepad:
+        axis:
+          name: RightStick
+          direction: up
+          deadzone: 0.25
+    target_events:
+      - mouse:
+          button: WheelUp
+  - name: Right stick scroll down
+    source_event:
+      gamepad:
+        axis:
+          name: RightStick
+          direction: down
+          deadzone: 0.25
+    target_events:
+      - mouse:
+          button: WheelDown
+  - name: Right stick scroll left
+    source_event:
+      gamepad:
+        axis:
+          name: RightStick
+          direction: left
+          deadzone: 0.25
+    target_events:
+      - mouse:
+          button: WheelLeft
+  - name: Right stick scroll right
+    source_event:
+      gamepad:
+        axis:
+          name: RightStick
+          direction: right
+          deadzone: 0.25
+    target_events:
+      - mouse:
+          button: WheelRight
   - name: Left stick mouse
     source_event:
       gamepad:
@@ -79,7 +119,8 @@ mapping:
       gamepad:
         button: LeftBumper
     target_events:
-      - keyboard: KeyPageUp
+      - keyboard: KeyLeftShift
+      - keyboard: KeyTab
   - name: RB tab
     source_event:
       gamepad:

@@ -6,6 +6,25 @@ from datetime import datetime, timezone
 from typing import Any
 
 
+@dataclass(frozen=True, slots=True)
+class ExternalAcquisition:
+    content_identity: str
+    title: str
+    origin: str
+    provenance: str
+    provider_job_id: str
+    state: "JobState"
+    progress: float | None
+    downloaded_bytes: int | None
+    total_bytes: int | None
+    stage: str
+    rate: int | None
+    provider_state: str
+    destination: str | None = None
+    backend: str = "nzbget"
+    metadata: dict[str, object] = field(default_factory=dict)
+
+
 def utc_now() -> str:
     """Return the stable UTC representation used at API and storage boundaries."""
     return datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
@@ -15,6 +34,7 @@ class JobState(StrEnum):
     QUEUED = "queued"
     STARTING = "starting"
     TRANSFERRING = "transferring"
+    AWAITING_INTERACTION = "awaiting_interaction"
     # Compatibility alias for the original foundation model.
     RUNNING = "transferring"
     FINALIZING = "finalizing"
@@ -67,6 +87,7 @@ class DownloadJob:
     eta_seconds: int | None = None
     provider_state: str | None = None
     ownership_label: str | None = None
+    origin: str = "mudos"
     deletion_policy: str = "preserve-partial"
     artifact_files: tuple[dict[str, object], ...] = ()
     seeding: bool = False
@@ -83,6 +104,7 @@ class DownloadJob:
     def is_active(self) -> bool:
         return self.state in {
             JobState.STARTING, JobState.TRANSFERRING, JobState.FINALIZING,
+            JobState.AWAITING_INTERACTION,
             JobState.PAUSING, JobState.RESUMING, JobState.CANCELLING,
         }
 
@@ -96,14 +118,15 @@ class DownloadJob:
             JobState.STARTING: {JobState.TRANSFERRING, JobState.PAUSING, JobState.PAUSED, JobState.FINALIZING,
                                 JobState.CANCELLING, JobState.FAILED},
             JobState.TRANSFERRING: {JobState.PAUSING, JobState.PAUSED, JobState.FINALIZING,
-                                   JobState.CANCELLING, JobState.FAILED},
+                                   JobState.AWAITING_INTERACTION, JobState.CANCELLING, JobState.FAILED},
+            JobState.AWAITING_INTERACTION: {JobState.TRANSFERRING, JobState.CANCELLING, JobState.FAILED},
             JobState.FINALIZING: {JobState.COMPLETED, JobState.CANCELLING,
                                   JobState.FAILED},
             JobState.PAUSED: {JobState.RESUMING, JobState.QUEUED, JobState.TRANSFERRING, JobState.CANCELLING,
                               JobState.FAILED},
             JobState.PAUSING: {JobState.PAUSED, JobState.CANCELLING, JobState.FAILED},
             JobState.RESUMING: {JobState.STARTING, JobState.QUEUED, JobState.TRANSFERRING,
-                                JobState.CANCELLING, JobState.FAILED},
+                                JobState.PAUSED, JobState.CANCELLING, JobState.FAILED},
             JobState.CANCELLING: {JobState.CANCELLED, JobState.FAILED},
             JobState.FAILED: {JobState.QUEUED, JobState.CANCELLED},
             JobState.COMPLETED: set(),

@@ -10,7 +10,7 @@ import shlex
 from .model import ConfigStrategy, GuideAction, LaunchDefinition, ProviderCapabilities, ProviderDefinition
 
 VALID_GUIDE_ROLES = {"system", "provider", "quit"}
-VALID_GUIDE_CONTEXTS = {"shell", "game", "standalone", "store", "downloads", "install"}
+VALID_GUIDE_CONTEXTS = {"shell", "game", "standalone", "store", "downloads", "install", "browser"}
 
 
 def _guide_actions(raw: object, path: Path) -> tuple[GuideAction, ...]:

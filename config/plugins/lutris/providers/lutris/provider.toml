@@ -1,0 +1,17 @@
+id = "lutris"
+name = "Lutris"
+
+[capabilities]
+launch = true
+library = true
+
+[platforms]
+supported = ["pc"]
+
+[[guide.actions]]
+id = "lutris-quit"
+label = "Quit"
+role = "quit"
+target = "process-group-terminate"
+contexts = ["game", "install"]
+order = 90

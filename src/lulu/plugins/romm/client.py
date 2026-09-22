@@ -120,6 +120,10 @@ class RommFile:
     file_id: int
     name: str
     size_bytes: int = 0
+    category: str | None = None
+    title_id: str | None = None
+    version: str | None = None
+    rom_id: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -165,7 +169,10 @@ class RommGame:
             if not isinstance(files_value, list):
                 raise ValueError
             files = tuple(
-                RommFile(int(item["id"]), str(item.get("file_name", "")), int(item.get("file_size_bytes", 0)))
+                RommFile(int(item["id"]), str(item.get("file_name", "")), int(item.get("file_size_bytes", 0)),
+                         str(item.get("category") or item.get("type") or "") or None,
+                         str(item.get("title_id") or item.get("titleId") or "") or None,
+                         str(item.get("version") or "") or None, rom_id)
                 for item in files_value
                 if isinstance(item, dict) and str(item.get("file_name", "")).strip()
             )
@@ -282,8 +289,12 @@ class UrlLibTransport:
         with urlopen(request, timeout=timeout) as response:
             return int(response.status), response.read()
 
-    def open(self, method: str, url: str, headers: dict[str, str], timeout: float) -> BinaryIO:
-        request = Request(url, headers=headers, method=method)
+    def open(self, method: str, url: str, headers: dict[str, str], timeout: float,
+             offset: int = 0) -> BinaryIO:
+        request_headers = dict(headers)
+        if offset > 0:
+            request_headers["Range"] = f"bytes={offset}-"
+        request = Request(url, headers=request_headers, method=method)
         response = urlopen(request, timeout=timeout)
         if not 200 <= int(response.status) < 300:
             response.close()
@@ -390,18 +401,30 @@ class RommClient:
         return [game for game in games if game.platform_slug.casefold() == expected]
 
     def download_file(self, romm_file: RommFile) -> bytes:
-        path = f"/roms/{romm_file.file_id}/files/content/{quote(romm_file.name, safe='')}"
+        path = self._content_path(romm_file)
         return self._request("GET", path, "application/octet-stream")[1]
 
-    def open_file_stream(self, romm_file: RommFile) -> BinaryIO:
+    @staticmethod
+    def _content_path(romm_file: RommFile) -> str:
+        """Build RomM 5.x's parent-ROM content route with file selection."""
+        if romm_file.rom_id is None:
+            raise RommApiError("RomM file is missing its parent ROM ID")
+        return (f"/roms/{romm_file.rom_id}/content/{quote(romm_file.name, safe='')}"
+                f"?file_ids={romm_file.file_id}")
+
+    def open_file_stream(self, romm_file: RommFile, *, offset: int = 0) -> BinaryIO:
         """Open a RomM content response without materialising it in memory."""
-        path = f"/roms/{romm_file.file_id}/files/content/{quote(romm_file.name, safe='')}"
+        path = self._content_path(romm_file)
         headers = {"Accept": "application/octet-stream", "User-Agent": "Mudos/romm"}
         if (auth := self.config.auth_header()) is not None:
             headers["Authorization"] = auth
         if isinstance(self.transport, UrlLibTransport):
             try:
-                return self.transport.open("GET", self.config.api_url + path, headers, self.config.timeout)
+                # Large RomM transfers can legitimately be idle for longer
+                # than the metadata timeout.  Keep metadata calls bounded,
+                # but allow the streaming socket a conservative idle window.
+                return self.transport.open("GET", self.config.api_url + path, headers,
+                                           max(self.config.timeout, 60.0), offset)
             except (HTTPError, URLError, OSError, TimeoutError) as error:
                 raise RommApiError(f"RomM request failed: GET {path}") from error
         # Test/custom transports expose only the existing bounded request API.
@@ -409,7 +432,7 @@ class RommClient:
         return BytesIO(self._request("GET", path, "application/octet-stream")[1])
 
     def read_steam_manifest(self, romm_file: RommFile) -> SteamManifest:
-        path = f"/roms/{romm_file.file_id}/files/content/{quote(romm_file.name, safe='')}"
+        path = self._content_path(romm_file)
         return SteamManifest.from_bytes(self._request("GET", path, "application/json")[1])
 
     def _json(self, method: str, path: str, query: dict[str, object] | None = None) -> object:

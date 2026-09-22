@@ -1,5 +1,9 @@
 .pragma library
 
+function nerdGlyph(codepoint) {
+    return String.fromCodePoint(codepoint)
+}
+
 // Semantic asset authority. Screens request names, never filesystem paths or
 // font codepoints. RomM platform artwork remains available for catalogue data;
 // Mudos-owned Library navigation uses its separate supplied-artwork map.
@@ -29,7 +33,11 @@ var iconCodepoints = {
     play: "\uf04b",
     back: "\uf060",
     check: "\uf00c",
-    close: "\uf00d"
+    close: "\uf00d",
+    fallback: nerdGlyph(0xF420),
+    questarr: nerdGlyph(0xF0833),
+    steam: nerdGlyph(0xF1B6),
+    addStore: nerdGlyph(0xF055)
 }
 
 // Logical asset IDs are the presentation-side counterpart of the Python
@@ -91,6 +99,18 @@ var platformAliases = {
 
 function icon(name) {
     return iconCodepoints[String(name || "")] || ""
+}
+
+function storeIcon(id, kind) {
+    if (kind === "store" && String(id || "") === "steam")
+        return icon("steam")
+    if (kind === "store" && String(id || "") === "questarr")
+        return icon("questarr")
+    if (kind === "add")
+        return icon("addStore")
+    if (kind === "catalogue")
+        return icon("download")
+    return icon("fallback")
 }
 
 function platformArtwork(platform) {

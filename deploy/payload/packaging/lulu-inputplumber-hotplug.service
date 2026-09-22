@@ -1,0 +1,8 @@
+[Unit]
+Description=Reconcile Lulu standard gamepad InputPlumber composites
+After=inputplumber.service systemd-udev-settle.service
+Wants=inputplumber.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/lulu/dev-current/scripts/provision-inputplumber-gamepads.py /etc/inputplumber/devices.d/lulu-composite.yaml --activate

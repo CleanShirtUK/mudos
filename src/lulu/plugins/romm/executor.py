@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import os
 from pathlib import Path
+from dataclasses import replace
 
 from ...emulation import PLATFORMS, ROM_ROOT, current_rom_root, ensure_storage
 from ...job_manager import JobExecutionError, JobReporter
@@ -24,10 +25,19 @@ class RommExecutor:
     def _resolve(self, identity: str) -> tuple[RommGame, RommFile]:
         if self.client is None:
             raise JobExecutionError("romm-unavailable", "RomM acquisition is not configured", retryable=True)
-        try:
-            rom_id = int(identity.removeprefix("romm:"))
-        except (TypeError, ValueError) as error:
-            raise JobExecutionError("invalid-content-identity", "RomM content identity is invalid") from error
+        file_id: int | None = None
+        raw_identity = identity.removeprefix("romm-file:") if identity.startswith("romm-file:") else identity.removeprefix("romm:")
+        if identity.startswith("romm-file:"):
+            try:
+                raw_rom, raw_file = raw_identity.split(":", 1)
+                rom_id, file_id = int(raw_rom), int(raw_file)
+            except (TypeError, ValueError):
+                raise JobExecutionError("invalid-content-identity", "RomM file identity is invalid")
+        else:
+            try:
+                rom_id = int(raw_identity)
+            except (TypeError, ValueError) as error:
+                raise JobExecutionError("invalid-content-identity", "RomM content identity is invalid") from error
         if rom_id < 1:
             raise JobExecutionError("invalid-content-identity", "RomM content identity is invalid")
         try:
@@ -38,6 +48,11 @@ class RommExecutor:
             raise JobExecutionError("romm-unavailable", str(error), retryable=True) from error
         if not game.files:
             raise JobExecutionError("romm-file-missing", f"RomM ROM {rom_id} has no downloadable file", retryable=True)
+        if file_id is not None:
+            try:
+                return game, next(item for item in game.files if item.file_id == file_id)
+            except StopIteration as error:
+                raise JobExecutionError("romm-file-missing", "RomM file is unavailable", retryable=True) from error
         return game, game.files[0]
 
     @staticmethod
@@ -58,28 +73,83 @@ class RommExecutor:
         return root / definition.platform_id / filename
 
     async def run(self, job: DownloadJob, reporter: JobReporter) -> None:
+        if job.content_identity.startswith("romm-set:"):
+            identities = [item for item in job.content_identity.removeprefix("romm-set:").split(",") if item]
+            if not identities:
+                raise JobExecutionError("invalid-content-set", "RomM content set is empty")
+            expanded: list[str] = []
+            selected_files: list[tuple[RommGame, RommFile]] = []
+            for identity in identities:
+                game, _ = await asyncio.to_thread(self._resolve, f"romm:{identity}")
+                selected = [item for item in game.files if item.category in {"game", "update", "dlc"}
+                            and not item.name.startswith(".")]
+                selected_files.extend((game, item) for item in selected)
+                expanded.extend(f"{game.rom_id}:{item.file_id}" for item in selected)
+            if not expanded:
+                raise JobExecutionError("romm-file-missing", "RomM content set has no installable files")
+            await reporter.metadata(artifact_files=tuple({
+                "rom_id": game.rom_id,
+                "file_id": item.file_id,
+                "name": item.name,
+                "category": item.category,
+                "title_id": item.title_id,
+                "version": item.version,
+            } for game, item in selected_files))
+            # A content set is one acquisition transaction.  Its component
+            # transfers must not drive the parent through FINALIZING until
+            # every component has been installed; otherwise the manager
+            # attempts STARTING for the next component after FINALIZING.
+            await reporter.state(JobState.STARTING, stage="starting")
+            for identity in expanded:
+                await self._run_one(replace(job, content_identity=f"romm-file:{identity}"), reporter,
+                                    transition_states=False)
+            await reporter.progress(1.0, stage="finalizing")
+            await reporter.state(JobState.FINALIZING, stage="finalizing")
+            return
+        await self._run_one(job, reporter)
+
+    async def _run_one(self, job: DownloadJob, reporter: JobReporter, *,
+                       transition_states: bool = True) -> None:
         # Pairing replaces the encrypted token while acquisitiond remains
         # alive. Refresh production clients per job; injected test doubles are
         # intentionally left untouched.
         if isinstance(self.client, RommClient):
             config = RommConfig.from_file()
             self.client = RommClient(config) if config else None
-        await reporter.state(JobState.STARTING, stage="starting")
+        if transition_states:
+            await reporter.state(JobState.STARTING, stage="starting")
         game, romm_file = await asyncio.to_thread(self._resolve, job.content_identity)
         destination = self._destination(game, romm_file)
         ensure_storage()
         destination.parent.mkdir(parents=True, exist_ok=True)
-        staging = destination.with_name(f".{destination.name}.{job.job_id}.part")
+        # Retries carry the failed attempt as parent_job_id.  Reusing that
+        # transaction key makes the provider-owned partial resumable without
+        # placing staging data in the RomM library.
+        transaction_id = job.parent_job_id or job.job_id
+        staging = destination.with_name(f".{destination.name}.{transaction_id}.part")
         stream = None
-        preserve_staging = False
+        preserve_staging = True
         try:
-            stream = await asyncio.to_thread(self.client.open_file_stream, romm_file)  # type: ignore[union-attr]
-            total_header = getattr(stream, "headers", {}).get("Content-Length") if hasattr(stream, "headers") else None
+            downloaded = staging.stat().st_size if staging.exists() else 0
+            try:
+                stream = await asyncio.to_thread(self.client.open_file_stream, romm_file, offset=downloaded)  # type: ignore[union-attr]
+            except TypeError as error:
+                # Preserve compatibility with injected provider doubles from
+                # older integrations; production RomMClient supports Range.
+                if "offset" not in str(error):
+                    raise
+                stream = await asyncio.to_thread(self.client.open_file_stream, romm_file)  # type: ignore[union-attr]
+            headers = getattr(stream, "headers", {})
+            status = int(getattr(stream, "status", 206 if downloaded else 200))
+            # A server that ignores Range must not append a second copy.
+            if downloaded and status != 206:
+                staging.unlink(missing_ok=True)
+                downloaded = 0
+            total_header = headers.get("Content-Range", "").rsplit("/", 1)[-1] if headers.get("Content-Range") else headers.get("Content-Length")
             try:
                 total = int(total_header) if total_header is not None else None
             except (TypeError, ValueError):
                 total = None
-            downloaded = staging.stat().st_size if staging.exists() else 0
             mode = "ab" if downloaded else "wb"
             with staging.open(mode) as output:
                 if downloaded:
@@ -99,8 +169,10 @@ class RommExecutor:
                                             stage="transferring")
                 output.flush()
                 await asyncio.to_thread(os.fsync, output.fileno())
-            await reporter.state(JobState.FINALIZING, stage="finalizing")
+            if transition_states:
+                await reporter.state(JobState.FINALIZING, stage="finalizing")
             await asyncio.to_thread(os.replace, staging, destination)
+            preserve_staging = False
         except asyncio.CancelledError:
             # A paused job keeps its provider-owned staging file so resume can
             # continue from the reported byte offset. Cancellation still

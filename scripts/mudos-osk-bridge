@@ -25,6 +25,14 @@ PROPERTIES_INTERFACE = "org.freedesktop.DBus.Properties"
 DBUS_INTERFACE = "org.shadowblip.Input.DBusDevice"
 DBUS_DAEMON_INTERFACE = "org.freedesktop.DBus"
 DBUS_DAEMON_PATH = "/org/freedesktop/DBus"
+PROFILE_INTERFACE = COMPOSITE_INTERFACE
+OSK_PROFILE = os.environ.get(
+    "LULU_OSK_PROFILE",
+    os.path.join(
+        os.environ.get("LULU_INSTALL_ROOT", "/opt/lulu/current"),
+        "config/inputplumber/profiles/osk.yaml",
+    ),
+)
 
 EV_SYN = 0
 EV_KEY = 1
@@ -160,6 +168,30 @@ async def set_intercept_mode(bus: MessageBus, object_path: str, mode: int) -> No
         raise RuntimeError(reply.error_name or "failed to restore InputPlumber mode")
 
 
+async def get_profile_path(bus: MessageBus, object_path: str) -> str:
+    reply = await bus.call(Message(
+        destination=INPUT_SERVICE, path=object_path,
+        interface=PROPERTIES_INTERFACE, member="Get", signature="ss",
+        body=[PROFILE_INTERFACE, "ProfilePath"],
+    ))
+    if reply.message_type.name == "ERROR" or not reply.body:
+        raise RuntimeError(reply.error_name or "failed to read InputPlumber profile")
+    value = getattr(reply.body[0], "value", reply.body[0])
+    if not isinstance(value, str) or not value:
+        raise RuntimeError("InputPlumber returned an invalid profile path")
+    return value
+
+
+async def load_profile_path(bus: MessageBus, object_path: str, path: str) -> None:
+    reply = await bus.call(Message(
+        destination=INPUT_SERVICE, path=object_path,
+        interface=COMPOSITE_INTERFACE, member="LoadProfilePath", signature="s",
+        body=[path],
+    ))
+    if reply.message_type.name == "ERROR":
+        raise RuntimeError(reply.error_name or "failed to load InputPlumber profile")
+
+
 class Bridge:
     def __init__(self, binary: str, config: str) -> None:
         self.binary = binary
@@ -169,6 +201,8 @@ class Bridge:
         self.process: asyncio.subprocess.Process | None = None
         self.dpad = {"up": False, "down": False, "left": False, "right": False}
         self.mode_restored = False
+        self.profile_path: str | None = None
+        self.profile_restored = False
         self.source_present = True
         self.awaiting_show_until = 0.0
         self.composite_path: str | None = None
@@ -306,21 +340,28 @@ class Bridge:
         self.pad.reset()
         self.composite_path = desired
         self.mode_restored = False
+        self.profile_path = None
+        self.profile_restored = False
         if desired is None:
             return
         try:
             # A recreated composite does not inherit the old mode.
             await set_intercept_mode(bus, desired, 1)
             if visible_now:
+                self.profile_path = await get_profile_path(bus, desired)
+                await load_profile_path(bus, desired, OSK_PROFILE)
                 await set_intercept_mode(bus, desired, 2)
                 self.active = True
             else:
                 self.mode_restored = True
+                self.profile_restored = True
         except Exception:
             # The object may disappear between GamepadOrder and Set. Leave the
             # bridge healthy and let the next reconciliation bind the replacement.
             self.composite_path = None
             self.mode_restored = False
+            self.profile_path = None
+            self.profile_restored = False
 
     async def run(self) -> None:
         bus = await MessageBus(bus_type=BusType.SYSTEM).connect()
@@ -362,23 +403,44 @@ class Bridge:
                 await self._reconcile_composite(bus, is_visible)
                 try:
                     if self.composite_path is not None and is_visible and not was_visible:
+                        # Capture the profile currently driving the browser or
+                        # shell at the ownership boundary.  Do not reuse the
+                        # startup profile: COMPAT may have been loaded after
+                        # the bridge first reconciled its hidden state.
+                        self.profile_path = await get_profile_path(
+                            bus, self.composite_path
+                        )
+                        await load_profile_path(
+                            bus, self.composite_path,
+                            OSK_PROFILE,
+                        )
                         await set_intercept_mode(bus, self.composite_path, 2)
                         self.active = True
                         self.mode_restored = False
+                        self.profile_restored = False
                     elif self.composite_path is not None and not is_visible and was_visible:
                         self.active = False
                         self.pad.reset()
                         await set_intercept_mode(bus, self.composite_path, 1)
+                        if self.profile_path is not None:
+                            await load_profile_path(bus, self.composite_path, self.profile_path)
                         self.mode_restored = True
+                        self.profile_restored = True
+                        self.profile_path = None
                     elif (self.composite_path is not None and not is_visible and not self.mode_restored
                           and time.monotonic() >= self.awaiting_show_until):
                         await set_intercept_mode(bus, self.composite_path, 1)
+                        if self.profile_path is not None and not self.profile_restored:
+                            await load_profile_path(bus, self.composite_path, self.profile_path)
+                            self.profile_restored = True
                         self.mode_restored = True
                 except Exception:
                     self.active = False
                     self.pad.reset()
                     self.composite_path = None
                     self.mode_restored = False
+                    self.profile_path = None
+                    self.profile_restored = False
                 was_visible = is_visible
                 self.visibility_event.set()
                 try:
@@ -395,6 +457,8 @@ class Bridge:
             if self.composite_path is not None:
                 try:
                     await set_intercept_mode(bus, self.composite_path, 1)
+                    if self.profile_path is not None:
+                        await load_profile_path(bus, self.composite_path, self.profile_path)
                 except Exception:
                     pass
             if self.process and self.process.returncode is None:

@@ -14,6 +14,7 @@ from lulu.catalogue import CatalogueGame, CatalogueStore
 from lulu.metadata import MetadataCandidate
 from lulu.controllerd import BatteryKind, BatteryState, Controller, ControllerRegistry
 from lulu.controllerd import default_inputplumber_client
+from lulu.inputplumber import InputPlumberClient
 from lulu.contracts import InputMode, Lifecycle, Overlay, Role, ServiceName
 from lulu.gamescope import GamescopeInvocation, discover_presentation_output
 from lulu.sessiond import ConsoleSessionInterface
@@ -65,6 +66,31 @@ def input_mode_interface(
 
 
 class BoundaryTests(unittest.TestCase):
+    def test_capable_source_is_inventory_fallback_when_composite_order_is_empty(self) -> None:
+        from unittest.mock import patch
+
+        class SourceOnlyClient(InputPlumberClient):
+            def gamepad_order(self, *, execute: bool = True) -> tuple[str, ...]:
+                return ()
+
+            def _source_gamepad_path(self, *, execute: bool = True) -> str | None:
+                return "/org/shadowblip/InputPlumber/devices/source/event8"
+
+        client = SourceOnlyClient("/org/shadowblip/InputPlumber/CompositeDevice0", {})
+        with patch("lulu.inputplumber.subprocess.run", return_value=type(
+            "Result", (), {"stdout": ""}
+        )()):
+            self.assertEqual(
+                client.runtime_composite_statuses(),
+                {
+                    "/org/shadowblip/InputPlumber/CompositeDevice0": (
+                        "source:event8",
+                        ("/org/shadowblip/InputPlumber/devices/source/event8",),
+                    )
+                },
+            )
+            self.assertEqual(client.runtime_gamepad_slots()[0][-1], 0)
+
     def test_console_catalog_metadata_search_exposes_duplicate_candidates(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             store = CatalogueStore(Path(directory) / "catalogue.sqlite3")
@@ -140,6 +166,37 @@ class BoundaryTests(unittest.TestCase):
         registry.set_navigation_controller("pad-a")
         self.assertEqual(registry.controllers["pad-a"].player, 1)
         self.assertEqual(registry.navigation_controller_id, "pad-a")
+
+    def test_all_navigation_accepts_every_assigned_controller_without_changing_players(self) -> None:
+        registry = ControllerRegistry()
+        registry.observe_runtime_composites({
+            "CompositeDevice0": ("pad-a", ("/dev/input/event1",)),
+            "CompositeDevice1": ("pad-b", ("/dev/input/event2",)),
+        })
+        registry.set_navigation_controller("all")
+        self.assertEqual(registry.navigation_mode, "all")
+        self.assertIsNone(registry.navigation_controller_id)
+        self.assertEqual(registry.controllers["CompositeDevice0"].player, 1)
+        self.assertEqual(registry.controllers["CompositeDevice1"].player, 2)
+        registry.observe_runtime_composites({
+            "CompositeDevice1": ("pad-b", ("/dev/input/event3",)),
+        })
+        self.assertEqual(registry.navigation_mode, "all")
+        self.assertIsNone(registry.navigation_controller_id)
+        self.assertTrue(registry.controllers["CompositeDevice1"].connected)
+
+    def test_specific_navigation_still_restricts_to_selected_controller(self) -> None:
+        registry = ControllerRegistry()
+        registry.observe_runtime_composites({
+            "CompositeDevice0": ("pad-a", ("/dev/input/event1",)),
+            "CompositeDevice1": ("pad-b", ("/dev/input/event2",)),
+        })
+        registry.set_navigation_controller("CompositeDevice1")
+        self.assertEqual(registry.navigation_mode, "specific")
+        self.assertEqual(registry.navigation_controller_id, "CompositeDevice1")
+        registry.set_navigation_controller("all")
+        self.assertEqual(registry.navigation_mode, "all")
+        self.assertIsNone(registry.navigation_controller_id)
 
     def test_controller_policy_has_no_button_mapping_surface(self) -> None:
         source = (Path(__file__).parents[1] / "ui/ControllerSettings.qml").read_text()
@@ -300,6 +357,14 @@ class BoundaryTests(unittest.TestCase):
             self.assertIn(f'QStringLiteral("{event}")', native_shell)
             self.assertIn(f"dbus: {event}", compat)
 
+    def test_osk_profile_has_no_second_keyboard_or_mouse_output(self) -> None:
+        profile = (Path(__file__).parents[1] / "config/inputplumber/profiles/osk.yaml").read_text()
+        self.assertIn("keyboard:", profile)
+        self.assertNotIn("mouse:", profile)
+        for key in ("KeyUp", "KeyDown", "KeyLeft", "KeyRight", "KeyEnter", "KeyEsc"):
+            self.assertIn(f"keyboard: {key}", profile)
+        self.assertNotIn("dbus:", profile)
+
     def test_controller_loss_releases_navigation_and_same_identity_reconnects(self) -> None:
         registry = ControllerRegistry()
         registry.observe_persistent_composite("", ())
@@ -317,13 +382,14 @@ class BoundaryTests(unittest.TestCase):
 
     def test_runtime_controller_loss_transfers_navigation_to_other_slot(self) -> None:
         registry = ControllerRegistry()
+        registry.set_navigation_controller("all")
         registry.observe_runtime_composites(
             {
                 "CompositeDevice0": ("045e_0291", ("/dev/input/event18",)),
                 "CompositeDevice1": ("045e_0291", ("/dev/input/event22",)),
             }
         )
-        self.assertEqual(registry.navigation_controller_id, "CompositeDevice0")
+        self.assertIsNone(registry.navigation_controller_id)
         self.assertEqual(registry.controllers["CompositeDevice0"].player, 1)
         self.assertEqual(registry.controllers["CompositeDevice1"].player, 2)
 
@@ -333,7 +399,7 @@ class BoundaryTests(unittest.TestCase):
         self.assertFalse(registry.controllers["CompositeDevice0"].connected)
         self.assertTrue(registry.controllers["CompositeDevice1"].connected)
         self.assertEqual(registry.controllers["CompositeDevice0"].player, 1)
-        self.assertEqual(registry.navigation_controller_id, "CompositeDevice1")
+        self.assertIsNone(registry.navigation_controller_id)
         self.assertEqual(registry.controllers["CompositeDevice1"].player, 2)
 
     def test_runtime_order_does_not_reshuffle_connected_players(self) -> None:
@@ -557,7 +623,8 @@ class BoundaryTests(unittest.TestCase):
         controller = interface.controller_registry.controllers[path]
         self.assertTrue(controller.connected)
         self.assertEqual(controller.player, 1)
-        self.assertEqual(interface.controller_registry.navigation_controller_id, path)
+        self.assertIsNone(interface.controller_registry.navigation_controller_id)
+        self.assertEqual(interface.controller_registry.navigation_mode, "all")
 
     def test_gamescope_invocation_accepts_deployment_output(self) -> None:
         command = GamescopeInvocation().argv(["/usr/bin/true"])

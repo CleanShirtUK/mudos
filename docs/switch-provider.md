@@ -10,8 +10,9 @@ source profile to the provider-owned `lulu-switch.ini` and applies the same
 resolves its native configuration from that canonical path.
 Each connected player is emitted as an Eden-native SDL slot (`type=0`) with a
 distinct SDL port; no unpopulated slot is left as a keyboard mapping.
-`LULU_SWITCH_SDL_GUID` overrides the default Xbox 360 SDL GUID when hardware
-validation identifies a different virtual-device GUID.
+`LULU_SWITCH_SDL_GUID` is retained only as a test/developer override. Normal
+launches obtain each populated player's live SDL GUID from the Mudos controller
+inventory; no controller model is the default.
 
 Place only legally obtained user-owned files under the Mudos Switch locations:
 
@@ -26,3 +27,17 @@ Mudos does not download, include, or provide firmware, keys, games, or other
 copyrighted material. Eden configuration and prerequisite discovery remain
 subject to hardware validation; the provider does not claim that a package is
 launchable without the user's legally obtained prerequisites.
+
+## Content lifecycle
+
+Switch uninstall is a parent-game operation. It removes only the Mudos-owned
+canonical component files recorded for that title (base, update, and DLC),
+never Eden NAND, saves, controller configuration, shader caches, or staging
+directories. Ambiguous, external, symlinked, or unowned paths are rejected.
+
+The catalogue groups those components into one game identity. RomM source
+records are retained as provenance and are collapsed under the parent title;
+component records do not become separate Library rows. RomM content-set
+acquisition uses one parent job with component-level provider identities.
+Installation is not considered complete until required components transfer and
+the emulator-specific activation/recognition checks succeed.

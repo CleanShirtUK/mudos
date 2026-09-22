@@ -4,11 +4,7 @@ from pathlib import Path
 import os
 
 from .paths import PATHS
-from .controller_policy import MUDOS_XBOX360_SDL_GUID, NINTENDO_FACE_BUTTONS
-
-
-# InputPlumber's virtual Xbox 360 target as reported by SDL2.
-DEFAULT_XBOX360_GUID = MUDOS_XBOX360_SDL_GUID
+from .controller_policy import NINTENDO_FACE_BUTTONS
 
 # SDL's standard gamepad order. Eden's SDL backend consumes these values in
 # the serialized input parameter packages.
@@ -57,6 +53,7 @@ class SwitchProvider:
         self,
         player_count: int | None = None,
         device_indices: dict[int, int] | None = None,
+        controller_identities: dict[int, object] | None = None,
     ) -> Path:
         if player_count is None:
             player_count = max(device_indices, default=4) if device_indices else 4
@@ -65,14 +62,20 @@ class SwitchProvider:
         device_indices = device_indices or {
             player: player - 1 for player in range(1, player_count + 1)
         }
-        guid = os.environ.get("LULU_SWITCH_SDL_GUID", DEFAULT_XBOX360_GUID)
         sections = ["[Controls]"]
         for player in range(1, player_count + 1):
             config_player = player - 1
             # Eden 0.2.x writes the SDL selector in port,guid order. The
             # parser is semantically key/value based, but matching the native
             # donor avoids relying on the older serialized ordering.
-            prefix = f'engine:sdl,port:{device_indices.get(player, player - 1)},guid:{guid}'
+            controller = (controller_identities or {}).get(player)
+            getter = controller.get if isinstance(controller, dict) else lambda key, default=None: getattr(controller, key, default)
+            index = getter("sdl_index")
+            index = index if isinstance(index, int) else device_indices.get(player, player - 1)
+            guid = getter("sdl_guid") or os.environ.get("LULU_SWITCH_SDL_GUID")
+            if not guid:
+                raise ValueError(f"missing live SDL GUID for player {player}")
+            prefix = f'engine:sdl,port:{index},guid:{guid}'
             sections.append(f"player_{config_player}_type=0")
             sections.append(f"player_{config_player}_connected\\default=false")
             sections.append(f"player_{config_player}_connected=true")
@@ -117,8 +120,9 @@ class SwitchProvider:
         content_path: str,
         player_count: int | None = None,
         device_indices: dict[int, int] | None = None,
+        controller_identities: dict[int, object] | None = None,
     ) -> tuple[str, ...]:
-        config = self.ensure_controller_config(player_count, device_indices)
+        config = self.ensure_controller_config(player_count, device_indices, controller_identities)
         return (
             "--appimage-extract-and-run",
             "--config", str(config), "-f", "--fullscreen", "--game", content_path,

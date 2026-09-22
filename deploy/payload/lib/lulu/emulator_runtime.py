@@ -30,7 +30,10 @@ class EmulatorRuntimeAdapter:
                  config_root: Path | None = None) -> None:
         self.runtime_paths = runtime_paths
         self.core_paths = core_paths or {}
-        self.switch_provider = switch_provider or SwitchProvider()
+        self.switch_provider = switch_provider or SwitchProvider(
+            config_root=(config_root / "eden" / "config") if config_root else None,
+            active_config_root=Path.home() / ".config" / "eden" if config_root else None,
+        )
         self.providers = providers or load_providers()
         self.platforms = load_platforms()
         self.config_root = config_root
@@ -49,6 +52,7 @@ class EmulatorRuntimeAdapter:
         self,
         game: LocalContentGame,
         device_indices: dict[int, int] | None = None,
+        controller_identities: dict[int, object] | None = None,
     ) -> EmulatorLaunchIntent:
         if not game.launchable:
             raise ValueError(f"content is not launchable: {game.reason}")
@@ -57,12 +61,14 @@ class EmulatorRuntimeAdapter:
             raise ValueError(f"runtime-missing: {game.platform}")
         definition = self.platforms.get(game.platform)
         provider = self.providers.get(definition.default_provider or "")
-        arguments = launch_arguments(provider, game, executable, self.core_paths.get(game.platform),
-                                     self.config_root / provider.provider_id / "config" if self.config_root else None,
-                                     self.switch_provider)
         if provider.provider_id == "eden" and device_indices is not None:
             arguments = self.switch_provider.launch_arguments(
                 getattr(game, "content_path", getattr(game, "install_dir", "")),
                 device_indices=device_indices,
+                controller_identities=controller_identities,
             )
+        else:
+            arguments = launch_arguments(provider, game, executable, self.core_paths.get(game.platform),
+                                         self.config_root / provider.provider_id / "config" if self.config_root else None,
+                                         self.switch_provider)
         return EmulatorLaunchIntent(game.platform, str(executable), arguments, provider.provider_id)

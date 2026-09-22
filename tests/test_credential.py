@@ -3,7 +3,8 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from lulu.credential import CredentialBroker, CredentialInput, CredentialStatus
+from lulu.credential import (CredentialBroker, CredentialInput,
+                              CredentialPresentation, CredentialStatus)
 
 
 class CredentialBrokerTests(unittest.TestCase):
@@ -29,6 +30,36 @@ class CredentialBrokerTests(unittest.TestCase):
             self.assertEqual(broker.state()["status"], "waiting")
             await broker.cancel(session.request.request_id)
             self.assertEqual(broker.state()["status"], "cancelled")
+        asyncio.run(scenario())
+
+    def test_request_shape_distinguishes_single_line_and_multiline(self) -> None:
+        async def scenario():
+            broker = CredentialBroker()
+            single = await broker.request("URL", "Value", CredentialInput.TEXT)
+            self.assertFalse(broker.state()["multiline"])
+            await broker.cancel(single.request.request_id)
+            multi = await broker.request("Notes", "Value", CredentialInput.TEXT,
+                                         multiline=True)
+            self.assertTrue(broker.state()["multiline"])
+
+    def test_request_explicit_presentation_is_public_but_not_secret_value(self) -> None:
+        async def scenario():
+            broker = CredentialBroker()
+            session = await broker.request("URL", "Prompt", CredentialInput.TEXT,
+                                           presentation=CredentialPresentation.ATTACHED)
+            self.assertEqual(broker.state()["presentation"], "attached")
+            self.assertNotIn("secret-sentinel", str(broker.state()))
+        asyncio.run(scenario())
+        asyncio.run(scenario())
+
+    def test_submission_is_terminal_and_cannot_fire_twice(self) -> None:
+        async def scenario():
+            broker = CredentialBroker()
+            session = await broker.request("URL", "Value", CredentialInput.TEXT)
+            await broker.submit(session.request.request_id, "value")
+            with self.assertRaises(ValueError):
+                await broker.submit(session.request.request_id, "duplicate")
+            self.assertEqual(await broker.take_value(session.request.request_id), "value")
         asyncio.run(scenario())
 
     def test_invalid_code_is_rejected_without_retaining_value(self) -> None:

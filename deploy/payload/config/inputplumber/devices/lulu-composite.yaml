@@ -10,8 +10,6 @@ source_devices:
   - group: gamepad
     unique: true
     evdev:
-      vendor_id: "045e"
-      product_id: "02a1"
       handler: event*
 options:
   auto_manage: true

@@ -11,6 +11,7 @@ consoled_dropin="$dropin_root/lulu-consoled.service.d/dev-runtime.conf"
 acquisition_dropin="$dropin_root/lulu-acquisition.service.d/dev-runtime.conf"
 acquisition_unit="$dropin_root/lulu-acquisition.service"
 osk_unit="$dropin_root/lulu-osk@.service"
+inputplumber_hotplug_unit="$dropin_root/lulu-inputplumber-hotplug.service"
 
 if [ "$(hostname)" != lulu ] || [ "$(CDPATH= cd -- "$repo_root" && pwd)" != "$repo_root" ]; then
     echo "dev runtime must be refreshed on canonical Lulu from $repo_root" >&2
@@ -22,6 +23,7 @@ if [ "$(id -u)" -ne 0 ]; then
 fi
 
 refresh() {
+    logger -t lulu-runtime "event=refresh-start source=$repo_root target=$runtime" 2>/dev/null || true
     head=$(git -C "$repo_root" rev-parse HEAD)
     branch=$(git -C "$repo_root" branch --show-current)
     status=$(git -C "$repo_root" status --porcelain --untracked-files=all)
@@ -42,10 +44,19 @@ refresh() {
         "$staging/packaging/lulu-osk@.service" > "$osk_unit"
     install -m 0644 "$staging/packaging/udev/80-lulu-osk.rules" \
         /etc/udev/rules.d/80-lulu-osk.rules
+    install -m 0644 "$staging/packaging/udev/81-lulu-gamepad-hotplug.rules" \
+        /etc/udev/rules.d/81-lulu-gamepad-hotplug.rules
+    install -m 0644 "$staging/packaging/lulu-inputplumber-hotplug.service" \
+        "$inputplumber_hotplug_unit"
     install -D -m 0644 "$staging/packaging/polkit-1/rules.d/49-lulu-network.rules" \
         /etc/polkit-1/rules.d/49-lulu-network.rules
     install -D -m 0644 "$staging/packaging/polkit-1/rules.d/50-lulu-storage.rules" \
         /etc/polkit-1/rules.d/50-lulu-storage.rules
+    # InputPlumber consumes system device definitions, not the mutable runtime
+    # tree. Install the repo-owned generic policy on every refresh so an old
+    # receiver-specific file cannot survive a development deployment.
+    "$staging/scripts/provision-inputplumber-gamepads.py" \
+        /etc/inputplumber/devices.d/lulu-composite.yaml
     udevadm control --reload-rules
     dirty=false
     [ -n "$status" ] && dirty=true
@@ -85,7 +96,9 @@ EOF
 Environment=PYTHONPATH=$runtime/lib
 EOF
     systemctl daemon-reload
+    systemctl restart inputplumber.service
     systemctl restart lulu-acquisition.service lulu-consoled.service lulu-session@2.service
+    logger -t lulu-runtime "event=refresh-complete target=$runtime head=$head" 2>/dev/null || true
     echo "refreshed non-promotable dev runtime: $runtime"
 }
 

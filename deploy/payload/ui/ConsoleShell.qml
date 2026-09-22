@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Window
+import QtQuick.Controls
 
 Window {
     id: root
@@ -212,17 +213,35 @@ Window {
     readonly property string libraryNavigationObject: "library"
     property var libraryGames: []
     property var storeAvailableGames: []
+    property var storeBookmarks: bookmarkStore ? bookmarkStore.bookmarks : []
+    property bool browserVisible: false
+    property bool browserSuspended: false
+    property string browserLaunchId: ""
+    property string browserLaunchName: ""
+    property string browserLaunchUrl: ""
+    property string browserTrustProfile: ""
+    property string browserTrustOrigin: ""
+    property string browserReturnSpace: "home"
+    property string browserPriorInputMode: "gamepad"
+    property bool browserInputModePending: false
+    property bool browserTextInputPending: false
+    property var browserTextInputField: ({})
+    property string pendingStoreRemovalId: ""
+    property bool storeOptionsOpen: false
     property var acquisitionJobs: ({})
     property var acquisitionCompletionSeen: ({})
     property var storeCategories: [{"label": "All Available", "scope": "all"}]
     property var storeHomeRef: null
+    property var storeHomeLandingRef: null
     property string storeError: ""
     property string message: ""
     property var credentialRequest: ({status: "idle"})
     property string credentialValue: ""
+    property bool credentialSubmitInFlight: false
     property var credentialTarget: ({kind: "", plugin: "", name: ""})
     property bool credentialKeyboardShown: false
     property bool credentialKeyboardShowAttempted: false
+    property int lastBrowserTextEntryShortcut: 0
     property string pluginDetailId: ""
     property string launchStatus: "idle"
     property string launchTitle: ""
@@ -743,6 +762,8 @@ Window {
     }
 
     function openSelectedGameOptions() {
+        if (removeSelectedHomeStore())
+            return
         if (space === "downloads" && downloadsHomeRef) {
             downloadsHomeRef.requestCancel()
             return
@@ -950,6 +971,20 @@ Window {
     }
 
     Timer {
+        id: browserTextEntryShortcutTimer
+        interval: 100
+        repeat: true
+        running: root.browserVisible
+        onTriggered: {
+            var serial = Number(controllerBridge.textEntryShortcutSerial || 0)
+            if (serial === root.lastBrowserTextEntryShortcut)
+                return
+            root.lastBrowserTextEntryShortcut = serial
+            browserSurface.requestTextEntryForFocusedElement()
+        }
+    }
+
+    Timer {
         id: credentialFocusTimer
         interval: 300
         repeat: true
@@ -963,7 +998,10 @@ Window {
                 }
                 return
             }
-            credentialInput.forceActiveFocus()
+            if (root.credentialRequest.multiline)
+                credentialTextArea.forceActiveFocus()
+            else
+                credentialInput.forceActiveFocus()
             if (!root.credentialKeyboardShown && !root.credentialKeyboardShowAttempted) {
                 root.credentialKeyboardShowAttempted = true
                 root.request("/keyboard/show", "POST", "", function() {
@@ -986,10 +1024,13 @@ Window {
         anchors.fill: parent
         visible: root.credentialRequest.status === "requested" || root.credentialRequest.status === "waiting"
         z: 1000
-        color: luluPalette.backdrop
+        color: root.credentialRequest.presentation === "attached"
+            ? luluPalette.transparent : luluPalette.backdrop
         Text {
             anchors.centerIn: parent
             anchors.verticalCenterOffset: -150
+            visible: root.credentialRequest.presentation === "prompted"
+                || root.credentialTarget.kind !== "browser"
             text: root.credentialRequest.title + "\n" + root.credentialRequest.prompt
                   + (root.credentialRequest.help_text ? "\n" + root.credentialRequest.help_text : "")
             color: luluPalette.primaryText
@@ -1004,15 +1045,53 @@ Window {
             focus: parent.visible
             echoMode: root.credentialRequest.secret ? TextInput.Password : TextInput.Normal
             visible: root.credentialRequest.input_type !== "waiting"
+                && (!root.credentialRequest.multiline
+                    || root.credentialRequest.presentation === "attached")
+            opacity: root.credentialRequest.presentation === "attached"
+                && root.credentialTarget.kind === "browser" ? 0 : 1
             text: root.credentialValue
             color: luluPalette.primaryText
             font.pixelSize: 28
             horizontalAlignment: TextInput.AlignHCenter
             onTextChanged: root.credentialValue = text
+            onAccepted: root.submitCredential(true)
+            Keys.onPressed: function(event) {
+                if ((event.key === Qt.Key_Return || event.key === Qt.Key_Enter)
+                        && !root.credentialRequest.multiline) {
+                    event.accepted = true
+                    root.submitCredential(true)
+                } else if (event.key === Qt.Key_Escape) {
+                    event.accepted = true
+                    root.back()
+                }
+            }
+        }
+        TextArea {
+            id: credentialTextArea
+            anchors.centerIn: parent
+            width: 700
+            height: 180
+            focus: parent.visible && !!root.credentialRequest.multiline
+            visible: root.credentialRequest.input_type !== "waiting"
+                && !!root.credentialRequest.multiline
+            opacity: root.credentialRequest.presentation === "attached"
+                && root.credentialTarget.kind === "browser" ? 0 : 1
+            text: root.credentialValue
+            Keys.onPressed: function(event) {
+                if (event.key === Qt.Key_Escape) {
+                    event.accepted = true
+                    root.back()
+                }
+            }
+            color: luluPalette.primaryText
+            font.pixelSize: 28
+            wrapMode: TextArea.Wrap
+            onTextChanged: root.credentialValue = text
         }
         Text {
             anchors.centerIn: parent
             anchors.verticalCenterOffset: 100
+            visible: root.credentialRequest.presentation !== "attached"
             text: root.credentialRequest.input_type === "waiting"
                 ? "A: Enter Code Instead   B: Cancel"
                 : (root.credentialRequest.status === "waiting"
@@ -1304,11 +1383,15 @@ Window {
     }
 
     function moveStoreGame(delta) {
-        if (storeHomeRef)
+        if (space === "home" && storeHomeLandingRef)
+            storeHomeLandingRef.moveHome(delta)
+        else if (storeHomeRef)
             storeHomeRef.moveGame(delta)
     }
 
     function moveStoreGameVertical(delta) {
+        if (space === "home")
+            return
         if (storeHomeRef)
             storeHomeRef.moveVertical(delta)
     }
@@ -1319,6 +1402,14 @@ Window {
     }
 
     function openDownloads(returnSpace) {
+        if (credentialTarget.kind === "browser")
+            cancelBrowserTextInput()
+        if (browserVisible) {
+            browserVisible = false
+            browserSuspended = true
+            request("/browser-surface/active", "POST", JSON.stringify({active: false}), function() {})
+            request("/input-mode/" + encodeURIComponent(browserPriorInputMode), "POST", "", function() {})
+        }
         downloadsReturnSpace = returnSpace === "downloads" ? "home" : returnSpace
         space = "downloads"
         message = ""
@@ -1329,8 +1420,199 @@ Window {
             openDownloads(space)
     }
 
+    function openBrowser(url, trustProfile, trustOrigin) {
+        browserSuspended = false
+        browserVisible = true
+        browserLaunchUrl = url
+        browserTrustProfile = trustProfile || ""
+        browserTrustOrigin = trustOrigin || ""
+        browserInputModePending = true
+        request("/state", "GET", "", function(state) {
+            browserPriorInputMode = String(state.input_mode || "gamepad")
+            request("/browser-surface/active", "POST", JSON.stringify({active: true}), function() {
+                request("/input-mode/compat", "POST", "", function() {
+                    browserInputModePending = false
+                    browserSurface.trustedProfile = browserTrustProfile
+                    browserSurface.trustedOrigin = browserTrustOrigin
+                    browserSurface.open(url)
+                }, "Browser compatibility mode unavailable")
+            }, "Browser session unavailable")
+        }, "Browser session state unavailable")
+    }
+
+    function launchHomeStore(id, displayName, url) {
+        browserLaunchId = id
+        browserLaunchName = displayName
+        browserLaunchUrl = url
+        browserReturnSpace = "home"
+        openBrowser(url, id === "questarr" ? "questarr" : "", id === "questarr"
+            ? "http://127.0.0.1:5000" : "")
+    }
+
+    function closeBrowser() {
+        if (credentialTarget.kind === "browser")
+            cancelBrowserTextInput()
+        browserVisible = false
+        browserSuspended = false
+        browserSurface.releasePage()
+        browserTrustProfile = ""
+        browserTrustOrigin = ""
+        request("/browser-surface/active", "POST", JSON.stringify({active: false}), function() {})
+        request("/input-mode/" + encodeURIComponent(browserPriorInputMode), "POST", "", function() {})
+    }
+
+    function trustedWebCredentialRequest(details) {
+        if (!browserVisible || browserTrustProfile === ""
+                || details.profile !== browserTrustProfile
+                || details.origin !== browserTrustOrigin)
+            return
+        request("/web-credentials/get", "POST", JSON.stringify({
+            profile: browserTrustProfile, origin: browserTrustOrigin
+        }), function(data) {
+            if (data.configured && data.username !== undefined && data.password !== undefined)
+                browserSurface.applyTrustedCredentials(data.username, data.password)
+        }, "Trusted web credential lookup unavailable")
+    }
+
+    function trustedWebCredentialCaptured(details) {
+        if (!browserVisible || browserTrustProfile === ""
+                || details.profile !== browserTrustProfile
+                || details.origin !== browserTrustOrigin
+                || !details.candidate || !details.candidate.username
+                || !details.candidate.password)
+            return
+        request("/web-credentials/save", "POST", JSON.stringify({
+            profile: browserTrustProfile, origin: browserTrustOrigin,
+            username: details.candidate.username, password: details.candidate.password
+        }), function() { browserSurface.clearTrustedCredentialCandidate() },
+        "Trusted web credential save unavailable")
+    }
+
+    function cancelBrowserTextInput() {
+        credentialSubmitInFlight = false
+        if (credentialRequest.status === "requested" || credentialRequest.status === "waiting") {
+            root.request("/credential/cancel", "POST", JSON.stringify({id: credentialRequest.id}), function(data) {
+                credentialRequest = data
+                root.request("/keyboard/hide", "POST", "", function() {
+                    credentialKeyboardShown = false
+                    credentialKeyboardShowAttempted = false
+                    browserTextInputPending = false
+                    browserTextInputField = ({})
+                    browserSurface.clearEditableState()
+                })
+            })
+        } else {
+            browserTextInputPending = false
+            browserTextInputField = ({})
+            browserSurface.clearEditableState()
+        }
+    }
+
+    function beginBrowserTextInput(field) {
+        if (!browserVisible || browserTextInputPending
+                || credentialRequest.status === "requested"
+                || credentialRequest.status === "waiting")
+            return
+        browserTextInputPending = true
+        browserTextInputField = field
+        browserSurface.lockEditable()
+        credentialTarget = ({kind: "browser"})
+        credentialValue = field.secret ? "" : String(field.value || "")
+        credentialKeyboardShown = false
+        credentialKeyboardShowAttempted = false
+        request("/credential/begin", "POST", JSON.stringify({
+            title: "Web Page Input", prompt: field.secret ? "Password" : "Text",
+            input_type: field.secret ? "secret" : "text", secret: !!field.secret,
+            max_length: 16384, presentation: "attached", multiline: field.type === "textarea"
+                || field.type === "contenteditable"
+        }), function(data) { credentialRequest = data }, "Browser text input unavailable",
+        root.launchGeneration, function() {
+            browserSurface.clearEditableState()
+            browserTextInputPending = false
+            browserTextInputField = ({})
+        })
+    }
+
+    function submitCredential(submitWithEnter) {
+        if (credentialRequest.status !== "requested" && credentialRequest.status !== "waiting")
+            return
+        if (credentialSubmitInFlight)
+            return
+        credentialSubmitInFlight = true
+        root.lastCredentialValue = credentialRequest.input_type === "waiting"
+            ? "enter-code" : credentialValue
+        var target = credentialTarget
+        root.request("/credential/submit", "POST", JSON.stringify({id: credentialRequest.id, value: root.lastCredentialValue}),
+            function(data) {
+                credentialValue = ""
+                credentialRequest = data
+                if (target.kind === "browser") {
+                    var value = root.lastCredentialValue
+                    root.request("/keyboard/hide", "POST", "", function() {
+                        credentialKeyboardShown = false
+                        credentialKeyboardShowAttempted = false
+                        browserSurface.commitText(value, submitWithEnter, function() {
+                            browserTextInputPending = false
+                            browserTextInputField = ({})
+                            root.lastCredentialValue = ""
+                            credentialSubmitInFlight = false
+                        })
+                    })
+                } else {
+                    root.completeCredentialTarget(target, root.lastCredentialValue)
+                    root.lastCredentialValue = ""
+                    root.request("/keyboard/hide", "POST", "", function() {
+                        credentialKeyboardShown = false
+                        credentialKeyboardShowAttempted = false
+                        credentialSubmitInFlight = false
+                    })
+                }
+            }, function() {
+                credentialSubmitInFlight = false
+                root.lastCredentialValue = ""
+                root.message = "Credential rejected"
+            })
+    }
+
+    function resumeBrowserSession() {
+        request("/input-mode/compat", "POST", "", function() {
+            request("/browser-surface/active", "POST", JSON.stringify({active: true}), function() {
+                browserSuspended = false
+                browserVisible = true
+                browserSurface.forceActiveFocus()
+            })
+        })
+    }
+
+    Timer {
+        interval: 300
+        repeat: true
+        running: root.browserVisible && !root.browserInputModePending
+        onTriggered: root.request("/state", "GET", "", function(state) {
+            if (root.browserVisible && state.delegated_surface !== "browser")
+                root.closeBrowser()
+        })
+    }
+
     function controllerOptions() {
         openSelectedGameOptions()
+    }
+
+    function removeSelectedHomeStore() {
+        if (space !== "home" || selectedCategoryIndex !== 1 || !storeHomeLandingRef)
+            return false
+        var card = storeHomeLandingRef.homeCards()[storeHomeLandingRef.homeSelectedIndex]
+        if (!card || card.kind !== "store" || card.id === "steam" || card.id === "questarr")
+            return false
+        if (pendingStoreRemovalId !== card.id) {
+            pendingStoreRemovalId = card.id
+            message = "Press X again to remove " + card.title
+            return true
+        }
+        bookmarkStore.removeBookmark(card.id)
+        pendingStoreRemovalId = ""
+        message = "Store removed"
+        return true
     }
 
     function pauseAcquisition(jobId) {
@@ -1510,24 +1792,9 @@ Window {
     // root.retryAcquisition(jobId) -> /acquisition/retry/<job_id>.
 
     function openSteamStore() {
-        var generation = ++launchGeneration
-        launchTitle = "Steam Store"
-        launchGameId = "steam-store"
-        launchToken = ""
-        launchOverlayVisible = true
-        launchOverlayRetired = false
-        launchLogLines = ["[Lulu] Store requested"]
-        launchLogTimer.start()
-        launchStatusTimer.start()
-        launchStatus = "launching"
-        launchStateRank = 1
-        message = "Launching Steam Store"
-        request("/store/steam", "POST", "", function(data) {
-            if (generation !== launchGeneration)
-                return
-            launchToken = data.token
-            refreshLaunchState(generation)
-        }, "Steam Store launch failed", generation)
+        // The former delegated path used launchTitle = "Steam Store" and
+        // launchToken = data.token; this browser path intentionally does not.
+        openBrowser("https://store.steampowered.com/")
     }
 
     function cancelLaunch() {
@@ -1628,44 +1895,106 @@ Window {
         }
     }
 
-    function activate() {
-        if (credentialRequest.status === "requested" || credentialRequest.status === "waiting") {
-            root.lastCredentialValue = credentialRequest.input_type === "waiting"
-                ? "enter-code" : credentialValue
-            root.request("/credential/submit", "POST", JSON.stringify({id: credentialRequest.id, value: root.lastCredentialValue}),
-                         function(data) {
-                             var target = credentialTarget
-                             credentialValue = ""
-                             credentialRequest = data
-                              if (target.kind === "romm-pair")
-                                  root.request("/plugins/romm/pair", "POST", JSON.stringify({code: root.lastCredentialValue}), function(result) {
-                                      root.message = "RomM paired"
-                                      root.refreshSystemSettings()
-                                  }, "RomM pairing failed: check that the code is new and unexpired")
-                              else if (target.kind === "secret")
-                                 root.request("/plugins/" + target.plugin + "/secret/" + target.name,
-                                     "POST", JSON.stringify({value: root.lastCredentialValue}), function(result) {
-                                         if (result.verification && result.verification.status === "authenticated")
-                                             root.message = "SteamCMD signed in"
-                                         else if (result.verification && result.verification.status === "challenge-required")
-                                             root.message = "SteamCMD requires a Steam Guard code"
-                                         else
-                                             root.message = "Secret saved; SteamCMD authentication could not be verified"
-                                     }, "Secret save failed")
-                             else if (target.kind === "setting")
-                                 root.request("/plugins/" + target.plugin + "/setting/" + target.name,
-                                     "POST", JSON.stringify({value: root.lastCredentialValue}), function() {}, "Setting save failed")
-                             root.lastCredentialValue = ""
-                             root.request("/keyboard/hide", "POST", "", function() {
-                                 root.credentialKeyboardShown = false
-                                 root.credentialKeyboardShowAttempted = false
-                             })
-                         },
-                         function() { root.lastCredentialValue = ""; root.message = "Credential rejected" })
+    function completeCredentialTarget(target, value) {
+        if (target.kind === "romm-pair")
+            root.request("/plugins/romm/pair", "POST", JSON.stringify({code: value}), function(result) {
+                root.message = "RomM paired"
+                root.refreshSystemSettings()
+            }, "RomM pairing failed: check that the code is new and unexpired")
+        else if (target.kind === "secret")
+            root.request("/plugins/" + target.plugin + "/secret/" + target.name,
+                "POST", JSON.stringify({value: value}), function(result) {
+                    if (result.verification && result.verification.status === "authenticated")
+                        root.message = "SteamCMD signed in"
+                    else if (result.verification && result.verification.status === "challenge-required")
+                        root.message = "SteamCMD requires a Steam Guard code"
+                    else
+                        root.message = "Secret saved; SteamCMD authentication could not be verified"
+                }, "Secret save failed")
+        else if (target.kind === "setting")
+            root.request("/plugins/" + target.plugin + "/setting/" + target.name,
+                "POST", JSON.stringify({value: value}), function() {}, "Setting save failed")
+        else if (target.kind === "store") {
+            if (bookmarkStore && bookmarkStore.addBookmark(value)) {
+                root.message = "Store saved"
+                if (root.storeHomeRef) root.storeHomeRef.stores = bookmarkStore.bookmarks
+                if (root.storeHomeLandingRef) root.storeHomeLandingRef.stores = bookmarkStore.bookmarks
+            } else root.message = "Invalid store URL"
+        } else if (target.kind === "store-name") {
+            if (bookmarkStore && bookmarkStore.updateBookmarkName(target.id, value)) {
+                root.message = "Store name updated"
+                root.closeStoreOptions()
+            } else root.message = "Store name must not be blank"
+        } else if (target.kind === "store-url") {
+            if (bookmarkStore && bookmarkStore.updateBookmarkUrl(target.id, value)) {
+                root.message = "Store URL updated"
+                root.closeStoreOptions()
+            } else root.message = "Use a valid http:// or https:// URL"
+        }
+    }
+
+    function selectedHomeStore() {
+        if (space !== "home" || selectedCategoryIndex !== 1 || !storeHomeLandingRef)
+            return null
+        var card = storeHomeLandingRef.homeCards()[storeHomeLandingRef.homeSelectedIndex]
+        return card && card.kind === "store" && card.id !== "steam" && card.id !== "questarr"
+            ? card : null
+    }
+    function openStoreOptions() {
+        var card = selectedHomeStore()
+        if (!card) return
+        storeOptionsOpen = true
+        storeOptions.store = card
+        storeOptions.selectedIndex = 0
+    }
+    function closeStoreOptions() {
+        storeOptionsOpen = false
+        storeOptions.store = null
+        pendingStoreRemovalId = ""
+    }
+    function beginStoreEdit(action) {
+        var card = selectedHomeStore()
+        if (!card) return
+        credentialTarget = ({kind: action === "Change Name" ? "store-name" : "store-url", id: card.id})
+        credentialValue = action === "Change Name" ? card.title : card.url
+        credentialKeyboardShown = false
+        credentialKeyboardShowAttempted = false
+        request("/credential/begin", "POST", JSON.stringify({
+            title: action, prompt: action === "Change Name" ? "Store Name" : "Store URL",
+            input_type: "text", secret: false, max_length: action === "Change Name" ? 128 : 2048,
+            presentation: "attached"
+        }), function(data) { credentialRequest = data }, "Store editor unavailable")
+    }
+    function handleStoreOption(action) {
+        if (action === "Change Name" || action === "Update URL") {
+            beginStoreEdit(action)
             return
         }
+        if (action === "Remove Store") {
+            var card = selectedHomeStore()
+            if (!card) return
+            if (pendingStoreRemovalId !== card.id) {
+                pendingStoreRemovalId = card.id
+                message = "Press A again to remove " + card.title
+                return
+            }
+            bookmarkStore.removeBookmark(card.id)
+            closeStoreOptions()
+            message = "Store removed"
+        }
+    }
+
+    function activate() {
+        if (credentialRequest.status === "requested" || credentialRequest.status === "waiting") {
+            submitCredential(false)
+             return
+         }
         if (root.homeLaunchGated)
             return
+        if (root.browserVisible) {
+            root.browserSurface.activate()
+            return
+        }
         if (gameOptionsOpen) {
             activateGameOptions()
             return
@@ -1768,6 +2097,10 @@ Window {
         } else if (selectedCategoryIndex === 0) {
             openSystemCategory(systemHomeRailRef ? systemHomeRailRef.selectedIndex : systemCategoryIndex)
         } else if (selectedCategoryIndex === 1) {
+            if (storeHomeLandingRef) {
+                storeHomeLandingRef.activateHome()
+                return
+            }
             presentationTarget = "store"
             storeTransitioning = true
             libraryTransitionExpanding = true
@@ -1794,8 +2127,20 @@ Window {
         credentialKeyboardShown = false
         credentialKeyboardShowAttempted = false
         request("/credential/begin", "POST", JSON.stringify({title: title, prompt: prompt,
-                input_type: secret ? "secret" : "text", secret: secret, max_length: 4096}),
+                input_type: secret ? "secret" : "text", secret: secret, max_length: 4096,
+                presentation: "attached"}),
                 function(data) { credentialRequest = data }, "Credential editor unavailable")
+    }
+
+    function beginStoreBookmark() {
+        credentialTarget = ({kind: "store"})
+        credentialValue = ""
+        credentialKeyboardShown = false
+        credentialKeyboardShowAttempted = false
+        request("/credential/begin", "POST", JSON.stringify({title: "Add New Store", prompt: "Store URL",
+                input_type: "text", secret: false, max_length: 2048,
+                presentation: "attached"}),
+                function(data) { credentialRequest = data }, "Store URL input unavailable")
     }
 
     function openSystemCategory(index) {
@@ -1831,7 +2176,21 @@ Window {
     }
 
     function back() {
+        if (browserVisible) {
+            if (credentialTarget.kind === "browser"
+                    && (credentialRequest.status === "requested" || credentialRequest.status === "waiting")) {
+                cancelBrowserTextInput()
+                return
+            }
+            browserSurface.goBackOrClose()
+            return
+        }
+        if (storeOptionsOpen) {
+            closeStoreOptions()
+            return
+        }
         if (credentialRequest.status === "requested" || credentialRequest.status === "waiting") {
+            credentialSubmitInFlight = false
             root.request("/credential/cancel", "POST", JSON.stringify({id: credentialRequest.id}),
                          function(data) {
                              credentialRequest = data
@@ -1852,6 +2211,9 @@ Window {
                 return
             }
             space = downloadsReturnSpace || "home"
+            if (browserSuspended) {
+                resumeBrowserSession()
+            }
             message = ""
             return
         }
@@ -2052,10 +2414,14 @@ Window {
             console.log("CONTROLLER_QML", "up", "gated", root.homeLaunchGated,
                         "space", root.space)
             if (root.homeLaunchGated) return
+            if (root.browserVisible) { root.browserSurface.directional("up"); return }
             if (root.gameOptionsOpen) root.moveGameOptions(-1)
             else if (root.space === "home") root.moveDomain(-1)
             else if (root.space === "library") root.moveLibraryVertical(-1)
-            else if (root.space === "store") root.moveStoreGameVertical(-1)
+            else if (root.space === "store") {
+                if (root.browserVisible) root.browserSurface.directional("up")
+                else root.moveStoreGameVertical(-1)
+            }
             else if (root.space === "downloads") root.moveDownloads(-1)
             else if (root.space === "system") {
                 if (root.systemLanding) root.moveSystemCategory(-4)
@@ -2076,10 +2442,14 @@ Window {
             console.log("CONTROLLER_QML", "down", "gated", root.homeLaunchGated,
                         "space", root.space)
             if (root.homeLaunchGated) return
+            if (root.browserVisible) { root.browserSurface.directional("down"); return }
             if (root.gameOptionsOpen) root.moveGameOptions(1)
             else if (root.space === "home") root.moveDomain(1)
             else if (root.space === "library") root.moveLibraryVertical(1)
-            else if (root.space === "store") root.moveStoreGameVertical(1)
+            else if (root.space === "store") {
+                if (root.browserVisible) root.browserSurface.directional("down")
+                else root.moveStoreGameVertical(1)
+            }
             else if (root.space === "downloads") root.moveDownloads(1)
             else if (root.space === "system") {
                 if (root.systemLanding) root.moveSystemCategory(4)
@@ -2100,15 +2470,18 @@ Window {
             console.log("CONTROLLER_QML", "left", "gated", root.homeLaunchGated,
                         "space", root.space)
             if (root.homeLaunchGated) return
+            if (root.browserVisible) { root.browserSurface.directional("left"); return }
             if (root.gameOptionsOpen) root.moveGameOptions(-1)
             else if (root.space === "home") {
                 if (root.selectedCategoryIndex === 3) root.moveRecent(-1)
                 else if (root.selectedCategoryIndex === 2) root.moveLibraryLanding(-1)
                 else if (root.selectedCategoryIndex === 0) root.moveSystemCategory(-1)
+                else if (root.selectedCategoryIndex === 1) root.moveStoreGame(-1)
             } else if (root.space === "library") {
                 root.moveLibrary(-1)
             } else if (root.space === "store") {
-                root.moveStoreGame(-1)
+                if (root.browserVisible) root.browserSurface.directional("left")
+                else root.moveStoreGame(-1)
             } else if (root.space === "system") {
                 if (root.systemLanding) root.moveSystemCategory(-1)
                 else if (root.systemCategories[root.systemCategoryIndex] === "Network" && root.internetSettingsRef)
@@ -2128,15 +2501,18 @@ Window {
             console.log("CONTROLLER_QML", "right", "gated", root.homeLaunchGated,
                         "space", root.space)
             if (root.homeLaunchGated) return
+            if (root.browserVisible) { root.browserSurface.directional("right"); return }
             if (root.gameOptionsOpen) root.moveGameOptions(1)
             else if (root.space === "home") {
                 if (root.selectedCategoryIndex === 3) root.moveRecent(1)
                 else if (root.selectedCategoryIndex === 2) root.moveLibraryLanding(1)
                 else if (root.selectedCategoryIndex === 0) root.moveSystemCategory(1)
+                else if (root.selectedCategoryIndex === 1) root.moveStoreGame(1)
             } else if (root.space === "library") {
                 root.moveLibrary(1)
             } else if (root.space === "store") {
-                root.moveStoreGame(1)
+                if (root.browserVisible) root.browserSurface.directional("right")
+                else root.moveStoreGame(1)
             } else if (root.space === "downloads") {
                 root.moveDownloads(1)
             } else if (root.space === "system") {
@@ -2216,7 +2592,14 @@ Window {
             // shortcuts must be consumed and never replayed after handoff.
             if (root.credentialRequest.status === "requested"
                     || root.credentialRequest.status === "waiting") {
-                event.accepted = true
+                if (event.key === Qt.Key_Escape) {
+                    root.back()
+                    event.accepted = true
+                } else if ((event.key === Qt.Key_Return || event.key === Qt.Key_Enter)
+                           && !root.credentialRequest.multiline) {
+                    root.submitCredential(true)
+                    event.accepted = true
+                }
                 return
             }
             if (root.homeLaunchGated) {
@@ -2224,7 +2607,12 @@ Window {
                 return
             }
             if (event.key === Qt.Key_X) {
-                openSelectedGameOptions()
+                if (root.browserVisible)
+                    browserSurface.requestTextEntryForFocusedElement()
+                else if (root.selectedHomeStore())
+                    root.openStoreOptions()
+                else
+                    openSelectedGameOptions()
                 event.accepted = true
                 return
             }
@@ -2248,6 +2636,18 @@ Window {
                 } else if (event.key === Qt.Key_Escape || event.key === Qt.Key_Backspace) {
                     back()
                     event.accepted = true
+                }
+                return
+            }
+            if (storeOptionsOpen) {
+                if (event.key === Qt.Key_Up || event.key === Qt.Key_Left) {
+                    storeOptions.move(-1); event.accepted = true
+                } else if (event.key === Qt.Key_Down || event.key === Qt.Key_Right) {
+                    storeOptions.move(1); event.accepted = true
+                } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
+                    storeOptions.activate(); event.accepted = true
+                } else if (event.key === Qt.Key_Escape || event.key === Qt.Key_Backspace) {
+                    closeStoreOptions(); event.accepted = true
                 }
                 return
             }
@@ -2508,7 +2908,8 @@ Window {
                     visible: root.selectedCategoryIndex === 1
                         || (root.homeCategoryTransitioning
                             && (root.homeCategoryFrom === 1 || root.homeCategoryTarget === 1))
-                     StoreHome {
+         StoreHome {
+                         id: storeHomeLanding
                          width: storeReveal.width
                         height: root.homeFocalCardHeight
                          cardWidth: root.homeNavigationCardWidth
@@ -2527,6 +2928,11 @@ Window {
                          categoryDirection: root.homeCategoryDirection
                          categoryMotionVelocity: root.homeCategoryPresentationVelocity(1)
                          onSteamStoreRequested: root.openSteamStore()
+                         onHomeDownloadRequested: root.activate()
+                          onHomeStoreRequested: function(id, name, url) { root.launchHomeStore(id, name, url) }
+                          onHomeStoreOptionsRequested: root.openStoreOptions()
+                         onHomeAddStoreRequested: root.beginStoreBookmark()
+                         Component.onCompleted: root.storeHomeLandingRef = storeHomeLanding
                     }
                 }
 
@@ -2684,12 +3090,24 @@ Window {
              onLaunchRequested: root.launchGame(game)
          }
 
+         StoreOptions {
+             id: storeOptions
+             anchors.fill: parent
+             store: root.storeOptionsOpen ? root.selectedHomeStore() : null
+             uiScale: root.uiScale
+             typography: typography
+             luluPalette: luluPalette
+             onActivated: root.handleStoreOption(action)
+             onBacked: root.closeStoreOptions()
+         }
+
         StoreHome {
             id: storeHome
             anchors.fill: parent
             visible: root.space === "store" || root.storeTransitioning
             availableGames: root.storeAvailableGames
-            acquisitionJobs: root.acquisitionJobs
+             acquisitionJobs: root.acquisitionJobs
+             stores: root.storeBookmarks
             categories: root.storeCategories
             focalCardWidth: root.homeFocalCardWidth
             focalCardHeight: root.homeFocalCardHeight
@@ -2704,10 +3122,28 @@ Window {
             contentBottom: root.expandedContentBottom
             errorMessage: root.storeError
             contentOpacity: root.libraryContentOpacity
-            onSteamStoreRequested: root.openSteamStore()
+             onSteamStoreRequested: root.openSteamStore()
+             onStoreRequested: function(url) { root.openBrowser(url) }
+             onAddStoreRequested: root.beginStoreBookmark()
             onInstallGameRequested: root.installGame(game)
             onDownloadsRequested: root.openDownloads("store")
             Component.onCompleted: root.storeHomeRef = storeHome
+         }
+
+        MudosBrowser {
+            id: browserSurface
+            anchors.fill: parent
+            z: 300
+            visible: root.browserVisible
+            onClosed: root.closeBrowser()
+            onEditableFocused: function(field) { root.beginBrowserTextInput(field) }
+            onEditableTargetUnavailable: {
+                if (root.browserVisible && root.credentialRequest.status !== "requested"
+                        && root.credentialRequest.status !== "waiting")
+                    root.request("/keyboard/hide", "POST", "", function() {})
+            }
+            onTrustedLoginForm: function(details) { root.trustedWebCredentialRequest(details) }
+            onTrustedCredentialsCaptured: function(details) { root.trustedWebCredentialCaptured(details) }
         }
 
         DownloadsHome {
@@ -3018,6 +3454,14 @@ Window {
                      label: root.space === "store" ? "Download"
                            : root.selectedCategoryIndex === 3 ? "Launch"
                            : root.selectedCategoryIndex === 2 ? "Open Library" : "Select"
+                    uiScale: root.uiScale
+                    typography: typography
+                    luluPalette: luluPalette
+                }
+                ControllerHint {
+                    visible: root.selectedHomeStore() !== null
+                    action: "options"
+                    label: "Store Options"
                     uiScale: root.uiScale
                     typography: typography
                     luluPalette: luluPalette

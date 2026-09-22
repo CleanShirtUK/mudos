@@ -17,7 +17,7 @@ from dbus_next.service import ServiceInterface, method, signal
 from .console_sessiond import SessionStateModel
 from .controllerd import ControllerRegistry, default_inputplumber_client
 from .gamescope import GamescopeInvocation, GamescopePresentation, discover_presentation_output
-from .contracts import InputMode, Lifecycle
+from .contracts import InputMode, Lifecycle, Presentation
 from .launch_identity import LaunchIdentity
 from .process_supervisor import ProcessSupervisor
 from .process_supervisor import ProcessResult
@@ -73,11 +73,19 @@ class ConsoleSessionInterface(ServiceInterface):
                 "last_failure_reason": self.model.last_failure_reason,
                 "controller": {
                     "navigation_controller_id": self.controller_registry.navigation_controller_id,
+                    "navigation_mode": self.controller_registry.navigation_mode,
                     "controllers": {
                         controller_id: {
                             "connected": controller.connected,
                             "player": controller.player,
                             "physical_identity": controller.physical_identity,
+                            "sdl_index": controller.sdl_index,
+                            "sdl_guid": controller.sdl_guid,
+                            "sdl_name": controller.sdl_name,
+                            "button_count": controller.button_count,
+                            "axis_count": controller.axis_count,
+                            "connection_type": controller.connection_type,
+                            "controller_type": controller.controller_type,
                             "battery": {
                                 "kind": controller.battery.kind.value,
                                 "percentage": controller.battery.percentage,
@@ -136,6 +144,11 @@ class ConsoleSessionInterface(ServiceInterface):
     ) -> None:
         if composite is None:
             composite = await asyncio.to_thread(self._inputplumber.composite_status, object_path)
+        # A source-backed provisional inventory entry has no CompositeDevice
+        # D-Bus object to initialize. Navigation may still be supplied by the
+        # native SDL path while the source is waiting for a target profile.
+        if composite[0].startswith("source:"):
+            return
         if not composite[1] or self._initialized_composites.get(object_path) == composite:
             return
         await asyncio.to_thread(
@@ -402,6 +415,42 @@ class ConsoleSessionInterface(ServiceInterface):
         return token
 
     @method()
+    async def RequestGameLaunch(self, game_id: "s", command: "as", startup_timeout_ms: "u") -> "s":
+        """Launch an owned game process while retaining its catalogue identity."""
+        try:
+            return await self.supervisor.launch(list(command), startup_timeout_ms, primary_id=game_id)
+        except ValueError as error:
+            raise self._error(error) from error
+
+    @method()
+    async def RequestInteractiveLaunch(self, transaction_id: "s", command: "as", startup_timeout_ms: "u") -> "s":
+        """Run an owned interactive child for an external transaction."""
+        try:
+            token = await self.supervisor.launch(
+                list(command), startup_timeout_ms,
+                primary_id=f"provider:lutris:install:{transaction_id}",
+                presentation=Presentation.FOREIGN_UI,
+                input_mode=InputMode.COMPAT,
+            )
+            self.model.state.delegated_surface = "install"
+            self.StateChanged(self._state_json())
+            return token
+        except ValueError as error:
+            raise self._error(error) from error
+
+    @method()
+    def SetDelegatedLaunchContext(self, context_json: "s") -> "":
+        try:
+            value = json.loads(context_json)
+            if not isinstance(value, dict):
+                raise ValueError("launch context must be an object")
+            self.supervisor.set_delegated_launch_environment({
+                str(key): str(child) for key, child in value.items()
+            })
+        except (TypeError, ValueError, json.JSONDecodeError) as error:
+            raise self._error(ValueError(str(error))) from error
+
+    @method()
     async def RequestShellLaunch(self, command: "as", startup_timeout_ms: "u") -> "s":
         try:
             return await self.supervisor.launch_shell(list(command), startup_timeout_ms)
@@ -460,9 +509,25 @@ class ConsoleSessionInterface(ServiceInterface):
     @method()
     async def QuitDelegated(self) -> "":
         try:
+            primary = str(self.model.state.primary_id or "")
             await self.supervisor.quit_delegated()
+            # The supervisor clears primary_id when the owned child returns;
+            # capture the transaction before termination for explicit Guide
+            # cancellation propagation.
+            if primary.startswith("provider:lutris:install:"):
+                await self._cancel_lutris_transaction(primary.rsplit(":", 1)[-1])
         except ValueError as error:
             raise self._error(error) from error
+
+    async def _cancel_lutris_transaction(self, job_id: str) -> None:
+        try:
+            bus = await MessageBus().connect()
+            intro = await bus.introspect("org.lulu.Acquisitiond", "/org/lulu/Acquisition")
+            acquisition = bus.get_proxy_object("org.lulu.Acquisitiond", "/org/lulu/Acquisition", intro).get_interface("org.lulu.Acquisition")
+            await acquisition.call_cancel_job(job_id)
+            bus.disconnect()
+        except Exception as error:
+            LOGGER.warning("interactive Lutris cancellation propagation failed job=%s error=%s", job_id, error)
 
     @method()
     async def ResetMudos(self) -> "s":
@@ -491,12 +556,20 @@ class ConsoleSessionInterface(ServiceInterface):
     def SetInputMode(self, mode: "s") -> "":
         try:
             requested = InputMode(mode)
-            if requested is InputMode.COMPAT and self.model.state.lifecycle.value != "game":
+            if requested is InputMode.COMPAT and self.model.state.lifecycle.value != "game" \
+                    and self.model.state.delegated_surface != "browser":
                 raise ValueError("Compatibility Mode requires an active application")
             self._apply_input_mode(requested)
             self.model.set_input_mode(requested)
         except (ValueError, KeyError) as error:
             raise self._error(ValueError(str(error))) from error
+        self.StateChanged(self._state_json())
+
+    @method()
+    def SetDelegatedSurface(self, surface: "s") -> "":
+        if surface not in {"", "browser"}:
+            raise self._error(ValueError("invalid delegated surface"))
+        self.model.state.delegated_surface = surface or None
         self.StateChanged(self._state_json())
 
     @signal()

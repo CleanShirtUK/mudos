@@ -19,6 +19,7 @@ Environment=XDG_RUNTIME_DIR=/run/user/958
 Environment=DISPLAY=:0
 Environment=WAYLAND_DISPLAY=gamescope-0
 Environment=LULU_INSTALL_ROOT=/opt/lulu/current
+Environment=LULU_GAMEPAD_OSK_CONFIG=/opt/lulu/current/config/gamepad-osk/config
 ExecStart=/opt/lulu/current/scripts/mudos-osk-service
 Restart=on-failure
 RestartSec=2s

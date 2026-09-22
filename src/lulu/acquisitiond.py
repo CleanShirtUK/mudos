@@ -22,6 +22,9 @@ from .credential import CredentialInput
 from .catalogue import CatalogueStore
 from .local_uninstall import LocalUninstallExecutor
 from .jobs import JobOperation
+from .lutris_install import LutrisInstallExecutor
+from .pc_install import PcInstallSource
+from .pc_install_store import PcInstallSourceStore
 
 
 BUS_NAME = "org.lulu.Acquisitiond"
@@ -70,6 +73,45 @@ class AcquisitionInterface(ServiceInterface):
         except ValueError as error:
             raise DBusError("org.lulu.Acquisition.Error.Unavailable", str(error)) from error
 
+    @method()
+    def SubmitContentSet(self, provider: "s", content_identities: "as", title: "s") -> "s":
+        """Submit one parent installation transaction for provider components."""
+        if provider != "romm" or not content_identities:
+            raise DBusError("org.lulu.Acquisition.Error.Unavailable", "content sets require RomM components")
+        identity = "romm-set:" + ",".join(str(item).removeprefix("romm:") for item in content_identities)
+        try:
+            executor = self.manager.executors.get(provider)
+            return self.manager.submit(provider, identity, title,
+                                       cancellation_supported=True,
+                                       pause_supported=bool(getattr(executor, "supports_pause", False))).job_id
+        except ValueError as error:
+            raise DBusError("org.lulu.Acquisition.Error.Unavailable", str(error)) from error
+
+    @method()
+    def RegisterPcSource(self, source_json: "s") -> "s":
+        try:
+            value = json.loads(source_json)
+            source = PcInstallSourceStore.from_dict(value)
+            executor = self.manager.executors.get("lutris")
+            if not isinstance(executor, LutrisInstallExecutor):
+                raise ValueError("Lutris installation is unavailable")
+            source_id = executor.register_source(source)
+            self.catalogue.register_lutris_source(source)
+            return source_id
+        except (TypeError, ValueError, json.JSONDecodeError) as error:
+            raise DBusError("org.lulu.Acquisition.Error.InvalidSource", str(error)) from error
+
+    @method()
+    def SubmitPcInstall(self, source_id: "s", title: "s") -> "s":
+        try:
+            executor = self.manager.executors.get("lutris")
+            if not isinstance(executor, LutrisInstallExecutor):
+                raise ValueError("Lutris installation is unavailable")
+            return self.manager.submit("lutris", source_id, title, operation=JobOperation.INSTALL,
+                                       cancellation_supported=True).job_id
+        except ValueError as error:
+            raise DBusError("org.lulu.Acquisition.Error.Unavailable", str(error)) from error
+
     def _uninstall_target(self, game_id: str) -> tuple[object, str, str, str]:
         game = self.catalogue.get_game(game_id)
         if game is None:
@@ -80,7 +122,7 @@ class AcquisitionInterface(ServiceInterface):
         if target.install_state != "installed":
             raise DBusError("org.lulu.Acquisition.Error.NotInstalled", "game is not installed")
         provider = str(target.provider)
-        identity = str(target.game_id if provider == "local" else f"steam:{target.provider_id}")
+        identity = str(target.game_id if provider == "local" else f"{provider}:{target.provider_id}")
         executor = self.manager.executors.get(provider)
         if executor is None or not hasattr(executor, "uninstall"):
             raise DBusError("org.lulu.Acquisition.Error.Unsupported", "uninstall is not supported")
@@ -90,7 +132,9 @@ class AcquisitionInterface(ServiceInterface):
     def CanUninstall(self, game_id: "s") -> "s":
         try:
             target, provider, identity, title = self._uninstall_target(game_id)
-            description = "Remove local installed content" if provider == "local" else "Remove Steam installation"
+            description = ("Remove local installed content" if provider == "local"
+                           else "Remove Lutris installation" if provider == "lutris"
+                           else "Remove Steam installation")
             return json.dumps({"supported": True, "installed": True, "provider": provider,
                                "operation": "remove", "description": description,
                                "target_game_id": target.game_id}, sort_keys=True)
@@ -103,6 +147,7 @@ class AcquisitionInterface(ServiceInterface):
             target, provider, identity, title = self._uninstall_target(game_id)
             return self.manager.submit(provider, identity, title,
                                        operation=JobOperation.REMOVE,
+                                       provider_job_id=target.provider_id,
                                        cancellation_supported=False).job_id
         except DBusError:
             raise
@@ -188,7 +233,8 @@ async def serve(bus_type: BusType = BusType.SESSION) -> None:
                     request = json.loads(await consoled.call_begin_owned_credential_request(
                         title, prompt, input_type.value, input_type is CredentialInput.SECRET,
                         min_length, max_length, owner_id, json.dumps(owner, sort_keys=True),
-                        json.dumps(["enter-code"] if input_type is CredentialInput.WAITING else [])))
+                         json.dumps(["enter-code"] if input_type is CredentialInput.WAITING else []),
+                         False))
                     request_id = request["id"]
                     try:
                         while True:
@@ -208,6 +254,14 @@ async def serve(bus_type: BusType = BusType.SESSION) -> None:
                             pass
                 executor.request_credential = request_credential
             manager.register_executor(item["provider"], executor, limit=int(item.get("limit", 1)))
+    async def reconcile_external_loop() -> None:
+        while True:
+            try:
+                await manager.reconcile_external()
+            except Exception:
+                LOGGER.exception("external acquisition reconciliation failed")
+            await asyncio.sleep(3)
+    asyncio.create_task(reconcile_external_loop())
     interface = AcquisitionInterface(manager, catalogue)
     bus.export(OBJECT_PATH, interface)
     await bus.request_name(BUS_NAME)

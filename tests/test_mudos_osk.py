@@ -76,6 +76,15 @@ class MudosOskProvisioningTests(unittest.TestCase):
         self.assertNotIn("--toggle", wrapper)
         self.assertNotIn("/dev/input/event", wrapper)
 
+    def test_keyboard_geometry_is_bottom_docked_and_native_sized(self) -> None:
+        config = (ROOT / "config/gamepad-osk/config").read_text()
+        service = (ROOT / "packaging/lulu-osk@.service").read_text()
+        self.assertIn("position = bottom", config)
+        self.assertIn("scale = 40", config)
+        self.assertIn("unit_size = 0", config)
+        self.assertIn("LULU_GAMEPAD_OSK_CONFIG=/opt/lulu/current/config/gamepad-osk/config", service)
+        self.assertNotIn("texture", config.lower())
+
 
 if __name__ == "__main__":
     unittest.main()

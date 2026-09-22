@@ -38,6 +38,13 @@ class CredentialStatus(StrEnum):
     CANCELLED = "cancelled"
 
 
+class CredentialPresentation(StrEnum):
+    """Where the managed request should be presented to the user."""
+
+    ATTACHED = "attached"
+    PROMPTED = "prompted"
+
+
 @dataclass(frozen=True, slots=True)
 class CredentialRequest:
     request_id: str
@@ -51,6 +58,8 @@ class CredentialRequest:
     help_text: str = ""
     owner_id: str = ""
     owner: dict[str, object] = field(default_factory=dict)
+    multiline: bool = False
+    presentation: CredentialPresentation = CredentialPresentation.PROMPTED
 
 
 @dataclass(slots=True)
@@ -61,13 +70,15 @@ class CredentialSession:
     _value: str | None = field(default=None, repr=False)
 
     def public_state(self) -> dict[str, object]:
-        return {"id": self.request.request_id, "title": self.request.title,
-                "prompt": self.request.prompt, "input_type": self.request.input_type.value,
-                "secret": self.request.secret, "min_length": self.request.min_length,
-                "max_length": self.request.max_length, "choices": self.request.choices,
-                "help_text": self.request.help_text, "status": self.status.value,
-                "message": self.message, "owner_id": self.request.owner_id,
-                "owner": self.request.owner}
+        state = {"id": self.request.request_id, "title": self.request.title,
+                 "prompt": self.request.prompt, "input_type": self.request.input_type.value,
+                 "secret": self.request.secret, "min_length": self.request.min_length,
+                 "max_length": self.request.max_length, "choices": self.request.choices,
+                 "help_text": self.request.help_text, "status": self.status.value,
+                 "message": self.message, "owner_id": self.request.owner_id,
+                  "owner": self.request.owner, "multiline": self.request.multiline}
+        state["presentation"] = self.request.presentation.value
+        return state
 
 
 class CredentialBroker:
@@ -86,7 +97,9 @@ class CredentialBroker:
                       *, secret: bool = False, min_length: int = 0,
                       max_length: int = 4096, choices: tuple[str, ...] = (),
                       help_text: str = "", owner_id: str = "",
-                      owner: dict[str, object] | None = None) -> CredentialSession:
+                       owner: dict[str, object] | None = None,
+                       multiline: bool = False,
+                       presentation: CredentialPresentation = CredentialPresentation.PROMPTED) -> CredentialSession:
         async with self._lock:
             if self._active is not None and self._active.status in {
                     CredentialStatus.REQUESTED, CredentialStatus.WAITING}:
@@ -95,7 +108,8 @@ class CredentialBroker:
                 secret = True
             request = CredentialRequest(uuid4().hex, title, prompt, input_type, secret,
                                          min_length, max_length, choices, help_text,
-                                         owner_id, dict(owner or {}))
+                                          owner_id, dict(owner or {}), multiline,
+                                          CredentialPresentation(presentation))
             self._active = CredentialSession(request)
             self._changed.set()
             return self._active
@@ -184,7 +198,12 @@ class SecretStore:
         self.creds = creds
 
     def _path(self, namespace: str, name: str) -> Path:
-        if not namespace or not name or any(part in namespace + name for part in "/\\\0"):
+        namespace_parts = namespace.split("/") if namespace else []
+        if (not namespace_parts or not name
+                or any(not part or part in {".", ".."} or "\\" in part or "\0" in part
+                       for part in namespace_parts)
+                or any(part in {".", ".."} or "\0" in part for part in name.split("/"))
+                or "/" in name or "\\" in name):
             raise ValueError("invalid secret name")
         return self.root / namespace / f"{name}.cred"
 

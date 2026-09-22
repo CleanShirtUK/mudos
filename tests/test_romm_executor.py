@@ -31,6 +31,30 @@ class FakeRomm:
 
 
 class RommExecutorTests(unittest.TestCase):
+    def test_content_set_keeps_one_parent_lifecycle_across_components(self) -> None:
+        async def exercise() -> None:
+            with tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                fake = FakeRomm(b"base")
+                fake.game = RommGame(
+                    7, "Test Kart", 1, "nes", "NES", "base.nes", ".nes", 4, "", False,
+                    (RommFile(70, "base.nes", 4, "game"),
+                     RommFile(71, "update.nes", 4, "update")),
+                )
+                executor = RommExecutor(fake, chunk_size=2)
+                manager = JobManager()
+                manager.register_executor("romm", executor, limit=1)
+                with patch("lulu.romm_executor.ROM_ROOT", root):
+                    job = manager.submit("romm", "romm-set:7", "Test Kart")
+                    await manager._tasks[job.job_id]
+                result = manager.jobs[job.job_id]
+                self.assertEqual(result.state, JobState.COMPLETED)
+                self.assertEqual(result.progress, 1.0)
+                self.assertEqual((root / "nes/base.nes").read_bytes(), b"base")
+                self.assertEqual((root / "nes/update.nes").read_bytes(), b"base")
+
+        asyncio.run(exercise())
+
     def test_romm_pause_uses_staging_task_lifecycle(self) -> None:
         self.assertTrue(RommExecutor(None).supports_pause)
 

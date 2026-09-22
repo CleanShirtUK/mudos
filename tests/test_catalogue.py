@@ -355,13 +355,17 @@ class CatalogueTests(unittest.TestCase):
 
             self.assertEqual({game.provider for game in visible}, {"local"})
             self.assertEqual({game.game_id for game in visible}, set(local[name].game_id for name in local))
-            self.assertEqual(len(visible), 2)
+            # Switch base/DLC files are one installed parent game, not
+            # separate library identities.
+            self.assertEqual(len(visible), 1)
+            self.assertEqual(len(visible[0].component_paths), 2)
             self.assertEqual(store.get_game("romm:243").installed_game_id, local[base.name].game_id)
-            self.assertEqual(store.get_game("romm:245").installed_game_id, local[dlc.name].game_id)
+            self.assertEqual(store.get_game("romm:243").installed_game_id, visible[0].game_id)
+            self.assertEqual(store.get_game("romm:243").provider_record_id, "243,245")
             self.assertEqual(store.list_available_games("romm"), [])
 
             store.reconcile_romm(romm_games)
-            self.assertEqual(len(store.list_games()), 2)
+            self.assertEqual(len(store.list_games()), 1)
 
     def test_missing_local_file_clears_romm_association_and_restores_store_availability(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

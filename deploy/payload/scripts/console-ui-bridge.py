@@ -412,7 +412,9 @@ class ConsoleUiBridge:
         return json.loads(await self.consoled.call_begin_credential_request(
             str(payload.get("title", "Credential")), str(payload.get("prompt", "Value")),
             str(payload.get("input_type", "text")), bool(payload.get("secret", False)),
-            int(payload.get("min_length", 0)), int(payload.get("max_length", 4096))))
+             int(payload.get("min_length", 0)), int(payload.get("max_length", 4096)),
+             bool(payload.get("multiline", False)),
+             str(payload.get("presentation", "prompted"))))
 
     async def credential_submit(self, payload: dict[str, object]) -> dict[str, object]:
         return json.loads(await self.consoled.call_submit_credential(
@@ -420,6 +422,18 @@ class ConsoleUiBridge:
 
     async def credential_cancel(self, payload: dict[str, object]) -> dict[str, object]:
         return json.loads(await self.consoled.call_cancel_credential(str(payload.get("id", ""))))
+
+    async def web_credential(self, operation: str, payload: dict[str, object]) -> dict[str, object]:
+        profile = str(payload.get("profile", ""))
+        origin = str(payload.get("origin", ""))
+        if operation == "get":
+            result = await self.consoled.call_get_web_credential(profile, origin)
+        elif operation == "save":
+            result = await self.consoled.call_save_web_credential(
+                profile, origin, str(payload.get("username", "")), str(payload.get("password", "")))
+        else:
+            result = await self.consoled.call_clear_web_credential(profile, origin)
+        return json.loads(result)
 
     async def plugin_secret(self, plugin_id: str, name: str, value: str) -> dict[str, object]:
         result = json.loads(await self.consoled.call_set_plugin_secret(plugin_id, name, value))
@@ -448,6 +462,10 @@ class ConsoleUiBridge:
     async def set_input_mode(self, mode: str) -> dict[str, str]:
         await self.sessiond.call_set_input_mode(mode)
         return {"input_mode": mode}
+
+    async def set_browser_surface(self, active: bool) -> dict[str, str]:
+        await self.sessiond.call_set_delegated_surface("browser" if active else "")
+        return {"delegated_surface": "browser" if active else ""}
 
     async def list_system_settings(self, category: str) -> list[dict[str, object]]:
         rows = await self.consoled.call_list_system_settings(category)
@@ -688,6 +706,19 @@ class ApiHandler(BaseHTTPRequestHandler):
             except Exception as error:
                 self._respond(409, {"error": str(error) or type(error).__name__})
             return
+        if path in {"/web-credentials/get", "/web-credentials/save", "/web-credentials/clear"}:
+            try:
+                request_origin = self.headers.get("Origin", "")
+                if request_origin not in {"", "null", "file://", "qrc:", "qrc://"}:
+                    self._respond(403, {"error": "web credential bridge is not available to page origins"})
+                    return
+                length = int(self.headers.get("Content-Length", "0"))
+                payload = json.loads(self.rfile.read(length) or b"{}")
+                operation = path.rsplit("/", 1)[-1]
+                self._respond(200, self.bridge.call(self.bridge.web_credential(operation, payload), timeout=30))
+            except Exception as error:
+                self._respond(409, {"error": str(error) or type(error).__name__})
+            return
         if path in {"/credential/submit", "/credential/cancel"}:
             try:
                 length = int(self.headers.get("Content-Length", "0"))
@@ -877,6 +908,15 @@ class ApiHandler(BaseHTTPRequestHandler):
             try:
                 mode = path.removeprefix("/input-mode/")
                 self._respond(200, self.bridge.call(self.bridge.set_input_mode(mode)))
+            except Exception as error:
+                self._respond(409, {"error": str(error)})
+            return
+        if path == "/browser-surface/active":
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+                payload = json.loads(self.rfile.read(length) or b"{}")
+                self._respond(200, self.bridge.call(
+                    self.bridge.set_browser_surface(bool(payload.get("active", False)))))
             except Exception as error:
                 self._respond(409, {"error": str(error)})
             return

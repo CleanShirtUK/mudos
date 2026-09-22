@@ -1,0 +1,7 @@
+id = "usenet"
+name = "Usenet downloader"
+version = "1"
+api_version = 1
+
+[capabilities]
+acquisition = true

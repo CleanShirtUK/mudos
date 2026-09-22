@@ -1,0 +1,15 @@
+[Unit]
+Description=Reconcile Mudos-owned services into Questarr
+After=lulu-questarr.service lulu-transmission.service nzbget.service network-online.target
+Wants=network-online.target
+Requires=lulu-questarr.service
+
+[Service]
+Type=oneshot
+User=lulu
+Environment=HOME=/home/lulu
+Environment=PYTHONPATH=/opt/lulu/current/lib
+ExecStart=/opt/lulu/current/scripts/reconcile-questarr.py
+
+[Install]
+WantedBy=multi-user.target

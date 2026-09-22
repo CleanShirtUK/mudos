@@ -48,6 +48,20 @@ class Controller:
     role: Role = Role.PLAYER
     profile_intent: str | None = None
     battery: BatteryState = field(default_factory=BatteryState)
+    # Runtime SDL identity is passed to providers; it is not a provider
+    # default and must not be confused with physical assignment identity.
+    sdl_index: int | None = None
+    sdl_guid: str | None = None
+    sdl_name: str | None = None
+    button_count: int | None = None
+    axis_count: int | None = None
+    connection_type: str | None = None
+    controller_type: str = "standard_gamepad"
+
+    @property
+    def gameplay_eligible(self) -> bool:
+        """Eligibility is capability-based, not model/name/VID based."""
+        return self.controller_type == "standard_gamepad"
 
 
 class ControllerRegistry:
@@ -58,6 +72,7 @@ class ControllerRegistry:
     def __init__(self, policy_path: Path | None = None) -> None:
         self.controllers: dict[str, Controller] = {}
         self.navigation_controller_id: str | None = None
+        self.navigation_mode = "all"
         self.policy_path = policy_path
         self._policy: dict[str, object] = {}
         self._runtime_seen = False
@@ -98,6 +113,9 @@ class ControllerRegistry:
             self._select_navigation_fallback()
 
     def _select_navigation_fallback(self) -> None:
+        if self.navigation_mode == "all":
+            self.navigation_controller_id = None
+            return
         connected = [
             (controller.player if controller.player is not None else 999, controller_id)
             for controller_id, controller in self.controllers.items()
@@ -131,12 +149,31 @@ class ControllerRegistry:
             self._save_policy()
 
     def set_navigation_controller(self, controller_id: str | None) -> None:
+        if controller_id == "all":
+            self.navigation_mode = "all"
+            self.navigation_controller_id = None
+            self._policy["navigation_mode"] = "all"
+            self._policy.pop("navigation_identity", None)
+            self._policy.pop("navigation_player", None)
+            self._save_policy()
+            return
+        if controller_id is None:
+            self.navigation_mode = "automatic"
+            self.navigation_controller_id = None
+            self._policy["navigation_mode"] = "automatic"
+            self._policy.pop("navigation_identity", None)
+            self._policy.pop("navigation_player", None)
+            self._save_policy()
+            self._select_navigation_fallback()
+            return
         if controller_id is not None and controller_id not in self.controllers:
             raise ValueError("unknown controller")
         if controller_id is not None and not self.controllers[controller_id].connected:
             raise ValueError("navigation controller must be connected")
         self.navigation_controller_id = controller_id
+        self.navigation_mode = "specific"
         identity = self.controllers[controller_id].physical_identity if controller_id else None
+        self._policy["navigation_mode"] = "specific"
         self._policy["navigation_identity"] = identity
         self._policy["navigation_player"] = (
             self.controllers[controller_id].player if controller_id else None
@@ -145,6 +182,8 @@ class ControllerRegistry:
 
     def observe_persistent_composite(self, persistent_id: str, source_paths: tuple[str, ...]) -> None:
         """Reconcile physical presence without replacing InputPlumber targets."""
+        if self.navigation_mode == "all":
+            self.navigation_controller_id = None
         if not persistent_id or not source_paths:
             for controller_id, controller in self.controllers.items():
                 if controller.connected:
@@ -200,6 +239,13 @@ class ControllerRegistry:
             else:
                 controller.connected = True
 
+        persisted_mode = self._policy.get("navigation_mode")
+        if persisted_mode in {"all", "automatic", "specific"} and not self._runtime_seen:
+            self.navigation_mode = persisted_mode
+        if self.navigation_mode == "all":
+            self.navigation_controller_id = None
+            self._runtime_seen = True
+            return
         preferred_player = self._policy.get("navigation_player") if not self._runtime_seen else None
         preferred_runtime = next(
             (runtime_id for runtime_id in connected_ids

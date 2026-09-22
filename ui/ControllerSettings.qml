@@ -49,6 +49,7 @@ Item {
             return result
         }
         if (root.view === "navigation") {
+            result.push({label: "All", value: controllerData.navigation_mode === "all" ? "Selected" : "Any connected controller", action: "set-navigation", id: "all"})
             for (var navigation of list) {
                 result.push({label: "Player " + (navigation.data.player || "Unassigned"), value: navigation.id === controllerData.navigation_controller_id ? "Selected" : "", action: "set-navigation", id: navigation.id})
             }
@@ -58,13 +59,13 @@ Item {
         }
         for (var entry of list) {
             var identity = entry.data.physical_identity || "unknown"
-            var name = identity === "045e_0291" ? "Xbox 360 Wireless Controller" : identity
+            var name = identity
             result.push({label: name, value: "Player " + (entry.data.player || "Unassigned")
                          + (entry.id === controllerData.navigation_controller_id ? " · Navigation" : ""),
                          action: "open-player", id: entry.id})
         }
         if (list.length === 0) result.push({label: "No controller connected", value: "", action: "none"})
-        result.push({label: "Navigation Controller", value: controllerData.navigation_controller_id ? "Assigned" : "Automatic fallback", action: "open-navigation"})
+        result.push({label: "Navigation Controller", value: controllerData.navigation_mode === "all" ? "All" : (controllerData.navigation_controller_id ? "Assigned" : "Automatic fallback"), action: "open-navigation"})
         result.push({label: "Provider profiles", value: "Owned by providers", action: "info"})
         result.push({label: "Back", value: "", action: "back"})
         return result

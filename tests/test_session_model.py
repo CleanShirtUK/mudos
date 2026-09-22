@@ -126,6 +126,42 @@ class SessionModelTests(unittest.TestCase):
 
         asyncio.run(exercise())
 
+    def test_delegated_launch_context_is_inherited_by_owned_child(self) -> None:
+        async def exercise() -> None:
+            session = SessionStateModel()
+            supervisor = ProcessSupervisor(session)
+            supervisor.set_delegated_launch_environment({
+                "DISPLAY": ":test", "WAYLAND_DISPLAY": "gamescope-test",
+                "XDG_RUNTIME_DIR": "/run/user/test", "UNRELATED_SECRET": "ignored",
+            })
+            await supervisor.launch([
+                "/bin/sh", "-c",
+                "test \"$DISPLAY\" = :test && test \"$WAYLAND_DISPLAY\" = gamescope-test && "
+                "test \"$XDG_RUNTIME_DIR\" = /run/user/test && test -z \"$UNRELATED_SECRET\"",
+            ], 1000, presentation_controller=None)
+            await supervisor._watch_task
+            self.assertEqual(session.state.lifecycle, Lifecycle.SHELL)
+
+        asyncio.run(exercise())
+
+    def test_presentation_timeout_releases_owned_identity(self) -> None:
+        async def exercise() -> None:
+            class MissingSurface:
+                def select_pids(self, _pids, _timeout):
+                    raise TimeoutError("surface absent")
+
+            session = SessionStateModel()
+            supervisor = ProcessSupervisor(session)
+            with self.assertRaises(ValueError):
+                await supervisor.launch(
+                    ["/bin/sh", "-c", "sleep 10"], 1000,
+                    presentation_controller=MissingSurface(),
+                )
+            self.assertIsNone(supervisor.active_identity)
+            self.assertEqual(session.state.lifecycle, Lifecycle.SHELL)
+
+        asyncio.run(exercise())
+
 
 if __name__ == "__main__":
     unittest.main()

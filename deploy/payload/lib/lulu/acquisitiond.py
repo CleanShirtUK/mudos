@@ -124,9 +124,9 @@ class AcquisitionInterface(ServiceInterface):
             raise DBusError("org.lulu.Acquisition.Error.UnknownJob", str(error)) from error
 
     @method()
-    def ResumeJob(self, job_id: "s") -> "":
+    async def ResumeJob(self, job_id: "s") -> "":
         try:
-            self.manager.resume(job_id)
+            await self.manager.resume(job_id)
         except KeyError as error:
             raise DBusError("org.lulu.Acquisition.Error.UnknownJob", str(error)) from error
 
@@ -188,7 +188,8 @@ async def serve(bus_type: BusType = BusType.SESSION) -> None:
                     request = json.loads(await consoled.call_begin_owned_credential_request(
                         title, prompt, input_type.value, input_type is CredentialInput.SECRET,
                         min_length, max_length, owner_id, json.dumps(owner, sort_keys=True),
-                        json.dumps(["enter-code"] if input_type is CredentialInput.WAITING else [])))
+                         json.dumps(["enter-code"] if input_type is CredentialInput.WAITING else []),
+                         False))
                     request_id = request["id"]
                     try:
                         while True:
@@ -208,6 +209,14 @@ async def serve(bus_type: BusType = BusType.SESSION) -> None:
                             pass
                 executor.request_credential = request_credential
             manager.register_executor(item["provider"], executor, limit=int(item.get("limit", 1)))
+    async def reconcile_external_loop() -> None:
+        while True:
+            try:
+                await manager.reconcile_external()
+            except Exception:
+                LOGGER.exception("external acquisition reconciliation failed")
+            await asyncio.sleep(3)
+    asyncio.create_task(reconcile_external_loop())
     interface = AcquisitionInterface(manager, catalogue)
     bus.export(OBJECT_PATH, interface)
     await bus.request_name(BUS_NAME)

@@ -17,4 +17,7 @@ def register(context):
         password=configuration.secret("password") or "",
         label=str(configuration.get("label", "mudos")),
     ))
-    context.register("acquisition", {"provider": "torrent", "executor": TorrentProvider(client), "limit": 1})
+    from lulu.questarr_metadata import QuestarrMetadataClient
+    context.register("acquisition", {"provider": "torrent",
+                                      "executor": TorrentProvider(client, questarr_metadata=QuestarrMetadataClient()),
+                                      "limit": 1})

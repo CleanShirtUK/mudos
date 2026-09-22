@@ -7,7 +7,14 @@ from .paths import PATHS
 from .controller_policy import nintendo_face_binding
 
 
-DOLPHIN_CONTROLLER_NAME = "Xbox 360 Controller"
+DEFAULT_CONTROLLER_NAME = "SDL Gamepad"
+
+
+def _identity(controller: object | None, index: int) -> tuple[str, int]:
+    getter = controller.get if isinstance(controller, dict) else lambda key, default=None: getattr(controller, key, default)
+    name = getter("sdl_name") or DEFAULT_CONTROLLER_NAME
+    value = getter("sdl_index")
+    return str(name), value if isinstance(value, int) else index
 
 
 def _replace_section(text: str, section: str, values: dict[str, str]) -> str:
@@ -199,6 +206,7 @@ def ensure_provider_controller_config(
     player_count: int | None = None,
     device_indices: dict[int, int] | None = None,
     native_user_root: Path | None = None,
+    controller_identities: dict[int, object] | None = None,
 ) -> Path:
     """Provision native profiles for the active logical player slots."""
     if player_count is None:
@@ -243,8 +251,7 @@ def ensure_provider_controller_config(
                 source,
                 f"GCPad{player}",
                 _dolphin_values(
-                    DOLPHIN_CONTROLLER_NAME,
-                    device_indices.get(player, player - 1),
+                    *_identity((controller_identities or {}).get(player), device_indices.get(player, player - 1)),
                 ),
             )
         _write_if_changed(path, source)
@@ -252,7 +259,7 @@ def ensure_provider_controller_config(
         wiimote_source = wiimote_path.read_text(encoding="utf-8") if wiimote_path.exists() else ""
         wiimote_source = _replace_section(
             wiimote_source, "Wiimote1", _dolphin_classic_values(
-                DOLPHIN_CONTROLLER_NAME, device_indices.get(1, 0),
+                *_identity((controller_identities or {}).get(1), device_indices.get(1, 0)),
             ),
         )
         _write_if_changed(wiimote_path, wiimote_source)

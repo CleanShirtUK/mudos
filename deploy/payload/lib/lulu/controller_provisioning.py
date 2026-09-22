@@ -4,9 +4,17 @@ from pathlib import Path
 import os
 
 from .paths import PATHS
+from .controller_policy import nintendo_face_binding
 
 
-DOLPHIN_CONTROLLER_NAME = "Xbox 360 Controller"
+DEFAULT_CONTROLLER_NAME = "SDL Gamepad"
+
+
+def _identity(controller: object | None, index: int) -> tuple[str, int]:
+    getter = controller.get if isinstance(controller, dict) else lambda key, default=None: getattr(controller, key, default)
+    name = getter("sdl_name") or DEFAULT_CONTROLLER_NAME
+    value = getter("sdl_index")
+    return str(name), value if isinstance(value, int) else index
 
 
 def _replace_section(text: str, section: str, values: dict[str, str]) -> str:
@@ -125,10 +133,10 @@ def _dolphin_values(device: str, sdl_index: int) -> dict[str, str]:
     return {
         "Device": prefix,
         # Match Dolphin's installed "SDL Gamepad (Stock)" profile.
-        "Buttons/A": "`Button A`",
-        "Buttons/B": "`Button B`",
-        "Buttons/X": "`Button X`",
-        "Buttons/Y": "`Button Y`",
+        "Buttons/A": f"`{nintendo_face_binding('a')}`",
+        "Buttons/B": f"`{nintendo_face_binding('b')}`",
+        "Buttons/X": f"`{nintendo_face_binding('x')}`",
+        "Buttons/Y": f"`{nintendo_face_binding('y')}`",
         "Buttons/Z": "`Shoulder R`",
         "Buttons/Start": "`Start`",
         "Main Stick/Up": "`Left Y+`",
@@ -153,6 +161,41 @@ def _dolphin_values(device: str, sdl_index: int) -> dict[str, str]:
     }
 
 
+def _dolphin_classic_values(device: str, sdl_index: int) -> dict[str, str]:
+    prefix = f"SDL/{sdl_index}/{device}"
+    return {
+        "Device": prefix,
+        "Extension": "Classic Controller",
+        "Classic/Buttons/A": f"`{nintendo_face_binding('a')}`",
+        "Classic/Buttons/B": f"`{nintendo_face_binding('b')}`",
+        "Classic/Buttons/X": f"`{nintendo_face_binding('x')}`",
+        "Classic/Buttons/Y": f"`{nintendo_face_binding('y')}`",
+        "Classic/Buttons/ZL": "`Left Shoulder`",
+        "Classic/Buttons/ZR": "`Right Shoulder`",
+        "Classic/Buttons/-": "`Back`",
+        "Classic/Buttons/+": "`Start`",
+        "Classic/Buttons/Home": "`Guide`",
+        "Classic/Left Stick/Up": "`Left Y+`",
+        "Classic/Left Stick/Down": "`Left Y-`",
+        "Classic/Left Stick/Left": "`Left X-`",
+        "Classic/Left Stick/Right": "`Left X+`",
+        "Classic/Left Stick/Calibration": "100.00",
+        "Classic/Right Stick/Up": "`Right Y+`",
+        "Classic/Right Stick/Down": "`Right Y-`",
+        "Classic/Right Stick/Left": "`Right X-`",
+        "Classic/Right Stick/Right": "`Right X+`",
+        "Classic/Right Stick/Calibration": "100.00",
+        "Classic/Triggers/L": "`Left Trigger`",
+        "Classic/Triggers/R": "`Right Trigger`",
+        "Classic/Triggers/L-Analog": "`Left Trigger`",
+        "Classic/Triggers/R-Analog": "`Right Trigger`",
+        "Classic/D-Pad/Up": "`Pad N`",
+        "Classic/D-Pad/Down": "`Pad S`",
+        "Classic/D-Pad/Left": "`Pad W`",
+        "Classic/D-Pad/Right": "`Pad E`",
+    }
+
+
 def _config_root() -> Path:
     return Path(os.environ.get("XDG_CONFIG_HOME", str(Path.home() / ".config"))).expanduser()
 
@@ -163,6 +206,7 @@ def ensure_provider_controller_config(
     player_count: int | None = None,
     device_indices: dict[int, int] | None = None,
     native_user_root: Path | None = None,
+    controller_identities: dict[int, object] | None = None,
 ) -> Path:
     """Provision native profiles for the active logical player slots."""
     if player_count is None:
@@ -198,7 +242,8 @@ def ensure_provider_controller_config(
         _write_if_changed(path, source)
         return path
     if provider == "dolphin":
-        dolphin_root = native_user_root or (root / "dolphin-emu")
+        # Dolphin 5.x resolves --user/<root> native settings under Config/.
+        dolphin_root = (native_user_root or (root / "dolphin-emu")) / "Config"
         path = dolphin_root / "GCPadNew.ini"
         source = path.read_text(encoding="utf-8") if path.exists() else ""
         for player in range(1, player_count + 1):
@@ -206,21 +251,27 @@ def ensure_provider_controller_config(
                 source,
                 f"GCPad{player}",
                 _dolphin_values(
-                    DOLPHIN_CONTROLLER_NAME,
-                    device_indices.get(player, player - 1),
+                    *_identity((controller_identities or {}).get(player), device_indices.get(player, player - 1)),
                 ),
             )
         _write_if_changed(path, source)
+        wiimote_path = dolphin_root / "WiimoteNew.ini"
+        wiimote_source = wiimote_path.read_text(encoding="utf-8") if wiimote_path.exists() else ""
+        wiimote_source = _replace_section(
+            wiimote_source, "Wiimote1", _dolphin_classic_values(
+                *_identity((controller_identities or {}).get(1), device_indices.get(1, 0)),
+            ),
+        )
+        _write_if_changed(wiimote_path, wiimote_source)
         dolphin_path = dolphin_root / "Dolphin.ini"
         dolphin_source = dolphin_path.read_text(encoding="utf-8") if dolphin_path.exists() else ""
         sidevices = {f"SIDevice{port}": "6" if port < player_count else "0" for port in range(4)}
-        sidevices["WiimoteSource0"] = "0"
+        # Emulate a Wii Remote with a Classic Controller extension; a real
+        # Bluetooth Wii Remote is deliberately not required.
+        sidevices["WiimoteSource0"] = "1"
         _write_if_changed(
             dolphin_path,
             _update_section_values(dolphin_source, "Core", sidevices),
         )
-        wiimote_path = dolphin_root / "WiimoteNew.ini"
-        wiimote_source = wiimote_path.read_text(encoding="utf-8") if wiimote_path.exists() else ""
-        _write_if_changed(wiimote_path, _remove_section(wiimote_source, "Wiimote1"))
         return path
     raise ValueError(f"unsupported controller provider: {provider}")

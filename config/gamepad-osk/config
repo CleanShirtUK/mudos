@@ -1,0 +1,45 @@
+# Mudos 10-foot keyboard geometry.  The keyboard is rendered at this native
+# window size; it is not a low-resolution surface scaled into a fullscreen
+# surface.
+
+[theme]
+name = tokyo_night
+
+[window]
+position = bottom
+margin = 18
+opacity = 0.95
+panel_avoid = true
+
+[keys]
+unit_size = 0
+padding = 4
+font_size = 0
+scale = 40
+repeat_delay_ms = 400
+repeat_rate_ms = 80
+
+[gamepad]
+device =
+grab = true
+deadzone = 0.25
+long_press_ms = 500
+swap_xy = auto
+mouse_stick = right
+toggle_combo =
+combo_period_ms = 200
+
+[gamepad.buttons]
+press = a
+close = b
+backspace = x
+space = y
+shift = lt
+enter = rt
+left_click = rb
+right_click = lb
+position_toggle = start
+
+[mouse]
+enabled = true
+sensitivity = 10

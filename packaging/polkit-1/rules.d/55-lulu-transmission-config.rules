@@ -1,0 +1,10 @@
+// Permit Mudos Admin to start only the root-owned ACL helper used for the
+// private Transmission settings file.
+polkit.addRule(function(action, subject) {
+    if (subject.user == "lulu" &&
+        action.id == "org.freedesktop.systemd1.manage-units" &&
+        action.lookup("unit") == "lulu-transmission-config.service" &&
+        action.lookup("verb") == "start") {
+        return polkit.Result.YES;
+    }
+});

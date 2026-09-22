@@ -1,0 +1,16 @@
+[Unit]
+Description=Lulu development Sunshine host (existing session only)
+After=default.target
+
+[Service]
+Type=simple
+ExecStartPre=/usr/bin/sleep 10
+ExecStart=/usr/bin/sunshine
+Restart=on-failure
+RestartSec=5s
+
+# Sunshine is an optional development aid. Its failure must not affect Mudos.
+Nice=5
+
+[Install]
+WantedBy=default.target

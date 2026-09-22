@@ -48,6 +48,20 @@ class Controller:
     role: Role = Role.PLAYER
     profile_intent: str | None = None
     battery: BatteryState = field(default_factory=BatteryState)
+    # Runtime SDL identity is passed to providers; it is not a provider
+    # default and must not be confused with physical assignment identity.
+    sdl_index: int | None = None
+    sdl_guid: str | None = None
+    sdl_name: str | None = None
+    button_count: int | None = None
+    axis_count: int | None = None
+    connection_type: str | None = None
+    controller_type: str = "standard_gamepad"
+
+    @property
+    def gameplay_eligible(self) -> bool:
+        """Eligibility is capability-based, not model/name/VID based."""
+        return self.controller_type == "standard_gamepad"
 
 
 class ControllerRegistry:

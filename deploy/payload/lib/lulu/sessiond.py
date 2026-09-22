@@ -78,6 +78,13 @@ class ConsoleSessionInterface(ServiceInterface):
                             "connected": controller.connected,
                             "player": controller.player,
                             "physical_identity": controller.physical_identity,
+                            "sdl_index": controller.sdl_index,
+                            "sdl_guid": controller.sdl_guid,
+                            "sdl_name": controller.sdl_name,
+                            "button_count": controller.button_count,
+                            "axis_count": controller.axis_count,
+                            "connection_type": controller.connection_type,
+                            "controller_type": controller.controller_type,
                             "battery": {
                                 "kind": controller.battery.kind.value,
                                 "percentage": controller.battery.percentage,
@@ -136,6 +143,11 @@ class ConsoleSessionInterface(ServiceInterface):
     ) -> None:
         if composite is None:
             composite = await asyncio.to_thread(self._inputplumber.composite_status, object_path)
+        # A source-backed provisional inventory entry has no CompositeDevice
+        # D-Bus object to initialize. Navigation may still be supplied by the
+        # native SDL path while the source is waiting for a target profile.
+        if composite[0].startswith("source:"):
+            return
         if not composite[1] or self._initialized_composites.get(object_path) == composite:
             return
         await asyncio.to_thread(
@@ -491,12 +503,20 @@ class ConsoleSessionInterface(ServiceInterface):
     def SetInputMode(self, mode: "s") -> "":
         try:
             requested = InputMode(mode)
-            if requested is InputMode.COMPAT and self.model.state.lifecycle.value != "game":
+            if requested is InputMode.COMPAT and self.model.state.lifecycle.value != "game" \
+                    and self.model.state.delegated_surface != "browser":
                 raise ValueError("Compatibility Mode requires an active application")
             self._apply_input_mode(requested)
             self.model.set_input_mode(requested)
         except (ValueError, KeyError) as error:
             raise self._error(ValueError(str(error))) from error
+        self.StateChanged(self._state_json())
+
+    @method()
+    def SetDelegatedSurface(self, surface: "s") -> "":
+        if surface not in {"", "browser"}:
+            raise self._error(ValueError("invalid delegated surface"))
+        self.model.state.delegated_surface = surface or None
         self.StateChanged(self._state_json())
 
     @signal()
@@ -511,6 +531,7 @@ async def _wait_for_stop(stop_event: asyncio.Event) -> None:
 
 
 async def serve(bus_type: BusType = BusType.SESSION, bootstrap_shell: bool = False) -> None:
+    LOGGER.info("session_lifecycle event=start pid=%s uid=%s", os.getpid(), os.geteuid())
     bus = await MessageBus(bus_type=bus_type).connect()
     model = SessionStateModel()
     interface = ConsoleSessionInterface(model)
@@ -531,6 +552,7 @@ async def serve(bus_type: BusType = BusType.SESSION, bootstrap_shell: bool = Fal
     await _wait_for_stop(stop_event)
     await interface.stop_controller_monitor()
     await interface.supervisor.stop()
+    LOGGER.info("session_lifecycle event=stop pid=%s", os.getpid())
     bus.disconnect()
 
 

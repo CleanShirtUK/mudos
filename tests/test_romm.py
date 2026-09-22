@@ -4,7 +4,7 @@ import unittest
 from unittest.mock import patch
 from urllib.parse import parse_qs, urlparse
 
-from lulu.romm import RommApiError, RommClient, RommConfig, RommGame, RommPlatform, SteamManifest
+from lulu.romm import RommApiError, RommClient, RommConfig, RommFile, RommGame, RommPlatform, SteamManifest
 
 
 FIXTURES = Path(__file__).parent / "fixtures" / "romm"
@@ -27,6 +27,20 @@ class Transport:
 
 
 class RommTests(unittest.TestCase):
+    def test_content_uses_parent_rom_route_and_file_id_selection(self):
+        class ContentTransport:
+            def __init__(self): self.url = ""
+            def request(self, method, url, headers, timeout):
+                self.url = url
+                return 200, b"PFS0"
+
+        transport = ContentTransport()
+        file = RommFile(717, "Mario Kart [0100].nsp", 4, "game", None, None, 243)
+        payload = RommClient(RommConfig("https://romm.test", client_token="secret"), transport).download_file(file)
+        self.assertEqual(payload, b"PFS0")
+        self.assertIn("/api/roms/243/content/Mario%20Kart%20%5B0100%5D.nsp", transport.url)
+        self.assertEqual(parse_qs(urlparse(transport.url).query)["file_ids"], ["717"])
+
     def test_pairing_code_exchanges_for_client_token(self):
         class PairTransport:
             def __init__(self):

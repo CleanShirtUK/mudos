@@ -1,16 +1,32 @@
 import tempfile
 import unittest
+import os
 from pathlib import Path
 
 from lulu.emulator_runtime import EmulatorRuntimeAdapter
 from lulu.controller_provisioning import ensure_provider_controller_config
-from lulu.consoled import _parse_busctl_json_string, _retroarch_child_config
+from lulu.consoled import (
+    _mudos_provider_device_indices,
+    _parse_busctl_json_string,
+    _retroarch_child_config,
+)
 from lulu.local_content import LocalContentGame
 from lulu.switch_provider import SwitchProvider
 from lulu.paths import PATHS
 
 
 class EmulatorRuntimeTests(unittest.TestCase):
+    def setUp(self) -> None:
+        # Unit profiles use an explicit synthetic live identity. Production
+        # callers always supply this from the controller inventory.
+        self._old_guid = os.environ.get("LULU_SWITCH_SDL_GUID")
+        os.environ["LULU_SWITCH_SDL_GUID"] = "synthetic-live-guid"
+
+    def tearDown(self) -> None:
+        if self._old_guid is None:
+            os.environ.pop("LULU_SWITCH_SDL_GUID", None)
+        else:
+            os.environ["LULU_SWITCH_SDL_GUID"] = self._old_guid
     def test_retroarch_child_config_does_not_emit_invalid_negative_joypad_index(self) -> None:
         config_path = Path(_retroarch_child_config({1: 0, 2: 1, 3: 2}))
         try:
@@ -23,6 +39,22 @@ class EmulatorRuntimeTests(unittest.TestCase):
         self.assertIn('input_player3_joypad_index = "2"', content)
         self.assertNotIn("-1", content)
         self.assertNotIn("input_player4_joypad_index", content)
+
+    def test_provider_indices_use_normalized_sdl_identity_not_composite_path(self) -> None:
+        from unittest.mock import patch
+
+        controllers = {
+            1: {
+                "connected": True,
+                "controller_type": "standard_gamepad",
+                "physical_identity": "source:event8",
+                "sdl_index": 0,
+                "sdl_guid": "unknown-guid",
+                "sdl_name": "Unbranded USB Gamepad",
+            }
+        }
+        with patch("lulu.consoled._mudos_provider_controller_identities", return_value=controllers):
+            self.assertEqual(_mudos_provider_device_indices(), {1: 0})
 
     def test_retroarch_provider_menu_capability_and_command(self) -> None:
         self.assertTrue(EmulatorRuntimeAdapter.supports_provider_menu("nes"))
@@ -92,16 +124,16 @@ class EmulatorRuntimeTests(unittest.TestCase):
             second_content = second.read_text()
 
         self.assertEqual(intent.arguments, ("--appimage-extract-and-run", "--config", str(second), "-f", "--fullscreen", "--game", "/fixture/game.nsp"))
-        self.assertIn('player_0_button_a="engine:sdl,port:0,guid:030081b85e0400008e02000001000000,button:1"', config)
-        self.assertIn('player_0_button_b="engine:sdl,port:0,guid:030081b85e0400008e02000001000000,button:0"', config)
-        self.assertIn('player_0_button_x="engine:sdl,port:0,guid:030081b85e0400008e02000001000000,button:3"', config)
-        self.assertIn('player_0_button_y="engine:sdl,port:0,guid:030081b85e0400008e02000001000000,button:2"', config)
+        self.assertIn('player_0_button_a="engine:sdl,port:0,guid:synthetic-live-guid,button:1"', config)
+        self.assertIn('player_0_button_b="engine:sdl,port:0,guid:synthetic-live-guid,button:0"', config)
+        self.assertIn('player_0_button_x="engine:sdl,port:0,guid:synthetic-live-guid,button:3"', config)
+        self.assertIn('player_0_button_y="engine:sdl,port:0,guid:synthetic-live-guid,button:2"', config)
         self.assertIn("player_0_type=0", config)
         self.assertIn("player_0_connected=true", config)
         self.assertIn("player_0_connected\\default=false", config)
         self.assertNotIn("player_0_connect=", config)
         self.assertEqual(config, second_content)
-        self.assertIn('player_0_lstick="engine:sdl,port:0,guid:030081b85e0400008e02000001000000,axis_x:0,axis_y:1,invert_x:+,invert_y:+"', config)
+        self.assertIn('player_0_lstick="engine:sdl,port:0,guid:synthetic-live-guid,axis_x:0,axis_y:1,invert_x:+,invert_y:+"', config)
 
     def test_switch_profile_follows_assigned_controller_indices(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -110,9 +142,9 @@ class EmulatorRuntimeTests(unittest.TestCase):
             config = provider.ensure_controller_config(device_indices={1: 0, 2: 2, 3: 1})
             content = config.read_text()
 
-        self.assertIn("player_0_button_a=\"engine:sdl,port:0,guid:030081b85e0400008e02000001000000,button:1\"", content)
-        self.assertIn("player_1_button_a=\"engine:sdl,port:2,guid:030081b85e0400008e02000001000000,button:1\"", content)
-        self.assertIn("player_2_button_a=\"engine:sdl,port:1,guid:030081b85e0400008e02000001000000,button:1\"", content)
+        self.assertIn("player_0_button_a=\"engine:sdl,port:0,guid:synthetic-live-guid,button:1\"", content)
+        self.assertIn("player_1_button_a=\"engine:sdl,port:2,guid:synthetic-live-guid,button:1\"", content)
+        self.assertIn("player_2_button_a=\"engine:sdl,port:1,guid:synthetic-live-guid,button:1\"", content)
         self.assertNotIn("player_3_", content)
 
     def test_switch_three_player_profile_has_unique_gamepads_and_nintendo_mapping(self) -> None:
@@ -124,7 +156,7 @@ class EmulatorRuntimeTests(unittest.TestCase):
         for player, port in enumerate((0, 1, 2)):
             for name, button in (("a", 1), ("b", 0), ("x", 3), ("y", 2)):
                 self.assertIn(
-                    f'player_{player}_button_{name}="engine:sdl,port:{port},guid:030081b85e0400008e02000001000000,button:{button}"',
+                    f'player_{player}_button_{name}="engine:sdl,port:{port},guid:synthetic-live-guid,button:{button}"',
                     content,
                 )
             self.assertIn(f"player_{player}_type=0", content)
@@ -203,13 +235,13 @@ class EmulatorRuntimeTests(unittest.TestCase):
             path = ensure_provider_controller_config("dolphin", Path(directory))
             content = path.read_text()
 
-            self.assertIn("Device = SDL/0/Xbox 360 Controller", content)
+            self.assertIn("Device = SDL/0/SDL Gamepad", content)
             self.assertIn("Buttons/A = `Button B`", content)
             self.assertIn("Main Stick/Up = `Left Y+`", content)
             self.assertIn("Triggers/L-Analog = `Trigger L`", content)
             self.assertIn("Main Stick/Calibration = 100.00", content)
             self.assertIn("[GCPad2]", content)
-            self.assertIn("Device = SDL/1/Xbox 360 Controller", content)
+            self.assertIn("Device = SDL/1/SDL Gamepad", content)
 
             dolphin = Path(directory) / "dolphin-emu" / "Config" / "Dolphin.ini"
             dolphin_content = dolphin.read_text()
@@ -246,9 +278,9 @@ class EmulatorRuntimeTests(unittest.TestCase):
         self.assertIn("[Pad2]", pcsx2)
         self.assertIn("Cross = SDL-2/FaceSouth", pcsx2)
         self.assertIn("[GCPad2]", dolphin)
-        self.assertIn("Device = SDL/2/Xbox 360 Controller", dolphin)
+        self.assertIn("Device = SDL/2/SDL Gamepad", dolphin)
         self.assertIn("[GCPad3]", dolphin)
-        self.assertIn("Device = SDL/1/Xbox 360 Controller", dolphin)
+        self.assertIn("Device = SDL/1/SDL Gamepad", dolphin)
 
 
 if __name__ == "__main__":

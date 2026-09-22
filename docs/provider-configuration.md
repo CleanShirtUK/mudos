@@ -21,3 +21,11 @@ configuration diagnostics.
 Use `config/provider-services.toml.example` as the placeholder-only template.
 `scripts/provision-provider-config.sh` creates the user file if absent and
 never overwrites it.
+
+## Questarr
+
+Questarr is an upstream-owned storefront service, not a Mudos provider table.
+Its JWT/session secret and encrypted indexer/downloader credential key remain
+in Questarr's persistent SQLite state at `/var/lib/lulu-questarr/data`; Mudos
+does not duplicate those secrets. Questarr's own setup UI/API is the supported
+boundary for configuring Prowlarr, Transmission, and NZBGet.

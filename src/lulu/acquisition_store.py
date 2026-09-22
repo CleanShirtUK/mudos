@@ -56,8 +56,9 @@ class AcquisitionStore:
                  download_rate INTEGER,
                  upload_rate INTEGER,
                  eta_seconds INTEGER,
-                 provider_state TEXT,
-                 ownership_label TEXT,
+                  provider_state TEXT,
+                  ownership_label TEXT,
+                  origin TEXT NOT NULL DEFAULT 'mudos',
                  deletion_policy TEXT NOT NULL DEFAULT 'preserve-partial',
                  artifact_files_json TEXT,
                  seeding INTEGER NOT NULL DEFAULT 0
@@ -74,6 +75,7 @@ class AcquisitionStore:
             "backend": "TEXT", "destination": "TEXT", "completion_path": "TEXT",
             "download_rate": "INTEGER", "upload_rate": "INTEGER", "eta_seconds": "INTEGER",
             "provider_state": "TEXT", "ownership_label": "TEXT",
+            "origin": "TEXT NOT NULL DEFAULT 'mudos'",
             "deletion_policy": "TEXT NOT NULL DEFAULT 'preserve-partial'",
             "artifact_files_json": "TEXT", "seeding": "INTEGER NOT NULL DEFAULT 0",
             "retired": "INTEGER NOT NULL DEFAULT 0",
@@ -112,9 +114,9 @@ class AcquisitionStore:
                         retryable, cancellation_supported, provider_job_id,
                         created_at, started_at, updated_at, completed_at, attempt,
                          parent_job_id, recovery_reason, backend, destination, completion_path,
-                         download_rate, upload_rate, eta_seconds, provider_state, ownership_label,
-                         deletion_policy, artifact_files_json, seeding, retired, pause_supported
-                     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                          download_rate, upload_rate, eta_seconds, provider_state, ownership_label,
+                          origin, deletion_policy, artifact_files_json, seeding, retired, pause_supported
+                     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT(job_id) DO UPDATE SET
                         provider=excluded.provider, content_identity=excluded.content_identity,
                         title=excluded.title, operation=excluded.operation, state=excluded.state,
@@ -129,7 +131,8 @@ class AcquisitionStore:
                          backend=excluded.backend, destination=excluded.destination,
                          completion_path=excluded.completion_path, download_rate=excluded.download_rate,
                          upload_rate=excluded.upload_rate, eta_seconds=excluded.eta_seconds,
-                         provider_state=excluded.provider_state, ownership_label=excluded.ownership_label,
+                           provider_state=excluded.provider_state, ownership_label=excluded.ownership_label,
+                           origin=excluded.origin,
                           deletion_policy=excluded.deletion_policy, artifact_files_json=excluded.artifact_files_json,
                           seeding=excluded.seeding, retired=excluded.retired,
                           pause_supported=excluded.pause_supported""",
@@ -190,7 +193,7 @@ class AcquisitionStore:
             job.created_at, job.started_at, job.updated_at, job.completed_at, job.attempt,
             job.parent_job_id, job.recovery_reason, job.backend, job.destination,
             job.completion_path, job.download_rate, job.upload_rate, job.eta_seconds,
-            job.provider_state, job.ownership_label, job.deletion_policy,
+             job.provider_state, job.ownership_label, job.origin, job.deletion_policy,
             json.dumps(list(job.artifact_files), sort_keys=True), int(job.seeding), int(job.retired),
             int(job.pause_supported),
         )
@@ -202,9 +205,18 @@ class AcquisitionStore:
             str(error_value["code"]), str(error_value["message"]),
             bool(error_value.get("retryable", False)), error_value.get("details"),
         )
+        content_identity = str(row["content_identity"])
+        origin = str(row["origin"] or "mudos")
+        deletion_policy = str(row["deletion_policy"] or "preserve-partial")
+        # Repair rows written by the first external-discovery migration, whose
+        # origin/deletion_policy columns were temporarily reversed.
+        if origin == "preserve-partial" and deletion_policy in {"external", "questarr", "mudos"}:
+            origin, deletion_policy = deletion_policy, "preserve-partial"
+        if origin not in {"mudos", "questarr", "external"}:
+            origin = "external" if content_identity.startswith("nzbget:external:") else "mudos"
         return DownloadJob(
             job_id=str(row["job_id"]), provider=str(row["provider"]),
-            content_identity=str(row["content_identity"]), title=str(row["title"]),
+            content_identity=content_identity, title=str(row["title"]),
             operation=JobOperation(str(row["operation"])), state=JobState(str(row["state"])),
             progress=row["progress"], downloaded_bytes=row["downloaded_bytes"],
             total_bytes=row["total_bytes"], stage=str(row["stage"]), error=error,
@@ -216,7 +228,8 @@ class AcquisitionStore:
             backend=row["backend"], destination=row["destination"], completion_path=row["completion_path"],
             download_rate=row["download_rate"], upload_rate=row["upload_rate"], eta_seconds=row["eta_seconds"],
             provider_state=row["provider_state"], ownership_label=row["ownership_label"],
-            deletion_policy=row["deletion_policy"] or "preserve-partial",
+            origin=origin,
+            deletion_policy=deletion_policy,
             artifact_files=tuple(json.loads(row["artifact_files_json"] or "[]")),
             seeding=bool(row["seeding"]),
             retired=bool(row["retired"]),

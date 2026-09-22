@@ -1,0 +1,83 @@
+version: 1
+kind: DeviceProfile
+name: Lulu OSK
+description: Exclusive keyboard actions for the Mudos managed keyboard
+mapping:
+  - name: D-pad up
+    source_event:
+      gamepad:
+        button: DPadUp
+    target_events:
+      - keyboard: KeyUp
+  - name: D-pad down
+    source_event:
+      gamepad:
+        button: DPadDown
+    target_events:
+      - keyboard: KeyDown
+  - name: D-pad left
+    source_event:
+      gamepad:
+        button: DPadLeft
+    target_events:
+      - keyboard: KeyLeft
+  - name: D-pad right
+    source_event:
+      gamepad:
+        button: DPadRight
+    target_events:
+      - keyboard: KeyRight
+  - name: A primary activation
+    source_event:
+      gamepad:
+        button: South
+    target_events:
+      - keyboard: KeyEnter
+  - name: B cancel
+    source_event:
+      gamepad:
+        button: East
+    target_events:
+      - keyboard: KeyEsc
+  - name: X context
+    source_event:
+      gamepad:
+        button: West
+    target_events:
+      - keyboard: KeyBackspace
+  - name: Y option
+    source_event:
+      gamepad:
+        button: North
+    target_events:
+      - keyboard: KeyX
+  - name: Menu enter
+    source_event:
+      gamepad:
+        button: Start
+    target_events:
+      - keyboard: KeyEnter
+  - name: View tab
+    source_event:
+      gamepad:
+        button: Select
+    target_events:
+      - keyboard: KeyTab
+  - name: Left bumper
+    source_event:
+      gamepad:
+        button: LeftBumper
+    target_events:
+      - keyboard: KeyPageUp
+  - name: Right bumper
+    source_event:
+      gamepad:
+        button: RightBumper
+    target_events:
+      - keyboard: KeyPageDown
+  - name: Guide
+    source_event:
+      gamepad:
+        button: Guide
+    target_events:
+      - keyboard: KeyEsc

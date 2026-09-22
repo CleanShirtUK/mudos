@@ -177,7 +177,58 @@ class InputPlumberClient:
                     )
                 )
             )
-        return {path: self.composite_status(path) for path in paths}
+        composites = {path: self.composite_status(path) for path in paths}
+        if composites:
+            return composites
+        # The shell has a direct SDL navigation path and can therefore remain
+        # usable while an InputPlumber composite is absent (for example when
+        # an installed device profile is stale). Expose a capability-verified
+        # source as a provisional logical gamepad so inventory, assignment,
+        # and providers do not collapse to an empty list.
+        source = self._source_gamepad_path()
+        if source:
+            return {
+                "/org/shadowblip/InputPlumber/CompositeDevice0":
+                    (f"source:{source.rsplit('/', 1)[-1]}", (source,))
+            }
+        return {}
+
+    def _source_gamepad_path(self, *, execute: bool = True) -> str | None:
+        """Find a live joystick source with standard gamepad capabilities."""
+        if not execute:
+            return None
+        tree = subprocess.run(
+            [self.busctl, "tree", "org.shadowblip.InputPlumber"],
+            check=True, capture_output=True, text=True,
+        ).stdout
+        sources = sorted(set(re.findall(
+            r"(/org/shadowblip/InputPlumber/devices/source/event\d+)", tree
+        )))
+        for source in sources:
+            device_class = subprocess.run(
+                [self.busctl, "get-property", "org.shadowblip.InputPlumber", source,
+                 "org.shadowblip.Input.Source.EventDevice", "DeviceClass"],
+                check=True, capture_output=True, text=True,
+            ).stdout
+            if '"joystick"' not in device_class:
+                continue
+            axes = subprocess.run(
+                [self.busctl, "get-property", "org.shadowblip.InputPlumber", source,
+                 "org.shadowblip.Input.Source.EventDevice", "SupportedAbsoluteAxes"],
+                check=False, capture_output=True, text=True,
+            ).stdout
+            if re.search(r"\baq\s+[1-9]", axes):
+                phys = subprocess.run(
+                    [self.busctl, "get-property", "org.shadowblip.InputPlumber", source,
+                     "org.shadowblip.Input.Source.EventDevice", "PhysPath"],
+                    check=False, capture_output=True, text=True,
+                ).stdout
+                # Virtual OSK/navigation devices also advertise joystick
+                # capabilities. They are not physical gameplay controllers
+                # and must not populate the provisional inventory.
+                if 's ""' not in phys and 'virtual/' not in phys:
+                    return source
+        return None
 
     def gamepad_order(self, *, execute: bool = True) -> tuple[str, ...]:
         """Return InputPlumber's current ordered composite handles."""
@@ -215,7 +266,15 @@ class InputPlumberClient:
         if not execute:
             return []
         slots: list[tuple[str, str, int]] = []
-        for runtime_path in self.gamepad_order():
+        runtime_paths = self.gamepad_order()
+        if not runtime_paths:
+            statuses = self.runtime_composite_statuses()
+            return [
+                (runtime_path, persistent_id, index)
+                for index, (runtime_path, (persistent_id, source_paths)) in enumerate(statuses.items())
+                if source_paths
+            ]
+        for runtime_path in runtime_paths:
             persistent_id, source_paths = self.composite_status(runtime_path)
             if not source_paths:
                 continue

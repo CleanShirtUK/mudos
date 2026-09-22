@@ -88,6 +88,17 @@ class MudosOskBridgeTests(unittest.TestCase):
         self.assertIn("awaiting_show_until", source)
         self.assertIn("await set_intercept_mode(bus, self.composite_path, 2)", source)
 
+    def test_osk_uses_exclusive_dbus_profile_and_restores_previous_profile(self):
+        source = (ROOT / "scripts/mudos-osk-bridge").read_text()
+        profile = (ROOT / "config/inputplumber/profiles/osk.yaml").read_text()
+        self.assertIn("LoadProfilePath", source)
+        self.assertIn("get_profile_path", source)
+        self.assertIn("self.profile_path", source)
+        self.assertIn("load_profile_path(bus, self.composite_path, self.profile_path)", source)
+        self.assertIn("keyboard: KeyUp", profile)
+        self.assertIn("keyboard: KeyEnter", profile)
+        self.assertNotIn("dbus:", profile)
+
     def test_composite_is_discovered_from_gamepad_order_not_fixed_index(self):
         source = (ROOT / "scripts/mudos-osk-bridge").read_text()
         self.assertIn('member="Get", signature="ss"', source)
@@ -116,9 +127,12 @@ class MudosOskBridgeTests(unittest.TestCase):
 
             async def call(self, message):
                 self.calls.append(message)
-                if message.member == "Get":
+                if message.member == "Get" and message.body[1] == "GamepadOrder":
                     return SimpleNamespace(message_type=SimpleNamespace(name="METHOD_RETURN"),
                                            body=[SimpleNamespace(value=self.order)])
+                if message.member == "Get" and message.body[1] == "ProfilePath":
+                    return SimpleNamespace(message_type=SimpleNamespace(name="METHOD_RETURN"),
+                                           body=[SimpleNamespace(value="/old/profile.yaml")])
                 return SimpleNamespace(message_type=SimpleNamespace(name="METHOD_RETURN"), body=[])
 
         mapper = object.__new__(self.bridge.Bridge)

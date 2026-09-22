@@ -1,16 +1,16 @@
 # Emulator Controller Provisioning
 
-Mudos provisions native emulator profiles for the InputPlumber virtual Xbox
-controller before launching local games. The physical controller is not
+Mudos provisions native emulator profiles for the current InputPlumber/SDL
+standard gamepad before launching local games. The physical controller is not
 referenced by event number, and emulator process/lifecycle ownership is
 unchanged.
 
 ## Input Contract
 
-InputPlumber presents the composite target as `Microsoft Xbox 360 Controller`.
-The current game profile exposes one player-facing gamepad target. Emulator
-profiles therefore use the emulator's SDL gamepad abstraction rather than
-`/dev/input/eventN` paths.
+InputPlumber exposes one or more player-facing standard gamepad targets.
+Mudos reads the live SDL index, GUID, and name immediately before launch;
+provider profiles therefore never identify a controller by model, VID/PID, or
+`/dev/input/eventN` path. Different players may have different SDL identities.
 
 ## PCSX2
 
@@ -30,14 +30,16 @@ The profile is written to the service user's
 ## Dolphin
 
 Dolphin's native GameCube profile is `Config/GCPadNew.ini`. The first profile
-selects `SDL/0/Xbox 360 Controller` and uses Dolphin's SDL semantic controls
+selects the current `SDL/<index>/<name>` identity and uses Dolphin's SDL semantic controls
 for face buttons, shoulders, sticks, triggers, d-pad, and Start. The Nintendo
 face-button convention is shared with Eden: A/B and X/Y are translated from
-the Xbox-style virtual target.
+the normalized logical controls.
 
 The profile is written below the `--user` root at
 `~/.config/lulu/providers/dolphin/config/Config/GCPadNew.ini` and preserves
-other controller slots and unrelated settings.
+other controller slots and unrelated settings. The Nintendo face-button
+translation is renderer policy over SDL logical controls, not a physical
+controller identity rule.
 
 For the Wii validation path, Dolphin's GameCube Port 1 is explicitly set to a
 standard GameCube controller with `SIDevice0 = 6`. Wii Remote 1 is emulated

@@ -11,6 +11,11 @@ consoled_dropin="$dropin_root/lulu-consoled.service.d/dev-runtime.conf"
 acquisition_dropin="$dropin_root/lulu-acquisition.service.d/dev-runtime.conf"
 acquisition_unit="$dropin_root/lulu-acquisition.service"
 osk_unit="$dropin_root/lulu-osk@.service"
+questarr_reconcile_unit="$dropin_root/lulu-questarr-reconcile.service"
+inputplumber_hotplug_unit="$dropin_root/lulu-inputplumber-hotplug.service"
+transmission_config_unit="$dropin_root/lulu-transmission-config.service"
+sunshine_user_config=/home/lulu/.config/sunshine
+sunshine_user_units=/home/lulu/.config/systemd/user
 
 if [ "$(hostname)" != lulu ] || [ "$(CDPATH= cd -- "$repo_root" && pwd)" != "$repo_root" ]; then
     echo "dev runtime must be refreshed on canonical Lulu from $repo_root" >&2
@@ -41,12 +46,54 @@ refresh() {
     install -m 0644 "$staging/packaging/lulu-acquisition.service" "$acquisition_unit"
     sed "s#/opt/lulu/current#/opt/lulu/dev-current#g" \
         "$staging/packaging/lulu-osk@.service" > "$osk_unit"
+    sed "s#/opt/lulu/current#/opt/lulu/dev-current#g" \
+        "$staging/packaging/lulu-questarr-reconcile.service" > "$questarr_reconcile_unit"
     install -m 0644 "$staging/packaging/udev/80-lulu-osk.rules" \
         /etc/udev/rules.d/80-lulu-osk.rules
+    install -m 0644 "$staging/packaging/udev/81-lulu-gamepad-hotplug.rules" \
+        /etc/udev/rules.d/81-lulu-gamepad-hotplug.rules
+    install -m 0644 "$staging/packaging/lulu-inputplumber-hotplug.service" \
+        "$inputplumber_hotplug_unit"
+    install -m 0644 "$staging/packaging/lulu-transmission-config.service" \
+        "$transmission_config_unit"
+    chmod +x "$staging/scripts/provision-appliance-services.sh" \
+        "$staging/scripts/provision-acquisition-services.sh" \
+        "$staging/scripts/provision-nzbget.sh" "$staging/scripts/provision-transmission.sh" \
+        "$staging/scripts/configure-acquisition-firewall.sh"
+    LULU_SOURCE_ROOT="$repo_root" LULU_SECRET_HELPER_ROOT="$staging" \
+        LULU_PROVIDER_CONFIG_USER=lulu LULU_INSTALL_ROOT="$staging" \
+        LULU_SERVICE_ROOT="$runtime" "$staging/scripts/provision-appliance-services.sh"
+    "$staging/scripts/configure-acquisition-firewall.sh"
+    install -D -m 0644 "$staging/packaging/sunshine-dev.conf" \
+        "$sunshine_user_config/sunshine.conf"
+    install -D -m 0644 "$staging/packaging/sunshine-dev-apps.json" \
+        "$sunshine_user_config/apps.json"
+    chmod +x "$staging/scripts/configure-dev-sunshine-firewall.sh"
+    "$staging/scripts/configure-dev-sunshine-firewall.sh"
+    install -D -m 0644 "$staging/packaging/lulu-sunshine-dev.service" \
+        "$sunshine_user_units/lulu-sunshine-dev.service"
+    mkdir -p "$sunshine_user_units/default.target.wants"
+    chown -R lulu:lulu /home/lulu/.config/sunshine "$sunshine_user_units/lulu-sunshine-dev.service"
     install -D -m 0644 "$staging/packaging/polkit-1/rules.d/49-lulu-network.rules" \
         /etc/polkit-1/rules.d/49-lulu-network.rules
     install -D -m 0644 "$staging/packaging/polkit-1/rules.d/50-lulu-storage.rules" \
         /etc/polkit-1/rules.d/50-lulu-storage.rules
+    install -D -m 0644 "$staging/packaging/polkit-1/rules.d/51-lulu-nzbget.rules" \
+        /etc/polkit-1/rules.d/51-lulu-nzbget.rules
+    install -D -m 0644 "$staging/packaging/polkit-1/rules.d/52-lulu-acquisition.rules" \
+        /etc/polkit-1/rules.d/52-lulu-acquisition.rules
+    install -D -m 0644 "$staging/packaging/polkit-1/rules.d/53-lulu-questarr-reconcile.rules" \
+        /etc/polkit-1/rules.d/53-lulu-questarr-reconcile.rules
+    install -D -m 0644 "$staging/packaging/polkit-1/rules.d/54-lulu-transmission.rules" \
+        /etc/polkit-1/rules.d/54-lulu-transmission.rules
+    install -D -m 0644 "$staging/packaging/polkit-1/rules.d/55-lulu-transmission-config.rules" \
+        /etc/polkit-1/rules.d/55-lulu-transmission-config.rules
+    systemctl reload polkit.service 2>/dev/null || true
+    # InputPlumber consumes system device definitions, not the mutable runtime
+    # tree. Install the repo-owned generic policy on every refresh so an old
+    # receiver-specific file cannot survive a development deployment.
+    "$staging/scripts/provision-inputplumber-gamepads.py" \
+        /etc/inputplumber/devices.d/lulu-composite.yaml
     udevadm control --reload-rules
     dirty=false
     [ -n "$status" ] && dirty=true
@@ -86,7 +133,24 @@ EOF
 Environment=PYTHONPATH=$runtime/lib
 EOF
     systemctl daemon-reload
+    systemctl enable lulu-questarr-reconcile.service >/dev/null
+    systemctl restart lulu-admin.service
+    sudo -u lulu XDG_RUNTIME_DIR=/run/user/958 \
+        DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/958/bus \
+        systemctl --user daemon-reload
+    # KMS capture and Gamescope share the physical connector, but Gamescope
+    # must acquire DRM master first.  A refresh restarts the presentation
+    # session, so release Sunshine before that restart and bring it back only
+    # after Gamescope has been launched.
+    sudo -u lulu XDG_RUNTIME_DIR=/run/user/958 \
+        DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/958/bus \
+        systemctl --user stop lulu-sunshine-dev.service || true
+    systemctl restart inputplumber.service
     systemctl restart lulu-acquisition.service lulu-consoled.service lulu-session@2.service
+    sudo -u lulu XDG_RUNTIME_DIR=/run/user/958 \
+        DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/958/bus \
+        systemctl --user enable --now lulu-sunshine-dev.service
+    systemctl start lulu-questarr-reconcile.service
     logger -t lulu-runtime "event=refresh-complete target=$runtime head=$head" 2>/dev/null || true
     echo "refreshed non-promotable dev runtime: $runtime"
 }

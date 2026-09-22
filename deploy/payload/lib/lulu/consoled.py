@@ -1,6 +1,7 @@
 """Unified game catalogue and game/content intent boundary."""
 
 import asyncio
+import ast
 from dataclasses import replace
 import logging
 import os
@@ -14,6 +15,7 @@ import shlex
 import json
 import time
 import threading
+import ctypes
 from collections import deque
 
 from dbus_next import BusType, Variant, DBusError
@@ -40,9 +42,10 @@ from .plugins.steam.entitlements import SteamEntitlementSource
 from .system_settings import CATEGORIES as SYSTEM_CATEGORIES, SystemSettingsProvider
 from .paths import PATHS
 from .platforms import load_platforms
-from .providers import NativeConfigAdapter, load_base_guide, load_mudos_guide, load_providers
+from .providers import GuideAction, NativeConfigAdapter, load_base_guide, load_mudos_guide, load_providers
 from .plugins import PluginRegistry
 from .credential import CredentialBroker, CredentialInput, CredentialStatus, SecretStore
+from .web_credentials import WebCredentialStore
 
 
 DESCRIPTOR = ServiceDescriptor(
@@ -566,7 +569,7 @@ def _keyboard_boundary(action: str) -> bool:
             import socket
             with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
                 client.settimeout(1.0)
-                client.connect(socket_path)
+                client.connect(str(socket_path))
                 client.sendall(b"status\n")
                 reply = client.recv(64).decode().strip()
             if reply.startswith("ok "):
@@ -583,9 +586,25 @@ def _keyboard_boundary(action: str) -> bool:
 
 
 def _mudos_provider_device_indices() -> dict[int, int]:
-    """Resolve logical players to current InputPlumber gamepad target indices."""
-    client = InputPlumberClient("/org/shadowblip/InputPlumber/CompositeDevice0", {})
-    slots = client.runtime_gamepad_slots()
+    """Resolve logical players to current SDL gamepad indices.
+
+    Providers consume the normalized Mudos controller model.  InputPlumber is
+    deliberately not part of this contract: a controller may be backed by a
+    real composite or by the capability-verified recovery source.
+    """
+    controllers = _mudos_provider_controller_identities()
+    result = {
+        player: int(controller["sdl_index"])
+        for player, controller in controllers.items()
+        if isinstance(controller.get("sdl_index"), int)
+    }
+    if result:
+        return result
+    raise RuntimeError("Mudos has no assigned SDL gamepad controllers")
+
+
+def _mudos_controller_state() -> dict[int, dict[str, object]]:
+    """Return connected, assigned normalized controllers keyed by player."""
     state = subprocess.run(
         [
             "busctl",
@@ -600,18 +619,69 @@ def _mudos_provider_device_indices() -> dict[int, int]:
         capture_output=True,
         text=True,
     ).stdout
-    state_json = json.loads(state.removeprefix("s ").strip())
-    if isinstance(state_json, str):
-        state_json = json.loads(state_json)
+    # busctl prints a D-Bus string using C-style quoting, not JSON quoting.
+    # JSON embedded in that string can contain apostrophes and escaped quotes.
+    state_json = _parse_busctl_json_string(state)
     assignments = state_json.get("controller", {}).get("controllers", {})
-    result: dict[int, int] = {}
-    for runtime_path, _persistent_id, target_index in slots:
-        player = assignments.get(runtime_path, {}).get("player")
-        if isinstance(player, int) and player in range(1, 5):
-            result[player] = target_index
-    if not result:
-        raise RuntimeError("Mudos has no assigned InputPlumber gamepad slots")
+    result: dict[int, dict[str, object]] = {}
+    if isinstance(assignments, dict):
+        for controller in assignments.values():
+            if not isinstance(controller, dict) or not controller.get("connected"):
+                continue
+            player = controller.get("player")
+            if isinstance(player, int) and player in range(1, 5):
+                result[player] = dict(controller)
     return result
+
+
+def _mudos_provider_controller_identities() -> dict[int, dict[str, object]]:
+    """Return live SDL identity for each assigned logical player."""
+    result = _mudos_controller_state()
+    # SDL is the provider boundary.  Read its current list at launch time so
+    # a replacement device cannot inherit the previous device's GUID/name.
+    try:
+        library = ctypes.CDLL("libSDL3.so")
+        library.SDL_Init.argtypes = [ctypes.c_uint32]
+        library.SDL_Init.restype = ctypes.c_bool
+        library.SDL_GetGamepads.argtypes = [ctypes.POINTER(ctypes.c_int)]
+        library.SDL_GetGamepads.restype = ctypes.POINTER(ctypes.c_uint32)
+        library.SDL_GetGamepadNameForID.argtypes = [ctypes.c_uint32]
+        library.SDL_GetGamepadNameForID.restype = ctypes.c_char_p
+        class SDLGuid(ctypes.Structure):
+            _fields_ = [("data", ctypes.c_ubyte * 16)]
+        library.SDL_GetGamepadGUIDForID.argtypes = [ctypes.c_uint32]
+        library.SDL_GetGamepadGUIDForID.restype = SDLGuid
+        library.SDL_GUIDToString.argtypes = [SDLGuid, ctypes.c_char_p, ctypes.c_int]
+        if library.SDL_Init(0x2000):
+            count = ctypes.c_int()
+            ids = library.SDL_GetGamepads(ctypes.byref(count))
+            for index in range(count.value):
+                instance = ids[index]
+                guid = ctypes.create_string_buffer(33)
+                library.SDL_GUIDToString(library.SDL_GetGamepadGUIDForID(instance), guid, 33)
+                # Match the normalized assignment to the current SDL list.
+                # The live index is the only provider-facing device identity.
+                for player, controller in result.items():
+                    if controller.get("sdl_index") in (None, index):
+                        result[player] = {
+                            **controller,
+                            "sdl_index": index,
+                            "sdl_guid": guid.value.decode("ascii"),
+                            "sdl_name": (library.SDL_GetGamepadNameForID(instance) or b"").decode(),
+                        }
+            library.SDL_Quit()
+    except (OSError, AttributeError, RuntimeError):
+        LOGGER.warning("SDL inventory unavailable; provider launch will report missing live identity")
+    return result
+
+
+def _parse_busctl_json_string(output: str) -> dict[str, object]:
+    """Decode the JSON string returned by ``busctl call ... GetState``."""
+    value = ast.literal_eval(output.removeprefix("s ").strip())
+    decoded = json.loads(value if isinstance(value, str) else value)
+    if not isinstance(decoded, dict):
+        raise ValueError("ConsoleSessiond state is not an object")
+    return decoded
 
 
 def _retroarch_child_config(device_indices: dict[int, int]) -> str:
@@ -657,6 +727,7 @@ class ConsoleInterface(ServiceInterface):
         self.display_manager = display_manager or DisplayManagerAdapter()
         self.credentials = credentials or CredentialBroker()
         self.secrets = SecretStore()
+        self.web_credentials = WebCredentialStore(self.secrets)
         self._local_process: asyncio.subprocess.Process | None = None
         self._local_token: str | None = None
         self._refresh_task: asyncio.Task[list[dict[str, object]]] | None = None
@@ -683,6 +754,8 @@ class ConsoleInterface(ServiceInterface):
             return None
 
     def _guide_context(self, state: dict[str, object]) -> tuple[str, object | None]:
+        if str(state.get("delegated_surface", "")) == "browser":
+            return "browser", None
         lifecycle = str(state.get("lifecycle", "shell"))
         if lifecycle == "shell":
             return "shell", None
@@ -715,6 +788,8 @@ class ConsoleInterface(ServiceInterface):
         provider_actions = self._providers.guide_actions(provider.provider_id, context) if provider is not None else ()
         # Provider actions lead, including Quit; Mudos-owned actions follow.
         actions = list(provider_actions)
+        if context == "browser":
+            actions.append(GuideAction("browser-quit", "Quit", "quit", "browser:quit", ("browser",), False, 1))
         actions.extend(action for action in self._base_guide if context in action.contexts)
         actions.extend(action for action in self._mudos_guide if context in action.contexts)
         return json.dumps([{
@@ -725,6 +800,12 @@ class ConsoleInterface(ServiceInterface):
     @method()
     async def ExecuteGuideAction(self, action_id: "s") -> "s":
         """Execute system-owned Guide actions; return provider targets to the helper."""
+        if action_id == "browser-quit":
+            state = json.loads(await self.sessiond.call_get_state())
+            if str(state.get("delegated_surface", "")) != "browser":
+                raise ValueError("browser is not active")
+            await self.sessiond.call_set_delegated_surface("")
+            return "executed"
         action = next((item for item in self._base_guide if item.action_id == action_id), None)
         if action is None:
             action = next((item for item in self._mudos_guide if item.action_id == action_id), None)
@@ -739,6 +820,8 @@ class ConsoleInterface(ServiceInterface):
                 await self.sessiond.call_shutdown()
             elif action.target == "mudos:downloads":
                 await self.sessiond.call_request_mudos_downloads()
+            elif action.target == "browser:quit":
+                await self.sessiond.call_set_delegated_surface("")
             else:
                 raise ValueError(f"unsupported base Guide target: {action.target}")
             return "executed"
@@ -1191,27 +1274,53 @@ class ConsoleInterface(ServiceInterface):
 
     @method()
     async def BeginCredentialRequest(self, title: "s", prompt: "s", input_type: "s",
-                                     secret: "b", min_length: "u", max_length: "u") -> "s":
+                                     secret: "b", min_length: "u", max_length: "u",
+                                     multiline: "b") -> "s":
         try:
             request = await self.credentials.request(title, prompt, CredentialInput(input_type),
                                                      secret=secret, min_length=min_length,
-                                                     max_length=max_length)
+                                                      max_length=max_length, multiline=multiline)
             return json.dumps(request.public_state(), separators=(",", ":"))
         except (RuntimeError, ValueError) as error:
             raise DBusError("org.lulu.Console.Error.CredentialUnavailable", str(error)) from error
 
     @method()
+    def GetWebCredential(self, profile_id: "s", origin: "s") -> "s":
+        try:
+            return json.dumps(self.web_credentials.get(profile_id, origin), separators=(",", ":"))
+        except ValueError as error:
+            raise DBusError("org.lulu.Console.Error.WebCredentialUnavailable", str(error)) from error
+
+    @method()
+    def SaveWebCredential(self, profile_id: "s", origin: "s", username: "s", password: "s") -> "s":
+        try:
+            return json.dumps(self.web_credentials.save(profile_id, origin, username, password), separators=(",", ":"))
+        except ValueError as error:
+            raise DBusError("org.lulu.Console.Error.WebCredentialUnavailable", str(error)) from error
+
+    @method()
+    def ClearWebCredential(self, profile_id: "s", origin: "s") -> "s":
+        try:
+            return json.dumps(self.web_credentials.clear(profile_id, origin), separators=(",", ":"))
+        except ValueError as error:
+            raise DBusError("org.lulu.Console.Error.WebCredentialUnavailable", str(error)) from error
+
+    @method()
     async def BeginOwnedCredentialRequest(self, title: "s", prompt: "s", input_type: "s",
                                           secret: "b", min_length: "u", max_length: "u",
-                                          owner_id: "s", owner_json: "s") -> "s":
+                                          owner_id: "s", owner_json: "s",
+                                          choices_json: "s", multiline: "b") -> "s":
         try:
             owner = json.loads(owner_json) if owner_json else {}
             if not isinstance(owner, dict):
                 raise ValueError("credential owner metadata must be an object")
+            choices = json.loads(choices_json) if choices_json else []
+            if not isinstance(choices, list) or not all(isinstance(item, str) for item in choices):
+                raise ValueError("credential choices must be a string list")
             request = await self.credentials.request(
                 title, prompt, CredentialInput(input_type), secret=secret,
                 min_length=min_length, max_length=max_length, owner_id=owner_id,
-                owner=owner,
+                owner=owner, choices=tuple(choices), multiline=multiline,
             )
             return json.dumps(request.public_state(), separators=(",", ":"))
         except (RuntimeError, ValueError, TypeError) as error:
@@ -1357,7 +1466,13 @@ class ConsoleInterface(ServiceInterface):
             device_indices = None
             if game.platform == "switch":
                 device_indices = await asyncio.to_thread(_mudos_provider_device_indices)
-            intent = self.local_runtime.launch_intent(game, device_indices=device_indices)
+            controller_identities = None
+            if game.platform in {"switch", "ps2", "wii", "nes", "genesis"}:
+                controller_identities = await asyncio.to_thread(_mudos_provider_controller_identities)
+            intent = self.local_runtime.launch_intent(
+                game, device_indices=device_indices,
+                controller_identities=controller_identities,
+            )
             command = [intent.executable, *intent.arguments]
             is_pcsx2 = intent.provider == "pcsx2"
             if is_pcsx2:
@@ -1375,6 +1490,7 @@ class ConsoleInterface(ServiceInterface):
                     device_indices,
                     PATHS.provider_config_root(controller_provider)
                     if controller_provider == "dolphin" else None,
+                    controller_identities,
                 )
                 LOGGER.info(
                     "local runtime controller profile provider=%s path=%s",

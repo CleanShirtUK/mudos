@@ -101,6 +101,14 @@ class ProvisioningTests(unittest.TestCase):
         self.assertNotIn("+open steam://open/minigameslist", bootstrap)
         self.assertIn("Restart=always", (PAYLOAD / "packaging/lulu-session@.service").read_text())
 
+    def test_dev_refresh_releases_kms_capture_before_restarting_presentation(self) -> None:
+        script = (ROOT / "scripts/dev-runtime.sh").read_text()
+        stop = script.index("systemctl --user stop lulu-sunshine-dev.service")
+        restart = script.index("systemctl restart lulu-acquisition.service lulu-consoled.service lulu-session@2.service")
+        start = script.index("systemctl --user enable --now lulu-sunshine-dev.service")
+        self.assertLess(stop, restart)
+        self.assertLess(restart, start)
+
     def test_logind_policy_reserves_console_session_vt(self) -> None:
         policy = (ROOT / "packaging/logind.conf.d/lulu.conf").read_text()
         self.assertIn("[Login]", policy)

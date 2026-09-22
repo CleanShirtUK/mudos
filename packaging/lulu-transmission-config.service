@@ -1,0 +1,7 @@
+[Unit]
+Description=Grant Mudos Admin narrow access to Transmission settings
+
+[Service]
+Type=oneshot
+User=root
+ExecStart=/usr/bin/setfacl -m u:lulu:rw,m:rw /var/lib/lulu-transmission/settings.json

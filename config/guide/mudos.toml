@@ -5,5 +5,5 @@ id = "open-downloads"
 label = "Open Downloads"
 role = "system"
 target = "mudos:downloads"
-contexts = ["shell", "game", "standalone", "store", "downloads", "install"]
+contexts = ["shell", "game", "standalone", "store", "downloads", "install", "browser"]
 order = 10

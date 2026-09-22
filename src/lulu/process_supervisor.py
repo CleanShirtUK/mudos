@@ -6,6 +6,7 @@ import logging
 import os
 import signal
 import subprocess
+from pathlib import Path
 from typing import Awaitable, Callable
 from uuid import uuid4
 
@@ -68,6 +69,18 @@ class ProcessSupervisor:
         self._logger = logging.getLogger("lulu.process-supervisor")
         self._presentation_watchdog = 10.0
         self._active_launch_task: asyncio.Task[object] | None = None
+        self._delegated_launch_environment: dict[str, str] = {}
+
+    def set_delegated_launch_environment(self, values: dict[str, str]) -> None:
+        """Install the explicit graphical-session handoff for the next child."""
+        allowed = {
+            "DISPLAY", "WAYLAND_DISPLAY", "XDG_RUNTIME_DIR", "XDG_SESSION_TYPE",
+            "DBUS_SESSION_BUS_ADDRESS", "XAUTHORITY", "HOME", "USER", "SDL_VIDEODRIVER",
+        }
+        self._delegated_launch_environment = {
+            key: value for key, value in values.items()
+            if key in allowed and isinstance(value, str) and value
+        }
 
     async def _drain_output(
         self, stream: asyncio.StreamReader, role: str, pid: int, channel: str
@@ -109,6 +122,7 @@ class ProcessSupervisor:
         command: list[str],
         startup_timeout_ms: int,
         *,
+        primary_id: str | None = None,
         presentation: Presentation = Presentation.GAME,
         input_mode: InputMode = InputMode.GAME,
         presentation_controller: GamescopePresentation | None = None,
@@ -122,7 +136,7 @@ class ProcessSupervisor:
         async with self._launch_lock:
             if self.active_identity is not None or self.model.state.lifecycle.value != "shell":
                 raise ValueError("another launch owns the session")
-            token = self.model.request_launch(command[0])
+            token = self.model.request_launch(primary_id or command[0])
             await self._notify()
             self._active_launch_task = asyncio.current_task()
             try:
@@ -132,6 +146,7 @@ class ProcessSupervisor:
                         stdin=asyncio.subprocess.DEVNULL,
                         stdout=asyncio.subprocess.PIPE,
                         stderr=asyncio.subprocess.PIPE,
+                        env={**os.environ, **self._delegated_launch_environment},
                         start_new_session=True,
                     ),
                     timeout=startup_timeout_ms / 1000,
@@ -174,6 +189,14 @@ class ProcessSupervisor:
                 raise
             except (OSError, asyncio.TimeoutError, TimeoutError) as error:
                 reason = f"launch failed: {error}"
+                if "process" in locals():
+                    try:
+                        await self._terminate_group(os.getpgid(process.pid))
+                    except ProcessLookupError:
+                        pass
+                self.active_identity = None
+                self._process = None
+                self._process_output_tasks = []
                 self.model.fail(token, reason)
                 self.model.record_result(
                     ProcessResult(
@@ -290,6 +313,26 @@ class ProcessSupervisor:
         exit_code = await process.wait()
         await self._finish_output(self._process_output_tasks, "game", process.pid, exit_code)
         self._process_output_tasks = []
+        # A bootstrapper may hand the UI to a replacement child in the same
+        # owned process group.  The original PID is not the transaction
+        # boundary: keep delegation alive until the group is empty and make
+        # the replacement surface current when it appears.
+        while True:
+            members = self._process_group_members(identity.pgid)
+            members.discard(os.getpid())
+            if not members:
+                break
+            if self._presentation is not None:
+                try:
+                    await asyncio.to_thread(self._presentation.select_pids, sorted(members), self._presentation_watchdog)
+                except (OSError, TimeoutError) as error:
+                    # A replacement may be between windows, or may only be a
+                    # non-presenting helper.  Ownership remains group-based;
+                    # do not terminate the transaction merely because there
+                    # is temporarily no focusable XWayland surface.
+                    self._logger.debug("replacement surface not ready pgid=%s members=%s error=%s",
+                                       identity.pgid, sorted(members), error)
+            await asyncio.sleep(0.1)
         await self._terminate_group(identity.pgid)
         result = ProcessResult(
             token=identity.token,
@@ -303,6 +346,8 @@ class ProcessSupervisor:
             error=None if exit_code == 0 else f"process exited with status {exit_code}",
         )
         self.model.primary_exited(identity.token, success=exit_code == 0)
+        self.model.state.delegated_surface = None
+        self.model.state.controller_mode = None
         self.model.record_result(result)
         self.model.return_complete(identity.token)
         self.active_identity = None
@@ -311,6 +356,20 @@ class ProcessSupervisor:
             self._presentation.select_shell(self._shell_process.pid)
         self._set_input_mode(InputMode.SHELL)
         await self._notify()
+
+    @staticmethod
+    def _process_group_members(pgid: int) -> set[int]:
+        members: set[int] = set()
+        for entry in os.scandir("/proc"):
+            if not entry.name.isdigit():
+                continue
+            try:
+                fields = Path(entry.path, "stat").read_text().split()
+                if len(fields) > 4 and fields[2] != "Z" and int(fields[4]) == pgid:
+                    members.add(int(entry.name))
+            except (OSError, ValueError):
+                continue
+        return members
 
     async def cancel_launch(self) -> None:
         task = self._active_launch_task or self._steam_launch_task
@@ -478,6 +537,14 @@ class ProcessSupervisor:
         return uri
 
     async def quit_delegated(self) -> None:
+        if str(self.model.state.primary_id or "").startswith("provider:lutris:install:"):
+            if self.model.state.lifecycle.value != "game" or self.active_identity is None:
+                raise ValueError("Lutris delegated surface is not active")
+            identity = self.active_identity
+            await self._terminate_group(identity.pgid)
+            if self._watch_task is not None:
+                await self._watch_task
+            return
         if self.model.state.primary_id not in ("steam-store",) and not str(self.model.state.primary_id or "").startswith("steam-install:"):
             raise ValueError("Steam delegated surface is not active")
         if self.model.state.lifecycle.value != "game":
