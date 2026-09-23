@@ -13,12 +13,13 @@ Window {
     Typography { id: typography }
 
     Rectangle {
-        x: width - 676
+        x: root.width - width - 56
         y: 54
         width: 620
         height: 132
         radius: 12
         visible: notificationModel.visible
+        opacity: 1
         color: luluPalette.overlaySurface
         border.color: luluPalette.glassBorder
         border.width: 1

@@ -12,6 +12,8 @@
 
 #include <cstdlib>
 #include <cstring>
+#include <cerrno>
+#include <fcntl.h>
 #include <unistd.h>
 
 namespace {
@@ -30,8 +32,11 @@ public:
         if (!window_->winId()) return false;
         window_->show();
         if (!setExternalOverlay()) return false;
+        const int flags = ::fcntl(STDIN_FILENO, F_GETFL, 0);
+        if (flags < 0 || ::fcntl(STDIN_FILENO, F_SETFL, flags | O_NONBLOCK) < 0) return false;
         notifier_ = new QSocketNotifier(STDIN_FILENO, QSocketNotifier::Read, this);
         connect(notifier_, &QSocketNotifier::activated, this, [this]() { readInput(); });
+        qInfo().noquote() << "notification presenter ready pid=" << getpid();
         return true;
     }
 
@@ -56,19 +61,37 @@ private:
     void readInput()
     {
         char buffer[4096];
-        while (const ssize_t count = ::read(STDIN_FILENO, buffer, sizeof(buffer))) {
-            if (count < 0) break;
+        while (true) {
+            const ssize_t count = ::read(STDIN_FILENO, buffer, sizeof(buffer));
+            if (count == 0) break;
+            if (count < 0) {
+                if (errno == EAGAIN || errno == EWOULDBLOCK) break;
+                qWarning() << "notification presenter stdin read failed errno=" << errno;
+                break;
+            }
             input_.append(buffer, count);
         }
         int newline = input_.indexOf('\n');
         while (newline >= 0) {
             const QByteArray line = input_.left(newline).trimmed();
             input_.remove(0, newline + 1);
-            const QJsonObject object = QJsonDocument::fromJson(line).object();
+            QJsonParseError parseError;
+            const QJsonObject object = QJsonDocument::fromJson(line, &parseError).object();
+            const QString eventId = object.value("event_id").toString();
+            if (parseError.error != QJsonParseError::NoError || object.isEmpty()) {
+                qWarning().noquote() << "notification parse failed event_id=" << eventId
+                                     << "error=" << parseError.errorString();
+                newline = input_.indexOf('\n');
+                continue;
+            }
+            qInfo().noquote() << "notification received event_id=" << eventId;
             model_->insert("visible", object.value("visible").toBool(true));
             model_->insert("title", object.value("title").toString());
             model_->insert("body", object.value("body").toString());
             model_->insert("glyph", object.value("glyph").toString());
+            qInfo().noquote() << "notification model updated event_id=" << eventId
+                              << "visible=" << model_->value("visible").toBool()
+                              << "title=" << model_->value("title").toString();
             newline = input_.indexOf('\n');
         }
     }
