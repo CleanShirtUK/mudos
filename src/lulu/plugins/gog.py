@@ -10,6 +10,7 @@ import sys
 import subprocess
 import shutil
 from typing import Any
+from urllib.parse import urlencode
 
 from ..paths import PATHS
 from .external import (CliAcquisitionExecutor, CliProviderAuthentication,
@@ -88,6 +89,51 @@ class GogEntitlementSource(SnapshotEntitlementSource):
 class GogAuthentication(CliProviderAuthentication):
     def __init__(self) -> None:
         super().__init__("gog", "gogdl", PATHS.provider_config_root("gog") / "heroic/gog_store/auth.json")
+
+    def authentication_methods(self) -> tuple[str, ...]:
+        # gogdl accepts the authorization code returned by GOG's browser
+        # login. The provider's fixed callback cannot be redirected to Mudos,
+        # so the transaction also exposes the external-browser handoff.
+        return ("auth_browser", "auth_2fa")
+
+    def status(self) -> dict[str, object]:
+        value = super().status()
+        value["methods"] = list(self.authentication_methods())
+        value["account"] = ""
+        try:
+            import json
+            data = json.loads(self.config_path.read_text())
+            credentials = next(iter(data.values()), {}) if isinstance(data, dict) else {}
+            value["account"] = str(credentials.get("user_id", credentials.get("account_id", "")))
+        except (OSError, ValueError, AttributeError, StopIteration):
+            pass
+        return value
+
+    def begin(self) -> dict[str, object]:
+        url = "https://auth.gog.com/auth?" + urlencode({
+            "client_id": "46899977096215655",
+            "redirect_uri": "https://embed.gog.com/on_login_success?origin=client",
+            "response_type": "code",
+        })
+        return {"provider_id": "gog", "auth_method": "auth_browser",
+                "verification_url": url, "surface": "browser"}
+
+    def complete_code(self, code: str) -> dict[str, object]:
+        """Let gogdl exchange the one-time browser code and write its private session."""
+        GogEntitlementSource()._client()
+        import argparse
+        import contextlib
+        import io
+        from gogdl.auth import AuthorizationManager
+        output = io.StringIO()
+        args = argparse.Namespace(client_id=None, client_secret=None, authorization_code=code)
+        with contextlib.redirect_stdout(output):
+            self.config_path.parent.mkdir(parents=True, exist_ok=True)
+            AuthorizationManager(str(self.config_path)).handle_cli(args, [])
+        result = json.loads(output.getvalue() or "{}")
+        if result.get("error"):
+            raise RuntimeError("GOG authorization code was rejected")
+        return self.status()
 
 
 class GogAcquisitionExecutor(CliAcquisitionExecutor):

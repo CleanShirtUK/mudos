@@ -210,3 +210,9 @@ class CliProviderAuthentication:
 
     def begin(self) -> dict[str, object]:
         return {"provider_id": self.provider_id, "surface": "interactive"}
+
+    def authentication_methods(self) -> tuple[str, ...]:
+        return ("auth_browser",)
+
+    def sign_out(self) -> None:
+        self.config_path.unlink(missing_ok=True)

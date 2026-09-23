@@ -4,6 +4,7 @@ version = "1"
 api_version = 1
 kind = "plugin"
 providers = ["steam"]
+authentication_methods = ["auth_credentials", "auth_2fa", "auth_browser"]
 description = "Steam ownership, installation, and Store access."
 types = ["catalogue", "acquisition", "store"]
 
@@ -28,12 +29,14 @@ slot = "username"
 label = "Steam username"
 description = "The Steam account used by Mudos for SteamCMD downloads."
 required = false
+reference = "steam/username"
 
 [[secrets]]
 slot = "password"
 label = "Steam password"
 description = "Stored securely and used automatically by SteamCMD. Steam Guard codes are never stored."
 required = false
+reference = "steam/password"
 
 [configuration.fields.username]
 type = "username"

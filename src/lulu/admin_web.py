@@ -23,6 +23,7 @@ import urllib.request
 from typing import Any
 
 from .credential import SecretStore
+from .auth_transactions import AuthTransactionState, AuthTransactionStore
 from .provider_config import ProviderConfigurationService
 from .paths import PATHS
 from .plugins import ComponentRegistry, PluginRegistry
@@ -35,7 +36,7 @@ ADMIN_NAMESPACE = "admin"
 ADMIN_SECRET = "password-hash"
 
 PROVIDERS = (
-    ("providers.steam", "Steam"), ("providers.romm", "RomM"),
+    ("steam", "Steam"), ("gog", "GOG"), ("epic", "Epic Games"), ("providers.romm", "RomM"),
     ("metadata.igdb", "IGDB / metadata"), ("metadata.steamgriddb", "SteamGridDB"),
     ("providers.torrent", "Transmission"),
     ("providers.usenet", "NZBGet"), ("providers.usenet.server", "Usenet news server"),
@@ -43,7 +44,9 @@ PROVIDERS = (
 )
 
 PROVIDER_META = {
-    "providers.steam": ("Steam", "Steam games and account services.", "Connect Mudos to Steam when account access is required."),
+    "steam": ("Steam", "Steam games and account services.", "SteamCMD acquisition credentials are kept separately from the Steam client session."),
+    "gog": ("GOG", "GOG games and gogdl account services.", "Sign in with GOG to authorize gogdl without entering a GOG password into Mudos."),
+    "epic": ("Epic Games", "Epic games and Legendary account services.", "Legendary authentication will use the same provider transaction flow."),
     "providers.romm": ("RomM", "Your game library and artwork source.", "Use the address of your RomM server and its private API key."),
     "metadata.igdb": ("Game metadata", "Game names, artwork, and catalogue information.", "These settings are optional and are normally supplied by the appliance administrator."),
     "metadata.steamgriddb": ("SteamGridDB", "Preferred automatic cover artwork.", "Use validated SteamGridDB covers after IGDB canonical identity resolution."),
@@ -217,6 +220,7 @@ class AdminApp:
         self.plugins.discover()
         self.components = ComponentRegistry(self.plugins)
         self.components.discover()
+        self.auth_transactions = AuthTransactionStore()
 
     def password_configured(self) -> bool:
         return self.secrets.configured(ADMIN_NAMESPACE, ADMIN_SECRET)
@@ -253,9 +257,67 @@ class AdminApp:
                         if component.component_id not in known and component.provider_ids)
         for provider_id, name in declared:
             config = self.config.provider(provider_id)
+            auth = self._auth(provider_id)
             rows.append({"id": provider_id, "name": name, "status": config.status,
-                         "secrets": {key: config.secret_available(key) for key in config.secret_refs}})
+                         "secrets": {key: config.secret_available(key) for key in config.secret_refs},
+                         "authentication": auth.status() if auth else {"status": "unavailable"}})
         return rows
+
+    def _auth(self, provider_id: str) -> object | None:
+        values = self.plugins.for_plugin(provider_id, "authentication")
+        return values[0] if values else None
+
+    def auth_status(self, provider_id: str) -> dict[str, object]:
+        auth = self._auth(provider_id)
+        if auth is None:
+            return {"provider_id": provider_id, "status": "unavailable", "methods": []}
+        try:
+            value = dict(auth.status())
+            value.setdefault("provider_id", provider_id)
+            value.setdefault("methods", list(getattr(auth, "authentication_methods", lambda: ())()))
+            return value
+        except Exception as error:
+            LOGGER.exception("provider auth status failed provider=%s", provider_id)
+            return {"provider_id": provider_id, "status": "error", "methods": [], "error": str(error)}
+
+    def begin_auth(self, provider_id: str):
+        auth = self._auth(provider_id)
+        if auth is None:
+            raise ValueError("provider authentication is unavailable")
+        begin = getattr(auth, "begin_admin_auth", None) or auth.begin
+        details = dict(begin())
+        method = str(details.get("auth_method") or (auth.authentication_methods()[0]
+                                                     if hasattr(auth, "authentication_methods") and auth.authentication_methods()
+                                                     else "auth_browser"))
+        handoff = {key: str(details.get(key, "")) for key in ("verification_url", "user_code", "qr_payload")}
+        transaction = self.auth_transactions.create(provider_id, method, **handoff)
+        return transaction
+
+    def complete_auth(self, transaction_id: str, code: str) -> dict[str, object]:
+        transaction = self.auth_transactions.get(transaction_id)
+        if transaction is None:
+            raise ValueError("authentication transaction expired")
+        auth = self._auth(transaction.provider)
+        if auth is None or not hasattr(auth, "complete_code"):
+            raise ValueError("this provider has no browser-code completion boundary")
+        self.auth_transactions.update(transaction_id, AuthTransactionState.EXCHANGING_TOKEN)
+        try:
+            value = auth.complete_code(code.strip())
+            self.auth_transactions.update(transaction_id, AuthTransactionState.AUTHENTICATED)
+            return {"transaction": self.auth_transactions.get(transaction_id).public(), "status": value}
+        except Exception as error:
+            self.auth_transactions.update(transaction_id, AuthTransactionState.FAILED, error=str(error))
+            raise
+
+    def cancel_auth(self, transaction_id: str) -> None:
+        if self.auth_transactions.get(transaction_id):
+            self.auth_transactions.update(transaction_id, AuthTransactionState.CANCELLED)
+
+    def sign_out(self, provider_id: str) -> None:
+        auth = self._auth(provider_id)
+        if auth is None or not hasattr(auth, "sign_out"):
+            raise ValueError("provider sign out is unavailable")
+        auth.sign_out()
 
     def service_state(self, unit: str) -> str:
         try:
@@ -402,6 +464,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:
         path = urllib.parse.urlsplit(self.path).path
+        query = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
         if path == "/login":
             message = "" if APP.password_configured() else "Admin access has not been set up yet."
             self._send(_login_page(message) if message else _login_page()); return
@@ -409,6 +472,18 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if path == "/": self._dashboard(); return
         if path == "/providers": self._redirect("/integrations"); return
         if path == "/integrations": self._providers(); return
+        if path == "/api/providers":
+            self._json(APP.provider_rows()); return
+        if path.endswith("/callback") and path.startswith("/auth/"):
+            parts = [urllib.parse.unquote(item) for item in path.split("/") if item]
+            try:
+                APP.complete_auth(parts[2], query.get("code", [""])[0])
+                self._send(_page("Authentication complete", _notice("Connected", "Provider authentication completed.", "success")))
+            except Exception as error:
+                self._send(_page("Authentication failed", _notice("Authentication failed", str(error), "error")), 400)
+            return
+        if path.startswith("/auth/"):
+            self._auth_page(*[urllib.parse.unquote(item) for item in path.split("/")[2:]]); return
         if path.startswith("/provider/"):
             self._redirect("/integration/" + urllib.parse.quote(urllib.parse.unquote(path[10:])))
             return
@@ -428,6 +503,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if not hmac.compare_digest(form.get("csrf", [""])[0], csrf):
             self._send(_page("Request rejected", "<p class=error>Invalid CSRF token.</p>"), 403); return
         if self.path == "/logout": APP.logout(token); self._redirect("/login", "mudos_session=; Max-Age=0; HttpOnly; SameSite=Lax"); return
+        if self.path.startswith("/auth/"):
+            self._auth_post(self.path, form); return
         if self.path.startswith("/provider/") or self.path.startswith("/integration/"):
             prefix = "/provider/" if self.path.startswith("/provider/") else "/integration/"
             self._save_provider(urllib.parse.unquote(self.path[len(prefix):]), form, token); return
@@ -517,10 +594,80 @@ class Handler(http.server.BaseHTTPRequestHandler):
         actions = f'<button class="button" type=submit>Save changes</button><button class="button button-secondary" formaction="{test_action}" formmethod=post>Test connection</button>'
         if open_link:
             actions += f'<a class="button button-secondary" href="{html.escape(_service_url(self, open_link))}">Open Web UI</a>'
-        body = (f'<div class="card"><div class="card-head"><div><h2>{html.escape(title)}</h2><p>{html.escape(explanation)}</p></div>{_badge(config.status)}</div>'
+        auth = APP.auth_status(provider_id)
+        auth_form = ""
+        if auth.get("status") != "unavailable":
+            auth_state = str(auth.get("status", "authentication_required"))
+            account = str(auth.get("account", ""))
+            identity = f'<p class="meta">Account: {html.escape(account)}</p>' if account else ""
+            auth_action = "/auth/" + urllib.parse.quote(provider_id) + "/start"
+            auth_buttons = '<button class="button" type=submit>Sign in</button>'
+            if auth_state in {"configured", "authenticated", "connected"}:
+                auth_buttons = '<button class="button button-secondary" type=submit>Reauthenticate</button>'
+                auth_buttons += ' <button class="button button-quiet" type=submit name=action value=sign_out>Sign out</button>'
+            auth_form = (f'<div class="card auth-card"><div class="card-head"><div><h2>Authentication</h2>'
+                         f'<p>{html.escape(" · ".join(str(item) for item in auth.get("methods", [])))}</p></div>{_badge(auth_state)}</div>'
+                         f'{identity}<p class="meta">Secrets and provider session material are never shown here.</p>'
+                         f'<form method=post action="{auth_action}"><input type=hidden name=csrf value="{csrf}">{auth_buttons}</form></div>')
+        body = (auth_form + f'<div class="card"><div class="card-head"><div><h2>{html.escape(title)}</h2><p>{html.escape(explanation)}</p></div>{_badge(config.status)}</div>'
                 f'<form method=post action="{form_action}"><input type=hidden name=csrf value="{csrf}"><section><div class="section-title"><h2>Connection</h2></div>{fields}{secrets}</section><div class="actions">{actions}</div></form></div>'
                 '<details class="technical"><summary>Technical details</summary><p>Integration identifier: ' + html.escape(provider_id) + '</p></details>')
         self._send(_page(title, body, subtitle=description, active="integrations"))
+
+    def _json(self, value: object, status: int = 200) -> None:
+        payload = json.dumps(value, sort_keys=True, separators=(",", ":")).encode()
+        self._send(payload, status, {"Content-Type": "application/json; charset=utf-8",
+                                     "Cache-Control": "no-store"})
+
+    def _auth_page(self, provider_id: str, transaction_id: str = "") -> None:
+        transaction = APP.auth_transactions.get(transaction_id) if transaction_id else None
+        if transaction is None:
+            self._send(_page("Authentication", _notice("Authentication unavailable", "This authentication transaction has expired or does not exist.", "error")), 404)
+            return
+        csrf = APP.session(self._token()) or ""
+        url = transaction.verification_url
+        link = f'<p><a class="button" href="{html.escape(url)}" target="_blank" rel="noopener">Open login page</a></p>' if url else ""
+        if hasattr(APP._auth(transaction.provider), "complete_code"):
+            code = ('<div class="setting"><label for=auth-code>Authorization code</label>'
+                    '<input id=auth-code name=code type=text autocomplete=one-time-code required>'
+                    '<p class=help-text>Only the one-time authorization code is submitted; Mudos never stores it.</p></div>')
+            complete = (f'<button class=button type=submit>Complete sign in</button>'
+                        f'<button class="button button-quiet" formaction="/auth/{urllib.parse.quote(provider_id)}/{urllib.parse.quote(transaction_id)}/cancel">Cancel</button>')
+        else:
+            code = '<p class=meta>Save the provider credentials on the previous page. Steam Guard codes are requested only during the acquisition operation and are never persisted.</p>'
+            complete = (f'<a class="button button-secondary" href="/integration/{urllib.parse.quote(provider_id)}">Provider settings</a>'
+                        f'<button class="button button-quiet" formaction="/auth/{urllib.parse.quote(provider_id)}/{urllib.parse.quote(transaction_id)}/cancel">Back</button>')
+        body = (f'<div class="card"><div class="card-head"><h2>{html.escape(provider_id.title())}</h2>{_badge(transaction.state.value)}</div>'
+                f'<p>Complete authentication in the provider login page, then return here.</p>{link}'
+                f'<form method=post action="/auth/{urllib.parse.quote(provider_id)}/{urllib.parse.quote(transaction_id)}/complete">'
+                f'<input type=hidden name=csrf value="{csrf}">{code}<div class=actions>{complete}</div></form></div>')
+        self._send(_page("Provider authentication", body, subtitle="Temporary authentication transaction", active="integrations"))
+
+    def _auth_post(self, path: str, form: dict[str, list[str]]) -> None:
+        parts = [urllib.parse.unquote(item) for item in path.split("/") if item]
+        # /auth/<provider>/start or /auth/<provider>/<transaction>/<action>
+        provider_id = parts[1] if len(parts) > 1 else ""
+        if len(parts) == 3 and parts[2] == "start":
+            if form.get("action", [""])[0] == "sign_out":
+                APP.sign_out(provider_id)
+                self._redirect("/integration/" + urllib.parse.quote(provider_id) + "?updated=1")
+                return
+            transaction = APP.begin_auth(provider_id)
+            self._redirect("/auth/{}/{}".format(urllib.parse.quote(provider_id), urllib.parse.quote(transaction.transaction_id)))
+            return
+        transaction_id = parts[2] if len(parts) > 2 else ""
+        action = parts[3] if len(parts) > 3 else ""
+        if action == "cancel":
+            APP.cancel_auth(transaction_id)
+            self._redirect("/integration/" + urllib.parse.quote(provider_id))
+            return
+        if action == "complete":
+            try:
+                APP.complete_auth(transaction_id, form.get("code", [""])[0])
+                self._redirect("/integration/" + urllib.parse.quote(provider_id) + "?updated=1")
+            except Exception as error:
+                self._send(_page("Authentication failed", _notice("Authentication failed", str(error), "error")
+                                      + f'<p><a class=button href="/auth/{urllib.parse.quote(provider_id)}/{urllib.parse.quote(transaction_id)}">Try again</a></p>'), 400)
 
     def _save_provider(self, provider_id: str, form: dict[str, list[str]], token: str | None) -> None:
         before = APP.config.provider(provider_id)

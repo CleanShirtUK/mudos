@@ -4,6 +4,7 @@ version = "1"
 api_version = 1
 kind = "plugin"
 providers = ["gog"]
+authentication_methods = ["auth_browser", "auth_2fa"]
 description = "GOG ownership and gogdl-managed installation."
 types = ["catalogue", "acquisition"]
 
@@ -19,9 +20,3 @@ settings = true
 [[provisioning]]
 package = "heroic-gogdl"
 reason = "Native GOG entitlement, install, update, repair, and launch backend."
-
-[[secrets]]
-slot = "auth"
-label = "GOG authentication"
-description = "Managed by gogdl; raw credentials are never stored by Mudos."
-required = false

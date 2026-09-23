@@ -109,6 +109,7 @@ class ComponentDescriptor:
     provisioning: tuple[ProvisioningRequirement, ...] = ()
     provider_ids: tuple[str, ...] = ()
     source_plugin: str = ""
+    authentication_methods: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -165,6 +166,7 @@ class PluginManifest:
     kind: str = "plugin"
     installed: bool = True
     provider_ids: tuple[str, ...] = ()
+    authentication_methods: tuple[str, ...] = ()
 
 
 @dataclass(slots=True)
@@ -252,6 +254,8 @@ class PluginRegistry:
                 provisioning=provisioning, kind=str(raw.get("kind", "plugin")),
                 installed=bool(raw.get("installed", True)),
                 provider_ids=tuple(str(item) for item in raw.get("providers", ())),
+                authentication_methods=tuple(str(item).strip().casefold()
+                                             for item in raw.get("authentication_methods", ())),
             )
             return PluginRecord(manifest, "disabled" if not enabled else "unavailable")
         except (OSError, tomllib.TOMLDecodeError, KeyError, TypeError, ValueError) as error:
@@ -428,10 +432,11 @@ class PluginRegistry:
             store_cards=record.manifest.store_cards,
             services=record.manifest.services,
             browser_handoffs=record.manifest.browser_handoffs,
-            provisioning=record.manifest.provisioning,
-            provider_ids=record.manifest.provider_ids,
-            source_plugin=record.manifest.plugin_id,
-        ) for record in self.records.values())
+             provisioning=record.manifest.provisioning,
+             provider_ids=record.manifest.provider_ids,
+             source_plugin=record.manifest.plugin_id,
+             authentication_methods=record.manifest.authentication_methods,
+         ) for record in self.records.values())
 
     def resolve_selection(self, selected: set[str] | tuple[str, ...] | list[str]) -> DependencyPlan:
         """Resolve only outgoing dependencies of selected plugins."""
@@ -551,10 +556,11 @@ class ComponentRegistry:
                                    "secret": field.secret, "validation": field.validation,
                                    "default": field.default, "choices": list(field.choices)}
                                   for field in component.configuration],
-                "secrets": [{"slot": requirement.slot, "label": requirement.label,
+                 "secrets": [{"slot": requirement.slot, "label": requirement.label,
                              "description": requirement.description, "required": requirement.required,
                              "configured": store.configured(requirement.slot)}
-                            for requirement in component.secrets],
+                             for requirement in component.secrets],
+                 "authentication_methods": list(component.authentication_methods),
                 "store_cards": [{"id": card.card_id, "label": card.label, "url": card.url,
                                  "glyph": card.glyph, "artwork": card.artwork,
                                  "browser_profile": card.browser_profile, "removable": card.removable}

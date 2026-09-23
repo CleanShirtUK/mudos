@@ -58,6 +58,9 @@ class EpicAuthentication(CliProviderAuthentication):
     def __init__(self) -> None:
         super().__init__("epic", "legendary", PATHS.provider_config_root("epic") / "legendary/user.json")
 
+    def authentication_methods(self) -> tuple[str, ...]:
+        return ("auth_browser", "auth_device_code", "auth_2fa")
+
 
 class EpicAcquisitionExecutor(CliAcquisitionExecutor):
     def __init__(self) -> None:
