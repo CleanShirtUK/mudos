@@ -142,11 +142,9 @@ class GogAcquisitionExecutor(CliAcquisitionExecutor):
         auth_path = PATHS.provider_config_root("gog") / "heroic/gog_store/auth.json"
         super().__init__("gog", "gogdl", root,
                          lambda identity, destination: ["gogdl", "--auth-config-path", str(auth_path),
-                                                        "download", identity,
-                                                        "--path", str(destination / identity.removeprefix("gog:")),
-                                                        "--with-dlcs"],
-                         lambda identity, destination: ["gogdl", "--auth-config-path", str(auth_path), "import",
-                                                        str(destination / identity.removeprefix("gog:"))])
+                                                        "download", identity.removeprefix("gog:"),
+                                                         "--path", str(destination / identity.removeprefix("gog:")),
+                                                         "--platform", "linux", "--with-dlcs"])
 
 
 class GogLauncher:
@@ -154,6 +152,9 @@ class GogLauncher:
 
     def launch_command(self, provider_id: str) -> list[str]:
         game_id = provider_id.removeprefix("gog:")
+        container = PATHS.gog_library_root / game_id
+        game_path = next((item.parent for item in container.glob("*/gameinfo")
+                          if item.is_file()), container)
         return ["gogdl", "--auth-config-path", str(PATHS.provider_config_root("gog") / "heroic/gog_store/auth.json"),
-                "launch", str(PATHS.gog_library_root / game_id), game_id,
+                "launch", str(game_path), game_id,
                 "--platform", "linux"]

@@ -174,10 +174,12 @@ Item {
                     "provider_id", providerId,
                     "acquisitionState", acquisitionState)
         // game.provider === "romm" remains part of the combined catalogue.
-        if ((provider === "steam" || provider === "romm" || provider === "lutris")
+        if ((provider === "steam" || provider === "romm" || provider === "lutris"
+                  || provider === "gog" || provider === "epic")
                  && ["queued", "starting", "transferring", "finalizing", "paused", "cancelling"].indexOf(acquisitionState) >= 0)
             downloadsRequested()
-        else if ((provider === "steam" || provider === "romm" || provider === "lutris")
+        else if ((provider === "steam" || provider === "romm" || provider === "lutris"
+                  || provider === "gog" || provider === "epic")
                  && ["queued", "starting", "transferring", "finalizing", "paused", "cancelling"].indexOf(acquisitionState) < 0
                   && providerId.match(/^[1-9][0-9]*$/)) {
             // installGameRequested(game) preserves the existing generic Store signal boundary.

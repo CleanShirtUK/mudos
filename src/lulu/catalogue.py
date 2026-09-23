@@ -819,7 +819,12 @@ class CatalogueStore:
             installed_ids = set(installed_by_id)
             owned_ids = known | installed_ids
             for current in existing:
-                if current.provider_id not in owned_ids and current.install_state == "installed":
+                # Provider ownership and local installation are separate
+                # facts.  A still-owned title must return to Installable
+                # after its provider payload is removed.
+                if (current.install_state == "installed"
+                        and (current.provider_id not in owned_ids
+                             or current.provider_id in known and current.provider_id not in installed_ids)):
                     self._apply_existing_locked(
                         current, replace(current, install_state="available", launchable=False,
                                          install_dir="", availability_state="available"), deltas)

@@ -308,6 +308,11 @@ class ConsoleUiBridge:
             asyncio.create_task(self._refresh_after_acquisition(job_id, provider))
             self.launch_logs.note("Lulu", f"{provider} installation submitted identity={content_identity} job_id={job_id}")
             return {"token": job_id}
+        elif provider in {"gog", "epic"}:
+            provider_id = str(selected.get("provider_id", ""))
+            if not provider_id:
+                raise ValueError("provider content identity is missing")
+            content_identity = f"{provider}:{provider_id}"
         else:
             raise ValueError("game provider is not acquirable")
         existing_snapshot = await self.acquisition()

@@ -146,6 +146,7 @@ class CliAcquisitionExecutor:
             import shutil as _shutil
             await asyncio.to_thread(_shutil.rmtree, marker_dir, True)
             await reporter.progress(1.0, stage="completed")
+            await reporter.state(JobState.FINALIZING, stage="completed")
             await reporter.state(JobState.COMPLETED, stage="completed")
             return
         else:
