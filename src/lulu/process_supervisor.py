@@ -17,6 +17,17 @@ from .launch_identity import LaunchIdentity
 from .plugins.steam.provider import SteamLaunch, SteamProvider, SteamLaunchRequest
 
 
+def _redact_argv(argv: tuple[str, ...] | list[str]) -> tuple[str, ...]:
+    """Hide ephemeral provider credentials from logs and public state."""
+    redacted: list[str] = []
+    for value in argv:
+        if value.startswith("-AUTH_PASSWORD="):
+            redacted.append("-AUTH_PASSWORD=<redacted>")
+        else:
+            redacted.append(value)
+    return tuple(redacted)
+
+
 @dataclass(frozen=True, slots=True)
 class ProcessResult:
     token: str
@@ -30,7 +41,9 @@ class ProcessResult:
     error: str | None = None
 
     def as_dict(self) -> dict[str, object]:
-        return asdict(self)
+        value = asdict(self)
+        value["argv"] = list(_redact_argv(self.argv))
+        return value
 
 
 StateChanged = Callable[[], Awaitable[None] | None]
@@ -95,7 +108,8 @@ class ProcessSupervisor:
         command: list[str],
         role: str,
     ) -> list[asyncio.Task[None]]:
-        self._logger.info("child start role=%s pid=%s command=%r", role, process.pid, command)
+        self._logger.info("child start role=%s pid=%s command=%r", role, process.pid,
+                          _redact_argv(command))
         tasks: list[asyncio.Task[None]] = []
         if process.stdout is not None:
             tasks.append(asyncio.create_task(self._drain_output(process.stdout, role, process.pid, "stdout")))
@@ -166,7 +180,8 @@ class ProcessSupervisor:
                 if presentation_controller is not None:
                     if hasattr(presentation_controller, "select_pids"):
                         await asyncio.to_thread(
-                            presentation_controller.select_pids, [process.pid], self._presentation_watchdog
+                            presentation_controller.select_pids, [process.pid],
+                            max(self._presentation_watchdog, startup_timeout_ms / 1000)
                         )
                     else:
                         await asyncio.to_thread(

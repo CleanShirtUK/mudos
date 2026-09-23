@@ -11,6 +11,7 @@ import asyncio
 import json
 import logging
 import os
+import os
 from pathlib import Path
 import re
 import shutil
@@ -125,6 +126,7 @@ class CliAcquisitionExecutor:
         self.command_builder = command_builder
         self.uninstall_builder = uninstall_builder
         self._processes: dict[str, asyncio.subprocess.Process] = {}
+        self.environment: dict[str, str] | None = None
 
     def _require(self) -> str:
         resolved = shutil.which(self.executable) or self.executable
@@ -156,6 +158,7 @@ class CliAcquisitionExecutor:
         process = await asyncio.create_subprocess_exec(
             *command, cwd=str(self.install_root), stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT,
+            env=self.environment,
         )
         self._processes[job.job_id] = process
         await reporter.state(JobState.STARTING, stage="starting")

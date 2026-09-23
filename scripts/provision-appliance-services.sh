@@ -17,4 +17,5 @@ pacman -S --needed --noconfirm qt6-webengine
 if [[ "${LULU_PROVISION_PC_PROVIDERS:-0}" == "1" ]]; then
     "$root/provision-gogdl.sh"
     "$root/provision-legendary.sh"
+    "$root/provision-umu.sh"
 fi

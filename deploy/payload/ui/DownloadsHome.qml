@@ -296,7 +296,7 @@ signal cancelRequested(string jobId)
                 ControllerHint {
                     visible: root.confirmationPending || root.actionLabel(root.selectedJob()) !== ""
                     action: "confirm"
-                        label: root.confirmationPending ? "Confirm" : root.actionText(root.selectedJob())
+                        label: root.confirmationPending ? "Confirm" : (root.selectedJob() === null ? "" : root.actionText(root.selectedJob()))
                     uiScale: root.uiScale
                     typography: root.typography
                     luluPalette: root.luluPalette
@@ -305,7 +305,7 @@ signal cancelRequested(string jobId)
                      visible: !root.confirmationPending && root.selectedJob() !== null
                          && String(root.selectedJob().state) !== "cancelling"
                      action: "options"
-                     label: String(root.selectedJob().state) === "failed" ? "Clear" : "Cancel"
+                     label: root.selectedJob() === null ? "" : (String(root.selectedJob().state) === "failed" ? "Clear" : "Cancel")
                     uiScale: root.uiScale
                     typography: root.typography
                     luluPalette: root.luluPalette

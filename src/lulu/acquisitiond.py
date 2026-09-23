@@ -42,12 +42,22 @@ LOGGER = logging.getLogger("lulu.acquisitiond")
 
 class AcquisitionInterface(ServiceInterface):
     def __init__(self, manager: JobManager, catalogue: CatalogueStore, plugins: PluginRegistry,
-                 notifications: NotificationBroker | None = None) -> None:
+                 notifications: NotificationBroker | None = None,
+                 bus: MessageBus | None = None) -> None:
         super().__init__(INTERFACE_NAME)
         self.manager = manager
         self.catalogue = catalogue
         self.plugins = plugins
+        self.bus = bus
         self.notifications = notifications or NotificationBroker(NotificationPresenter())
+        # Historical terminal jobs are already reflected in the catalogue;
+        # only completions observed after this interface starts need a
+        # provider refresh.
+        self._reconciliations: set[str] = {
+            job.job_id for job in manager.snapshot()
+            if job.state.value == "completed"
+            and job.operation in {JobOperation.INSTALL, JobOperation.REMOVE}
+        }
         self.notifications.seed(manager.snapshot())
         manager._on_change = self._publish
 
@@ -58,8 +68,36 @@ class AcquisitionInterface(ServiceInterface):
         }, sort_keys=True)
 
     def _publish(self, *_: object) -> None:
-        self.notifications.observe(self.manager.snapshot())
+        snapshot = self.manager.snapshot()
+        self.notifications.observe(snapshot)
         self.StateChanged(self._snapshot())
+        # Do not reconcile inline: this callback runs inside JobManager's
+        # terminal transition and provider refreshes may invoke subprocesses.
+        # Schedule the provider/catalogue refresh only after the executor has
+        # returned, while retaining the authoritative completed job state.
+        for job in snapshot:
+            if (job.state.value == "completed" and job.job_id not in self._reconciliations
+                    and job.operation in {JobOperation.INSTALL, JobOperation.REMOVE}):
+                self._reconciliations.add(job.job_id)
+                asyncio.create_task(self._reconcile_completed_job(job.job_id))
+
+    async def _reconcile_completed_job(self, job_id: str) -> None:
+        try:
+            job = self.manager.jobs.get(job_id)
+            if job is None:
+                return
+            source = next((item for item in self.plugins.with_capability("installed_catalogue")
+                           if str(getattr(item, "provider_id", "")) == job.provider), None)
+            if source is None or self.bus is None:
+                return
+            # Consoled owns provider refresh and catalogue delta publication.
+            # Invoke only the affected stage, outside JobManager's completion
+            # callback, so no provider/job lifecycle lock is held.
+            introspection = await self.bus.introspect("org.lulu.Consoled", "/org/lulu/Console")
+            proxy = self.bus.get_proxy_object("org.lulu.Consoled", "/org/lulu/Console", introspection)
+            await proxy.get_interface("org.lulu.Console").call_refresh_stages([job.provider])
+        except Exception:
+            LOGGER.exception("completed acquisition reconciliation failed job=%s", job_id)
 
     @method()
     def GetSnapshot(self) -> "s":
@@ -308,7 +346,7 @@ async def serve(bus_type: BusType = BusType.SESSION) -> None:
                 LOGGER.exception("external acquisition reconciliation failed")
             await asyncio.sleep(3)
     asyncio.create_task(reconcile_external_loop())
-    interface = AcquisitionInterface(manager, catalogue, plugins)
+    interface = AcquisitionInterface(manager, catalogue, plugins, bus=bus)
     bus.export(OBJECT_PATH, interface)
     await bus.request_name(BUS_NAME)
     interface.StateChanged(interface._snapshot())

@@ -4,7 +4,7 @@ version = "1"
 api_version = 1
 kind = "plugin"
 providers = ["epic"]
-authentication_methods = ["auth_browser", "auth_device_code", "auth_2fa"]
+authentication_methods = ["auth_browser"]
 description = "Epic ownership and Legendary-managed installation."
 types = ["catalogue", "acquisition"]
 

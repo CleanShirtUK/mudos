@@ -210,7 +210,8 @@ class ConsoleUiBridge:
             self.launch_logs.note("Lulu", f"session launch boundary reached game_id={game_id} appid={appid} token={token}")
             self.launch_logs.note("Steam", f"steam://rungameid/{appid}")
         else:
-            token = await self.consoled.call_launch_game(game_id, 15000)
+            startup_timeout = 120000 if game_id.startswith("epic:") else 15000
+            token = await self.consoled.call_launch_game(game_id, startup_timeout)
             self.local_token = token
             self.launch_logs.note("Lulu", f"launch boundary reached game_id={game_id} appid={appid}")
         LOGGER.info("launch accepted game_id=%s token=%s", game_id, token)
@@ -1020,6 +1021,8 @@ class ApiHandler(BaseHTTPRequestHandler):
             LOGGER.info("http launch game_id=%s", game_id)
             self.bridge.launch_logs.start(game_id)
             timeout = None if game_id.startswith("steam:") else 15
+            if game_id.startswith("epic:"):
+                timeout = 125
             result = self.bridge.call(
                 self.bridge.launch_game(game_id),
                 timeout=timeout,
