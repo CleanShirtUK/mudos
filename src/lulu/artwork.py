@@ -8,9 +8,64 @@ from pathlib import Path
 import urllib.error
 import urllib.parse
 import urllib.request
+import shutil
+import re
 
 from .paths import PATHS
 from .provider_config import ProviderConfigurationService
+
+
+IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp"}
+
+
+def local_artwork_path(game: object) -> Path:
+    """Return the stable, user-visible artwork path for a catalogue record."""
+    provider = str(getattr(game, "provider", ""))
+    install_dir = Path(str(getattr(game, "install_dir", "") or "")).expanduser()
+    game_id = re.sub(r"[^A-Za-z0-9_.-]+", "_", str(getattr(game, "game_id", "game")))
+    if provider == "flatpak":
+        return PATHS.data_root / "artwork" / "flatpak" / game_id / "cover.jpg"
+    if provider == "romm":
+        return PATHS.data_root / "artwork" / "romm" / game_id / "cover.jpg"
+    if install_dir.is_file():
+        return install_dir.with_name(install_dir.name + ".cover.jpg")
+    if install_dir:
+        return install_dir / "cover.jpg"
+    return PATHS.data_root / "artwork" / provider / game_id / "cover.jpg"
+
+
+def materialize_artwork(source_url: str, destination: Path, *, overwrite: bool = False) -> bool:
+    """Materialize a decoded image once, without replacing user files."""
+    if destination.exists() and not overwrite:
+        return True
+    if not source_url:
+        return destination.exists()
+    parsed = urllib.parse.urlparse(source_url)
+    source = Path(urllib.request.url2pathname(parsed.path)) if parsed.scheme == "file" else None
+    if source is None or not source.exists():
+        return False
+    try:
+        from PIL import Image
+        with Image.open(source) as image:
+            image.verify()
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        temporary = destination.with_suffix(".tmp")
+        with Image.open(source) as image:
+            image.convert("RGB").save(temporary, format="JPEG", quality=94)
+        temporary.replace(destination)
+        return True
+    except (OSError, ValueError):
+        return False
+
+
+@dataclass(frozen=True, slots=True)
+class ArtworkSelection:
+    url: str
+    source_url: str
+    provider: str
+    artwork_type: str
+    width: int | None = None
+    height: int | None = None
 
 
 @dataclass(slots=True)
@@ -59,12 +114,28 @@ class SteamGridDBArtwork:
     endpoint: str = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
-        config = ProviderConfigurationService.from_environment().provider("metadata.steamgriddb")
-        if self.api_key is None:
-            self.api_key = config.secret("api_key") if config.configured else None
-        self.endpoint = str(config.get("endpoint", "https://www.steamgriddb.com/api")).rstrip("/")
+        self.reload_configuration()
         self.cache_dir = self.cache_dir or PATHS.artwork_cache
         self._logger = logging.getLogger("lulu.artwork")
+
+    @property
+    def configured(self) -> bool:
+        return bool(self.api_key)
+
+    def reload_configuration(self) -> None:
+        config = ProviderConfigurationService.from_environment().provider("metadata.steamgriddb")
+        if config.configured:
+            self.api_key = config.secret("api_key")
+        elif self.api_key is None:
+            self.api_key = None
+        self.endpoint = str(config.get("endpoint", "https://www.steamgriddb.com/api")).rstrip("/")
+
+    def test_connection(self) -> str:
+        self.reload_configuration()
+        if not self.configured:
+            return "incomplete"
+        self._request_json("/v2/search/autocomplete/SuperTux")
+        return "connected"
 
     def enrich(self, games: list[object]) -> dict[str, str]:
         if not self.api_key:
@@ -83,6 +154,99 @@ class SteamGridDBArtwork:
             if artwork:
                 resolved[game_id] = artwork
         return resolved
+
+    def resolve_typed(self, game: object) -> ArtworkSelection | None:
+        """Resolve a cover without collapsing icons and arbitrary images into it."""
+        self.reload_configuration()
+        if bool(getattr(game, "artwork_suppressed", False)):
+            return None
+        existing_url = str(getattr(game, "artwork_url", "") or "")
+        existing_type = str(getattr(game, "artwork_type", "") or "")
+        existing_provider = str(getattr(game, "artwork_provider", "") or "")
+        if existing_url and existing_type == "icon":
+            existing_url = ""
+        # Existing validated/legacy SGDB covers remain usable during migration.
+        legacy_selection = None
+        if existing_url and existing_type == "cover" and existing_provider == "steamgriddb":
+            legacy_selection = ArtworkSelection(
+                existing_url, str(getattr(game, "artwork_source_url", "") or ""),
+                "steamgriddb", "cover", getattr(game, "artwork_width", None),
+                getattr(game, "artwork_height", None))
+        provider = str(getattr(game, "provider", ""))
+        provider_id = str(getattr(game, "provider_id", ""))
+        canonical_title = str(getattr(game, "canonical_title", "") or getattr(game, "title", ""))
+        igdb_id = str(getattr(game, "metadata_game_id", "")) if \
+            str(getattr(game, "metadata_provider", "")) == "igdb" else ""
+        image_url = ""
+        if self.api_key and provider == "steam" and provider_id.isdecimal():
+            image_url = self._find_image("steam", provider_id, canonical_title)
+        elif self.api_key and igdb_id:
+            image_url = self._find_canonical_image(canonical_title, igdb_id)
+        if image_url:
+            key = hashlib.sha256(f"sgdb-cover:{igdb_id or provider_id}:{image_url}".encode()).hexdigest()
+            image_path = self.cache_dir / f"{key}.jpg"
+            if not image_path.exists():
+                self._download(image_url, image_path)
+            if image_path.exists():
+                return ArtworkSelection(image_path.as_uri(), image_url, "steamgriddb", "cover")
+        canonical_cover = str(getattr(game, "canonical_cover_url", "") or "")
+        if canonical_cover:
+            key = hashlib.sha256(f"igdb-cover:{igdb_id}:{canonical_cover}".encode()).hexdigest()
+            image_path = self.cache_dir / f"{key}.jpg"
+            if not image_path.exists():
+                self._download(canonical_cover, image_path)
+            if image_path.exists():
+                return ArtworkSelection(
+                    image_path.as_uri(), canonical_cover, "igdb", "cover",
+                    getattr(game, "canonical_cover_width", None),
+                    getattr(game, "canonical_cover_height", None),
+                )
+        if existing_url and existing_type == "cover":
+            return ArtworkSelection(existing_url, str(getattr(game, "artwork_source_url", "") or existing_url),
+                                    existing_provider or provider, "cover",
+                                    getattr(game, "artwork_width", None), getattr(game, "artwork_height", None))
+        return legacy_selection
+
+    def gallery(self, game: object) -> list[dict[str, object]]:
+        """Return validated portrait grids for an established IGDB identity."""
+        igdb_id = str(getattr(game, "metadata_game_id", "") or "")
+        if str(getattr(game, "metadata_provider", "")) != "igdb" or not igdb_id:
+            return []
+        title = str(getattr(game, "canonical_title", "") or getattr(game, "title", ""))
+        sgdb_id = self._find_canonical_game_id(title, igdb_id)
+        if not sgdb_id:
+            return []
+        result = self._request_json(f"/v2/grids/game/{sgdb_id}")
+        current = str(getattr(game, "automatic_artwork_source_url", "") or "")
+        selected = str(getattr(game, "selected_artwork_source_url", "") or "")
+        candidates = []
+        for item in result.get("data", []) if isinstance(result, dict) else []:
+            if not isinstance(item, dict) or not self._valid_portrait(item):
+                continue
+            url = str(item.get("url", ""))
+            if not url:
+                continue
+            candidates.append({
+                "id": str(item.get("id", "")), "url": url,
+                "thumbnail": str(item.get("thumb", "") or item.get("url", "")),
+                "width": int(item.get("width", 0) or 0),
+                "height": int(item.get("height", 0) or 0),
+                "current": url == current or url == selected,
+            })
+        return candidates
+
+    def select_gallery_artwork(self, game: object, source_url: str) -> tuple[Path, str, int, int] | None:
+        """Download and validate one candidate, returning its cached image."""
+        candidate = next((item for item in self.gallery(game) if item["url"] == source_url), None)
+        if candidate is None:
+            return None
+        key = hashlib.sha256(f"sgdb-selected:{source_url}".encode()).hexdigest()
+        image_path = self.cache_dir / f"{key}.jpg"
+        if not image_path.exists():
+            self._download(source_url, image_path)
+        if not image_path.exists():
+            return None
+        return image_path, source_url, int(candidate["width"]), int(candidate["height"])
 
     def _resolve(self, game_id: str, provider: str, provider_id: str, title: str,
                  metadata_provider: str = "", metadata_game_id: str = "") -> str:
@@ -114,7 +278,88 @@ class SteamGridDBArtwork:
         else:
             return ""
         result = self._request_json(path + "?dimensions=600x900")
-        return next((str(item.get("url", "")) for item in result.get("data", []) if item.get("url")), "")
+        return self._choose_cover(result.get("data", []))
+
+    def _find_canonical_image(self, title: str, igdb_id: str) -> str:
+        # SGDB has no universal IGDB foreign-key endpoint. Resolve the SGDB
+        # identity from the canonical IGDB title, then validate its grids.
+        identity = hashlib.sha256(f"sgdb-identity:{igdb_id}:{title.casefold()}".encode()).hexdigest()
+        state_path = self.cache_dir / f"{identity}.json"
+        try:
+            state = json.loads(state_path.read_text()) if state_path.exists() else None
+            if isinstance(state, dict) and state.get("identity") == f"igdb:{igdb_id}" and state.get("sgdb_game_id"):
+                return str(state.get("image_url", ""))
+        except (OSError, ValueError, TypeError):
+            pass
+        escaped = urllib.parse.quote(title, safe="")
+        result = self._request_json(f"/v2/search/autocomplete/{escaped}")
+        candidates = [item for item in result.get("data", []) if isinstance(item, dict)]
+        normalized = " ".join(title.casefold().split())
+        candidates.sort(key=lambda item: 0 if " ".join(str(item.get("name", "")).casefold().split()) == normalized else 1)
+        for candidate in candidates[:5]:
+            game_id = str(candidate.get("id", ""))
+            if not game_id:
+                continue
+            grids = self._request_json(f"/v2/grids/game/{game_id}?dimensions=600x900")
+            selected = self._choose_cover(grids.get("data", []))
+            if selected:
+                self._write_json(state_path, {"identity": f"igdb:{igdb_id}",
+                                               "sgdb_game_id": game_id, "image_url": selected})
+                return selected
+        self._write_json(state_path, {"identity": f"igdb:{igdb_id}", "image_url": ""})
+        return ""
+
+    def _find_canonical_game_id(self, title: str, igdb_id: str) -> str:
+        identity = hashlib.sha256(f"sgdb-identity:{igdb_id}:{title.casefold()}".encode()).hexdigest()
+        state_path = self.cache_dir / f"{identity}.json"
+        try:
+            state = json.loads(state_path.read_text()) if state_path.exists() else {}
+            if isinstance(state, dict) and state.get("identity") == f"igdb:{igdb_id}" and state.get("sgdb_game_id"):
+                return str(state["sgdb_game_id"])
+        except (OSError, ValueError, TypeError):
+            pass
+        self._find_canonical_image(title, igdb_id)
+        try:
+            state = json.loads(state_path.read_text())
+            return str(state.get("sgdb_game_id", ""))
+        except (OSError, ValueError, TypeError):
+            return ""
+
+    @staticmethod
+    def _valid_portrait(item: dict[str, object]) -> bool:
+        try:
+            width, height = int(item.get("width", 0) or 0), int(item.get("height", 0) or 0)
+        except (TypeError, ValueError):
+            return False
+        if not width or not height or height < 500:
+            return False
+        ratio = width / height
+        return 0.52 <= ratio <= 0.78
+
+    @staticmethod
+    def _choose_cover(items: object) -> str:
+        if not isinstance(items, list):
+            return ""
+        ranked: list[tuple[int, str]] = []
+        for item in items:
+            if not isinstance(item, dict) or not item.get("url"):
+                continue
+            try:
+                width = int(item.get("width", 0) or 0)
+                height = int(item.get("height", 0) or 0)
+            except (TypeError, ValueError):
+                width = height = 0
+            # When dimensions are supplied, reject square/wide assets. Older
+            # SGDB responses omit them, so those remain eligible but rank last.
+            if width and height:
+                ratio = width / height
+                if ratio < 0.52 or ratio > 0.78 or height < 500:
+                    continue
+                score = 1000 - abs(width / height - 2 / 3) * 1000 + min(height, 900) / 10
+            else:
+                score = 1
+            ranked.append((int(score), str(item["url"])))
+        return max(ranked, default=(0, ""))[1]
 
     def _request_json(self, path: str) -> dict[str, object]:
         request = urllib.request.Request(

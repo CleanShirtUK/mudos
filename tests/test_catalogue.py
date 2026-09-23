@@ -7,6 +7,7 @@ from lulu.catalogue import CatalogueGame, CatalogueStore
 from lulu.romm import RommFile, RommGame
 from lulu.steam_provider import InstalledSteamGame
 from lulu.local_content import LocalContentProvider
+from lulu.steam_entitlements import SteamEntitlement
 
 
 class FakeSteamProvider:
@@ -66,6 +67,36 @@ class CatalogueTests(unittest.TestCase):
 
         self.assertEqual({game.provider for game in available}, {"romm", "steam"})
         self.assertEqual({game.game_id for game in available}, {"romm:43", "steam:263980"})
+
+    def test_installable_excludes_storefront_and_unknown_discovery_sources(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = CatalogueStore(Path(directory) / "catalogue.sqlite3")
+            store.connection.execute(
+                "INSERT INTO games (game_id, provider, provider_id, title, platform, "
+                "install_state, launchable, install_dir, artwork_url, availability_state, "
+                "catalogue_source) VALUES (?, ?, ?, ?, ?, 'available', 0, '', '', 'available', ?)",
+                ("flatpak:org.example.Game", "flatpak", "org.example.Game", "Store app", "Linux", "flatpak"),
+            )
+            store.connection.execute(
+                "INSERT INTO games (game_id, provider, provider_id, title, platform, "
+                "install_state, launchable, install_dir, artwork_url, availability_state, "
+                "catalogue_source) VALUES (?, ?, ?, ?, ?, 'available', 0, '', '', 'available', ?)",
+                ("mystery:1", "mystery", "1", "Discovered item", "PC", "discovery"),
+            )
+            store.connection.commit()
+
+            self.assertEqual(store.list_available_games(), [])
+
+    def test_installable_does_not_require_metadata_or_artwork(self) -> None:
+        entitlement = (SteamEntitlement("263980", "Out There Somewhere"),)
+        with tempfile.TemporaryDirectory() as directory:
+            store = CatalogueStore(Path(directory) / "catalogue.sqlite3")
+            store.reconcile_steam_entitlements(entitlement, FakeSteamProvider([]))
+            game = store.list_available_games()[0]
+
+        self.assertEqual(game.game_id, "steam:263980")
+        self.assertEqual(game.metadata_game_id, "")
+        self.assertEqual(game.artwork_url, "")
 
     def test_romm_steam_platform_survives_runtime_identity_and_available_query(self) -> None:
         first = RommGame(272, "BEEP", 7, "steam", "Steam", "104200-beep.json", ".json", 10, "", False,

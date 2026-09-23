@@ -6,7 +6,7 @@ Item {
     property real cardWidth: 0
     property var availableGames: []
     property var acquisitionJobs: ({})
-    property var categories: [{"label": "All Available", "scope": "all"}]
+    property var categories: [{"label": "Installable", "scope": "all"}]
     property string errorMessage: ""
     property real contentOpacity: 1
     property int categoryIndex: 0
@@ -31,6 +31,9 @@ Item {
     property int categoryTarget: -1
     property int categoryDirection: 1
     property real categoryMotionVelocity: 0
+    // Keep the filtered catalogue as plain stable records. Expensive card
+    // state belongs to the virtualized LibrarySpace delegates, not to every
+    // item in the provider catalogue.
     property var displayCards: []
     property var stores: []
     property var pluginStores: []
@@ -83,39 +86,19 @@ Item {
 
     function rebuildDisplayCards() {
         var previous = displayCards
-        var selectedIdentity = previous.length > selectedIndex && previous[selectedIndex].game
-            ? String(previous[selectedIndex].game.game_id) : ""
+        var selectedIdentity = previous.length > selectedIndex && previous[selectedIndex]
+            ? String(previous[selectedIndex].game_id) : ""
         var previousFirstVisibleRow = firstVisibleRow
+        var started = Date.now()
         var next = []
         var games = filteredGames()
-        for (var index = 0; index < games.length; index++) {
-            var game = games[index]
-            var state = null
-            for (var oldIndex = 0; oldIndex < previous.length; oldIndex++) {
-                if (previous[oldIndex].game
-                        && String(previous[oldIndex].game.game_id) === String(game.game_id)) {
-                    state = previous[oldIndex]
-                    break
-                }
-            }
-            if (!state) {
-                state = cardStateComponent.createObject(root, {game: game})
-                state.setAcquisition(jobForGame(game))
-            } else {
-                state.game = game
-            }
-            next.push(state)
-        }
-        for (var old = 0; old < previous.length; old++) {
-            if (next.indexOf(previous[old]) < 0)
-                previous[old].destroy()
-        }
+        for (var index = 0; index < games.length; index++)
+            next.push(games[index])
         displayCards = next
         var preservedIndex = -1
         if (selectedIdentity) {
             for (var preserved = 0; preserved < next.length; preserved++) {
-                if (next[preserved].game
-                        && String(next[preserved].game.game_id) === selectedIdentity) {
+                if (String(next[preserved].game_id) === selectedIdentity) {
                     preservedIndex = preserved
                     break
                 }
@@ -125,15 +108,17 @@ Item {
             : Math.min(selectedIndex, Math.max(0, displayCards.length - 1))
         firstVisibleRow = Math.min(previousFirstVisibleRow,
             Math.max(0, Math.floor(Math.max(0, displayCards.length - 1) / 6) - 1))
+        if (typeof mudosPerfDiagnostics !== "undefined" && mudosPerfDiagnostics)
+            console.log("STORE_FILTER", games.length, "ms", Date.now() - started,
+                "cardStates", 0)
     }
 
     function applyAcquisitionJobs() {
-        for (var index = 0; index < displayCards.length; index++)
-            displayCards[index].setAcquisition(jobForGame(displayCards[index].game))
+        // Acquisition state is resolved by the visible LibrarySpace delegate.
     }
 
-    // Catalogue/category changes rebuild this list. Acquisition changes only
-    // mutate StoreCardState objects, so delegates and navigation remain stable.
+    // Catalogue/category changes rebuild this list. Acquisition state is
+    // resolved only by visible delegates, so the catalogue stays lightweight.
     // availableGames.length + categories.length + displayCategoryIndex >= 0
     readonly property var displayGames: displayCards
 
@@ -164,6 +149,10 @@ Item {
     }
 
     function activateSelected() {
+        console.log("INSTALLABLE_ACTIVATE_SELECTED", "index", selectedIndex,
+                    "count", displayGames.length,
+                    "game", displayGames.length > selectedIndex
+                        ? JSON.stringify(displayGames[selectedIndex]) : "null")
         if (!displayGames.length)
             return
         activateGame(displayGames[selectedIndex])
@@ -173,18 +162,33 @@ Item {
         if (!game)
             return
         var selectedGame = game.game || game
+        var provider = String(selectedGame.provider || "")
+        var providerId = String(selectedGame.provider_id || "")
         var acquisitionState = acquisitionJob && acquisitionJob.state
             ? String(acquisitionJob.state) : (game.acquisition_state !== undefined
                 ? String(game.acquisition_state) : "")
+        console.log("INSTALLABLE_CARD_ACTIVATE", "game", String(selectedGame.game_id),
+                    "provider", provider, "action", "install",
+                    "actionEnabled", String(selectedGame.install_state === "available"
+                        && selectedGame.availability_state === "available"),
+                    "provider_id", providerId,
+                    "acquisitionState", acquisitionState)
         // game.provider === "romm" remains part of the combined catalogue.
-        if ((selectedGame.provider === "steam" || selectedGame.provider === "romm" || selectedGame.provider === "lutris")
+        if ((provider === "steam" || provider === "romm" || provider === "lutris")
                  && ["queued", "starting", "transferring", "finalizing", "paused", "cancelling"].indexOf(acquisitionState) >= 0)
             downloadsRequested()
-        else if ((selectedGame.provider === "steam" || selectedGame.provider === "romm" || selectedGame.provider === "lutris")
+        else if ((provider === "steam" || provider === "romm" || provider === "lutris")
                  && ["queued", "starting", "transferring", "finalizing", "paused", "cancelling"].indexOf(acquisitionState) < 0
-                  && String(selectedGame.provider_id).match(/^[1-9][0-9]*$/))
+                  && providerId.match(/^[1-9][0-9]*$/)) {
             // installGameRequested(game) preserves the existing generic Store signal boundary.
+            console.log("INSTALLABLE_INSTALL_SIGNAL", "game", String(selectedGame.game_id),
+                        "provider", provider, "provider_id", providerId)
             installGameRequested(selectedGame)
+        } else {
+            console.warn("INSTALLABLE_INSTALL_NOT_DISPATCHED", "game", String(selectedGame.game_id),
+                         "provider", provider, "provider_id", providerId,
+                         "acquisitionState", acquisitionState)
+        }
     }
 
     onAvailableGamesChanged: rebuildDisplayCards()
@@ -207,7 +211,7 @@ Item {
     }
 
     function homeCards() {
-        var cards = [{id: "available", title: "Available to Download", kind: "catalogue"}]
+        var cards = [{id: "available", title: "Installable", kind: "catalogue"}]
         for (var pluginIndex = 0; pluginIndex < pluginStores.length; pluginIndex++) {
             var pluginStore = pluginStores[pluginIndex]
             cards.push({id: String(pluginStore.id), title: String(pluginStore.label), kind: "store",
@@ -276,27 +280,22 @@ Item {
         }
     }
 
-    Component {
-        id: cardStateComponent
-        StoreCardState {}
-    }
     LibrarySpace {
         anchors.fill: parent
         visible: root.cardWidth === 0
         libraryGames: root.displayGames
+        acquisitionJobs: root.acquisitionJobs
         selectedIndex: root.selectedIndex
         firstVisibleRow: root.firstVisibleRow
         collectionIndex: root.categoryIndex
-         collections: root.categories
+        collections: root.categories
         contentBottom: root.contentBottom
         contentSideMargin: root.contentSideMargin
         collectionFocus: false
-        // Default catalogue labels remain: headingText: "AVAILABLE TO DOWNLOAD"
-        headingText: "AVAILABLE TO DOWNLOAD"
-        emptyText: root.errorMessage !== "" ? root.errorMessage : "No games available"
+        headingText: "INSTALLABLE"
+        emptyText: root.errorMessage !== "" ? root.errorMessage : "No games ready to install"
         contentOpacity: root.contentOpacity
-        // Default catalogue action remains: actionLabel: "Download"
-        actionLabel: "Download"
+        actionLabel: "Install"
         uiScale: root.uiScale
         typography: root.typography
         luluPalette: root.luluPalette
@@ -309,7 +308,7 @@ Item {
     }
 
     // NavigationCard { artworkRole: "icon" } remains the shared Home card contract.
-    // displayTitle: "Available to Download"
+    // displayTitle: "Installable"
     Repeater {
         id: homeCardRepeater
         visible: root.cardWidth > 0

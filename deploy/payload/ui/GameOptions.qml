@@ -7,19 +7,14 @@ Item {
     property var game: null
     property string view: "menu"
     property int selectedIndex: 0
-    property var results: []
-    property string query: ""
-    property string titleDraft: ""
     property string errorMessage: ""
-    property bool busy: false
+    property var artworkCandidates: []
     property bool uninstallSupported: false
     property real uiScale: 1
     property var typography
     property var luluPalette
     signal activated()
     signal backed()
-    signal queryEdited(string value)
-    signal titleEdited(string value)
     signal uninstallRequested()
 
     function mixColor(from, to, progress) {
@@ -30,11 +25,14 @@ Item {
             from.a + (to.a - from.a) * progress)
     }
 
-    readonly property var menuEntries: uninstallSupported
-        ? ["Change Match", "Edit Metadata", "Uninstall"]
-        : ["Change Match", "Edit Metadata"]
-    readonly property var editEntries: ["Edit Title", "Clear Title Override",
-        game && game.artwork_suppressed ? "Restore Image" : "Remove Image"]
+    readonly property var menuEntries: {
+        var entries = ["Change Artwork"]
+        if (game && game.artwork_override)
+            entries.push("Restore Automatic Artwork")
+        if (uninstallSupported)
+            entries.push("Uninstall")
+        return entries
+    }
 
     anchors.fill: parent
     visible: game !== null
@@ -89,64 +87,24 @@ Item {
             }
 
             Text {
-                visible: options.view === "search" || options.view === "confirm"
-                text: options.view === "confirm" ? "UNINSTALL?  This removes the local installed content." : "Change Match  /  Search SGDB"
+                visible: options.view === "artwork" || options.view === "confirm"
+                text: options.view === "confirm" ? "UNINSTALL?  This removes the local installed content." : "Choose cover artwork"
                 color: options.luluPalette.secondaryText
                 font.family: options.typography.interfaceFamily
                 font.pixelSize: options.typography.size("body", 15)
             }
 
-            TextInput {
-                id: queryEditor
-                visible: options.view === "search"
-                text: options.query
-                color: options.luluPalette.primaryText
-                selectionColor: options.luluPalette.accent
-                font.family: options.typography.interfaceFamily
-                font.pixelSize: options.typography.size("body", 18)
-                width: parent.width
-                focus: options.view === "search"
-                onTextChanged: options.queryEdited(text)
-                onAccepted: options.activated()
-                Keys.onPressed: function(event) {
-                    if (event.key === Qt.Key_Escape || event.key === Qt.Key_Backspace) {
-                        options.backed()
-                        event.accepted = true
-                    }
-                }
-            }
-
             Text {
-                visible: options.view === "title"
-                text: "Edit Title"
+                visible: options.view === "artwork"
+                text: "SteamGridDB alternatives"
                 color: options.luluPalette.secondaryText
                 font.family: options.typography.interfaceFamily
                 font.pixelSize: options.typography.size("body", 15)
             }
-            TextInput {
-                id: titleEditor
-                visible: options.view === "title"
-                text: options.titleDraft
-                color: options.luluPalette.primaryText
-                selectionColor: options.luluPalette.accent
-                font.family: options.typography.interfaceFamily
-                font.pixelSize: options.typography.size("body", 20)
-                width: parent.width
-                focus: options.view === "title"
-                onTextChanged: options.titleEdited(text)
-                onAccepted: options.activated()
-                Keys.onPressed: function(event) {
-                    if (event.key === Qt.Key_Escape || event.key === Qt.Key_Backspace) {
-                        options.backed()
-                        event.accepted = true
-                    }
-                }
-            }
-
             Text {
-                visible: options.busy || options.errorMessage !== ""
-                text: options.busy ? "Searching..." : options.errorMessage
-                color: options.busy ? options.luluPalette.secondaryText : options.luluPalette.warning
+                visible: options.errorMessage !== ""
+                text: options.errorMessage
+                color: options.luluPalette.warning
                 font.family: options.typography.interfaceFamily
                 font.pixelSize: options.typography.size("body", 15)
                 width: parent.width
@@ -155,11 +113,11 @@ Item {
 
             ListView {
                 id: entryList
-                visible: options.view === "menu" || options.view === "edit"
+                visible: options.view === "menu"
                 width: parent.width
                 height: Math.min(contentHeight, 330 * options.uiScale)
                 spacing: 8 * options.uiScale
-                model: options.view === "menu" ? options.menuEntries : options.editEntries
+                model: options.menuEntries
                 delegate: Rectangle {
                     id: rowDelegate
                     required property int index
@@ -211,77 +169,49 @@ Item {
             }
 
             ListView {
-                id: resultList
-                visible: options.view === "search"
+                id: artworkList
+                visible: options.view === "artwork"
                 width: parent.width
                 height: Math.min(contentHeight, 390 * options.uiScale)
                 spacing: 8 * options.uiScale
-                model: options.results
+                model: options.artworkCandidates
                 delegate: Rectangle {
-                    id: resultRow
+                    id: artworkRow
                     required property int index
                     required property var modelData
-                    width: resultList.width
+                    width: artworkList.width
                     height: 58 * options.uiScale
                     radius: 8 * options.uiScale
-                    z: index === options.selectedIndex ? 1 : 0
-                    property real selectionProgress: index === options.selectedIndex ? 1 : 0
-                    scale: 1 + 0.01 * selectionProgress
-                    transformOrigin: Item.Center
-                    readonly property color surfaceColor: options.mixColor(
-                        options.luluPalette.cardSurface, options.luluPalette.focusedCardSurface,
-                        selectionProgress)
-                    readonly property color rowBorderColor: options.mixColor(
-                        options.luluPalette.glassBorder, options.luluPalette.focusIndicator,
-                        selectionProgress)
-                    readonly property color textColor: options.mixColor(
-                        options.luluPalette.navigationText, options.luluPalette.primaryText,
-                        selectionProgress)
-                    Behavior on selectionProgress {
-                        NumberAnimation {
-                            duration: 180
-                            easing.type: Easing.OutQuint
-                        }
-                    }
-                    color: surfaceColor
-                    border.color: rowBorderColor
-                    border.width: options.uiScale
-                    Column {
+                    color: index === options.selectedIndex ? options.luluPalette.focusedCardSurface : options.luluPalette.cardSurface
+                    border.color: index === options.selectedIndex ? options.luluPalette.focusIndicator : options.luluPalette.glassBorder
+                    Text {
                         anchors.fill: parent
-                        anchors.margins: 10 * options.uiScale
-                        spacing: 3 * options.uiScale
-                        Text {
-                            text: resultRow.modelData.title + "  [" + resultRow.modelData.id + "]"
-                            color: resultRow.textColor
-                            font.family: options.typography.interfaceFamily
-                            font.pixelSize: options.typography.size("body", 18)
-                            elide: Text.ElideRight
-                            width: parent.width
-                            layer.enabled: true
-                            layer.effect: MultiEffect {
-                                shadowEnabled: true
-                                shadowColor: "#000000"
-                                shadowOpacity: 0.35
-                                shadowBlur: 0.2
-                                shadowVerticalOffset: 1 * options.uiScale
-                            }
-                        }
-                        Text {
-                            text: resultRow.modelData.platforms && resultRow.modelData.platforms.length
-                                ? resultRow.modelData.platforms.join(", ") : "Platform metadata unavailable"
-                            color: resultRow.textColor
-                            font.family: options.typography.interfaceFamily
-                            font.pixelSize: options.typography.size("hint", 12)
-                            elide: Text.ElideRight
-                            width: parent.width
-                        }
+                        anchors.leftMargin: 18 * options.uiScale
+                        text: (artworkRow.modelData.current ? "[CURRENT] " : "") + "SGDB cover"
+                        color: options.luluPalette.primaryText
+                        font.family: options.typography.interfaceFamily
+                        font.pixelSize: options.typography.size("body", 18)
+                        verticalAlignment: Text.AlignVCenter
+                        elide: Text.ElideRight
+                    }
+                    Image {
+                        anchors.right: parent.right
+                        anchors.rightMargin: 12 * options.uiScale
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: 34 * options.uiScale
+                        height: 48 * options.uiScale
+                        source: artworkRow.modelData.thumbnail
+                        fillMode: Image.PreserveAspectFit
+                        asynchronous: true
+                        cache: true
                     }
                 }
             }
 
+
             Item { width: 1; height: 1 }
             Text {
-                        text: options.view === "search" ? "Choose    Back" : options.view === "confirm" ? "Confirm    Back" : "Select    Back"
+                text: options.view === "artwork" ? "Select    Back" : options.view === "confirm" ? "Confirm    Back" : "Select    Back"
                 color: options.luluPalette.secondaryText
                 font.family: options.typography.interfaceFamily
                 font.pixelSize: options.typography.size("hint", 14)

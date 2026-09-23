@@ -18,7 +18,8 @@ LOGGER = logging.getLogger("lulu.igdb")
 IGDB_FIELDS = (
     "id,name,summary,first_release_date,genres.name,game_modes.name,platforms.name,"
     "involved_companies.company.name,involved_companies.developer,involved_companies.publisher,"
-    "franchises.name,collections.name,multiplayer_modes.*"
+    "franchises.name,collections.name,multiplayer_modes.*,cover.url,cover.width,cover.height,cover.image_id,"
+    "alternative_names.name,external_games.*"
 )
 
 
@@ -56,6 +57,23 @@ class IGDBClient:
     @property
     def configured(self) -> bool:
         return self.config.enabled and bool(self.config.get("client_id", "")) and self.config.secret_available("client_secret")
+
+    def test_connection(self) -> str:
+        """Validate credentials through the same token/query boundary as enrichment."""
+        if not self.config.enabled:
+            return "disabled"
+        if not str(self.config.get("client_id", "")).strip() or not self.config.secret_available("client_secret"):
+            return "incomplete"
+        self.query("fields id; limit 1;")
+        return "connected"
+
+    def reload_configuration(self) -> None:
+        """Pick up Admin changes without restarting the catalogue daemon."""
+        service = ProviderConfigurationService.from_environment()
+        self.config = service.provider("metadata.igdb")
+        self.endpoint = str(self.config.get("endpoint", "https://api.igdb.com/v4")).rstrip("/")
+        self.auth_endpoint = str(self.config.get("auth_endpoint", "https://id.twitch.tv/oauth2/token"))
+        self._token = None
 
     def _token_value(self, *, force: bool = False) -> str:
         if not self.config.enabled:
@@ -102,7 +120,7 @@ class IGDBClient:
         client_id = str(self.config.get("client_id", "")).strip()
         with self._semaphore:
             self._throttle()
-            request = Request(self.endpoint, data=body.encode(), method="POST",
+            request = Request(self.endpoint.rstrip("/") + "/games", data=body.encode(), method="POST",
                               headers={"Client-ID": client_id, "Authorization": f"Bearer {token}",
                                        "Content-Type": "text/plain"})
             try:
@@ -130,6 +148,13 @@ class IGDBClient:
         body = f'fields {IGDB_FIELDS}; where external_games.external_game_source = 1 & external_games.uid = "{app_id}"; limit 2;'
         rows = self.query(body)
         return rows[0] if len(rows) == 1 else None
+
+    def by_id(self, game_id: str) -> dict[str, object] | None:
+        """Resolve a previously supplied IGDB identity without title searching."""
+        if not str(game_id).isdecimal() or int(game_id) < 1 or not self.configured:
+            return None
+        rows = self.query(f"fields {IGDB_FIELDS}; where id = {int(game_id)}; limit 1;")
+        return rows[0] if rows else None
 
     def search_platform(self, title: str, platform_id: int) -> list[dict[str, object]]:
         if not title.strip() or not self.configured:
@@ -176,6 +201,17 @@ def normalize_igdb_game(value: dict[str, object]) -> dict[str, object]:
         "developer": developer, "publisher": publisher,
         "franchise": (names("franchises") or [""])[0], "collection": (names("collections") or [""])[0],
     }
+    cover = value.get("cover") if isinstance(value.get("cover"), dict) else {}
+    cover_url = str(cover.get("url", "")).strip()
+    image_id = str(cover.get("image_id", "")).strip()
+    if image_id:
+        cover_url = f"https://images.igdb.com/igdb/image/upload/t_1080p/{image_id}.jpg"
+    if cover_url.startswith("//"):
+        cover_url = "https:" + cover_url
+    result["cover_url"] = cover_url
+    result["cover_width"] = int(cover["width"]) if str(cover.get("width", "")).isdigit() else None
+    result["cover_height"] = int(cover["height"]) if str(cover.get("height", "")).isdigit() else None
+    result["aliases"] = names("alternative_names")
     multiplayer = value.get("multiplayer_modes")
     if isinstance(multiplayer, list) and multiplayer:
         mode = multiplayer[0] if isinstance(multiplayer[0], dict) else {}

@@ -14,7 +14,7 @@ class BrowserStoreLifecycleTests(unittest.TestCase):
         self.consoled = (ROOT / "src/lulu/consoled.py").read_text()
 
     def test_home_store_cards_are_not_catalogue_cards(self) -> None:
-        self.assertIn('title: "Available to Download"', self.store)
+        self.assertIn('title: "Installable"', self.store)
         self.assertIn('title: "Add New Store"', self.store)
         self.assertIn("function homeCards()", self.store)
         self.assertIn("pluginStores", self.store)

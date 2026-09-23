@@ -106,7 +106,10 @@ class NotificationBrokerTests(unittest.IsolatedAsyncioTestCase):
             try:
                 await presenter(Notification("event-1", "installation_succeeded",
                                              "Installed successfully", "Example is ready"))
-                await asyncio.sleep(0.05)
+                for _ in range(20):
+                    if output.exists():
+                        break
+                    await asyncio.sleep(0.05)
             finally:
                 if old is None:
                     os.environ.pop("OUTPUT", None)

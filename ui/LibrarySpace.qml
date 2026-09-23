@@ -4,6 +4,7 @@ import "MudosAssetCatalog.js" as MudosAssetCatalog
 Item {
     id: librarySpace
     property var libraryGames: []
+    property var acquisitionJobs: ({})
     property int selectedIndex: 0
     property int firstVisibleRow: 0
     property int collectionIndex: 0
@@ -100,6 +101,15 @@ Item {
     signal launchRequested(var game, var acquisitionJob)
     signal specialActivated(var game)
     signal categoryContentHidden()
+
+    function acquisitionJobFor(game) {
+        if (!game)
+            return null
+        return acquisitionJobs[String(game.game_id)]
+            || (game.provider === "steam"
+                ? acquisitionJobs["steam:" + String(game.provider_id)] : null)
+            || null
+    }
 
     Behavior on gameContentOpacity {
         NumberAnimation {
@@ -334,7 +344,7 @@ Item {
                     visible: !librarySpace.specialCardId
                         || String(gameData.game_id) !== librarySpace.specialCardId
                     game: gameData
-                    acquisitionJob: modelData.acquisitionJob || null
+                    acquisitionJob: librarySpace.acquisitionJobFor(gameData)
                     focused: index === librarySpace.selectedIndex && !librarySpace.collectionFocus
                     compact: true
                     uiScale: librarySpace.uiScale
@@ -362,13 +372,23 @@ Item {
                          + gameGrid.contentY + parent.x + parent.y
                          + scale + selectionProgress
                     showAction: false
-                     actionLabel: (modelData.acquisition_state || gameData.acquisition_state) === "queued" ? "Queued"
-                         : (modelData.acquisition_state || gameData.acquisition_state) === "starting" ? "Starting"
-                         : (modelData.acquisition_state || gameData.acquisition_state) === "transferring" ? "Downloading"
-                         : (modelData.acquisition_state || gameData.acquisition_state) === "finalizing" ? "Finalizing"
-                         : (modelData.acquisition_state || gameData.acquisition_state) === "failed"
-                           && (!modelData.acquisition_error && !gameData.acquisition_error
-                               || (modelData.acquisition_error || gameData.acquisition_error).retryable !== false)
+                      actionLabel: ((librarySpace.acquisitionJobFor(gameData)
+                          ? librarySpace.acquisitionJobFor(gameData).state : "")
+                          || gameData.acquisition_state) === "queued" ? "Queued"
+                          : ((librarySpace.acquisitionJobFor(gameData)
+                              ? librarySpace.acquisitionJobFor(gameData).state : "")
+                              || gameData.acquisition_state) === "starting" ? "Starting"
+                          : ((librarySpace.acquisitionJobFor(gameData)
+                              ? librarySpace.acquisitionJobFor(gameData).state : "")
+                              || gameData.acquisition_state) === "transferring" ? "Downloading"
+                          : ((librarySpace.acquisitionJobFor(gameData)
+                              ? librarySpace.acquisitionJobFor(gameData).state : "")
+                              || gameData.acquisition_state) === "finalizing" ? "Finalizing"
+                          : ((librarySpace.acquisitionJobFor(gameData)
+                              ? librarySpace.acquisitionJobFor(gameData).state : "")
+                              || gameData.acquisition_state) === "failed"
+                            && (!gameData.acquisition_error
+                                || gameData.acquisition_error.retryable !== false)
                            ? "Retry Download"
                          : librarySpace.actionLabel
                     catalogueCard: true
@@ -381,7 +401,8 @@ Item {
 
                     MouseArea {
                         anchors.fill: parent
-                         onClicked: launchRequested(gameData, modelData.acquisitionJob || null)
+                         onClicked: launchRequested(gameData,
+                             librarySpace.acquisitionJobFor(gameData))
                     }
                 }
 

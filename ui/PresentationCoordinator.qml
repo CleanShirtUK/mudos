@@ -11,6 +11,9 @@ Item {
     readonly property string presentedState: "PRESENTED"
     readonly property string transitioningAwayState: "TRANSITIONING_AWAY"
     property string contentState: hiddenState
+    property bool ready: false
+
+    Component.onCompleted: ready = true
 
     // Startup tuning is deliberately centralized here for physical tuning.
     readonly property int contentRevealAt: 110

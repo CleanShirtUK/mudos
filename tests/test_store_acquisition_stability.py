@@ -13,16 +13,17 @@ class StoreAcquisitionStabilityTests(unittest.TestCase):
         self.library = (ROOT / "ui" / "LibrarySpace.qml").read_text()
         self.game_card = (ROOT / "ui" / "GameCard.qml").read_text()
 
-    def test_acquisition_changes_mutate_stable_card_state(self) -> None:
+    def test_store_uses_stable_records_and_visible_job_lookup(self) -> None:
         self.assertIn("readonly property var displayGames: displayCards", self.store)
         self.assertIn("function applyAcquisitionJobs()", self.store)
-        self.assertIn("displayCards[index].setAcquisition", self.store)
+        self.assertNotIn("displayCards[index].setAcquisition", self.store)
+        self.assertNotIn("cardStateComponent.createObject", self.store)
         self.assertIn("onLaunchRequested: root.activateGame(game, acquisitionJob)", self.store)
-        self.assertIn("launchRequested(gameData, modelData.acquisitionJob", self.library)
+        self.assertIn("acquisitionJobFor(gameData)", self.library)
         self.assertIn("function setAcquisition(job)", self.card)
         self.assertIn("if (signature === acquisition_signature)", self.card)
         self.assertNotIn("Object.keys(acquisitionJobs)", self.store)
-        self.assertIn("acquisitionJob: modelData.acquisitionJob", self.library)
+        self.assertIn("property var acquisitionJobs", self.library)
 
     def test_transient_stages_do_not_use_stale_transfer_progress(self) -> None:
         self.assertIn('card.acquisitionState === "transferring"', self.game_card)

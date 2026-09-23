@@ -6,9 +6,8 @@ from collections import deque
 import ctypes
 from datetime import datetime
 import json
-import logging
-import os
 from pathlib import Path
+import logging
 import re
 import select
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -579,6 +578,16 @@ class ConsoleUiBridge:
         else:
             await self.consoled.call_restore_artwork(game_id)
 
+    async def artwork_candidates(self, game_id: str) -> list[dict[str, object]]:
+        rows = await self.consoled.call_list_artwork_candidates(game_id)
+        return [{key: value.value for key, value in row.items()} for row in rows]
+
+    async def select_artwork(self, game_id: str, source_url: str) -> None:
+        await self.consoled.call_select_artwork(game_id, source_url)
+
+    async def restore_automatic_artwork(self, game_id: str) -> None:
+        await self.consoled.call_restore_automatic_artwork(game_id)
+
 
 class ApiHandler(BaseHTTPRequestHandler):
     bridge: ConsoleUiBridge
@@ -688,6 +697,13 @@ class ApiHandler(BaseHTTPRequestHandler):
             except Exception as error:  # pragma: no cover - live IPC failure path
                 self._respond(503, {"error": str(error)})
             return
+        if urlparse(self.path).path == "/artwork/candidates":
+            game_id = parse_qs(urlparse(self.path).query).get("game_id", [""])[0]
+            try:
+                self._respond(200, self.bridge.call(self.bridge.artwork_candidates(game_id), timeout=30))
+            except Exception as error:
+                self._respond(409, {"error": str(error)})
+            return
         if urlparse(self.path).path.startswith("/uninstall/capability/"):
             try:
                 game_id = unquote(urlparse(self.path).path.removeprefix("/uninstall/capability/"))
@@ -709,6 +725,20 @@ class ApiHandler(BaseHTTPRequestHandler):
                 Path("/tmp/lulu-qml-refresh-request").write_text(group, encoding="ascii")
                 self._respond(200, {"status": "requested", "group": group})
             except OSError as error:
+                self._respond(409, {"error": str(error)})
+            return
+        if path.startswith("/artwork/"):
+            try:
+                game_id = unquote(path.removeprefix("/artwork/"))
+                length = int(self.headers.get("Content-Length", "0"))
+                payload = json.loads(self.rfile.read(length) or b"{}")
+                if payload.get("restore"):
+                    self.bridge.call(self.bridge.restore_automatic_artwork(game_id), timeout=30)
+                else:
+                    self.bridge.call(self.bridge.select_artwork(
+                        game_id, str(payload.get("source_url", ""))), timeout=30)
+                self._respond(200, {"status": "updated"})
+            except Exception as error:
                 self._respond(409, {"error": str(error)})
             return
         if path.startswith("/plugins/") and path.endswith("/signin"):

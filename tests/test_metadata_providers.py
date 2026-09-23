@@ -115,6 +115,41 @@ class MetadataProviderTests(unittest.TestCase):
             reopened = CatalogueStore(Path(directory) / "catalogue.sqlite3")
             self.assertEqual(reopened.get_game(game.game_id).igdb_id, "99")
 
+    def test_protondb_stage_targets_installed_steam_and_reuses_ttl(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = CatalogueStore(Path(directory) / "catalogue.sqlite3")
+            steam = CatalogueGame.from_steam(type("Steam", (), {
+                "app_id": "220780", "title": "Thomas Was Alone", "install_dir": "/games/base",
+                "artwork_url": "", "last_played": 0,
+            })())
+            local = CatalogueGame.from_local(type("Local", (), {
+                "content_id": "local:nes:one", "title": "Other", "platform": "nes",
+                "install_state": "installed", "launchable": True, "content_path": "/rom/Other.nes",
+                "runtime": "retroarch", "platform_label": "NES", "source_title": "Other",
+            })())
+            store._upsert(steam)
+            store._upsert(local)
+            store.connection.commit()
+
+            class Proton:
+                enabled = True
+                def __init__(self):
+                    self.calls = []
+                def summary(self, app_id):
+                    self.calls.append(app_id)
+                    return {"tier": "platinum", "confidence": "good", "score": 0.83}
+
+            proton = Proton()
+            service = MetadataEnrichmentService(store, type("IGDB", (), {"configured": False})(), proton)
+            games = [game for game in store.list_games()
+                     if game.provider == "steam" and game.provider_id.isdecimal()]
+            self.assertEqual([game.game_id for game in games], [steam.game_id])
+            self.assertEqual(len(service.enrich_protondb(games)), 1)
+            self.assertEqual(proton.calls, ["220780"])
+            self.assertEqual(store.get_game(steam.game_id).protondb_tier, "platinum")
+            self.assertEqual(service.enrich_protondb(games), ())
+            self.assertEqual(proton.calls, ["220780"])
+
 
 if __name__ == "__main__":
     unittest.main()

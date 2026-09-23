@@ -31,3 +31,30 @@ class ArtworkTests(unittest.TestCase):
         with patch("lulu.artwork.SteamGridDBArtwork._resolve") as resolve:
             self.assertEqual(provider.enrich([game]), {})
         resolve.assert_not_called()
+
+    def test_gallery_uses_canonical_identity_and_portrait_grids_only(self) -> None:
+        provider = SteamGridDBArtwork(api_key="test", cache_dir=Path(tempfile.mkdtemp()))
+        game = type("Game", (), {
+            "metadata_provider": "igdb", "metadata_game_id": "51231",
+            "canonical_title": "SuperTux", "automatic_artwork_source_url": "https://cdn/current.jpg",
+            "selected_artwork_source_url": "",
+        })()
+        calls: list[str] = []
+
+        def request(path: str) -> dict[str, object]:
+            calls.append(path)
+            if path.startswith("/v2/search/autocomplete/"):
+                return {"data": [{"id": 77, "name": "SuperTux"}]}
+            return {"data": [
+                {"id": 1, "url": "https://cdn/current.jpg", "thumb": "https://cdn/current-thumb.jpg",
+                 "width": 600, "height": 900},
+                {"id": 2, "url": "https://cdn/wide.jpg", "width": 1200, "height": 600},
+                {"id": 3, "url": "https://cdn/small.jpg", "width": 300, "height": 450},
+            ]}
+
+        with patch("lulu.artwork.SteamGridDBArtwork._request_json", side_effect=request):
+            rows = provider.gallery(game)
+        self.assertEqual([row["url"] for row in rows], ["https://cdn/current.jpg"])
+        self.assertTrue(rows[0]["current"])
+        self.assertIn("/v2/search/autocomplete/SuperTux", calls)
+        self.assertIn("/v2/grids/game/77", calls)

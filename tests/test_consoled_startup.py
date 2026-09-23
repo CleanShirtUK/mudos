@@ -13,12 +13,19 @@ class ConsoledStartupTests(unittest.TestCase):
         source = (ROOT / "src/lulu/consoled.py").read_text()
         serve = source[source.index("async def serve()") :]
         self.assertLess(serve.index("await bus.request_name(BUS_NAME)"),
-                         serve.index("await interface.refresh_catalogue()"))
+                        serve.index("await interface.refresh_catalogue("))
 
     def test_provider_refresh_is_background_work(self) -> None:
         source = (ROOT / "src/lulu/consoled.py").read_text()
         self.assertIn('asyncio.to_thread(self.catalogue.refresh)', source)
         self.assertIn('ROMM_SYNC_INTERVAL = 15 * 60', source)
+
+    def test_startup_readiness_is_only_installed_local_reconciliation(self) -> None:
+        source = (ROOT / "src/lulu/consoled.py").read_text()
+        self.assertIn('startup_stages = {"steam", "local"}', source)
+        self.assertIn("mark_startup_reconciliation_ready", source)
+        self.assertIn('"romm", "components", "romm-artwork", "protondb"', source)
+        self.assertIn("GetStartupReadiness", source)
 
     def test_refresh_callers_share_one_in_flight_reconciliation(self) -> None:
         class Catalogue:

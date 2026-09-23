@@ -163,7 +163,7 @@ class MudosPaths:
 
     @property
     def artwork_cache(self) -> Path:
-        return self.cache_home / "lulu/steamgriddb"
+        return self.cache_home / "lulu/artwork/covers"
 
     @property
     def romm_artwork_cache(self) -> Path:

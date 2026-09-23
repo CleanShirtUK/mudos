@@ -6,6 +6,7 @@ from unittest.mock import patch
 from lulu.admin_web import (AdminApp, Handler, SERVICES, _check_password, _hash_password,
                             _login_page, _page, _service_url)
 from lulu.provider_config import ProviderConfigurationService
+from lulu.plugins import ComponentRegistry
 
 
 class FakeSecrets:
@@ -54,6 +55,24 @@ class AdminWebTests(unittest.TestCase):
             service.update_provider("providers.usenet", {"enabled": True}, {"rpc_password": "replacement"})
             self.assertIn('rpc_password = "usenet/rpc-password"', (root / "user.toml").read_text())
             self.assertEqual(secrets.get("usenet", "rpc-password"), "replacement")
+
+    def test_first_time_secret_schema_creates_declared_reference_without_exposing_value(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory); secrets = FakeSecrets()
+            service = ProviderConfigurationService(system_path=root / "missing.toml",
+                user_path=root / "user.toml", secrets=secrets)
+            descriptor = next(item for item in ComponentRegistry().builtins
+                              if item.component_id == "metadata.igdb")
+            service.update_provider("metadata.igdb", {"enabled": True, "client_id": "public-id"},
+                                   {"client_secret": "private-value"},
+                                   secret_references={"client_secret": descriptor.secrets[0].reference})
+            text = (root / "user.toml").read_text()
+            self.assertIn('client_id = "public-id"', text)
+            self.assertIn('client_secret = "metadata/igdb-client-secret"', text)
+            self.assertNotIn("private-value", text)
+            self.assertEqual(secrets.get("metadata", "igdb-client-secret"), "private-value")
+            service.update_provider("metadata.igdb", {}, {})
+            self.assertEqual(secrets.get("metadata", "igdb-client-secret"), "private-value")
 
     def test_service_links_use_request_host_and_include_dufs(self):
         class Request:

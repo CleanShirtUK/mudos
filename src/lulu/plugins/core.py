@@ -43,6 +43,7 @@ class SecretRequirement:
     label: str
     description: str = ""
     required: bool = False
+    reference: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -304,7 +305,8 @@ class PluginRegistry:
         if not isinstance(raw, list):
             raise ValueError(f"invalid secret requirements: {path}")
         return tuple(SecretRequirement(str(item.get("slot", "")), str(item.get("label", "")),
-                                       str(item.get("description", "")), bool(item.get("required", False)))
+                                       str(item.get("description", "")), bool(item.get("required", False)),
+                                       str(item.get("reference", "")))
                      for item in raw if isinstance(item, dict) and item.get("slot"))
 
     @staticmethod
@@ -467,6 +469,26 @@ class PluginRegistry:
 
 
 BUILTIN_COMPONENTS: tuple[ComponentDescriptor, ...] = (
+    ComponentDescriptor(
+        "metadata.igdb", "IGDB", "Canonical game metadata and artwork.", "builtin_metadata",
+        capabilities=frozenset({"metadata"}), provider_ids=("metadata.igdb",),
+        configuration=(
+            ConfigurationField("enabled", "boolean", "Enable IGDB metadata",
+                               "Allow Mudos to query IGDB for canonical identity and presentation metadata."),
+            ConfigurationField("client_id", "text", "Client ID", "Your Twitch application client ID.", required=True),
+        ),
+        secrets=(SecretRequirement("client_secret", "Client Secret",
+                                   "Write-only Twitch application client secret.", required=True,
+                                   reference="metadata/igdb-client-secret"),),
+    ),
+    ComponentDescriptor(
+        "metadata.steamgriddb", "SteamGridDB", "Preferred automatic cover artwork.", "builtin_metadata",
+        capabilities=frozenset({"artwork"}), provider_ids=("metadata.steamgriddb",),
+        configuration=(ConfigurationField("enabled", "boolean", "Enable SteamGridDB artwork",
+                                          "Allow Mudos to use validated SteamGridDB covers after canonical identity resolution."),),
+        secrets=(SecretRequirement("api_key", "API Key", "Write-only SteamGridDB API key.", required=True,
+                                   reference="metadata/steamgriddb-api-key"),),
+    ),
     ComponentDescriptor("retroarch", "RetroArch", "Classic console emulation.", "builtin_provider",
                         capabilities=frozenset({"catalogue", "launch", "settings"}), provider_ids=("retroarch",)),
     ComponentDescriptor("dolphin", "Dolphin", "GameCube and Wii emulation.", "builtin_provider",

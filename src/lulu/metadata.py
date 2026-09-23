@@ -22,7 +22,7 @@ NOISE_WORDS = {
     "a", "b", "beta", "cart", "demo", "dump", "e", "en", "eng", "f", "fr",
     "fra", "g", "german", "i", "it", "j", "jpn", "japan", "k", "proto",
     "base", "cart", "dlc", "game", "nsp", "rev", "revision", "sample", "spanish",
-    "t", "translation", "u", "usa", "v", "version", "world",
+    "t", "translation", "u", "usa", "v", "version",
 }
 NOISE_REGION_WORDS = {"australia", "europe", "japan", "korea", "usa", "world"}
 PLATFORM_ALIASES = {
@@ -39,7 +39,8 @@ def _is_noise_token(value: str) -> bool:
     value = value.casefold().strip()
     return (
         value in NOISE_WORDS
-        or value in NOISE_REGION_WORDS
+        # Region words are noise only inside explicit ROM decoration groups;
+        # meaningful title words such as "World" must survive bare titles.
         or bool(re.fullmatch(r"[0-9a-f]{8,20}", value))
         or bool(re.fullmatch(r"\d+(?:\.\d+)+", value))
         or bool(re.fullmatch(r"\d{1,3}", value))
@@ -72,6 +73,9 @@ def clean_local_title(value: str) -> str:
 
     title = re.sub(r"(?:\s|[-_.])+(?:[A-Z]{2,5}\d{2,6})$", "", title)
     title = re.sub(r"\s+", " ", title)
+    # ROM sets commonly put a leading article at the end of the title.
+    # Normalize that reversible presentation form without fuzzy matching.
+    title = re.sub(r"^(.+),\s*the(\s+-|$)", r"The \1\2", title, flags=re.IGNORECASE)
     tokens = title.split()
     while tokens and _is_trailing_noise_token(tokens[-1]):
         tokens.pop()
@@ -84,7 +88,6 @@ def _is_trailing_noise_token(value: str) -> bool:
     value = value.casefold().strip()
     return (
         value in NOISE_WORDS
-        or value in NOISE_REGION_WORDS
         or bool(re.fullmatch(r"[0-9a-f]{8,20}", value))
         or bool(re.fullmatch(r"[a-z]{1,3}\d+(?:\.\d+)*", value))
     )
@@ -340,7 +343,8 @@ def presentation_metadata(candidate: MetadataCandidate) -> dict[str, object]:
         release_year = None
     result: dict[str, object] = {"genres": genres, "release_date": release_date, "release_year": release_year}
     for key in ("summary", "developer", "publisher", "franchise", "collection", "igdb_id",
-                "total_playtime", "local_multiplayer", "online_multiplayer", "game_mode", "protondb_rating"):
+                "total_playtime", "local_multiplayer", "online_multiplayer", "game_mode", "protondb_rating",
+                "cover_url", "cover_width", "cover_height", "aliases"):
         if key in raw and raw[key] is not None:
             result[key] = raw[key]
     for key in ("game_modes", "platforms"):

@@ -21,8 +21,10 @@ Item {
     required property var total_playtime
     required property var runtime
     required property var genres
-    required property var local_multiplayer
-    required property var online_multiplayer
+    // The native RecentModel exposes this role even when its value is empty;
+    // requiring the role makes QML bind the native value instead of retaining
+    // a local default binding.
+    required property var game_modes
     required property var game_mode
     required property var protondb_rating
     required property var display_title_override
@@ -98,8 +100,7 @@ Item {
         total_playtime: total_playtime,
         runtime: runtime,
         genres: genres,
-        local_multiplayer: local_multiplayer,
-        online_multiplayer: online_multiplayer,
+        game_modes: game_modes,
         game_mode: game_mode,
         protondb_rating: protondb_rating,
         display_title_override: display_title_override,
@@ -125,7 +126,7 @@ Item {
         compact: root.presentationState === "COMPACT"
         showAction: false
         actionLabel: root.install_state === "available"
-            ? "Available to Download" : (root.provider === "steam-store"
+            ? "Installable" : (root.provider === "steam-store"
                 ? "Open" : "Play")
         homeCard: true
         playActivationSerial: root.playActivationSerial

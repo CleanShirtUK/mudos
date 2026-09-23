@@ -491,10 +491,14 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertIn('availability_state !== "available"', QML)
         self.assertIn('install_state !== "available"', QML)
         self.assertIn('categories.push({"label": label, "scope": scope})', QML)
-        self.assertIn('emptyText: root.errorMessage !== "" ? root.errorMessage : "No games available"', store)
+        self.assertIn('emptyText: root.errorMessage !== "" ? root.errorMessage : "No games ready to install"', store)
         self.assertIn('libraryGames: root.displayGames', store)
         self.assertNotIn('specialCardId: "steam-store"', store)
-        self.assertIn('actionLabel: "Download"', store)
+        self.assertIn('actionLabel: "Install"', store)
+        self.assertIn('signal installGameRequested(var game)', store)
+        self.assertIn('installGameRequested(selectedGame)', store)
+        self.assertIn('providerId.match(/^[1-9][0-9]*$/)', store)
+        self.assertIn('CONTROLLER_ACTIVATE', QML)
         self.assertIn('root.space === "store" ? "Download"', QML)
         self.assertIn('catalogueCard: true', (ROOT / "ui" / "LibrarySpace.qml").read_text())
         self.assertIn('MudosGlassItem {', (ROOT / "ui" / "GameCard.qml").read_text())
@@ -507,6 +511,9 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertIn('installGameRequested(game)', store)
         self.assertIn('game.provider === "steam"', store)
         self.assertIn('onInstallGameRequested: root.installGame(game)', QML)
+        self.assertIn('onHomeDownloadRequested: root.openInstallableSurface()', QML)
+        self.assertIn('function openInstallableSurface()', QML)
+        self.assertNotIn('onHomeDownloadRequested: root.activate()', QML)
         self.assertIn('request("/install/"', QML)
         self.assertIn('call_submit_job', bridge)
         self.assertNotIn('steam://install', QML + store)
@@ -769,13 +776,12 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertIn("readonly property var focalMetadataRows", game_card)
         self.assertNotIn('"Genres  "', game_card)
         self.assertNotIn('"Last Played  "', game_card)
-        self.assertIn('"SUPPORTED"', game_card)
-        self.assertIn('"NOT_SUPPORTED"', game_card)
-        self.assertIn('"UNKNOWN"', game_card)
-        self.assertIn('"No Local Multiplayer"', game_card)
-        self.assertIn('"No Online Multiplayer"', game_card)
+        self.assertIn('card.game.game_modes', game_card)
+        self.assertIn('usefulGameModes.join(" · ")', game_card)
+        self.assertNotIn('"Local Multiplayer"', game_card)
+        self.assertNotIn('"Online Multiplayer"', game_card)
         for glyph in ('"\\uf02c"', '"\\uf1da"', '"\\uf017"',
-                      '"\\uf0c0"', '"\\uf0ac"', '"\\ue27f"',
+                      '"\\uf0c0"', '"\\ue27f"',
                       '"\\uf11b"', '"\\uf1e6"'):
             self.assertIn(glyph, game_card)
         self.assertIn('text: protonDb', game_card)
@@ -826,6 +832,20 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertIn('canonicalTexture: orbitTexture', shell)
         self.assertIn('canonicalCoordinateRoot: orbitRenderSource', shell)
 
+    def test_startup_intro_waits_for_library_readiness_and_coordinator(self) -> None:
+        shell = (ROOT / "ui" / "ConsoleShell.qml").read_text()
+        coordinator = (ROOT / "ui" / "PresentationCoordinator.qml").read_text()
+        self.assertIn('property string startupLifecycle: "BOOTSTRAPPING"', shell)
+        self.assertIn('startupLifecycle = "RECONCILING_LIBRARY"', shell)
+        self.assertIn('request("/startup-ready"', shell)
+        self.assertIn('startupLifecycle = "READY_FOR_INTRO"', shell)
+        self.assertIn('startupLifecycle = "PLAYING_INTRO"', shell)
+        self.assertIn('startupLifecycle = "HOME"', shell)
+        self.assertIn('!presentationCoordinator.ready', shell)
+        self.assertIn('property bool ready: false', coordinator)
+        self.assertIn('Component.onCompleted: ready = true', coordinator)
+        self.assertNotIn('root.presentationCoordinator.contentState', shell)
+
     def test_controller_x_routes_to_shared_game_options_action(self) -> None:
         native_shell = (ROOT / "native" / "lulu-shell.cpp").read_text()
         self.assertIn('{SDL_GAMEPAD_BUTTON_WEST, "options"}', native_shell)
@@ -860,13 +880,28 @@ class ConsoleUiTests(unittest.TestCase):
 
     def test_game_options_preserves_contextual_two_level_structure(self) -> None:
         options = (ROOT / "ui" / "GameOptions.qml").read_text()
-        for entry in ("Change Match", "Edit Metadata", "Edit Title", "Clear Title Override"):
-            self.assertIn(entry, options)
-        self.assertIn('"Remove Image"', options)
-        self.assertIn('"Restore Image"', options)
-        self.assertIn("metadataMutation", QML)
-        self.assertIn("/metadata/search?game_id=", QML)
+        self.assertIn('"Change Artwork"', options)
+        self.assertIn('"Restore Automatic Artwork"', options)
+        self.assertNotIn("Edit Metadata", options)
+        self.assertNotIn("Change Match", options)
+        self.assertNotIn("/metadata/search?game_id=", QML)
+        self.assertNotIn("/artwork/files", QML)
+        self.assertIn("property var artworkCandidates: []", QML)
+        self.assertIn("function loadArtworkCandidates()", QML)
+        self.assertIn("/artwork/candidates?game_id=", QML)
+        self.assertNotIn("Window {", options)
         self.assertIn("function back()", QML)
+
+    def test_recent_game_modes_are_optional_card_metadata(self) -> None:
+        game_card = (ROOT / "ui" / "GameCard.qml").read_text()
+        presentation = (ROOT / "ui" / "RecentCardPresentation.qml").read_text()
+        self.assertIn("required property var game_modes", presentation)
+        self.assertIn("var gameModes = card.game.game_modes || []", game_card)
+        self.assertIn('usefulGameModes.join(" · ")', game_card)
+        self.assertIn("if (usefulGameModes.length)", game_card)
+        self.assertNotIn("game_modes.length", presentation)
+        for mode in ("Single player", "Multiplayer", "Split screen"):
+            self.assertNotIn(mode, game_card)
 
     def test_library_navigation_separates_grid_and_collection_controls(self) -> None:
         shell = (ROOT / "ui" / "ConsoleShell.qml").read_text()
@@ -995,8 +1030,9 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertIn("horizontalAlignment: Text.AlignHCenter", library_space)
         self.assertIn("LibrarySpace {", (ROOT / "ui" / "StoreHome.qml").read_text())
         store_home = (ROOT / "ui" / "StoreHome.qml").read_text()
-        self.assertIn('headingText: "AVAILABLE TO DOWNLOAD"', store_home)
-        self.assertIn('displayTitle: "Available to Download"', store_home)
+        self.assertIn('headingText: "INSTALLABLE"', store_home)
+        self.assertIn('"No games ready to install"', store_home)
+        self.assertIn('title: "Installable"', store_home)
         self.assertIn('root.space === "store"', QML)
         self.assertIn("text: root.domains[index].toUpperCase()", QML)
         self.assertIn("font.letterSpacing: 5 * root.uiScale", QML)

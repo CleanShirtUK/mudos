@@ -140,20 +140,6 @@ Rectangle {
         if (state === "cancelling") return "Stopping"
         return "Download failed"
     }
-    function multiplayerCapabilityState(value) {
-        if (value === true || value === 1)
-            return "SUPPORTED"
-        if (value === false || value === 0)
-            return "NOT_SUPPORTED"
-        if (typeof value === "string") {
-            var normalized = value.trim().toLowerCase()
-            if (normalized === "true" || normalized === "1")
-                return "SUPPORTED"
-            if (normalized === "false" || normalized === "0")
-                return "NOT_SUPPORTED"
-        }
-        return "UNKNOWN"
-    }
     function focalMetadataGlyph(name) {
         if (name === "genres")
             return "\uf02c" // fa-tags
@@ -161,10 +147,8 @@ Rectangle {
             return "\uf1da" // fa-history
         if (name === "clock")
             return "\uf017" // fa-clock-o
-        if (name === "local-multiplayer")
+        if (name === "game-modes")
             return "\uf0c0" // fa-users
-        if (name === "online-multiplayer")
-            return "\uf0ac" // fa-globe
         if (name === "protondb")
             return "\ue27f" // nf-fae-atom
         if (name === "platform")
@@ -219,6 +203,14 @@ Rectangle {
         }
         if (usefulGenres.length)
             rows.push({text: usefulGenres.join(" · "), glyph: "genres"})
+        var gameModes = card.game.game_modes || []
+        var usefulGameModes = []
+        for (var modeIndex = 0; modeIndex < gameModes.length; modeIndex++) {
+            if (String(gameModes[modeIndex]).trim().length > 0)
+                usefulGameModes.push(String(gameModes[modeIndex]).trim())
+        }
+        if (usefulGameModes.length)
+            rows.push({text: usefulGameModes.join(" · "), glyph: "game-modes"})
         if (Number(card.game.last_played) > 0)
             rows.push({text: Qt.formatDateTime(
                 new Date(Number(card.game.last_played) * 1000), "d MMM yyyy"),
@@ -234,20 +226,26 @@ Rectangle {
                     card.game.platform_label || card.game.platform), glyph: "platform"})
         rows.push({text: card.displayProvider(
                     card.game.provider, card.game.runtime), glyph: "provider"})
-        var localState = card.multiplayerCapabilityState(card.game.local_multiplayer)
-        rows.push({text: localState === "SUPPORTED" ? "Local Multiplayer"
-                    : (localState === "NOT_SUPPORTED" ? "No Local Multiplayer" : "Unknown"),
-                    glyph: "local-multiplayer"})
-        var onlineState = card.multiplayerCapabilityState(card.game.online_multiplayer)
-        rows.push({text: onlineState === "SUPPORTED" ? "Online Multiplayer"
-                    : (onlineState === "NOT_SUPPORTED" ? "No Online Multiplayer" : "Unknown"),
-                    glyph: "online-multiplayer"})
         return rows
     }
-    readonly property url displayedArtworkSource: String(card.artworkSource).length > 0
-        ? card.artworkSource
+    readonly property string rawArtworkSource: String(card.artworkSource).length > 0
+        ? String(card.artworkSource)
         : (card.game && !card.game.artwork_suppressed && card.game.artwork_url
-            ? card.game.artwork_url : "")
+            ? String(card.game.artwork_url) : "")
+    // Provider artwork is resolved through the shared bounded image provider.
+    // Bare application IDs and other malformed values are deliberately not
+    // interpreted as paths relative to the QML file.
+    readonly property url displayedArtworkSource: {
+        var source = card.rawArtworkSource
+        if (source.indexOf("https://") === 0 || source.indexOf("http://") === 0)
+            return "image://mudos-artwork/" + encodeURIComponent(source)
+        if (source.indexOf("http://") === 0 || source.indexOf("https://") === 0
+                || source.indexOf("file:") === 0)
+            return "image://mudos-artwork/" + encodeURIComponent(source)
+        if (source.indexOf("qrc:") === 0)
+            return source
+        return ""
+    }
     readonly property string displayedSymbolicArtwork: card.symbolicArtwork
         || (String(card.displayedArtworkSource).length === 0 || card.artworkLoadFailed
             ? MudosAssetCatalog.icon("fallback") : "")
@@ -385,12 +383,15 @@ Rectangle {
 
         Image {
             id: artworkSource
-            anchors.fill: parent
+            anchors.centerIn: parent
+            width: card.iconArtwork ? parent.width * 0.5 : parent.width
+            height: card.iconArtwork ? parent.height * 0.5 : parent.height
             source: card.displayedArtworkSource
+            sourceSize: Qt.size(600, 900)
             fillMode: Image.PreserveAspectFit
             asynchronous: true
             retainWhileLoading: false
-            visible: !card.iconArtwork
+            visible: !card.displayedSymbolicArtwork
             onStatusChanged: if (status === Image.Error) card.artworkLoadFailed = true
             onSourceChanged: card.artworkLoadFailed = false
         }
@@ -412,25 +413,13 @@ Rectangle {
             property real borderAlpha: artworkFrame.artworkBorderAlpha
             property real focusBrightness: card.focusBrightness
         opacity: card.focused ? 1 : 0.84
-            visible: !card.iconArtwork
+            visible: !card.iconArtwork && !card.displayedSymbolicArtwork
             fragmentShader: "shaders/card-rounded.frag.qsb"
         }
 
-        Image {
-            id: iconArtworkSource
-            anchors.centerIn: parent
-            width: card.iconArtwork ? parent.width * 0.5 : parent.width
-            height: card.iconArtwork ? parent.height * 0.5 : parent.height
-            source: card.displayedArtworkSource
-            fillMode: Image.PreserveAspectFit
-            asynchronous: true
-            retainWhileLoading: false
-            visible: card.iconArtwork && !card.displayedSymbolicArtwork
-        }
-
         MultiEffect {
-            anchors.fill: iconArtworkSource
-            source: iconArtworkSource
+            anchors.fill: artworkSource
+            source: artworkSource
             visible: card.iconArtwork && !card.displayedSymbolicArtwork
             z: 1
             colorization: 1.0

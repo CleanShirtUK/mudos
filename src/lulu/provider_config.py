@@ -25,7 +25,12 @@ USER_FILENAME = "provider-services.toml"
 
 # No optional service is enabled by default. The structure is intentionally
 # generic so new namespaces do not require a second configuration mechanism.
-DEFAULT_CONFIG: dict[str, object] = {}
+DEFAULT_CONFIG: dict[str, object] = {
+    # ProtonDB is a public, AppID-keyed compatibility summary service.  It
+    # has no credentials and is scoped by the enrichment caller to installed
+    # Steam Library records.
+    "metadata": {"protondb": {"enabled": True}},
+}
 _SECRET_KEYS = {"api_key", "api-key", "password", "secret", "token", "client_secret", "client-secret"}
 
 
@@ -116,6 +121,8 @@ class ProviderConfiguration:
     def configured(self) -> bool:
         if not self.enabled:
             return False
+        if self.provider_id == "metadata.igdb" and not str(self.get("client_id", "")).strip():
+            return False
         return all(self.secret_available(name) for name in self.secret_refs)
 
     @property
@@ -203,7 +210,8 @@ class ProviderConfigurationService:
 
     def update_provider(self, provider_id: str, values: Mapping[str, object],
                         secrets: Mapping[str, str] | None = None,
-                        clear_secrets: set[str] | None = None) -> ProviderConfiguration:
+                        clear_secrets: set[str] | None = None,
+                        secret_references: Mapping[str, str] | None = None) -> ProviderConfiguration:
         """Update the user layer without exposing or writing secret values.
 
         This is the shared mutation boundary for OOBE, controller tooling and
@@ -239,7 +247,8 @@ class ProviderConfigurationService:
                 if not isinstance(reference, str) or "/" not in reference:
                     reference = merged_refs.get(name)
                 if not isinstance(reference, str) or "/" not in reference:
-                    reference = f"{parts[0]}/{parts[0]}-{name.replace('_', '-')}"
+                    reference = ((secret_references or {}).get(name)
+                                 or f"{parts[0]}/{parts[0]}-{name.replace('_', '-')}")
                 secret_refs[name] = reference
                 namespace, _, secret_name = reference.partition("/")
                 self.secrets.put(namespace, secret_name, value)

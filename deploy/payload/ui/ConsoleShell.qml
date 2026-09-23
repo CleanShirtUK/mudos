@@ -9,19 +9,47 @@ Window {
     color: luluPalette.backdrop
     flags: Qt.FramelessWindowHint
 
-    onVisibleChanged: {
-        if (visible && presentationCoordinator.contentState
-                === presentationCoordinator.hiddenState)
-            presentationCoordinator.beginStartup()
-    }
+    onVisibleChanged: { }
 
     property var domains: ["System", "Store", "Library", "Recent"]
     property int selectedCategoryIndex: 3
     property int desiredCategoryIndex: 3
+    readonly property bool perfDiagnostics: typeof mudosPerfDiagnostics !== "undefined"
+        && mudosPerfDiagnostics
+    property int perfFrameCount: 0
+    property int perfSlowFrameCount: 0
+    property real perfFrameTotalMs: 0
+    property real perfWorstFrameMs: 0
     readonly property real referenceWidth: 1280
     readonly property real referenceHeight: 720
     readonly property real uiScale: Math.min(width / referenceWidth, height / referenceHeight)
     function design(value) { return value * uiScale }
+
+    function recordPerfFrame(frameMs) {
+        if (!perfDiagnostics || frameMs <= 0 || frameMs > 1000)
+            return
+        perfFrameCount += 1
+        perfFrameTotalMs += frameMs
+        perfWorstFrameMs = Math.max(perfWorstFrameMs, frameMs)
+        if (frameMs > 33.3)
+            perfSlowFrameCount += 1
+        if (perfFrameCount >= 120) {
+            console.log("MUDOS_FRAME_WINDOW", "frames", perfFrameCount,
+                "avg_ms", (perfFrameTotalMs / perfFrameCount).toFixed(2),
+                "worst_ms", perfWorstFrameMs.toFixed(2),
+                "slow_over_33ms", perfSlowFrameCount,
+                "fps", (1000 * perfFrameCount / perfFrameTotalMs).toFixed(1))
+            perfFrameCount = 0
+            perfSlowFrameCount = 0
+            perfFrameTotalMs = 0
+            perfWorstFrameMs = 0
+        }
+    }
+
+    FrameAnimation {
+        running: root.perfDiagnostics
+        onTriggered: root.recordPerfFrame(frameTime * 1000)
+    }
 
     Typography {
         id: typography
@@ -231,7 +259,7 @@ Window {
     property bool storeOptionsOpen: false
     property var acquisitionJobs: ({})
     property var acquisitionCompletionSeen: ({})
-    property var storeCategories: [{"label": "All Available", "scope": "all"}]
+    property var storeCategories: [{"label": "Installable", "scope": "all"}]
     property var storeHomeRef: null
     property var storeHomeLandingRef: null
     property string storeError: ""
@@ -262,11 +290,8 @@ Window {
     property string gameOptionsGameId: ""
     property var gameOptionsGame: null
     property var uninstallCapability: ({supported: false, installed: false})
-    property var metadataResults: []
-    property string metadataQuery: ""
-    property string metadataTitleDraft: ""
-    property string metadataError: ""
-    property bool metadataBusy: false
+    property var artworkCandidates: []
+    property string artworkError: ""
     property int launchGeneration: 0
     property int launchStateSerial: 0
     property int launchStateApplied: 0
@@ -275,6 +300,9 @@ Window {
     property var pendingHomeLaunch: null
     property string pendingHomeLaunchPhase: "idle"
     property string launchLifecycle: "shell"
+    property string startupLifecycle: "BOOTSTRAPPING"
+    property bool startupLibraryReady: false
+    property bool startupReadinessRequestInFlight: false
     property bool returnPreparationStarted: false
     property bool returnPresentationPending: false
     property bool returnWatchActive: false
@@ -286,6 +314,7 @@ Window {
     readonly property bool homeLaunchGated: pendingHomeLaunch !== null
         || returnPresentationPending
         || returnPreparationStarted
+        || startupLifecycle !== "HOME"
         || presentationCoordinator.contentState !== presentationCoordinator.presentedState
     readonly property bool launchOverlayEffectiveVisible: launchOverlayVisible
         && launchOverlayEnabled && !launchOverlayRetired
@@ -297,6 +326,9 @@ Window {
 
     Connections {
         target: presentationCoordinator
+        function onReadyChanged() {
+            root.tryBeginStartup()
+        }
         function onContentHiddenReached() {
             root.finishHiddenHomeLaunch()
         }
@@ -309,9 +341,15 @@ Window {
                 root.returnPresentationPending = false
             }
             root.returnPreparationStarted = false
+            if (root.startupLifecycle === "PLAYING_INTRO") {
+                root.startupLifecycle = "HOME"
+                root.traceLaunchEvent("STARTUP_INTRO_COMPLETE", {})
+                root.refreshPlatformsCatalogue()
+                root.refreshStore()
+            }
             console.log("HOME_INPUT_UNLOCK_ATTEMPT", JSON.stringify({
                 homeLaunchGated: root.homeLaunchGated,
-                coordinatorState: root.presentationCoordinator.contentState,
+                coordinatorState: presentationCoordinator.contentState,
                 returnPresentationPending: root.returnPresentationPending
             }))
             root.traceLaunchEvent("HOME_INPUT_UNLOCKED", {})
@@ -430,14 +468,14 @@ Window {
                 return
             if (request.status !== 200) {
                 storeAvailableGames = []
-                storeCategories = [{"label": "All Available", "scope": "all"}]
-                storeError = "Available titles unavailable"
+                storeCategories = [{"label": "Installable", "scope": "all"}]
+                storeError = "Installable titles unavailable"
                 return
             }
             try {
                 var rows = JSON.parse(request.responseText)
                 var games = []
-                var categories = [{"label": "All Available", "scope": "all"}]
+                var categories = [{"label": "Installable", "scope": "all"}]
                 var categorySeen = ({})
                 var seen = ({})
                 for (var index = 0; index < rows.length; index++) {
@@ -462,11 +500,11 @@ Window {
                 storeError = ""
             } catch (error) {
                 storeAvailableGames = []
-                storeCategories = [{"label": "All Available", "scope": "all"}]
-                storeError = "Available titles unavailable"
+                storeCategories = [{"label": "Installable", "scope": "all"}]
+                storeError = "Installable titles unavailable"
             }
         }
-        // Available to Download is the combined installable catalogue. Provider
+        // Installable is the combined entitled-but-uninstalled catalogue. Provider
         // filtering belongs to the catalogue boundary, not this presentation.
         request.open("GET", apiUrl + "/available")
         request.send()
@@ -730,6 +768,46 @@ Window {
         })
     }
 
+    function requestStartupReadiness() {
+        if (startupLibraryReady || startupReadinessRequestInFlight)
+            return
+        startupReadinessRequestInFlight = true
+        request("/startup-ready", "GET", "", function(data) {
+            startupReadinessRequestInFlight = false
+            traceLaunchEvent("STARTUP_READINESS_RESPONSE", {ready: data && data.ready === true})
+            if (!data || data.ready !== true) {
+                startupReadinessTimer.start()
+                return
+            }
+            startupLibraryReady = true
+            startupLifecycle = "READY_FOR_INTRO"
+            traceLaunchEvent("LIBRARY_RECONCILE_READY", {})
+            // This is a local cached catalogue projection; no optional
+            // metadata or storefront request is part of the startup barrier.
+            refreshLibrary(function() {
+                traceLaunchEvent("STARTUP_LIBRARY_MODEL_READY", {count: libraryGames.length})
+                root.tryBeginStartup()
+            })
+        }, "", undefined, function() {
+            startupReadinessRequestInFlight = false
+            startupReadinessTimer.start()
+        })
+    }
+
+    function tryBeginStartup() {
+        traceLaunchEvent("STARTUP_TRY_INTRO", {
+            libraryReady: startupLibraryReady,
+            lifecycle: startupLifecycle,
+            coordinatorReady: presentationCoordinator.ready
+        })
+        if (!startupLibraryReady || startupLifecycle !== "READY_FOR_INTRO"
+                || !presentationCoordinator.ready)
+            return
+        startupLifecycle = "PLAYING_INTRO"
+        traceLaunchEvent("STARTUP_INTRO_BEGIN", {})
+        presentationCoordinator.beginStartup()
+    }
+
     function refreshCataloguePair(group) {
         if (group === "recent-library") {
             refreshLibrary()
@@ -783,11 +861,18 @@ Window {
         gameOptionsView = "menu"
         gameOptionsIndex = 0
         uninstallCapability = ({supported: false, installed: false})
-        metadataError = ""
+        artworkError = ""
         gameOptionsOpen = true
         request("/uninstall/capability/" + encodeURIComponent(gameOptionsGameId), "GET", "", function(data) {
             uninstallCapability = data || ({supported: false, installed: false})
         }, "Uninstall capability unavailable")
+    }
+
+    function loadArtworkCandidates() {
+        request("/artwork/candidates?game_id=" + encodeURIComponent(gameOptionsGameId), "GET", "", function(data) {
+            artworkCandidates = data || []
+            gameOptionsIndex = 0
+        }, "No alternate artwork available")
     }
 
     function closeGameOptions() {
@@ -795,31 +880,15 @@ Window {
         gameOptionsGame = null
         gameOptionsGameId = ""
         uninstallCapability = ({supported: false, installed: false})
-        metadataResults = []
-        metadataError = ""
+        artworkError = ""
     }
 
-    function metadataSearch() {
-        if (!gameOptionsGame)
-            return
-        metadataBusy = true
-        metadataError = ""
-        request("/metadata/search?game_id=" + encodeURIComponent(gameOptionsGameId)
-                + "&query=" + encodeURIComponent(metadataQuery), "GET", "", function(data) {
-            metadataBusy = false
-            metadataResults = data
-            gameOptionsIndex = 0
-            if (!data.length)
-                metadataError = "No metadata results"
-        }, "Metadata search unavailable")
-    }
-
-    function metadataMutation(path, body, callback) {
+    function artworkMutation(path, body, callback) {
         request(path, "POST", JSON.stringify(body || {}), function(data) {
             refreshCatalogue()
             if (callback)
                 callback(data)
-        }, "Metadata update failed")
+        }, "Artwork update failed")
     }
 
     function activateGameOptions() {
@@ -827,17 +896,14 @@ Window {
             return
         if (gameOptionsView === "menu") {
             if (gameOptionsIndex === 0) {
-                metadataQuery = gameOptionsGame.canonical_title || gameOptionsGame.normalized_search_title
-                    || gameOptionsGame.title
-                metadataResults = []
-                gameOptionsView = "search"
-                gameOptionsIndex = 0
-                metadataSearch()
-            } else if (gameOptionsIndex === 1) {
-                metadataTitleDraft = gameOptionsGame.display_title_override || gameOptionsGame.title
-                gameOptionsView = "edit"
-                gameOptionsIndex = 0
-            } else if (gameOptionsIndex === 2 && uninstallCapability.supported) {
+                gameOptionsView = "artwork"
+                loadArtworkCandidates()
+            } else if (gameOptionsIndex === 1 && gameOptionsGame.artwork_override) {
+                artworkMutation("/artwork/" + encodeURIComponent(gameOptionsGameId), {restore: true}, function() {
+                    gameOptionsView = "menu"
+                    gameOptionsIndex = 0
+                })
+            } else if (uninstallCapability.supported && gameOptionsIndex === (gameOptionsGame.artwork_override ? 2 : 1)) {
                 gameOptionsView = "confirm"
                 gameOptionsIndex = 0
             }
@@ -846,40 +912,11 @@ Window {
                 closeGameOptions()
                 refreshCatalogue()
             }, "Uninstall failed")
-        } else if (gameOptionsView === "edit") {
-            if (gameOptionsIndex === 0) {
-                metadataTitleDraft = gameOptionsGame.display_title_override || gameOptionsGame.title
-                gameOptionsView = "title"
-            } else if (gameOptionsIndex === 1) {
-                metadataMutation("/metadata/title/clear/" + encodeURIComponent(gameOptionsGameId), {}, function() {
-                    gameOptionsView = "edit"
-                    gameOptionsIndex = 0
-                })
-            } else {
-                metadataMutation("/metadata/artwork/" + encodeURIComponent(gameOptionsGameId), {
-                    suppressed: !Boolean(gameOptionsGame.artwork_suppressed)
-                }, function() {
-                    gameOptionsView = "edit"
-                    gameOptionsIndex = 0
-                })
-            }
-        } else if (gameOptionsView === "title") {
-            var title = metadataTitleDraft.trim()
-            if (!title)
+        } else if (gameOptionsView === "artwork") {
+            if (!artworkCandidates.length || !artworkCandidates[gameOptionsIndex])
                 return
-            metadataMutation("/metadata/title/" + encodeURIComponent(gameOptionsGameId), {title: title}, function() {
-                gameOptionsView = "edit"
-                gameOptionsIndex = 0
-            })
-        } else if (gameOptionsView === "search") {
-            if (!metadataResults.length || !metadataResults[gameOptionsIndex])
-                return
-            var result = metadataResults[gameOptionsIndex]
-            metadataMutation("/metadata/match/" + encodeURIComponent(gameOptionsGameId), {
-                provider: "steamgriddb",
-                metadata_game_id: String(result.id),
-                canonical_title: String(result.title)
-            }, function() {
+            var artwork = artworkCandidates[gameOptionsIndex]
+            artworkMutation("/artwork/" + encodeURIComponent(gameOptionsGameId), {source_url: artwork.url}, function() {
                 gameOptionsView = "menu"
                 gameOptionsIndex = 0
             })
@@ -887,8 +924,10 @@ Window {
     }
 
     function moveGameOptions(delta) {
-        var count = gameOptionsView === "menu" ? (uninstallCapability.supported ? 3 : 2)
-            : gameOptionsView === "edit" ? 3 : metadataResults.length
+        var count = gameOptionsView === "menu" ? 1 + (gameOptionsGame && gameOptionsGame.artwork_override ? 1 : 0)
+            + (uninstallCapability.supported ? 1 : 0)
+            : gameOptionsView === "artwork" ? artworkCandidates.length
+            : artworkCandidates.length
         if (gameOptionsView === "title")
             return
         if (count > 0)
@@ -963,9 +1002,11 @@ Window {
         id: credentialTimer
         interval: 500
         repeat: true
-        // This must remain active while idle so a backend-created request can
-        // wake the UI. OSK activation itself is separately single-flight.
-        running: true
+        // Credential requests created by the UI are returned immediately by
+        // their begin call. Poll only while one is active; idle Home/Library
+        // no longer performs an IPC request twice per second.
+        running: root.credentialRequest.status === "requested"
+            || root.credentialRequest.status === "waiting"
         onTriggered: root.request("/credential", "GET", "", function(data) {
             root.credentialRequest = data
         })
@@ -1758,6 +1799,10 @@ Window {
     function installGame(game) {
         if (!game || launchOverlayEffectiveVisible)
             return
+        console.log("INSTALLABLE_INSTALL_DISPATCH", "game", String(game.game_id),
+                    "provider", String(game.provider), "provider_id", String(game.provider_id),
+                    "install_state", String(game.install_state),
+                    "availability_state", String(game.availability_state))
         var generation = ++launchGeneration
         launchTitle = game.title
         launchGameId = String(game.game_id)
@@ -1986,6 +2031,10 @@ Window {
     }
 
     function activate() {
+        console.log("CONTROLLER_ACTIVATE", "space", space,
+                    "selectedCategory", selectedCategoryIndex,
+                    "storeReady", !!storeHomeRef,
+                    "storeSelected", storeHomeRef ? storeHomeRef.selectedIndex : -1)
         if (credentialRequest.status === "requested" || credentialRequest.status === "waiting") {
             submitCredential(false)
              return
@@ -2069,8 +2118,13 @@ Window {
             return
         }
         if (space === "store") {
-            if (storeHomeRef)
+            if (storeHomeRef) {
+                console.log("STORE_CONTROLLER_ACTIVATE", "selectedIndex", storeHomeRef.selectedIndex,
+                            "displayCount", storeHomeRef.displayGames.length,
+                            "selected", storeHomeRef.displayGames.length > storeHomeRef.selectedIndex
+                                ? JSON.stringify(storeHomeRef.displayGames[storeHomeRef.selectedIndex]) : "null")
                 storeHomeRef.activateSelected()
+            }
             return
         }
         if (space === "downloads") {
@@ -2102,24 +2156,31 @@ Window {
                 storeHomeLandingRef.activateHome()
                 return
             }
-            presentationTarget = "store"
-            storeTransitioning = true
-            libraryTransitionExpanding = true
-            libraryTransitionProgress = 0
-            libraryContentOpacity = 0
-            libraryTransitionAnimation.restart()
-            libraryContentFadeOut.stop()
-            libraryContentFadeIn.restart()
-            homeFadeIn.stop()
-            homeFadeOut.restart()
-            storeHomeRef.categoryIndex = 0
-            storeHomeRef.selectedIndex = 0
-            refreshStore()
-            message = ""
+            openInstallableSurface()
         } else {
             // Store space is not implemented for unknown future domains: message = "Store space is not implemented"
             message = "System space is not implemented"
         }
+    }
+
+    function openInstallableSurface() {
+        console.log("INSTALLABLE_SURFACE_OPEN")
+        presentationTarget = "store"
+        storeTransitioning = true
+        libraryTransitionExpanding = true
+        libraryTransitionProgress = 0
+        libraryContentOpacity = 0
+        libraryTransitionAnimation.restart()
+        libraryContentFadeOut.stop()
+        libraryContentFadeIn.restart()
+        homeFadeIn.stop()
+        homeFadeOut.restart()
+        if (storeHomeRef) {
+            storeHomeRef.categoryIndex = 0
+            storeHomeRef.selectedIndex = 0
+        }
+        refreshStore()
+        message = ""
     }
 
     property string lastCredentialValue: ""
@@ -2224,7 +2285,7 @@ Window {
             else {
                 gameOptionsView = "menu"
                 gameOptionsIndex = 0
-                metadataError = ""
+                artworkError = ""
             }
             return
         }
@@ -2407,8 +2468,9 @@ Window {
         inputSurface.forceActiveFocus()
         if (systemStatus)
             root.applyAcquisitionSnapshot(systemStatus.acquisitionSnapshot)
-        refreshCatalogue()
-        refreshStore()
+        startupLifecycle = "RECONCILING_LIBRARY"
+        traceLaunchEvent("STARTUP_RECONCILE_BEGIN", {})
+        requestStartupReadiness()
     }
 
     function controllerUp() {
@@ -2930,7 +2992,7 @@ Window {
                           categoryMotionVelocity: root.homeCategoryPresentationVelocity(1)
                           pluginStores: root.pluginStoreCards
                          onSteamStoreRequested: root.openSteamStore()
-                         onHomeDownloadRequested: root.activate()
+                          onHomeDownloadRequested: root.openInstallableSurface()
                           onHomeStoreRequested: function(id, name, url) { root.launchHomeStore(id, name, url) }
                           onHomeStoreOptionsRequested: root.openStoreOptions()
                          onHomeAddStoreRequested: root.beginStoreBookmark()
@@ -3068,8 +3130,9 @@ Window {
         LibrarySpace {
             anchors.fill: parent
             visible: root.space === "library" || root.libraryTransitioning
-            libraryGames: root.libraryGames
-            selectedIndex: root.libraryIndex
+             libraryGames: root.libraryGames
+             acquisitionJobs: root.acquisitionJobs
+             selectedIndex: root.libraryIndex
              collectionIndex: root.collectionIndex
              collections: root.libraryCollections
             collectionFocus: root.libraryFocus === "collection"
@@ -3338,19 +3401,14 @@ Window {
             view: root.gameOptionsView
                 selectedIndex: root.gameOptionsIndex
                 uninstallSupported: root.uninstallCapability.supported === true
-            results: root.metadataResults
-            query: root.metadataQuery
-            titleDraft: root.metadataTitleDraft
-            errorMessage: root.metadataError
-            busy: root.metadataBusy
+             errorMessage: root.artworkError
+             artworkCandidates: root.artworkCandidates
             uiScale: root.uiScale
             typography: typography
             luluPalette: luluPalette
                 onActivated: root.activateGameOptions()
             onBacked: root.back()
-            onQueryEdited: root.metadataQuery = value
-            onTitleEdited: root.metadataTitleDraft = value
-        }
+         }
 
         SystemStatusStrip {
             id: systemStatusStrip
@@ -3569,8 +3627,15 @@ Window {
     }
 
     Timer {
+        id: startupReadinessTimer
+        interval: 50
+        repeat: false
+        onTriggered: root.requestStartupReadiness()
+    }
+
+    Timer {
         interval: 100
-        running: true
+        running: root.perfDiagnostics
         repeat: true
         onTriggered: {
             var group = controllerBridge.consumeDiagnosticRefreshRequest()

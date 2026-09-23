@@ -16,7 +16,16 @@
 #include <QQmlPropertyMap>
 #include <QQmlApplicationEngine>
 #include <QQuickWindow>
+#include <QQuickImageProvider>
+#include <QQuickTextureFactory>
 #include <QQuickRenderTarget>
+#include <QNetworkAccessManager>
+#include <QNetworkReply>
+#include <QStandardPaths>
+#include <QImage>
+#include <QImageWriter>
+#include <QBuffer>
+#include <QDateTime>
 #include <QSocketNotifier>
 #include <QTimer>
 #include <qnativeinterface.h>
@@ -26,6 +35,7 @@
 #include <QVariantList>
 #include <QHash>
 #include <QSet>
+#include <QCryptographicHash>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonArray>
@@ -47,6 +57,158 @@
 #include "mudos-glass-item.h"
 
 namespace {
+
+constexpr int UI_ARTWORK_WIDTH = 600;
+constexpr int UI_ARTWORK_HEIGHT = 900;
+
+class ArtworkImageResponse final : public QQuickImageResponse
+{
+public:
+    ArtworkImageResponse(const QString &url, const QSize &requestedSize)
+        : url_(url), requestedSize_(requestedSize)
+    {
+        const QString cacheRoot = qEnvironmentVariable(
+            "LULU_ARTWORK_CACHE",
+            QStandardPaths::writableLocation(QStandardPaths::CacheLocation)
+                + QStringLiteral("/artwork-ui"));
+        QDir().mkpath(cacheRoot);
+        QString sourceIdentity = url_;
+        if (url_.startsWith(QStringLiteral("file://"))) {
+            const QFileInfo sourceInfo(QUrl(url_).toLocalFile());
+            sourceIdentity += QStringLiteral("|%1|%2")
+                .arg(sourceInfo.lastModified().toMSecsSinceEpoch())
+                .arg(sourceInfo.size());
+        }
+        const QByteArray identity = (QStringLiteral("cover-v2|") + sourceIdentity
+            + QStringLiteral("|%1x%2")
+            .arg(UI_ARTWORK_WIDTH).arg(UI_ARTWORK_HEIGHT)).toUtf8();
+        const QString digest = QString::fromLatin1(
+            QCryptographicHash::hash(identity, QCryptographicHash::Sha256).toHex());
+        cachePath_ = QDir(cacheRoot).filePath(digest + QStringLiteral(".png"));
+        negativePath_ = QDir(cacheRoot).filePath(digest + QStringLiteral(".failed"));
+
+        if (QFileInfo::exists(cachePath_)) {
+            finishFromFile();
+            return;
+        }
+        if (QFileInfo::exists(negativePath_)
+            && QFileInfo(negativePath_).lastModified().secsTo(QDateTime::currentDateTimeUtc()) < 3600) {
+            fail(QStringLiteral("cached artwork failure"), true);
+            return;
+        }
+
+        if (url_.startsWith(QStringLiteral("file://"))) {
+            QImage image(QUrl(url_).toLocalFile());
+            if (image.isNull()) {
+                fail(QStringLiteral("local artwork is unreadable"), true);
+                return;
+            }
+            finishImage(image);
+            return;
+        }
+
+        manager_ = new QNetworkAccessManager(this);
+        QNetworkRequest request{QUrl(url_)};
+        request.setHeader(QNetworkRequest::UserAgentHeader, QStringLiteral("Mudos/1"));
+        reply_ = manager_->get(request);
+        connect(reply_, &QNetworkReply::finished, this, [this]() { downloadFinished(); });
+    }
+
+    QQuickTextureFactory *textureFactory() const override
+    {
+        return image_.isNull() ? nullptr : QQuickTextureFactory::textureFactoryForImage(image_);
+    }
+
+    QString errorString() const override { return errorString_; }
+
+    void cancel() override
+    {
+        if (reply_)
+            reply_->abort();
+    }
+
+private:
+    void finishFromFile()
+    {
+        QImage image(cachePath_);
+        if (image.isNull()) {
+            fail(QStringLiteral("cached artwork is unreadable"), true);
+            return;
+        }
+        image_ = image;
+        emit finished();
+    }
+
+    void downloadFinished()
+    {
+        if (!reply_)
+            return;
+        const int status = reply_->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+        const QByteArray payload = reply_->readAll();
+        if (reply_->error() != QNetworkReply::NoError || status >= 400 || payload.isEmpty()) {
+            fail(QStringLiteral("artwork request failed status=%1 error=%2")
+                .arg(status).arg(reply_->errorString()), status == 404 || status >= 400);
+            return;
+        }
+        QImage image;
+        if (!image.loadFromData(payload)) {
+            fail(QStringLiteral("artwork response is not an image"), true);
+            return;
+        }
+        finishImage(image);
+    }
+
+    void finishImage(QImage image)
+    {
+        if (image.width() > UI_ARTWORK_WIDTH || image.height() > UI_ARTWORK_HEIGHT)
+            image = image.scaled(QSize(UI_ARTWORK_WIDTH, UI_ARTWORK_HEIGHT),
+                                 Qt::KeepAspectRatio, Qt::SmoothTransformation);
+        QImageWriter writer(cachePath_, "PNG");
+        if (!writer.write(image)) {
+            fail(QStringLiteral("artwork cache write failed"), false);
+            return;
+        }
+        QFile::remove(negativePath_);
+        image_ = image;
+        emit finished();
+    }
+
+    void fail(const QString &reason, bool cacheNegative)
+    {
+        if (cacheNegative) {
+            QFile marker(negativePath_);
+            if (marker.open(QIODevice::WriteOnly | QIODevice::Truncate))
+                marker.write(reason.toUtf8());
+        }
+        qInfo().noquote() << "ARTWORK_CACHE_MISS" << url_ << reason;
+        errorString_ = reason;
+        emit finished();
+    }
+
+    QString url_;
+    QSize requestedSize_;
+    QString cachePath_;
+    QString negativePath_;
+    QImage image_;
+    QString errorString_;
+    QNetworkAccessManager *manager_ = nullptr;
+    QNetworkReply *reply_ = nullptr;
+};
+
+class ArtworkImageProvider final : public QQuickAsyncImageProvider
+{
+public:
+    QQuickImageResponse *requestImageResponse(const QString &id,
+                                               const QSize &requestedSize) override
+    {
+        const QString url = QUrl::fromPercentEncoding(id.toUtf8());
+        if (!url.startsWith(QStringLiteral("https://"))
+            && !url.startsWith(QStringLiteral("http://"))
+            && !url.startsWith(QStringLiteral("file://")))
+            return new ArtworkImageResponse(QString(), requestedSize);
+        return new ArtworkImageResponse(url, requestedSize);
+    }
+};
 
 class StoreBookmarkBridge final : public QObject
 {
@@ -1331,6 +1493,7 @@ int main(int argc, char **argv)
     QGuiApplication application(argc, argv);
     qmlRegisterType<MudosGlassItem>("Mudos.Poc", 1, 0, "MudosGlassItem");
     QQmlApplicationEngine engine;
+    engine.addImageProvider(QStringLiteral("mudos-artwork"), new ArtworkImageProvider());
     ControllerBridge controller(nullptr, &application);
     SystemStatusBridge systemStatus(&application);
     CatalogueModel catalogueModel(&application);
@@ -1345,6 +1508,8 @@ int main(int argc, char **argv)
     engine.rootContext()->setContextProperty("recentModel", &recentModel);
     engine.rootContext()->setContextProperty("bookmarkStore", &storeBookmarks);
     engine.rootContext()->setContextProperty("pluginStoreCardsBridge", &pluginStoreCards);
+    engine.rootContext()->setContextProperty("mudosPerfDiagnostics",
+                                              qEnvironmentVariableIsSet("LULU_PERF_DIAGNOSTICS"));
     const QString qmlPath = qEnvironmentVariable("LULU_UI_FILE", "/opt/lulu/ui/ConsoleShell.qml");
     engine.load(QUrl::fromLocalFile(qmlPath));
 

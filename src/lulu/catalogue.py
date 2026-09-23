@@ -84,6 +84,17 @@ class CatalogueGame:
     last_seen_at: int | None = None
     last_synced_at: int | None = None
     artwork_source_url: str = ""
+    local_artwork_path: str = ""
+    artwork_override: bool = False
+    local_artwork_mode: str = ""
+    local_artwork_mtime: int = 0
+    automatic_artwork_url: str = ""
+    automatic_artwork_source_url: str = ""
+    automatic_artwork_provider: str = ""
+    automatic_artwork_type: str = ""
+    automatic_artwork_width: int | None = None
+    automatic_artwork_height: int | None = None
+    selected_artwork_source_url: str = ""
     metadata_resolver_version: int = 0
     installed_game_id: str = ""
     summary: str = ""
@@ -106,6 +117,14 @@ class CatalogueGame:
     component_roles: tuple[str, ...] = ()
     component_title_ids: tuple[str, ...] = ()
     mudos_owned: bool = False
+    artwork_type: str = ""
+    artwork_provider: str = ""
+    artwork_width: int | None = None
+    artwork_height: int | None = None
+    icon_url: str = ""
+    canonical_cover_url: str = ""
+    canonical_cover_width: int | None = None
+    canonical_cover_height: int | None = None
 
     @classmethod
     def from_steam(cls, game: InstalledSteamGame) -> "CatalogueGame":
@@ -114,7 +133,8 @@ class CatalogueGame:
             title=game.title, platform="Steam", install_state="installed", launchable=True,
             install_dir=game.install_dir, artwork_url=game.artwork_url, last_played=game.last_played,
             source_title=game.title, normalized_search_title=clean_local_title(game.title),
-            catalogue_source="steam",
+            catalogue_source="steam", artwork_type="cover", artwork_provider="steam",
+            artwork_source_url=game.artwork_url,
         )
 
     @classmethod
@@ -148,10 +168,11 @@ class CatalogueGame:
             game_id=f"flatpak:{application_id}", provider="flatpak", provider_id=application_id,
             title=title, platform="Linux", install_state="installed" if installed else "available",
             launchable=installed, install_dir=str(Path.home() / ".var" / "app" / application_id),
-            artwork_url=str(value.get("icon", "")), last_played=0, runtime=str(value.get("branch", "")),
+            artwork_url="", last_played=0, runtime=str(value.get("branch", "")),
             source_title=title, summary=str(value.get("summary", "")), genres=categories,
             availability_state="installed" if installed else "available", provider_record_id=application_id,
-            content_identity=application_id, catalogue_source="flatpak",
+            content_identity=application_id, catalogue_source="flatpak", icon_url=str(value.get("icon", "")),
+            artwork_type="icon", artwork_provider="flatpak",
         )
 
     @classmethod
@@ -199,12 +220,14 @@ class CatalogueGame:
                 last_played=installed.last_played if installed else 0, source_title=game.title,
                 normalized_search_title=clean_local_title(game.title),
                 availability_state="installed" if installed else "available",
-                provider_record_id=str(game.rom_id), catalogue_source="romm",
+                 provider_record_id=str(game.rom_id), catalogue_source="romm",
+                 artwork_type="cover", artwork_provider="romm",
                 content_identity=game.files[0].name if game.files else game.file_name,
                 genres=game.genres, release_date=game.release_date, release_year=game.release_year,
-                total_playtime=game.total_playtime, local_multiplayer=game.local_multiplayer,
-                online_multiplayer=game.online_multiplayer, game_mode=game.game_mode,
-                protondb_rating=game.protondb_rating, artwork_source_url=game.artwork_url,
+                 total_playtime=game.total_playtime, local_multiplayer=game.local_multiplayer,
+                 online_multiplayer=game.online_multiplayer, game_mode=game.game_mode,
+                 protondb_rating=game.protondb_rating, artwork_source_url=game.artwork_url,
+                 igdb_id=game.igdb_id,
             )
         platform = "Steam" if game.platform_slug.casefold() == "steam" else game.platform_slug
         return cls(
@@ -215,11 +238,13 @@ class CatalogueGame:
             normalized_search_title=clean_local_title(game.title), availability_state="available",
             provider_record_id=str(game.rom_id),
             content_identity=game.files[0].name if game.files else game.file_name,
-            catalogue_source="romm", genres=game.genres, release_date=game.release_date,
+             catalogue_source="romm", genres=game.genres, release_date=game.release_date,
+             artwork_type="cover", artwork_provider="romm",
             release_year=game.release_year, total_playtime=game.total_playtime,
             local_multiplayer=game.local_multiplayer, online_multiplayer=game.online_multiplayer,
-            game_mode=game.game_mode, protondb_rating=game.protondb_rating,
-            artwork_source_url=game.artwork_url,
+             game_mode=game.game_mode, protondb_rating=game.protondb_rating,
+             artwork_source_url=game.artwork_url,
+             igdb_id=game.igdb_id,
         )
 
     def as_dict(self) -> dict[str, object]:
@@ -231,6 +256,19 @@ class CatalogueGame:
         value["component_roles"] = list(self.component_roles)
         value["component_title_ids"] = list(self.component_title_ids)
         return value
+
+
+def canonical_metadata_required(record: CatalogueGame, *, in_library: bool = False,
+                                available_to_download: bool = False) -> bool:
+    """Return whether a record is on a Mudos presentation surface."""
+    return bool(in_library or available_to_download)
+
+
+# A record is installable only when it came from a source that asserts the
+# user's entitlement/access.  Provider catalogue discovery is deliberately
+# not enough.  RomM is retained here because it is the user's accessible
+# catalogue, while component/Flathub discovery remains storefront-only.
+INSTALLABLE_CATALOGUE_SOURCES = frozenset({"steam", "romm", "gog", "epic"})
 
 
 # These two provider-observation fields are deliberately excluded from
@@ -252,29 +290,36 @@ IDENTITY_COLUMNS = (
 )
 TEMPORARY_METADATA_RETRY_SECONDS = 15 * 60
 NORMAL_METADATA_RETRY_SECONDS = 24 * 60 * 60
-METADATA_RESOLVER_VERSION = 2
+METADATA_RESOLVER_VERSION = 3
 SELECT_COLUMNS = (
     "game_id, provider, provider_id, title, platform, install_state, launchable, install_dir, "
     "artwork_url, last_played, runtime, platform_label, " + ", ".join(IDENTITY_COLUMNS)
     + ", availability_state, provider_record_id, content_identity, catalogue_source, genres, "
       "release_date, release_year, total_playtime, local_multiplayer, online_multiplayer, "
-       "game_mode, protondb_rating, last_seen_at, last_synced_at, artwork_source_url"
+        "game_mode, protondb_rating, last_seen_at, last_synced_at, artwork_source_url, local_artwork_path, artwork_override, "
+        "local_artwork_mode, local_artwork_mtime, automatic_artwork_url, automatic_artwork_source_url, automatic_artwork_provider, automatic_artwork_type, "
+         "automatic_artwork_width, automatic_artwork_height, selected_artwork_source_url"
        ", metadata_resolver_version, installed_game_id, summary, game_modes, developer, publisher, platforms, "
        "franchise, collection, igdb_id, igdb_fetched_at, protondb_tier, protondb_confidence, protondb_score, "
         "protondb_trending_tier, protondb_best_tier, protondb_report_count, protondb_fetched_at, "
-        "component_paths, component_roles, component_title_ids, mudos_owned"
+         "component_paths, component_roles, component_title_ids, mudos_owned, artwork_type, artwork_provider, "
+         "artwork_width, artwork_height, icon_url, canonical_cover_url, canonical_cover_width, canonical_cover_height"
 )
 SELECT_FIELD_ORDER = (
     "game_id", "provider", "provider_id", "title", "platform", "install_state", "launchable",
     "install_dir", "artwork_url", "last_played", "runtime", "platform_label", *IDENTITY_COLUMNS, "availability_state",
     "provider_record_id", "content_identity", "catalogue_source", "genres", "release_date",
     "release_year", "total_playtime", "local_multiplayer", "online_multiplayer", "game_mode",
-    "protondb_rating", "last_seen_at", "last_synced_at", "artwork_source_url",
+     "protondb_rating", "last_seen_at", "last_synced_at", "artwork_source_url", "local_artwork_path",
+      "artwork_override", "local_artwork_mode", "local_artwork_mtime", "automatic_artwork_url", "automatic_artwork_source_url", "automatic_artwork_provider",
+      "automatic_artwork_type", "automatic_artwork_width", "automatic_artwork_height",
+      "selected_artwork_source_url",
     "metadata_resolver_version", "installed_game_id", "summary", "game_modes", "developer",
     "publisher", "platforms", "franchise", "collection", "igdb_id", "igdb_fetched_at", "protondb_tier",
     "protondb_confidence", "protondb_score", "protondb_trending_tier", "protondb_best_tier",
      "protondb_report_count", "protondb_fetched_at", "component_paths", "component_roles",
-     "component_title_ids", "mudos_owned",
+      "component_title_ids", "mudos_owned", "artwork_type", "artwork_provider", "artwork_width",
+      "artwork_height", "icon_url", "canonical_cover_url", "canonical_cover_width", "canonical_cover_height",
 )
 
 
@@ -310,7 +355,14 @@ class CatalogueStore:
                        "release_date": "TEXT", "release_year": "INTEGER", "total_playtime": "INTEGER",
                        "local_multiplayer": "INTEGER", "online_multiplayer": "INTEGER", "game_mode": "TEXT",
                         "protondb_rating": "TEXT", "last_seen_at": "INTEGER", "last_synced_at": "INTEGER",
-                        "artwork_source_url": "TEXT NOT NULL DEFAULT ''", "metadata_resolver_version": "INTEGER NOT NULL DEFAULT 0",
+                         "artwork_source_url": "TEXT NOT NULL DEFAULT ''", "local_artwork_path": "TEXT NOT NULL DEFAULT ''",
+                           "artwork_override": "INTEGER NOT NULL DEFAULT 0", "local_artwork_mode": "TEXT NOT NULL DEFAULT ''",
+                          "local_artwork_mtime": "INTEGER NOT NULL DEFAULT 0",
+                          "automatic_artwork_url": "TEXT NOT NULL DEFAULT ''",
+                         "automatic_artwork_source_url": "TEXT NOT NULL DEFAULT ''", "automatic_artwork_provider": "TEXT NOT NULL DEFAULT ''",
+                         "automatic_artwork_type": "TEXT NOT NULL DEFAULT ''", "automatic_artwork_width": "INTEGER",
+                          "automatic_artwork_height": "INTEGER", "selected_artwork_source_url": "TEXT NOT NULL DEFAULT ''",
+                          "metadata_resolver_version": "INTEGER NOT NULL DEFAULT 0",
                        "installed_game_id": "TEXT NOT NULL DEFAULT ''", "summary": "TEXT NOT NULL DEFAULT ''",
                        "game_modes": "TEXT NOT NULL DEFAULT '[]'", "developer": "TEXT NOT NULL DEFAULT ''",
                        "publisher": "TEXT NOT NULL DEFAULT ''", "platforms": "TEXT NOT NULL DEFAULT '[]'",
@@ -322,10 +374,32 @@ class CatalogueStore:
                         "component_paths": "TEXT NOT NULL DEFAULT '[]'",
                         "component_roles": "TEXT NOT NULL DEFAULT '[]'",
                         "component_title_ids": "TEXT NOT NULL DEFAULT '[]'",
-                        "mudos_owned": "INTEGER NOT NULL DEFAULT 0"}
+                         "mudos_owned": "INTEGER NOT NULL DEFAULT 0",
+                         "artwork_type": "TEXT NOT NULL DEFAULT ''", "artwork_provider": "TEXT NOT NULL DEFAULT ''",
+                         "artwork_width": "INTEGER", "artwork_height": "INTEGER",
+                         "icon_url": "TEXT NOT NULL DEFAULT ''", "canonical_cover_url": "TEXT NOT NULL DEFAULT ''",
+                         "canonical_cover_width": "INTEGER", "canonical_cover_height": "INTEGER"}
         for name, definition in migrations.items():
             if name not in columns:
                 self.connection.execute(f"ALTER TABLE games ADD COLUMN {name} {definition}")
+        # One-time compatibility projection for pre-typed records. Flatpak
+        # artwork was an AppStream icon; all other legacy populated artwork
+        # was card artwork from a provider/enrichment path.
+        self.connection.execute(
+            "UPDATE games SET artwork_type=CASE WHEN provider='flatpak' THEN 'icon' ELSE 'cover' END, "
+            "artwork_provider=CASE WHEN provider='flatpak' THEN 'flatpak' "
+            "WHEN metadata_provider='steamgriddb' THEN 'steamgriddb' ELSE provider END "
+            "WHERE artwork_url<>'' AND artwork_type=''"
+        )
+        self.connection.execute(
+            "UPDATE games SET automatic_artwork_url=artwork_url, automatic_artwork_source_url=artwork_source_url, "
+            "automatic_artwork_provider=artwork_provider, automatic_artwork_type=artwork_type, "
+            "automatic_artwork_width=artwork_width, automatic_artwork_height=artwork_height "
+            "WHERE artwork_url<>'' AND automatic_artwork_url='' AND artwork_override=0"
+        )
+        self.connection.execute(
+            "UPDATE games SET local_artwork_mode='filesystem' WHERE artwork_override=1 AND local_artwork_path<>'' AND local_artwork_mode=''"
+        )
         self.connection.commit()
         self.connection.execute(
             """CREATE TABLE IF NOT EXISTS metadata_enrichment (
@@ -507,12 +581,20 @@ class CatalogueStore:
             normalized_search_title=incoming.normalized_search_title,
             metadata_resolver_version=existing.metadata_resolver_version if preserve_metadata else incoming.metadata_resolver_version,
             title=existing.title if preserve_title else incoming.title,
-            artwork_url=existing.artwork_url if existing.metadata_game_id != incoming.metadata_game_id else incoming.artwork_url,
+             artwork_url=existing.artwork_url if existing.artwork_override or existing.metadata_game_id != incoming.metadata_game_id else incoming.artwork_url,
             last_played=max(existing.last_played, incoming.last_played),
             last_seen_at=existing.last_seen_at,
             last_synced_at=existing.last_synced_at,
-            installed_game_id=incoming.installed_game_id,
-        )
+             installed_game_id=incoming.installed_game_id,
+             artwork_type=existing.artwork_type or incoming.artwork_type,
+             artwork_provider=existing.artwork_provider or incoming.artwork_provider,
+             artwork_width=existing.artwork_width or incoming.artwork_width,
+             artwork_height=existing.artwork_height or incoming.artwork_height,
+             icon_url=incoming.icon_url or existing.icon_url,
+             canonical_cover_url=existing.canonical_cover_url or incoming.canonical_cover_url,
+             canonical_cover_width=existing.canonical_cover_width or incoming.canonical_cover_width,
+             canonical_cover_height=existing.canonical_cover_height or incoming.canonical_cover_height,
+         )
 
     def _upsert_locked(self, game: CatalogueGame, deltas: list[CatalogueDelta] | None = None) -> CatalogueDelta | None:
         existing = self._rows(f"SELECT {SELECT_COLUMNS} FROM games WHERE game_id=?", (game.game_id,))
@@ -889,8 +971,16 @@ class CatalogueStore:
         )
 
     def list_available_games(self, provider: str | None = None) -> list[CatalogueGame]:
-        query = f"SELECT {SELECT_COLUMNS} FROM games WHERE availability_state='available'"
-        parameters: tuple[object, ...] = ()
+        # Installable is an entitlement/access surface, not provider
+        # storefront inventory.  Keep both state columns explicit so stale
+        # or partially reconciled rows cannot leak into the UI.
+        sources = ",".join("?" for _ in INSTALLABLE_CATALOGUE_SOURCES)
+        query = (
+            f"SELECT {SELECT_COLUMNS} FROM games WHERE "
+            "availability_state='available' AND install_state='available' "
+            f"AND catalogue_source IN ({sources})"
+        )
+        parameters: tuple[object, ...] = tuple(sorted(INSTALLABLE_CATALOGUE_SOURCES))
         if provider is not None:
             if provider == "romm":
                 # The existing Store endpoint historically asked for the RomM
@@ -899,7 +989,7 @@ class CatalogueStore:
                 query += " AND (provider='romm' OR (provider='steam' AND availability_state='available'))"
             else:
                 query += " AND provider=?"
-                parameters = (provider,)
+                parameters += (provider,)
         query += " AND NOT (provider='romm' AND installed_game_id<>'' AND EXISTS ("
         query += "SELECT 1 FROM games AS linked_local WHERE linked_local.game_id=games.installed_game_id "
         query += "AND linked_local.provider='local' AND linked_local.install_state='installed'))"
@@ -916,7 +1006,7 @@ class CatalogueStore:
     def needs_metadata_match(self, game_id: str, now: int | None = None) -> bool:
         row = self.connection.execute(
             "SELECT match_locked, metadata_game_id, match_status, match_method, metadata_checked_at, "
-            "catalogue_source, platform, metadata_resolver_version "
+            "catalogue_source, platform, metadata_resolver_version, metadata_provider "
             "FROM games WHERE game_id=?", (game_id,)
         ).fetchone()
         if row is None or row[0]:
@@ -928,12 +1018,14 @@ class CatalogueStore:
         )
         if appid_migration and row[3] == "steam-appid":
             return True
-        if row[1] and not appid_migration:
+        if row[1] and not appid_migration and (
+                (row[8] == "igdb" and row[7] == METADATA_RESOLVER_VERSION)
+                or (not row[8] and row[2] == "matched")):
             return False
         current = int(time.time()) if now is None else now
         cooldown = (
             TEMPORARY_METADATA_RETRY_SECONDS
-            if row[3] == "network-error"
+            if row[3] in {"network-error", "igdb-network-error", "igdb-unconfigured"}
             else NORMAL_METADATA_RETRY_SECONDS
         )
         return not row[4] or current - row[4] >= cooldown
@@ -942,6 +1034,18 @@ class CatalogueStore:
         existing = self.get_game(game_id)
         if existing is None or existing.match_locked:
             return None
+        if match.status != "matched":
+            # A failed/ambiguous canonical lookup must not erase usable
+            # provider presentation metadata or a previously selected cover.
+            after = replace(existing, normalized_search_title=match.normalized_search_title,
+                            match_status=match.status, match_method=match.method,
+                            match_confidence=match.confidence,
+                            metadata_checked_at=int(time.time()))
+            with self.atomic():
+                self._start_operation()
+                delta = self._apply_existing_locked(existing, after)
+            self._finish_operation([delta] if delta else [])
+            return delta
         title = existing.display_title_override or (match.canonical_title if match.status == "matched" else match.normalized_search_title)
         presentation = match.presentation
         after = replace(
@@ -967,7 +1071,9 @@ class CatalogueStore:
             collection=presentation.get("collection") or existing.collection,
             igdb_id=str(presentation.get("igdb_id") or existing.igdb_id),
             metadata_resolver_version=METADATA_RESOLVER_VERSION,
-            artwork_url="",
+            canonical_cover_url=str(presentation.get("cover_url") or existing.canonical_cover_url),
+            canonical_cover_width=presentation.get("cover_width") or existing.canonical_cover_width,
+            canonical_cover_height=presentation.get("cover_height") or existing.canonical_cover_height,
         )
         with self.atomic():
             self._start_operation()
@@ -1033,10 +1139,13 @@ class CatalogueStore:
             genres=existing.genres or tuple(str(item) for item in normalized.get("genres", ())),
             game_modes=existing.game_modes or tuple(str(item) for item in normalized.get("game_modes", ())),
             developer=existing.developer or str(normalized.get("developer") or ""),
-            publisher=existing.publisher or str(normalized.get("publisher") or ""),
+             publisher=existing.publisher or str(normalized.get("publisher") or ""),
             platforms=existing.platforms or tuple(str(item) for item in normalized.get("platforms", ())),
             franchise=existing.franchise or str(normalized.get("franchise") or ""),
-            collection=existing.collection or str(normalized.get("collection") or ""),
+             collection=existing.collection or str(normalized.get("collection") or ""),
+             canonical_cover_url=existing.canonical_cover_url or str(normalized.get("cover_url") or ""),
+             canonical_cover_width=existing.canonical_cover_width or normalized.get("cover_width"),
+             canonical_cover_height=existing.canonical_cover_height or normalized.get("cover_height"),
             igdb_id=str(external_id) if provider == "igdb" else existing.igdb_id,
             igdb_fetched_at=fetched if provider == "igdb" else existing.igdb_fetched_at,
             protondb_tier=str(normalized.get("tier") or existing.protondb_tier) if provider == "protondb" else existing.protondb_tier,
@@ -1116,6 +1225,126 @@ class CatalogueStore:
         with self.atomic():
             self._start_operation()
             delta = self._apply_existing_locked(existing, replace(existing, artwork_url=artwork_url))
+        self._finish_operation([delta] if delta else [])
+        return delta
+
+    def set_artwork_selection(self, game_id: str, *, url: str, source_url: str,
+                              provider: str, artwork_type: str = "cover",
+                              width: int | None = None, height: int | None = None) -> CatalogueDelta | None:
+        existing = self.get_game(game_id)
+        if existing is None:
+            return None
+        after = replace(existing, automatic_artwork_url=url, automatic_artwork_source_url=source_url,
+                        automatic_artwork_provider=provider, automatic_artwork_type=artwork_type,
+                        automatic_artwork_width=width, automatic_artwork_height=height)
+        if not existing.artwork_override:
+            after = replace(after, artwork_url=url, artwork_source_url=source_url,
+                            artwork_provider=provider, artwork_type=artwork_type,
+                            artwork_width=width, artwork_height=height)
+        with self.atomic():
+            self._start_operation()
+            delta = self._apply_existing_locked(existing, after)
+        self._finish_operation([delta] if delta else [])
+        return delta
+
+    def set_local_artwork(self, game_id: str, path: str) -> CatalogueDelta | None:
+        existing = self.get_game(game_id)
+        if existing is None:
+            return None
+        resolved = Path(path).resolve()
+        try:
+            version = resolved.stat().st_mtime_ns
+        except OSError:
+            version = 0
+        after = replace(existing, local_artwork_path=str(resolved), local_artwork_mode="filesystem",
+                        local_artwork_mtime=version, artwork_override=True, selected_artwork_source_url="",
+                        artwork_url=f"{resolved.as_uri()}?v={version}",
+                        artwork_source_url=existing.automatic_artwork_source_url or existing.artwork_source_url,
+                        artwork_provider="local", artwork_type="cover")
+        with self.atomic():
+            self._start_operation()
+            delta = self._apply_existing_locked(existing, after)
+        self._finish_operation([delta] if delta else [])
+        return delta
+
+    def set_selected_artwork(self, game_id: str, path: str, source_url: str,
+                             width: int | None = None, height: int | None = None) -> CatalogueDelta | None:
+        existing = self.get_game(game_id)
+        if existing is None:
+            return None
+        resolved = Path(path).resolve()
+        try:
+            version = resolved.stat().st_mtime_ns
+        except OSError:
+            version = 0
+        after = replace(existing, local_artwork_path=str(resolved), local_artwork_mode="sgdb",
+                        local_artwork_mtime=version, artwork_override=True,
+                        selected_artwork_source_url=source_url,
+                        artwork_url=f"{resolved.as_uri()}?v={version}",
+                        artwork_source_url=source_url, artwork_provider="local", artwork_type="cover",
+                        artwork_width=width, artwork_height=height)
+        with self.atomic():
+            self._start_operation()
+            delta = self._apply_existing_locked(existing, after)
+        self._finish_operation([delta] if delta else [])
+        return delta
+
+    def clear_local_artwork(self, game_id: str) -> CatalogueDelta | None:
+        existing = self.get_game(game_id)
+        if existing is None:
+            return None
+        after = replace(existing, local_artwork_path="", local_artwork_mode="", local_artwork_mtime=0, artwork_override=False,
+                        selected_artwork_source_url="",
+                        artwork_url=existing.automatic_artwork_url,
+                        artwork_source_url=existing.automatic_artwork_source_url,
+                        artwork_provider=existing.automatic_artwork_provider,
+                        artwork_type=existing.automatic_artwork_type,
+                        artwork_width=existing.automatic_artwork_width,
+                        artwork_height=existing.automatic_artwork_height)
+        with self.atomic():
+            self._start_operation()
+            delta = self._apply_existing_locked(existing, after)
+        self._finish_operation([delta] if delta else [])
+        return delta
+
+    def restore_automatic_artwork(self, game_id: str, path: str) -> CatalogueDelta | None:
+        """Keep the materialized automatic file while clearing SGDB selection."""
+        existing = self.get_game(game_id)
+        if existing is None:
+            return None
+        resolved = Path(path).resolve()
+        try:
+            version = resolved.stat().st_mtime_ns
+        except OSError:
+            version = 0
+        after = replace(existing, local_artwork_path=str(resolved), local_artwork_mode="automatic",
+                        local_artwork_mtime=version, artwork_override=False,
+                        selected_artwork_source_url="",
+                        artwork_url=f"{resolved.as_uri()}?v={version}",
+                        artwork_source_url=existing.automatic_artwork_source_url,
+                        artwork_provider="local", artwork_type="cover",
+                        artwork_width=existing.automatic_artwork_width,
+                        artwork_height=existing.automatic_artwork_height)
+        with self.atomic():
+            self._start_operation()
+            delta = self._apply_existing_locked(existing, after)
+        self._finish_operation([delta] if delta else [])
+        return delta
+
+    def sync_local_artwork_url(self, game_id: str, path: str) -> CatalogueDelta | None:
+        existing = self.get_game(game_id)
+        if existing is None:
+            return None
+        resolved = Path(path).resolve()
+        try:
+            version = resolved.stat().st_mtime_ns
+        except OSError:
+            version = existing.local_artwork_mtime
+        after = replace(existing, local_artwork_path=str(resolved), local_artwork_mtime=version,
+                        artwork_url=f"{resolved.as_uri()}?v={version}")
+        with self.atomic():
+            self._start_operation()
+            delta = self._apply_existing_locked(existing, after)
         self._finish_operation([delta] if delta else [])
         return delta
 

@@ -25,12 +25,16 @@ class NativeBuildTests(unittest.TestCase):
         root = Path(__file__).parents[1]
         recent = (root / "ui" / "RecentHome.qml").read_text()
         card_presentation = (root / "ui" / "RecentCardPresentation.qml").read_text()
+        catalogue_model = (root / "native" / "catalogue-model.cpp").read_text()
+        self.assertIn('{"game_modes", "game_modes"}', catalogue_model)
         self.assertIn("property var gameRecord: ({", card_presentation)
         for field in ("game_id", "title", "artwork_url", "platform", "provider",
-                      "last_played", "genres", "local_multiplayer",
-                      "online_multiplayer", "game_mode"):
+                      "last_played", "genres", "game_modes", "game_mode"):
             self.assertIn(f"{field}: {field}", card_presentation)
             self.assertIn(f"required property", card_presentation)
+        self.assertNotIn("local_multiplayer: local_multiplayer", card_presentation)
+        self.assertNotIn("online_multiplayer: online_multiplayer", card_presentation)
+        self.assertIn("required property var game_modes", card_presentation)
         self.assertIn("game: root.gameRecord", card_presentation)
         self.assertIn("recentHome.itemCount - 1", (root / "ui" / "ConsoleShell.qml").read_text())
 

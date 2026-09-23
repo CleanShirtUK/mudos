@@ -27,8 +27,7 @@ TestCase {
                 provider: provider,
                 last_played: last_played,
                 genres: genres,
-                local_multiplayer: local_multiplayer,
-                online_multiplayer: online_multiplayer,
+                game_modes: model.game_modes || [],
                 game_mode: game_mode
             })
         }
@@ -39,24 +38,31 @@ TestCase {
         compare(recentRepeater.count, 0)
         nativeModelStandIn.append({game_id: "steam:a", title: "Mario Kart 8 Deluxe",
                                     artwork_url: "file:///artwork.jpg", platform: "switch",
-                                    provider: "local", last_played: 10, genres: ["Racing"],
-                                    local_multiplayer: 1, online_multiplayer: 0,
-                                    game_mode: "Multiplayer"})
+                                     provider: "local", last_played: 10, genres: ["Racing"],
+                                     game_modes: ["Single player", "Multiplayer", "Split screen"],
+                                     game_mode: "Multiplayer"})
         nativeModelStandIn.append({game_id: "steam:b", title: "Other Game",
                                     artwork_url: "file:///other.jpg", platform: "nes",
-                                    provider: "steam", last_played: 9, genres: [],
-                                    local_multiplayer: 0, online_multiplayer: 0,
+                                     provider: "steam", last_played: 9, genres: [],
+                                     game_modes: [],
+                                     game_mode: "Single player"})
+        nativeModelStandIn.append({game_id: "steam:c", title: "Legacy Game",
+                                    artwork_url: "file:///legacy.jpg", platform: "nes",
+                                    provider: "steam", last_played: 8, genres: [],
                                     game_mode: "Single player"})
-        compare(nativeModelStandIn.count, 2)
-        compare(recentRepeater.count, 2)
+        compare(nativeModelStandIn.count, 3)
+        compare(recentRepeater.count, 3)
         verify(recentRepeater.itemAt(0) !== null)
         verify(recentRepeater.itemAt(1) !== null)
         compare(recentRepeater.itemAt(0).gameRecord.title, "Mario Kart 8 Deluxe")
         verify(recentRepeater.itemAt(0).gameRecord.artwork_url.length > 0)
         compare(recentRepeater.itemAt(0).gameRecord.platform, "switch")
         compare(recentRepeater.itemAt(0).gameRecord.provider, "local")
-        compare(recentRepeater.itemAt(0).gameRecord.local_multiplayer, 1)
+        compare(recentRepeater.itemAt(0).gameRecord.game_modes,
+                ["Single player", "Multiplayer", "Split screen"])
         compare(recentRepeater.itemAt(0).gameRecord.game_mode, "Multiplayer")
+        compare(recentRepeater.itemAt(1).gameRecord.game_modes, [])
+        compare(recentRepeater.itemAt(2).gameRecord.game_modes, [])
         compare(selectedGameId, "steam:a")
         moveRecent(1)
         compare(selectedIndex, 1)

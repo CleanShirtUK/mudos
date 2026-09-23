@@ -36,7 +36,8 @@ ADMIN_SECRET = "password-hash"
 
 PROVIDERS = (
     ("providers.steam", "Steam"), ("providers.romm", "RomM"),
-    ("metadata.igdb", "IGDB / metadata"), ("providers.torrent", "Transmission"),
+    ("metadata.igdb", "IGDB / metadata"), ("metadata.steamgriddb", "SteamGridDB"),
+    ("providers.torrent", "Transmission"),
     ("providers.usenet", "NZBGet"), ("providers.usenet.server", "Usenet news server"),
     ("providers.prowlarr", "Prowlarr"),
 )
@@ -45,6 +46,7 @@ PROVIDER_META = {
     "providers.steam": ("Steam", "Steam games and account services.", "Connect Mudos to Steam when account access is required."),
     "providers.romm": ("RomM", "Your game library and artwork source.", "Use the address of your RomM server and its private API key."),
     "metadata.igdb": ("Game metadata", "Game names, artwork, and catalogue information.", "These settings are optional and are normally supplied by the appliance administrator."),
+    "metadata.steamgriddb": ("SteamGridDB", "Preferred automatic cover artwork.", "Use validated SteamGridDB covers after IGDB canonical identity resolution."),
     "providers.torrent": ("Transmission", "Torrent downloads managed by Mudos.", "Mudos uses the same account for Transmission's Web UI and its connection to Mudos."),
     "providers.usenet": ("NZBGet", "Usenet downloads managed by Mudos.", "Mudos uses the same account for NZBGet's Web UI and its connection to Mudos."),
     "providers.usenet.server": ("Usenet provider", "The Usenet account used by NZBGet.", "Your Usenet provider supplies these connection details."),
@@ -158,8 +160,10 @@ def _field(label: str, name: str, value: object = "", *, kind: str = "text",
     described = f' aria-describedby="help-{field_id}"' if help_text else ""
     required_attr = " required" if required else ""
     extra = f' placeholder="{html.escape(placeholder)}"' if placeholder else ""
+    checked = " checked" if kind == "checkbox" and bool(value) else ""
+    value_attr = "" if kind == "checkbox" else f' value="{html.escape(str(value))}"'
     input_html = (f'<input id="{field_id}" name="{html.escape(name)}" type="{kind}" '
-                  f'value="{html.escape(str(value))}"{described}{extra}{required_attr}>')
+                  f'{value_attr}{checked}{described}{extra}{required_attr}>')
     return (f'<div class="setting"><div class="setting-label"><label for="{field_id}">{html.escape(label)}</label>'
             f'{_help(help_text, field_id) if help_text else ""}</div>{input_html}'
             f'{f"<p class=help-text>{html.escape(help_text)}</p>" if help_text else ""}</div>')
@@ -273,6 +277,29 @@ class AdminApp:
 
     def test_provider(self, provider_id: str) -> tuple[bool, str]:
         config = self.config.provider(provider_id)
+        if provider_id == "metadata.igdb":
+            try:
+                from .igdb import IGDBClient, IGDBError
+                result = IGDBClient(self.config).test_connection()
+                return (True, "IGDB connection established") if result == "connected" else (False, "IGDB credentials are incomplete")
+            except IGDBError as error:
+                reason = str(error)
+                if reason.startswith(("token-http-401", "token-http-403")):
+                    return False, "IGDB authentication failed"
+                return False, "IGDB service unavailable"
+            except Exception:
+                return False, "IGDB service unavailable"
+        if provider_id == "metadata.steamgriddb":
+            try:
+                from .artwork import SteamGridDBArtwork
+                result = SteamGridDBArtwork().test_connection()
+                return (True, "SteamGridDB connection established") if result == "connected" else (False, "SteamGridDB credentials are incomplete")
+            except urllib.error.HTTPError as error:
+                return (False, "SteamGridDB authentication failed") if error.code in {401, 403} else (False, "SteamGridDB service unavailable")
+            except (OSError, urllib.error.URLError, TimeoutError, ValueError):
+                return False, "SteamGridDB service unavailable"
+            except Exception:
+                return False, "SteamGridDB service unavailable"
         if provider_id == "providers.prowlarr":
             try:
                 endpoint = str(config.get("endpoint", "")).rstrip("/")
@@ -450,7 +477,22 @@ class Handler(http.server.BaseHTTPRequestHandler):
         component_ids = {component.component_id for component in APP.components.all()}
         if provider_id not in dict(PROVIDERS) and provider_id not in component_ids:
             self._send(_page("Not found", '<div class="notice error"><strong>Integration not found</strong><p>Choose an integration from the list.</p></div><a class="button" href="/integrations">Back to integrations</a>', active="integrations"), 404); return
-        if provider_id == "providers.torrent":
+        component = next((item for item in APP.components.all() if provider_id in item.provider_ids), None)
+        if component and (component.configuration or component.secrets):
+            fields = ""
+            for item in component.configuration:
+                if item.kind == "boolean":
+                    fields += _field(item.label, item.key, config.get(item.key, item.default or False), kind="checkbox", help_text=item.description)
+                elif not item.secret:
+                    fields += _field(item.label, item.key, config.get(item.key, item.default or ""),
+                                     kind={"integer": "number", "url": "url"}.get(item.kind, "text"),
+                                     help_text=item.description, required=item.required)
+            secrets = ""
+            for item in component.secrets:
+                secrets += _field(item.label, "secret_" + item.slot, "", kind="password",
+                                  help_text=item.description + " Leave blank to preserve the existing secret.")
+                secrets += f'<p class="meta">{html.escape(item.label)}: {_badge("configured" if config.secret_available(item.slot) else "unconfigured")}</p>'
+        elif provider_id == "providers.torrent":
             fields = (_field("Username", "username", config.secret("username") or "", help_text="The account name used by Mudos and the Transmission Web UI.", required=True)
                       + _field("Connection address", "endpoint", config.get("endpoint", ""), help_text="The local address Mudos uses to connect to Transmission."))
             secrets = _field("Password", "secret_password", "", kind="password", help_text="Leave blank to keep the existing password. Enter a new value to replace it.") + f'<p class="meta">Password: {_badge("configured" if config.secret_available("password") else "unconfigured")}</p>'
@@ -487,6 +529,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
         before_secrets = {key: before.secret(key) for key in before.secret_refs
                           if before.secret(key) is not None}
         values = {key: value[0] for key, value in form.items() if not key.startswith(("csrf", "secret_", "clear_"))}
+        component = next((item for item in APP.components.all() if provider_id in item.provider_ids), None)
+        if component:
+            for item in component.configuration:
+                if item.kind == "boolean" and item.key not in values:
+                    values[item.key] = False
         for key in ("enabled", "tls"):
             if key in values: values[key] = values[key].lower() in {"1", "true", "on", "yes"}
         for key in ("port", "connections"):
@@ -507,6 +554,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             "password" in secrets_in
             or ("username" in secrets_in and secrets_in["username"] != (before.secret("username") or ""))
         )
+        secret_references = {item.slot: item.reference for item in component.secrets
+                             if item.reference} if component else {}
         try:
             if transmission_credentials_changed:
                 from .plugins.torrent import TransmissionClient, TransmissionConfig
@@ -551,7 +600,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     reconcile=lambda: systemctl("start", "lulu-questarr-reconcile.service"),
                 )
             else:
-                APP.config.update_provider(provider_id, values, secrets_in, clears)
+                APP.config.update_provider(provider_id, values, secrets_in, clears, secret_references)
             if provider_id == "providers.usenet":
                 from .nzbget_admin import apply_control_credentials, apply_packaged_paths
                 updated = APP.config.provider(provider_id)
@@ -574,6 +623,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 subprocess.run(["systemctl", "restart", "nzbget.service"],
                                stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
                                stderr=subprocess.DEVNULL, check=True, timeout=10)
+            if provider_id == "metadata.igdb":
+                subprocess.Popen(["busctl", "call", "org.lulu.Consoled", "/org/lulu/Console",
+                                  "org.lulu.Console", "RefreshStages", "as", "3",
+                                  "metadata", "metadata-enrichment", "artwork"],
+                                 stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                                 stderr=subprocess.DEVNULL, close_fds=True)
             if provider_id in {"providers.usenet", "providers.usenet.server"}:
                 subprocess.run(["systemctl", "restart", "lulu-acquisition.service"],
                                stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
