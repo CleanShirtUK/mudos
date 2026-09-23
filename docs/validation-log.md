@@ -1882,3 +1882,20 @@ restart may be required for InputPlumber to publish a newly created target.
   and no historical notification queue is replayed.
 - v1 event types are `download_started`, `download_finished`, and
   `installation_succeeded`. Gameplay download pausing is explicitly deferred.
+
+## Notification live integration regression
+
+- The first real browser-triggered Flatpak install created a normal
+  Acquisitiond JobManager job. Its state sequence was
+  `queued -> starting -> transferring -> finalizing -> completed`.
+- NotificationBroker observed the transitions and generated all three generic
+  event IDs. The presenter was launched for each event but exited because its
+  native default pointed at `/opt/lulu/ui/MudosNotification.qml`; the deployed
+  file is under `/opt/lulu/dev-current/ui`.
+- Fixed the presenter environment to derive `LULU_NOTIFICATION_UI_FILE` from
+  `LULU_INSTALL_ROOT`. No provider-specific notification path was added.
+- Revalidated with OpenTTD: uninstall through the normal acquisition endpoint,
+  then trusted Flathub browser handoff
+  `flatpak+https://dl.flathub.org/repo/appstream/org.openttd.OpenTTD.flatpakref`.
+  Job `job-f4431d16479449a58b1296bda086601d` completed successfully and the
+  presenter remained alive without QML or connection-reset errors.

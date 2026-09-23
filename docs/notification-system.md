@@ -31,6 +31,11 @@ The current wording is deliberately concise: “Download started”, “Download
 finished”, and “Installed successfully”, followed by the catalogue title or
 “is ready to play”.
 
+The presenter receives its QML path through `LULU_NOTIFICATION_UI_FILE`,
+derived from the active `LULU_INSTALL_ROOT`. This is important because the
+mutable development runtime lives under `/opt/lulu/dev-current`, while the
+packaged default root may be `/opt/lulu/current`.
+
 ## Deliberate limitations
 
 Notifications do not pause downloads, own navigation, expose history, or add

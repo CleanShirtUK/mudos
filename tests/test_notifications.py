@@ -1,9 +1,12 @@
 import asyncio
 from dataclasses import replace
+import json
+from pathlib import Path
+import tempfile
 import unittest
 
 from lulu.jobs import DownloadJob, JobOperation, JobState
-from lulu.notifications import Notification, NotificationBroker
+from lulu.notifications import Notification, NotificationBroker, NotificationPresenter
 
 
 def job(job_id: str = "job-1", *, state: JobState = JobState.QUEUED,
@@ -82,6 +85,34 @@ class NotificationBrokerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([event.event_type for event in events], [
             "download_started", "download_finished",
         ])
+
+    async def test_presenter_passes_deployed_ui_path_and_receives_event(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            executable = Path(directory) / "presenter.py"
+            output = Path(directory) / "event.json"
+            executable.write_text(
+                "#!/usr/bin/env python3\n"
+                "import json, os, sys\n"
+                "assert os.environ['LULU_NOTIFICATION_UI_FILE'].endswith('/ui/MudosNotification.qml')\n"
+                "first = sys.stdin.readline()\n"
+                "with open(os.environ['OUTPUT'], 'w') as f: f.write(first)\n"
+                "sys.stdin.readline()\n"
+            )
+            executable.chmod(0o755)
+            presenter = NotificationPresenter(str(executable), duration=0)
+            import os
+            old = os.environ.get("OUTPUT")
+            os.environ["OUTPUT"] = str(output)
+            try:
+                await presenter(Notification("event-1", "installation_succeeded",
+                                             "Installed successfully", "Example is ready"))
+                await asyncio.sleep(0.05)
+            finally:
+                if old is None:
+                    os.environ.pop("OUTPUT", None)
+                else:
+                    os.environ["OUTPUT"] = old
+            self.assertEqual(json.loads(output.read_text())["event_id"], "event-1")
 
 
 if __name__ == "__main__":

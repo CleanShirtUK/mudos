@@ -147,10 +147,14 @@ class NotificationPresenter:
     async def _ensure_process(self) -> asyncio.subprocess.Process:
         if self._process is not None and self._process.returncode is None:
             return self._process
+        install_root = Path(os.environ.get("LULU_INSTALL_ROOT", "/opt/lulu/dev-current"))
         env = {**os.environ, "DISPLAY": os.environ.get("DISPLAY", ":0"),
                "WAYLAND_DISPLAY": os.environ.get("WAYLAND_DISPLAY", "gamescope-0"),
                "XDG_RUNTIME_DIR": os.environ.get("XDG_RUNTIME_DIR", "/run/user/958"),
-               "QT_QPA_PLATFORM": os.environ.get("QT_QPA_PLATFORM", "xcb")}
+               "QT_QPA_PLATFORM": os.environ.get("QT_QPA_PLATFORM", "xcb"),
+               "LULU_NOTIFICATION_UI_FILE": os.environ.get(
+                   "LULU_NOTIFICATION_UI_FILE", str(install_root / "ui" / "MudosNotification.qml"),
+               )}
         self._process = await asyncio.create_subprocess_exec(
             self.executable, stdin=asyncio.subprocess.PIPE, env=env,
         )
