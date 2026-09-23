@@ -100,9 +100,13 @@ class ConsoleCatalog:
         self.metadata = metadata or SteamGridDBMetadata()
         self.matcher = MetadataMatcher(self.metadata)
         self.enrichment = MetadataEnrichmentService(self.store)
+        installed_sources = tuple(self._plugins.with_capability("installed_catalogue"))
         self.steam_entitlements = steam_entitlements or next(
-            (item for item in self._plugins.with_capability("installed_catalogue")
-             if hasattr(item, "has_snapshot")), None)
+            (item for item in installed_sources if getattr(item, "provider_id", "") == "steam"), None)
+        self.external_entitlements = tuple(
+            item for item in installed_sources
+            if getattr(item, "provider_id", "") in {"gog", "epic"}
+        )
         self._diagnostic_artwork_originals: dict[str, str] = {}
         self._diagnostic_timestamp_originals: dict[str, tuple[int | None, int | None]] = {}
         self._diagnostic_canonical_originals: dict[str, str] = {}
@@ -123,7 +127,7 @@ class ConsoleCatalog:
         )
 
     def refresh(self, stages: set[str] | None = None) -> list[dict[str, object]]:
-        all_stages = {"steam", "local", "romm", "components", "romm-artwork", "metadata", "metadata-enrichment", "protondb", "artwork"}
+        all_stages = {"steam", "gog", "epic", "local", "romm", "components", "romm-artwork", "metadata", "metadata-enrichment", "protondb", "artwork"}
         selected = all_stages if stages is None else set(stages)
         catalogue_records = self.store.list_catalogue_games()
         library_ids = {game.game_id for game in self.store.list_games()}
@@ -192,6 +196,20 @@ class ConsoleCatalog:
             if self.store.last_deltas:
                 self.last_delta_batches.append(self.store.last_deltas)
             LOGGER.info("catalogue stage completed name=steam sqlite_commit=complete")
+        for source in self.external_entitlements:
+            provider_id = str(getattr(source, "provider_id", ""))
+            if provider_id not in selected:
+                continue
+            LOGGER.info("catalogue stage started name=%s", provider_id)
+            try:
+                source.refresh()
+                self.store.reconcile_owned_provider(provider_id, tuple(source.snapshot),
+                                                    tuple(source.installed()))
+                if self.store.last_deltas:
+                    self.last_delta_batches.append(self.store.last_deltas)
+                LOGGER.info("catalogue stage completed name=%s sqlite_commit=complete", provider_id)
+            except Exception:
+                LOGGER.exception("catalogue stage failed name=%s", provider_id)
         if "local" in selected:
             LOGGER.info("catalogue stage started name=local")
             ensure_storage()
@@ -1933,7 +1951,7 @@ async def serve() -> None:
                 # migration. Canonical metadata is explicit/bulk work; normal
                 # provider reconciliation remains available here.
                 stages = (startup_stages if not startup_attempted else
-                          {"steam", "local", "romm", "components", "romm-artwork", "protondb"})
+                          {"steam", "gog", "epic", "local", "romm", "components", "romm-artwork", "protondb"})
                 await interface.refresh_catalogue(stages)
             except Exception:
                 LOGGER.exception("background catalogue synchronization failed")

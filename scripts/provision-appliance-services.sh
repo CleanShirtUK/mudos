@@ -11,3 +11,10 @@ pacman -S --needed --noconfirm qt6-webengine
 "$root/provision-admin.sh"
 "$root/provision-acquisition-services.sh"
 "$root/provision-questarr.sh"
+# Optional PC entitlement backends are independently idempotent.  They are
+# installed only when explicitly requested so a base appliance remains
+# offline-safe and does not pull frontend launchers into the image.
+if [[ "${LULU_PROVISION_PC_PROVIDERS:-0}" == "1" ]]; then
+    "$root/provision-gogdl.sh"
+    "$root/provision-legendary.sh"
+fi

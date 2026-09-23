@@ -61,7 +61,9 @@ class PluginRegistryTests(unittest.TestCase):
             registry = PluginRegistry(root)
             records = {record.manifest.plugin_id: record for record in registry.discover()}
             self.assertEqual(records["steam"].health, "disabled")
-            self.assertEqual(registry.with_capability("providers"), ())
+            providers = registry.with_capability("providers")
+            self.assertFalse(any(str(path).endswith("/steam/providers") for path in providers))
+            self.assertTrue(any(str(path).endswith("/gog/providers") for path in providers))
 
     def test_empty_user_plugin_root_does_not_mask_shipped_plugins(self) -> None:
         """A settings-only user root must still allow shipped discovery."""

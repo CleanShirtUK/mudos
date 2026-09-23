@@ -101,6 +101,14 @@ class MudosPaths:
         return self.game_install_root / "Executables/steam"
 
     @property
+    def gog_library_root(self) -> Path:
+        return self.game_install_root / "Executables/gog"
+
+    @property
+    def epic_library_root(self) -> Path:
+        return self.game_install_root / "Executables/epic"
+
+    @property
     def steamcmd_root(self) -> Path:
         """Mudos-owned SteamCMD runtime, separate from user Steam state."""
         return Path(os.environ.get("LULU_STEAMCMD_ROOT", "/var/lib/lulu/steamcmd"))

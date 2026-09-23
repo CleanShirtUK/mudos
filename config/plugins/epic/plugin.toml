@@ -1,0 +1,27 @@
+id = "epic"
+name = "Epic Games"
+version = "1"
+api_version = 1
+kind = "plugin"
+providers = ["epic"]
+description = "Epic ownership and Legendary-managed installation."
+types = ["catalogue", "acquisition"]
+
+[capabilities]
+providers = true
+installed_catalogue = true
+available_catalogue = true
+acquisition = true
+authentication = true
+launch = true
+settings = true
+
+[[provisioning]]
+package = "legendary"
+reason = "Native Epic entitlement, install, update, and launch backend."
+
+[[secrets]]
+slot = "auth"
+label = "Epic authentication"
+description = "Managed by Legendary; raw credentials are never stored by Mudos."
+required = false

@@ -177,7 +177,7 @@ class CatalogueGame:
 
     @classmethod
     def from_steam_entitlement(cls, entitlement: SteamEntitlement,
-                               installed: InstalledSteamGame | None = None) -> "CatalogueGame":
+                                installed: InstalledSteamGame | None = None) -> "CatalogueGame":
         return cls(
             game_id=f"steam:{entitlement.app_id}", provider="steam",
             provider_id=entitlement.app_id,
@@ -191,6 +191,26 @@ class CatalogueGame:
             normalized_search_title=clean_local_title(entitlement.title),
             availability_state="installed" if installed else "available",
             catalogue_source="steam",
+        )
+
+    @classmethod
+    def from_owned_provider(cls, provider: str, game: object,
+                            installed: object | None = None) -> "CatalogueGame":
+        """Normalize a non-Steam entitlement without making metadata required."""
+        provider_id = str(getattr(game, "provider_id", "")).strip()
+        title = str(getattr(installed or game, "title", "")).strip()
+        installed_dir = str(getattr(installed, "install_dir", "") or "")
+        return cls(
+            game_id=f"{provider}:{provider_id}", provider=provider,
+            provider_id=provider_id, title=title or provider_id, platform="PC",
+            install_state="installed" if installed is not None else "available",
+            launchable=installed is not None, install_dir=installed_dir,
+            artwork_url=str(getattr(installed or game, "artwork_url", "") or ""),
+            last_played=int(getattr(installed or game, "last_played", 0) or 0),
+            platform_label=provider.title(), source_title=str(getattr(game, "title", title)),
+            normalized_search_title=clean_local_title(str(getattr(game, "title", title))),
+            availability_state="installed" if installed is not None else "available",
+            catalogue_source=provider,
         )
 
     @classmethod
@@ -780,6 +800,34 @@ class CatalogueStore:
         self._finish_operation(deltas)
         return normalized
 
+    def reconcile_owned_provider(self, provider: str, entitlements: tuple[object, ...],
+                                 installed: tuple[object, ...]) -> list[CatalogueGame]:
+        """Join a provider-owned snapshot to that provider's installed state."""
+        installed_by_id = {str(getattr(game, "provider_id", "")): game for game in installed}
+        normalized = [CatalogueGame.from_owned_provider(provider, game,
+                       installed_by_id.get(str(getattr(game, "provider_id", ""))))
+                      for game in entitlements]
+        known = {str(getattr(game, "provider_id", "")) for game in entitlements}
+        normalized.extend(
+            CatalogueGame.from_owned_provider(provider, game, game)
+            for identity, game in installed_by_id.items() if identity not in known
+        )
+        deltas: list[CatalogueDelta] = []
+        self._start_operation()
+        with self.atomic():
+            existing = self._rows(f"SELECT {SELECT_COLUMNS} FROM games WHERE provider=?", (provider,))
+            installed_ids = set(installed_by_id)
+            owned_ids = known | installed_ids
+            for current in existing:
+                if current.provider_id not in owned_ids and current.install_state == "installed":
+                    self._apply_existing_locked(
+                        current, replace(current, install_state="available", launchable=False,
+                                         install_dir="", availability_state="available"), deltas)
+            for game in normalized:
+                self._upsert_locked(game, deltas)
+        self._finish_operation(deltas)
+        return normalized
+
     def reconcile_local(self, provider: LocalContentProvider, root: Path) -> list[CatalogueGame]:
         games = [CatalogueGame.from_local(game) for game in provider.list_installed(root)]
         deltas: list[CatalogueDelta] = []
@@ -952,9 +1000,9 @@ class CatalogueStore:
         query = f"SELECT {SELECT_COLUMNS} FROM games WHERE {self._installed_presentation_where()}"
         parameters: tuple[object, ...] = ()
         if scope == "pc":
-            # PC Games includes native Linux applications managed by enabled
-            # providers (currently Steam and Flatpak), not only Steam rows.
-            query += " AND provider IN ('steam', 'flatpak')"
+            # PC Games includes native/managed PC applications from all
+            # enabled PC providers, not only Steam rows.
+            query += " AND provider IN ('steam', 'gog', 'epic', 'flatpak', 'lutris', 'local')"
         elif scope == "steam":
             query += " AND provider=?"; parameters = ("steam",)
         elif scope.startswith("platform:"):

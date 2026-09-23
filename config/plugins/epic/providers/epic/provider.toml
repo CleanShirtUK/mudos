@@ -1,0 +1,32 @@
+id = "epic"
+name = "Epic Games"
+
+[capabilities]
+launch = true
+settings = true
+library = true
+acquire = true
+health = true
+
+[platforms]
+supported = ["pc"]
+
+[config]
+strategy = "generated"
+directory = "config"
+
+[launch.standalone]
+command = "legendary auth"
+controller_mode = "compat"
+
+[launch.game]
+command = "legendary launch"
+controller_mode = "game"
+
+[[guide.actions]]
+id = "epic-quit"
+label = "Quit Epic game"
+role = "quit"
+target = "window-delete"
+contexts = ["game", "standalone", "install"]
+order = 90

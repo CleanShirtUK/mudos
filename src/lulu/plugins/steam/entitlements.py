@@ -75,6 +75,8 @@ class SteamEntitlementConfig:
 class SteamEntitlementSource:
     """Read Valve-owned AppIDs and retain the last valid snapshot on failure."""
 
+    provider_id = "steam"
+
     def __init__(self, config: SteamEntitlementConfig | None = None,
                  request: Callable[[str, float], bytes] | None = None,
                  snapshot_path: Path | None = None) -> None:

@@ -346,7 +346,7 @@ class ConsoleUiBridge:
                 if job is None:
                     return
                 if job.get("state") == "completed":
-                    await self.consoled.call_refresh_stages(["steam", "local", "romm", "components"])
+                    await self.consoled.call_refresh_stages(["steam", "gog", "epic", "local", "romm", "components"])
                     return
                 if job.get("state") in {"failed", "cancelled"}:
                     return
@@ -364,7 +364,7 @@ class ConsoleUiBridge:
                 if job is None or job.get("state") in {"failed", "cancelled"}:
                     return
                 if job.get("state") == "completed":
-                    stages = (["steam"] if provider == "steam" else
+                    stages = ([provider] if provider in {"steam", "gog", "epic"} else
                               ["components"] if provider == "flatpak" else ["local"])
                     await self.consoled.call_refresh_stages(stages)
                     return
