@@ -22,6 +22,7 @@ from .credential import CredentialInput
 from .catalogue import CatalogueStore
 from .local_uninstall import LocalUninstallExecutor
 from .jobs import JobOperation
+from .notifications import NotificationBroker, NotificationPresenter
 from .lutris_install import LutrisInstallExecutor
 from .pc_install import PcInstallSource
 from .pc_install_store import PcInstallSourceStore
@@ -40,11 +41,14 @@ LOGGER = logging.getLogger("lulu.acquisitiond")
 
 
 class AcquisitionInterface(ServiceInterface):
-    def __init__(self, manager: JobManager, catalogue: CatalogueStore, plugins: PluginRegistry) -> None:
+    def __init__(self, manager: JobManager, catalogue: CatalogueStore, plugins: PluginRegistry,
+                 notifications: NotificationBroker | None = None) -> None:
         super().__init__(INTERFACE_NAME)
         self.manager = manager
         self.catalogue = catalogue
         self.plugins = plugins
+        self.notifications = notifications or NotificationBroker(NotificationPresenter())
+        self.notifications.seed(manager.snapshot())
         manager._on_change = self._publish
 
     def _snapshot(self) -> str:
@@ -54,6 +58,7 @@ class AcquisitionInterface(ServiceInterface):
         }, sort_keys=True)
 
     def _publish(self, *_: object) -> None:
+        self.notifications.observe(self.manager.snapshot())
         self.StateChanged(self._snapshot())
 
     @method()

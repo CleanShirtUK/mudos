@@ -131,6 +131,7 @@ EOF
     cat > "$acquisition_dropin" <<EOF
 [Service]
 Environment=PYTHONPATH=$runtime/lib
+Environment=LULU_INSTALL_ROOT=$runtime
 EOF
     systemctl daemon-reload
     systemctl enable lulu-questarr-reconcile.service >/dev/null

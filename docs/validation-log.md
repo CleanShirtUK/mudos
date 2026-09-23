@@ -1861,3 +1861,24 @@ restart may be required for InputPlumber to publish a newly created target.
   handoffs idempotent. Repeated SuperTux handoff now returns `Already installed`
   without creating another job.
 - Full suite after the correction: 556 passed, 6 subtests passed.
+
+## Immutable pre-notification checkpoint
+
+- Checkpoint commit: `3e23e545fbaceca6fbf61c30f5a580c27615b7dd`.
+- Tag: `mudos-flatpak-plugin-checkpoint-20260922-final`.
+- Immutable release: `/opt/lulu/releases/3e23e54-candidate-20260922234735`.
+- Release manifest and immutability were verified. `/opt/lulu/current` was
+  left unchanged; `/opt/lulu/dev-current` remained the mutable runtime.
+- Full pre-notification suite: 557 passed, 6 subtests passed.
+
+## Notification system
+
+- The existing Guide is a modal, input-owning external overlay. Notifications
+  use a separate passive `mudos-notification` external overlay with transparent
+  input, so Home, browser, Settings, and delegated surfaces share one global
+  presentation boundary without changing focus or navigation ownership.
+- Acquisitiond observes normalized JobManager transitions through a
+  session-scoped broker. Startup state is seeded, repeated states are ignored,
+  and no historical notification queue is replayed.
+- v1 event types are `download_started`, `download_finished`, and
+  `installation_succeeded`. Gameplay download pausing is explicitly deferred.
