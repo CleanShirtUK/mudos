@@ -1280,7 +1280,7 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertLess(QML.index("launchToken = data.token"), QML.index("            refreshLaunchState(generation)"))
         self.assertLess(QML.index("retireLaunchOverlay(generation)"), QML.index("function refreshLaunchLog(generation)"))
         self.assertIn('request("/cancel", "POST"', QML)
-        self.assertIn('value === "back"', QML)
+        self.assertIn('action === "back"', QML)
         self.assertIn('launchTitle = "Steam Store"', QML)
         bridge = (ROOT / "scripts" / "console-ui-bridge.py").read_text()
         self.assertIn('self.launch_logs.start("steam-store")', bridge)
@@ -1301,29 +1301,20 @@ class ConsoleUiTests(unittest.TestCase):
 
     def test_ui_audio_engine_has_semantic_voices_and_safety_rules(self) -> None:
         engine = (ROOT / "ui" / "UiAudioEngine.qml").read_text()
-        for semantic in ("navigate", "confirm", "back", "error"):
-            self.assertIn(f'{semantic}Source: "sounds/ui-{semantic}.wav"', engine)
-            self.assertIn(f'id: {semantic}VoiceComponent', engine)
         self.assertIn("function play(semantic)", engine)
-        self.assertIn("function voiceFor(semantic)", engine)
         self.assertIn("debounceInterval: 55", engine)
-        self.assertIn("maxVoices: 3", engine)
-        self.assertIn("voice.status !== SoundEffect.Ready", engine)
-        self.assertIn("activeVoiceCount() >= maxVoices", engine)
-        self.assertIn("voice.stop()", engine)
-        self.assertIn("function stopAll()", engine)
-        self.assertIn("function loaderFor(semantic)", engine)
-        self.assertIn("property string pendingSemantic", engine)
-        self.assertIn("onLoaded: root.tryPlayPending()", engine)
+        self.assertIn("function audioBridge()", engine)
+        self.assertIn('typeof bridge.playUiSound !== "function"', engine)
+        self.assertNotIn("QtMultimedia", engine)
         self.assertNotIn('source: "UiAudioEngine.qml"', (ROOT / "ui" / "MudosGuide.qml").read_text())
-        self.assertIn('source: "UiAudioEngine.qml"', QML)
+        self.assertIn("UiAudioEngine { id: uiAudioEngine }", QML)
         self.assertNotIn("onValueChanged", engine)
 
     def test_ui_audio_assets_are_canonical_and_replaceable(self) -> None:
         manifest = (ROOT / "ui" / "sounds" / "README.md").read_text()
         for filename in ("ui-navigate.wav", "ui-confirm.wav", "ui-back.wav", "ui-error.wav"):
             self.assertIn(f"`{filename}`", manifest)
-        self.assertIn("does not\nrequire a", manifest)
+        self.assertIn("audio-only playback path", manifest)
 
 if __name__ == "__main__":
     unittest.main()

@@ -78,16 +78,21 @@ class SessionModelTests(unittest.TestCase):
         session.clear_requested_surface()
         self.assertIsNone(session.state.requested_surface)
 
-    def test_reset_tears_down_session_and_requests_service_restart(self) -> None:
+    def test_reset_requests_owned_systemd_session_restart(self) -> None:
         async def exercise() -> None:
             interface = ConsoleSessionInterface.__new__(ConsoleSessionInterface)
-            interface.stop_controller_monitor = AsyncMock()
-            interface.supervisor = type("Supervisor", (), {"stop": AsyncMock()})()
-            with patch("lulu.sessiond.os.kill") as kill:
+            interface._reset_requested = True
+            process = AsyncMock()
+            process.returncode = 0
+            process.communicate.return_value = (b"", b"")
+            with patch("lulu.sessiond.asyncio.create_subprocess_exec",
+                       new=AsyncMock(return_value=process)) as spawn:
                 await interface._reset_mudos()
-            interface.stop_controller_monitor.assert_awaited_once()
-            interface.supervisor.stop.assert_awaited_once()
-            kill.assert_called_once()
+            spawn.assert_awaited_once_with(
+                "systemctl", "--no-block", "restart", "lulu-session@2.service",
+                stdout=asyncio.subprocess.DEVNULL,
+                stderr=asyncio.subprocess.PIPE,
+            )
 
         asyncio.run(exercise())
     def test_empty_primary_id_is_rejected_and_new_launch_clears_failure(self) -> None:

@@ -63,6 +63,7 @@ class ConsoleSessionInterface(ServiceInterface):
             presentation=GamescopePresentation(),
             input_mode_changed=None if self._native_controller else self._apply_input_mode,
         )
+        self._reset_requested = False
 
     def _state_json(self) -> str:
         state = asdict(self.model.state)
@@ -533,14 +534,31 @@ class ConsoleSessionInterface(ServiceInterface):
 
     @method()
     async def ResetMudos(self) -> "s":
+        if self._reset_requested:
+            return "reset-requested"
+        self._reset_requested = True
         asyncio.create_task(self._reset_mudos())
         return "reset-requested"
 
     async def _reset_mudos(self) -> None:
-        LOGGER.warning("session stop attribution source=ResetMudos reason=controlled-reset")
-        await self.stop_controller_monitor()
-        await self.supervisor.stop()
-        os.kill(os.getpid(), os_signal.SIGTERM)
+        unit = "lulu-session@2.service"
+        LOGGER.warning("session restart requested source=ResetMudos unit=%s", unit)
+        try:
+            process = await asyncio.create_subprocess_exec(
+                "systemctl", "--no-block", "restart", unit,
+                stdout=asyncio.subprocess.DEVNULL,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            _, stderr = await process.communicate()
+            if process.returncode:
+                self._reset_requested = False
+                LOGGER.error("session restart request failed unit=%s error=%s",
+                             unit, stderr.decode(errors="replace").strip())
+            else:
+                LOGGER.info("session restart queued by systemd unit=%s", unit)
+        except (OSError, asyncio.SubprocessError) as error:
+            self._reset_requested = False
+            LOGGER.exception("session restart request failed unit=%s: %s", unit, error)
 
     @method()
     async def Reboot(self) -> "s":

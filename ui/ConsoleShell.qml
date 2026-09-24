@@ -60,19 +60,7 @@ import QtQuick.Controls
         id: luluPalette
     }
 
-    Loader {
-        id: uiAudioLoader
-        active: false
-        source: "UiAudioEngine.qml"
-        property string pendingEvent: ""
-        onLoaded: {
-            if (pendingEvent) {
-                var event = pendingEvent
-                pendingEvent = ""
-                item.play(event)
-            }
-        }
-    }
+    UiAudioEngine { id: uiAudioEngine }
 
     function audioEventForAction(action) {
         if (action === "up" || action === "down" || action === "left"
@@ -89,14 +77,7 @@ import QtQuick.Controls
     function playAudioEvent(event) {
         if (!event)
             return
-        if (!uiAudioLoader.active) {
-            uiAudioLoader.pendingEvent = event
-            uiAudioLoader.active = true
-        } else if (uiAudioLoader.item) {
-            uiAudioLoader.item.play(event)
-        } else {
-            uiAudioLoader.pendingEvent = event
-        }
+        uiAudioEngine.play(event)
     }
 
     readonly property real activeHeadingHeight: design(37)
@@ -427,6 +408,7 @@ import QtQuick.Controls
                 callback(JSON.parse(request.responseText))
             else if (failureMessage && (generation === undefined || generation === launchGeneration)) {
                 message = failureMessage || "Catalogue unavailable"
+                playAudioEvent("error")
                 if (generation !== undefined) {
                     launchStatus = "failed"
                     launchStatusTimer.stop()
@@ -842,16 +824,20 @@ import QtQuick.Controls
     }
 
     function openSelectedGameOptions() {
-        if (removeSelectedHomeStore())
+        if (removeSelectedHomeStore()) {
+            playAudioEvent(audioEventForAction("confirm"))
             return
+        }
         if (space === "downloads" && downloadsHomeRef) {
             downloadsHomeRef.requestCancel()
             return
         }
         if (gameOptionsOpen)
             return
-        if (selectedGameForOptions)
+        if (selectedGameForOptions) {
+            playAudioEvent(audioEventForAction("options"))
             openGameOptions(selectedGameForOptions)
+        }
     }
 
     function openGameOptions(game) {
@@ -2108,10 +2094,6 @@ import QtQuick.Controls
                 root.openDownloads(root.space)
                 root.request("/surface/clear", "POST", "", function(data) {})
             }
-            if (key === "action" && value === "back" && root.launchOverlayEffectiveVisible)
-                root.cancelLaunch()
-            if (key === "action")
-                root.playAudioEvent(root.audioEventForAction(value))
         }
     }
 
@@ -2271,6 +2253,7 @@ import QtQuick.Controls
          }
         if (root.homeLaunchGated)
             return
+        playAudioEvent(audioEventForAction("confirm"))
         if (root.browserVisible) {
             root.browserSurface.activate()
             return
@@ -2463,6 +2446,7 @@ import QtQuick.Controls
     }
 
     function back() {
+        playAudioEvent(audioEventForAction("back"))
         if (browserVisible) {
             if (credentialTarget.kind === "browser"
                     && (credentialRequest.status === "requested" || credentialRequest.status === "waiting")) {
@@ -2706,6 +2690,7 @@ import QtQuick.Controls
             console.log("CONTROLLER_QML", "up", "gated", root.homeLaunchGated,
                         "space", root.space)
             if (root.homeLaunchGated) return
+            root.playAudioEvent(root.audioEventForAction("up"))
             if (root.browserVisible) { root.browserSurface.directional("up"); return }
             if (root.gameOptionsOpen) root.moveGameOptions(-1)
             else if (root.space === "home") root.moveDomain(-1)
@@ -2734,6 +2719,7 @@ import QtQuick.Controls
             console.log("CONTROLLER_QML", "down", "gated", root.homeLaunchGated,
                         "space", root.space)
             if (root.homeLaunchGated) return
+            root.playAudioEvent(root.audioEventForAction("down"))
             if (root.browserVisible) { root.browserSurface.directional("down"); return }
             if (root.gameOptionsOpen) root.moveGameOptions(1)
             else if (root.space === "home") root.moveDomain(1)
@@ -2762,6 +2748,7 @@ import QtQuick.Controls
             console.log("CONTROLLER_QML", "left", "gated", root.homeLaunchGated,
                         "space", root.space)
             if (root.homeLaunchGated) return
+            root.playAudioEvent(root.audioEventForAction("left"))
             if (root.browserVisible) { root.browserSurface.directional("left"); return }
             if (root.gameOptionsOpen) root.moveGameOptions(-1)
             else if (root.space === "home") {
@@ -2793,6 +2780,7 @@ import QtQuick.Controls
             console.log("CONTROLLER_QML", "right", "gated", root.homeLaunchGated,
                         "space", root.space)
             if (root.homeLaunchGated) return
+            root.playAudioEvent(root.audioEventForAction("right"))
             if (root.browserVisible) { root.browserSurface.directional("right"); return }
             if (root.gameOptionsOpen) root.moveGameOptions(1)
             else if (root.space === "home") {
@@ -2823,6 +2811,9 @@ import QtQuick.Controls
             }
     }
     function controllerShoulder(delta) {
+        if (root.space === "library" || root.space === "store"
+                || (root.space === "system" && !root.systemLanding))
+            root.playAudioEvent(root.audioEventForAction(delta < 0 ? "leftShoulder" : "rightShoulder"))
         if (root.space === "library") root.moveLibraryCollection(delta)
         else if (root.space === "store") root.moveStoreCategory(delta)
         else if (root.space === "system" && !root.systemLanding) {

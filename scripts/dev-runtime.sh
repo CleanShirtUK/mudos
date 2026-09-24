@@ -94,6 +94,8 @@ refresh() {
         /etc/polkit-1/rules.d/54-lulu-transmission.rules
     install -D -m 0644 "$staging/packaging/polkit-1/rules.d/55-lulu-transmission-config.rules" \
         /etc/polkit-1/rules.d/55-lulu-transmission-config.rules
+    install -D -m 0644 "$staging/packaging/polkit-1/rules.d/56-lulu-session-restart.rules" \
+        /etc/polkit-1/rules.d/56-lulu-session-restart.rules
     systemctl reload polkit.service 2>/dev/null || true
     # InputPlumber consumes system device definitions, not the mutable runtime
     # tree. Install the repo-owned generic policy on every refresh so an old
@@ -180,6 +182,8 @@ immutable() {
         /etc/polkit-1/rules.d/49-lulu-network.rules
     install -D -m 0644 "$immutable_root/packaging/polkit-1/rules.d/50-lulu-storage.rules" \
         /etc/polkit-1/rules.d/50-lulu-storage.rules
+    install -D -m 0644 "$immutable_root/packaging/polkit-1/rules.d/56-lulu-session-restart.rules" \
+        /etc/polkit-1/rules.d/56-lulu-session-restart.rules
     udevadm control --reload-rules
     systemctl daemon-reload
     systemctl disable lulu-acquisition.service lulu-consoled.service >/dev/null 2>&1 || true

@@ -707,10 +707,84 @@ public:
 
     ~ControllerBridge() override
     {
+        if (uiAudioStream_)
+            SDL_DestroyAudioStream(uiAudioStream_);
         if (presentationConnection_)
             xcb_disconnect(presentationConnection_);
         closeGamepads();
         SDL_QuitSubSystem(SDL_INIT_GAMEPAD);
+        SDL_QuitSubSystem(SDL_INIT_AUDIO);
+    }
+
+    Q_INVOKABLE bool playUiSound(const QString &semantic)
+    {
+        static const QHash<QString, QString> files = {
+            {QStringLiteral("navigate"), QStringLiteral("ui-navigate.wav")},
+            {QStringLiteral("confirm"), QStringLiteral("ui-confirm.wav")},
+            {QStringLiteral("back"), QStringLiteral("ui-back.wav")},
+            {QStringLiteral("error"), QStringLiteral("ui-error.wav")},
+        };
+        const auto file = files.constFind(semantic);
+        if (file == files.cend())
+            return false;
+        const quint64 request = ++uiAudioRequestSerial_;
+        qInfo() << "UI_AUDIO_REQUEST" << request << semantic
+                << "device_ready" << (uiAudioStream_ != nullptr);
+        if (!ensureUiAudioDevice(request))
+            return false;
+        if (uiAudioUnavailable_.contains(semantic))
+            return false;
+
+        QByteArray pcm = uiAudioCache_.value(semantic);
+        if (pcm.isNull()) {
+            const QString path = QDir(uiAudioAssetDirectory_).filePath(*file);
+            SDL_AudioSpec sourceFormat{};
+            Uint8 *source = nullptr;
+            Uint32 sourceLength = 0;
+            if (!SDL_LoadWAV(path.toUtf8().constData(), &sourceFormat,
+                             &source, &sourceLength)) {
+                uiAudioUnavailable_.insert(semantic);
+                qWarning() << "UI_AUDIO_UNAVAILABLE WAV load" << path << SDL_GetError();
+                return false;
+            }
+            SDL_AudioSpec outputFormat{SDL_AUDIO_S16LE, 2, 48000};
+            Uint8 *converted = nullptr;
+            int convertedLength = 0;
+            const bool convertedOk = SDL_ConvertAudioSamples(
+                &sourceFormat, source, static_cast<int>(sourceLength),
+                &outputFormat, &converted, &convertedLength);
+            SDL_free(source);
+            if (!convertedOk) {
+                uiAudioUnavailable_.insert(semantic);
+                qWarning() << "UI_AUDIO_UNAVAILABLE WAV conversion" << path << SDL_GetError();
+                return false;
+            }
+            pcm = QByteArray(reinterpret_cast<const char *>(converted), convertedLength);
+            SDL_free(converted);
+            auto *samples = reinterpret_cast<qint16 *>(pcm.data());
+            const qsizetype sampleCount = pcm.size() / sizeof(qint16);
+            for (qsizetype index = 0; index < sampleCount; ++index)
+                samples[index] = static_cast<qint16>(samples[index] * 0.35);
+            uiAudioCache_.insert(semantic, pcm);
+        }
+
+        SDL_ClearAudioStream(uiAudioStream_);
+        if (!SDL_PutAudioStreamData(uiAudioStream_, pcm.constData(), pcm.size())) {
+            invalidateUiAudioDevice("queue playback", SDL_GetError());
+            return false;
+        }
+        if (SDL_AudioStreamDevicePaused(uiAudioStream_)
+            && !SDL_ResumeAudioStreamDevice(uiAudioStream_)) {
+            invalidateUiAudioDevice("resume output", SDL_GetError());
+            return false;
+        }
+        qInfo() << "UI_AUDIO_PLAY" << request << semantic << "bytes" << pcm.size();
+        return true;
+    }
+
+    void setUiAudioAssetDirectory(const QString &directory)
+    {
+        uiAudioAssetDirectory_ = directory;
     }
 
     void setWindow(QQuickWindow *window)
@@ -746,6 +820,57 @@ private slots:
     }
 
 private:
+    bool ensureUiAudioDevice(quint64 request)
+    {
+        if (uiAudioStream_)
+            return true;
+        const qint64 now = QDateTime::currentMSecsSinceEpoch();
+        if (now < uiAudioRetryAfterMs_) {
+            qInfo() << "UI_AUDIO_RETRY_DEFERRED" << request
+                    << "retry_after_ms" << (uiAudioRetryAfterMs_ - now);
+            return false;
+        }
+        if (!uiAudioSubsystemInitialized_) {
+            if (!SDL_InitSubSystem(SDL_INIT_AUDIO)) {
+                scheduleUiAudioRetry("SDL audio init", SDL_GetError());
+                return false;
+            }
+            uiAudioSubsystemInitialized_ = true;
+        }
+
+        const SDL_AudioSpec format{SDL_AUDIO_S16LE, 2, 48000};
+        uiAudioStream_ = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK,
+                                                    &format, nullptr, nullptr);
+        if (!uiAudioStream_) {
+            scheduleUiAudioRetry("open default output", SDL_GetError());
+            return false;
+        }
+        uiAudioRetryAfterMs_ = 0;
+        uiAudioFailures_ = 0;
+        qInfo() << "UI_AUDIO_DEVICE_READY" << request
+                << SDL_GetAudioDeviceName(SDL_GetAudioStreamDevice(uiAudioStream_));
+        return true;
+    }
+
+    void scheduleUiAudioRetry(const char *operation, const char *error)
+    {
+        ++uiAudioFailures_;
+        const qint64 backoff = std::min<qint64>(30000,
+            1000LL << std::min<uint>(uiAudioFailures_ - 1, 4));
+        uiAudioRetryAfterMs_ = QDateTime::currentMSecsSinceEpoch() + backoff;
+        qWarning() << "UI_AUDIO_UNAVAILABLE" << operation << error
+                   << "retry_ms" << backoff;
+    }
+
+    void invalidateUiAudioDevice(const char *operation, const char *error)
+    {
+        if (uiAudioStream_) {
+            SDL_DestroyAudioStream(uiAudioStream_);
+            uiAudioStream_ = nullptr;
+        }
+        scheduleUiAudioRetry(operation, error);
+    }
+
     void refreshSessionStatus()
     {
         QDBusInterface session(QStringLiteral("org.lulu.ConsoleSessiond"),
@@ -1216,8 +1341,19 @@ private:
     {
         insert("action", QString::fromLatin1(action));
         insert("actionSerial", value("actionSerial").toInt() + 1);
-        if (guideProcess_)
+        if (guideProcess_) {
+            const QString event = QString::fromLatin1(action);
+            const QString semantic = (event == QStringLiteral("up")
+                || event == QStringLiteral("down") || event == QStringLiteral("left")
+                || event == QStringLiteral("right") || event.endsWith(QStringLiteral("Shoulder")))
+                ? QStringLiteral("navigate")
+                : event == QStringLiteral("confirm") || event == QStringLiteral("options")
+                    ? QStringLiteral("confirm")
+                    : event == QStringLiteral("back") ? QStringLiteral("back") : QString();
+            if (!semantic.isEmpty())
+                playUiSound(semantic);
             return;
+        }
         static const std::pair<const char *, const char *> routes[] = {
             {"up", "controllerUp"}, {"down", "controllerDown"},
             {"left", "controllerLeft"}, {"right", "controllerRight"},
@@ -1416,6 +1552,14 @@ private:
 
     QQuickWindow *window_;
     QTimer timer_;
+    QString uiAudioAssetDirectory_;
+    QHash<QString, QByteArray> uiAudioCache_;
+    QSet<QString> uiAudioUnavailable_;
+    SDL_AudioStream *uiAudioStream_ = nullptr;
+    bool uiAudioSubsystemInitialized_ = false;
+    quint64 uiAudioRequestSerial_ = 0;
+    uint uiAudioFailures_ = 0;
+    qint64 uiAudioRetryAfterMs_ = 0;
     static constexpr const char *dbusInterface = "org.shadowblip.Input.DBusDevice";
     xcb_connection_t *presentationConnection_ = nullptr;
     xcb_window_t presentationRoot_ = XCB_WINDOW_NONE;
@@ -1500,6 +1644,8 @@ int main(int argc, char **argv)
     RecentModel recentModel(&catalogueModel, &application);
     StoreBookmarkBridge storeBookmarks(&application);
     PluginStoreCardBridge pluginStoreCards(&application);
+    const QString qmlPath = qEnvironmentVariable("LULU_UI_FILE", "/opt/lulu/ui/ConsoleShell.qml");
+    controller.setUiAudioAssetDirectory(QFileInfo(qmlPath).dir().filePath(QStringLiteral("sounds")));
     engine.rootContext()->setContextProperty("controllerBridge", &controller);
     engine.rootContext()->setContextProperty("systemStatus", &systemStatus);
     // The native catalogue model is authoritative for the migrated Recent
@@ -1510,7 +1656,6 @@ int main(int argc, char **argv)
     engine.rootContext()->setContextProperty("pluginStoreCardsBridge", &pluginStoreCards);
     engine.rootContext()->setContextProperty("mudosPerfDiagnostics",
                                               qEnvironmentVariableIsSet("LULU_PERF_DIAGNOSTICS"));
-    const QString qmlPath = qEnvironmentVariable("LULU_UI_FILE", "/opt/lulu/ui/ConsoleShell.qml");
     engine.load(QUrl::fromLocalFile(qmlPath));
 
     if (engine.rootObjects().isEmpty())
