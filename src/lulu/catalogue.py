@@ -17,6 +17,32 @@ from .plugins.steam.provider import InstalledSteamGame, SteamProvider
 from .plugins.steam.entitlements import SteamEntitlement
 from .switch_content import parent_name
 from .pc_install import PcInstallSource
+from .platforms import load_platforms
+
+
+def _metadata_memberships(values: object) -> tuple[str, ...]:
+    """Normalize rich metadata arrays without creating combined categories."""
+    if isinstance(values, str):
+        values = [values]
+    result: list[str] = []
+    for value in values or ():
+        for item in str(value).split(","):
+            item = item.strip()
+            if item and item not in result:
+                result.append(item)
+    return tuple(result)
+
+
+_DESKTOP_PLATFORM_IDENTITIES = frozenset({
+    "desktop", "epic", "epic games", "epic games store", "flatpak", "gog",
+    "gog galaxy", "linux", "lutris", "pc", "steam", "windows", "windows pc",
+})
+
+
+def normalize_platform_identity(value: object) -> str:
+    """Normalize desktop storefront/OS labels to the user-facing PC platform."""
+    label = str(value or "").strip()
+    return "PC" if label.casefold() in _DESKTOP_PLATFORM_IDENTITIES else label
 
 
 @dataclass(frozen=True, slots=True)
@@ -125,12 +151,20 @@ class CatalogueGame:
     canonical_cover_url: str = ""
     canonical_cover_width: int | None = None
     canonical_cover_height: int | None = None
+    preview_video: str = ""
+    preview_video_provider: str = ""
+    preview_video_source_url: str = ""
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "platform", normalize_platform_identity(self.platform))
+        if self.platform_label:
+            object.__setattr__(self, "platform_label", normalize_platform_identity(self.platform_label))
 
     @classmethod
     def from_steam(cls, game: InstalledSteamGame) -> "CatalogueGame":
         return cls(
             game_id=f"steam:{game.app_id}", provider="steam", provider_id=game.app_id,
-            title=game.title, platform="Steam", install_state="installed", launchable=True,
+            title=game.title, platform="PC", install_state="installed", launchable=True,
             install_dir=game.install_dir, artwork_url=game.artwork_url, last_played=game.last_played,
             source_title=game.title, normalized_search_title=clean_local_title(game.title),
             catalogue_source="steam", artwork_type="cover", artwork_provider="steam",
@@ -166,7 +200,7 @@ class CatalogueGame:
         categories = tuple(str(item) for item in value.get("categories", ()))
         return cls(
             game_id=f"flatpak:{application_id}", provider="flatpak", provider_id=application_id,
-            title=title, platform="Linux", install_state="installed" if installed else "available",
+            title=title, platform="PC", install_state="installed" if installed else "available",
             launchable=installed, install_dir=str(Path.home() / ".var" / "app" / application_id),
             artwork_url="", last_played=0, runtime=str(value.get("branch", "")),
             source_title=title, summary=str(value.get("summary", "")), genres=categories,
@@ -216,8 +250,14 @@ class CatalogueGame:
     @classmethod
     def from_local(cls, game: LocalContentGame) -> "CatalogueGame":
         source_title = game.source_title or game.title
+        try:
+            platform_definition = load_platforms().get(game.platform)
+        except KeyError:
+            platform_definition = None
+        provider = platform_definition.default_provider if platform_definition else "local"
+        provider = provider or "local"
         return cls(
-            game_id=game.content_id, provider="local", provider_id=game.content_id,
+            game_id=game.content_id, provider=provider, provider_id=game.content_id,
             title=game.title, platform=game.platform, install_state=game.install_state,
             launchable=game.launchable, install_dir=game.content_path, artwork_url="",
             last_played=0, runtime=game.runtime, platform_label=game.platform_label,
@@ -245,7 +285,8 @@ class CatalogueGame:
                 content_identity=game.files[0].name if game.files else game.file_name,
                 genres=game.genres, release_date=game.release_date, release_year=game.release_year,
                  total_playtime=game.total_playtime, local_multiplayer=game.local_multiplayer,
-                 online_multiplayer=game.online_multiplayer, game_mode=game.game_mode,
+                  online_multiplayer=game.online_multiplayer, game_mode=game.game_mode,
+                  game_modes=_metadata_memberships(game.game_mode),
                  protondb_rating=game.protondb_rating, artwork_source_url=game.artwork_url,
                  igdb_id=game.igdb_id,
             )
@@ -262,7 +303,8 @@ class CatalogueGame:
              artwork_type="cover", artwork_provider="romm",
             release_year=game.release_year, total_playtime=game.total_playtime,
             local_multiplayer=game.local_multiplayer, online_multiplayer=game.online_multiplayer,
-             game_mode=game.game_mode, protondb_rating=game.protondb_rating,
+             game_mode=game.game_mode, game_modes=_metadata_memberships(game.game_mode),
+             protondb_rating=game.protondb_rating,
              artwork_source_url=game.artwork_url,
              igdb_id=game.igdb_id,
         )
@@ -323,7 +365,7 @@ SELECT_COLUMNS = (
        "franchise, collection, igdb_id, igdb_fetched_at, protondb_tier, protondb_confidence, protondb_score, "
         "protondb_trending_tier, protondb_best_tier, protondb_report_count, protondb_fetched_at, "
          "component_paths, component_roles, component_title_ids, mudos_owned, artwork_type, artwork_provider, "
-         "artwork_width, artwork_height, icon_url, canonical_cover_url, canonical_cover_width, canonical_cover_height"
+          "artwork_width, artwork_height, icon_url, canonical_cover_url, canonical_cover_width, canonical_cover_height, preview_video, preview_video_provider, preview_video_source_url"
 )
 SELECT_FIELD_ORDER = (
     "game_id", "provider", "provider_id", "title", "platform", "install_state", "launchable",
@@ -339,7 +381,7 @@ SELECT_FIELD_ORDER = (
     "protondb_confidence", "protondb_score", "protondb_trending_tier", "protondb_best_tier",
      "protondb_report_count", "protondb_fetched_at", "component_paths", "component_roles",
       "component_title_ids", "mudos_owned", "artwork_type", "artwork_provider", "artwork_width",
-      "artwork_height", "icon_url", "canonical_cover_url", "canonical_cover_width", "canonical_cover_height",
+        "artwork_height", "icon_url", "canonical_cover_url", "canonical_cover_width", "canonical_cover_height", "preview_video", "preview_video_provider", "preview_video_source_url",
 )
 
 
@@ -398,7 +440,10 @@ class CatalogueStore:
                          "artwork_type": "TEXT NOT NULL DEFAULT ''", "artwork_provider": "TEXT NOT NULL DEFAULT ''",
                          "artwork_width": "INTEGER", "artwork_height": "INTEGER",
                          "icon_url": "TEXT NOT NULL DEFAULT ''", "canonical_cover_url": "TEXT NOT NULL DEFAULT ''",
-                         "canonical_cover_width": "INTEGER", "canonical_cover_height": "INTEGER"}
+                          "canonical_cover_width": "INTEGER", "canonical_cover_height": "INTEGER",
+                          "preview_video": "TEXT NOT NULL DEFAULT ''",
+                          "preview_video_provider": "TEXT NOT NULL DEFAULT ''",
+                          "preview_video_source_url": "TEXT NOT NULL DEFAULT ''"}
         for name, definition in migrations.items():
             if name not in columns:
                 self.connection.execute(f"ALTER TABLE games ADD COLUMN {name} {definition}")
@@ -503,7 +548,7 @@ class CatalogueStore:
         """Find the installed local file represented by one RomM record."""
         locals_ = self._rows(
             f"SELECT {SELECT_COLUMNS} FROM games "
-            "WHERE provider='local' AND install_state='installed'"
+            "WHERE catalogue_source='local' AND install_state='installed'"
         )
         filename = self._romm_filename(game)
         expected = (PATHS.rom_root / game.platform / filename).resolve()
@@ -559,6 +604,7 @@ class CatalogueStore:
                               or existing.match_status in {"matched", "manual"})
         return replace(
             existing,
+            provider=incoming.provider,
             provider_id=incoming.provider_id,
             platform=incoming.platform,
             install_state=existing.install_state if installed else incoming.install_state,
@@ -613,8 +659,11 @@ class CatalogueStore:
              icon_url=incoming.icon_url or existing.icon_url,
              canonical_cover_url=existing.canonical_cover_url or incoming.canonical_cover_url,
              canonical_cover_width=existing.canonical_cover_width or incoming.canonical_cover_width,
-             canonical_cover_height=existing.canonical_cover_height or incoming.canonical_cover_height,
-         )
+              canonical_cover_height=existing.canonical_cover_height or incoming.canonical_cover_height,
+              preview_video=incoming.preview_video or existing.preview_video,
+              preview_video_provider=incoming.preview_video_provider or existing.preview_video_provider,
+              preview_video_source_url=incoming.preview_video_source_url or existing.preview_video_source_url,
+           )
 
     def _upsert_locked(self, game: CatalogueGame, deltas: list[CatalogueDelta] | None = None) -> CatalogueDelta | None:
         existing = self._rows(f"SELECT {SELECT_COLUMNS} FROM games WHERE game_id=?", (game.game_id,))
@@ -838,7 +887,9 @@ class CatalogueStore:
         deltas: list[CatalogueDelta] = []
         self._start_operation()
         with self.atomic():
-            existing = self._rows(f"SELECT {SELECT_COLUMNS} FROM games WHERE provider='local'")
+            existing = self._rows(
+                f"SELECT {SELECT_COLUMNS} FROM games WHERE catalogue_source='local' OR game_id LIKE 'local:%'"
+            )
             incoming_ids = {game.game_id for game in games}
             for current in existing:
                 if current.game_id not in incoming_ids:
@@ -997,7 +1048,7 @@ class CatalogueStore:
             "provider='romm' AND installed_game_id<>'' AND EXISTS ("
             "SELECT 1 FROM games AS linked_local "
             "WHERE linked_local.game_id=games.installed_game_id "
-            "AND linked_local.provider='local' AND linked_local.install_state='installed'"
+            "AND linked_local.catalogue_source='local' AND linked_local.install_state='installed'"
             "))"
         )
 
@@ -1011,7 +1062,7 @@ class CatalogueStore:
         elif scope == "steam":
             query += " AND provider=?"; parameters = ("steam",)
         elif scope.startswith("platform:"):
-            query += " AND provider='local' AND platform=?"; parameters = (scope.removeprefix("platform:"),)
+            query += " AND catalogue_source='local' AND platform=?"; parameters = (scope.removeprefix("platform:"),)
         return self._rows(query + " ORDER BY title COLLATE NOCASE", parameters)
 
     def list_catalogue_games(self) -> list[CatalogueGame]:
@@ -1045,7 +1096,7 @@ class CatalogueStore:
                 parameters += (provider,)
         query += " AND NOT (provider='romm' AND installed_game_id<>'' AND EXISTS ("
         query += "SELECT 1 FROM games AS linked_local WHERE linked_local.game_id=games.installed_game_id "
-        query += "AND linked_local.provider='local' AND linked_local.install_state='installed'))"
+        query += "AND linked_local.catalogue_source='local' AND linked_local.install_state='installed'))"
         return self._rows(query + " ORDER BY title COLLATE NOCASE", parameters)
 
     def get_game(self, game_id: str) -> CatalogueGame | None:
@@ -1053,7 +1104,7 @@ class CatalogueStore:
         return rows[0] if rows else None
 
     def list_platforms(self) -> list[tuple[str, str]]:
-        platforms = list(self.connection.execute("SELECT platform, MAX(platform_label) FROM games WHERE provider='local' AND install_state='installed' GROUP BY platform"))
+        platforms = list(self.connection.execute("SELECT platform, MAX(platform_label) FROM games WHERE catalogue_source='local' AND install_state='installed' GROUP BY platform"))
         return sorted(platforms, key=lambda item: item[1].casefold())
 
     def needs_metadata_match(self, game_id: str, now: int | None = None) -> bool:
@@ -1107,7 +1158,7 @@ class CatalogueStore:
             canonical_title=match.canonical_title, match_status=match.status,
             match_method=match.method, match_confidence=match.confidence, match_locked=False,
             metadata_checked_at=int(time.time()),
-            genres=tuple(presentation["genres"]) if presentation.get("genres") else existing.genres,
+            genres=_metadata_memberships(presentation.get("genres")) if presentation.get("genres") else existing.genres,
             release_date=presentation.get("release_date") or existing.release_date,
             release_year=presentation.get("release_year") or existing.release_year,
             total_playtime=presentation.get("total_playtime") or existing.total_playtime,
@@ -1116,7 +1167,7 @@ class CatalogueStore:
             game_mode=presentation.get("game_mode") or existing.game_mode,
             protondb_rating=presentation.get("protondb_rating") or existing.protondb_rating,
             summary=presentation.get("summary") or existing.summary,
-            game_modes=tuple(presentation.get("game_modes", ())) or existing.game_modes,
+            game_modes=_metadata_memberships(presentation.get("game_modes")) or existing.game_modes,
             developer=presentation.get("developer") or existing.developer,
             publisher=presentation.get("publisher") or existing.publisher,
             platforms=tuple(presentation.get("platforms", ())) or existing.platforms,
@@ -1189,8 +1240,8 @@ class CatalogueStore:
             summary=existing.summary or str(normalized.get("summary") or ""),
             release_date=existing.release_date or (str(normalized["release_date"]) if normalized.get("release_date") else None),
             release_year=existing.release_year if existing.release_year is not None else (int(normalized["release_year"]) if normalized.get("release_year") is not None else None),
-            genres=existing.genres or tuple(str(item) for item in normalized.get("genres", ())),
-            game_modes=existing.game_modes or tuple(str(item) for item in normalized.get("game_modes", ())),
+            genres=existing.genres or _metadata_memberships(normalized.get("genres")),
+            game_modes=existing.game_modes or _metadata_memberships(normalized.get("game_modes")),
             developer=existing.developer or str(normalized.get("developer") or ""),
              publisher=existing.publisher or str(normalized.get("publisher") or ""),
             platforms=existing.platforms or tuple(str(item) for item in normalized.get("platforms", ())),

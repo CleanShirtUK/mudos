@@ -202,6 +202,11 @@ Item {
         captureHomeSelection()
     }
     onAcquisitionJobsChanged: applyAcquisitionJobs()
+    onCategoryIndexChanged: {
+        selectedIndex = 0
+        firstVisibleRow = 0
+        displayCategoryIndex = categoryIndex
+    }
     onCategoriesChanged: {
         categoryIndex = Math.min(categoryIndex, Math.max(0, categories.length - 1))
         displayCategoryIndex = Math.min(displayCategoryIndex, Math.max(0, categories.length - 1))
@@ -286,15 +291,13 @@ Item {
     LibrarySpace {
         anchors.fill: parent
         visible: root.cardWidth === 0
-        libraryGames: root.displayGames
+        canonicalGames: root.displayGames
         acquisitionJobs: root.acquisitionJobs
         selectedIndex: root.selectedIndex
-        firstVisibleRow: root.firstVisibleRow
-        collectionIndex: root.categoryIndex
-        collections: root.categories
+        browseCategories: root.categories
+        browseCategoryIndex: root.categoryIndex
         contentBottom: root.contentBottom
         contentSideMargin: root.contentSideMargin
-        collectionFocus: false
         headingText: "INSTALLABLE"
         emptyText: root.errorMessage !== "" ? root.errorMessage : "No games ready to install"
         contentOpacity: root.contentOpacity
@@ -305,9 +308,8 @@ Item {
         canonicalTexture: root.canonicalTexture
         canonicalCoordinateRoot: root.canonicalCoordinateRoot
         canonicalSize: root.canonicalSize
-        onCollectionChanged: root.categoryIndex = index
-            onLaunchRequested: root.activateGame(game, acquisitionJob)
-        onCategoryContentHidden: root.displayCategoryIndex = root.categoryIndex
+        onBrowseCategoryRequested: root.categoryIndex = index
+        onLaunchRequested: root.activateGame(game, acquisitionJob)
     }
 
     // NavigationCard { artworkRole: "icon" } remains the shared Home card contract.

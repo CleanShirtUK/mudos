@@ -152,9 +152,9 @@ class LaunchLogCapture:
 
 from dbus_next import BusType, Variant
 from dbus_next.aio import MessageBus
-from dbus_next.errors import DBusError
 
 from lulu.paths import PATHS
+from lulu.service_readiness import introspect_lulu_services
 from lulu.settings import SettingsStore
 
 
@@ -1036,46 +1036,25 @@ class ApiHandler(BaseHTTPRequestHandler):
         return
 
 
-async def wait_for_dbus_service(bus: object, name: str, path: str,
-                                timeout: float = 5.0, interval: float = 0.1) -> object:
-    """Wait for a service name and object path without masking daemon failure."""
-    loop = asyncio.get_running_loop()
-    deadline = loop.time() + timeout
-    while True:
-        try:
-            return await bus.introspect(name, path)
-        except DBusError as error:
-            if error.type not in {
-                "org.freedesktop.DBus.Error.ServiceUnknown",
-                "org.freedesktop.DBus.Error.NameHasNoOwner",
-            }:
-                raise
-            remaining = deadline - loop.time()
-            if remaining <= 0:
-                raise RuntimeError(
-                    f"D-Bus service unavailable after {timeout:.1f}s: {name}{path}"
-                ) from error
-            await asyncio.sleep(min(interval, remaining))
-
-
 async def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
     bus = await MessageBus(bus_type=BusType.SESSION).connect()
-    introspection = await wait_for_dbus_service(bus, "org.lulu.Consoled", "/org/lulu/Console")
-    proxy = bus.get_proxy_object("org.lulu.Consoled", "/org/lulu/Console", introspection)
-    consoled = proxy.get_interface("org.lulu.Console")
-    session_introspection = await wait_for_dbus_service(
-        bus, "org.lulu.ConsoleSessiond", "/org/lulu/ConsoleSession"
+    try:
+        introspections = await introspect_lulu_services(bus)
+    except Exception:
+        LOGGER.exception("required Lulu D-Bus services are not ready; refusing to launch shell")
+        bus.disconnect()
+        raise
+    proxy = bus.get_proxy_object(
+        "org.lulu.Consoled", "/org/lulu/Console", introspections["consoled"]
     )
+    consoled = proxy.get_interface("org.lulu.Console")
     session_proxy = bus.get_proxy_object(
-        "org.lulu.ConsoleSessiond", "/org/lulu/ConsoleSession", session_introspection
+        "org.lulu.ConsoleSessiond", "/org/lulu/ConsoleSession", introspections["sessiond"]
     )
     sessiond = session_proxy.get_interface("org.lulu.ConsoleSession")
-    acquisition_introspection = await wait_for_dbus_service(
-        bus, "org.lulu.Acquisitiond", "/org/lulu/Acquisition"
-    )
     acquisition_proxy = bus.get_proxy_object(
-        "org.lulu.Acquisitiond", "/org/lulu/Acquisition", acquisition_introspection
+        "org.lulu.Acquisitiond", "/org/lulu/Acquisition", introspections["acquisitiond"]
     )
     acquisitiond = acquisition_proxy.get_interface("org.lulu.Acquisition")
     loop = asyncio.get_running_loop()

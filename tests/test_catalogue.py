@@ -1,5 +1,6 @@
 import tempfile
 import unittest
+from dataclasses import replace
 from pathlib import Path
 
 from lulu.consoled import ConsoleInterface
@@ -19,6 +20,53 @@ class FakeSteamProvider:
 
 
 class CatalogueTests(unittest.TestCase):
+    @staticmethod
+    def _platform_game(platform: str, platform_label: str, provider: str = "steam") -> CatalogueGame:
+        return CatalogueGame(
+            "test:1", provider, "1", "Test", platform, "installed", True,
+            "/games/test", "", 0, platform_label=platform_label,
+        )
+
+    def test_desktop_platform_identities_normalize_to_pc_without_changing_provider(self) -> None:
+        for identity in ("Steam", "Epic", "GOG", "Linux", "Windows", "Flatpak", "Lutris"):
+            with self.subTest(identity=identity):
+                game = self._platform_game(identity, identity)
+                self.assertEqual(game.platform, "PC")
+                self.assertEqual(game.platform_label, "PC")
+                self.assertEqual(game.provider, "steam")
+
+    def test_emulator_platform_identities_remain_distinct(self) -> None:
+        for platform, label in (("nes", "NES"), ("genesis", "Genesis"),
+                                ("gamecube", "Nintendo GameCube"), ("wii", "Wii"),
+                                ("switch", "Switch"), ("ps2", "PlayStation 2")):
+            with self.subTest(platform=platform):
+                game = self._platform_game(platform, label, "dolphin")
+                self.assertEqual(game.platform, platform)
+                self.assertEqual(game.platform_label, label)
+
+    def test_local_emulator_records_use_runtime_provider_identity(self) -> None:
+        from types import SimpleNamespace
+
+        game = CatalogueGame.from_local(SimpleNamespace(
+            content_id="local:gamecube:1", title="Mario", platform="gamecube",
+            content_path="/games/gamecube/mario.iso", launchable=True,
+            install_state="installed", platform_label="Nintendo GameCube",
+            source_title="Mario.iso", runtime="dolphin",
+            component_paths=(), component_roles=(), component_title_ids=(), mudos_owned=True,
+        ))
+        self.assertEqual(game.provider, "dolphin")
+        self.assertEqual(game.platform, "gamecube")
+        self.assertEqual(game.catalogue_source, "local")
+
+    def test_merge_does_not_lose_provider_identity_on_rescan(self) -> None:
+        existing = CatalogueGame(
+            "local:gamecube:1", "local", "local:gamecube:1", "Mario", "gamecube",
+            "installed", True, "/games/mario.iso", "", 0, catalogue_source="local")
+        incoming = replace(existing, provider="dolphin")
+        with tempfile.TemporaryDirectory() as directory:
+            store = CatalogueStore(Path(directory) / "catalogue.sqlite3")
+            self.assertEqual(store._merged_game(existing, incoming).provider, "dolphin")
+
     @staticmethod
     def _game_statements(store: CatalogueStore) -> list[str]:
         statements: list[str] = []
@@ -115,8 +163,8 @@ class CatalogueTests(unittest.TestCase):
         self.assertEqual(available[0].game_id, "steam:104200")
         self.assertEqual(available[0].provider, "steam")
         self.assertEqual(available[0].provider_id, "104200")
-        self.assertEqual(available[0].platform, "Steam")
-        self.assertEqual(available[0].platform_label, "Steam")
+        self.assertEqual(available[0].platform, "PC")
+        self.assertEqual(available[0].platform_label, "PC")
         self.assertIn(available[0].provider_record_id, {"272", "273"})
 
     def test_steam_reconcile_does_not_hide_romm_steam_titles(self) -> None:
@@ -166,7 +214,7 @@ class CatalogueTests(unittest.TestCase):
             record = reopened.get_game("steam:104200")
 
         self.assertEqual(record.catalogue_source, "romm")
-        self.assertEqual(record.platform, "Steam")
+        self.assertEqual(record.platform, "PC")
         self.assertEqual(record.provider, "steam")
         self.assertEqual(record.genres, ("Action", "Puzzle"))
         self.assertEqual(record.release_year, 2001)
@@ -183,8 +231,8 @@ class CatalogueTests(unittest.TestCase):
     def test_unresolved_romm_steam_record_keeps_canonical_platform(self) -> None:
         romm = RommGame(327, "Mortal Kombat X", 7, "steam", "Steam", "307780-mortal-kombat-x", "", 10, "", False)
         record = CatalogueGame.from_romm(romm)
-        self.assertEqual(record.platform, "Steam")
-        self.assertEqual(record.platform_label, "Steam")
+        self.assertEqual(record.platform, "PC")
+        self.assertEqual(record.platform_label, "PC")
         self.assertEqual(record.provider, "romm")
         self.assertFalse(record.launchable)
 
@@ -337,7 +385,7 @@ class CatalogueTests(unittest.TestCase):
             content.unlink()
             store.reconcile_local(provider, root)
 
-        self.assertEqual(record.provider, "local")
+        self.assertEqual(record.provider, "retroarch")
         self.assertEqual(record.platform, "nes")
         self.assertEqual(store.list_games(), [])
 
@@ -353,7 +401,7 @@ class CatalogueTests(unittest.TestCase):
             store.reconcile_local(LocalContentProvider({"nes": Path("/usr/bin/true")}), root)
             games = store.list_games()
 
-        self.assertEqual({game.provider for game in games}, {"steam", "local"})
+        self.assertEqual({game.provider for game in games}, {"steam", "retroarch"})
         self.assertEqual(store.list_games("platform:nes")[0].title, "Mario")
         self.assertEqual(store.list_platforms(), [("nes", "Nintendo Entertainment System")])
 
@@ -402,7 +450,7 @@ class CatalogueTests(unittest.TestCase):
             store.reconcile_romm(romm_games)
             visible = store.list_games()
 
-            self.assertEqual({game.provider for game in visible}, {"local"})
+            self.assertEqual({game.provider for game in visible}, {"eden"})
             self.assertEqual({game.game_id for game in visible}, set(local[name].game_id for name in local))
             # Switch base/DLC files are one installed parent game, not
             # separate library identities.
@@ -430,7 +478,7 @@ class CatalogueTests(unittest.TestCase):
                 "", False, (RommFile(1860, content.name),)
             ))
             store.reconcile_romm([romm])
-            local_id = next(game.game_id for game in store.list_games() if game.provider == "local")
+            local_id = next(game.game_id for game in store.list_games() if game.catalogue_source == "local")
             self.assertEqual(store.get_game("romm:186").installed_game_id, local_id)
 
             content.unlink()
@@ -455,7 +503,7 @@ class CatalogueTests(unittest.TestCase):
             store.reconcile_local(LocalContentProvider({"nes": Path("/usr/bin/true")}), root)
             games = store.list_games()
 
-        self.assertEqual({game.provider for game in games}, {"local", "steam"})
+        self.assertEqual({game.provider for game in games}, {"retroarch", "steam"})
         self.assertEqual(store.get_game("steam:40800").provider_id, "40800")
         self.assertEqual(store.get_game("steam:40800").game_id, "steam:40800")
 

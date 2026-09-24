@@ -6,6 +6,7 @@ from collections import deque
 import ctypes
 from datetime import datetime
 import json
+import os
 from pathlib import Path
 import logging
 import re
@@ -151,9 +152,9 @@ class LaunchLogCapture:
 
 from dbus_next import BusType, Variant
 from dbus_next.aio import MessageBus
-from dbus_next.errors import DBusError
 
 from lulu.paths import PATHS
+from lulu.service_readiness import introspect_lulu_services
 from lulu.settings import SettingsStore
 
 
@@ -193,6 +194,10 @@ class ConsoleUiBridge:
                     ",".join(stages), count)
         return {"games": int(count)}
 
+    async def startup_readiness(self) -> dict[str, bool]:
+        ready = await self.consoled.call_get_startup_readiness()
+        return {"ready": bool(ready)}
+
     def launch_log(self) -> dict[str, object]:
         return self.launch_logs.snapshot()
 
@@ -205,7 +210,8 @@ class ConsoleUiBridge:
             self.launch_logs.note("Lulu", f"session launch boundary reached game_id={game_id} appid={appid} token={token}")
             self.launch_logs.note("Steam", f"steam://rungameid/{appid}")
         else:
-            token = await self.consoled.call_launch_game(game_id, 15000)
+            startup_timeout = 120000 if game_id.startswith("epic:") else 15000
+            token = await self.consoled.call_launch_game(game_id, startup_timeout)
             self.local_token = token
             self.launch_logs.note("Lulu", f"launch boundary reached game_id={game_id} appid={appid}")
         LOGGER.info("launch accepted game_id=%s token=%s", game_id, token)
@@ -303,6 +309,11 @@ class ConsoleUiBridge:
             asyncio.create_task(self._refresh_after_acquisition(job_id, provider))
             self.launch_logs.note("Lulu", f"{provider} installation submitted identity={content_identity} job_id={job_id}")
             return {"token": job_id}
+        elif provider in {"gog", "epic"}:
+            provider_id = str(selected.get("provider_id", ""))
+            if not provider_id:
+                raise ValueError("provider content identity is missing")
+            content_identity = f"{provider}:{provider_id}"
         else:
             raise ValueError("game provider is not acquirable")
         existing_snapshot = await self.acquisition()
@@ -341,7 +352,7 @@ class ConsoleUiBridge:
                 if job is None:
                     return
                 if job.get("state") == "completed":
-                    await self.consoled.call_refresh_stages(["steam", "local", "romm", "components"])
+                    await self.consoled.call_refresh_stages(["steam", "gog", "epic", "local", "romm", "components"])
                     return
                 if job.get("state") in {"failed", "cancelled"}:
                     return
@@ -359,7 +370,7 @@ class ConsoleUiBridge:
                 if job is None or job.get("state") in {"failed", "cancelled"}:
                     return
                 if job.get("state") == "completed":
-                    stages = (["steam"] if provider == "steam" else
+                    stages = ([provider] if provider in {"steam", "gog", "epic"} else
                               ["components"] if provider == "flatpak" else ["local"])
                     await self.consoled.call_refresh_stages(stages)
                     return
@@ -659,6 +670,12 @@ class ApiHandler(BaseHTTPRequestHandler):
             except Exception as error:  # pragma: no cover - live IPC failure path
                 self._respond(503, {"error": str(error)})
             return
+        if urlparse(self.path).path == "/startup-ready":
+            try:
+                self._respond(200, self.bridge.call(self.bridge.startup_readiness()))
+            except Exception as error:
+                self._respond(503, {"error": str(error)})
+            return
         if urlparse(self.path).path == "/plugins":
             try:
                 self._respond(200, self.bridge.call(self.bridge.plugin_status()))
@@ -679,7 +696,7 @@ class ApiHandler(BaseHTTPRequestHandler):
                 self._respond(503, {"error": str(error)})
             return
         if urlparse(self.path).path == "/available":
-            # The Available to Download surface is the combined installable
+            # The Installable surface is the combined entitled-but-uninstalled
             # catalogue. Provider-specific filtering remains available to
             # callers that explicitly request it.
             provider = parse_qs(urlparse(self.path).query).get("provider", [""])[0]
@@ -1004,6 +1021,8 @@ class ApiHandler(BaseHTTPRequestHandler):
             LOGGER.info("http launch game_id=%s", game_id)
             self.bridge.launch_logs.start(game_id)
             timeout = None if game_id.startswith("steam:") else 15
+            if game_id.startswith("epic:"):
+                timeout = 125
             result = self.bridge.call(
                 self.bridge.launch_game(game_id),
                 timeout=timeout,
@@ -1017,46 +1036,25 @@ class ApiHandler(BaseHTTPRequestHandler):
         return
 
 
-async def wait_for_dbus_service(bus: object, name: str, path: str,
-                                timeout: float = 5.0, interval: float = 0.1) -> object:
-    """Wait for a service name and object path without masking daemon failure."""
-    loop = asyncio.get_running_loop()
-    deadline = loop.time() + timeout
-    while True:
-        try:
-            return await bus.introspect(name, path)
-        except DBusError as error:
-            if error.type not in {
-                "org.freedesktop.DBus.Error.ServiceUnknown",
-                "org.freedesktop.DBus.Error.NameHasNoOwner",
-            }:
-                raise
-            remaining = deadline - loop.time()
-            if remaining <= 0:
-                raise RuntimeError(
-                    f"D-Bus service unavailable after {timeout:.1f}s: {name}{path}"
-                ) from error
-            await asyncio.sleep(min(interval, remaining))
-
-
 async def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
     bus = await MessageBus(bus_type=BusType.SESSION).connect()
-    introspection = await wait_for_dbus_service(bus, "org.lulu.Consoled", "/org/lulu/Console")
-    proxy = bus.get_proxy_object("org.lulu.Consoled", "/org/lulu/Console", introspection)
-    consoled = proxy.get_interface("org.lulu.Console")
-    session_introspection = await wait_for_dbus_service(
-        bus, "org.lulu.ConsoleSessiond", "/org/lulu/ConsoleSession"
+    try:
+        introspections = await introspect_lulu_services(bus)
+    except Exception:
+        LOGGER.exception("required Lulu D-Bus services are not ready; refusing to launch shell")
+        bus.disconnect()
+        raise
+    proxy = bus.get_proxy_object(
+        "org.lulu.Consoled", "/org/lulu/Console", introspections["consoled"]
     )
+    consoled = proxy.get_interface("org.lulu.Console")
     session_proxy = bus.get_proxy_object(
-        "org.lulu.ConsoleSessiond", "/org/lulu/ConsoleSession", session_introspection
+        "org.lulu.ConsoleSessiond", "/org/lulu/ConsoleSession", introspections["sessiond"]
     )
     sessiond = session_proxy.get_interface("org.lulu.ConsoleSession")
-    acquisition_introspection = await wait_for_dbus_service(
-        bus, "org.lulu.Acquisitiond", "/org/lulu/Acquisition"
-    )
     acquisition_proxy = bus.get_proxy_object(
-        "org.lulu.Acquisitiond", "/org/lulu/Acquisition", acquisition_introspection
+        "org.lulu.Acquisitiond", "/org/lulu/Acquisition", introspections["acquisitiond"]
     )
     acquisitiond = acquisition_proxy.get_interface("org.lulu.Acquisition")
     loop = asyncio.get_running_loop()

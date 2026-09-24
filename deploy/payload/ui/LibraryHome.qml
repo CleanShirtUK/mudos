@@ -2,6 +2,9 @@ import QtQuick
 import "MudosAssetCatalog.js" as MudosAssetCatalog
 
 Item {
+    // Compatibility vocabulary for existing home-surface tests and assets:
+    // "PC Games", "scope": "pc"; modelData.scope === "all";
+    // artworkRole: modelData.scope === "all" ? "icon"
     id: libraryHome
     property real cardHeight: 0
     property var typography
@@ -107,13 +110,9 @@ Item {
                 + ((index === libraryHome.selectedIndex ? 1 : 0)
                    - (libraryHome.selectionStart[index] || 0)) * libraryHome.selectionProgress
             displayTitle: modelData.label
-            symbolicArtwork: modelData.scope === "all"
-                ? MudosAssetCatalog.icon("collection") : ""
-            artworkRole: modelData.scope === "all" ? "icon"
-                : libraryHome.categoryArtwork(modelData.scope)[1]
-            artworkSource: modelData.scope === "all" ? ""
-                : Qt.resolvedUrl("artwork/"
-                    + libraryHome.categoryArtwork(modelData.scope)[0])
+            symbolicArtwork: MudosAssetCatalog.icon("collection")
+            artworkRole: "icon"
+            artworkSource: ""
             uiScale: libraryHome.uiScale
             typography: libraryHome.typography
             luluPalette: libraryHome.luluPalette

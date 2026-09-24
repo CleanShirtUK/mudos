@@ -1,3 +1,6 @@
+import os
+import shutil
+import subprocess
 import unittest
 from pathlib import Path
 
@@ -8,6 +11,13 @@ SHELL_PROFILE = (ROOT / "config" / "inputplumber" / "profiles" / "shell.yaml").r
 
 
 class ConsoleUiTests(unittest.TestCase):
+    def test_library_preview_uses_qt6_media_player_video_output_binding(self) -> None:
+        library = (ROOT / "ui" / "LibrarySpace.qml").read_text()
+        self.assertIn("videoOutput: previewOutput", library)
+        self.assertIn("id: previewOutput", library)
+        self.assertNotIn("source: previewPlayer", library)
+        self.assertIn("active: root.previewSource !== \"\"", library)
+
     def test_qml_preserves_card_to_space_shell_interaction(self) -> None:
         self.assertIn('property var domains: ["System", "Store", "Library", "Recent"]', QML)
         self.assertIn("property int selectedCategoryIndex: 3", QML)
@@ -135,7 +145,7 @@ class ConsoleUiTests(unittest.TestCase):
         library_space = (ROOT / "ui" / "LibrarySpace.qml").read_text()
         self.assertIn("property var game: null", game_card)
         self.assertIn("card.game.artwork_url", game_card)
-        self.assertIn("signal collectionChanged", library_space)
+        self.assertIn('property string dimensionKey: "platform"', library_space)
         self.assertIn("signal launchRequested", library_space)
 
     def test_recent_refresh_avoids_unchanged_model_replacement(self) -> None:
@@ -175,6 +185,7 @@ class ConsoleUiTests(unittest.TestCase):
 
     def test_controller_hint_groups_center_on_the_full_interaction_rail(self) -> None:
         shell = (ROOT / "ui" / "ConsoleShell.qml").read_text()
+        library_space = (ROOT / "ui" / "LibrarySpace.qml").read_text()
         self.assertGreaterEqual(shell.count("width: implicitWidth"), 2)
         self.assertEqual(shell.count("anchors.horizontalCenter: parent.horizontalCenter"), 2)
         self.assertNotIn("width: parent.width * 0.54", shell)
@@ -492,7 +503,7 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertIn('install_state !== "available"', QML)
         self.assertIn('categories.push({"label": label, "scope": scope})', QML)
         self.assertIn('emptyText: root.errorMessage !== "" ? root.errorMessage : "No games ready to install"', store)
-        self.assertIn('libraryGames: root.displayGames', store)
+        self.assertIn('canonicalGames: root.displayGames', store)
         self.assertNotIn('specialCardId: "steam-store"', store)
         self.assertIn('actionLabel: "Install"', store)
         self.assertIn('signal installGameRequested(var game)', store)
@@ -589,7 +600,7 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertIn("function railX(relativeIndex)", library_home)
         self.assertIn("targetX: libraryHome.railX(index - libraryHome.selectedIndex)", library_home)
         self.assertIn("moveLibraryLanding", QML)
-        self.assertIn("selectedIndex: root.collectionIndex", QML)
+        self.assertIn("selectedIndex: root.libraryHomeIndex", QML)
         self.assertIn("property real cardHeight", library_home)
         self.assertIn("height: libraryHome.cardHeight", library_home)
         self.assertIn("width: libraryHome.compactCardWidth", library_home)
@@ -617,79 +628,39 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertIn("compactArtworkHeight", game_card)
         self.assertIn("Image.PreserveAspectFit", game_card)
         self.assertIn("presentationProgress < 1", game_card)
-        self.assertIn("readonly property int gridColumns: 6", library_space)
-        self.assertIn("gridLeftInset", library_space)
-        self.assertIn("gridTop - gridTopInset", library_space)
-        self.assertIn("gridRegionHeight + gridTopInset", library_space)
-        self.assertIn("(usableGridWidth - (gridColumns - 1) * gridGap) / gridColumns", library_space)
-        self.assertIn("fullscreenPanelBevelWidth: 6 * uiScale", library_space)
-        self.assertIn("gridHorizontalGrowth", library_space)
-        self.assertIn("gridVerticalGrowth", library_space)
-        self.assertIn("(fullscreenPanelCardSelectionScale - 1.0) * libraryCardHeight", library_space)
-        self.assertIn("fullscreenPanelBorderWidth: 0", library_space)
-        self.assertIn("fullscreenPanelTransmission: 1", library_space)
-        self.assertNotIn("border.color: luluPalette.libraryHighlight", library_space)
-        self.assertIn("scale: focused ? librarySpace.fullscreenPanelCardSelectionScale : 1", library_space)
-        self.assertIn("z: focused ? 2 : 1", library_space)
-        self.assertIn("unfocusedBrightness: 0.8", library_space)
-        self.assertIn("librarySpace.unfocusedBrightness", library_space)
         self.assertIn("property real focusBrightness: 1", game_card)
         self.assertIn("opacity: card.focused ? 1 : 0.84", game_card)
         self.assertIn("focusBrightness: root.focused ? 1 : 0.84", (ROOT / "ui" / "RecentCardPresentation.qml").read_text())
         self.assertIn("focusBrightness: root.selectedOpacityOwner ? 1 : 0.84", (ROOT / "ui" / "NavigationCard.qml").read_text())
-        self.assertIn("readonly property real headerToGridGap: currentHeaderToGridGap / 2", library_space)
-        self.assertIn("gridTop: contentBottom - gridContentFootprintHeight", library_space)
-        self.assertIn("horizontalCardWidth", library_space)
-        self.assertIn("libraryCardHeight: libraryCardWidth * 1.55", library_space)
-        self.assertIn("expandedCardScale: 0.92", library_space)
-        self.assertIn("* expandedCardScale", library_space)
-        self.assertIn("headingBottom: pageHeading.y + pageHeading.height", library_space)
-        self.assertIn("firstRowTop: gridTop - selectedGrowth", library_space)
-        self.assertIn("categoryRailHeight: categoryGlyphMetrics.height + 8 * uiScale", library_space)
-        self.assertIn("requiredTwoRowHeight", library_space)
-        self.assertIn("id: gridViewport", library_space)
-        self.assertIn("clip: true", library_space)
-        self.assertIn("GridView {", library_space)
-        self.assertIn("cacheBuffer: 2 * gridRowStep", library_space)
-        self.assertIn("contentY: librarySpace.firstVisibleRow * librarySpace.gridRowStep", library_space)
-        self.assertIn("highlightRangeMode: GridView.NoHighlightRange", library_space)
-        self.assertIn("highlightFollowsCurrentItem: false", library_space)
-        self.assertIn("parent.height - 16 * uiScale - gridBottomInset", library_space)
-        self.assertIn("gridRegionHeight: requiredTwoRowHeight", library_space)
-        self.assertIn("property real contentBottom", library_space)
-        self.assertIn("gridContentFootprintHeight", library_space)
-        self.assertIn("gridTop: contentBottom - gridContentFootprintHeight", library_space)
-        self.assertIn("libraryCardHeight + gridGap + libraryCardHeight + selectedGrowth", library_space)
-        self.assertIn("firstRowTop: gridTop - selectedGrowth", library_space)
-        self.assertIn("property real contentSideMargin", library_space)
-        self.assertIn("parent.width - 2 * contentSideMargin", library_space)
-        self.assertIn("gridVisualWidth: gridSlotWidth + 2 * gridHorizontalGrowth", library_space)
-        self.assertIn("contentOriginX: (parent.width - gridVisualWidth) / 2", library_space)
-        self.assertIn("gridSlotLeft: contentOriginX + gridHorizontalGrowth", library_space)
-        self.assertIn("y: 81 * uiScale", library_space)
-        self.assertIn("id: categoryViewport", library_space)
-        self.assertIn("x: contentOriginX", library_space)
-        self.assertIn("categoryFadeWidth: categoryGlyphAdvance * 10", library_space)
-        self.assertIn("categoryGlyphAdvance: categoryGlyphMetrics.advanceWidth", library_space)
-        self.assertIn("readonly property real glyphCenterX", library_space)
-        self.assertIn("categoryViewport.x + categoryRail.x + parent.x", library_space)
-        self.assertIn("opacity: categoryStateOpacity * edgeFadeOpacity", library_space)
-        self.assertIn("model: categoryLabel.length", library_space)
-        self.assertNotIn("ShaderEffectSource", library_space)
-        self.assertNotIn("category-rail-fade", library_space)
-        self.assertIn("TextMetrics {", library_space)
+        store_home = (ROOT / "ui" / "StoreHome.qml").read_text()
+        self.assertIn("browseCategories: root.categories", store_home)
+        self.assertIn("browseCategoryIndex: root.categoryIndex", store_home)
+        self.assertIn("onBrowseCategoryRequested: root.categoryIndex = index", store_home)
+        self.assertNotIn("collectionIndex", store_home)
+        self.assertNotIn("collections:", store_home)
+        self.assertNotIn("onCollectionChanged", store_home)
+        self.assertNotIn("onCategoryContentHidden", store_home)
+        self.assertIn('readonly property var libraryDimensions: [', shell)
+        for label, mode in (("Platform", "platform"), ("Provider", "provider"),
+                            ("Game Mode", "game_mode"), ("Genre", "genre")):
+            self.assertIn('{label: "%s", mode: "%s"}' % (label, mode), shell)
+        self.assertIn('property string libraryDimension: "platform"', shell)
+        setter = shell[shell.index("function setLibraryDimension(mode)"):
+                       shell.index("function commitLibraryCategory(index)")]
+        cycling = shell[shell.index("function moveLibraryCollection(delta)"):
+                        shell.index("function moveStoreCategory(delta)")]
+        self.assertIn("libraryDimension = mode", setter)
+        self.assertIn("setLibraryDimension(adjacentLibraryDimension(delta))", cycling)
+        self.assertIn("dimensionKey: root.libraryDimension", shell)
+        self.assertIn("dimensionLabel: root.libraryDimensionLabel(root.libraryDimension)", shell)
+        self.assertNotIn("browseCategory", shell[shell.index("id: librarySpace"):])
         self.assertIn("fullscreenHeight: root.expandedShellHeight", shell)
         self.assertIn("fullscreenY: root.expandedShellY", shell)
-        self.assertIn("y: 32 * uiScale", library_space)
-        self.assertIn("height: parent.height - 48 * uiScale", library_space)
-        self.assertIn("property real gameContentOpacity: 1", library_space)
-        self.assertIn("opacity: librarySpace.contentOpacity * librarySpace.gameContentOpacity", library_space)
-        self.assertIn("duration: librarySpace.gameContentOpacity === 0 ? 100 : 200", library_space)
-        self.assertIn("signal categoryContentHidden()", library_space)
-        self.assertIn("onCategoryContentHidden: root.displayCategoryIndex = root.categoryIndex", (ROOT / "ui" / "StoreHome.qml").read_text())
-        self.assertNotIn("Repeater {\n                model: libraryGames", library_space)
-        self.assertNotIn("scrollFadeStart", library_space)
-        self.assertNotIn("scrollFadeEnd", library_space)
+        self.assertIn("ListView {", library_space)
+        self.assertIn("model: root.categoryTapeValues", library_space)
+        self.assertIn("signal browseCategoryRequested(int index)", library_space)
+        self.assertIn("property string dimensionKey", library_space)
+        self.assertIn("readonly property string categoryMode: projectionState.dimensionKey", library_space)
         self.assertIn("horizontalAlignment: Text.AlignHCenter", game_card)
         self.assertIn("verticalAlignment: Text.AlignVCenter", game_card)
         self.assertIn("elide: Text.ElideRight", game_card)
@@ -905,9 +876,10 @@ class ConsoleUiTests(unittest.TestCase):
 
     def test_library_navigation_separates_grid_and_collection_controls(self) -> None:
         shell = (ROOT / "ui" / "ConsoleShell.qml").read_text()
+        library_space = (ROOT / "ui" / "LibrarySpace.qml").read_text()
         self.assertIn("function moveLibraryVertical(delta)", shell)
-        self.assertIn("var column = libraryIndex % 6", shell)
-        self.assertIn("var target = row * 6 + column", shell)
+        self.assertIn("function moveLibraryCategory(delta)", shell)
+        self.assertIn("librarySpace.moveCategory(delta)", shell)
         self.assertIn("moveLibraryCollection(-1)", shell)
         self.assertIn("moveLibraryCollection(1)", shell)
         self.assertIn('action: "navigation"', shell)
@@ -936,7 +908,6 @@ class ConsoleUiTests(unittest.TestCase):
         spatial_surface = (ROOT / "ui" / "LibrarySpatialSurface.qml").read_text()
         self.assertNotIn("z: 1", spatial_surface)
         self.assertIn('contentOpacity: root.libraryContentOpacity', shell)
-        library_space = (ROOT / "ui" / "LibrarySpace.qml").read_text()
         self.assertNotIn("GlassSurface {", library_space)
         library_home = (ROOT / "ui" / "LibraryHome.qml").read_text()
         self.assertIn("NavigationCard", library_home)
@@ -944,9 +915,134 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertIn("card.librarySurfaceMaterial", game_card)
         self.assertIn("card.librarySurfaceMaterial ? 0", game_card)
         self.assertIn('action: "confirm"', shell)
-        self.assertIn("property int libraryFirstVisibleRow: 0", shell)
-        self.assertIn("if (row >= libraryFirstVisibleRow + 2)", shell)
-        self.assertIn("firstVisibleRow: root.libraryFirstVisibleRow", shell)
+        self.assertIn("filteredGames", library_space)
+        self.assertIn("categoryTape", library_space)
+        self.assertIn("orientation: ListView.Horizontal", library_space)
+
+    def test_library_projection_uses_normalized_dimensions_and_memberships(self) -> None:
+        library_space = (ROOT / "ui" / "LibrarySpace.qml").read_text()
+        projection = (ROOT / "ui" / "LibraryProjection.js").read_text()
+        self.assertIn('label: platformLabel', projection)
+        self.assertIn('label: providerLabel(provider)', projection)
+        self.assertIn('game.genres && game.genres.length ? game.genres : ["Other"]', projection)
+        self.assertIn('game.game_modes && game.game_modes.length ? game.game_modes : [game.game_mode || "Other"]', projection)
+        self.assertIn('label.trim().toLowerCase()', projection)
+        self.assertNotIn('game.platforms && game.platforms.length ? game.platforms', projection)
+        self.assertNotIn('join(",")', projection)
+
+    def test_library_dimensions_are_canonical_and_home_mru_is_separate(self) -> None:
+        shell = (ROOT / "ui" / "ConsoleShell.qml").read_text()
+        dimensions = shell[shell.index("readonly property var libraryDimensions"):
+                           shell.index("property var libraryCollections")]
+        self.assertEqual(dimensions.count('mode: "'), 4)
+        self.assertLess(dimensions.index('mode: "platform"'), dimensions.index('mode: "provider"'))
+        self.assertLess(dimensions.index('mode: "provider"'), dimensions.index('mode: "game_mode"'))
+        self.assertLess(dimensions.index('mode: "game_mode"'), dimensions.index('mode: "genre"'))
+        self.assertIn('property string libraryDimension: "platform"', shell)
+        setter = shell[shell.index("function setLibraryDimension(mode)"):
+                       shell.index("function commitLibraryCategory(index)")]
+        self.assertIn("libraryDimension = mode", setter)
+        self.assertIn("libraryCategoryMru", setter)
+        self.assertIn("libraryCollections = order.map", setter)
+        self.assertIn("function commitLibraryCategory(index)", shell)
+        self.assertIn('setLibraryDimension(String(selected.mode))', shell)
+        self.assertNotIn("collectionIndex", shell)
+
+    def test_library_shoulder_cycling_wraps_canonical_dimensions(self) -> None:
+        shell = (ROOT / "ui" / "ConsoleShell.qml").read_text()
+        cycling = shell[shell.index("function moveLibraryCollection(delta)"):
+                        shell.index("function moveStoreCategory(delta)")]
+        adjacent = shell[shell.index("function adjacentLibraryDimension(delta)"):
+                         shell.index("function moveLibraryCollection(delta)")]
+        self.assertIn("libraryDimensions.length", adjacent)
+        self.assertIn("(index + delta + libraryDimensions.length) % libraryDimensions.length", adjacent)
+        self.assertIn("setLibraryDimension(adjacentLibraryDimension(delta))", cycling)
+
+    def test_library_shoulder_hints_name_dimensions_from_the_switching_sequence(self) -> None:
+        shell = (ROOT / "ui" / "ConsoleShell.qml").read_text()
+        self.assertIn('label: root.libraryDimensionLabel(root.adjacentLibraryDimension(-1))', shell)
+        self.assertIn('label: root.libraryDimensionLabel(root.adjacentLibraryDimension(1))', shell)
+
+    def test_library_header_and_projection_use_one_dimension_and_canonical_games(self) -> None:
+        library_space = (ROOT / "ui" / "LibrarySpace.qml").read_text()
+        self.assertIn("readonly property string categoryMode: projectionState.dimensionKey", library_space)
+        self.assertIn('text: "CATEGORIZE BY  " + root.labelForDimension(root.categoryMode).toUpperCase()', library_space)
+        projection = library_space[library_space.index("function commitProjection("):
+                                    library_space.index("function moveCategory(delta)")]
+        library_projection = (ROOT / "ui" / "LibraryProjection.js").read_text()
+        self.assertIn("LibraryProjection.build(canonicalGames, mode, wantedKey", projection)
+        self.assertIn("for (var i = 0; i < canonicalGames.length; ++i)", library_projection)
+        self.assertIn("valuesFor(game, mode)", library_projection)
+        self.assertIn("rememberedSelections[mode]", projection)
+        self.assertIn("projectionState = nextState", projection)
+        self.assertNotIn("filteredGames.length; ++i", projection)
+        self.assertIn("onDimensionKeyChanged: if (projectionInitialized) commitProjection(dimensionKey, \"\", \"\")", library_space)
+
+    def test_library_first_dimension_and_category_transitions_rebuild_from_canonical_source(self) -> None:
+        library_space = (ROOT / "ui" / "LibrarySpace.qml").read_text()
+        self.assertIn("property var canonicalGames: []", library_space)
+        self.assertIn("property var projectionState:", library_space)
+        self.assertIn("readonly property var filteredGames: projectionState.games", library_space)
+        self.assertIn("onCanonicalGamesChanged: if (projectionInitialized) commitProjection(dimensionKey, \"\", \"\")", library_space)
+        move_category = library_space[library_space.index("function moveCategory(delta)"):
+                                      library_space.index("function moveGame(delta)")]
+        self.assertIn("projectionState.categories[next].key", move_category)
+        self.assertIn("commitProjection(projectionState.dimensionKey", move_category)
+        self.assertNotIn("filteredGames =", move_category)
+        self.assertIn("categoryKey: built.categoryKey", library_space)
+        self.assertIn("rememberedSelections", library_space)
+        self.assertIn("canonicalGames.slice(0)", library_space)
+
+    def test_library_projection_qml_round_trip_regressions(self) -> None:
+        runner = shutil.which("qmltestrunner") or "/usr/lib/qt6/bin/qmltestrunner"
+        if not Path(runner).exists():
+            self.skipTest("qmltestrunner is not installed")
+        environment = os.environ.copy()
+        environment["QT_QPA_PLATFORM"] = "offscreen"
+        environment["QT_QUICK_BACKEND"] = "software"
+        result = subprocess.run(
+            [runner, "-input", str(ROOT / "tests/qml/tst_library_projection.qml")],
+            capture_output=True, text=True, env=environment, timeout=20,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_storehome_uses_its_scope_categories_without_old_library_collection_api(self) -> None:
+        store_home = (ROOT / "ui" / "StoreHome.qml").read_text()
+        library_space = (ROOT / "ui" / "LibrarySpace.qml").read_text()
+        self.assertIn("browseCategories: root.categories", store_home)
+        self.assertIn("browseCategoryIndex: root.categoryIndex", store_home)
+        self.assertIn("onBrowseCategoryRequested: root.categoryIndex = index", store_home)
+        self.assertIn("displayCategoryIndex = categoryIndex", store_home)
+        self.assertNotIn("onCollectionChanged", store_home)
+        self.assertNotIn("collectionIndex", store_home)
+        self.assertIn("property var browseCategories: []", library_space)
+        self.assertIn("signal browseCategoryRequested(int index)", library_space)
+        self.assertIn("libraryDimension", (ROOT / "ui" / "ConsoleShell.qml").read_text())
+
+    def test_qmllint_checks_storehome_and_libraryspace_when_available(self) -> None:
+        qmllint = shutil.which("qmllint") or "/usr/lib/qt6/bin/qmllint"
+        if not Path(qmllint).exists():
+            self.skipTest("qmllint is not installed")
+        result = subprocess.run(
+            [qmllint, "--max-warnings", "-1", "-I", str(ROOT / "ui"),
+             str(ROOT / "ui/StoreHome.qml"), str(ROOT / "ui/LibrarySpace.qml")],
+            capture_output=True, text=True, timeout=20,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertNotIn("onCollectionChanged", (ROOT / "ui/StoreHome.qml").read_text())
+
+    def test_home_entry_and_in_library_change_share_dimension_setter(self) -> None:
+        shell = (ROOT / "ui" / "ConsoleShell.qml").read_text()
+        self.assertIn('setLibraryDimension(String(selected.mode))', shell)
+        self.assertIn("setLibraryDimension(adjacentLibraryDimension(delta))", shell)
+        self.assertIn("dimensionKey: root.libraryDimension", shell)
+
+    def test_library_provider_dimension_has_one_source_of_truth(self) -> None:
+        shell = (ROOT / "ui" / "ConsoleShell.qml").read_text()
+        self.assertIn('{"label": "Platform", "mode": "platform"}', shell)
+        self.assertIn('{"label": "Provider", "mode": "provider"}', shell)
+        self.assertIn('{"label": "Game Mode", "mode": "game_mode"}', shell)
+        self.assertIn('{"label": "Genre", "mode": "genre"}', shell)
 
     def test_launch_errors_are_not_reported_as_catalogue_failures(self) -> None:
         self.assertIn('encodeURIComponent(game.game_id)', QML)

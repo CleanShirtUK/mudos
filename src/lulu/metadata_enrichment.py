@@ -138,7 +138,7 @@ class MetadataEnrichmentService:
                     LOGGER.info("ProtonDB enrichment unavailable game_id=%s reason=%s", game.game_id, error)
             return deltas
 
-        if game.provider not in {"local", "romm"} or not game.platform:
+        if not game.platform:
             return deltas
         if not self.igdb.configured or (not force and self.store.enrichment_is_fresh("igdb", game.game_id, IGDB_TTL)):
             return deltas

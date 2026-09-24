@@ -2,7 +2,7 @@ import QtQuick
 import QtQuick.Window
 import QtQuick.Controls
 
-Window {
+    Window {
     id: root
     visible: false
     visibility: Window.FullScreen
@@ -169,9 +169,16 @@ Window {
         && recentHome && recentIndex < recentHome.itemCount
         ? String(recentModel.gameIdAt(recentIndex)) : ""
     property int playActivationSerial: 0
-    property int libraryIndex: 0
-    property int collectionIndex: 0
-    property var libraryCollections: [{"label": "All Games", "scope": "all"}, {"label": "PC Games", "scope": "pc"}]
+    property int libraryHomeIndex: 0
+    readonly property var libraryDimensions: [
+        {label: "Platform", mode: "platform"},
+        {label: "Provider", mode: "provider"},
+        {label: "Game Mode", mode: "game_mode"},
+        {label: "Genre", mode: "genre"}
+    ]
+    property var libraryCollections: [{"label": "Platform", "mode": "platform"}, {"label": "Provider", "mode": "provider"}, {"label": "Game Mode", "mode": "game_mode"}, {"label": "Genre", "mode": "genre"}]
+    property var libraryCategoryMru: ["platform", "provider", "game_mode", "genre"]
+    property string libraryDimension: "platform"
     property string space: "home"
     property string downloadsReturnSpace: "home"
     property var downloadsHomeRef: null
@@ -196,7 +203,6 @@ Window {
     property var controllerState: ({controllers: {}, navigation_controller_id: ""})
     property var controllerSettingsRef: null
     property string libraryFocus: "games"
-    property int libraryFirstVisibleRow: 0
     property string libraryTransitionState: "RESTING"
     property bool libraryTransitioning: false
     property bool storeTransitioning: false
@@ -394,7 +400,7 @@ Window {
     readonly property var catalogueRecentModel: recentModel
     readonly property var visibleRecentGame: recentSelectedGameId !== ""
         ? catalogueModel.game(recentSelectedGameId) : null
-    readonly property var visibleLibraryGame: libraryGames.length ? libraryGames[libraryIndex] : null
+    readonly property var visibleLibraryGame: librarySpace ? librarySpace.selectedGame : null
     readonly property var selectedGameForOptions: {
         if (space === "library" && libraryFocus === "games")
             return visibleLibraryGame
@@ -402,8 +408,7 @@ Window {
             return visibleRecentGame
         return null
     }
-    readonly property string libraryScope: libraryCollections.length > collectionIndex
-        ? libraryCollections[collectionIndex].scope : "all"
+    readonly property string libraryScope: "all"
 
     function request(path, method, body, callback, failureMessage, generation, failureCallback) {
         var request = new XMLHttpRequest()
@@ -444,16 +449,7 @@ Window {
     }
 
     function refreshPlatformsCatalogue(done) {
-        request("/platforms", "GET", "", function(data) {
-            var collections = [{"label": "All Games", "scope": "all"}, {"label": "PC Games", "scope": "pc"}]
-            for (var index = 0; index < data.length; index++)
-                collections.push(data[index])
-            libraryCollections = collections
-            if (collectionIndex >= libraryCollections.length)
-                collectionIndex = 0
-            if (done)
-                done()
-        })
+        if (done) done()
     }
 
     function refreshCatalogue() {
@@ -758,10 +754,6 @@ Window {
     function refreshLibrary(done) {
         request("/?scope=" + libraryScope, "GET", "", function(data) {
             libraryGames = data
-            if (libraryIndex >= libraryGames.length)
-                libraryIndex = Math.max(0, libraryGames.length - 1)
-            libraryFirstVisibleRow = Math.min(libraryFirstVisibleRow,
-                                               Math.max(0, Math.floor(Math.max(0, libraryGames.length - 1) / 6) - 1))
             syncGameOptionsGame()
             if (done)
                 done()
@@ -1387,36 +1379,60 @@ Window {
     }
 
     function moveLibrary(delta) {
-        if (!libraryGames.length)
-            return
-        libraryIndex = Math.max(0, Math.min(libraryGames.length - 1, libraryIndex + delta))
+        moveLibraryVertical(delta)
     }
 
     function moveLibraryLanding(delta) {
         libraryHomeLanding.moveSelection(delta)
-        collectionIndex = libraryHomeLanding.selectedIndex
+        libraryHomeIndex = libraryHomeLanding.selectedIndex
+    }
+
+    function libraryDimensionLabel(mode) {
+        for (var i = 0; i < libraryDimensions.length; ++i)
+            if (libraryDimensions[i].mode === mode) return libraryDimensions[i].label
+        return "Platform"
+    }
+
+    function setLibraryDimension(mode) {
+        var valid = false
+        for (var i = 0; i < libraryDimensions.length; ++i)
+            if (libraryDimensions[i].mode === mode) valid = true
+        if (!valid) return
+        libraryDimension = mode
+        libraryHomeIndex = 0
+        var order = libraryCategoryMru.filter(function(item) { return item !== mode })
+        order.unshift(mode)
+        libraryCategoryMru = order
+        libraryCollections = order.map(function(item) {
+            return {label: libraryDimensionLabel(item), mode: item}
+        })
+    }
+
+    function commitLibraryCategory(index) {
+        var selected = libraryCollections[index]
+        if (!selected) return
+        setLibraryDimension(String(selected.mode))
     }
 
     function moveLibraryVertical(delta) {
-        if (!libraryGames.length)
-            return
-        var column = libraryIndex % 6
-        var row = Math.floor(libraryIndex / 6) + delta
-        if (row < 0)
-            return
-        var target = row * 6 + column
-        var rowStart = row * 6
-        if (rowStart >= libraryGames.length)
-            return
-        libraryIndex = Math.min(target, libraryGames.length - 1)
-        if (row >= libraryFirstVisibleRow + 2)
-            libraryFirstVisibleRow = row - 1
-        else if (row < libraryFirstVisibleRow)
-            libraryFirstVisibleRow = row
+        if (librarySpace) librarySpace.moveGame(delta)
+    }
+
+    function moveLibraryCategory(delta) {
+        if (librarySpace) librarySpace.moveCategory(delta)
+    }
+
+    function adjacentLibraryDimension(delta) {
+        var index = -1
+        for (var i = 0; i < libraryDimensions.length; ++i)
+            if (libraryDimensions[i].mode === libraryDimension) index = i
+        if (index < 0 || !libraryDimensions.length) return "platform"
+        var next = (index + delta + libraryDimensions.length) % libraryDimensions.length
+        return libraryDimensions[next].mode
     }
 
     function moveLibraryCollection(delta) {
-        collectionIndex = Math.max(0, Math.min(libraryCollections.length - 1, collectionIndex + delta))
+        setLibraryDimension(adjacentLibraryDimension(delta))
     }
 
     function moveStoreCategory(delta) {
@@ -2109,12 +2125,7 @@ Window {
             return
         }
         if (space === "library") {
-            if (libraryFocus === "collection") {
-                refreshLibrary()
-                libraryFocus = "games"
-            } else {
-                launchGame(visibleLibraryGame)
-            }
+            launchGame(visibleLibraryGame)
             return
         }
         if (space === "store") {
@@ -2541,7 +2552,7 @@ Window {
                 else if (root.selectedCategoryIndex === 0) root.moveSystemCategory(-1)
                 else if (root.selectedCategoryIndex === 1) root.moveStoreGame(-1)
             } else if (root.space === "library") {
-                root.moveLibrary(-1)
+                root.moveLibraryCategory(-1)
             } else if (root.space === "store") {
                 if (root.browserVisible) root.browserSurface.directional("left")
                 else root.moveStoreGame(-1)
@@ -2572,7 +2583,7 @@ Window {
                 else if (root.selectedCategoryIndex === 0) root.moveSystemCategory(1)
                 else if (root.selectedCategoryIndex === 1) root.moveStoreGame(1)
             } else if (root.space === "library") {
-                root.moveLibrary(1)
+                root.moveLibraryCategory(1)
             } else if (root.space === "store") {
                 if (root.browserVisible) root.browserSurface.directional("right")
                 else root.moveStoreGame(1)
@@ -2746,10 +2757,10 @@ Window {
                     moveLibraryVertical(1)
                     event.accepted = true
                 } else if (event.key === Qt.Key_Left) {
-                    moveLibrary(-1)
+                    moveLibraryCategory(-1)
                     event.accepted = true
                 } else if (event.key === Qt.Key_Right) {
-                    moveLibrary(1)
+                    moveLibraryCategory(1)
                     event.accepted = true
                 } else if (event.key === Qt.Key_PageUp) {
                     moveLibraryCollection(-1)
@@ -2951,11 +2962,11 @@ Window {
                         transitionProgress: root.libraryTransitionProgress
                         transitionExpanding: root.libraryTransitionExpanding
                         contentOpacity: root.homeContentOpacity
-                         selectedIndex: root.collectionIndex
+                          selectedIndex: root.libraryHomeIndex
                          categories: root.libraryCollections
-                        onOpenRequested: {
-                            root.collectionIndex = index
-                            root.activate()
+                         onOpenRequested: {
+                             root.commitLibraryCategory(index)
+                             root.activate()
                         }
                     }
                 }
@@ -3127,15 +3138,14 @@ Window {
             opacity: 0.58
         }
 
-        LibrarySpace {
+             LibrarySpace {
+            id: librarySpace
             anchors.fill: parent
             visible: root.space === "library" || root.libraryTransitioning
-             libraryGames: root.libraryGames
+             canonicalGames: root.libraryGames
              acquisitionJobs: root.acquisitionJobs
-             selectedIndex: root.libraryIndex
-             collectionIndex: root.collectionIndex
-             collections: root.libraryCollections
-            collectionFocus: root.libraryFocus === "collection"
+             dimensionKey: root.libraryDimension
+             dimensionLabel: root.libraryDimensionLabel(root.libraryDimension)
              transitionState: root.libraryTransitionState
              returnState: root.space === "library" ? "EXPANDED" : "RESTING"
              uiScale: root.uiScale
@@ -3145,14 +3155,9 @@ Window {
              canonicalCoordinateRoot: orbitRenderSource
              canonicalSize: Qt.size(root.width, root.height)
              contentSideMargin: root.expandedContentSideMargin
-             firstVisibleRow: root.libraryFirstVisibleRow
              contentBottom: root.expandedContentBottom
              contentOpacity: root.libraryContentOpacity
-             onCollectionChanged: {
-                 root.collectionIndex = index
-             }
-             onCategoryContentHidden: root.refreshLibrary()
-             onLaunchRequested: root.launchGame(game)
+              onLaunchRequested: root.launchGame(game)
          }
 
          StoreOptions {
@@ -3464,14 +3469,14 @@ Window {
                 }
                 ControllerHint {
                     action: "previousCollection"
-                    label: "Prev"
+                    label: root.libraryDimensionLabel(root.adjacentLibraryDimension(-1))
                     uiScale: root.uiScale
                     typography: typography
                     luluPalette: luluPalette
                 }
                 ControllerHint {
                     action: "nextCollection"
-                    label: "Next"
+                    label: root.libraryDimensionLabel(root.adjacentLibraryDimension(1))
                     uiScale: root.uiScale
                     typography: typography
                     luluPalette: luluPalette

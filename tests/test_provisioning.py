@@ -19,6 +19,10 @@ class ProvisioningTests(unittest.TestCase):
         self.assertEqual(shipped_files, source_files)
         for name in sorted(source_files):
             self.assertEqual((shipped / name).read_bytes(), (source / name).read_bytes(), name)
+        self.assertEqual(
+            (shipped / "LibraryProjection.js").read_bytes(),
+            (source / "LibraryProjection.js").read_bytes(),
+        )
         qmllint = shutil.which("qmllint") or "/usr/lib/qt6/bin/qmllint"
         if not Path(qmllint).exists():
             self.skipTest("qmllint is not installed")
@@ -99,15 +103,16 @@ class ProvisioningTests(unittest.TestCase):
         bootstrap = (PAYLOAD / "scripts/steam-bootstrap.sh").read_text()
         self.assertIn("exec /usr/bin/steam -silent", bootstrap)
         self.assertNotIn("+open steam://open/minigameslist", bootstrap)
-        self.assertIn("Restart=always", (PAYLOAD / "packaging/lulu-session@.service").read_text())
+        self.assertIn("Restart=on-failure", (ROOT / "packaging/lulu-session@.service").read_text())
 
     def test_dev_refresh_releases_kms_capture_before_restarting_presentation(self) -> None:
         script = (ROOT / "scripts/dev-runtime.sh").read_text()
         stop = script.index("systemctl --user stop lulu-sunshine-dev.service")
-        restart = script.index("systemctl restart lulu-acquisition.service lulu-consoled.service lulu-session@2.service")
+        restart = script.index("systemctl restart lulu-session@2.service")
         start = script.index("systemctl --user enable --now lulu-sunshine-dev.service")
         self.assertLess(stop, restart)
         self.assertLess(restart, start)
+        self.assertNotIn("systemctl restart lulu-acquisition.service lulu-consoled.service", script)
 
     def test_logind_policy_reserves_console_session_vt(self) -> None:
         policy = (ROOT / "packaging/logind.conf.d/lulu.conf").read_text()
@@ -116,6 +121,38 @@ class ProvisioningTests(unittest.TestCase):
         self.assertIn("ReserveVT=0", policy)
         service = (ROOT / "packaging/lulu-consoled.service").read_text()
         self.assertIn("After=user@958.service lulu-session@2.service", service)
+        self.assertIn("PartOf=lulu-session@2.service", service)
+
+    def test_session_readiness_orders_daemons_before_graphical_bootstrap(self) -> None:
+        session = (ROOT / "packaging/lulu-session@.service").read_text()
+        consoled = (ROOT / "packaging/lulu-consoled.service").read_text()
+        acquisition = (ROOT / "packaging/lulu-acquisition.service").read_text()
+        target = (ROOT / "packaging/lulu.target").read_text()
+        self.assertIn("Wants=inputplumber.service lulu-osk@%i.service lulu-consoled.service lulu-acquisition.service", session)
+        self.assertIn("Type=notify", session)
+        self.assertIn("NotifyAccess=main", session)
+        self.assertIn("PartOf=lulu-session@2.service", consoled)
+        self.assertIn("After=user@958.service lulu-session@2.service", consoled)
+        self.assertIn("PartOf=lulu-session@2.service", acquisition)
+        self.assertIn("After=user@958.service lulu-session@2.service", acquisition)
+        self.assertNotIn("WantedBy=lulu.target", consoled)
+        self.assertNotIn("WantedBy=lulu.target", acquisition)
+        self.assertIn("Wants=inputplumber.service lulu-osk@%i.service lulu-consoled.service lulu-acquisition.service", session)
+        self.assertIn("lulu-session@2.service", target)
+        self.assertNotIn("lulu-consoled.service", target)
+        self.assertNotIn("lulu-acquisition.service", target)
+        dev_runtime = (ROOT / "scripts/dev-runtime.sh").read_text()
+        self.assertIn('install -m 0644 "$staging/packaging/lulu-session@.service" "$session_unit"', dev_runtime)
+        self.assertIn('install -m 0644 "$staging/packaging/lulu-consoled.service" "$consoled_unit"', dev_runtime)
+        self.assertIn('install -m 0644 "$staging/packaging/lulu.target" "$target_unit"', dev_runtime)
+        self.assertIn("systemctl disable lulu-acquisition.service lulu-consoled.service", dev_runtime)
+        self.assertIn('install -m 0644 "$immutable_root/packaging/lulu-session@.service" "$session_unit"', dev_runtime)
+        sessiond = (ROOT / "src/lulu/sessiond.py").read_text()
+        self.assertIn("_notify_systemd_ready()", sessiond)
+        self.assertIn("await bootstrap_after_services_ready(interface, bus)", sessiond)
+        readiness = (ROOT / "src/lulu/service_readiness.py").read_text()
+        for name in ("org.lulu.ConsoleSessiond", "org.lulu.Consoled", "org.lulu.Acquisitiond"):
+            self.assertIn(name, readiness)
 
 
     def test_presentation_default_is_discovered_not_hardcoded(self) -> None:

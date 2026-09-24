@@ -25,7 +25,7 @@ class LocalUninstallExecutor:
 
     def _approved_paths(self, game_id: str) -> tuple[Path, ...]:
         game = self.store.get_game(game_id)
-        if game is None or game.provider != "local" or game.install_state != "installed":
+        if game is None or game.catalogue_source != "local" or game.install_state != "installed":
             raise JobExecutionError("not-installed", "Local game is not installed")
         root = self.root.resolve(strict=False)
         values = (tuple(game.component_paths)

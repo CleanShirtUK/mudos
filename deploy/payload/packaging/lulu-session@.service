@@ -1,7 +1,7 @@
 [Unit]
 Description=Lulu graphical console session on VT %i
 Requires=seatd.service user-runtime-dir@958.service user@958.service
-Wants=inputplumber.service lulu-osk@%i.service
+Wants=inputplumber.service lulu-osk@%i.service lulu-consoled.service lulu-acquisition.service
 PartOf=inputplumber.service
 After=seatd.service inputplumber.service systemd-logind.service systemd-user-sessions.service user-runtime-dir@958.service user@958.service
 Conflicts=getty@tty%i.service
@@ -10,7 +10,8 @@ StartLimitIntervalSec=60s
 StartLimitBurst=5
 
 [Service]
-Type=simple
+Type=notify
+NotifyAccess=main
 User=lulu
 PAMName=lulu-session
 TTYPath=/dev/tty%i
@@ -32,12 +33,14 @@ Environment=REAL_HOME=/home/lulu
 Environment=REAL_XDG_CONFIG_HOME=/home/lulu/.config
 Environment=REAL_XDG_DATA_HOME=/home/lulu/.local/share
 Environment=REAL_XDG_CACHE_HOME=/home/lulu/.cache
+Environment=XDG_RUNTIME_DIR=/run/user/958
+Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/958/bus
 Environment=LULU_NATIVE_CONTROLLER=1
 EnvironmentFile=-/etc/lulu/presentation.conf
 ExecStartPre=+/opt/lulu/bin/lulu-vt activate %i
 ExecStart=/usr/bin/python -m lulu.sessiond --bootstrap-shell
 ExecStopPost=+/opt/lulu/bin/lulu-vt restore
-Restart=always
+Restart=on-failure
 RestartSec=2s
 TimeoutStopSec=20s
 KillMode=mixed

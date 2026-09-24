@@ -1,7 +1,8 @@
 [Unit]
 Description=Lulu acquisition and job service
 Requires=user@958.service
-After=user@958.service
+PartOf=lulu-session@2.service
+After=user@958.service lulu-session@2.service
 
 [Service]
 Type=simple
@@ -15,9 +16,7 @@ Environment=XDG_DATA_HOME=/home/lulu/.local/share
 Environment=XDG_CACHE_HOME=/home/lulu/.cache
 Environment=XDG_RUNTIME_DIR=/run/user/958
 Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/958/bus
+Environment=LULU_INSTALL_ROOT=/opt/lulu/current
 ExecStart=/usr/bin/python -m lulu.acquisitiond
 Restart=on-failure
 RestartSec=2s
-
-[Install]
-WantedBy=lulu.target

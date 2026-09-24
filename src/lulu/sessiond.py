@@ -9,6 +9,7 @@ import os
 import json
 from pathlib import Path
 import signal as os_signal
+import socket
 
 from dbus_next import BusType, DBusError, MessageType
 from dbus_next.aio import MessageBus
@@ -22,6 +23,7 @@ from .launch_identity import LaunchIdentity
 from .process_supervisor import ProcessSupervisor
 from .process_supervisor import ProcessResult
 from .paths import PATHS
+from .service_readiness import wait_for_lulu_services
 
 
 BUS_NAME = "org.lulu.ConsoleSessiond"
@@ -583,6 +585,30 @@ async def _wait_for_stop(stop_event: asyncio.Event) -> None:
     LOGGER.info("sessiond stop requested; beginning shutdown")
 
 
+def _notify_systemd_ready() -> None:
+    """Signal that Sessiond's D-Bus API is exported, before dependents start."""
+    address = os.environ.get("NOTIFY_SOCKET")
+    if not address:
+        return
+    if address.startswith("@"):
+        address = "\0" + address[1:]
+    with socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM) as notify_socket:
+        notify_socket.connect(address)
+        notify_socket.sendall(b"READY=1\nSTATUS=Sessiond D-Bus API is ready")
+
+
+async def bootstrap_after_services_ready(interface: ConsoleSessionInterface, bus: object,
+                                         *, timeout: float = 30.0) -> None:
+    """Start Gamescope only after all required user-bus APIs respond."""
+    try:
+        await wait_for_lulu_services(bus, timeout=timeout)
+    except Exception:
+        LOGGER.exception("graphical bootstrap blocked: required Lulu D-Bus services are not ready")
+        raise
+    LOGGER.info("all required Lulu D-Bus services are ready; starting graphical session")
+    await interface.bootstrap_shell()
+
+
 async def serve(bus_type: BusType = BusType.SESSION, bootstrap_shell: bool = False) -> None:
     LOGGER.info("session_lifecycle event=start pid=%s uid=%s", os.getpid(), os.geteuid())
     bus = await MessageBus(bus_type=bus_type).connect()
@@ -591,8 +617,10 @@ async def serve(bus_type: BusType = BusType.SESSION, bootstrap_shell: bool = Fal
     bus.export(OBJECT_PATH, interface)
     await bus.request_name(BUS_NAME)
     await interface.start_controller_monitor()
+    _notify_systemd_ready()
+    LOGGER.info("Sessiond D-Bus API ready; systemd dependents may now start")
     if bootstrap_shell:
-        await interface.bootstrap_shell()
+        await bootstrap_after_services_ready(interface, bus)
     stop_event = asyncio.Event()
     loop = asyncio.get_running_loop()
     def request_stop(stop_signal: os_signal.Signals) -> None:

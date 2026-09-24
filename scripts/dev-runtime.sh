@@ -10,6 +10,9 @@ session_dropin="$dropin_root/lulu-session@.service.d/dev-runtime.conf"
 consoled_dropin="$dropin_root/lulu-consoled.service.d/dev-runtime.conf"
 acquisition_dropin="$dropin_root/lulu-acquisition.service.d/dev-runtime.conf"
 acquisition_unit="$dropin_root/lulu-acquisition.service"
+session_unit="$dropin_root/lulu-session@.service"
+consoled_unit="$dropin_root/lulu-consoled.service"
+target_unit="$dropin_root/lulu.target"
 osk_unit="$dropin_root/lulu-osk@.service"
 questarr_reconcile_unit="$dropin_root/lulu-questarr-reconcile.service"
 inputplumber_hotplug_unit="$dropin_root/lulu-inputplumber-hotplug.service"
@@ -44,6 +47,9 @@ refresh() {
     LULU_INSTALL_ROOT="$staging" "$staging/scripts/build-lulu-shell.sh" "$staging/bin/lulu-shell"
     chmod +x "$staging/bin"/* "$staging/scripts"/*
     install -m 0644 "$staging/packaging/lulu-acquisition.service" "$acquisition_unit"
+    install -m 0644 "$staging/packaging/lulu-session@.service" "$session_unit"
+    install -m 0644 "$staging/packaging/lulu-consoled.service" "$consoled_unit"
+    install -m 0644 "$staging/packaging/lulu.target" "$target_unit"
     sed "s#/opt/lulu/current#/opt/lulu/dev-current#g" \
         "$staging/packaging/lulu-osk@.service" > "$osk_unit"
     sed "s#/opt/lulu/current#/opt/lulu/dev-current#g" \
@@ -134,6 +140,7 @@ Environment=PYTHONPATH=$runtime/lib
 Environment=LULU_INSTALL_ROOT=$runtime
 EOF
     systemctl daemon-reload
+    systemctl disable lulu-acquisition.service lulu-consoled.service >/dev/null 2>&1 || true
     systemctl enable lulu-questarr-reconcile.service >/dev/null
     systemctl restart lulu-admin.service
     sudo -u lulu XDG_RUNTIME_DIR=/run/user/958 \
@@ -147,7 +154,7 @@ EOF
         DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/958/bus \
         systemctl --user stop lulu-sunshine-dev.service || true
     systemctl restart inputplumber.service
-    systemctl restart lulu-acquisition.service lulu-consoled.service lulu-session@2.service
+    systemctl restart lulu-session@2.service
     sudo -u lulu XDG_RUNTIME_DIR=/run/user/958 \
         DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/958/bus \
         systemctl --user enable --now lulu-sunshine-dev.service
@@ -163,6 +170,9 @@ immutable() {
     # dangling OSK link and leaving the shell without Acquisitiond on reboot.
     immutable_root=$(CDPATH= cd -- "$(readlink -f /opt/lulu/current)" && pwd)
     install -m 0644 "$immutable_root/packaging/lulu-acquisition.service" "$acquisition_unit"
+    install -m 0644 "$immutable_root/packaging/lulu-session@.service" "$session_unit"
+    install -m 0644 "$immutable_root/packaging/lulu-consoled.service" "$consoled_unit"
+    install -m 0644 "$immutable_root/packaging/lulu.target" "$target_unit"
     install -m 0644 "$immutable_root/packaging/lulu-osk@.service" "$osk_unit"
     install -m 0644 "$immutable_root/packaging/udev/80-lulu-osk.rules" \
         /etc/udev/rules.d/80-lulu-osk.rules
@@ -172,7 +182,8 @@ immutable() {
         /etc/polkit-1/rules.d/50-lulu-storage.rules
     udevadm control --reload-rules
     systemctl daemon-reload
-    systemctl restart lulu-acquisition.service lulu-consoled.service lulu-session@2.service
+    systemctl disable lulu-acquisition.service lulu-consoled.service >/dev/null 2>&1 || true
+    systemctl restart lulu-session@2.service
     echo "restored immutable runtime: $(readlink -f /opt/lulu/current)"
 }
 
