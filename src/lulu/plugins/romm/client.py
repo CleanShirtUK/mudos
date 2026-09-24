@@ -148,6 +148,7 @@ class RommGame:
     game_mode: str | None = None
     protondb_rating: str | None = None
     igdb_id: str = ""
+    summary: str = ""
 
     @classmethod
     def from_json(cls, value: object, platforms: dict[int, RommPlatform]) -> "RommGame":
@@ -251,6 +252,8 @@ class RommGame:
             embedded_igdb_id = str(
                 (metadatum.get("id") or igdb_metadata.get("id") or "")
             ).strip()
+            summary = str(metadata_value("summary") or metadata_value("storyline")
+                          or metadata_value("description") or "").strip()
             return cls(
                 rom_id, str(value.get("name") or Path(file_name).stem), platform_id,
                 platform_slug, platform_label, file_name,
@@ -258,7 +261,7 @@ class RommGame:
                 int(value.get("fs_size_bytes", 0)), str(value.get("url_cover") or ""),
                 bool(value.get("missing_from_fs", False)), files, genres, release_date, release_year,
                  None, local_multiplayer, online_multiplayer, game_mode,
-                 igdb_id=embedded_igdb_id,
+                 igdb_id=embedded_igdb_id, summary=summary,
             )
         except (KeyError, TypeError, ValueError) as error:
             raise RommApiError("malformed RomM ROM entry") from error

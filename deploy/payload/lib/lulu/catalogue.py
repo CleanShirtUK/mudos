@@ -154,6 +154,15 @@ class CatalogueGame:
     preview_video: str = ""
     preview_video_provider: str = ""
     preview_video_source_url: str = ""
+    landscape_artwork_url: str = ""
+    icon_square_url: str = ""
+    icon_square_provider: str = ""
+    icon_square_source_url: str = ""
+    preview_video_url: str = ""
+    preview_still_url: str = ""
+    preview_still_provider: str = ""
+    preview_still_source_url: str = ""
+    preview_animation_url: str = ""
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "platform", normalize_platform_identity(self.platform))
@@ -288,7 +297,7 @@ class CatalogueGame:
                   online_multiplayer=game.online_multiplayer, game_mode=game.game_mode,
                   game_modes=_metadata_memberships(game.game_mode),
                  protondb_rating=game.protondb_rating, artwork_source_url=game.artwork_url,
-                 igdb_id=game.igdb_id,
+                  igdb_id=game.igdb_id, summary=game.summary,
             )
         platform = "Steam" if game.platform_slug.casefold() == "steam" else game.platform_slug
         return cls(
@@ -306,7 +315,7 @@ class CatalogueGame:
              game_mode=game.game_mode, game_modes=_metadata_memberships(game.game_mode),
              protondb_rating=game.protondb_rating,
              artwork_source_url=game.artwork_url,
-             igdb_id=game.igdb_id,
+              igdb_id=game.igdb_id, summary=game.summary,
         )
 
     def as_dict(self) -> dict[str, object]:
@@ -365,7 +374,8 @@ SELECT_COLUMNS = (
        "franchise, collection, igdb_id, igdb_fetched_at, protondb_tier, protondb_confidence, protondb_score, "
         "protondb_trending_tier, protondb_best_tier, protondb_report_count, protondb_fetched_at, "
          "component_paths, component_roles, component_title_ids, mudos_owned, artwork_type, artwork_provider, "
-          "artwork_width, artwork_height, icon_url, canonical_cover_url, canonical_cover_width, canonical_cover_height, preview_video, preview_video_provider, preview_video_source_url"
+            "artwork_width, artwork_height, icon_url, canonical_cover_url, canonical_cover_width, canonical_cover_height, preview_video, preview_video_provider, preview_video_source_url, landscape_artwork_url, "
+             "icon_square_url, icon_square_provider, icon_square_source_url, preview_video_url, preview_still_url, preview_still_provider, preview_still_source_url, preview_animation_url"
 )
 SELECT_FIELD_ORDER = (
     "game_id", "provider", "provider_id", "title", "platform", "install_state", "launchable",
@@ -381,7 +391,8 @@ SELECT_FIELD_ORDER = (
     "protondb_confidence", "protondb_score", "protondb_trending_tier", "protondb_best_tier",
      "protondb_report_count", "protondb_fetched_at", "component_paths", "component_roles",
       "component_title_ids", "mudos_owned", "artwork_type", "artwork_provider", "artwork_width",
-        "artwork_height", "icon_url", "canonical_cover_url", "canonical_cover_width", "canonical_cover_height", "preview_video", "preview_video_provider", "preview_video_source_url",
+          "artwork_height", "icon_url", "canonical_cover_url", "canonical_cover_width", "canonical_cover_height", "preview_video", "preview_video_provider", "preview_video_source_url", "landscape_artwork_url",
+           "icon_square_url", "icon_square_provider", "icon_square_source_url", "preview_video_url", "preview_still_url", "preview_still_provider", "preview_still_source_url", "preview_animation_url",
 )
 
 
@@ -443,7 +454,13 @@ class CatalogueStore:
                           "canonical_cover_width": "INTEGER", "canonical_cover_height": "INTEGER",
                           "preview_video": "TEXT NOT NULL DEFAULT ''",
                           "preview_video_provider": "TEXT NOT NULL DEFAULT ''",
-                          "preview_video_source_url": "TEXT NOT NULL DEFAULT ''"}
+                           "preview_video_source_url": "TEXT NOT NULL DEFAULT ''",
+                            "landscape_artwork_url": "TEXT NOT NULL DEFAULT ''",
+                           "icon_square_url": "TEXT NOT NULL DEFAULT ''", "icon_square_provider": "TEXT NOT NULL DEFAULT ''",
+                           "icon_square_source_url": "TEXT NOT NULL DEFAULT ''", "preview_video_url": "TEXT NOT NULL DEFAULT ''",
+                            "preview_still_url": "TEXT NOT NULL DEFAULT ''", "preview_still_provider": "TEXT NOT NULL DEFAULT ''",
+                            "preview_still_source_url": "TEXT NOT NULL DEFAULT ''",
+                            "preview_animation_url": "TEXT NOT NULL DEFAULT ''"}
         for name, definition in migrations.items():
             if name not in columns:
                 self.connection.execute(f"ALTER TABLE games ADD COLUMN {name} {definition}")
@@ -663,7 +680,16 @@ class CatalogueStore:
               preview_video=incoming.preview_video or existing.preview_video,
               preview_video_provider=incoming.preview_video_provider or existing.preview_video_provider,
               preview_video_source_url=incoming.preview_video_source_url or existing.preview_video_source_url,
-           )
+              landscape_artwork_url=incoming.landscape_artwork_url or existing.landscape_artwork_url,
+              icon_square_url=incoming.icon_square_url or existing.icon_square_url,
+              icon_square_provider=incoming.icon_square_provider or existing.icon_square_provider,
+              icon_square_source_url=incoming.icon_square_source_url or existing.icon_square_source_url,
+              preview_video_url=incoming.preview_video_url or existing.preview_video_url,
+               preview_still_url=incoming.preview_still_url or existing.preview_still_url,
+               preview_still_provider=incoming.preview_still_provider or existing.preview_still_provider,
+               preview_still_source_url=incoming.preview_still_source_url or existing.preview_still_source_url,
+               preview_animation_url=incoming.preview_animation_url or existing.preview_animation_url,
+            )
 
     def _upsert_locked(self, game: CatalogueGame, deltas: list[CatalogueDelta] | None = None) -> CatalogueDelta | None:
         existing = self._rows(f"SELECT {SELECT_COLUMNS} FROM games WHERE game_id=?", (game.game_id,))
@@ -1178,6 +1204,13 @@ class CatalogueStore:
             canonical_cover_url=str(presentation.get("cover_url") or existing.canonical_cover_url),
             canonical_cover_width=presentation.get("cover_width") or existing.canonical_cover_width,
             canonical_cover_height=presentation.get("cover_height") or existing.canonical_cover_height,
+            icon_square_url=str(presentation.get("icon_square_url") or existing.icon_square_url),
+            icon_square_provider=str(presentation.get("icon_square_provider") or existing.icon_square_provider),
+            icon_square_source_url=str(presentation.get("icon_square_source_url") or existing.icon_square_source_url),
+            preview_still_url=str(presentation.get("preview_still_url") or existing.preview_still_url),
+            preview_still_provider=str(presentation.get("preview_still_provider") or existing.preview_still_provider),
+             preview_still_source_url=str(presentation.get("preview_still_source_url") or existing.preview_still_source_url),
+             preview_animation_url=existing.preview_animation_url,
         )
         with self.atomic():
             self._start_operation()
@@ -1193,6 +1226,7 @@ class CatalogueStore:
         after = replace(
             existing,
             genres=existing.genres or source.genres,
+            summary=existing.summary or source.summary,
             release_date=existing.release_date or source.release_date,
             release_year=existing.release_year or source.release_year,
             total_playtime=existing.total_playtime or source.total_playtime,
@@ -1249,7 +1283,22 @@ class CatalogueStore:
              collection=existing.collection or str(normalized.get("collection") or ""),
              canonical_cover_url=existing.canonical_cover_url or str(normalized.get("cover_url") or ""),
              canonical_cover_width=existing.canonical_cover_width or normalized.get("cover_width"),
-             canonical_cover_height=existing.canonical_cover_height or normalized.get("cover_height"),
+            canonical_cover_height=existing.canonical_cover_height or normalized.get("cover_height"),
+            icon_square_url=existing.icon_square_url or str(normalized.get("icon_square_url") or ""),
+            icon_square_provider=existing.icon_square_provider or str(normalized.get("icon_square_provider") or ""),
+            icon_square_source_url=existing.icon_square_source_url or str(normalized.get("icon_square_source_url") or ""),
+            preview_still_url=existing.preview_still_url or str(normalized.get("preview_still_url") or ""),
+            preview_still_provider=existing.preview_still_provider or str(normalized.get("preview_still_provider") or ""),
+            preview_still_source_url=existing.preview_still_source_url or str(normalized.get("preview_still_source_url") or ""),
+            preview_animation_url=existing.preview_animation_url,
+            preview_video_url=(str(normalized.get("preview_video_url") or existing.preview_video_url)
+                               if provider == "steam" else existing.preview_video_url),
+            preview_video=(str(normalized.get("preview_video_url") or existing.preview_video)
+                           if provider == "steam" else existing.preview_video),
+            preview_video_provider=(str(normalized.get("preview_video_provider") or existing.preview_video_provider)
+                                    if provider == "steam" else existing.preview_video_provider),
+            preview_video_source_url=(str(normalized.get("preview_video_source_url") or existing.preview_video_source_url)
+                                     if provider == "steam" else existing.preview_video_source_url),
             igdb_id=str(external_id) if provider == "igdb" else existing.igdb_id,
             igdb_fetched_at=fetched if provider == "igdb" else existing.igdb_fetched_at,
             protondb_tier=str(normalized.get("tier") or existing.protondb_tier) if provider == "protondb" else existing.protondb_tier,
@@ -1329,6 +1378,78 @@ class CatalogueStore:
         with self.atomic():
             self._start_operation()
             delta = self._apply_existing_locked(existing, replace(existing, artwork_url=artwork_url))
+        self._finish_operation([delta] if delta else [])
+        return delta
+
+    def set_landscape_artwork_url(self, game_id: str, artwork_url: str) -> CatalogueDelta | None:
+        existing = self.get_game(game_id)
+        if existing is None:
+            return None
+        with self.atomic():
+            self._start_operation()
+            delta = self._apply_existing_locked(
+                existing, replace(existing, landscape_artwork_url=artwork_url))
+        self._finish_operation([delta] if delta else [])
+        return delta
+
+    def set_icon_square_media(self, game_id: str, *, url: str, provider: str,
+                              source_url: str = "") -> CatalogueDelta | None:
+        existing = self.get_game(game_id)
+        if existing is None or not url:
+            return None
+        after = replace(existing, icon_square_url=url, icon_square_provider=provider,
+                        icon_square_source_url=source_url or url)
+        with self.atomic():
+            self._start_operation()
+            delta = self._apply_existing_locked(existing, after)
+        self._finish_operation([delta] if delta else [])
+        return delta
+
+    def set_preview_animation(self, game_id: str, url: str) -> CatalogueDelta | None:
+        existing = self.get_game(game_id)
+        if existing is None or existing.provider != "steam":
+            return None
+        after = replace(existing, preview_animation_url=url)
+        with self.atomic():
+            self._start_operation()
+            delta = self._apply_existing_locked(existing, after)
+        self._finish_operation([delta] if delta else [])
+        return delta
+
+    def clear_preview_still_if_provider(self, game_id: str, provider: str) -> CatalogueDelta | None:
+        existing = self.get_game(game_id)
+        if existing is None or existing.preview_still_provider != provider:
+            return None
+        after = replace(existing, preview_still_url="", preview_still_provider="",
+                        preview_still_source_url="")
+        with self.atomic():
+            self._start_operation()
+            delta = self._apply_existing_locked(existing, after)
+        self._finish_operation([delta] if delta else [])
+        return delta
+
+    def set_preview_media(self, game_id: str, *, video_url: str = "", video_provider: str = "",
+                          video_source_url: str = "", still_url: str = "", still_provider: str = "",
+                          still_source_url: str = "", prefer_still: bool = False) -> CatalogueDelta | None:
+        existing = self.get_game(game_id)
+        if existing is None:
+            return None
+        provider_is_steam = existing.provider == "steam"
+        video = video_url if provider_is_steam else ""
+        still_wins = bool(still_url and (prefer_still or not existing.preview_still_url))
+        after = replace(
+            existing,
+            preview_video_url=video or existing.preview_video_url,
+            preview_video=video or existing.preview_video,
+            preview_video_provider=(video_provider or "steam") if video else existing.preview_video_provider,
+            preview_video_source_url=(video_source_url or video) if video else existing.preview_video_source_url,
+            preview_still_url=still_url if still_wins else existing.preview_still_url,
+            preview_still_provider=(still_provider or "") if still_wins else existing.preview_still_provider,
+            preview_still_source_url=(still_source_url or still_url) if still_wins else existing.preview_still_source_url,
+        )
+        with self.atomic():
+            self._start_operation()
+            delta = self._apply_existing_locked(existing, after)
         self._finish_operation([delta] if delta else [])
         return delta
 

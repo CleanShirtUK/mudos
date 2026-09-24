@@ -11,6 +11,10 @@ PAYLOAD = ROOT / "deploy/payload"
 
 
 class ProvisioningTests(unittest.TestCase):
+    def test_shell_provisions_animated_webp_image_plugin(self) -> None:
+        provisioning = (ROOT / "scripts" / "provision-appliance-services.sh").read_text()
+        self.assertIn("qt6-webengine qt6-imageformats ffmpeg python-pillow", provisioning)
+
     def test_shipped_qml_is_complete_and_lintable(self) -> None:
         source = ROOT / "ui"
         shipped = PAYLOAD / "ui"
@@ -19,10 +23,8 @@ class ProvisioningTests(unittest.TestCase):
         self.assertEqual(shipped_files, source_files)
         for name in sorted(source_files):
             self.assertEqual((shipped / name).read_bytes(), (source / name).read_bytes(), name)
-        self.assertEqual(
-            (shipped / "LibraryProjection.js").read_bytes(),
-            (source / "LibraryProjection.js").read_bytes(),
-        )
+        for name in ("LibraryProjection.js", "GameArtwork.js", "GameMetadata.js"):
+            self.assertEqual((shipped / name).read_bytes(), (source / name).read_bytes(), name)
         qmllint = shutil.which("qmllint") or "/usr/lib/qt6/bin/qmllint"
         if not Path(qmllint).exists():
             self.skipTest("qmllint is not installed")

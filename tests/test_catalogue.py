@@ -44,6 +44,15 @@ class CatalogueTests(unittest.TestCase):
                 self.assertEqual(game.platform, platform)
                 self.assertEqual(game.platform_label, label)
 
+    def test_landscape_artwork_url_round_trips_through_normalized_catalogue(self) -> None:
+        game = self._platform_game("PC", "PC")
+        with tempfile.TemporaryDirectory() as directory:
+            store = CatalogueStore(Path(directory) / "catalogue.sqlite3")
+            store.reconcile_component_apps("steam", [game])
+            store.set_landscape_artwork_url(game.game_id, "https://cdn.example/hero.jpg")
+            record = store.get_game(game.game_id)
+        self.assertEqual(record.landscape_artwork_url, "https://cdn.example/hero.jpg")
+
     def test_local_emulator_records_use_runtime_provider_identity(self) -> None:
         from types import SimpleNamespace
 

@@ -1,49 +1,11 @@
 import QtQuick
-import QtMultimedia
 import "LibraryProjection.js" as LibraryProjection
+import "GameArtwork.js" as GameArtwork
+import "GameMetadata.js" as GameMetadata
+import "DescriptionFit.js" as DescriptionFit
+import "MudosAssetCatalog.js" as MudosAssetCatalog
 
 Item {
-    // Legacy geometry names remain documented for catalogue-browser consumers:
-    // readonly property int gridColumns: 6; gridLeftInset; gridTop - gridTopInset;
-    // gridRegionHeight + gridTopInset; (usableGridWidth - (gridColumns - 1) * gridGap) / gridColumns;
-    // fullscreenPanelBevelWidth: 6 * uiScale; gridHorizontalGrowth; gridVerticalGrowth;
-    // (fullscreenPanelCardSelectionScale - 1.0) * libraryCardHeight;
-    // fullscreenPanelBorderWidth: 0; fullscreenPanelTransmission: 1;
-    // scale: focused ? librarySpace.fullscreenPanelCardSelectionScale : 1;
-    // z: focused ? 2 : 1; unfocusedBrightness: 0.8; librarySpace.unfocusedBrightness;
-    // headerToGridGap: currentHeaderToGridGap / 2; catalogueCard: true;
-    // required property string modelData; categoryRowWidth; categoryGlyphAdvance;
-    // categoryFadeWidth; categoryViewport; categoryRail; selectedCategoryDelegate;
-    // readonly property real headerToGridGap: currentHeaderToGridGap / 2;
-    // gridTop: contentBottom - gridContentFootprintHeight;
-    // horizontalCardWidth; libraryCardHeight: libraryCardWidth * 1.55;
-    // expandedCardScale: 0.92; * expandedCardScale;
-    // headingBottom: pageHeading.y + pageHeading.height;
-    // firstRowTop: gridTop - selectedGrowth;
-    // categoryRailHeight: categoryGlyphMetrics.height + 8 * uiScale;
-    // requiredTwoRowHeight; id: gridViewport; GridView {
-    // cacheBuffer: 2 * gridRowStep; contentY: librarySpace.firstVisibleRow * librarySpace.gridRowStep;
-    // highlightRangeMode: GridView.NoHighlightRange; highlightFollowsCurrentItem: false;
-    // parent.height - 16 * uiScale - gridBottomInset; gridRegionHeight: requiredTwoRowHeight;
-    // property real gridContentFootprintHeight; property real gridTop;
-    // libraryCardHeight + gridGap + libraryCardHeight + selectedGrowth;
-    // parent.width - 2 * contentSideMargin; gridVisualWidth: gridSlotWidth + 2 * gridHorizontalGrowth;
-    // contentOriginX: (parent.width - gridVisualWidth) / 2;
-    // gridSlotLeft: contentOriginX + gridHorizontalGrowth; y: 81 * uiScale;
-    // id: categoryViewport; x: contentOriginX;
-    // categoryFadeWidth: categoryGlyphAdvance * 10;
-    // categoryGlyphAdvance: categoryGlyphMetrics.advanceWidth;
-    // readonly property real glyphCenterX;
-    // categoryViewport.x + categoryRail.x + parent.x;
-    // opacity: categoryStateOpacity * edgeFadeOpacity;
-    // model: categoryLabel.length; TextMetrics {
-    // y: 32 * uiScale; height: parent.height - 48 * uiScale;
-    // opacity: librarySpace.contentOpacity * librarySpace.gameContentOpacity;
-    // duration: librarySpace.gameContentOpacity === 0 ? 100 : 200;
-    // Library catalogue rail geometry: id: categoryViewport; id: categoryRail;
-    // selectedCategoryDelegate; x: selectedCategoryDelegate ? -selectedCategoryDelegate.x : 0;
-    // width: categoryRowWidth; spacing: librarySpace.categoryGap;
-    // Behavior on x; Easing.OutQuint; horizontalAlignment: Text.AlignHCenter;
     id: root
     property var canonicalGames: []
     property var acquisitionJobs: ({})
@@ -70,6 +32,7 @@ Item {
     property var canonicalTexture
     property var canonicalCoordinateRoot
     property size canonicalSize: Qt.size(1280, 720)
+    property rect contentBounds: Qt.rect(0, 0, width, height)
     property real contentBottom: parent ? parent.height : 0
     property real contentSideMargin: 72 * uiScale
     property string headingText: "LIBRARY"
@@ -78,7 +41,6 @@ Item {
     property string actionLabel: "Play"
     readonly property string navigationObject: "library"
     readonly property real rowHeight: 54 * uiScale
-    readonly property real leftWidth: Math.max(320 * uiScale, parent.width * 0.34)
     readonly property string categoryMode: projectionState.dimensionKey
     readonly property bool browsingExternalCategories: browseCategories.length > 0
     readonly property var categoryTapeValues: browsingExternalCategories
@@ -95,8 +57,38 @@ Item {
         ? String(categoryTapeValues[categoryTapeIndex]) : ""
     readonly property var selectedGame: selectedIndex >= 0 && selectedIndex < filteredGames.length
         ? filteredGames[selectedIndex] : null
-    property bool previewReady: false
     property string previewSource: ""
+    property int previewGeneration: 0
+    property string previewAnimationSource: ""
+    property string previewAnimationGameId: ""
+    property string failedAnimationPath: ""
+    property string failedAnimationGameId: ""
+    property bool previewAnimationReady: false
+    // Video previews use the Qt image plugin only. Retain the explicit false
+    // switch as a guard against reintroducing in-process Qt Multimedia playback.
+    readonly property bool videoPreviewsEnabled: false
+    property real internalSurfaceOpacity: 0.40
+    readonly property string libraryFontFamily: "JetBrains Mono"
+    readonly property real frameMargin: 30 * uiScale
+    readonly property rect contentFrameRect: Qt.rect(
+        contentBounds.x + frameMargin, contentBounds.y + frameMargin,
+        Math.max(0, contentBounds.width - 2 * frameMargin),
+        Math.max(0, contentBounds.height - 2 * frameMargin))
+    readonly property real panelGap: 22 * uiScale
+    readonly property real panelTop: 116 * uiScale
+    readonly property real panelBottomMargin: 2 * uiScale
+    readonly property real detailInset: 18 * uiScale
+    readonly property real detailGutter: 16 * uiScale
+    readonly property real detailRightColumnRatio: 0.46
+    readonly property real detailArtworkHeightRatio: 0.46
+    readonly property real metadataRowSpacing: 8 * uiScale
+    readonly property var detailMetadataRows: GameMetadata.rows(selectedGame, function(timestamp) {
+        return Qt.formatDateTime(new Date(timestamp * 1000), "d MMM yyyy")
+    })
+    property string displayedDescription: ""
+    property bool descriptionNeedsElide: false
+    readonly property real listWidth: Math.max(250 * uiScale,
+        (contentFrameRect.width - panelGap) * 0.40)
     signal launchRequested(var game, var acquisitionJob)
     signal specialActivated(var game)
     signal browseCategoryRequested(int index)
@@ -106,11 +98,14 @@ Item {
         return acquisitionJobs[String(game.game_id)] || null
     }
 
-    function labelForDimension(mode) {
-        if (mode === "provider") return "Provider"
-        if (mode === "game_mode") return "Game Mode"
-        if (mode === "genre") return "Genre"
-        return "Platform"
+    function recomputeDescription() {
+        var source = selectedGame ? String(selectedGame.summary || "No description available.") : emptyText
+        var result = DescriptionFit.select(source, function(candidate) {
+            descriptionMeasure.text = candidate
+            return descriptionMeasure.contentHeight <= descriptionRegion.height
+        })
+        displayedDescription = result.text
+        descriptionNeedsElide = result.elide
     }
 
     function rememberSelection(mode, categoryKey, gameId) {
@@ -193,12 +188,12 @@ Item {
     }
 
     function preparePreview() {
-        if (previewLoader.item) {
-            previewLoader.item.player.stop()
-            previewLoader.item.player.source = ""
-        }
-        previewReady = false
-        previewSource = selectedGame && selectedGame.preview_video ? selectedGame.preview_video : ""
+        ++previewGeneration
+        previewAnimationSource = ""
+        previewAnimationGameId = ""
+        previewAnimationReady = false
+        previewSource = selectedGame && (selectedGame.preview_video_url || selectedGame.preview_video)
+                ? (selectedGame.preview_video_url || selectedGame.preview_video) : ""
         previewSettle.restart()
     }
 
@@ -215,6 +210,15 @@ Item {
     onDimensionKeyChanged: if (projectionInitialized) commitProjection(dimensionKey, "", "")
     onBrowseCategoriesChanged: if (projectionInitialized && browsingExternalCategories) commitProjection(dimensionKey, "", "")
     onBrowseCategoryIndexChanged: if (projectionInitialized && browsingExternalCategories) commitProjection(dimensionKey, "", "")
+    onVisibleChanged: {
+        if (visible) {
+            Qt.callLater(preparePreview)
+        } else {
+            previewAnimationSource = ""
+            previewAnimationGameId = ""
+            previewAnimationReady = false
+        }
+    }
     onSelectedIndexChanged: if (!committingProjection && !browsingExternalCategories) {
         rememberSelection(categoryMode, projectionState.categoryKey,
             selectedGame ? String(selectedGame.game_id) : "")
@@ -238,177 +242,401 @@ Item {
             }
         }
     }
-
     Timer {
         id: previewSettle
         interval: 220
         repeat: false
         onTriggered: {
-            if (root.previewSource !== "" && previewLoader.item) {
-                previewLoader.item.player.source = root.previewSource
-                previewLoader.item.player.play()
-            }
+            if (!root.visible || !root.selectedGame)
+                return
+            var gameId = String(root.selectedGame.game_id || "")
+            if (gameId === "")
+                return
+            var localAnimation = String(root.selectedGame.preview_animation_url || "")
+            if (root.failedAnimationGameId === gameId
+                    && root.failedAnimationPath === localAnimation)
+                return
+            root.previewAnimationSource = localAnimation.indexOf("file:") === 0
+                ? localAnimation : ""
+            root.previewAnimationGameId = root.previewAnimationSource ? gameId : ""
         }
     }
 
-    Loader {
-        id: previewLoader
-        anchors.left: parent.left
-        anchors.top: parent.top
-        anchors.bottom: parent.bottom
-        width: parent.width * 0.43
-        active: root.previewSource !== ""
-        sourceComponent: previewComponent
-        visible: root.previewReady
-    }
-    Component {
-        id: previewComponent
-        Item {
-            anchors.fill: parent
-            property alias player: previewPlayer
-            MediaPlayer {
-                id: previewPlayer
-                videoOutput: previewOutput
-                audioOutput: AudioOutput { muted: true }
-                loops: MediaPlayer.Infinite
-                onHasVideoChanged: if (hasVideo) root.previewReady = true
-                onErrorOccurred: root.previewReady = false
-            }
-            VideoOutput {
-                id: previewOutput
-                anchors.fill: parent
-                fillMode: VideoOutput.PreserveAspectCrop
-            }
-        }
-    }
-
-    Rectangle {
-        anchors.fill: parent
-        color: "transparent"
-        opacity: root.contentOpacity
-    }
-    Text {
-        x: root.contentSideMargin; y: 60 * root.uiScale
-        text: root.headingText
-        color: luluPalette.headingAccent
-        font.family: typography ? typography.majorHeadingFamily : "JetBrains Mono"
-        font.pixelSize: typography ? typography.size("section", 30) : 30 * root.uiScale
-        font.bold: true
-        font.letterSpacing: 5 * root.uiScale
-    }
-    Text {
-        x: root.contentSideMargin; y: 112 * root.uiScale
-        text: "CATEGORIZE BY  " + root.labelForDimension(root.categoryMode).toUpperCase()
-        color: luluPalette.secondaryText
-        font.family: typography ? typography.interfaceFamily : "JetBrains Mono"
-        font.pixelSize: typography ? typography.size("hint", 13) : 13 * root.uiScale
-    }
-
-    ListView {
-        id: categoryTape
-        x: root.contentSideMargin
-        y: 136 * root.uiScale
-        width: parent.width - 2 * root.contentSideMargin
-        height: 34 * root.uiScale
-        orientation: ListView.Horizontal
-        spacing: 28 * root.uiScale
+    Item {
+        id: contentFrame
+        x: root.contentFrameRect.x
+        y: root.contentFrameRect.y
+        width: root.contentFrameRect.width
+        height: root.contentFrameRect.height
         clip: true
-        interactive: false
-        model: root.categoryTapeValues
-        currentIndex: root.categoryTapeIndex
-        delegate: Text {
-            required property string modelData
-            required property int index
-            text: modelData
-            color: index === root.categoryTapeIndex ? luluPalette.selectedText : luluPalette.secondaryText
-            font.family: typography ? typography.interfaceFamily : "JetBrains Mono"
-            font.pixelSize: typography ? typography.size("body", 16) : 16 * root.uiScale
-            font.bold: index === root.categoryTapeIndex
-            MouseArea {
-                anchors.fill: parent
-                onClicked: root.moveCategory(index - root.categoryTapeIndex)
-            }
-        }
-        onCurrentIndexChanged: if (currentIndex >= 0) positionViewAtIndex(currentIndex, ListView.Contain)
-        onModelChanged: positionViewAtIndex(root.categoryTapeIndex, ListView.Contain)
-    }
+        opacity: root.contentOpacity
 
-    Rectangle {
-        x: root.contentSideMargin; y: 184 * root.uiScale
-        width: root.leftWidth; height: parent.height - y - 34 * root.uiScale
-        color: luluPalette.librarySurface
-        radius: 14 * root.uiScale
-        border.color: luluPalette.glassBorder
+        Text {
+            id: libraryTitle
+            x: 0; y: 0
+            width: Math.max(0, categoryTape.x + categoryTape.width - x)
+            height: 42 * root.uiScale
+            text: "LIBRARY: " + String(root.categoryMode).replace(/_/g, " ").toUpperCase()
+            color: root.luluPalette.headingAccent
+            font.family: root.libraryFontFamily
+            font.pixelSize: root.typography ? root.typography.size("section", 27) : 27 * root.uiScale
+            font.bold: true
+            font.letterSpacing: 2 * root.uiScale
+            elide: Text.ElideRight
+            verticalAlignment: Text.AlignVCenter
+        }
         ListView {
-            id: gameRows
-            anchors.fill: parent; anchors.margins: 10 * root.uiScale
+            id: categoryTape
+            x: 0; y: 50 * root.uiScale
+            width: parent.width; height: 38 * root.uiScale
+            orientation: ListView.Horizontal
+            spacing: 26 * root.uiScale
             clip: true; interactive: false
-            model: root.browserRows
+            model: root.categoryTapeValues
+            currentIndex: root.categoryTapeIndex
             delegate: Item {
-                required property var modelData
+                required property string modelData
                 required property int index
-                readonly property var gameData: modelData.game
-                width: gameRows.width; height: modelData.header ? 34 * root.uiScale : root.rowHeight
+                width: categoryText.implicitWidth + 8 * root.uiScale
+                height: categoryTape.height
                 Text {
-                    anchors.left: parent.left; anchors.leftMargin: 12 * root.uiScale
-                    anchors.verticalCenter: parent.verticalCenter
-                    text: modelData.header ? String(modelData.label).toUpperCase() : String(modelData.game.title || "")
-                    color: modelData.header ? luluPalette.headingAccent
-                        : (root.selectedGame && modelData.game.game_id === root.selectedGame.game_id ? luluPalette.selectedText : luluPalette.primaryText)
-                    font.family: typography ? typography.interfaceFamily : "JetBrains Mono"
-                    font.pixelSize: modelData.header ? typography.size("hint", 12) : typography.size("body", 16)
-                    font.bold: modelData.header || (root.selectedGame && modelData.game.game_id === root.selectedGame.game_id)
-                    elide: Text.ElideRight; width: parent.width - 40 * root.uiScale
-                }
-                Text {
-                    visible: !modelData.header && modelData.game.platform_label !== ""
-                    anchors.right: parent.right; anchors.rightMargin: 12 * root.uiScale
-                    anchors.verticalCenter: parent.verticalCenter
-                    text: "◆"; color: luluPalette.secondaryText
+                    id: categoryText
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    anchors.top: parent.top
+                    text: modelData
+                    color: index === root.categoryTapeIndex
+                        ? root.luluPalette.selectedText : root.luluPalette.secondaryText
+                    font.family: root.libraryFontFamily
+                    font.pixelSize: root.typography ? root.typography.size("body", 16) : 16 * root.uiScale
+                    font.bold: index === root.categoryTapeIndex
                 }
                 Rectangle {
-                    visible: !modelData.header && root.selectedGame && modelData.game.game_id === root.selectedGame.game_id
-                    anchors.fill: parent; anchors.margins: 1 * root.uiScale
-                    color: "transparent"; border.color: luluPalette.focusIndicator
-                    radius: 8 * root.uiScale; z: -1
+                    visible: index === root.categoryTapeIndex
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    anchors.bottom: parent.bottom
+                    width: categoryText.implicitWidth
+                    height: 2 * root.uiScale
+                    color: root.luluPalette.focusIndicator
                 }
                 MouseArea {
-                    anchors.fill: parent; enabled: !modelData.header
-                    onClicked: {
-                        var id = String(gameData.game_id)
-                        for (var n = 0; n < root.filteredGames.length; ++n)
-                            if (String(root.filteredGames[n].game_id) === id) root.selectedIndex = n
+                    anchors.fill: parent
+                    onClicked: root.moveCategory(index - root.categoryTapeIndex)
+                }
+            }
+            onCurrentIndexChanged: if (currentIndex >= 0)
+                positionViewAtIndex(currentIndex, ListView.Contain)
+            onModelChanged: if (root.categoryTapeIndex >= 0)
+                positionViewAtIndex(root.categoryTapeIndex, ListView.Contain)
+            Component.onCompleted: if (root.categoryTapeIndex >= 0)
+                positionViewAtIndex(root.categoryTapeIndex, ListView.Contain)
+        }
+
+        Rectangle {
+            id: listSurface
+            x: 0; y: root.panelTop
+            width: Math.min(root.listWidth, parent.width * 0.42)
+            height: Math.max(0, parent.height - y - root.panelBottomMargin)
+            radius: 10 * root.uiScale
+            color: Qt.rgba(root.luluPalette.librarySurface.r,
+                           root.luluPalette.librarySurface.g,
+                           root.luluPalette.librarySurface.b,
+                           root.internalSurfaceOpacity)
+            ListView {
+                id: gameRows
+                anchors.fill: parent
+                anchors.margins: 10 * root.uiScale
+                clip: true
+                interactive: false
+                model: root.filteredGames
+                delegate: Item {
+                    id: gameRow
+                    required property var modelData
+                    required property int index
+                    property bool iconFailed: false
+                    width: gameRows.width
+                    height: root.rowHeight
+                    Rectangle {
+                        anchors.fill: parent
+                        anchors.leftMargin: 2 * root.uiScale
+                        anchors.rightMargin: 2 * root.uiScale
+                        radius: 6 * root.uiScale
+                        color: root.selectedIndex === gameRow.index
+                            ? Qt.rgba(root.luluPalette.focusIndicator.r,
+                                      root.luluPalette.focusIndicator.g,
+                                      root.luluPalette.focusIndicator.b, 0.18)
+                            : "transparent"
+                    }
+                    Rectangle {
+                        x: 10 * root.uiScale
+                        width: 34 * root.uiScale; height: width
+                        anchors.verticalCenter: parent.verticalCenter
+                        radius: 4 * root.uiScale
+                        color: Qt.rgba(root.luluPalette.primaryText.r,
+                                       root.luluPalette.primaryText.g,
+                                       root.luluPalette.primaryText.b, 0.08)
+                        clip: true
+                        Image {
+                            id: gameIcon
+                            anchors.fill: parent
+                            source: GameArtwork.portraitIcon(gameRow.modelData)
+                            sourceSize: Qt.size(96, 96)
+                            fillMode: Image.PreserveAspectFit
+                            asynchronous: true
+                            onStatusChanged: if (status === Image.Error) gameRow.iconFailed = true
+                            onSourceChanged: gameRow.iconFailed = false
+                        }
+                        MudosIcon {
+                            anchors.centerIn: parent
+                            visible: !gameIcon.source || gameRow.iconFailed
+                            glyph: MudosAssetCatalog.icon("fallback")
+                            iconSize: 21 * root.uiScale
+                            typography: root.typography
+                            semanticColor: root.luluPalette.secondaryText
+                        }
+                    }
+                    Text {
+                        anchors.left: parent.left
+                        anchors.leftMargin: 54 * root.uiScale
+                        anchors.right: parent.right
+                        anchors.rightMargin: 12 * root.uiScale
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: String(gameRow.modelData.display_title_override
+                            || gameRow.modelData.canonical_title || gameRow.modelData.title || "")
+                        color: root.selectedIndex === gameRow.index
+                            ? root.luluPalette.selectedText : root.luluPalette.primaryText
+                        font.family: root.libraryFontFamily
+                        font.pixelSize: root.typography ? root.typography.size("body", 16) : 16 * root.uiScale
+                        font.bold: root.selectedIndex === gameRow.index
+                        elide: Text.ElideRight
+                    }
+                    MouseArea {
+                        anchors.fill: parent
+                        onClicked: root.selectedIndex = gameRow.index
+                    }
+                }
+                onCurrentIndexChanged: if (currentIndex >= 0)
+                    positionViewAtIndex(currentIndex, ListView.Contain)
+                onCountChanged: if (count > 0) positionViewAtIndex(root.selectedIndex, ListView.Contain)
+            }
+            Text {
+                anchors.centerIn: parent
+                visible: root.filteredGames.length === 0
+                text: root.emptyText
+                color: root.luluPalette.mutedText
+                font.family: root.libraryFontFamily
+                font.pixelSize: root.typography ? root.typography.size("body", 16) : 16 * root.uiScale
+                wrapMode: Text.WordWrap
+                horizontalAlignment: Text.AlignHCenter
+                width: parent.width - 32 * root.uiScale
+            }
+        }
+
+        Rectangle {
+            id: detailSurface
+            x: listSurface.width + root.panelGap
+            y: root.panelTop
+            width: Math.max(0, parent.width - x)
+            height: Math.max(0, parent.height - y - root.panelBottomMargin)
+            radius: 10 * root.uiScale
+            color: Qt.rgba(root.luluPalette.librarySurface.r,
+                           root.luluPalette.librarySurface.g,
+                           root.luluPalette.librarySurface.b,
+                           root.internalSurfaceOpacity)
+            clip: true
+
+            readonly property real inset: root.detailInset
+            readonly property real gutter: root.detailGutter
+            readonly property real innerWidth: Math.max(0, width - 2 * inset)
+            readonly property real innerHeight: Math.max(0, height - 2 * inset)
+            readonly property real leftWidth: (innerWidth - gutter) * (1 - root.detailRightColumnRatio)
+            readonly property real rightWidth: (innerWidth - gutter) * root.detailRightColumnRatio
+            readonly property real rightArtworkHeight: Math.max(0,
+                (innerHeight - gutter) * root.detailArtworkHeightRatio)
+            readonly property real rightMetadataY: inset + rightArtworkHeight + gutter
+            readonly property real rightMetadataHeight: Math.max(0,
+                height - rightMetadataY - inset)
+
+            Item {
+                id: detailTitleRegion
+                x: detailSurface.inset
+                y: detailSurface.inset
+                width: detailSurface.leftWidth
+                height: titleText.implicitHeight
+                clip: true
+                Text {
+                    id: titleText
+                    x: 0
+                    y: 0
+                    width: parent.width
+                    height: implicitHeight
+                    text: root.selectedGame
+                        ? String(root.selectedGame.display_title_override
+                            || root.selectedGame.canonical_title || root.selectedGame.title || "") : ""
+                    color: root.luluPalette.primaryText
+                    font.family: root.libraryFontFamily
+                    font.pixelSize: root.typography ? root.typography.size("display", 32) : 32 * root.uiScale
+                    font.bold: true
+                    wrapMode: Text.WordWrap
+                    maximumLineCount: 4
+                    elide: Text.ElideRight
+                    horizontalAlignment: Text.AlignLeft
+                    verticalAlignment: Text.AlignTop
+                }
+            }
+
+            Item {
+                id: descriptionRegion
+                x: detailSurface.inset
+                y: detailTitleRegion.y + detailTitleRegion.height + detailSurface.gutter
+                width: detailSurface.leftWidth
+                height: Math.max(0, detailSurface.height - y - detailSurface.inset)
+                clip: true
+                Text {
+                    id: descriptionText
+                    anchors.fill: parent
+                    text: root.displayedDescription
+                    color: root.luluPalette.secondaryText
+                    font.family: root.libraryFontFamily
+                    font.pixelSize: root.typography ? root.typography.size("body", 14) : 14 * root.uiScale
+                    fontSizeMode: Text.Fit
+                    minimumPixelSize: 10 * root.uiScale
+                    wrapMode: Text.WordWrap
+                    maximumLineCount: Math.max(1, Math.floor(descriptionRegion.height / (10 * root.uiScale * 1.2)))
+                    elide: root.descriptionNeedsElide ? Text.ElideRight : Text.ElideNone
+                    horizontalAlignment: Text.AlignLeft
+                    verticalAlignment: Text.AlignTop
+                }
+                Text {
+                    id: descriptionMeasure
+                    x: -100000
+                    y: 0
+                    width: descriptionRegion.width
+                    height: 100000
+                    visible: false
+                    text: ""
+                    font.family: root.libraryFontFamily
+                    font.pixelSize: 10 * root.uiScale
+                    wrapMode: Text.WordWrap
+                    elide: Text.ElideNone
+                }
+                Component.onCompleted: Qt.callLater(root.recomputeDescription)
+                onWidthChanged: Qt.callLater(root.recomputeDescription)
+                onHeightChanged: Qt.callLater(root.recomputeDescription)
+            }
+
+            Item {
+                id: landscapeArea
+                x: detailSurface.inset + detailSurface.leftWidth + detailSurface.gutter
+                y: detailSurface.inset
+                width: detailSurface.rightWidth
+                height: detailSurface.rightArtworkHeight
+                clip: true
+                Item {
+                    id: landscapeMediaRect
+                    anchors.centerIn: parent
+                    width: Math.min(parent.width, parent.height * 16 / 9)
+                    height: Math.min(parent.height, parent.width * 9 / 16)
+                    clip: true
+                    Rectangle {
+                        anchors.fill: parent
+                        color: Qt.rgba(root.luluPalette.primaryText.r,
+                                       root.luluPalette.primaryText.g,
+                                       root.luluPalette.primaryText.b, 0.045)
+                        MudosIcon {
+                            anchors.centerIn: parent
+                            glyph: MudosAssetCatalog.icon("fallback")
+                            iconSize: 52 * root.uiScale
+                            typography: root.typography
+                            semanticColor: root.luluPalette.secondaryText
+                        }
+                    }
+                    Image {
+                        id: landscapeImage
+                        anchors.fill: parent
+                        source: GameArtwork.previewStill(root.selectedGame)
+                        sourceSize: Qt.size(1600, 720)
+                        fillMode: Image.PreserveAspectCrop
+                        asynchronous: true
+                        cache: false
+                        opacity: root.previewAnimationReady ? 0 : 1
+                        Behavior on opacity { NumberAnimation { duration: 260 } }
+                    }
+                    Loader {
+                        id: animationLoader
+                        anchors.fill: parent
+                        active: root.previewAnimationSource !== "" && root.selectedGame !== null
+                            && root.previewAnimationGameId === String(root.selectedGame.game_id)
+                        visible: root.previewAnimationReady
+                        sourceComponent: animationComponent
                     }
                 }
             }
-            onCurrentIndexChanged: if (currentIndex >= 0) positionViewAtIndex(currentIndex, ListView.Contain)
+
+            Item {
+                id: detailMetadata
+                y: detailSurface.rightMetadataY
+                x: landscapeArea.x
+                width: detailSurface.rightWidth
+                height: detailSurface.rightMetadataHeight
+                clip: true
+                Column {
+                    id: detailMetadataColumn
+                    anchors.left: parent.left
+                    anchors.bottom: parent.bottom
+                    width: parent.width
+                    height: implicitHeight
+                    spacing: root.metadataRowSpacing
+                    Repeater {
+                        model: root.detailMetadataRows
+                        delegate: FocalMetadataRow {
+                            required property var modelData
+                            width: detailMetadataColumn.width
+                            height: implicitHeight
+                            glyph: modelData.glyph
+                            text: modelData.text
+                            fontFamily: root.libraryFontFamily
+                            iconFamily: root.typography ? root.typography.iconFamily : root.libraryFontFamily
+                            textColor: root.luluPalette.secondaryText
+                            uiScale: root.uiScale
+                            glyphSize: Math.min(16 * root.uiScale, height * 0.7)
+                            textSize: root.typography ? root.typography.size("hint", 12) : 12 * root.uiScale
+                            glyphColumnWidth: 20 * root.uiScale
+                            wrapText: true
+                            maximumLineCount: 0
+                        }
+                    }
+                }
+            }
         }
     }
 
-    Rectangle {
-        x: root.contentSideMargin + root.leftWidth + 28 * root.uiScale
-        y: 184 * root.uiScale
-        width: parent.width - x - root.contentSideMargin
-        height: parent.height - y - 34 * root.uiScale
-        color: luluPalette.librarySurface; radius: 14 * root.uiScale
-        border.color: luluPalette.glassBorder
-        opacity: root.gameContentOpacity
-        Image {
-            id: artwork
-            anchors.left: parent.left; anchors.top: parent.top; anchors.bottom: parent.bottom
-            width: parent.width * 0.43; fillMode: Image.PreserveAspectCrop
-            source: root.selectedGame ? (root.selectedGame.artwork_url || root.selectedGame.canonical_cover_url) : ""
-            opacity: root.previewReady ? 0 : 1
-            Behavior on opacity { NumberAnimation { duration: 260 } }
-        }
-        Column {
-            x: parent.width * 0.47; y: 34 * root.uiScale
-            width: parent.width * 0.48; spacing: 14 * root.uiScale
-            Text { text: root.selectedGame ? root.selectedGame.title : ""; color: luluPalette.primaryText; font.bold: true; font.pixelSize: typography.size("heading", 25); wrapMode: Text.WordWrap; width: parent.width }
-            Text { text: root.selectedGame ? (root.selectedGame.summary || "No description available.") : root.emptyText; color: luluPalette.secondaryText; font.pixelSize: typography.size("body", 15); wrapMode: Text.WordWrap; width: parent.width; maximumLineCount: 5; elide: Text.ElideRight }
-            Text { text: root.selectedGame ? [root.selectedGame.platform_label || root.selectedGame.platform, root.selectedGame.provider, root.selectedGame.game_mode || ""].filter(function(x) { return x }).join("  •  ") : ""; color: luluPalette.headingAccent; font.pixelSize: typography.size("hint", 13); wrapMode: Text.WordWrap; width: parent.width }
-            Text { text: root.selectedGame && root.selectedGame.protondb_rating ? "ProtonDB  " + root.selectedGame.protondb_rating : ""; color: luluPalette.secondaryText; font.pixelSize: typography.size("hint", 13) }
-            ControllerHint { visible: !!root.selectedGame; action: "confirm"; label: root.actionLabel; uiScale: root.uiScale; typography: root.typography; luluPalette: root.luluPalette }
+    onSelectedGameChanged: Qt.callLater(recomputeDescription)
+
+    Component {
+        id: animationComponent
+        AnimatedImage {
+            anchors.fill: parent
+            source: root.previewAnimationSource
+            fillMode: Image.PreserveAspectCrop
+            asynchronous: true
+            cache: false
+            playing: true
+            onStatusChanged: {
+                if (status === Image.Ready && root.selectedGame
+                        && root.previewAnimationGameId === String(root.selectedGame.game_id)) {
+                    root.previewAnimationReady = true
+                } else if (status === Image.Error) {
+                    root.previewAnimationReady = false
+                    if (root.selectedGame
+                            && root.previewAnimationGameId === String(root.selectedGame.game_id)) {
+                        root.failedAnimationGameId = String(root.selectedGame.game_id)
+                        root.failedAnimationPath = root.previewAnimationSource
+                        root.previewAnimationSource = ""
+                        root.previewAnimationGameId = ""
+                    }
+                }
+            }
         }
     }
+
 }

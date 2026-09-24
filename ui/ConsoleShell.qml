@@ -123,13 +123,11 @@ import QtQuick.Controls
     readonly property real expandedGridVisualWidth:
         expandedGridSlotWidth
         + (1.05 - 1.0) * expandedGridCardWidth
-    readonly property real expandedShellSideMargin:
-        (width - expandedGridVisualWidth) / 2 - expandedGridGap
-    readonly property real expandedSurfaceChromeGap: design(18)
+    readonly property real expandedShellSideMargin: 20
+    readonly property real expandedSurfaceChromeGap: design(8)
     readonly property real statusStripBottom: statusStripTop + systemStatusStrip.height
     readonly property real expandedHintRowTop: interactionRail.y + expandedHintRow.y
-    readonly property real expandedShellTop: statusStripBottom
-        + expandedSurfaceChromeGap
+    readonly property real expandedShellTop: 20
     readonly property real expandedShellBottom: expandedHintRowTop
         - expandedSurfaceChromeGap
     readonly property real expandedContentBottom: expandedShellBottom
@@ -3154,6 +3152,8 @@ import QtQuick.Controls
              canonicalTexture: orbitTexture
              canonicalCoordinateRoot: orbitRenderSource
              canonicalSize: Qt.size(root.width, root.height)
+              contentBounds: Qt.rect(root.expandedShellX, root.expandedShellY,
+                                     root.expandedShellWidth, root.expandedShellHeight)
              contentSideMargin: root.expandedContentSideMargin
              contentBottom: root.expandedContentBottom
              contentOpacity: root.libraryContentOpacity
@@ -3190,7 +3190,9 @@ import QtQuick.Controls
              canonicalTexture: orbitTexture
              canonicalCoordinateRoot: orbitRenderSource
              canonicalSize: Qt.size(root.width, root.height)
-            contentBottom: root.expandedContentBottom
+              contentBounds: Qt.rect(root.expandedShellX, root.expandedShellY,
+                                     root.expandedShellWidth, root.expandedShellHeight)
+             contentBottom: root.expandedContentBottom
             errorMessage: root.storeError
             contentOpacity: root.libraryContentOpacity
              onSteamStoreRequested: root.openSteamStore()
@@ -3463,6 +3465,7 @@ import QtQuick.Controls
                 ControllerHint {
                     action: "navigation"
                     label: "Games"
+                    fontFamily: root.space === "library" ? "JetBrains Mono" : typography.interfaceFamily
                     uiScale: root.uiScale
                     typography: typography
                     luluPalette: luluPalette
@@ -3470,6 +3473,7 @@ import QtQuick.Controls
                 ControllerHint {
                     action: "previousCollection"
                     label: root.libraryDimensionLabel(root.adjacentLibraryDimension(-1))
+                    fontFamily: root.space === "library" ? "JetBrains Mono" : typography.interfaceFamily
                     uiScale: root.uiScale
                     typography: typography
                     luluPalette: luluPalette
@@ -3477,6 +3481,7 @@ import QtQuick.Controls
                 ControllerHint {
                     action: "nextCollection"
                     label: root.libraryDimensionLabel(root.adjacentLibraryDimension(1))
+                    fontFamily: root.space === "library" ? "JetBrains Mono" : typography.interfaceFamily
                     uiScale: root.uiScale
                     typography: typography
                     luluPalette: luluPalette
@@ -3484,6 +3489,7 @@ import QtQuick.Controls
                 ControllerHint {
                     action: "confirm"
                     label: root.space === "library" ? "Launch" : "Download"
+                    fontFamily: root.space === "library" ? "JetBrains Mono" : typography.interfaceFamily
                     uiScale: root.uiScale
                     typography: typography
                     luluPalette: luluPalette
@@ -3492,6 +3498,7 @@ import QtQuick.Controls
                     visible: root.space === "library" && root.libraryFocus === "games" && root.visibleLibraryGame !== null
                     action: "options"
                     label: "Game Options"
+                    fontFamily: "JetBrains Mono"
                     uiScale: root.uiScale
                     typography: typography
                     luluPalette: luluPalette
@@ -3499,6 +3506,7 @@ import QtQuick.Controls
                 ControllerHint {
                     action: "back"
                     label: "Back"
+                    fontFamily: root.space === "library" ? "JetBrains Mono" : typography.interfaceFamily
                     uiScale: root.uiScale
                     typography: typography
                     luluPalette: luluPalette

@@ -1,6 +1,8 @@
 import QtQuick
 import QtQuick.Effects
 import "MudosAssetCatalog.js" as MudosAssetCatalog
+import "GameArtwork.js" as GameArtwork
+import "GameMetadata.js" as GameMetadata
 import Mudos.Poc 1.0
 
 Rectangle {
@@ -124,13 +126,6 @@ Rectangle {
                 card.playFeedbackCompleted()
         }
     }
-    function formatPlaytime(value) {
-        var minutes = Math.max(0, Math.floor(Number(value) || 0))
-        var hours = Math.floor(minutes / 60)
-        var remainder = minutes % 60
-        return hours > 0 ? hours + "h " + remainder + "m" : minutes + "m"
-    }
-
     function acquisitionStatusLabel(state) {
         if (state === "queued") return "Queued"
         if (state === "starting") return "Starting"
@@ -140,94 +135,9 @@ Rectangle {
         if (state === "cancelling") return "Stopping"
         return "Download failed"
     }
-    function focalMetadataGlyph(name) {
-        if (name === "genres")
-            return "\uf02c" // fa-tags
-        if (name === "last-played")
-            return "\uf1da" // fa-history
-        if (name === "clock")
-            return "\uf017" // fa-clock-o
-        if (name === "game-modes")
-            return "\uf0c0" // fa-users
-        if (name === "protondb")
-            return "\ue27f" // nf-fae-atom
-        if (name === "platform")
-            return "\uf11b" // fa-gamepad
-        if (name === "provider")
-            return "\uf1e6"
-        return ""
-    }
-    function displayPlatform(value) {
-        var key = String(value || "").trim().toLowerCase()
-        var labels = {
-            pc: "PC", nes: "NES", snes: "SNES", genesis: "Genesis",
-            gb: "Game Boy", gbc: "Game Boy Color", gba: "Game Boy Advance",
-            nds: "Nintendo DS", gamecube: "GameCube", ngc: "GameCube",
-            wii: "Wii", switch: "Nintendo Switch", ps1: "PlayStation",
-            ps2: "PlayStation", ps3: "PlayStation"
-        }
-        return labels[key] || (String(value || "").trim() || "Unknown")
-    }
-    function displayProvider(provider, runtime) {
-        var key = String(runtime || provider || "").trim().toLowerCase()
-        var labels = {
-            steam: "Steam", romm: "RomM", retroarch: "RetroArch",
-            dolphin: "Dolphin", pcsx2: "PCSX2", eden: "Eden"
-        }
-        return labels[key] || (String(runtime || provider || "").trim() || "Unknown")
-    }
-    function protonDbText(provider, platform, rating) {
-        var providerKey = String(provider || "").trim().toLowerCase()
-        var platformKey = String(platform || "").trim().toLowerCase()
-        if (providerKey !== "steam" && platformKey !== "pc")
-            return ""
-        var normalized = String(rating || "").trim().toLowerCase()
-        if (!normalized)
-            return "Pending"
-        var labels = {
-            platinum: "Platinum", gold: "Gold", silver: "Silver",
-            bronze: "Bronze", borked: "Borked", pending: "Pending",
-            unknown: "Unknown"
-        }
-        return labels[normalized] || "Unknown"
-    }
-    readonly property var focalMetadataRows: {
-        var rows = []
-        if (!card.game)
-            return rows
-        var genres = card.game.genres || []
-        var usefulGenres = []
-        for (var genreIndex = 0; genreIndex < genres.length; genreIndex++) {
-            if (String(genres[genreIndex]).trim().length > 0)
-                usefulGenres.push(String(genres[genreIndex]).trim())
-        }
-        if (usefulGenres.length)
-            rows.push({text: usefulGenres.join(" · "), glyph: "genres"})
-        var gameModes = card.game.game_modes || []
-        var usefulGameModes = []
-        for (var modeIndex = 0; modeIndex < gameModes.length; modeIndex++) {
-            if (String(gameModes[modeIndex]).trim().length > 0)
-                usefulGameModes.push(String(gameModes[modeIndex]).trim())
-        }
-        if (usefulGameModes.length)
-            rows.push({text: usefulGameModes.join(" · "), glyph: "game-modes"})
-        if (Number(card.game.last_played) > 0)
-            rows.push({text: Qt.formatDateTime(
-                new Date(Number(card.game.last_played) * 1000), "d MMM yyyy"),
-                glyph: "last-played"})
-        if (Number(card.game.total_playtime) > 0)
-            rows.push({text: "Total Playtime  " + card.formatPlaytime(card.game.total_playtime),
-                      glyph: "clock"})
-        var protonDb = card.protonDbText(card.game.provider, card.game.platform,
-                                         card.game.protondb_rating)
-        if (protonDb.length)
-            rows.push({text: protonDb, glyph: "protondb"})
-        rows.push({text: card.displayPlatform(
-                    card.game.platform_label || card.game.platform), glyph: "platform"})
-        rows.push({text: card.displayProvider(
-                    card.game.provider, card.game.runtime), glyph: "provider"})
-        return rows
-    }
+    readonly property var focalMetadataRows: GameMetadata.rows(card.game, function(timestamp) {
+        return Qt.formatDateTime(new Date(timestamp * 1000), "d MMM yyyy")
+    })
     readonly property string rawArtworkSource: String(card.artworkSource).length > 0
         ? String(card.artworkSource)
         : (card.game && !card.game.artwork_suppressed && card.game.artwork_url
@@ -236,15 +146,7 @@ Rectangle {
     // Bare application IDs and other malformed values are deliberately not
     // interpreted as paths relative to the QML file.
     readonly property url displayedArtworkSource: {
-        var source = card.rawArtworkSource
-        if (source.indexOf("https://") === 0 || source.indexOf("http://") === 0)
-            return "image://mudos-artwork/" + encodeURIComponent(source)
-        if (source.indexOf("http://") === 0 || source.indexOf("https://") === 0
-                || source.indexOf("file:") === 0)
-            return "image://mudos-artwork/" + encodeURIComponent(source)
-        if (source.indexOf("qrc:") === 0)
-            return source
-        return ""
+        return GameArtwork.displaySource(card.rawArtworkSource)
     }
     readonly property string displayedSymbolicArtwork: card.symbolicArtwork
         || (String(card.displayedArtworkSource).length === 0 || card.artworkLoadFailed
@@ -562,52 +464,21 @@ Rectangle {
                     required property var modelData
                     required property int index
                     width: focalMetadata.width
-                    height: Math.max(metadataText.implicitHeight,
-                                     metadataGlyphText.height)
-
-                    Item {
-                        id: metadataGlyphColumn
-                        anchors.left: parent.left
-                        anchors.verticalCenter: parent.verticalCenter
-                        width: card.focalMetadataGlyphColumnWidth
-                        height: 19 * focalScale * card.uiScale
-
-                        TextMetrics {
-                            id: metadataGlyphMetrics
-                            text: card.focalMetadataGlyph(modelData.glyph)
-                            font.family: card.typography ? card.typography.iconFamily : "JetBrains Mono"
-                            font.pixelSize: 18 * focalScale * card.uiScale
-                        }
-
-                        Text {
-                            id: metadataGlyphText
-                            x: parent.width / 2
-                                - (metadataGlyphMetrics.tightBoundingRect.x
-                                   + metadataGlyphMetrics.tightBoundingRect.width / 2)
-                            y: 0
-                            width: metadataGlyphMetrics.advanceWidth
-                            height: parent.height
-                            text: card.focalMetadataGlyph(modelData.glyph)
-                            color: card.focusedColor(card.luluPalette.secondaryText)
-                            font.family: card.typography ? card.typography.iconFamily : "JetBrains Mono"
-                            font.pixelSize: 18 * focalScale * card.uiScale
-                            horizontalAlignment: Text.AlignLeft
-                            verticalAlignment: Text.AlignVCenter
-                            renderType: Text.NativeRendering
-                        }
-                    }
-
-                    Text {
-                        id: metadataText
-                        anchors.left: parent.left
-                        anchors.leftMargin: 31 * focalScale * card.uiScale
-                        anchors.right: parent.right
-                        visible: modelData.text.length > 0
+                    FocalMetadataRow {
+                        id: metadataRow
+                        width: parent.width
+                        height: implicitHeight
+                        glyph: modelData.glyph
                         text: modelData.text
-                        color: card.focusedColor(card.luluPalette.secondaryText)
-                        font.family: card.typography ? card.typography.interfaceFamily : "JetBrains Mono"
-                        font.pixelSize: card.typography ? card.typography.size("secondary", 17 * focalScale) : 17 * focalScale * card.uiScale
-                        elide: Text.ElideRight
+                        fontFamily: card.typography ? card.typography.interfaceFamily : "JetBrains Mono"
+                        iconFamily: card.typography ? card.typography.iconFamily : "JetBrains Mono"
+                        textColor: card.focusedColor(card.luluPalette.secondaryText)
+                        uiScale: focalScale * card.uiScale
+                        glyphSize: 18 * focalScale * card.uiScale
+                        textSize: card.typography
+                            ? card.typography.size("secondary", 17 * focalScale)
+                            : 17 * focalScale * card.uiScale
+                        glyphColumnWidth: card.focalMetadataGlyphColumnWidth
                     }
                 }
             }

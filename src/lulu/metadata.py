@@ -56,7 +56,14 @@ def _is_noise_token(value: str) -> bool:
 
 def clean_local_title(value: str) -> str:
     """Remove common ROM-set decoration while retaining meaningful punctuation."""
-    title = Path(value).stem
+    title = Path(value).name
+    known_extensions = {
+        ".7z", ".bin", ".cue", ".gb", ".gba", ".gbc", ".gen", ".iso", ".md",
+        ".nds", ".nes", ".n64", ".nsp", ".pak", ".ps1", ".ps2", ".rom", ".rvz",
+        ".sfc", ".smc", ".snes", ".z64", ".zip",
+    }
+    if Path(title).suffix.casefold() in known_extensions:
+        title = Path(title).stem
     title = title.replace("_", " ")
     title = re.sub(r"(?<!\d)\.|\.(?!\d)", " ", title)
     title = re.sub(r"\bDLC\b.*$", "", title, flags=re.IGNORECASE)

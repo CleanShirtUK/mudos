@@ -22,8 +22,9 @@ from dbus_next import BusType, Variant, DBusError
 from dbus_next.aio import MessageBus
 from dbus_next.service import ServiceInterface, method, signal as dbus_signal
 
-from .catalogue import CatalogueDelta, CatalogueGame, CatalogueStore
-from .artwork import LocalArtworkCache, SteamGridDBArtwork
+from .catalogue import CatalogueDelta, CatalogueGame, CatalogueStore, canonical_metadata_required
+from .artwork import LocalArtworkCache, SteamGridDBArtwork, local_artwork_path, materialize_artwork
+from .media_assets import LocalMediaAssets
 from .contracts import ServiceDescriptor, ServiceName
 from .controller_provisioning import ensure_provider_controller_config
 from .emulator_runtime import EmulatorRuntimeAdapter
@@ -32,6 +33,7 @@ from .inputplumber import InputPlumberClient
 from .local_content import LocalContentProvider
 from .metadata import MetadataMatcher, SteamGridDBMetadata, clean_local_title
 from .metadata_enrichment import MetadataEnrichmentService
+from .steam_media import SteamStoreMedia
 from .network_manager import NetworkManagerAdapter
 from .audio_manager import AudioManagerAdapter
 from .display_manager import DisplayManagerAdapter
@@ -84,7 +86,7 @@ class ConsoleCatalog:
 
     def __init__(self, store: CatalogueStore | None = None, provider: SteamProvider | None = None,
                   local_provider: LocalContentProvider | None = None,
-                  metadata: SteamGridDBMetadata | None = None,
+            metadata: SteamGridDBMetadata | None = None,
                   romm: RommClient | None = None,
                   steam_entitlements: SteamEntitlementSource | None = None,
                   plugin_registry: PluginRegistry | None = None) -> None:
@@ -96,13 +98,19 @@ class ConsoleCatalog:
                                           if hasattr(item, "open_main")), None)
         self.local_provider = local_provider or LocalContentProvider()
         self.artwork = SteamGridDBArtwork()
+        self.media_assets = LocalMediaAssets()
         self.romm_artwork = LocalArtworkCache()
         self.metadata = metadata or SteamGridDBMetadata()
         self.matcher = MetadataMatcher(self.metadata)
         self.enrichment = MetadataEnrichmentService(self.store)
+        self.steam_media = SteamStoreMedia()
+        installed_sources = tuple(self._plugins.with_capability("installed_catalogue"))
         self.steam_entitlements = steam_entitlements or next(
-            (item for item in self._plugins.with_capability("installed_catalogue")
-             if hasattr(item, "has_snapshot")), None)
+            (item for item in installed_sources if getattr(item, "provider_id", "") == "steam"), None)
+        self.external_entitlements = tuple(
+            item for item in installed_sources
+            if getattr(item, "provider_id", "") in {"gog", "epic"}
+        )
         self._diagnostic_artwork_originals: dict[str, str] = {}
         self._diagnostic_timestamp_originals: dict[str, tuple[int | None, int | None]] = {}
         self._diagnostic_canonical_originals: dict[str, str] = {}
@@ -123,8 +131,17 @@ class ConsoleCatalog:
         )
 
     def refresh(self, stages: set[str] | None = None) -> list[dict[str, object]]:
-        all_stages = {"steam", "local", "romm", "components", "romm-artwork", "metadata", "artwork"}
+        all_stages = {"steam", "gog", "epic", "local", "romm", "components", "romm-artwork", "metadata", "metadata-enrichment", "protondb", "artwork"}
         selected = all_stages if stages is None else set(stages)
+        catalogue_records = self.store.list_catalogue_games()
+        library_ids = {game.game_id for game in self.store.list_games()}
+        available_ids = {game.game_id for game in self.store.list_available_games()}
+        eligible_ids = {game.game_id for game in catalogue_records if canonical_metadata_required(
+            game, in_library=game.game_id in library_ids,
+            available_to_download=game.game_id in available_ids)}
+        LOGGER.info("canonical migration set total=%d library=%d available=%d overlap=%d eligible=%d",
+                    len(catalogue_records), len(library_ids), len(available_ids),
+                    len(library_ids & available_ids), len(eligible_ids))
         self.last_delta_batches = []
         LOGGER.info("catalogue refresh worker started stages=%s", ",".join(sorted(selected)) or "none")
         LOGGER.info("catalogue refresh worker thread=%s in_transaction=%s",
@@ -183,6 +200,20 @@ class ConsoleCatalog:
             if self.store.last_deltas:
                 self.last_delta_batches.append(self.store.last_deltas)
             LOGGER.info("catalogue stage completed name=steam sqlite_commit=complete")
+        for source in self.external_entitlements:
+            provider_id = str(getattr(source, "provider_id", ""))
+            if provider_id not in selected:
+                continue
+            LOGGER.info("catalogue stage started name=%s", provider_id)
+            try:
+                source.refresh()
+                self.store.reconcile_owned_provider(provider_id, tuple(source.snapshot),
+                                                    tuple(source.installed()))
+                if self.store.last_deltas:
+                    self.last_delta_batches.append(self.store.last_deltas)
+                LOGGER.info("catalogue stage completed name=%s sqlite_commit=complete", provider_id)
+            except Exception:
+                LOGGER.exception("catalogue stage failed name=%s", provider_id)
         if "local" in selected:
             LOGGER.info("catalogue stage started name=local")
             ensure_storage()
@@ -443,44 +474,210 @@ class ConsoleCatalog:
             LOGGER.info("catalogue stage started name=metadata")
             metadata_count = 0
             metadata_deltas = []
-            with self.store.atomic():
-                for game in self.store.list_catalogue_games():
-                    if self.store.needs_metadata_match(game.game_id):
-                        match = self.matcher.match_game(game)
-                        delta = self.store.apply_metadata_match(game.game_id, match)
-                        if delta is not None:
-                            metadata_deltas.append(delta)
-                        metadata_count += 1
-                        LOGGER.info("catalogue metadata item game_id=%s status=%s method=%s",
-                                    game.game_id, match.status, match.method)
+            for game in catalogue_records:
+                if game.game_id not in eligible_ids:
+                    continue
+                retry_after_configuration = (
+                    game.match_method == "igdb-unconfigured"
+                    and getattr(self.enrichment.igdb, "configured", False)
+                )
+                if retry_after_configuration or self.store.needs_metadata_match(game.game_id):
+                    match = self.enrichment.canonical_match(game)
+                    delta = self.store.apply_metadata_match(game.game_id, match)
+                    if delta is not None:
+                        metadata_deltas.append(delta)
+                    metadata_count += 1
+                    LOGGER.info("catalogue metadata item game_id=%s status=%s method=%s",
+                                game.game_id, match.status, match.method)
             if metadata_deltas:
                 self.last_delta_batches.append(tuple(metadata_deltas))
             LOGGER.info("catalogue stage completed name=metadata items=%d sqlite_commit=complete",
                         metadata_count)
         if "metadata-enrichment" in selected:
             LOGGER.info("catalogue stage started name=metadata-enrichment")
-            deltas = self.enrichment.enrich_all()
+            deltas = self.enrichment.enrich_all(
+                [game for game in catalogue_records if game.game_id in eligible_ids])
             if deltas:
                 self.last_delta_batches.append(deltas)
             LOGGER.info("catalogue stage completed name=metadata-enrichment items=%d",
                         len(deltas))
+        if "protondb" in selected:
+            LOGGER.info("catalogue stage started name=protondb")
+            installed_steam = [game for game in self.store.list_games()
+                               if game.provider == "steam" and game.provider_id.isdecimal()]
+            deltas = self.enrichment.enrich_protondb(installed_steam)
+            if deltas:
+                self.last_delta_batches.append(deltas)
+            LOGGER.info("catalogue stage completed name=protondb items=%d",
+                        len(deltas))
         if "artwork" in selected:
             LOGGER.info("catalogue stage started name=artwork")
-            games = self.store.list_catalogue_games()
+            # Presentation media has an independent generation marker so older
+            # records receive one bounded AppID/IGDB screenshot backfill.
+            media_games = [game for game in self.store.list_catalogue_games()
+                           if game.game_id in eligible_ids]
+            igdb_configured = bool(getattr(self.enrichment.igdb, "configured", False))
+            for game in media_games:
+                if (not self.enrichment.presentation_media_backfill_needed(game.game_id)
+                        or not igdb_configured):
+                    continue
+                current = self.store.get_game(game.game_id) or game
+                identity_attempted = False
+                if not (current.metadata_provider == "igdb" and current.metadata_game_id) \
+                        and not current.match_locked:
+                    try:
+                        match = self.enrichment.canonical_match(current)
+                        delta = self.store.apply_metadata_match(current.game_id, match)
+                        identity_attempted = True
+                        if delta is not None:
+                            self.last_delta_batches.append((delta,))
+                    except (OSError, ValueError, TimeoutError):
+                        LOGGER.info("media identity backfill failed game_id=%s", current.game_id,
+                                    exc_info=True)
+                current = self.store.get_game(game.game_id) or current
+                if not identity_attempted:
+                    try:
+                        self.enrichment.enrich_game(current, force_igdb=True)
+                    except (OSError, ValueError, TimeoutError):
+                        LOGGER.info("media metadata backfill failed game_id=%s", current.game_id,
+                                    exc_info=True)
+                self.enrichment.mark_presentation_media_backfill_attempted(game.game_id)
+            # Metadata may have been enriched earlier in this pass. Resolve
+            # assets from the current persisted records, not a stale snapshot.
+            games = [game for game in self.store.list_catalogue_games()
+                     if game.game_id in eligible_ids]
             artwork_count = 0
             artwork_deltas = []
             with self.store.atomic():
-                for game_id, artwork_url in self.artwork.enrich(games).items():
-                    delta = self.store.set_artwork_url(game_id, artwork_url)
+                for game in games:
+                    try:
+                        selection = self.artwork.resolve_typed(game)
+                    except (OSError, ValueError, TimeoutError) as error:
+                        LOGGER.info("typed artwork unavailable game_id=%s reason=%s",
+                                    game.game_id, type(error).__name__)
+                        selection = None
+                    if selection is None:
+                        continue
+                    delta = self.store.set_artwork_selection(
+                        game.game_id, url=selection.url, source_url=selection.source_url,
+                        provider=selection.provider, artwork_type=selection.artwork_type,
+                        width=selection.width, height=selection.height)
                     if delta is not None:
                         artwork_deltas.append(delta)
                     artwork_count += 1
                     LOGGER.info("catalogue artwork item game_id=%s cached=%s",
-                            game_id, bool(artwork_url))
+                            game.game_id, bool(selection.url))
             if artwork_deltas:
                 self.last_delta_batches.append(tuple(artwork_deltas))
             LOGGER.info("catalogue stage completed name=artwork items=%d sqlite_commit=complete",
                         artwork_count)
+            square_deltas = []
+            preview_deltas = []
+            for game in games:
+                try:
+                    icon = self.artwork.resolve_square_icon(game)
+                    if icon is not None:
+                        local_icon = self.media_assets.acquire_image(
+                            game, "icon_square", icon.source_url or icon.url)
+                        delta = self.store.set_icon_square_media(
+                            game.game_id, url=local_icon or self.media_assets.present(game, "icon_square"),
+                            provider=icon.provider, source_url=icon.source_url or icon.url)
+                        if delta is not None:
+                            square_deltas.append(delta)
+                    else:
+                        local_icon = self.media_assets.present(game, "icon_square")
+                        if local_icon:
+                            delta = self.store.set_icon_square_media(
+                                game.game_id, url=local_icon,
+                                provider=game.icon_square_provider or "local",
+                                source_url=game.icon_square_source_url)
+                            if delta is not None:
+                                square_deltas.append(delta)
+                except (OSError, ValueError, TimeoutError) as error:
+                    LOGGER.info("square artwork unavailable game_id=%s reason=%s",
+                                game.game_id, type(error).__name__)
+                current = self.store.get_game(game.game_id) or game
+                igdb_record = self.store.enrichment_record("igdb", game.game_id) or {}
+                normalized = igdb_record.get("normalized", {})
+                still_source = str(normalized.get("preview_still_url", "") or "") \
+                    if isinstance(normalized, dict) else ""
+                still_provider = "igdb" if still_source else ""
+                steam_media: dict[str, str] = {}
+                if current.provider == "steam" and current.provider_id.isdecimal():
+                    try:
+                        steam_media = self.steam_media.resolve(current.provider_id)
+                    except (OSError, ValueError, TimeoutError) as error:
+                        LOGGER.info("Steam preview media unavailable game_id=%s reason=%s",
+                                    current.game_id, type(error).__name__)
+                if not still_source and current.provider == "steam":
+                    still_source = str(steam_media.get("preview_still_url", "") or "")
+                    still_provider = "steam" if still_source else ""
+                if not still_source and current.preview_still_provider != "steamgriddb":
+                    candidate = current.preview_still_source_url or current.preview_still_url
+                    if candidate and not candidate.startswith("file:"):
+                        still_source = candidate
+                        still_provider = current.preview_still_provider or current.provider
+                if still_source:
+                    local_still = self.media_assets.acquire_image(current, "preview_still", still_source)
+                else:
+                    local_still = self.media_assets.present(current, "preview_still")
+                delta = self.store.set_preview_media(
+                    current.game_id, video_url=steam_media.get("preview_video_url", ""),
+                    video_provider=steam_media.get("preview_video_provider", ""),
+                    video_source_url=steam_media.get("preview_video_source_url", ""),
+                    still_url=local_still,
+                    still_provider=still_provider or current.preview_still_provider or "local",
+                    still_source_url=still_source or current.preview_still_source_url,
+                    prefer_still=True)
+                if delta is not None:
+                    preview_deltas.append(delta)
+                if not local_still and current.preview_still_provider == "steamgriddb":
+                    self.media_assets.remove_automatic(current, "preview_still")
+                    delta = self.store.clear_preview_still_if_provider(current.game_id, "steamgriddb")
+                    if delta is not None:
+                        preview_deltas.append(delta)
+                if current.provider == "steam":
+                    animation_source = str(steam_media.get("preview_video_url")
+                                           or current.preview_video_url or "")
+                    animation = (self.media_assets.acquire_animation(current, animation_source)
+                                 if animation_source else
+                                 self.media_assets.present(current, "preview_animation"))
+                    delta = self.store.set_preview_animation(current.game_id, animation)
+                    if delta is not None:
+                        preview_deltas.append(delta)
+            if square_deltas:
+                self.last_delta_batches.append(tuple(square_deltas))
+            if preview_deltas:
+                self.last_delta_batches.append(tuple(preview_deltas))
+            LOGGER.info("catalogue stage completed name=local-media assets=%d",
+                        len(square_deltas) + len(preview_deltas))
+        # Materialize only the actual Library surface.  This intentionally
+        # excludes Available-to-Download/storefront inventory.
+        local_deltas = []
+        for game in self.store.list_games():
+            path = local_artwork_path(game)
+            if path.exists():
+                mtime = path.stat().st_mtime_ns
+                if game.local_artwork_mode == "automatic":
+                    delta = self.store.restore_automatic_artwork(game.game_id, str(path))
+                    if delta is not None:
+                        local_deltas.append(delta)
+                elif game.local_artwork_mtime and mtime != game.local_artwork_mtime:
+                    delta = self.store.set_local_artwork(game.game_id, str(path))
+                    if delta is not None:
+                        local_deltas.append(delta)
+                elif not game.artwork_url.startswith(path.as_uri()):
+                    delta = self.store.sync_local_artwork_url(game.game_id, str(path))
+                    if delta is not None:
+                        local_deltas.append(delta)
+                continue
+            source = game.artwork_url
+            if source and materialize_artwork(source, path):
+                delta = self.store.restore_automatic_artwork(game.game_id, str(path))
+                if delta is not None:
+                    local_deltas.append(delta)
+        if local_deltas:
+            self.last_delta_batches.append(tuple(local_deltas))
         games = self.store.list_catalogue_games()
         result = [game.as_dict() for game in self.store.list_games()]
         LOGGER.info("catalogue refresh worker completed games=%d sqlite_read=complete", len(result))
@@ -488,9 +685,101 @@ class ConsoleCatalog:
 
     def enrich_metadata(self, game_id: str | None = None, *, force: bool = False) -> int:
         games = [self.store.get_game(game_id)] if game_id else self.store.list_catalogue_games()
-        deltas = self.enrichment.enrich_all([game for game in games if game is not None], force=force)
+        selected = [game for game in games if game is not None]
+        deltas: list[object] = []
+        # A targeted request must resolve canonical identity itself; the bulk
+        # metadata stage is deliberately not used for individual refreshes.
+        for game in selected:
+            has_canonical_identity = (
+                str(game.metadata_provider) == "igdb" and bool(game.metadata_game_id)
+            )
+            if not has_canonical_identity and (force or self.store.needs_metadata_match(game.game_id)):
+                match = self.enrichment.canonical_match(game)
+                delta = self.store.apply_metadata_match(game.game_id, match)
+                if delta is not None:
+                    deltas.append(delta)
+            current = self.store.get_game(game.game_id)
+            if current is not None:
+                enriched = self.enrichment.enrich_game(current, force=force)
+                deltas.extend(enriched)
+                current = self.store.get_game(game.game_id) or current
+                try:
+                    self.artwork.reload_configuration()
+                    selection = self.artwork.resolve_typed(current)
+                except (OSError, ValueError, TimeoutError):
+                    selection = None
+                if selection is not None:
+                    delta = self.store.set_artwork_selection(
+                        current.game_id, url=selection.url, source_url=selection.source_url,
+                        provider=selection.provider, artwork_type=selection.artwork_type,
+                        width=selection.width, height=selection.height)
+                    if delta is not None:
+                        deltas.append(delta)
+                current = self.store.get_game(game.game_id) or current
+                try:
+                    square = self.artwork.resolve_square_icon(current)
+                except (OSError, ValueError, TimeoutError):
+                    square = None
+                if square is not None:
+                    local_square = self.media_assets.acquire_image(
+                        current, "icon_square", square.source_url or square.url)
+                    delta = self.store.set_icon_square_media(
+                        current.game_id,
+                        url=local_square or self.media_assets.present(current, "icon_square"),
+                        provider=square.provider, source_url=square.source_url or square.url)
+                    if delta is not None:
+                        deltas.append(delta)
+                else:
+                    local_square = self.media_assets.present(current, "icon_square")
+                    if local_square:
+                        delta = self.store.set_icon_square_media(
+                            current.game_id, url=local_square,
+                            provider=current.icon_square_provider or "local",
+                            source_url=current.icon_square_source_url)
+                        if delta is not None:
+                            deltas.append(delta)
+                igdb_record = self.store.enrichment_record("igdb", current.game_id) or {}
+                normalized = igdb_record.get("normalized", {})
+                still_source = str(normalized.get("preview_still_url", "") or "") \
+                    if isinstance(normalized, dict) else ""
+                still_provider = "igdb" if still_source else ""
+                media: dict[str, str] = {}
+                if current.provider == "steam" and current.provider_id.isdecimal():
+                    try:
+                        media = self.steam_media.resolve(current.provider_id)
+                    except (OSError, ValueError, TimeoutError):
+                        media = {}
+                    if not still_source:
+                        still_source = str(media.get("preview_still_url", "") or "")
+                        still_provider = "steam" if still_source else ""
+                if still_source:
+                    still_local = self.media_assets.acquire_image(current, "preview_still", still_source)
+                else:
+                    still_local = self.media_assets.present(current, "preview_still")
+                delta = self.store.set_preview_media(
+                    current.game_id, video_url=media.get("preview_video_url", ""),
+                    video_provider=media.get("preview_video_provider", ""),
+                    video_source_url=media.get("preview_video_source_url", ""),
+                    still_url=still_local, still_provider=still_provider or current.preview_still_provider,
+                    still_source_url=still_source or current.preview_still_source_url,
+                    prefer_still=True)
+                if delta is not None:
+                    deltas.append(delta)
+                if current.preview_still_provider == "steamgriddb" and not still_local:
+                    self.media_assets.remove_automatic(current, "preview_still")
+                    delta = self.store.clear_preview_still_if_provider(current.game_id, "steamgriddb")
+                    if delta is not None:
+                        deltas.append(delta)
+                if current.provider == "steam":
+                    animation_source = str(media.get("preview_video_url") or current.preview_video_url or "")
+                    animation = (self.media_assets.acquire_animation(current, animation_source)
+                                 if animation_source else
+                                 self.media_assets.present(current, "preview_animation"))
+                    delta = self.store.set_preview_animation(current.game_id, animation)
+                    if delta is not None:
+                        deltas.append(delta)
         if deltas:
-            self.last_delta_batches.append(deltas)
+            self.last_delta_batches.append(tuple(deltas))
         return len(deltas)
 
     def set_metadata_match(self, game_id: str, provider: str, metadata_game_id: str,
@@ -523,6 +812,61 @@ class ConsoleCatalog:
             if refreshed_id == game_id:
                 return self.store.set_artwork_url(game_id, artwork_url)
         return None
+
+    def set_local_artwork(self, game_id: str, source_path: str) -> CatalogueDelta | None:
+        game = self.store.get_game(game_id)
+        if game is None:
+            raise ValueError("game does not exist")
+        source = Path(source_path).expanduser().resolve()
+        if source.suffix.casefold() not in {".png", ".jpg", ".jpeg", ".webp"}:
+            raise ValueError("unsupported artwork format")
+        destination = local_artwork_path(game)
+        if not materialize_artwork(source.as_uri(), destination, overwrite=True):
+            raise ValueError("artwork could not be decoded")
+        delta = self.store.set_local_artwork(game_id, str(destination))
+        return delta
+
+    def clear_local_artwork(self, game_id: str) -> CatalogueDelta | None:
+        game = self.store.get_game(game_id)
+        if game is None:
+            raise ValueError("game does not exist")
+        path = local_artwork_path(game)
+        delta = self.store.clear_local_artwork(game_id)
+        try:
+            if path.exists() and path.is_file():
+                path.unlink()
+        except OSError:
+            pass
+        return delta
+
+    def artwork_candidates(self, game_id: str) -> list[dict[str, object]]:
+        game = self.store.get_game(game_id)
+        if game is None:
+            raise ValueError("game does not exist")
+        return self.artwork.gallery(game)
+
+    def select_artwork(self, game_id: str, source_url: str) -> CatalogueDelta | None:
+        game = self.store.get_game(game_id)
+        if game is None:
+            raise ValueError("game does not exist")
+        selected = self.artwork.select_gallery_artwork(game, source_url)
+        if selected is None:
+            raise ValueError("artwork is not a valid canonical SGDB candidate")
+        cached, url, width, height = selected
+        destination = local_artwork_path(game)
+        if not materialize_artwork(cached.as_uri(), destination, overwrite=True):
+            raise ValueError("selected artwork could not be materialized")
+        return self.store.set_selected_artwork(game_id, str(destination), url, width, height)
+
+    def restore_automatic_artwork(self, game_id: str) -> CatalogueDelta | None:
+        game = self.store.get_game(game_id)
+        if game is None:
+            raise ValueError("game does not exist")
+        automatic = str(game.automatic_artwork_url or "")
+        destination = local_artwork_path(game)
+        if automatic and not materialize_artwork(automatic, destination, overwrite=True):
+            raise ValueError("automatic artwork is unavailable")
+        return self.store.restore_automatic_artwork(game_id, str(destination))
 
     def apply_metadata_match(self, game_id: str, provider: str, metadata_game_id: str,
                              canonical_title: str) -> tuple[CatalogueDelta, ...]:
@@ -750,6 +1094,7 @@ class ConsoleInterface(ServiceInterface):
         self._local_token: str | None = None
         self._refresh_task: asyncio.Task[list[dict[str, object]]] | None = None
         self._catalogue_generation = 0
+        self._startup_reconciliation_ready = False
         self._delta_history: deque[tuple[int, list[dict[str, object]]]] = deque(maxlen=256)
         self._providers = load_providers()
         plugin_root = PATHS.plugins_root
@@ -1178,6 +1523,16 @@ class ConsoleInterface(ServiceInterface):
         return count
 
     @method()
+    def GetStartupReadiness(self) -> "b":
+        return self._startup_reconciliation_ready
+
+    def mark_startup_reconciliation_ready(self) -> None:
+        if self._startup_reconciliation_ready:
+            return
+        self._startup_reconciliation_ready = True
+        LOGGER.info("startup library reconciliation ready")
+
+    @method()
     async def RefreshMetadata(self, game_id: "s", force: "b") -> "u":
         """Run optional external enrichment in the catalogue worker boundary."""
         count = await asyncio.to_thread(self.catalogue.enrich_metadata, game_id or None, force=force)
@@ -1278,6 +1633,48 @@ class ConsoleInterface(ServiceInterface):
             (delta,) for delta in self.catalogue.apply_metadata_match(
                 game_id, provider, metadata_game_id, canonical_title)
         ])
+
+    @method()
+    def SetLocalArtwork(self, game_id: "s", source_path: "s") -> "":
+        try:
+            self._publish_delta(self.catalogue.set_local_artwork(game_id, source_path))
+        except ValueError as error:
+            raise DBusError("org.lulu.Console.Error.InvalidArtwork", str(error)) from error
+        self.CatalogueChanged()
+
+    @method()
+    def ClearLocalArtwork(self, game_id: "s") -> "":
+        try:
+            self._publish_delta(self.catalogue.clear_local_artwork(game_id))
+        except ValueError as error:
+            raise DBusError("org.lulu.Console.Error.InvalidArtwork", str(error)) from error
+        self.CatalogueChanged()
+
+    @method()
+    async def ListArtworkCandidates(self, game_id: "s") -> "aa{sv}":
+        try:
+            rows = await asyncio.to_thread(self.catalogue.artwork_candidates, game_id)
+            return [self._variants(row) for row in rows]
+        except ValueError as error:
+            raise DBusError("org.lulu.Console.Error.InvalidArtwork", str(error)) from error
+
+    @method()
+    async def SelectArtwork(self, game_id: "s", source_url: "s") -> "":
+        try:
+            delta = await asyncio.to_thread(self.catalogue.select_artwork, game_id, source_url)
+        except ValueError as error:
+            raise DBusError("org.lulu.Console.Error.InvalidArtwork", str(error)) from error
+        self._publish_delta(delta)
+        self.CatalogueChanged()
+
+    @method()
+    async def RestoreAutomaticArtwork(self, game_id: "s") -> "":
+        try:
+            delta = await asyncio.to_thread(self.catalogue.restore_automatic_artwork, game_id)
+        except ValueError as error:
+            raise DBusError("org.lulu.Console.Error.InvalidArtwork", str(error)) from error
+        self._publish_delta(delta)
+        self.CatalogueChanged()
 
     @method()
     def GetPluginStatus(self) -> "s":
@@ -1726,11 +2123,26 @@ async def serve() -> None:
     # Publish the boundary and cached catalogue immediately. Provider sync is
     # deliberately background work so RomM cannot delay shell startup.
     async def synchronize() -> None:
+        startup_stages = {"steam", "local"}
+        startup_attempted = False
         while True:
             try:
-                await interface.refresh_catalogue()
+                # Startup synchronization must not launch the expensive IGDB
+                # migration. Canonical metadata is explicit/bulk work; normal
+                # provider reconciliation remains available here.
+                stages = (startup_stages if not startup_attempted else
+                          {"steam", "gog", "epic", "local", "romm", "components", "romm-artwork",
+                           "protondb", "artwork"})
+                await interface.refresh_catalogue(stages)
             except Exception:
                 LOGGER.exception("background catalogue synchronization failed")
+                if not startup_attempted:
+                    # Persisted catalogue state is a valid offline startup
+                    # fallback; optional reconciliation must not hold the UI.
+                    interface.mark_startup_reconciliation_ready()
+            if not startup_attempted:
+                interface.mark_startup_reconciliation_ready()
+                startup_attempted = True
             await asyncio.sleep(ROMM_SYNC_INTERVAL)
 
     asyncio.create_task(synchronize(), name="catalogue-sync")

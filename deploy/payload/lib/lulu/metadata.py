@@ -7,7 +7,6 @@ from datetime import datetime, timezone
 import hashlib
 import json
 import logging
-import os
 import re
 import time
 from pathlib import Path
@@ -16,13 +15,14 @@ import urllib.parse
 import urllib.request
 
 from .paths import PATHS
+from .provider_config import ProviderConfigurationService
 
 
 NOISE_WORDS = {
     "a", "b", "beta", "cart", "demo", "dump", "e", "en", "eng", "f", "fr",
     "fra", "g", "german", "i", "it", "j", "jpn", "japan", "k", "proto",
     "base", "cart", "dlc", "game", "nsp", "rev", "revision", "sample", "spanish",
-    "t", "translation", "u", "usa", "v", "version", "world",
+    "t", "translation", "u", "usa", "v", "version",
 }
 NOISE_REGION_WORDS = {"australia", "europe", "japan", "korea", "usa", "world"}
 PLATFORM_ALIASES = {
@@ -39,7 +39,8 @@ def _is_noise_token(value: str) -> bool:
     value = value.casefold().strip()
     return (
         value in NOISE_WORDS
-        or value in NOISE_REGION_WORDS
+        # Region words are noise only inside explicit ROM decoration groups;
+        # meaningful title words such as "World" must survive bare titles.
         or bool(re.fullmatch(r"[0-9a-f]{8,20}", value))
         or bool(re.fullmatch(r"\d+(?:\.\d+)+", value))
         or bool(re.fullmatch(r"\d{1,3}", value))
@@ -55,7 +56,14 @@ def _is_noise_token(value: str) -> bool:
 
 def clean_local_title(value: str) -> str:
     """Remove common ROM-set decoration while retaining meaningful punctuation."""
-    title = Path(value).stem
+    title = Path(value).name
+    known_extensions = {
+        ".7z", ".bin", ".cue", ".gb", ".gba", ".gbc", ".gen", ".iso", ".md",
+        ".nds", ".nes", ".n64", ".nsp", ".pak", ".ps1", ".ps2", ".rom", ".rvz",
+        ".sfc", ".smc", ".snes", ".z64", ".zip",
+    }
+    if Path(title).suffix.casefold() in known_extensions:
+        title = Path(title).stem
     title = title.replace("_", " ")
     title = re.sub(r"(?<!\d)\.|\.(?!\d)", " ", title)
     title = re.sub(r"\bDLC\b.*$", "", title, flags=re.IGNORECASE)
@@ -72,6 +80,9 @@ def clean_local_title(value: str) -> str:
 
     title = re.sub(r"(?:\s|[-_.])+(?:[A-Z]{2,5}\d{2,6})$", "", title)
     title = re.sub(r"\s+", " ", title)
+    # ROM sets commonly put a leading article at the end of the title.
+    # Normalize that reversible presentation form without fuzzy matching.
+    title = re.sub(r"^(.+),\s*the(\s+-|$)", r"The \1\2", title, flags=re.IGNORECASE)
     tokens = title.split()
     while tokens and _is_trailing_noise_token(tokens[-1]):
         tokens.pop()
@@ -84,7 +95,6 @@ def _is_trailing_noise_token(value: str) -> bool:
     value = value.casefold().strip()
     return (
         value in NOISE_WORDS
-        or value in NOISE_REGION_WORDS
         or bool(re.fullmatch(r"[0-9a-f]{8,20}", value))
         or bool(re.fullmatch(r"[a-z]{1,3}\d+(?:\.\d+)*", value))
     )
@@ -119,7 +129,9 @@ class SteamGridDBMetadata:
 
     def __init__(self, api_key: str | None = None, cache_dir: Path | None = None,
                  timeout: float = 4.0, now: callable = time.time) -> None:
-        self.api_key = api_key or os.environ.get("LULU_STEAMGRIDDB_API_KEY")
+        config = ProviderConfigurationService.from_environment().provider("metadata.steamgriddb")
+        self.api_key = api_key if api_key is not None else (config.secret("api_key") if config.configured else None)
+        self.endpoint = str(config.get("endpoint", "https://www.steamgriddb.com/api")).rstrip("/")
         self.cache_dir = cache_dir or PATHS.metadata_cache
         self.timeout = timeout
         self.now = now
@@ -186,7 +198,7 @@ class SteamGridDBMetadata:
 
     def _request_json(self, path: str) -> dict[str, object]:
         request = urllib.request.Request(
-            "https://www.steamgriddb.com/api" + path,
+            self.endpoint + path,
             headers={"Authorization": f"Bearer {self.api_key}", "User-Agent": "Lulu/1"},
         )
         with urllib.request.urlopen(request, timeout=self.timeout) as response:
@@ -337,7 +349,14 @@ def presentation_metadata(candidate: MetadataCandidate) -> dict[str, object]:
     except (TypeError, ValueError):
         release_year = None
     result: dict[str, object] = {"genres": genres, "release_date": release_date, "release_year": release_year}
-    for key in ("total_playtime", "local_multiplayer", "online_multiplayer", "game_mode", "protondb_rating"):
+    for key in ("summary", "developer", "publisher", "franchise", "collection", "igdb_id",
+                "total_playtime", "local_multiplayer", "online_multiplayer", "game_mode", "protondb_rating",
+                "cover_url", "cover_width", "cover_height", "aliases"):
         if key in raw and raw[key] is not None:
             result[key] = raw[key]
+    for key in ("game_modes", "platforms"):
+        values = raw.get(key, [])
+        if isinstance(values, list):
+            result[key] = [str(item.get("name", "")).strip() if isinstance(item, dict) else str(item).strip()
+                           for item in values if str(item).strip()]
     return result

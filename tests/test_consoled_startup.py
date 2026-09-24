@@ -24,7 +24,8 @@ class ConsoledStartupTests(unittest.TestCase):
         source = (ROOT / "src/lulu/consoled.py").read_text()
         self.assertIn('startup_stages = {"steam", "local"}', source)
         self.assertIn("mark_startup_reconciliation_ready", source)
-        self.assertIn('"romm", "components", "romm-artwork", "protondb"', source)
+        self.assertIn('"romm", "components", "romm-artwork",', source)
+        self.assertIn('"protondb", "artwork"', source)
         self.assertIn("GetStartupReadiness", source)
 
     def test_refresh_callers_share_one_in_flight_reconciliation(self) -> None:

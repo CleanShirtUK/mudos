@@ -24,6 +24,7 @@ Item {
     property size canonicalSize: Qt.size(1280, 720)
     property real contentBottom: parent ? parent.height : 0
     property real contentSideMargin: 120 * uiScale
+    property rect contentBounds: Qt.rect(0, 0, width, height)
     property var presentationCoordinator
     property real categoryProgress: 1
     property bool categoryTransitioning: false
@@ -291,6 +292,7 @@ Item {
     LibrarySpace {
         anchors.fill: parent
         visible: root.cardWidth === 0
+        contentBounds: root.contentBounds
         canonicalGames: root.displayGames
         acquisitionJobs: root.acquisitionJobs
         selectedIndex: root.selectedIndex

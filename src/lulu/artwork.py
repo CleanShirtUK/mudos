@@ -10,6 +10,8 @@ import urllib.parse
 import urllib.request
 import shutil
 import re
+import time
+from threading import Lock
 
 from .paths import PATHS
 from .provider_config import ProviderConfigurationService
@@ -112,11 +114,14 @@ class SteamGridDBArtwork:
     timeout: float = 4.0
     _logger: logging.Logger = field(init=False, repr=False)
     endpoint: str = field(init=False, repr=False)
+    _request_lock: Lock = field(init=False, repr=False)
+    _last_request_at: float = field(init=False, default=0.0, repr=False)
 
     def __post_init__(self) -> None:
         self.reload_configuration()
         self.cache_dir = self.cache_dir or PATHS.artwork_cache
         self._logger = logging.getLogger("lulu.artwork")
+        self._request_lock = Lock()
 
     @property
     def configured(self) -> bool:
@@ -206,6 +211,195 @@ class SteamGridDBArtwork:
                                     existing_provider or provider, "cover",
                                     getattr(game, "artwork_width", None), getattr(game, "artwork_height", None))
         return legacy_selection
+
+    def resolve_square_icon(self, game: object) -> ArtworkSelection | None:
+        """Resolve a stable square list icon, independently of cover artwork."""
+        if bool(getattr(game, "artwork_suppressed", False)):
+            return None
+        self.reload_configuration()
+        game_id = str(getattr(game, "game_id", ""))
+        existing_url = str(getattr(game, "icon_square_url", "") or "")
+        existing_provider = str(getattr(game, "icon_square_provider", "") or "")
+        existing_source = str(getattr(game, "icon_square_source_url", "") or existing_url)
+        if existing_url and existing_provider == "steamgriddb":
+            return ArtworkSelection(existing_url, existing_source, existing_provider, "icon")
+
+        provider = str(getattr(game, "provider", ""))
+        provider_id = str(getattr(game, "provider_id", ""))
+        title = str(getattr(game, "canonical_title", "") or getattr(game, "title", ""))
+        sgdb_game_id = ""
+        endpoints: list[tuple[str, str]] = []
+        if self.api_key and provider == "steam" and provider_id.isdecimal():
+            sgdb_game_id = provider_id
+            endpoints = [(f"/v2/grids/steam/{provider_id}", "grid"),
+                         (f"/v2/icons/steam/{provider_id}", "icon")]
+        elif (self.api_key and str(getattr(game, "metadata_provider", "")) == "igdb"
+              and str(getattr(game, "metadata_game_id", ""))):
+            sgdb_game_id = self._search_sgdb_game_id(
+                title, str(getattr(game, "metadata_game_id")))
+            if sgdb_game_id:
+                endpoints = [(f"/v2/grids/game/{sgdb_game_id}", "grid"),
+                             (f"/v2/icons/game/{sgdb_game_id}", "icon")]
+
+        if sgdb_game_id:
+            cache_key = hashlib.sha256(f"sgdb-square:{sgdb_game_id}".encode()).hexdigest()
+            cache_path = self.cache_dir / f"{cache_key}.json"
+            cached: dict[str, object] = {}
+            try:
+                cached = json.loads(cache_path.read_text()) if cache_path.exists() else {}
+                if cached.get("checked_at", 0) and time.time() - float(cached["checked_at"]) < 30 * 86400:
+                    cached_url = str(cached.get("url", ""))
+                    if cached_url:
+                        return ArtworkSelection(cached_url, cached_url, "steamgriddb", "icon")
+                    endpoints = []
+            except (OSError, ValueError, TypeError):
+                pass
+            selected = ""
+            for endpoint, role in endpoints:
+                try:
+                    data = self._request_json(endpoint).get("data", [])
+                except (OSError, ValueError, urllib.error.URLError, TimeoutError):
+                    continue
+                selected = self._choose_square_asset(data) if role == "grid" else self._choose_icon_asset(data)
+                if selected:
+                    break
+            try:
+                self._write_json(cache_path, {"checked_at": time.time(), "url": selected})
+            except OSError:
+                pass
+            if selected:
+                return ArtworkSelection(selected, selected, "steamgriddb", "icon")
+
+        if existing_url:
+            return ArtworkSelection(existing_url, existing_source,
+                                    existing_provider or "native", "icon")
+        fallback = str(getattr(game, "icon_url", "") or "")
+        if fallback:
+            return ArtworkSelection(fallback, fallback,
+                                    str(getattr(game, "provider", "native")), "icon")
+        return None
+
+    def _search_sgdb_game_id(self, title: str, igdb_id: str) -> str:
+        key = hashlib.sha256(f"sgdb-game-id:{igdb_id}:{title.casefold()}".encode()).hexdigest()
+        path = self.cache_dir / f"{key}.json"
+        try:
+            state = json.loads(path.read_text()) if path.exists() else {}
+            if state.get("igdb_id") == igdb_id and time.time() - float(state.get("checked_at", 0)) < 30 * 86400:
+                return str(state.get("game_id", ""))
+        except (OSError, ValueError, TypeError):
+            pass
+        game_id = ""
+        try:
+            escaped = urllib.parse.quote(title, safe="")
+            candidates = self._request_json(f"/v2/search/autocomplete/{escaped}").get("data", [])
+            key_title = re.sub(r"[^a-z0-9]+", "", title.casefold())
+            ranked: set[str] = set()
+            for item in candidates if isinstance(candidates, list) else []:
+                if not isinstance(item, dict) or not item.get("id"):
+                    continue
+                name_key = re.sub(r"[^a-z0-9]+", "", str(item.get("name", "")).casefold())
+                if name_key == key_title:
+                    ranked.add(str(item["id"]))
+            game_id = next(iter(ranked)) if len(ranked) == 1 else ""
+        except (OSError, ValueError, urllib.error.URLError, TimeoutError):
+            return ""
+        try:
+            self._write_json(path, {"igdb_id": igdb_id, "checked_at": time.time(), "game_id": game_id})
+        except OSError:
+            pass
+        return game_id
+
+    @staticmethod
+    def _choose_square_asset(items: object) -> str:
+        if not isinstance(items, list):
+            return ""
+        ranked: list[tuple[float, str]] = []
+        for item in items:
+            if not isinstance(item, dict) or not item.get("url"):
+                continue
+            try:
+                width, height = int(item.get("width", 0) or 0), int(item.get("height", 0) or 0)
+            except (TypeError, ValueError):
+                continue
+            if width < 256 or height < 256 or not 0.85 <= width / height <= 1.15:
+                continue
+            ranked.append((min(width, height) - abs(width - height), str(item["url"])))
+        return max(ranked, default=(0, ""))[1]
+
+    @staticmethod
+    def _choose_icon_asset(items: object) -> str:
+        if not isinstance(items, list):
+            return ""
+        ranked: list[tuple[int, str]] = []
+        for item in items:
+            if not isinstance(item, dict) or not item.get("url"):
+                continue
+            try:
+                width, height = int(item.get("width", 0) or 0), int(item.get("height", 0) or 0)
+            except (TypeError, ValueError):
+                width = height = 0
+            if width and height and not 0.7 <= width / height <= 1.3:
+                continue
+            ranked.append((width * height, str(item["url"])))
+        return max(ranked, default=(0, ""))[1]
+
+    def resolve_landscape(self, game: object) -> str:
+        """Resolve an SGDB hero image independently from portrait cover art."""
+        existing = str(getattr(game, "landscape_artwork_url", "") or "")
+        if existing:
+            return existing
+        self.reload_configuration()
+        if not self.api_key or bool(getattr(game, "artwork_suppressed", False)):
+            return ""
+        provider = str(getattr(game, "provider", ""))
+        provider_id = str(getattr(game, "provider_id", ""))
+        if provider == "steam" and provider_id.isdecimal():
+            endpoint = f"/v2/heroes/steam/{provider_id}"
+        elif (str(getattr(game, "metadata_provider", "")) == "steamgriddb"
+              and str(getattr(game, "metadata_game_id", "")).isdecimal()):
+            endpoint = f"/v2/heroes/game/{getattr(game, 'metadata_game_id')}"
+        elif str(getattr(game, "metadata_provider", "")) == "igdb" and str(
+                getattr(game, "metadata_game_id", "")):
+            sgdb_id = self._find_canonical_game_id(
+                str(getattr(game, "canonical_title", "") or getattr(game, "title", "")),
+                str(getattr(game, "metadata_game_id")))
+            if not sgdb_id:
+                return ""
+            endpoint = f"/v2/heroes/game/{sgdb_id}"
+        else:
+            return ""
+        cache_key = hashlib.sha256(f"sgdb-landscape:{endpoint}".encode()).hexdigest()
+        cache_path = self.cache_dir / f"{cache_key}.json"
+        try:
+            cached = json.loads(cache_path.read_text()) if cache_path.exists() else {}
+            if (isinstance(cached, dict) and cached.get("endpoint") == endpoint
+                    and time.time() - float(cached.get("checked_at", 0)) < 86400):
+                return str(cached.get("url", ""))
+        except (OSError, ValueError, TypeError):
+            pass
+        result = self._request_json(endpoint)
+        items = result.get("data", []) if isinstance(result, dict) else []
+        ranked: list[tuple[float, str]] = []
+        if not isinstance(items, list):
+            return ""
+        for item in items:
+            if not isinstance(item, dict) or not item.get("url"):
+                continue
+            try:
+                width, height = int(item.get("width", 0) or 0), int(item.get("height", 0) or 0)
+            except (TypeError, ValueError):
+                continue
+            if width < 600 or height <= 0 or width / height < 1.4:
+                continue
+            ratio = width / height
+            ranked.append((abs(ratio - 2.4), str(item["url"])))
+        selected = min(ranked)[1] if ranked else ""
+        try:
+            self._write_json(cache_path, {"endpoint": endpoint, "checked_at": time.time(),
+                                          "url": selected})
+        except OSError:
+            pass
+        return selected
 
     def gallery(self, game: object) -> list[dict[str, object]]:
         """Return validated portrait grids for an established IGDB identity."""
@@ -362,6 +556,13 @@ class SteamGridDBArtwork:
         return max(ranked, default=(0, ""))[1]
 
     def _request_json(self, path: str) -> dict[str, object]:
+        # SteamGridDB's public API is rate limited. Backfill is intentionally
+        # serial and capped at one request per second per client instance.
+        with self._request_lock:
+            wait = 1.0 - (time.monotonic() - self._last_request_at)
+            if wait > 0:
+                time.sleep(wait)
+            self._last_request_at = time.monotonic()
         request = urllib.request.Request(
             self.endpoint + path,
             headers={"Authorization": f"Bearer {self.api_key}", "User-Agent": "Lulu/1"},
