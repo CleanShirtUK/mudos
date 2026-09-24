@@ -183,10 +183,10 @@ class SteamGridDBArtwork:
         igdb_id = str(getattr(game, "metadata_game_id", "")) if \
             str(getattr(game, "metadata_provider", "")) == "igdb" else ""
         image_url = ""
-        if self.api_key and provider == "steam" and provider_id.isdecimal():
-            image_url = self._find_image("steam", provider_id, canonical_title)
-        elif self.api_key and igdb_id:
+        if self.api_key and igdb_id:
             image_url = self._find_canonical_image(canonical_title, igdb_id)
+        elif self.api_key and provider == "steam" and provider_id.isdecimal():
+            image_url = self._find_image("steam", provider_id, canonical_title)
         if image_url:
             key = hashlib.sha256(f"sgdb-cover:{igdb_id or provider_id}:{image_url}".encode()).hexdigest()
             image_path = self.cache_dir / f"{key}.jpg"
@@ -229,17 +229,17 @@ class SteamGridDBArtwork:
         title = str(getattr(game, "canonical_title", "") or getattr(game, "title", ""))
         sgdb_game_id = ""
         endpoints: list[tuple[str, str]] = []
-        if self.api_key and provider == "steam" and provider_id.isdecimal():
-            sgdb_game_id = provider_id
-            endpoints = [(f"/v2/grids/steam/{provider_id}", "grid"),
-                         (f"/v2/icons/steam/{provider_id}", "icon")]
-        elif (self.api_key and str(getattr(game, "metadata_provider", "")) == "igdb"
+        if (self.api_key and str(getattr(game, "metadata_provider", "")) == "igdb"
               and str(getattr(game, "metadata_game_id", ""))):
             sgdb_game_id = self._search_sgdb_game_id(
                 title, str(getattr(game, "metadata_game_id")))
             if sgdb_game_id:
                 endpoints = [(f"/v2/grids/game/{sgdb_game_id}", "grid"),
                              (f"/v2/icons/game/{sgdb_game_id}", "icon")]
+        elif self.api_key and provider == "steam" and provider_id.isdecimal():
+            sgdb_game_id = provider_id
+            endpoints = [(f"/v2/grids/steam/{provider_id}", "grid"),
+                         (f"/v2/icons/steam/{provider_id}", "icon")]
 
         if sgdb_game_id:
             cache_key = hashlib.sha256(f"sgdb-square:{sgdb_game_id}".encode()).hexdigest()
@@ -343,6 +343,54 @@ class SteamGridDBArtwork:
             ranked.append((width * height, str(item["url"])))
         return max(ranked, default=(0, ""))[1]
 
+    def square_gallery(self, game: object) -> list[dict[str, object]]:
+        """Return only near-square SGDB grid/icon candidates for list artwork."""
+        self.reload_configuration()
+        if not self.api_key or bool(getattr(game, "artwork_suppressed", False)):
+            return []
+        provider = str(getattr(game, "provider", ""))
+        provider_id = str(getattr(game, "provider_id", ""))
+        if (str(getattr(game, "metadata_provider", "")) == "igdb"
+              and str(getattr(game, "metadata_game_id", ""))):
+            sgdb_id = self._find_canonical_game_id(
+                str(getattr(game, "canonical_title", "") or getattr(game, "title", "")),
+                str(getattr(game, "metadata_game_id")))
+            if not sgdb_id:
+                return []
+            endpoints = (f"/v2/grids/game/{sgdb_id}", f"/v2/icons/game/{sgdb_id}")
+        elif provider == "steam" and provider_id.isdecimal():
+            endpoints = (f"/v2/grids/steam/{provider_id}", f"/v2/icons/steam/{provider_id}")
+        else:
+            return []
+        current = str(getattr(game, "icon_square_source_url", "") or "")
+        candidates: list[dict[str, object]] = []
+        seen: set[str] = set()
+        for endpoint in endpoints:
+            try:
+                rows = self._request_json(endpoint).get("data", [])
+            except (OSError, ValueError, urllib.error.URLError, TimeoutError):
+                continue
+            if not isinstance(rows, list):
+                continue
+            for item in rows:
+                if not isinstance(item, dict) or not item.get("url"):
+                    continue
+                try:
+                    width, height = int(item.get("width", 0) or 0), int(item.get("height", 0) or 0)
+                except (TypeError, ValueError):
+                    continue
+                if width < 128 or height < 128 or not 0.85 <= width / height <= 1.15:
+                    continue
+                url = str(item["url"])
+                if url in seen:
+                    continue
+                seen.add(url)
+                candidates.append({"id": str(item.get("id", url)), "url": url,
+                                   "thumbnail": str(item.get("thumb", "") or url),
+                                   "width": width, "height": height,
+                                   "provider": "steamgriddb", "current": url == current})
+        return candidates
+
     def resolve_landscape(self, game: object) -> str:
         """Resolve an SGDB hero image independently from portrait cover art."""
         existing = str(getattr(game, "landscape_artwork_url", "") or "")
@@ -425,6 +473,8 @@ class SteamGridDBArtwork:
                 "thumbnail": str(item.get("thumb", "") or item.get("url", "")),
                 "width": int(item.get("width", 0) or 0),
                 "height": int(item.get("height", 0) or 0),
+                "provider": "steamgriddb", "source": "SteamGridDB",
+                "title": "SteamGridDB card artwork",
                 "current": url == current or url == selected,
             })
         return candidates
@@ -465,6 +515,8 @@ class SteamGridDBArtwork:
 
     def _find_image(self, provider: str, provider_id: str, title: str,
                     metadata_provider: str = "", metadata_game_id: str = "") -> str:
+        if metadata_provider == "igdb" and metadata_game_id:
+            return self._find_canonical_image(title, metadata_game_id)
         if metadata_provider == "steamgriddb" and metadata_game_id:
             path = f"/v2/grids/game/{metadata_game_id}"
         elif provider == "steam" and provider_id.isdecimal():

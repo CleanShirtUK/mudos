@@ -70,6 +70,33 @@ class MetadataEnrichmentService:
             {"generation": PRESENTATION_MEDIA_GENERATION},
             match_method="media-backfill-v1", confidence=1.0, status="attempted")
 
+    def search_games(self, game: CatalogueGame, query: str) -> list[dict[str, object]]:
+        """Search IGDB for explicit user mapping choices; never writes a match."""
+        if not self.igdb.configured or not query.strip():
+            return []
+        platform_id = PLATFORM_IDS.get(game.platform.casefold())
+        matches = self.igdb.search(query.strip(), platform_id)
+        results: list[dict[str, object]] = []
+        seen: set[str] = set()
+        for match in matches:
+            normalized = normalize_igdb_game(match)
+            game_id = str(normalized.get("igdb_id", ""))
+            title = str(normalized.get("canonical_title", ""))
+            if not game_id or not title or game_id in seen:
+                continue
+            seen.add(game_id)
+            results.append({
+                "provider": "igdb", "source": "IGDB", "id": game_id, "title": title,
+                "year": normalized.get("release_year"),
+                "platforms": normalized.get("platforms", []),
+                "thumbnail": normalized.get("icon_square_url") or normalized.get("cover_url", ""),
+                "subtitle": " · ".join(filter(None, (
+                    str(normalized.get("release_year") or ""),
+                    ", ".join(str(item) for item in normalized.get("platforms", [])),
+                ))),
+            })
+        return results
+
     def canonical_match(self, game: CatalogueGame) -> MetadataMatch:
         """Resolve provider identity through IGDB without changing operational state."""
         reload_config = getattr(self.igdb, "reload_configuration", None)

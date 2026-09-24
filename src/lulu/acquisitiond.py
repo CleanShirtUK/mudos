@@ -204,20 +204,31 @@ class AcquisitionInterface(ServiceInterface):
             target = self.catalogue.get_game(game.installed_game_id) or game
         if target.install_state != "installed":
             raise DBusError("org.lulu.Acquisition.Error.NotInstalled", "game is not installed")
-        provider = str(target.provider)
+        # Emulator names describe the launch runtime, not ownership of the
+        # ROM file. Local catalogue content is removed through the bounded
+        # local-content executor regardless of RetroArch/Dolphin/Eden/PCSX2.
+        provider = ("local" if str(getattr(target, "catalogue_source", "")) == "local"
+                    or str(target.provider) == "local" else str(target.provider))
         identity = str(target.game_id if provider == "local" else f"{provider}:{target.provider_id}")
         executor = self.manager.executors.get(provider)
         if executor is None or not getattr(executor, "supports_uninstall", False):
             raise DBusError("org.lulu.Acquisition.Error.Unsupported", "uninstall is not supported")
+        capability_check = getattr(executor, "can_uninstall", None)
+        if callable(capability_check) and not capability_check(target.game_id):
+            raise DBusError("org.lulu.Acquisition.Error.Unsupported",
+                            "provider cannot safely remove this installation")
         return target, provider, identity, str(target.title)
 
     @method()
     def CanUninstall(self, game_id: "s") -> "s":
         try:
             target, provider, identity, title = self._uninstall_target(game_id)
-            description = ("Remove local installed content" if provider == "local"
+            description = ("Remove local game content only" if provider == "local"
                            else "Remove Lutris installation" if provider == "lutris"
                            else "Remove Steam installation" if provider == "steam"
+                           else "Uninstall Flatpak application" if provider == "flatpak"
+                           else "Uninstall Epic game" if provider == "epic"
+                           else "Remove GOG provider-managed files" if provider == "gog"
                            else "Remove provider application")
             return json.dumps({"supported": True, "installed": True, "provider": provider,
                                "operation": "remove", "description": description,

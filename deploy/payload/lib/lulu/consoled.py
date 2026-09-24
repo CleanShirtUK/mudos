@@ -577,13 +577,16 @@ class ConsoleCatalog:
                 try:
                     icon = self.artwork.resolve_square_icon(game)
                     if icon is not None:
-                        local_icon = self.media_assets.acquire_image(
-                            game, "icon_square", icon.source_url or icon.url)
-                        delta = self.store.set_icon_square_media(
-                            game.game_id, url=local_icon or self.media_assets.present(game, "icon_square"),
-                            provider=icon.provider, source_url=icon.source_url or icon.url)
-                        if delta is not None:
-                            square_deltas.append(delta)
+                        if self.media_assets.is_override(game, "icon_square"):
+                            local_icon = self.media_assets.present(game, "icon_square")
+                        else:
+                            local_icon = self.media_assets.acquire_image(
+                                game, "icon_square", icon.source_url or icon.url)
+                            delta = self.store.set_icon_square_media(
+                                game.game_id, url=local_icon or self.media_assets.present(game, "icon_square"),
+                                provider=icon.provider, source_url=icon.source_url or icon.url)
+                            if delta is not None:
+                                square_deltas.append(delta)
                     else:
                         local_icon = self.media_assets.present(game, "icon_square")
                         if local_icon:
@@ -617,7 +620,11 @@ class ConsoleCatalog:
                     if candidate and not candidate.startswith("file:"):
                         still_source = candidate
                         still_provider = current.preview_still_provider or current.provider
-                if still_source:
+                if self.media_assets.is_override(current, "preview_still"):
+                    local_still = self.media_assets.present(current, "preview_still")
+                    still_provider = current.preview_still_provider
+                    still_source = current.preview_still_source_url
+                elif still_source:
                     local_still = self.media_assets.acquire_image(current, "preview_still", still_source)
                 else:
                     local_still = self.media_assets.present(current, "preview_still")
@@ -721,14 +728,17 @@ class ConsoleCatalog:
                 except (OSError, ValueError, TimeoutError):
                     square = None
                 if square is not None:
-                    local_square = self.media_assets.acquire_image(
-                        current, "icon_square", square.source_url or square.url)
-                    delta = self.store.set_icon_square_media(
-                        current.game_id,
-                        url=local_square or self.media_assets.present(current, "icon_square"),
-                        provider=square.provider, source_url=square.source_url or square.url)
-                    if delta is not None:
-                        deltas.append(delta)
+                    if self.media_assets.is_override(current, "icon_square"):
+                        local_square = self.media_assets.present(current, "icon_square")
+                    else:
+                        local_square = self.media_assets.acquire_image(
+                            current, "icon_square", square.source_url or square.url)
+                        delta = self.store.set_icon_square_media(
+                            current.game_id,
+                            url=local_square or self.media_assets.present(current, "icon_square"),
+                            provider=square.provider, source_url=square.source_url or square.url)
+                        if delta is not None:
+                            deltas.append(delta)
                 else:
                     local_square = self.media_assets.present(current, "icon_square")
                     if local_square:
@@ -752,7 +762,11 @@ class ConsoleCatalog:
                     if not still_source:
                         still_source = str(media.get("preview_still_url", "") or "")
                         still_provider = "steam" if still_source else ""
-                if still_source:
+                if self.media_assets.is_override(current, "preview_still"):
+                    still_local = self.media_assets.present(current, "preview_still")
+                    still_provider = current.preview_still_provider
+                    still_source = current.preview_still_source_url
+                elif still_source:
                     still_local = self.media_assets.acquire_image(current, "preview_still", still_source)
                 else:
                     still_local = self.media_assets.present(current, "preview_still")
@@ -789,29 +803,104 @@ class ConsoleCatalog:
     def clear_metadata_match(self, game_id: str) -> CatalogueDelta | None:
         return self.store.clear_metadata_match(game_id)
 
+    def revert_metadata_match(self, game_id: str) -> tuple[CatalogueDelta, ...]:
+        game = self.store.get_game(game_id)
+        if game is None or not game.match_locked:
+            return ()
+        for role in ("icon_square", "preview_still"):
+            if not self.media_assets.is_override(game, role):
+                self.media_assets.remove_automatic(game, role)
+        delta = self.store.revert_metadata_match(game_id)
+        deltas = [delta] if delta else []
+        current = self.store.get_game(game_id)
+        if current and not current.metadata_game_id:
+            match = self.enrichment.canonical_match(current)
+            self.store.apply_metadata_match(game_id, match)
+        current = self.store.get_game(game_id)
+        if current and current.metadata_provider == "igdb":
+            deltas.extend(self.enrichment.enrich_game(current, force=True, force_igdb=True))
+        artwork_delta = self._refresh_game_artwork(game_id)
+        if artwork_delta:
+            deltas.append(artwork_delta)
+        return tuple(deltas)
+
     def metadata_search(self, game_id: str, query: str) -> list[dict[str, object]]:
         game = self.store.get_game(game_id)
         if game is None:
             raise ValueError("game does not exist")
+        if getattr(self.enrichment.igdb, "configured", False):
+            return self.enrichment.search_games(game, query)
         search_title = query.strip() or game.canonical_title or game.normalized_search_title or clean_local_title(game.source_title or game.title)
         candidates = self.metadata.search(search_title, game.platform)
         if candidates is None:
             return []
         return [{
+            "provider": "steamgriddb",
+            "source": "SteamGridDB",
             "id": candidate.game_id,
             "title": candidate.title,
+            "subtitle": ", ".join(candidate.platforms),
+            "thumbnail": "",
             "aliases": list(candidate.aliases),
             "platforms": list(candidate.platforms),
         } for candidate in candidates]
+
+    @staticmethod
+    def _candidate_contract(candidate: dict[str, object]) -> dict[str, object]:
+        """Flatten integrated artwork into stable QML display and selection roles."""
+        url = str(candidate.get("url") or candidate.get("source_url") or "")
+        provider = str(candidate.get("provider") or candidate.get("source") or "Artwork")
+        source_labels = {"igdb": "IGDB", "steamgriddb": "SteamGridDB", "steam": "Steam"}
+        source = str(candidate.get("source") or source_labels.get(provider.casefold(), provider))
+        try:
+            width = int(candidate["width"]) if candidate.get("width") is not None else None
+        except (TypeError, ValueError):
+            width = None
+        try:
+            height = int(candidate["height"]) if candidate.get("height") is not None else None
+        except (TypeError, ValueError):
+            height = None
+        size = f"{width}×{height}" if width and height else ""
+        subtitle = str(candidate.get("subtitle") or " · ".join(filter(None, (source, size))))
+        result: dict[str, object] = {
+            "id": str(candidate.get("id") or url),
+            "title": str(candidate.get("title") or source),
+            "subtitle": subtitle,
+            "thumbnail": str(candidate.get("thumbnail") or url),
+            "source": source,
+            "source_url": url,
+            "url": url,
+            "provider": provider,
+            "current": bool(candidate.get("current", False)),
+        }
+        if width is not None:
+            result["width"] = width
+        if height is not None:
+            result["height"] = height
+        if candidate.get("year") is not None:
+            try:
+                result["year"] = int(candidate["year"])
+            except (TypeError, ValueError):
+                pass
+        if isinstance(candidate.get("platforms"), (list, tuple)):
+            result["platforms"] = [str(value) for value in candidate["platforms"]]
+        return result
 
     def _refresh_game_artwork(self, game_id: str) -> CatalogueDelta | None:
         game = self.store.get_game(game_id)
         if game is None:
             raise ValueError("game does not exist")
-        for refreshed_id, artwork_url in self.artwork.enrich([game]).items():
-            if refreshed_id == game_id:
-                return self.store.set_artwork_url(game_id, artwork_url)
-        return None
+        try:
+            self.artwork.reload_configuration()
+            selection = self.artwork.resolve_typed(game)
+        except (OSError, ValueError, TimeoutError):
+            selection = None
+        if selection is None:
+            return None
+        return self.store.set_artwork_selection(
+            game_id, url=selection.url, source_url=selection.source_url,
+            provider=selection.provider, artwork_type=selection.artwork_type,
+            width=selection.width, height=selection.height)
 
     def set_local_artwork(self, game_id: str, source_path: str) -> CatalogueDelta | None:
         game = self.store.get_game(game_id)
@@ -839,11 +928,70 @@ class ConsoleCatalog:
             pass
         return delta
 
-    def artwork_candidates(self, game_id: str) -> list[dict[str, object]]:
+    def artwork_candidates(self, game_id: str, role: str = "cover") -> list[dict[str, object]]:
         game = self.store.get_game(game_id)
         if game is None:
             raise ValueError("game does not exist")
-        return self.artwork.gallery(game)
+        if role == "icon_square":
+            candidates = self.artwork.square_gallery(game)
+            enrichment = self.store.enrichment_record("igdb", game_id) or {}
+            normalized = enrichment.get("normalized", {})
+            current = str(game.icon_square_source_url or "")
+            if isinstance(normalized, dict):
+                igdb_icon = str(normalized.get("icon_square_url", "") or "")
+                if igdb_icon:
+                    candidates.append({"id": "igdb-square", "url": igdb_icon,
+                                       "thumbnail": igdb_icon, "width": 512, "height": 512,
+                                       "provider": "igdb", "current": igdb_icon == current})
+            return [ConsoleCatalog._candidate_contract(candidate) for candidate in candidates]
+        if role == "preview_still":
+            candidates: list[dict[str, object]] = []
+            enrichment = self.store.enrichment_record("igdb", game_id) or {}
+            normalized = enrichment.get("normalized", {})
+            if isinstance(normalized, dict):
+                for index, value in enumerate(normalized.get("preview_still_candidates", [])):
+                    if not isinstance(value, dict) or not value.get("url"):
+                        continue
+                    candidates.append({"id": f"igdb-screenshot-{index}", **value,
+                                       "current": str(value["url"]) == game.preview_still_source_url})
+            if game.provider == "steam" and game.provider_id.isdecimal():
+                media = self.steam_media.resolve(game.provider_id)
+                for index, value in enumerate(media.get("preview_still_candidates", [])):
+                    if not isinstance(value, dict) or not value.get("url"):
+                        continue
+                    candidates.append({"id": f"steam-screenshot-{index}", **value,
+                                       "current": str(value["url"]) == game.preview_still_source_url})
+            if not candidates and game.preview_still_source_url:
+                candidates.append({"id": "current", "url": game.preview_still_source_url,
+                                   "thumbnail": game.preview_still_source_url,
+                                   "provider": game.preview_still_provider, "current": True})
+            return [ConsoleCatalog._candidate_contract(candidate) for candidate in candidates]
+        if role != "cover":
+            raise ValueError("unsupported presentation artwork role")
+        return [ConsoleCatalog._candidate_contract(candidate)
+                for candidate in self.artwork.gallery(game)]
+
+    def select_presentation_artwork(self, game_id: str, role: str,
+                                    source_url: str) -> CatalogueDelta | None:
+        game = self.store.get_game(game_id)
+        if game is None:
+            raise ValueError("game does not exist")
+        if role not in {"icon_square", "preview_still"}:
+            raise ValueError("unsupported presentation artwork role")
+        candidates = self.artwork_candidates(game_id, role)
+        candidate = next((item for item in candidates if item.get("url") == source_url), None)
+        if candidate is None:
+            raise ValueError("artwork is not an available integrated candidate")
+        local_url = self.media_assets.install_override(game, role, source_url)
+        if not local_url:
+            raise ValueError("selected artwork could not be acquired")
+        provider = str(candidate.get("provider", "local"))
+        if role == "icon_square":
+            return self.store.set_icon_square_media(
+                game_id, url=local_url, provider=provider, source_url=source_url)
+        return self.store.set_preview_media(
+            game_id, still_url=local_url, still_provider=provider,
+            still_source_url=source_url, prefer_still=True)
 
     def select_artwork(self, game_id: str, source_url: str) -> CatalogueDelta | None:
         game = self.store.get_game(game_id)
@@ -871,9 +1019,45 @@ class ConsoleCatalog:
     def apply_metadata_match(self, game_id: str, provider: str, metadata_game_id: str,
                              canonical_title: str) -> tuple[CatalogueDelta, ...]:
         deltas = []
+        game = self.store.get_game(game_id)
+        if game is None:
+            raise ValueError("game does not exist")
+        for role in ("icon_square", "preview_still"):
+            if not self.media_assets.is_override(game, role):
+                self.media_assets.remove_automatic(game, role)
+                if role == "icon_square":
+                    delta = self.store.clear_icon_square_media(game_id)
+                elif role == "preview_still":
+                    delta = self.store.clear_preview_still(game_id)
+                else:
+                    delta = None
+                if delta is not None:
+                    deltas.append(delta)
         delta = self.store.set_metadata_match(game_id, provider, metadata_game_id, canonical_title)
         if delta is not None:
             deltas.append(delta)
+        current = self.store.get_game(game_id)
+        if current is not None and provider == "igdb":
+            deltas.extend(self.enrichment.enrich_game(current, force=True, force_igdb=True))
+            current = self.store.get_game(game_id) or current
+            record = self.store.enrichment_record("igdb", game_id) or {}
+            normalized = record.get("normalized", {})
+            if isinstance(normalized, dict):
+                icon_url = str(normalized.get("icon_square_url", "") or "")
+                if icon_url and not self.media_assets.is_override(current, "icon_square"):
+                    local = self.media_assets.acquire_image(current, "icon_square", icon_url)
+                    delta = self.store.set_icon_square_media(
+                        game_id, url=local, provider="igdb", source_url=icon_url) if local else None
+                    if delta is not None:
+                        deltas.append(delta)
+                screenshot = str(normalized.get("preview_still_url", "") or "")
+                if screenshot and not self.media_assets.is_override(current, "preview_still"):
+                    local = self.media_assets.acquire_image(current, "preview_still", screenshot)
+                    delta = self.store.set_preview_media(
+                        game_id, still_url=local, still_provider="igdb",
+                        still_source_url=screenshot, prefer_still=True) if local else None
+                    if delta is not None:
+                        deltas.append(delta)
         artwork_delta = self._refresh_game_artwork(game_id)
         if artwork_delta is not None:
             deltas.append(artwork_delta)
@@ -1623,16 +1807,18 @@ class ConsoleInterface(ServiceInterface):
         return list(SYSTEM_CATEGORIES)
 
     @method()
-    def SearchMetadata(self, game_id: "s", query: "s") -> "aa{sv}":
-        return [self._variants(item) for item in self.catalogue.metadata_search(game_id, query)]
+    async def SearchMetadata(self, game_id: "s", query: "s") -> "aa{sv}":
+        rows = await asyncio.to_thread(self.catalogue.metadata_search, game_id, query)
+        return [self._variants(item) for item in rows]
 
     @method()
-    def SetMetadataMatch(self, game_id: "s", provider: "s", metadata_game_id: "s",
-                         canonical_title: "s") -> "":
-        self._publish_delta_batches([
-            (delta,) for delta in self.catalogue.apply_metadata_match(
-                game_id, provider, metadata_game_id, canonical_title)
-        ])
+    async def SetMetadataMatch(self, game_id: "s", provider: "s", metadata_game_id: "s",
+                               canonical_title: "s") -> "":
+        deltas = await asyncio.to_thread(
+            self.catalogue.apply_metadata_match, game_id, provider,
+            metadata_game_id, canonical_title)
+        self._publish_delta_batches([(delta,) for delta in deltas])
+        self.CatalogueChanged()
 
     @method()
     def SetLocalArtwork(self, game_id: "s", source_path: "s") -> "":
@@ -1657,6 +1843,24 @@ class ConsoleInterface(ServiceInterface):
             return [self._variants(row) for row in rows]
         except ValueError as error:
             raise DBusError("org.lulu.Console.Error.InvalidArtwork", str(error)) from error
+
+    @method()
+    async def ListPresentationArtworkCandidates(self, game_id: "s", role: "s") -> "aa{sv}":
+        try:
+            rows = await asyncio.to_thread(self.catalogue.artwork_candidates, game_id, role)
+            return [self._variants(row) for row in rows]
+        except ValueError as error:
+            raise DBusError("org.lulu.Console.Error.InvalidArtwork", str(error)) from error
+
+    @method()
+    async def SelectPresentationArtwork(self, game_id: "s", role: "s", source_url: "s") -> "":
+        try:
+            delta = await asyncio.to_thread(
+                self.catalogue.select_presentation_artwork, game_id, role, source_url)
+        except (OSError, ValueError) as error:
+            raise DBusError("org.lulu.Console.Error.InvalidArtwork", str(error)) from error
+        self._publish_delta(delta)
+        self.CatalogueChanged()
 
     @method()
     async def SelectArtwork(self, game_id: "s", source_url: "s") -> "":
@@ -1866,6 +2070,11 @@ class ConsoleInterface(ServiceInterface):
     @method()
     def ClearMetadataMatch(self, game_id: "s") -> "":
         self._publish_delta(self.catalogue.clear_metadata_match(game_id))
+
+    @method()
+    def RevertMetadataMatch(self, game_id: "s") -> "":
+        for delta in self.catalogue.revert_metadata_match(game_id):
+            self._publish_delta(delta)
         self.CatalogueChanged()
 
     @method()

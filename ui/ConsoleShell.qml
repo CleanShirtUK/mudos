@@ -294,8 +294,18 @@ import QtQuick.Controls
     property string gameOptionsGameId: ""
     property var gameOptionsGame: null
     property var uninstallCapability: ({supported: false, installed: false})
+    property string uninstallCapabilityKey: ""
+    property int mappingSearchGeneration: 0
+    property int artworkCandidateGeneration: 0
     property var artworkCandidates: []
+    property var mappingCandidates: []
+    property string mappingQuery: ""
+    property string selectedArtworkRole: "icon_square"
     property string artworkError: ""
+    property bool gameOptionsTextEntryActive: false
+    property bool gameOptionsKeyboardShown: false
+    property bool gameOptionsKeyboardWasVisible: false
+    property var gameOptionsRef: null
     property int launchGeneration: 0
     property int launchStateSerial: 0
     property int launchStateApplied: 0
@@ -818,13 +828,14 @@ import QtQuick.Controls
     function syncGameOptionsGame() {
         if (!gameOptionsOpen || gameOptionsGameId === "")
             return
-        var games = []
+        var games = libraryGames.slice(0)
         if (visibleRecentGame)
             games.push(visibleRecentGame)
-        games = games.concat(libraryGames)
         for (var index = 0; index < games.length; index++) {
             if (String(games[index].game_id) === gameOptionsGameId) {
                 gameOptionsGame = games[index]
+                gameOptionsRef.mappingOverride = !!games[index].match_locked
+                refreshGameOptionsCapability(games[index])
                 return
             }
         }
@@ -847,30 +858,150 @@ import QtQuick.Controls
         if (!game)
             return
         gameOptionsGame = game
+        gameOptionsRef.mappingOverride = !!game.match_locked
         gameOptionsGameId = String(game.game_id)
         gameOptionsView = "menu"
         gameOptionsIndex = 0
         uninstallCapability = ({supported: false, installed: false})
+        uninstallCapabilityKey = ""
         artworkError = ""
+        mappingCandidates = []
+        artworkCandidates = []
         gameOptionsOpen = true
-        request("/uninstall/capability/" + encodeURIComponent(gameOptionsGameId), "GET", "", function(data) {
-            uninstallCapability = data || ({supported: false, installed: false})
+        refreshGameOptionsCapability(game)
+    }
+
+    function refreshGameOptionsCapability(game) {
+        if (!game || !gameOptionsOpen)
+            return
+        var key = [game.game_id, game.provider, game.provider_id, game.install_state,
+                   game.installed_game_id || ""].join("|")
+        if (key === uninstallCapabilityKey)
+            return
+        uninstallCapabilityKey = key
+        var gameId = String(game.game_id)
+        request("/uninstall/capability/" + encodeURIComponent(gameId), "GET", "", function(data) {
+            if (gameOptionsOpen && gameOptionsGameId === gameId
+                    && uninstallCapabilityKey === key)
+                uninstallCapability = data || ({supported: false, installed: false})
         }, "Uninstall capability unavailable")
     }
 
-    function loadArtworkCandidates() {
-        request("/artwork/candidates?game_id=" + encodeURIComponent(gameOptionsGameId), "GET", "", function(data) {
-            artworkCandidates = data || []
-            gameOptionsIndex = 0
-        }, "No alternate artwork available")
-    }
-
     function closeGameOptions() {
+        if (gameOptionsTextEntryActive)
+            finishGameOptionsTextEntry(true)
         gameOptionsOpen = false
         gameOptionsGame = null
         gameOptionsGameId = ""
         uninstallCapability = ({supported: false, installed: false})
+        uninstallCapabilityKey = ""
+        mappingSearchGeneration++
+        artworkCandidateGeneration++
         artworkError = ""
+    }
+
+    function loadGameArtworkCandidates(role) {
+        selectedArtworkRole = role
+        artworkCandidates = []
+        var generation = ++artworkCandidateGeneration
+        var gameId = gameOptionsGameId
+        request("/artwork/candidates?game_id=" + encodeURIComponent(gameOptionsGameId)
+                + "&role=" + encodeURIComponent(role), "GET", "", function(data) {
+            if (!gameOptionsOpen || gameId !== gameOptionsGameId
+                    || role !== selectedArtworkRole || generation !== artworkCandidateGeneration)
+                return
+            gameOptionsRef.selectedCandidateId = ""
+            artworkCandidates = data || []
+            gameOptionsIndex = 0
+            if (gameOptionsRef)
+                gameOptionsRef.ensureCandidateVisible()
+            if (!artworkCandidates.length)
+                artworkError = "No integrated candidates are available for this artwork type"
+        }, "Artwork candidates unavailable")
+    }
+
+    function searchGameMapping(query) {
+        mappingQuery = String(query || "")
+        mappingCandidates = []
+        if (!mappingQuery.trim()) {
+            artworkError = "Enter a game title to search"
+            return
+        }
+        var generation = ++mappingSearchGeneration
+        var gameId = gameOptionsGameId
+        request("/metadata/search?game_id=" + encodeURIComponent(gameOptionsGameId)
+                + "&query=" + encodeURIComponent(mappingQuery), "GET", "", function(data) {
+            if (!gameOptionsOpen || gameId !== gameOptionsGameId
+                    || generation !== mappingSearchGeneration)
+                return
+            gameOptionsRef.selectedCandidateId = ""
+            mappingCandidates = data || []
+            gameOptionsIndex = mappingCandidates.length ? 2 : 0
+            if (gameOptionsRef)
+                gameOptionsRef.ensureCandidateVisible()
+            artworkError = mappingCandidates.length ? "" : "No matching games found"
+        }, "Metadata search unavailable")
+    }
+
+    function showGameOptionsKeyboard() {
+        gameOptionsTextEntryActive = true
+        gameOptionsKeyboardShown = false
+        gameOptionsKeyboardWasVisible = false
+        request("/keyboard/show", "POST", "", function(data) {
+            gameOptionsKeyboardShown = data && data.visible === true
+            if (!gameOptionsKeyboardShown) {
+                gameOptionsTextEntryActive = false
+                artworkError = "On-screen keyboard is unavailable"
+            }
+        }, "On-screen keyboard unavailable")
+    }
+
+    function finishGameOptionsTextEntry(cancelled) {
+        var hideKeyboard = gameOptionsKeyboardShown
+        gameOptionsTextEntryActive = false
+        gameOptionsKeyboardShown = false
+        gameOptionsKeyboardWasVisible = false
+        if (gameOptionsRef) {
+            if (cancelled)
+                gameOptionsRef.cancelTextEntry()
+            else
+                gameOptionsRef.textEditing = false
+        }
+        if (!cancelled && gameOptionsView === "title" && gameOptionsRef) {
+            if (!gameOptionsRef.titleDraft.trim()) {
+                artworkError = "Enter a title"
+            } else {
+                request("/metadata/title/" + encodeURIComponent(gameOptionsGameId), "POST",
+                        JSON.stringify({title: gameOptionsRef.titleDraft}), function() {
+                    gameOptionsView = "menu"
+                    gameOptionsIndex = 0
+                    refreshCatalogue()
+                }, "Title update failed")
+            }
+        }
+        if (hideKeyboard)
+            request("/keyboard/hide", "POST", "", function() {})
+    }
+
+    function selectGameMapping(candidate) {
+        if (!candidate || !candidate.id)
+            return
+        request("/metadata/match/" + encodeURIComponent(gameOptionsGameId), "POST",
+                JSON.stringify({provider: String(candidate.provider || "igdb"),
+                    metadata_game_id: String(candidate.id), canonical_title: String(candidate.title || "")}),
+                function() {
+                    mappingSearchGeneration++
+                    artworkCandidateGeneration++
+                    mappingCandidates = []
+                    artworkCandidates = []
+                    refreshLibrary(function() {
+                        refreshPlatformsCatalogue()
+                        gameOptionsView = "menu"
+                        gameOptionsIndex = 0
+                        artworkError = ""
+                        syncGameOptionsGame()
+                    })
+                }, "Mapping update failed")
     }
 
     function artworkMutation(path, body, callback) {
@@ -885,43 +1016,110 @@ import QtQuick.Controls
         if (!gameOptionsGame)
             return
         if (gameOptionsView === "menu") {
-            if (gameOptionsIndex === 0) {
-                gameOptionsView = "artwork"
-                loadArtworkCandidates()
-            } else if (gameOptionsIndex === 1 && gameOptionsGame.artwork_override) {
-                artworkMutation("/artwork/" + encodeURIComponent(gameOptionsGameId), {restore: true}, function() {
-                    gameOptionsView = "menu"
-                    gameOptionsIndex = 0
-                })
-            } else if (uninstallCapability.supported && gameOptionsIndex === (gameOptionsGame.artwork_override ? 2 : 1)) {
+            var menuChoice = gameOptionsRef.menuEntries[gameOptionsIndex]
+            if (menuChoice === "Change Mapping") {
+                gameOptionsView = "mapping"
+                mappingQuery = String(gameOptionsGame.canonical_title || gameOptionsGame.title || "")
+                mappingCandidates = []
+                artworkError = ""
+                gameOptionsIndex = 0
+            } else if (menuChoice === "Revert Mapping") {
+                request("/metadata/match/revert/" + encodeURIComponent(gameOptionsGameId), "POST", "{}", function() {
+                    refreshCatalogue()
+                    refreshLibrary(function() {
+                        refreshPlatformsCatalogue()
+                        gameOptionsView = "menu"
+                        gameOptionsIndex = 0
+                        syncGameOptionsGame()
+                    })
+                }, "Mapping revert failed")
+            } else if (menuChoice === "Change Artwork") {
+                gameOptionsView = "artworkRole"
+                artworkError = ""
+                gameOptionsIndex = 0
+            } else if (menuChoice === "Change Title") {
+                gameOptionsView = "title"
+                gameOptionsRef.titleDraft = String(gameOptionsGame.display_title_override
+                    || gameOptionsGame.canonical_title || gameOptionsGame.title || "")
+                gameOptionsRef.titleOverride = !!gameOptionsGame.display_title_override
+                artworkError = ""
+                gameOptionsIndex = 0
+            } else if (menuChoice === "Uninstall" && uninstallCapability.supported) {
                 gameOptionsView = "confirm"
                 gameOptionsIndex = 0
             }
         } else if (gameOptionsView === "confirm") {
-            request("/uninstall/" + encodeURIComponent(gameOptionsGameId), "POST", "", function(data) {
-                closeGameOptions()
-                refreshCatalogue()
-            }, "Uninstall failed")
+            if (gameOptionsIndex === 0) {
+                request("/uninstall/" + encodeURIComponent(gameOptionsGameId), "POST", "", function(data) {
+                    closeGameOptions()
+                    refreshCatalogue()
+                }, "Uninstall failed")
+            } else {
+                gameOptionsView = "menu"
+                gameOptionsIndex = 0
+            }
+        } else if (gameOptionsView === "mapping") {
+            if (gameOptionsIndex === 0) {
+                gameOptionsRef.beginTextEntry("mapping")
+            } else if (gameOptionsIndex === 1) {
+                searchGameMapping(mappingQuery)
+            } else {
+                selectGameMapping(gameOptionsRef.selectedCandidate())
+            }
+        } else if (gameOptionsView === "artworkRole") {
+            var roles = ["cover", "icon_square", "preview_still"]
+            loadGameArtworkCandidates(roles[gameOptionsIndex] || "cover")
+            gameOptionsView = "artwork"
         } else if (gameOptionsView === "artwork") {
             if (!artworkCandidates.length || !artworkCandidates[gameOptionsIndex])
                 return
-            var artwork = artworkCandidates[gameOptionsIndex]
-            artworkMutation("/artwork/" + encodeURIComponent(gameOptionsGameId), {source_url: artwork.url}, function() {
+            var artwork = gameOptionsRef.selectedCandidate()
+            artworkMutation("/artwork/" + encodeURIComponent(gameOptionsGameId), {
+                role: selectedArtworkRole, source_url: artwork.url
+            }, function() {
                 gameOptionsView = "menu"
                 gameOptionsIndex = 0
             })
+        } else if (gameOptionsView === "title") {
+            if (gameOptionsIndex === 0) {
+                gameOptionsRef.beginTextEntry("title")
+            } else if (gameOptionsIndex === 1) {
+                if (gameOptionsRef.titleDraft.trim()) {
+                    request("/metadata/title/" + encodeURIComponent(gameOptionsGameId), "POST",
+                            JSON.stringify({title: gameOptionsRef.titleDraft}), function() {
+                        gameOptionsView = "menu"
+                        gameOptionsIndex = 0
+                        refreshCatalogue()
+                    }, "Title update failed")
+                }
+            } else if (gameOptionsIndex === 2 && gameOptionsRef.titleOverride) {
+                request("/metadata/title/clear/" + encodeURIComponent(gameOptionsGameId),
+                        "POST", "{}", function() {
+                    gameOptionsView = "menu"
+                    gameOptionsIndex = 0
+                    refreshCatalogue()
+                }, "Title reset failed")
+            } else {
+                gameOptionsRef.cancelTextEntry()
+                gameOptionsView = "menu"
+                gameOptionsIndex = 0
+                artworkError = ""
+            }
         }
     }
 
     function moveGameOptions(delta) {
-        var count = gameOptionsView === "menu" ? 1 + (gameOptionsGame && gameOptionsGame.artwork_override ? 1 : 0)
-            + (uninstallCapability.supported ? 1 : 0)
+        var count = gameOptionsView === "menu" ? (gameOptionsRef ? gameOptionsRef.menuEntries.length : 0)
+            : gameOptionsView === "mapping" ? 2 + mappingCandidates.length
+            : gameOptionsView === "artworkRole" ? 2
             : gameOptionsView === "artwork" ? artworkCandidates.length
-            : artworkCandidates.length
-        if (gameOptionsView === "title")
-            return
-        if (count > 0)
+            : gameOptionsView === "title" ? 1 + (gameOptionsRef ? gameOptionsRef.titleActionCount : 0)
+            : gameOptionsView === "confirm" ? 2 : 0
+        if (count > 0) {
             gameOptionsIndex = Math.max(0, Math.min(count - 1, gameOptionsIndex + delta))
+            if (gameOptionsRef)
+                gameOptionsRef.ensureCandidateVisible()
+        }
     }
 
     function refreshSystemSettings() {
@@ -1050,6 +1248,24 @@ import QtQuick.Controls
                 })
             }
         }
+    }
+
+    Timer {
+        id: gameOptionsKeyboardTimer
+        interval: 300
+        repeat: true
+        running: root.gameOptionsOpen && root.gameOptionsTextEntryActive
+            && root.gameOptionsKeyboardShown
+        onTriggered: root.request("/keyboard/status", "GET", "", function(data) {
+            var visible = data && data.visible === true
+            if (root.gameOptionsKeyboardWasVisible && !visible) {
+                root.gameOptionsKeyboardShown = false
+                root.gameOptionsTextEntryActive = false
+                if (root.gameOptionsRef)
+                    root.gameOptionsRef.keyboardDismissed()
+            }
+            root.gameOptionsKeyboardWasVisible = visible
+        })
     }
 
     Rectangle {
@@ -2289,6 +2505,10 @@ import QtQuick.Controls
             return
         }
         if (gameOptionsOpen) {
+            if (gameOptionsTextEntryActive) {
+                finishGameOptionsTextEntry(true)
+                return
+            }
             if (gameOptionsView === "menu")
                 closeGameOptions()
             else {
@@ -3403,19 +3623,31 @@ import QtQuick.Controls
             onBackRequested: root.back()
         }
 
-            GameOptions {
+        GameOptions {
+            id: gameOptions
             game: root.gameOptionsGame
             view: root.gameOptionsView
-                selectedIndex: root.gameOptionsIndex
-                uninstallSupported: root.uninstallCapability.supported === true
-             errorMessage: root.artworkError
-             artworkCandidates: root.artworkCandidates
+            selectedIndex: root.gameOptionsIndex
+            uninstallSupported: root.uninstallCapability.supported === true
+            uninstallDescription: String(root.uninstallCapability.description || "Remove installed content")
+            artworkCandidates: root.artworkCandidates
+            mappingResults: root.mappingCandidates
+            mappingQuery: root.mappingQuery
+            titleOverride: !!(root.gameOptionsGame && root.gameOptionsGame.display_title_override)
+            artworkRole: root.selectedArtworkRole
+            errorMessage: root.artworkError
             uiScale: root.uiScale
             typography: typography
             luluPalette: luluPalette
-                onActivated: root.activateGameOptions()
+            Component.onCompleted: root.gameOptionsRef = gameOptions
+            onTextEntryRequested: root.showGameOptionsKeyboard()
+            onTextEntryCancelled: root.finishGameOptionsTextEntry(true)
+            onTextEntrySubmitted: root.finishGameOptionsTextEntry(false)
+            onMappingQueryEdited: function(query) { root.mappingQuery = query }
+            onMappingSearchRequested: function(query) { root.searchGameMapping(query) }
+            onActivated: root.activateGameOptions()
             onBacked: root.back()
-         }
+        }
 
         SystemStatusStrip {
             id: systemStatusStrip

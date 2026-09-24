@@ -107,6 +107,16 @@ class LocalMediaAssets:
             self._write_state(path, state)
         return self._url(path)
 
+    def is_override(self, game: object, role: str) -> bool:
+        path = media_asset_path(game, role)
+        if not path.is_file():
+            return False
+        record = self._read_state(path).get(path.stem)
+        if not isinstance(record, dict):
+            return True
+        return (bool(record.get("override"))
+                or int(record.get("mtime_ns", 0) or 0) != path.stat().st_mtime_ns)
+
     def install_override(self, game: object, role: str, source_url: str) -> str:
         """Install an explicitly selected integrated candidate as the active override."""
         path = media_asset_path(game, role)

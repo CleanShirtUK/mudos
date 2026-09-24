@@ -22,6 +22,7 @@ from .credential import CredentialInput
 from .catalogue import CatalogueStore
 from .local_uninstall import LocalUninstallExecutor
 from .jobs import JobOperation
+from .notifications import NotificationBroker, NotificationPresenter
 from .lutris_install import LutrisInstallExecutor
 from .pc_install import PcInstallSource
 from .pc_install_store import PcInstallSourceStore
@@ -40,11 +41,24 @@ LOGGER = logging.getLogger("lulu.acquisitiond")
 
 
 class AcquisitionInterface(ServiceInterface):
-    def __init__(self, manager: JobManager, catalogue: CatalogueStore, plugins: PluginRegistry) -> None:
+    def __init__(self, manager: JobManager, catalogue: CatalogueStore, plugins: PluginRegistry,
+                 notifications: NotificationBroker | None = None,
+                 bus: MessageBus | None = None) -> None:
         super().__init__(INTERFACE_NAME)
         self.manager = manager
         self.catalogue = catalogue
         self.plugins = plugins
+        self.bus = bus
+        self.notifications = notifications or NotificationBroker(NotificationPresenter())
+        # Historical terminal jobs are already reflected in the catalogue;
+        # only completions observed after this interface starts need a
+        # provider refresh.
+        self._reconciliations: set[str] = {
+            job.job_id for job in manager.snapshot()
+            if job.state.value == "completed"
+            and job.operation in {JobOperation.INSTALL, JobOperation.REMOVE}
+        }
+        self.notifications.seed(manager.snapshot())
         manager._on_change = self._publish
 
     def _snapshot(self) -> str:
@@ -54,7 +68,36 @@ class AcquisitionInterface(ServiceInterface):
         }, sort_keys=True)
 
     def _publish(self, *_: object) -> None:
+        snapshot = self.manager.snapshot()
+        self.notifications.observe(snapshot)
         self.StateChanged(self._snapshot())
+        # Do not reconcile inline: this callback runs inside JobManager's
+        # terminal transition and provider refreshes may invoke subprocesses.
+        # Schedule the provider/catalogue refresh only after the executor has
+        # returned, while retaining the authoritative completed job state.
+        for job in snapshot:
+            if (job.state.value == "completed" and job.job_id not in self._reconciliations
+                    and job.operation in {JobOperation.INSTALL, JobOperation.REMOVE}):
+                self._reconciliations.add(job.job_id)
+                asyncio.create_task(self._reconcile_completed_job(job.job_id))
+
+    async def _reconcile_completed_job(self, job_id: str) -> None:
+        try:
+            job = self.manager.jobs.get(job_id)
+            if job is None:
+                return
+            source = next((item for item in self.plugins.with_capability("installed_catalogue")
+                           if str(getattr(item, "provider_id", "")) == job.provider), None)
+            if source is None or self.bus is None:
+                return
+            # Consoled owns provider refresh and catalogue delta publication.
+            # Invoke only the affected stage, outside JobManager's completion
+            # callback, so no provider/job lifecycle lock is held.
+            introspection = await self.bus.introspect("org.lulu.Consoled", "/org/lulu/Console")
+            proxy = self.bus.get_proxy_object("org.lulu.Consoled", "/org/lulu/Console", introspection)
+            await proxy.get_interface("org.lulu.Console").call_refresh_stages([job.provider])
+        except Exception:
+            LOGGER.exception("completed acquisition reconciliation failed job=%s", job_id)
 
     @method()
     def GetSnapshot(self) -> "s":
@@ -161,20 +204,31 @@ class AcquisitionInterface(ServiceInterface):
             target = self.catalogue.get_game(game.installed_game_id) or game
         if target.install_state != "installed":
             raise DBusError("org.lulu.Acquisition.Error.NotInstalled", "game is not installed")
-        provider = str(target.provider)
+        # Emulator names describe the launch runtime, not ownership of the
+        # ROM file. Local catalogue content is removed through the bounded
+        # local-content executor regardless of RetroArch/Dolphin/Eden/PCSX2.
+        provider = ("local" if str(getattr(target, "catalogue_source", "")) == "local"
+                    or str(target.provider) == "local" else str(target.provider))
         identity = str(target.game_id if provider == "local" else f"{provider}:{target.provider_id}")
         executor = self.manager.executors.get(provider)
         if executor is None or not getattr(executor, "supports_uninstall", False):
             raise DBusError("org.lulu.Acquisition.Error.Unsupported", "uninstall is not supported")
+        capability_check = getattr(executor, "can_uninstall", None)
+        if callable(capability_check) and not capability_check(target.game_id):
+            raise DBusError("org.lulu.Acquisition.Error.Unsupported",
+                            "provider cannot safely remove this installation")
         return target, provider, identity, str(target.title)
 
     @method()
     def CanUninstall(self, game_id: "s") -> "s":
         try:
             target, provider, identity, title = self._uninstall_target(game_id)
-            description = ("Remove local installed content" if provider == "local"
+            description = ("Remove local game content only" if provider == "local"
                            else "Remove Lutris installation" if provider == "lutris"
                            else "Remove Steam installation" if provider == "steam"
+                           else "Uninstall Flatpak application" if provider == "flatpak"
+                           else "Uninstall Epic game" if provider == "epic"
+                           else "Remove GOG provider-managed files" if provider == "gog"
                            else "Remove provider application")
             return json.dumps({"supported": True, "installed": True, "provider": provider,
                                "operation": "remove", "description": description,
@@ -303,7 +357,7 @@ async def serve(bus_type: BusType = BusType.SESSION) -> None:
                 LOGGER.exception("external acquisition reconciliation failed")
             await asyncio.sleep(3)
     asyncio.create_task(reconcile_external_loop())
-    interface = AcquisitionInterface(manager, catalogue, plugins)
+    interface = AcquisitionInterface(manager, catalogue, plugins, bus=bus)
     bus.export(OBJECT_PATH, interface)
     await bus.request_name(BUS_NAME)
     interface.StateChanged(interface._snapshot())

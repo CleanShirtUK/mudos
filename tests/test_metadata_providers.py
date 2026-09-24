@@ -3,9 +3,12 @@ from dataclasses import replace
 from pathlib import Path
 import tempfile
 import unittest
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from lulu.catalogue import CatalogueGame, CatalogueStore
+from lulu.consoled import ConsoleCatalog, ConsoleInterface
+from lulu.artwork import ArtworkSelection
 from lulu.igdb import IGDBClient, normalize_igdb_game
 from lulu.metadata_enrichment import MetadataEnrichmentService
 from lulu.protondb import ProtonDBClient
@@ -67,6 +70,175 @@ class MetadataProviderTests(unittest.TestCase):
         ]})
         self.assertEqual(normalized["preview_still_url"],
                          "https://images.igdb.com/igdb/image/upload/t_screenshot_big/first.jpg")
+        self.assertEqual([item["url"] for item in normalized["preview_still_candidates"]], [
+            "https://images.igdb.com/igdb/image/upload/t_screenshot_big/first.jpg",
+            "https://images.igdb.com/igdb/image/upload/t_screenshot_big/larger.jpg",
+        ])
+
+    def test_igdb_search_returns_controller_disambiguation_fields(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = CatalogueStore(Path(directory) / "catalogue.sqlite3")
+            game = CatalogueGame.from_steam(type("Steam", (), {
+                "app_id": "10", "title": "Zelda", "install_dir": "/games/zelda",
+                "artwork_url": "", "last_played": 0,
+            })())
+            store._upsert(game); store.connection.commit()
+
+            class IGDB:
+                configured = True
+                def search(self, query, platform_id):
+                    self.assertion = (query, platform_id)
+                    return [{"id": 55, "name": "Zelda", "first_release_date": 1262304000,
+                             "platforms": [{"name": "PC"}],
+                             "cover": {"image_id": "cover-id"}}]
+
+            igdb = IGDB()
+            service = MetadataEnrichmentService(store, igdb,
+                                                 type("Proton", (), {"enabled": False})())
+            results = service.search_games(game, "Zelda")
+            self.assertEqual(igdb.assertion, ("Zelda", 6))
+            self.assertEqual(results[0]["provider"], "igdb")
+            self.assertEqual(results[0]["id"], "55")
+            self.assertEqual(results[0]["platforms"], ["PC"])
+            self.assertTrue(results[0]["thumbnail"].endswith("cover-id.jpg"))
+            serialized = ConsoleInterface._variants(results[0])
+            self.assertEqual(serialized["title"].value, "Zelda")
+            self.assertEqual(serialized["year"].value, 2010)
+            self.assertEqual(serialized["platforms"].value, ["PC"])
+            self.assertEqual(serialized["thumbnail"].value, results[0]["thumbnail"])
+
+    def test_mapping_row_keeps_title_when_thumbnail_year_and_platforms_are_missing(self):
+        candidate = ConsoleCatalog._candidate_contract({
+            "id": "55", "title": "Braid", "provider": "igdb", "url": "",
+        })
+        self.assertEqual(candidate["title"], "Braid")
+        self.assertEqual(candidate["thumbnail"], "")
+        self.assertEqual(candidate["source_url"], "")
+        self.assertEqual(candidate["subtitle"], "IGDB")
+        serialized = ConsoleInterface._variants(candidate)
+        self.assertEqual(serialized["title"].value, "Braid")
+        self.assertEqual(serialized["thumbnail"].value, "")
+        self.assertNotIn("year", serialized)
+        self.assertNotIn("platforms", serialized)
+
+    def test_artwork_candidate_contract_keeps_thumbnail_source_and_selection_url(self):
+        candidate = ConsoleCatalog._candidate_contract({
+            "id": "candidate-1", "url": "https://cdn.example/art.jpg",
+            "thumbnail": "https://cdn.example/thumb.jpg", "provider": "steamgriddb",
+        })
+        self.assertEqual(candidate["id"], "candidate-1")
+        self.assertEqual(candidate["thumbnail"], "https://cdn.example/thumb.jpg")
+        self.assertEqual(candidate["source_url"], "https://cdn.example/art.jpg")
+        self.assertEqual(candidate["url"], "https://cdn.example/art.jpg")
+        self.assertEqual(candidate["title"], "SteamGridDB")
+        serialized = ConsoleInterface._variants(candidate)
+        self.assertEqual(serialized["thumbnail"].value, candidate["thumbnail"])
+        self.assertEqual(serialized["url"].value, candidate["url"])
+
+    def test_thomas_was_alone_remap_refreshes_automatic_roles_and_candidate_identity(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = CatalogueStore(Path(directory) / "catalogue.sqlite3")
+            game = CatalogueGame(
+                "steam:thomas", "steam", "thomas", "Thomas Was Alone", "PC",
+                "installed", True, "/games/thomas", "old-card.jpg", 0,
+                metadata_provider="igdb", metadata_game_id="identity-a",
+                canonical_title="Thomas Was Alone", summary="Old description",
+                genres=("Old",), artwork_source_url="old-card-source",
+                automatic_artwork_url="old-card.jpg",
+                automatic_artwork_source_url="old-card-source",
+                automatic_artwork_provider="steamgriddb", automatic_artwork_type="cover",
+                icon_square_url="old-icon.jpg", icon_square_provider="igdb",
+                icon_square_source_url="old-icon-source",
+                preview_still_url="old-preview.jpg", preview_still_provider="igdb",
+                preview_still_source_url="old-preview-source",
+            )
+            store._upsert(game)
+            store.connection.commit()
+            store.apply_enrichment("igdb", game.game_id, "identity-a", {"summary": "Old"},
+                                   match_method="manual", confidence=1.0)
+
+            class MediaAssets:
+                def __init__(self): self.removed = []
+                def is_override(self, _game, _role): return False
+                def remove_automatic(self, _game, role): self.removed.append(role)
+                def acquire_image(self, _game, role, source):
+                    return f"file:///local/{role}-{source.rsplit('/', 1)[-1]}"
+                def present(self, _game, role): return f"file:///local/{role}-fallback"
+
+            class Artwork:
+                def reload_configuration(self): pass
+                def resolve_typed(self, current):
+                    return ArtworkSelection("file:///cache/card-b.jpg", "https://art/card-b.jpg",
+                                             "steamgriddb", "cover", 600, 900)
+                def resolve_square_icon(self, current):
+                    return ArtworkSelection("https://art/icon-b.jpg", "https://art/icon-b.jpg",
+                                             "igdb", "icon", 512, 512)
+                def gallery(self, current):
+                    self.gallery_identity = current.metadata_game_id
+                    return [{"id": "grid-b", "url": "https://art/card-b.jpg",
+                             "thumbnail": "https://art/thumb-b.jpg", "provider": "steamgriddb"}]
+
+            class Enrichment:
+                def enrich_game(self, current, **_kwargs):
+                    delta = store.apply_enrichment(
+                        "igdb", current.game_id, current.metadata_game_id,
+                        {"summary": "New description", "genres": ["Puzzle"],
+                         "game_modes": ["Single player"],
+                         "icon_square_url": "https://art/icon-b.jpg",
+                         "preview_still_url": "https://art/preview-b.jpg",
+                         "preview_still_candidates": [{"url": "https://art/preview-b.jpg"}]},
+                        match_method="manual-igdb-id", confidence=1.0)
+                    return [delta] if delta else []
+
+            catalogue = ConsoleCatalog.__new__(ConsoleCatalog)
+            catalogue.store = store
+            catalogue.media_assets = MediaAssets()
+            catalogue.artwork = Artwork()
+            catalogue.enrichment = Enrichment()
+            catalogue.steam_media = SimpleNamespace(resolve=lambda _appid: {})
+
+            catalogue.apply_metadata_match(game.game_id, "igdb", "identity-b", "Thomas Was Alone 2")
+            refreshed = store.get_game(game.game_id)
+            self.assertEqual(refreshed.metadata_game_id, "identity-b")
+            self.assertEqual((refreshed.summary, refreshed.genres, refreshed.game_modes),
+                             ("New description", ("Puzzle",), ("Single player",)))
+            self.assertEqual(refreshed.artwork_source_url, "https://art/card-b.jpg")
+            self.assertEqual(refreshed.automatic_artwork_source_url, "https://art/card-b.jpg")
+            self.assertEqual(refreshed.icon_square_source_url, "https://art/icon-b.jpg")
+            self.assertEqual(refreshed.preview_still_source_url, "https://art/preview-b.jpg")
+            self.assertEqual((refreshed.provider, refreshed.platform, refreshed.provider_id,
+                              refreshed.install_dir),
+                             ("steam", "PC", "thomas", "/games/thomas"))
+            candidates = catalogue.artwork_candidates(game.game_id, "cover")
+            self.assertEqual(catalogue.artwork.gallery_identity, "identity-b")
+            self.assertEqual(candidates[0]["id"], "grid-b")
+
+    def test_mapping_card_refresh_keeps_explicit_card_override(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = CatalogueStore(Path(directory) / "catalogue.sqlite3")
+            game = CatalogueGame(
+                "steam:override", "steam", "override", "Thomas Was Alone", "PC",
+                "installed", True, "/games/thomas", "file:///user/card.jpg", 0,
+                metadata_provider="igdb", metadata_game_id="identity-a",
+                canonical_title="Thomas Was Alone", artwork_override=True,
+                artwork_source_url="user-card-source", artwork_provider="local",
+                artwork_type="cover", automatic_artwork_url="old-auto.jpg",
+            )
+            store._upsert(game)
+            store.connection.commit()
+            artwork = SimpleNamespace(
+                reload_configuration=lambda: None,
+                resolve_typed=lambda _game: ArtworkSelection(
+                    "file:///cache/new-auto.jpg", "new-auto-source", "steamgriddb", "cover"))
+            catalogue = ConsoleCatalog.__new__(ConsoleCatalog)
+            catalogue.store = store
+            catalogue.artwork = artwork
+            delta = catalogue._refresh_game_artwork(game.game_id)
+            self.assertIsNotNone(delta)
+            refreshed = store.get_game(game.game_id)
+            self.assertEqual(refreshed.artwork_url, "file:///user/card.jpg")
+            self.assertEqual(refreshed.artwork_source_url, "user-card-source")
+            self.assertEqual(refreshed.automatic_artwork_source_url, "new-auto-source")
 
     def test_generic_title_normalization_handles_subtitles_and_numeric_punctuation(self):
         self.assertEqual(_exact_candidates([{"id": 1, "name": "Oddworld: Soulstorm"}],

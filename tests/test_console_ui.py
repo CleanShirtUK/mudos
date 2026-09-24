@@ -11,6 +11,40 @@ SHELL_PROFILE = (ROOT / "config" / "inputplumber" / "profiles" / "shell.yaml").r
 
 
 class ConsoleUiTests(unittest.TestCase):
+    def test_game_options_scope_and_controller_text_entry_lifecycle(self) -> None:
+        shell = (ROOT / "ui" / "ConsoleShell.qml").read_text()
+        options = (ROOT / "ui" / "GameOptions.qml").read_text()
+        for action in ("Change Mapping", "Change Artwork", "Change Title", "Uninstall"):
+            self.assertIn(action, options)
+        self.assertNotIn("Restore Automatic Artwork", options)
+        self.assertIn("onMappingSearchRequested", shell)
+        self.assertIn("/metadata/search?game_id=", shell)
+        self.assertIn("/metadata/match/", shell)
+        self.assertIn("/artwork/candidates?game_id=", shell)
+        self.assertIn('role: selectedArtworkRole', shell)
+        self.assertIn("/keyboard/show", shell)
+        self.assertIn("/keyboard/status", shell)
+        self.assertIn("/keyboard/hide", shell)
+        self.assertIn("function keyboardDismissed()", options)
+        self.assertIn("mappingInput.forceActiveFocus()", options)
+        self.assertIn("titleInput.forceActiveFocus()", options)
+        self.assertIn("id: candidateDelegate", options)
+        self.assertIn("candidateDelegate.modelData.thumbnail", options)
+        self.assertIn("candidateDelegate.modelData.title", options)
+        self.assertIn('role: "cover"', options)
+        self.assertIn('role: "icon_square"', options)
+        self.assertIn('role: "preview_still"', options)
+        self.assertIn("function selectedCandidate()", options)
+        self.assertIn("selectGameMapping(gameOptionsRef.selectedCandidate())", shell)
+        self.assertIn("var artwork = gameOptionsRef.selectedCandidate()", shell)
+        self.assertIn("selectedCandidateId", options)
+        self.assertIn("candidate.id", shell)
+        self.assertNotIn("artworkRow.modelData", options)
+        self.assertNotIn("resultRow.modelData", options)
+        self.assertIn("function closeGameOptions()", shell)
+        self.assertIn("selectedGameForOptions", shell)
+        self.assertIn("onAccepted:", options)
+
     def test_library_preview_is_image_only_and_multimedia_disabled(self) -> None:
         library = (ROOT / "ui" / "LibrarySpace.qml").read_text()
         self.assertNotIn("import QtMultimedia", library)
@@ -847,8 +881,8 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertIn('{SDL_GAMEPAD_BUTTON_SOUTH, "confirm"}', native_shell)
         self.assertIn("if (gameOptionsOpen) {\n            activateGameOptions()", QML)
         self.assertIn("if (gameOptionsOpen)\n            return\n        if (selectedGameForOptions)", QML)
-        self.assertIn('if (gameOptionsOpen) {\n            if (gameOptionsView === "menu")', QML)
-        self.assertIn('closeGameOptions()\n            else', QML)
+        self.assertIn('if (gameOptionsOpen) {\n            if (gameOptionsTextEntryActive)', QML)
+        self.assertIn('closeGameOptions()', QML)
 
     def test_shell_profile_routes_semantic_events_to_qt_keys(self) -> None:
         for button, key in (
@@ -866,16 +900,19 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertIn("button: North", SHELL_PROFILE)
         self.assertIn("keyboard: KeyX", SHELL_PROFILE)
 
-    def test_game_options_preserves_contextual_two_level_structure(self) -> None:
+    def test_game_options_exposes_only_four_shallow_actions_and_subflows(self) -> None:
         options = (ROOT / "ui" / "GameOptions.qml").read_text()
         self.assertIn('"Change Artwork"', options)
-        self.assertIn('"Restore Automatic Artwork"', options)
+        self.assertIn('"Change Mapping"', options)
+        self.assertIn('"Change Title"', options)
+        self.assertIn('"Uninstall"', options)
+        self.assertNotIn('"Restore Automatic Artwork"', options)
         self.assertNotIn("Edit Metadata", options)
         self.assertNotIn("Change Match", options)
-        self.assertNotIn("/metadata/search?game_id=", QML)
+        self.assertIn("/metadata/search?game_id=", QML)
         self.assertNotIn("/artwork/files", QML)
         self.assertIn("property var artworkCandidates: []", QML)
-        self.assertIn("function loadArtworkCandidates()", QML)
+        self.assertIn("function loadGameArtworkCandidates(role)", QML)
         self.assertIn("/artwork/candidates?game_id=", QML)
         self.assertNotIn("Window {", options)
         self.assertIn("function back()", QML)
@@ -1073,6 +1110,19 @@ class ConsoleUiTests(unittest.TestCase):
         environment["QT_QUICK_BACKEND"] = "software"
         result = subprocess.run(
             [runner, "-input", str(ROOT / "tests/qml/tst_library_projection.qml")],
+            capture_output=True, text=True, env=environment, timeout=20,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_game_options_candidate_delegate_qml_regressions(self) -> None:
+        runner = shutil.which("qmltestrunner") or "/usr/lib/qt6/bin/qmltestrunner"
+        if not Path(runner).exists():
+            self.skipTest("qmltestrunner is not installed")
+        environment = os.environ.copy()
+        environment["QT_QPA_PLATFORM"] = "offscreen"
+        environment["QT_QUICK_BACKEND"] = "software"
+        result = subprocess.run(
+            [runner, "-input", str(ROOT / "tests/qml/tst_game_options_candidates.qml")],
             capture_output=True, text=True, env=environment, timeout=20,
         )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)

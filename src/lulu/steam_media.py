@@ -29,7 +29,7 @@ class SteamStoreMedia:
         self._request_lock = Lock()
         self._last_request_at = 0.0
 
-    def resolve(self, app_id: str) -> dict[str, str]:
+    def resolve(self, app_id: str) -> dict[str, object]:
         if not app_id.isdecimal() or int(app_id) < 1:
             return {}
         path = self.cache_dir / f"{app_id}.json"
@@ -39,7 +39,9 @@ class SteamStoreMedia:
             ttl = 6 * 60 * 60 if cached.get("failed") else 30 * 86400
             if cached.get("app_id") == app_id and age < ttl:
                 value = cached.get("media", {})
-                return value if isinstance(value, dict) else {}
+                if isinstance(value, dict) and (not value.get("preview_still_url")
+                                                or value.get("preview_still_candidates")):
+                    return value
         except (OSError, ValueError, TypeError):
             pass
         url = f"{self.endpoint}/{app_id}/?" + urlencode({"l": "english", "json": 1})
@@ -59,6 +61,7 @@ class SteamStoreMedia:
         if video and ".webm" not in video.casefold():
             video = ""
         still = ""
+        still_candidates: list[dict[str, object]] = []
         screenshots = payload.get("rgScreenshots", [])
         if isinstance(screenshots, list):
             for screenshot in screenshots:
@@ -66,20 +69,25 @@ class SteamStoreMedia:
                     continue
                 filename = str(screenshot.get("filename", "")).strip().lstrip("/")
                 if filename and not filename.startswith(("http://", "https://")):
-                    still = (f"https://shared.akamai.steamstatic.com/store_item_assets/"
-                             f"steam/apps/{app_id}/{filename}")
-                    break
+                    screenshot_url = (f"https://shared.akamai.steamstatic.com/store_item_assets/"
+                                      f"steam/apps/{app_id}/{filename}")
+                    if not still:
+                        still = screenshot_url
+                    still_candidates.append({"url": screenshot_url, "thumbnail": screenshot_url,
+                                             "provider": "steam", "width": 1920,
+                                             "height": 1080})
         media = {"preview_video_url": video, "preview_video_provider": "steam" if video else "",
                  "preview_video_source_url": video, "preview_still_url": still,
                  "preview_still_provider": "steam" if still else "",
-                 "preview_still_source_url": still}
+                 "preview_still_source_url": still,
+                 "preview_still_candidates": still_candidates}
         try:
             self._save(app_id, media)
         except OSError:
             pass
         return media
 
-    def _save(self, app_id: str, media: dict[str, str], *, failed: bool = False) -> None:
+    def _save(self, app_id: str, media: dict[str, object], *, failed: bool = False) -> None:
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         path = self.cache_dir / f"{app_id}.json"
         temporary = path.with_suffix(".tmp")

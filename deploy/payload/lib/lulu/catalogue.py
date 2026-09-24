@@ -92,6 +92,12 @@ class CatalogueGame:
     match_method: str = ""
     match_confidence: float = 0.0
     match_locked: bool = False
+    automatic_metadata_provider: str = ""
+    automatic_metadata_game_id: str = ""
+    automatic_canonical_title: str = ""
+    manual_metadata_provider: str = ""
+    manual_metadata_game_id: str = ""
+    manual_canonical_title: str = ""
     metadata_checked_at: int = 0
     display_title_override: str = ""
     artwork_suppressed: bool = False
@@ -191,7 +197,7 @@ class CatalogueGame:
             runtime=str(registration.get("runner", "")), source_title=source.title,
             normalized_search_title=clean_local_title(title), availability_state="installed",
             provider_record_id=str(registration.get("config_id", "")), content_identity=source.source_id,
-            catalogue_source=source.provenance,
+            catalogue_source=source.provenance, mudos_owned=True,
         )
 
     @classmethod
@@ -357,7 +363,9 @@ MEANINGFUL_GAME_FIELDS = tuple(
 IDENTITY_COLUMNS = (
     "source_title", "normalized_search_title", "metadata_provider", "metadata_game_id",
     "canonical_title", "match_status", "match_method", "match_confidence",
-    "match_locked", "metadata_checked_at", "display_title_override", "artwork_suppressed",
+    "match_locked", "automatic_metadata_provider", "automatic_metadata_game_id",
+    "automatic_canonical_title", "manual_metadata_provider", "manual_metadata_game_id",
+    "manual_canonical_title", "metadata_checked_at", "display_title_override", "artwork_suppressed",
 )
 TEMPORARY_METADATA_RETRY_SECONDS = 15 * 60
 NORMAL_METADATA_RETRY_SECONDS = 24 * 60 * 60
@@ -421,6 +429,12 @@ class CatalogueStore:
                       "canonical_title": "TEXT NOT NULL DEFAULT ''", "match_status": "TEXT NOT NULL DEFAULT ''",
                       "match_method": "TEXT NOT NULL DEFAULT ''", "match_confidence": "REAL NOT NULL DEFAULT 0",
                        "match_locked": "INTEGER NOT NULL DEFAULT 0", "metadata_checked_at": "INTEGER NOT NULL DEFAULT 0",
+                       "automatic_metadata_provider": "TEXT NOT NULL DEFAULT ''",
+                       "automatic_metadata_game_id": "TEXT NOT NULL DEFAULT ''",
+                       "automatic_canonical_title": "TEXT NOT NULL DEFAULT ''",
+                       "manual_metadata_provider": "TEXT NOT NULL DEFAULT ''",
+                       "manual_metadata_game_id": "TEXT NOT NULL DEFAULT ''",
+                       "manual_canonical_title": "TEXT NOT NULL DEFAULT ''",
                        "display_title_override": "TEXT NOT NULL DEFAULT ''", "artwork_suppressed": "INTEGER NOT NULL DEFAULT 0",
                        "availability_state": "TEXT NOT NULL DEFAULT 'installed'",
                        "provider_record_id": "TEXT NOT NULL DEFAULT ''", "content_identity": "TEXT NOT NULL DEFAULT ''",
@@ -464,6 +478,16 @@ class CatalogueStore:
         for name, definition in migrations.items():
             if name not in columns:
                 self.connection.execute(f"ALTER TABLE games ADD COLUMN {name} {definition}")
+        # Preserve legacy locked mappings as manual overrides. Their previous
+        # automatic identity cannot be inferred from the overwritten columns.
+        self.connection.execute(
+            "UPDATE games SET manual_metadata_provider=metadata_provider, "
+            "manual_metadata_game_id=metadata_game_id, manual_canonical_title=canonical_title "
+            "WHERE match_locked=1 AND manual_metadata_game_id='' AND metadata_game_id<>''")
+        self.connection.execute(
+            "UPDATE games SET automatic_metadata_provider=metadata_provider, "
+            "automatic_metadata_game_id=metadata_game_id, automatic_canonical_title=canonical_title "
+            "WHERE match_locked=0 AND automatic_metadata_game_id='' AND metadata_game_id<>''")
         # One-time compatibility projection for pre-typed records. Flatpak
         # artwork was an AppStream icon; all other legacy populated artwork
         # was card artwork from a provider/enrichment path.
@@ -1129,6 +1153,11 @@ class CatalogueStore:
         rows = self._rows(f"SELECT {SELECT_COLUMNS} FROM games WHERE game_id=?", (game_id,))
         return rows[0] if rows else None
 
+    def get_game_by_provider_id(self, provider: str, provider_id: str) -> CatalogueGame | None:
+        rows = self._rows(f"SELECT {SELECT_COLUMNS} FROM games WHERE provider=? AND provider_id=? LIMIT 1",
+                          (str(provider), str(provider_id)))
+        return rows[0] if rows else None
+
     def list_platforms(self) -> list[tuple[str, str]]:
         platforms = list(self.connection.execute("SELECT platform, MAX(platform_label) FROM games WHERE catalogue_source='local' AND install_state='installed' GROUP BY platform"))
         return sorted(platforms, key=lambda item: item[1].casefold())
@@ -1183,6 +1212,9 @@ class CatalogueStore:
             metadata_provider=match.provider, metadata_game_id=match.game_id,
             canonical_title=match.canonical_title, match_status=match.status,
             match_method=match.method, match_confidence=match.confidence, match_locked=False,
+            automatic_metadata_provider=match.provider,
+            automatic_metadata_game_id=match.game_id,
+            automatic_canonical_title=match.canonical_title,
             metadata_checked_at=int(time.time()),
             genres=_metadata_memberships(presentation.get("genres")) if presentation.get("genres") else existing.genres,
             release_date=presentation.get("release_date") or existing.release_date,
@@ -1335,10 +1367,75 @@ class CatalogueStore:
                         metadata_provider=provider, metadata_game_id=metadata_game_id,
                         canonical_title=canonical_title, match_status="manual",
                         match_method="manual", match_confidence=1, match_locked=True,
-                        metadata_checked_at=int(time.time()), artwork_url="")
+                        manual_metadata_provider=provider, manual_metadata_game_id=metadata_game_id,
+                        manual_canonical_title=canonical_title,
+                        automatic_metadata_provider=(existing.automatic_metadata_provider or
+                                                     (existing.metadata_provider if not existing.match_locked else "")),
+                        automatic_metadata_game_id=(existing.automatic_metadata_game_id or
+                                                    (existing.metadata_game_id if not existing.match_locked else "")),
+                        automatic_canonical_title=(existing.automatic_canonical_title or
+                                                   (existing.canonical_title if not existing.match_locked else "")),
+                        metadata_checked_at=int(time.time()),
+                         summary="", release_date=None, release_year=None, genres=(),
+                         game_modes=(), game_mode=None, local_multiplayer=None,
+                         online_multiplayer=None, developer="", publisher="",
+                         platforms=(), franchise="", collection="", igdb_id="",
+                         canonical_cover_url="", canonical_cover_width=None,
+                         canonical_cover_height=None, metadata_resolver_version=0,
+                         artwork_url=existing.artwork_url if existing.artwork_override else "",
+                         artwork_source_url=existing.artwork_source_url if existing.artwork_override else "",
+                         artwork_provider=existing.artwork_provider if existing.artwork_override else "",
+                         artwork_type=existing.artwork_type if existing.artwork_override else "",
+                         artwork_width=existing.artwork_width if existing.artwork_override else None,
+                         artwork_height=existing.artwork_height if existing.artwork_override else None,
+                         automatic_artwork_url="", automatic_artwork_source_url="",
+                         automatic_artwork_provider="", automatic_artwork_type="",
+                         automatic_artwork_width=None, automatic_artwork_height=None,
+                         selected_artwork_source_url=(existing.selected_artwork_source_url
+                                                      if existing.artwork_override else ""))
         with self.atomic():
             self._start_operation()
             delta = self._apply_existing_locked(existing, after)
+            self.connection.execute(
+                "DELETE FROM metadata_enrichment WHERE provider='igdb' AND game_id=?", (game_id,))
+        self._finish_operation([delta] if delta else [])
+        return delta
+
+    def revert_metadata_match(self, game_id: str) -> CatalogueDelta | None:
+        existing = self.get_game(game_id)
+        if existing is None or not existing.match_locked:
+            return None
+        # A legacy manual override may have no recoverable prior association.
+        # Clear only the override; the normal conservative matcher can then
+        # resolve the automatic identity without changing runtime identity.
+        provider = existing.automatic_metadata_provider
+        external_id = existing.automatic_metadata_game_id
+        canonical = existing.automatic_canonical_title
+        after = replace(existing, title=existing.display_title_override or canonical or
+                        existing.normalized_search_title or clean_local_title(existing.source_title or existing.title),
+                        metadata_provider=provider, metadata_game_id=external_id,
+                        canonical_title=canonical, match_status="matched" if external_id else "",
+                        match_method="reverted" if external_id else "unmatched",
+                        match_confidence=1 if external_id else 0, match_locked=False,
+                        manual_metadata_provider="", manual_metadata_game_id="",
+                        manual_canonical_title="", metadata_checked_at=0,
+                        summary="", release_date=None, release_year=None, genres=(),
+                        game_modes=(), game_mode=None, local_multiplayer=None,
+                        online_multiplayer=None, developer="", publisher="", platforms=(),
+                        franchise="", collection="", igdb_id="", canonical_cover_url="",
+                        canonical_cover_width=None, canonical_cover_height=None,
+                        metadata_resolver_version=0,
+                        artwork_url=existing.artwork_url if existing.artwork_override else "",
+                        artwork_source_url=existing.artwork_source_url if existing.artwork_override else "",
+                        automatic_artwork_url="", automatic_artwork_source_url="",
+                        automatic_artwork_provider="", automatic_artwork_type="",
+                        automatic_artwork_width=None, automatic_artwork_height=None,
+                        icon_square_url=existing.icon_square_url if existing.icon_square_provider == "override" else "",
+                        preview_still_url=existing.preview_still_url if existing.preview_still_provider == "override" else "")
+        with self.atomic():
+            self._start_operation()
+            delta = self._apply_existing_locked(existing, after)
+            self.connection.execute("DELETE FROM metadata_enrichment WHERE provider='igdb' AND game_id=?", (game_id,))
         self._finish_operation([delta] if delta else [])
         return delta
 
@@ -1405,6 +1502,18 @@ class CatalogueStore:
         self._finish_operation([delta] if delta else [])
         return delta
 
+    def clear_icon_square_media(self, game_id: str) -> CatalogueDelta | None:
+        existing = self.get_game(game_id)
+        if existing is None:
+            return None
+        after = replace(existing, icon_square_url="", icon_square_provider="",
+                        icon_square_source_url="")
+        with self.atomic():
+            self._start_operation()
+            delta = self._apply_existing_locked(existing, after)
+        self._finish_operation([delta] if delta else [])
+        return delta
+
     def set_preview_animation(self, game_id: str, url: str) -> CatalogueDelta | None:
         existing = self.get_game(game_id)
         if existing is None or existing.provider != "steam":
@@ -1419,6 +1528,12 @@ class CatalogueStore:
     def clear_preview_still_if_provider(self, game_id: str, provider: str) -> CatalogueDelta | None:
         existing = self.get_game(game_id)
         if existing is None or existing.preview_still_provider != provider:
+            return None
+        return self.clear_preview_still(game_id)
+
+    def clear_preview_still(self, game_id: str) -> CatalogueDelta | None:
+        existing = self.get_game(game_id)
+        if existing is None:
             return None
         after = replace(existing, preview_still_url="", preview_still_provider="",
                         preview_still_source_url="")

@@ -9,6 +9,7 @@ from lulu.romm import RommFile, RommGame
 from lulu.steam_provider import InstalledSteamGame
 from lulu.local_content import LocalContentProvider
 from lulu.steam_entitlements import SteamEntitlement
+from lulu.metadata import MetadataMatch
 
 
 class FakeSteamProvider:
@@ -20,6 +21,26 @@ class FakeSteamProvider:
 
 
 class CatalogueTests(unittest.TestCase):
+    def test_manual_mapping_is_override_and_revert_restores_automatic_identity(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = CatalogueStore(Path(directory) / "catalogue.sqlite3")
+            game = CatalogueGame("steam:1", "steam", "1", "Runtime title", "Steam",
+                                 "installed", True, "/games/one", "", 0)
+            store.reconcile_component_apps("steam", [game])
+            store.apply_metadata_match(game.game_id, MetadataMatch(
+                "matched", provider="igdb", game_id="A", canonical_title="Automatic A"))
+            store.set_metadata_match(game.game_id, "igdb", "B", "Manual B")
+            manual = store.get_game(game.game_id)
+            self.assertEqual(manual.automatic_metadata_game_id, "A")
+            self.assertEqual(manual.manual_metadata_game_id, "B")
+            self.assertEqual(manual.metadata_game_id, "B")
+            store.revert_metadata_match(game.game_id)
+            reverted = store.get_game(game.game_id)
+        self.assertFalse(reverted.match_locked)
+        self.assertEqual(reverted.metadata_game_id, "A")
+        self.assertEqual(reverted.provider_id, "1")
+        self.assertEqual(reverted.install_dir, "/games/one")
+
     @staticmethod
     def _platform_game(platform: str, platform_label: str, provider: str = "steam") -> CatalogueGame:
         return CatalogueGame(
@@ -534,6 +555,108 @@ class CatalogueTests(unittest.TestCase):
         self.assertEqual(record.title, "My Mario")
         self.assertEqual(record.display_title_override, "My Mario")
         self.assertTrue(record.artwork_suppressed)
+
+    def test_explicit_mapping_is_locked_and_does_not_change_runtime_identity(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = CatalogueStore(Path(directory) / "catalogue.sqlite3")
+            game = CatalogueGame(
+                "steam:40800", "steam", "40800", "Super Meat Boy", "Steam",
+                "installed", True, "/games/Super Meat Boy", "", 0,
+                metadata_provider="igdb", metadata_game_id="12", canonical_title="Old Match",
+                match_status="matched", match_method="steam-appid", summary="old summary",
+                genres=("Old Genre",),
+            )
+            store._upsert(game)
+            store.connection.commit()
+            store.set_metadata_match(game.game_id, "igdb", "77", "Correct Match")
+            corrected = store.get_game(game.game_id)
+            self.assertTrue(corrected.match_locked)
+            self.assertEqual((corrected.provider, corrected.platform, corrected.provider_id,
+                              corrected.install_dir),
+                             ("steam", "PC", "40800", "/games/Super Meat Boy"))
+            self.assertEqual(corrected.metadata_game_id, "77")
+            self.assertEqual(corrected.summary, "")
+            refreshed = store.apply_enrichment(
+                "igdb", game.game_id, "77", {
+                    "canonical_title": "Correct Match", "summary": "Correct description",
+                    "genres": ["Puzzle"], "release_year": 2024,
+                }, match_method="manual-igdb-id", confidence=1.0, fetched_at=100)
+            self.assertIsNotNone(refreshed)
+            enriched = store.get_game(game.game_id)
+            self.assertEqual(enriched.metadata_game_id, "77")
+            self.assertTrue(enriched.match_locked)
+            self.assertEqual(enriched.summary, "Correct description")
+            self.assertEqual(enriched.genres, ("Puzzle",))
+            ignored = store.apply_metadata_match(game.game_id, MetadataMatch(
+                "matched", "igdb", "999", "Automatic Wrong Match", method="automatic"))
+            self.assertIsNone(ignored)
+            reopened = CatalogueStore(Path(directory) / "catalogue.sqlite3")
+            self.assertEqual(reopened.get_game(game.game_id).metadata_game_id, "77")
+            self.assertEqual(reopened.get_game(game.game_id).provider_id, "40800")
+
+    def test_remapping_clears_automatic_identity_state_but_keeps_card_override(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = CatalogueStore(Path(directory) / "catalogue.sqlite3")
+            game = CatalogueGame(
+                "steam:thomas", "steam", "thomas", "Thomas Was Alone", "PC",
+                "installed", True, "/games/thomas", "old-auto-card.jpg", 0,
+                metadata_provider="igdb", metadata_game_id="identity-a",
+                canonical_title="Thomas Was Alone", summary="old description",
+                genres=("Old Genre",), game_modes=("Old Mode",),
+                artwork_source_url="old-card-source", artwork_provider="steamgriddb",
+                artwork_type="cover", automatic_artwork_url="old-auto-card.jpg",
+                automatic_artwork_source_url="old-card-source",
+                icon_square_url="old-auto-icon.jpg", icon_square_provider="igdb",
+                icon_square_source_url="old-icon-source",
+                preview_still_url="old-auto-preview.jpg", preview_still_provider="igdb",
+                preview_still_source_url="old-preview-source",
+            )
+            store._upsert(game)
+            store.connection.commit()
+            store.apply_enrichment("igdb", game.game_id, "identity-a",
+                                   {"summary": "old description"},
+                                   match_method="manual", confidence=1.0)
+            store.set_metadata_match(game.game_id, "igdb", "identity-b", "New Canonical Name")
+            remapped = store.get_game(game.game_id)
+            self.assertEqual((remapped.metadata_game_id, remapped.canonical_title),
+                             ("identity-b", "New Canonical Name"))
+            self.assertEqual((remapped.provider, remapped.platform, remapped.provider_id,
+                              remapped.install_dir),
+                             ("steam", "PC", "thomas", "/games/thomas"))
+            self.assertEqual((remapped.summary, remapped.genres, remapped.game_modes),
+                             ("", (), ()))
+            self.assertEqual(remapped.automatic_artwork_url, "")
+            self.assertEqual(remapped.artwork_url, "")
+            self.assertIsNone(store.enrichment_record("igdb", game.game_id))
+
+            explicit_path = Path(directory) / "user-card.jpg"
+            explicit_path.write_bytes(b"image")
+            store.set_selected_artwork(game.game_id, str(explicit_path), "user-card-source", 600, 900)
+            store.set_metadata_match(game.game_id, "igdb", "identity-c", "Third Name")
+            preserved = store.get_game(game.game_id)
+            self.assertEqual(preserved.artwork_url.split("?", 1)[0], explicit_path.as_uri())
+            self.assertEqual(preserved.artwork_source_url, "user-card-source")
+
+    def test_display_title_override_and_reset_are_separate_from_metadata_and_launch_identity(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = CatalogueStore(Path(directory) / "catalogue.sqlite3")
+            game = CatalogueGame(
+                "steam:10", "steam", "10", "Canonical Zelda", "Steam", "installed",
+                True, "/games/zelda.exe", "", 0, canonical_title="Canonical Zelda",
+                metadata_provider="igdb", metadata_game_id="71", match_locked=True,
+            )
+            store._upsert(game)
+            store.connection.commit()
+            store.set_display_title_override(game.game_id, "Zelda")
+            changed = store.get_game(game.game_id)
+            self.assertEqual(changed.title, "Zelda")
+            self.assertEqual((changed.provider, changed.platform, changed.provider_id,
+                              changed.install_dir, changed.metadata_game_id),
+                             ("steam", "PC", "10", "/games/zelda.exe", "71"))
+            store.clear_display_title_override(game.game_id)
+            restored = store.get_game(game.game_id)
+            self.assertEqual(restored.title, "Canonical Zelda")
+            self.assertEqual(restored.metadata_game_id, "71")
 
     def test_dbus_variants_preserve_real_catalogue_types(self) -> None:
         from lulu.catalogue import CatalogueGame

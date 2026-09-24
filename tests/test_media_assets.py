@@ -9,6 +9,8 @@ from unittest.mock import patch
 from PIL import Image
 
 from lulu.media_assets import LocalMediaAssets, media_asset_path
+from lulu.catalogue import CatalogueGame, CatalogueStore
+from lulu.consoled import ConsoleCatalog
 
 
 class LocalMediaAssetTests(unittest.TestCase):
@@ -71,6 +73,156 @@ class LocalMediaAssetTests(unittest.TestCase):
         self.assertEqual(self.downloads, ["https://sgdb.example/selected.png"])
         state = json.loads((path.parent / ".media-assets.json").read_text())
         self.assertTrue(state["icon_square"]["override"])
+
+    def test_catalogue_artwork_selection_persists_role_override_locally(self) -> None:
+        from types import SimpleNamespace
+
+        with tempfile.TemporaryDirectory() as directory:
+            store = CatalogueStore(Path(directory) / "catalogue.sqlite3")
+            game = CatalogueGame("steam:26800", "steam", "26800", "Braid", "Steam",
+                                 "installed", True, "/games/braid", "", 0)
+            store._upsert(game); store.connection.commit()
+            catalogue = SimpleNamespace(
+                store=store,
+                artwork_candidates=lambda _game_id, _role: [{
+                    "url": "https://sgdb.example/square.png", "provider": "steamgriddb"}],
+                media_assets=self.assets,
+            )
+            delta = ConsoleCatalog.select_presentation_artwork(
+                catalogue, game.game_id, "icon_square", "https://sgdb.example/square.png")
+            stored = store.get_game(game.game_id)
+            path = media_asset_path(game, "icon_square")
+            self.assertIsNotNone(delta)
+            self.assertEqual(stored.icon_square_url.split("?", 1)[0], path.as_uri())
+            self.assertEqual(stored.icon_square_source_url, "https://sgdb.example/square.png")
+            before = path.read_bytes()
+            store.apply_enrichment("igdb", game.game_id, "55", {
+                "icon_square_url": "https://igdb.example/automatic.png",
+            }, match_method="test", confidence=1)
+            self.assertEqual(path.read_bytes(), before)
+            self.assertEqual(store.get_game(game.game_id).icon_square_url, stored.icon_square_url)
+
+    def test_card_square_and_preview_artwork_roles_are_independent(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = CatalogueStore(Path(directory) / "catalogue.sqlite3")
+            game = CatalogueGame("steam:26800", "steam", "26800", "Braid", "PC",
+                                 "installed", True, "/games/braid", "", 0)
+            store._upsert(game)
+            store.connection.commit()
+            cover_path = Path(directory) / "selected-cover.jpg"
+            cover_path.write_bytes(b"cover")
+            store.set_selected_artwork(game.game_id, str(cover_path),
+                                       "https://sgdb.example/card.png", 600, 900)
+            after_cover = store.get_game(game.game_id)
+            self.assertTrue(after_cover.artwork_override)
+            self.assertEqual(after_cover.artwork_url.split("?", 1)[0], cover_path.as_uri())
+            self.assertEqual(after_cover.icon_square_url, "")
+            self.assertEqual(after_cover.preview_still_url, "")
+
+            square = self.assets.install_override(
+                self.game, "icon_square", "https://sgdb.example/square.png")
+            store.set_icon_square_media(game.game_id, url=square, provider="steamgriddb",
+                                        source_url="https://sgdb.example/square.png")
+            preview = self.assets.install_override(
+                self.game, "preview_still", "https://igdb.example/screenshot.jpg")
+            store.set_preview_media(game.game_id, still_url=preview, still_provider="igdb",
+                                    still_source_url="https://igdb.example/screenshot.jpg",
+                                    prefer_still=True)
+            all_roles = store.get_game(game.game_id)
+            self.assertEqual(all_roles.artwork_url.split("?", 1)[0], cover_path.as_uri())
+            self.assertEqual(all_roles.icon_square_url.split("?", 1)[0],
+                             media_asset_path(game, "icon_square").as_uri())
+            self.assertEqual(all_roles.preview_still_url.split("?", 1)[0],
+                             media_asset_path(game, "preview_still").as_uri())
+            self.assertEqual(all_roles.preview_animation_url, "")
+
+    def test_mapping_artwork_refresh_preserves_explicit_card_override_and_updates_automatic(self) -> None:
+        from types import SimpleNamespace
+        from lulu.artwork import ArtworkSelection
+
+        with tempfile.TemporaryDirectory() as directory:
+            store = CatalogueStore(Path(directory) / "catalogue.sqlite3")
+            game = CatalogueGame("steam:26800", "steam", "26800", "Braid", "PC",
+                                 "installed", True, "/games/braid", "", 0)
+            store._upsert(game)
+            store.connection.commit()
+            cover = Path(directory) / "cover.jpg"
+            cover.write_bytes(b"explicit-card-art")
+            store.set_selected_artwork(game.game_id, str(cover),
+                                       "https://sgdb.example/card.png", 600, 900)
+            artwork = SimpleNamespace(
+                reload_configuration=lambda: None,
+                resolve_typed=lambda _game: ArtworkSelection(
+                    "file:///cache/automatic.jpg", "https://sgdb.example/new-auto.png",
+                    "steamgriddb", "cover", 600, 900))
+            catalogue = SimpleNamespace(store=store, artwork=artwork)
+            self.assertIsNotNone(ConsoleCatalog._refresh_game_artwork(catalogue, game.game_id))
+            stored = store.get_game(game.game_id)
+            self.assertEqual(stored.artwork_url.split("?", 1)[0], cover.as_uri())
+            self.assertEqual(stored.automatic_artwork_source_url,
+                             "https://sgdb.example/new-auto.png")
+
+    def test_mapping_change_preserves_explicit_overrides_for_all_three_roles(self) -> None:
+        from lulu.artwork import ArtworkSelection
+
+        with tempfile.TemporaryDirectory() as directory:
+            store = CatalogueStore(Path(directory) / "catalogue.sqlite3")
+            game = CatalogueGame(
+                "steam:26800", "steam", "26800", "Braid", "PC", "installed", True,
+                "/games/braid", "", 0, metadata_provider="igdb", metadata_game_id="old-id",
+                canonical_title="Braid", icon_square_provider="igdb",
+                preview_still_provider="igdb")
+            store._upsert(game)
+            store.connection.commit()
+            cover = Path(directory) / "user-cover.jpg"
+            cover.write_bytes(b"cover")
+            store.set_selected_artwork(game.game_id, str(cover), "user-cover-source", 600, 900)
+            square = self.assets.install_override(self.game, "icon_square", "user-square-source")
+            preview = self.assets.install_override(self.game, "preview_still", "user-preview-source")
+            store.set_icon_square_media(game.game_id, url=square, provider="steamgriddb",
+                                        source_url="user-square-source")
+            store.set_preview_media(game.game_id, still_url=preview, still_provider="igdb",
+                                    still_source_url="user-preview-source", prefer_still=True)
+
+            class Artwork:
+                def reload_configuration(self): pass
+                def resolve_typed(self, _game):
+                    return ArtworkSelection("file:///automatic/card.jpg", "automatic-card",
+                                            "steamgriddb", "cover", 600, 900)
+
+            catalogue = ConsoleCatalog.__new__(ConsoleCatalog)
+            catalogue.store = store
+            catalogue.media_assets = self.assets
+            catalogue.artwork = Artwork()
+            catalogue.enrichment = SimpleNamespace(enrich_game=lambda *_args, **_kwargs: [])
+            catalogue.apply_metadata_match(game.game_id, "igdb", "new-id", "Braid Remapped")
+            updated = store.get_game(game.game_id)
+            self.assertEqual(updated.metadata_game_id, "new-id")
+            self.assertEqual(updated.artwork_source_url, "user-cover-source")
+            self.assertEqual(updated.icon_square_source_url, "user-square-source")
+            self.assertEqual(updated.preview_still_source_url, "user-preview-source")
+            self.assertTrue(self.assets.is_override(updated, "icon_square"))
+            self.assertTrue(self.assets.is_override(updated, "preview_still"))
+
+    def test_preview_candidate_gallery_uses_screenshots_not_hero_images(self) -> None:
+        from types import SimpleNamespace
+
+        with tempfile.TemporaryDirectory() as directory:
+            store = CatalogueStore(Path(directory) / "catalogue.sqlite3")
+            game = CatalogueGame("flatpak:org.example.Game", "flatpak", "org.example.Game",
+                                 "Example", "PC", "installed", True, "/games/example", "", 0)
+            store._upsert(game); store.connection.commit()
+            screenshot_url = "https://images.igdb.com/screenshot.jpg"
+            store.apply_enrichment("igdb", game.game_id, "55", {
+                "preview_still_candidates": [{"url": screenshot_url,
+                                               "thumbnail": screenshot_url,
+                                               "provider": "igdb"}],
+                "hero_url": "https://cdn.example/steamgriddb-hero.jpg",
+            }, match_method="test", confidence=1)
+            catalogue = SimpleNamespace(store=store)
+            candidates = ConsoleCatalog.artwork_candidates(
+                catalogue, game.game_id, "preview_still")
+            self.assertEqual([item["url"] for item in candidates], [screenshot_url])
 
     def test_failed_refresh_preserves_existing_local_asset(self) -> None:
         old = self.assets.acquire_image(self.game, "preview_still", "https://old/still.jpg")

@@ -14,6 +14,94 @@ SPEC.loader.exec_module(BRIDGE)
 
 
 class ConsoleBridgeTests(unittest.TestCase):
+    def test_selected_mapping_candidate_preserves_its_igdb_identity(self) -> None:
+        class Consoled:
+            def __init__(self): self.selected = None
+            async def call_set_metadata_match(self, *values): self.selected = values
+
+        async def exercise():
+            consoled = Consoled()
+            bridge = BRIDGE.ConsoleUiBridge(asyncio.get_running_loop(), consoled, object())
+            await bridge.set_metadata_match("steam:26800", {
+                "provider": "igdb", "metadata_game_id": "2853", "canonical_title": "Braid",
+            })
+            self.assertEqual(consoled.selected, ("steam:26800", "igdb", "2853", "Braid"))
+
+        asyncio.run(exercise())
+
+    def test_artwork_candidate_passes_the_chosen_role_and_source_identity(self) -> None:
+        class Consoled:
+            def __init__(self): self.selected = None
+            async def call_select_presentation_artwork(self, *values): self.selected = values
+
+        async def exercise():
+            consoled = Consoled()
+            bridge = BRIDGE.ConsoleUiBridge(asyncio.get_running_loop(), consoled, object())
+            await bridge.select_presentation_artwork(
+                "steam:26800", "preview_still", "https://igdb.example/screen.jpg")
+            self.assertEqual(consoled.selected, (
+                "steam:26800", "preview_still", "https://igdb.example/screen.jpg"))
+
+        asyncio.run(exercise())
+
+    def test_selected_recents_card_artwork_passes_chosen_source_url(self) -> None:
+        class Consoled:
+            def __init__(self): self.selected = None
+            async def call_select_artwork(self, *values): self.selected = values
+
+        async def exercise():
+            consoled = Consoled()
+            bridge = BRIDGE.ConsoleUiBridge(asyncio.get_running_loop(), consoled, object())
+            await bridge.select_artwork("steam:26800", "https://sgdb.example/card.png")
+            self.assertEqual(consoled.selected,
+                             ("steam:26800", "https://sgdb.example/card.png"))
+
+        asyncio.run(exercise())
+
+    def test_game_options_uses_normalized_uninstall_capability_and_operation(self) -> None:
+        class Acquisition:
+            def __init__(self):
+                self.uninstalled = []
+
+            async def call_can_uninstall(self, game_id):
+                return json.dumps({"supported": True, "installed": True,
+                                   "provider": "steam" if game_id.startswith("steam:") else "unknown"})
+
+            async def call_uninstall_game(self, game_id):
+                self.uninstalled.append(game_id)
+                return "job-1"
+
+            async def call_get_snapshot(self):
+                return json.dumps({"jobs": [{"job_id": "job-1", "state": "failed"}]})
+
+        async def exercise():
+            acquisition = Acquisition()
+            bridge = BRIDGE.ConsoleUiBridge(asyncio.get_running_loop(), object(), object(), acquisition)
+            capability = await bridge.uninstall_capability("steam:40800")
+            result = await bridge.uninstall_game("steam:40800")
+            await asyncio.sleep(0)
+            self.assertEqual(capability, {"supported": True, "installed": True, "provider": "steam"})
+            self.assertEqual(result, {"token": "job-1"})
+            self.assertEqual(acquisition.uninstalled, ["steam:40800"])
+
+        asyncio.run(exercise())
+
+    def test_keyboard_bridge_routes_show_hide_and_status_to_consoled(self) -> None:
+        class Consoled:
+            def __init__(self): self.calls = []
+            async def call_show_keyboard(self): self.calls.append("show"); return True
+            async def call_hide_keyboard(self): self.calls.append("hide"); return False
+            async def call_keyboard_visible(self): self.calls.append("status"); return True
+
+        async def exercise():
+            consoled = Consoled()
+            bridge = BRIDGE.ConsoleUiBridge(asyncio.get_running_loop(), consoled, object())
+            self.assertEqual(await bridge.keyboard("show"), {"visible": True})
+            self.assertEqual(await bridge.keyboard("status"), {"visible": True})
+            self.assertEqual(await bridge.keyboard("hide"), {"visible": False})
+            self.assertEqual(consoled.calls, ["show", "status", "hide"])
+
+        asyncio.run(exercise())
     def test_bridge_checks_all_prerequisites_before_launch(self) -> None:
         class ReadyBus:
             def __init__(self) -> None:

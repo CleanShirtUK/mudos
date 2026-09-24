@@ -158,10 +158,14 @@ class IGDBClient:
         return rows[0] if rows else None
 
     def search_platform(self, title: str, platform_id: int) -> list[dict[str, object]]:
+        return self.search(title, platform_id)
+
+    def search(self, title: str, platform_id: int | None = None) -> list[dict[str, object]]:
         if not title.strip() or not self.configured:
             return []
-        escaped = title.replace('"', '\\"')
-        body = f'fields {IGDB_FIELDS}; search "{escaped}"; where platforms = ({platform_id}); limit 10;'
+        escaped = title.replace('\\', '\\\\').replace('"', '\\"')
+        platform_filter = f" where platforms = ({int(platform_id)});" if platform_id else ""
+        body = f'fields {IGDB_FIELDS}; search "{escaped}";{platform_filter} limit 20;'
         return self.query(body)
 
     @staticmethod
@@ -217,6 +221,7 @@ def normalize_igdb_game(value: dict[str, object]) -> dict[str, object]:
     screenshots = value.get("screenshots")
     if isinstance(screenshots, list):
         widescreen: list[str] = []
+        screenshot_candidates: list[dict[str, object]] = []
         for screenshot in screenshots:
             if not isinstance(screenshot, dict):
                 continue
@@ -234,6 +239,12 @@ def normalize_igdb_game(value: dict[str, object]) -> dict[str, object]:
                     url = "https:" + url
                 if url:
                     widescreen.append(url)
+                    screenshot_candidates.append({
+                        "url": url,
+                        "thumbnail": url.replace("t_screenshot_big", "t_thumb"),
+                        "width": width, "height": height, "provider": "igdb",
+                    })
+        result["preview_still_candidates"] = screenshot_candidates
         if widescreen:
             # IGDB preserves its canonical screenshot order; choosing the first
             # valid landscape image keeps the preview stable between refreshes.

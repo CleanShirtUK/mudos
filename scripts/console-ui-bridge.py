@@ -564,7 +564,9 @@ class ConsoleUiBridge:
         return json.loads(result)
 
     async def keyboard(self, action: str) -> dict[str, object]:
-        method = self.consoled.call_show_keyboard if action == "show" else self.consoled.call_hide_keyboard
+        method = (self.consoled.call_show_keyboard if action == "show" else
+                  self.consoled.call_hide_keyboard if action == "hide" else
+                  self.consoled.call_keyboard_visible)
         return {"visible": bool(await method())}
 
     async def search_metadata(self, game_id: str, query: str) -> list[dict[str, object]]:
@@ -576,6 +578,9 @@ class ConsoleUiBridge:
             game_id, str(payload.get("provider", "steamgriddb")),
             str(payload.get("metadata_game_id", "")), str(payload.get("canonical_title", "")),
         )
+
+    async def revert_metadata_match(self, game_id: str) -> None:
+        await self.consoled.call_revert_metadata_match(game_id)
 
     async def set_title_override(self, game_id: str, title: str) -> None:
         await self.consoled.call_set_title_override(game_id, title)
@@ -589,12 +594,18 @@ class ConsoleUiBridge:
         else:
             await self.consoled.call_restore_artwork(game_id)
 
-    async def artwork_candidates(self, game_id: str) -> list[dict[str, object]]:
-        rows = await self.consoled.call_list_artwork_candidates(game_id)
+    async def artwork_candidates(self, game_id: str, role: str = "cover") -> list[dict[str, object]]:
+        if role == "cover":
+            rows = await self.consoled.call_list_artwork_candidates(game_id)
+        else:
+            rows = await self.consoled.call_list_presentation_artwork_candidates(game_id, role)
         return [{key: value.value for key, value in row.items()} for row in rows]
 
     async def select_artwork(self, game_id: str, source_url: str) -> None:
         await self.consoled.call_select_artwork(game_id, source_url)
+
+    async def select_presentation_artwork(self, game_id: str, role: str, source_url: str) -> None:
+        await self.consoled.call_select_presentation_artwork(game_id, role, source_url)
 
     async def restore_automatic_artwork(self, game_id: str) -> None:
         await self.consoled.call_restore_automatic_artwork(game_id)
@@ -612,6 +623,12 @@ class ApiHandler(BaseHTTPRequestHandler):
         self.wfile.write(data)
 
     def do_GET(self) -> None:
+        if urlparse(self.path).path == "/keyboard/status":
+            try:
+                self._respond(200, self.bridge.call(self.bridge.keyboard("status")))
+            except Exception as error:
+                self._respond(503, {"error": str(error) or type(error).__name__})
+            return
         if urlparse(self.path).path == "/state":
             try:
                 self._respond(200, self.bridge.call(self.bridge.state()))
@@ -710,14 +727,18 @@ class ApiHandler(BaseHTTPRequestHandler):
             game_id = query.get("game_id", [""])[0]
             search = query.get("query", [""])[0]
             try:
-                self._respond(200, self.bridge.call(self.bridge.search_metadata(game_id, search)))
+                self._respond(200, self.bridge.call(
+                    self.bridge.search_metadata(game_id, search), timeout=60))
             except Exception as error:  # pragma: no cover - live IPC failure path
                 self._respond(503, {"error": str(error)})
             return
         if urlparse(self.path).path == "/artwork/candidates":
-            game_id = parse_qs(urlparse(self.path).query).get("game_id", [""])[0]
+            query = parse_qs(urlparse(self.path).query)
+            game_id = query.get("game_id", [""])[0]
+            role = query.get("role", ["cover"])[0]
             try:
-                self._respond(200, self.bridge.call(self.bridge.artwork_candidates(game_id), timeout=30))
+                self._respond(200, self.bridge.call(
+                    self.bridge.artwork_candidates(game_id, role), timeout=30))
             except Exception as error:
                 self._respond(409, {"error": str(error)})
             return
@@ -749,7 +770,11 @@ class ApiHandler(BaseHTTPRequestHandler):
                 game_id = unquote(path.removeprefix("/artwork/"))
                 length = int(self.headers.get("Content-Length", "0"))
                 payload = json.loads(self.rfile.read(length) or b"{}")
-                if payload.get("restore"):
+                role = str(payload.get("role", "cover"))
+                if role in {"icon_square", "preview_still"}:
+                    self.bridge.call(self.bridge.select_presentation_artwork(
+                        game_id, role, str(payload.get("source_url", ""))), timeout=60)
+                elif payload.get("restore"):
                     self.bridge.call(self.bridge.restore_automatic_artwork(game_id), timeout=30)
                 else:
                     self.bridge.call(self.bridge.select_artwork(
@@ -889,8 +914,11 @@ class ApiHandler(BaseHTTPRequestHandler):
                 if path.startswith("/metadata/title/clear/"):
                     game_id = unquote(path.removeprefix("/metadata/title/clear/"))
                     self.bridge.call(self.bridge.clear_title_override(game_id))
+                elif path.startswith("/metadata/match/revert/"):
+                    game_id = unquote(path.removeprefix("/metadata/match/revert/"))
+                    self.bridge.call(self.bridge.revert_metadata_match(game_id), timeout=90)
                 elif path.startswith("/metadata/match/"):
-                    self.bridge.call(self.bridge.set_metadata_match(game_id, payload))
+                    self.bridge.call(self.bridge.set_metadata_match(game_id, payload), timeout=60)
                 elif path.startswith("/metadata/title/"):
                     self.bridge.call(self.bridge.set_title_override(game_id, str(payload.get("title", ""))))
                 elif path.startswith("/metadata/artwork/"):

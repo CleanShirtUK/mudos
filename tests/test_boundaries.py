@@ -119,7 +119,10 @@ class BoundaryTests(unittest.TestCase):
             ))
             store.connection.commit()
             catalogue = ConsoleCatalog(store=store)
-            catalogue.artwork = type("Artwork", (), {"enrich": lambda self, games: {}})()
+            catalogue.artwork = type("Artwork", (), {
+                "reload_configuration": lambda self: None,
+                "resolve_typed": lambda self, game: None,
+            })()
             catalogue.apply_metadata_match("local:nes:1", "steamgriddb", "42", "Mario Kart")
             record = store.get_game("local:nes:1")
 
