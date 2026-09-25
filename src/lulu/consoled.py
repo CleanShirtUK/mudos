@@ -39,6 +39,8 @@ from .audio_manager import AudioManagerAdapter
 from .display_manager import DisplayManagerAdapter
 from .storage_manager import StorageManagerAdapter
 from .plugins.romm.client import RommApiError, RommClient, RommConfig, RommGame
+from .plugins.romm.readiness import RommReadinessStore
+from .provider_readiness import ProviderReadinessStore
 from .plugins.steam.provider import SteamProvider
 from .plugins.steam.entitlements import SteamEntitlementSource
 from .system_settings import CATEGORIES as SYSTEM_CATEGORIES, SystemSettingsProvider
@@ -89,7 +91,9 @@ class ConsoleCatalog:
             metadata: SteamGridDBMetadata | None = None,
                   romm: RommClient | None = None,
                   steam_entitlements: SteamEntitlementSource | None = None,
-                  plugin_registry: PluginRegistry | None = None) -> None:
+                  plugin_registry: PluginRegistry | None = None,
+                  romm_readiness: RommReadinessStore | None = None) -> None:
+        injected_store = store is not None
         self.store = store or CatalogueStore()
         self._plugins = plugin_registry or _load_plugin_registry()
         if plugin_registry is None:
@@ -115,8 +119,14 @@ class ConsoleCatalog:
         self._diagnostic_timestamp_originals: dict[str, tuple[int | None, int | None]] = {}
         self._diagnostic_canonical_originals: dict[str, str] = {}
         self.last_delta_batches: list[tuple[object, ...]] = []
-        self.romm = romm or next((item for item in self._plugins.with_capability("installed_catalogue")
-                                  if hasattr(item, "list_games")), None)
+        self._romm_injected = romm is not None
+        self.romm = romm if romm is not None else next(
+            (item for item in self._plugins.with_capability("installed_catalogue")
+             if hasattr(item, "list_games")), None)
+        self.romm_readiness = romm_readiness or RommReadinessStore()
+        self.provider_readiness = ProviderReadinessStore(
+            self.store.path.parent / "provider-readiness.json" if injected_store else None
+        )
         connection = self.store.connection
         LOGGER.info(
             "catalogue sqlite connection path=%s creator_thread=%s check_same_thread=false "
@@ -133,6 +143,35 @@ class ConsoleCatalog:
     def refresh(self, stages: set[str] | None = None) -> list[dict[str, object]]:
         all_stages = {"steam", "gog", "epic", "local", "romm", "components", "romm-artwork", "metadata", "metadata-enrichment", "protondb", "artwork"}
         selected = all_stages if stages is None else set(stages)
+        # Optional integrations are never invoked merely because their code is
+        # present. Setup selection is persisted by the admin service; local
+        # filesystem discovery remains a core stage.
+        from .onboarding import onboarding_state
+        setup = onboarding_state()
+        selected_providers = set(setup.get("selected_providers", []))
+        selected_integrations = set(setup.get("selected_integrations", []))
+        stage_provider = {"steam": "steam", "gog": "gog", "epic": "epic"}
+        for stage, provider_id in stage_provider.items():
+            if stage in selected and provider_id not in selected_providers:
+                LOGGER.info("catalogue stage skipped name=%s reason=not-selected", stage)
+                selected.discard(stage)
+        if "romm" in selected and not ("romm" in selected_providers
+                                       or "providers.romm" in selected_integrations):
+            LOGGER.info("catalogue stage skipped name=romm reason=not-selected")
+            selected.discard("romm")
+        elif "romm" in selected:
+            romm_state = self.romm_readiness.snapshot(
+                selected=True, installed=True,
+                config=RommConfig.from_file() if not self._romm_injected else getattr(self.romm, "config", None),
+            )
+            allowed_statuses = {"ready"} if stages is None else {"authenticated", "ready", "sync_failed"}
+            if romm_state.get("status") not in allowed_statuses:
+                LOGGER.info("catalogue stage skipped name=romm reason=not-validated status=%s",
+                            romm_state.get("status", "unknown"))
+                selected.discard("romm")
+        if "components" in selected and not selected_providers:
+            LOGGER.info("catalogue stage skipped name=components reason=no-selected-providers")
+            selected.discard("components")
         catalogue_records = self.store.list_catalogue_games()
         library_ids = {game.game_id for game in self.store.list_games()}
         available_ids = {game.game_id for game in self.store.list_available_games()}
@@ -186,8 +225,15 @@ class ConsoleCatalog:
             LOGGER.info("catalogue direct diagnostic canonical_title transaction=%s", metrics)
             result = [game.as_dict() for game in self.store.list_games()]
             return result
-        if "steam" in selected and self.steam_entitlements is not None and self.provider is not None:
+        steam_auth_configured = bool(getattr(self.steam_entitlements, "config", None))
+        if ("steam" in selected and self.steam_entitlements is not None and self.provider is not None
+                and steam_auth_configured):
+            steam_config = getattr(self.steam_entitlements, "config", None)
             LOGGER.info("catalogue stage started name=steam")
+            self.provider_readiness.set(
+                "steam", "syncing",
+                message="Steam account catalogue reconciliation is running.",
+            )
             self.steam_entitlements.refresh()
             if self.steam_entitlements.has_snapshot:
                 self.store.reconcile_steam_entitlements(
@@ -199,18 +245,73 @@ class ConsoleCatalog:
                 self.store.reconcile_steam(self.provider)
             if self.store.last_deltas:
                 self.last_delta_batches.append(self.store.last_deltas)
+            if getattr(self.steam_entitlements, "last_refresh_succeeded", False):
+                authentication = self._plugins.for_plugin("steam", "authentication")
+                acquisition = {"status": "authentication-required"}
+                if authentication and hasattr(authentication[0], "verify_acquisition"):
+                    try:
+                        acquisition = asyncio.run(authentication[0].verify_acquisition())
+                    except Exception as error:
+                        LOGGER.warning("SteamCMD readiness verification failed error_type=%s",
+                                       type(error).__name__)
+                        acquisition = {"status": "authentication-failed"}
+                acquisition_ready = acquisition.get("status") == "authenticated"
+                status = "ready" if acquisition_ready else (
+                    "authentication_required" if acquisition.get("status") in {
+                        "authentication-required", "challenge-required"} else "auth_failed")
+                message = ("Steam account and SteamCMD acquisition were validated; owned games reconciled."
+                           if acquisition_ready else
+                           "Owned games were reconciled, but the separate SteamCMD acquisition session is not ready.")
+                self.provider_readiness.set(
+                    "steam", status, message=message,
+                    catalogue_count=len(self.steam_entitlements.snapshot),
+                )
+            elif steam_config is not None:
+                self.provider_readiness.set(
+                    "steam", "sync_failed", message="Steam ownership validation or reconciliation failed.",
+                    catalogue_count=len(getattr(self.steam_entitlements, "snapshot", ())),
+                )
             LOGGER.info("catalogue stage completed name=steam sqlite_commit=complete")
+        elif "steam" in selected:
+            LOGGER.info("catalogue stage skipped name=steam reason=authentication-required")
         for source in self.external_entitlements:
             provider_id = str(getattr(source, "provider_id", ""))
             if provider_id not in selected:
                 continue
+            if provider_id not in selected_providers:
+                LOGGER.info("catalogue stage skipped name=%s reason=not-selected", provider_id)
+                continue
+            auth_path = getattr(source, "config_path", None) or getattr(source, "auth_path", None)
+            if not auth_path or not auth_path.is_file():
+                LOGGER.info("catalogue stage skipped name=%s reason=authentication-required", provider_id)
+                self.provider_readiness.set(
+                    provider_id, "authentication_required",
+                    message=f"Sign in to {provider_id.title()} before syncing owned games.",
+                )
+                continue
             LOGGER.info("catalogue stage started name=%s", provider_id)
             try:
+                self.provider_readiness.set(
+                    provider_id, "syncing",
+                    message=f"{provider_id.title()} account catalogue reconciliation is running.",
+                )
                 source.refresh()
                 self.store.reconcile_owned_provider(provider_id, tuple(source.snapshot),
                                                     tuple(source.installed()))
                 if self.store.last_deltas:
                     self.last_delta_batches.append(self.store.last_deltas)
+                if getattr(source, "last_error", ""):
+                    self.provider_readiness.set(
+                        provider_id, "sync_failed",
+                        message=f"{provider_id.title()} authentication or catalogue sync failed.",
+                        catalogue_count=len(source.snapshot),
+                    )
+                else:
+                    self.provider_readiness.set(
+                        provider_id, "ready",
+                        message=f"{provider_id.title()} was authenticated and its catalogue reconciled.",
+                        catalogue_count=len(source.snapshot),
+                    )
                 LOGGER.info("catalogue stage completed name=%s sqlite_commit=complete", provider_id)
             except Exception:
                 LOGGER.exception("catalogue stage failed name=%s", provider_id)
@@ -225,19 +326,28 @@ class ConsoleCatalog:
             for source in self._plugins.with_capability("catalogue"):
                 if not hasattr(source, "reconcile") or not getattr(source, "provider_id", ""):
                     continue
+                component_provider = str(source.provider_id)
+                if component_provider not in selected_providers:
+                    LOGGER.info("catalogue stage skipped name=component provider=%s reason=not-selected",
+                                component_provider)
+                    continue
+                if not getattr(source, "available", True):
+                    LOGGER.info("catalogue stage skipped name=component provider=%s reason=not-installed",
+                                component_provider)
+                    continue
                 try:
-                    LOGGER.info("catalogue stage started name=component provider=%s", source.provider_id)
+                    LOGGER.info("catalogue stage started name=component provider=%s", component_provider)
                     applications = asyncio.run(source.reconcile())
                     games = [CatalogueGame.from_component_app(item) for item in applications
                              if bool(getattr(item, "game", False))]
-                    self.store.reconcile_component_apps(str(source.provider_id), games)
+                    self.store.reconcile_component_apps(component_provider, games)
                     if self.store.last_deltas:
                         self.last_delta_batches.append(self.store.last_deltas)
                     LOGGER.info("catalogue stage completed name=component provider=%s games=%d",
-                                source.provider_id, len(games))
+                                component_provider, len(games))
                 except Exception as error:
-                    LOGGER.info("component catalogue unavailable provider=%s error=%s",
-                                source.provider_id, type(error).__name__)
+                    LOGGER.warning("component catalogue unavailable provider=%s error=%s",
+                                   component_provider, type(error).__name__)
         romm_stages = {
             "romm", "romm-readonly", "romm-reconcile-only", "romm-presentation-only",
             "romm-reconcile-mark-only", "romm-reconcile-upsert-only",
@@ -262,7 +372,18 @@ class ConsoleCatalog:
             ))),
             None,
         )
-        if (selected.intersection(romm_stages) or single_upsert_stage) and self.romm is not None:
+        romm_client = self.romm
+        if not self._romm_injected:
+            # Setup can create/replace the URL and encrypted token while
+            # Consoled remains alive. Resolve production credentials at each
+            # reconciliation instead of retaining a pre-setup client.
+            current_config = RommConfig.from_file()
+            romm_client = RommClient(current_config) if current_config else None
+        if (selected.intersection(romm_stages) or single_upsert_stage) and romm_client is None:
+            self.romm_readiness.set("missing_configuration", None,
+                                    message="RomM server URL and Client API Token are required.")
+            LOGGER.info("catalogue stage skipped name=romm reason=missing-configuration")
+        if (selected.intersection(romm_stages) or single_upsert_stage) and romm_client is not None:
             romm_readonly = "romm-readonly" in selected and not selected.intersection(
                  {"romm", "romm-reconcile-only", "romm-presentation-only",
                  "romm-reconcile-mark-only", "romm-reconcile-upsert-only",
@@ -294,11 +415,26 @@ class ConsoleCatalog:
                 "romm-presentation-only" if romm_presentation_only else "romm"
             )
             LOGGER.info("catalogue stage started name=%s", romm_stage_name)
+            romm_config = getattr(romm_client, "config", None)
+            if romm_stage_name == "romm" and romm_config is not None:
+                self.romm_readiness.set(
+                    "syncing", romm_config,
+                    message="RomM authentication and initial catalogue sync are running.",
+                )
             try:
                 LOGGER.info("catalogue romm substage started name=network-list")
-                romm_games = self.romm.list_games()
+                romm_games = romm_client.list_games()
                 LOGGER.info("catalogue romm substage completed name=network-list items=%d",
                             len(romm_games))
+                if romm_stage_name == "romm" and romm_config is not None:
+                    self.romm_readiness.set(
+                        "authenticated", romm_config,
+                        message="RomM authenticated; initial catalogue reconciliation is starting.",
+                    )
+                    self.romm_readiness.set(
+                        "syncing", romm_config,
+                        message="RomM catalogue reconciliation is running.",
+                    )
                 normalized: dict[str, object] = {}
                 for game in romm_games:
                     # RomM's transitional Steam marker platform is no longer a
@@ -468,8 +604,33 @@ class ConsoleCatalog:
                 LOGGER.info("catalogue stage completed name=%s items=%d sqlite_commit=%s",
                             romm_stage_name,
                             len(romm_games), romm_commit)
+                if romm_stage_name == "romm" and romm_commit == "complete" and romm_config is not None:
+                    persisted = [game for game in self.store.list_catalogue_games()
+                                 if game.catalogue_source == "romm"]
+                    installable = [game for game in self.store.list_available_games("romm")
+                                   if game.catalogue_source == "romm"]
+                    self.romm_readiness.set(
+                        "ready", romm_config,
+                        message="RomM authenticated and initial catalogue reconciliation completed.",
+                        record_count=len(persisted), installable_count=len(installable),
+                    )
             except RommApiError as error:
+                text = str(error).casefold()
+                failure_status = "configuration_invalid" if "http 401" in text or "http 403" in text else "sync_failed"
+                if romm_stage_name == "romm" and romm_config is not None:
+                    self.romm_readiness.set(
+                        failure_status, romm_config,
+                        message=("RomM rejected the Client API Token." if failure_status == "configuration_invalid"
+                                 else "RomM catalogue reconciliation failed."),
+                    )
                 LOGGER.warning("RomM refresh failed; retaining previous snapshot: %s", error)
+            except Exception:
+                if romm_stage_name == "romm" and romm_config is not None:
+                    self.romm_readiness.set(
+                        "sync_failed", romm_config,
+                        message="RomM catalogue reconciliation failed.",
+                    )
+                LOGGER.exception("RomM catalogue reconciliation failed")
         if "metadata" in selected:
             LOGGER.info("catalogue stage started name=metadata")
             metadata_count = 0
@@ -1087,7 +1248,10 @@ class ConsoleCatalog:
                  for platform, label in self.store.list_platforms()]
 
     def available_games(self, provider: str | None = None) -> list[dict[str, object]]:
-        return [game.as_dict() for game in self.store.list_available_games(provider)]
+        # D-Bus requires a string argument, so the combined Installable
+        # surface arrives here as "" rather than None. Normalize that to no
+        # provider filter; passing it through would hide every provider row.
+        return [game.as_dict() for game in self.store.list_available_games(provider or None)]
 
     def resolve_steam_install(self, game_id: str) -> str:
         game = self.store.get_game(game_id)
@@ -1291,6 +1455,11 @@ class ConsoleInterface(ServiceInterface):
             plugin_root = installed_plugins
         self._plugins = PluginRegistry(plugin_root)
         self._plugins.discover()
+        steam_auth = self._plugins.for_plugin("steam", "authentication")
+        if steam_auth and getattr(steam_auth[0], "acquisition", None) is not None:
+            # SteamCMD OOBE verification uses the same broker the shell polls
+            # and submits through; otherwise its prompts remain invisible.
+            steam_auth[0].acquisition.credentials = self.credentials
         self._components = ComponentRegistry(self._plugins)
         self._components.discover()
         self._base_guide = load_base_guide()
@@ -1934,15 +2103,6 @@ class ConsoleInterface(ServiceInterface):
     def SaveWebCredential(self, profile_id: "s", origin: "s", username: "s", password: "s") -> "s":
         try:
             result = self.web_credentials.save(profile_id, origin, username, password)
-            if profile_id == "questarr":
-                # Credential persistence is complete before this asynchronous
-                # trigger is submitted.  The UI does not wait for Questarr's
-                # network reconciliation.
-                subprocess.Popen(
-                    ["systemctl", "start", "lulu-questarr-reconcile.service"],
-                    stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL, close_fds=True,
-                )
             return json.dumps(result, separators=(",", ":"))
         except ValueError as error:
             raise DBusError("org.lulu.Console.Error.WebCredentialUnavailable", str(error)) from error
@@ -1979,6 +2139,16 @@ class ConsoleInterface(ServiceInterface):
     @method()
     def GetCredentialState(self) -> "s":
         return json.dumps(self.credentials.state(), separators=(",", ":"))
+
+    @method()
+    async def VerifySteamAcquisition(self) -> "s":
+        """Validate SteamCMD in the shell's secure password/Guard prompt flow."""
+        auth = self._plugins.for_plugin("steam", "authentication")
+        if not auth or not hasattr(auth[0], "verify_acquisition"):
+            raise DBusError("org.lulu.Console.Error.PluginUnavailable",
+                            "SteamCMD authentication is unavailable")
+        result = await auth[0].verify_acquisition()
+        return json.dumps(result, separators=(",", ":"))
 
     @method()
     async def WithdrawOwnedCredentialRequest(self, request_id: "s", owner_id: "s",
@@ -2155,7 +2325,11 @@ class ConsoleInterface(ServiceInterface):
             self._publish_delta(delta)
             self.CatalogueChanged()
             return token
-        if game.provider == "local" and self.local_runtime is not None:
+        # Local ROM catalogue rows carry their actual emulator provider
+        # (RetroArch, Dolphin, PCSX2, Eden) for Library grouping. Identify
+        # them by source instead of provider ID so every managed emulator
+        # reaches the local runtime adapter.
+        if game.catalogue_source == "local" and self.local_runtime is not None:
             device_indices = None
             if game.platform == "switch":
                 device_indices = await asyncio.to_thread(_mudos_provider_device_indices)
@@ -2334,6 +2508,10 @@ async def serve() -> None:
     async def synchronize() -> None:
         startup_stages = {"steam", "local"}
         startup_attempted = False
+        # The persisted catalogue is a valid offline startup view. Never hold
+        # the graphical shell on a provider login prompt or a stalled sync;
+        # reconciliation continues in this background task.
+        interface.mark_startup_reconciliation_ready()
         while True:
             try:
                 # Startup synchronization must not launch the expensive IGDB

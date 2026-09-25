@@ -1,0 +1,2 @@
+#!/bin/sh
+exec /usr/bin/flatpak run --system net.pcsx2.PCSX2 "$@"

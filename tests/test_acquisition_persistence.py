@@ -5,6 +5,7 @@ import unittest
 from pathlib import Path
 
 from lulu.acquisition_store import AcquisitionStore
+from lulu.acquisitiond import _completed_job_refresh_stages
 from lulu.job_manager import JobManager, JobReporter
 from lulu.jobs import DownloadJob, JobError, JobState
 
@@ -28,6 +29,10 @@ class HoldingExecutor:
 
 
 class AcquisitionPersistenceTests(unittest.TestCase):
+    def test_romm_completion_refreshes_remote_and_local_catalogues(self) -> None:
+        self.assertEqual(_completed_job_refresh_stages("romm"), ["romm", "local"])
+        self.assertEqual(_completed_job_refresh_stages("steam"), ["steam"])
+
     def test_timestamps_and_reconstruction(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             store = AcquisitionStore(Path(directory) / "acquisition.sqlite3")

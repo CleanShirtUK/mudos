@@ -1,0 +1,10 @@
+id = "dreamcast"
+name = "Sega Dreamcast"
+[content]
+subdir = "dreamcast"
+extensions = [".cdi", ".gdi", ".chd", ".cue"]
+[bios]
+required = false
+[providers]
+default = "retroarch"
+supported = ["retroarch"]

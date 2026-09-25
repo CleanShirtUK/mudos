@@ -1,0 +1,16 @@
+[Unit]
+Description=Check whether repeated Mudos failures require the independent Recovery UI
+
+[Service]
+Type=oneshot
+User=lulu
+Group=lulu
+Environment=PYTHONPATH=/opt/lulu/current/lib
+Environment=HOME=/home/lulu
+Environment=XDG_CONFIG_HOME=/home/lulu/.config
+ExecStart=/opt/lulu/current/scripts/mudos-recovery-guard.py
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=read-only
+CapabilityBoundingSet=

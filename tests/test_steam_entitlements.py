@@ -22,6 +22,23 @@ class FakeSteamProvider:
 
 
 class SteamEntitlementTests(unittest.TestCase):
+    def test_entitlement_config_keeps_username_and_resolved_account_id(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            key = root / "steam-key"
+            key.write_text("fixture")
+            key.chmod(0o600)
+            config_path = root / "steam.json"
+            config_path.write_text(json.dumps({
+                "steam_id": "76561198000000000",
+                "steam_username": "fixtureuser",
+                "api_key_file": str(key),
+            }))
+            config = SteamEntitlementConfig.from_file(config_path)
+        self.assertIsNotNone(config)
+        self.assertEqual(config.steam_id, "76561198000000000")
+        self.assertEqual(config.steam_username, "fixtureuser")
+
     def test_mullock_sparse_marker_fixture_parity(self) -> None:
         markers = json.loads((ROOT / "fixtures/steam-owned-markers.json").read_text())
         entitlements = tuple(SteamEntitlement(str(item["id"]), {
@@ -42,6 +59,10 @@ class SteamEntitlementTests(unittest.TestCase):
         self.assertTrue(installed_row.launchable)
         self.assertEqual(installed_row.provider_id, "40800")
         self.assertEqual(installed_row.catalogue_source, "steam")
+        self.assertEqual(installed_row.platform, "PC")
+        installable = store.list_available_games("steam")
+        self.assertEqual({game.game_id for game in installable}, {"steam:263980", "steam:268910"})
+        self.assertEqual(sum(game.game_id == "steam:40800" for game in store.list_games("steam")), 1)
 
     def test_valve_response_validation_is_fail_closed(self) -> None:
         valid = {"response": {"games": [{"appid": 263980, "name": "Out There Somewhere"}]}}

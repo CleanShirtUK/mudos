@@ -27,6 +27,7 @@ from ...jobs import DownloadJob, JobState
 from ...job_manager import JobExecutionError, JobReporter
 from ...paths import PATHS
 from ...credential import CredentialBroker, CredentialInput, SecretStore
+from .entitlements import SteamEntitlementConfig
 
 
 LOGGER = logging.getLogger("lulu.steamcmd")
@@ -139,6 +140,8 @@ class SteamCmdParser:
             return SteamCmdObservation("success", message=success.group(2).lower())
         if "Cached credentials not found" in clean:
             return SteamCmdObservation("authentication-required")
+        if "invalid password" in clean.casefold():
+            return SteamCmdObservation("authentication-invalid-password")
         if "not online or not logged in" in clean or "Login Failure" in clean:
             return SteamCmdObservation("authentication-required")
         if "ERROR (Timeout)" in clean or "Retrying..." in clean:
@@ -181,6 +184,10 @@ class SteamCmdExecutor:
         self.account = account or os.environ.get("LULU_STEAM_ACCOUNT", "")
         if not self.account:
             self.account = self.secrets.get("steam", "username") or ""
+        if not self.account:
+            entitlement_config = SteamEntitlementConfig.from_file()
+            if entitlement_config is not None:
+                self.account = entitlement_config.steam_username
         if not self.account:
             try:
                 path = PATHS.plugins_root / "steam" / "settings.toml"
@@ -307,7 +314,8 @@ class SteamCmdExecutor:
         if platform not in {"windows", "linux"}:
             raise SteamCmdError("unknown-platform", f"Steam platform is unknown for AppID {app_id}")
         if not self.account:
-            raise SteamCmdError("authentication-required", "Steam download authentication required")
+            raise SteamCmdError("authentication-required", "Steam download authentication required",
+                                retryable=True)
         command = [self.executable]
         if platform == "windows":
             command += ["+@sSteamCmdForcePlatformType", "windows"]
@@ -363,14 +371,25 @@ class SteamCmdExecutor:
         promoted_manifest = target / "steamapps" / f"appmanifest_{app_id}.acf"
         final_manifest = self.install_dir / "steamapps" / f"appmanifest_{app_id}.acf"
         try:
-            os.replace(promoted_manifest, final_manifest)
             nested_steamapps = target / "steamapps"
-            if nested_steamapps.exists():
-                nested_steamapps.rmdir()
+            # SteamCMD leaves empty transaction folders (and may leave other
+            # temporary metadata) inside the force_install_dir. They are part
+            # of this job's isolated staging tree, not game payload.
+            for entry in nested_steamapps.iterdir():
+                if entry == promoted_manifest:
+                    continue
+                if entry.is_dir() and not entry.is_symlink():
+                    shutil.rmtree(entry)
+                else:
+                    entry.unlink()
+            os.replace(promoted_manifest, final_manifest)
+            nested_steamapps.rmdir()
         except Exception:
             # If manifest promotion fails, restore the directory to its
             # attributable staging location instead of damaging another game.
             try:
+                if final_manifest.exists() and not promoted_manifest.exists():
+                    os.replace(final_manifest, promoted_manifest)
                 os.replace(target, staging)
             except OSError:
                 pass
@@ -698,7 +717,14 @@ class SteamCmdExecutor:
                         if not finalizing:
                             await reporter.state(JobState.FINALIZING, stage="finalizing")
                     elif observation.kind == "authentication-required":
-                        raise SteamCmdError("authentication-required", "SteamCMD authentication required")
+                        raise SteamCmdError("authentication-required", "SteamCMD authentication required",
+                                            retryable=True)
+                    elif observation.kind == "authentication-invalid-password":
+                        raise SteamCmdError(
+                            "authentication-invalid-password",
+                            "Steam rejected the saved password. Update the Steam password in Mudos setup.",
+                            retryable=True,
+                        )
                     elif observation.kind == "network-error":
                         raise SteamCmdError("network-error", "SteamCMD could not connect to Steam", retryable=True)
                     elif observation.kind == "invalid-platform":
@@ -775,9 +801,11 @@ class SteamCmdExecutor:
             await asyncio.to_thread(self._existing_update_target, app_id)
 
     async def authenticate(self) -> dict[str, str]:
-        """Verify SteamCMD acquisition authentication without secret argv/env."""
+        """Verify SteamCMD authentication using the normal owned Guard flow."""
         if not self.account:
             raise SteamCmdError("authentication-required", "SteamCMD username is not configured")
+        auth_id = uuid4().hex
+        job_id = f"steam-auth-{auth_id}"
         process = await asyncio.create_subprocess_exec(
             self._require_executable(), "+login", self.account, "+quit",
             stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
@@ -797,46 +825,111 @@ class SteamCmdExecutor:
             "cache_before": before,
         }
         self._diagnostic(diagnostic)
-        password = self.secrets.get("steam", "password")
         authenticated = False
-        challenge = False
-        password_sent = False
+        password_prompt_seen = False
+        auth_active = False
+        auth_changed = asyncio.Event()
+        guard_task: asyncio.Task[str] | None = None
 
         async def consume(stream: asyncio.StreamReader) -> None:
-            nonlocal authenticated, challenge, password_sent
-            while (chunk := await stream.read(256)):
-                text = chunk.decode(errors="replace")
-                lower = text.casefold()
+            nonlocal authenticated, password_prompt_seen, auth_active, guard_task
+            buffer = ""
+            while chunk := await stream.read(256):
+                buffer += chunk.decode(errors="replace")
+                lower = buffer.casefold()
+                if "invalid password" in lower:
+                    diagnostic["authentication_failure"] = "invalid-password"
+                    raise SteamCmdError(
+                        "authentication-invalid-password",
+                        "Steam rejected the saved password. Update the Steam password in Mudos setup.",
+                        retryable=True,
+                    )
                 if "logging in using cached credentials" in lower:
                     diagnostic["cached_credentials_reported"] = True
                     diagnostic["login_success"] = True
+                    authenticated = True
                 if "logged in ok" in lower:
                     diagnostic["login_success"] = True
-                if ("password:" in lower or "password " in lower) and not password_sent:
-                    diagnostic["password_prompt_observed"] = True
-                    diagnostic["login_mode"] = "credential supplied"
-                    if process.stdin is None or password is None:
-                        raise SteamCmdError("authentication-required", "SteamCMD password is required")
-                    process.stdin.write((password + "\n").encode())
-                    await process.stdin.drain()
-                    password_sent = True
-                elif "guard code" in lower or "two-factor" in lower or "authenticator" in lower:
-                    diagnostic["guard_prompt_observed"] = True
-                    diagnostic["login_mode"] = "interactive required"
-                    challenge = True
-                elif "logged in ok" in lower or "logging in using cached credentials" in lower:
                     authenticated = True
+                if (not password_prompt_seen and ("password:" in lower or "password " in lower)):
+                    diagnostic["password_prompt_observed"] = True
+                    diagnostic["login_mode"] = "credential supplied through Steam auth UI"
+                    auth_active = True
+                    try:
+                        await self._answer(
+                            CredentialInput.SECRET, "SteamCMD password", "Steam account password",
+                            process, owner={"provider": "steam", "job_id": job_id,
+                                            "auth_id": auth_id, "pid": process.pid,
+                                            "operation": "authenticate"})
+                    finally:
+                        auth_active = False
+                        auth_changed.set()
+                    password_prompt_seen = True
+                    buffer = ""
+                    continue
+                if (guard_task is None and not authenticated
+                        and any(prompt in lower for prompt in (
+                            "guard code", "two-factor", "authenticator", "steam guard",
+                            "mobile authenticator", "verification code", "waiting for approval",
+                            "approve this login"))):
+                    diagnostic["guard_prompt_observed"] = True
+                    diagnostic["login_mode"] = "Steam Guard approval"
+                    auth_active = True
+                    guard_task = asyncio.create_task(
+                        self._guard_interaction(process, job_id, auth_id, process.pid))
+                    def guard_finished(_task: asyncio.Task[str]) -> None:
+                        nonlocal auth_active
+                        auth_active = False
+                        auth_changed.set()
+                    guard_task.add_done_callback(guard_finished)
+                    buffer = ""
+                if guard_task is not None and guard_task.done():
+                    await guard_task
+                    guard_task = None
+                    auth_active = False
+                    auth_changed.set()
 
         try:
-            await asyncio.wait_for(asyncio.gather(consume(process.stdout), consume(process.stderr)), timeout=45)
+            consumers = {asyncio.create_task(consume(process.stdout)),
+                         asyncio.create_task(consume(process.stderr))}
+            deadline = asyncio.get_running_loop().time() + 120
+            while consumers:
+                remaining = max(0.0, deadline - asyncio.get_running_loop().time())
+                done, _ = await asyncio.wait(consumers, timeout=remaining)
+                if not done:
+                    if auth_active:
+                        auth_changed.clear()
+                        await auth_changed.wait()
+                        deadline = asyncio.get_running_loop().time() + 120
+                        continue
+                    raise asyncio.TimeoutError
+                for task in done:
+                    consumers.remove(task)
+                    await task
+                if not auth_active:
+                    deadline = asyncio.get_running_loop().time() + 120
             returncode = await process.wait()
-        except Exception:
+        except asyncio.CancelledError:
+            if guard_task is not None and not guard_task.done():
+                guard_task.cancel()
+                await asyncio.gather(guard_task, return_exceptions=True)
             if process.returncode is None:
                 try:
-                    os.killpg(process.pid, signal.SIGKILL)
+                    os.killpg(process.pid, signal.SIGTERM)
                 except ProcessLookupError:
                     pass
             await process.wait()
+            raise
+        except Exception as error:
+            if process.returncode is None:
+                try:
+                    os.killpg(process.pid, signal.SIGTERM)
+                except ProcessLookupError:
+                    pass
+            await process.wait()
+            if guard_task is not None and not guard_task.done():
+                guard_task.cancel()
+                await asyncio.gather(guard_task, return_exceptions=True)
             returncode = process.returncode
             diagnostic.update({
                 "event": "exit",
@@ -846,6 +939,9 @@ class SteamCmdExecutor:
             })
             diagnostic["cache_events"] = self._cache_events(before, diagnostic["cache_after"])
             self._diagnostic(diagnostic)
+            if isinstance(error, asyncio.TimeoutError):
+                raise SteamCmdError("authentication-timeout", "SteamCMD authentication timed out",
+                                    retryable=True) from error
             raise
         after = self._cache_snapshot()
         diagnostic.update({
@@ -858,12 +954,8 @@ class SteamCmdExecutor:
             "login_success": bool(diagnostic["login_success"] or authenticated),
         })
         self._diagnostic(diagnostic)
-        if challenge:
-            raise SteamCmdError("challenge-required", "SteamCMD requires a Steam Guard code")
         if returncode != 0 or not authenticated:
             raise SteamCmdError("authentication-failed", "SteamCMD authentication failed")
-        if password is not None:
-            self.secrets.clear("steam", "password")
         return {"status": "authenticated"}
 
     async def cancel(self, job: DownloadJob) -> None:
@@ -878,9 +970,11 @@ class SteamCmdExecutor:
                  "pid": pid, "operation": "acquire"}
         choice = await self._answer(
             CredentialInput.WAITING, "Steam Guard",
-            "Approve this login in the Steam mobile app.", process,
+            "Approve this login in the Steam mobile app, then confirm here.", process,
             owner=owner, write_to_process=False,
         )
+        if choice == "approved":
+            return "approved"
         if choice != "enter-code":
             raise SteamCmdError("authentication-cancelled", "Steam Guard approval was cancelled")
         return await self._answer(
@@ -902,7 +996,13 @@ class SteamCmdExecutor:
             for key in ("provider", "job_id", "auth_id")
         ).rstrip(":"))
         try:
-            if self.request_credential is not None:
+            # OOBE has already stored the Steam password in the secret store.
+            # Use it directly so SteamCMD can reach the subsequent Guard step;
+            # routing this password through the shell broker can block OOBE's
+            # verification request and make Guard appear never to be requested.
+            use_saved_password = (input_type is CredentialInput.SECRET
+                                  and self.secrets.configured("steam", "password"))
+            if self.request_credential is not None and not use_saved_password:
                 async def external_value() -> str:
                     return await self.request_credential(
                         input_type, title, prompt, min_length, max_length, owner or {})
@@ -927,7 +1027,7 @@ class SteamCmdExecutor:
                     if not exit_task.done():
                         exit_task.cancel()
                     await asyncio.gather(exit_task, return_exceptions=True)
-            elif input_type is CredentialInput.SECRET and self.secrets.configured("steam", "password"):
+            elif use_saved_password:
                 value = self.secrets.get("steam", "password") or ""
             else:
                 request = await self.credentials.request(title, prompt, input_type,
@@ -956,10 +1056,9 @@ class SteamCmdExecutor:
             if write_to_process:
                 process.stdin.write((value + "\n").encode())
                 await process.stdin.drain()
-            if input_type is CredentialInput.SECRET and value:
-                # SteamCMD normally writes its own issued cache after login;
-                # do not retain the raw password once it has been supplied.
-                self.secrets.clear("steam", "password")
+            # The Steam password is an encrypted, user-configured credential.
+            # Keep it for later SteamCMD sessions and retry after transient or
+            # rejected logins; SteamCMD itself maintains its separate token cache.
         except asyncio.TimeoutError as error:
             raise SteamCmdError("authentication-timeout", "Steam credential request timed out",
                                 retryable=True) from error

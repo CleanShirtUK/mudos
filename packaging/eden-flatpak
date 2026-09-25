@@ -1,0 +1,7 @@
+#!/bin/sh
+# SwitchProvider emits this AppImage-runtime flag for native Eden releases;
+# the Flathub build is launched directly and receives the remaining game args.
+if [ "${1:-}" = "--appimage-extract-and-run" ]; then
+    shift
+fi
+exec /usr/bin/flatpak run --system dev.eden_emu.eden "$@"

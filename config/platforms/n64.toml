@@ -1,0 +1,10 @@
+id = "n64"
+name = "Nintendo 64"
+[content]
+subdir = "n64"
+extensions = [".n64", ".v64", ".z64", ".zip"]
+[bios]
+required = false
+[providers]
+default = "retroarch"
+supported = ["retroarch"]

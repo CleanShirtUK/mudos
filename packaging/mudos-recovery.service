@@ -1,0 +1,26 @@
+[Unit]
+Description=Mudos independent recovery control plane
+After=systemd-user-sessions.service
+
+[Service]
+Type=simple
+User=lulu
+Group=lulu
+Environment=PYTHONPATH=/opt/lulu/current/lib
+Environment=LULU_INSTALL_ROOT=/opt/lulu/current
+Environment=HOME=/home/lulu
+Environment=XDG_CONFIG_HOME=/home/lulu/.config
+Environment=XDG_DATA_HOME=/home/lulu/.local/share
+Environment=XDG_RUNTIME_DIR=/run/user/958
+Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/958/bus
+ExecStart=/usr/bin/python -m lulu.recovery_service
+Restart=on-failure
+RestartSec=2s
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=read-only
+CapabilityBoundingSet=
+
+[Install]
+WantedBy=multi-user.target

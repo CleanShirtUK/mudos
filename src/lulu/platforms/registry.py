@@ -4,7 +4,7 @@ from pathlib import Path
 import tomllib
 
 from ..paths import PATHS
-from .model import BiosDefinition, ContentDefinition, PlatformDefinition
+from .model import BiosDefinition, ContentDefinition, PlatformDefinition, SetupFileRequirement
 
 
 class PlatformRegistry:
@@ -47,6 +47,7 @@ def load_platforms(directory: Path | None = None) -> PlatformRegistry:
         content = raw.get("content", {})
         bios = raw.get("bios", {})
         providers = raw.get("providers", {})
+        setup = raw.get("setup", {})
         if not platform_id or not isinstance(content, dict) or not isinstance(providers, dict):
             raise ValueError(f"invalid platform definition: {path}")
         subdir = str(content.get("subdir", platform_id)).strip()
@@ -54,10 +55,30 @@ def load_platforms(directory: Path | None = None) -> PlatformRegistry:
         supported = tuple(str(item).casefold() for item in providers.get("supported", ()))
         if not subdir or not extensions or not supported:
             raise ValueError(f"incomplete platform definition: {path}")
+        setup_files = []
+        if not isinstance(setup, dict) or not isinstance(setup.get("files", []), list):
+            raise ValueError(f"invalid setup file requirements: {path}")
+        for item in setup.get("files", []):
+            if not isinstance(item, dict):
+                raise ValueError(f"invalid setup file requirement: {path}")
+            requirement_id = str(item.get("id", "")).strip().casefold()
+            destination = str(item.get("destination", "")).strip()
+            if (not requirement_id or not destination or Path(destination).is_absolute()
+                    or ".." in Path(destination).parts):
+                raise ValueError(f"unsafe setup file destination: {path}")
+            setup_files.append(SetupFileRequirement(
+                requirement_id, str(item.get("label", requirement_id)), destination,
+                str(item.get("description", "")),
+                tuple(str(ext).casefold() for ext in item.get("extensions", [])),
+                bool(item.get("multiple", False)), bool(item.get("archive", False)),
+                bool(item.get("required", False)),
+                tuple(str(name).casefold() for name in item.get("required_names", [])),
+            ))
         definitions[platform_id] = PlatformDefinition(
             platform_id, str(raw.get("name", platform_id)),
             ContentDefinition(subdir, extensions),
             BiosDefinition(bool(bios.get("required", False)), bios.get("subdir")),
             supported, providers.get("default"), raw.get("assets", {}).get("icon"),
+            tuple(setup_files),
         )
     return PlatformRegistry(definitions)

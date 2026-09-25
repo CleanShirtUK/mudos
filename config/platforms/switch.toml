@@ -8,3 +8,21 @@ required = false
 [providers]
 default = "eden"
 supported = ["eden"]
+
+[[setup.files]]
+id = "keys"
+label = "Switch keys"
+destination = "switch/keys"
+description = "Upload your prod.keys and, if available, title.keys files."
+extensions = [".keys"]
+multiple = true
+required = true
+required_names = ["prod.keys"]
+
+[[setup.files]]
+id = "firmware"
+label = "Switch firmware archive"
+destination = "switch/firmware"
+description = "Optionally upload a ZIP archive containing firmware files."
+extensions = [".zip"]
+archive = true

@@ -1,0 +1,10 @@
+id = "gb"
+name = "Game Boy"
+[content]
+subdir = "gb"
+extensions = [".gb", ".zip"]
+[bios]
+required = false
+[providers]
+default = "retroarch"
+supported = ["retroarch"]

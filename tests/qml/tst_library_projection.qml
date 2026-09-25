@@ -78,7 +78,7 @@ TestCase {
             preview_still_url: "https://cdn.example/hero.jpg",
             genres: ["Action"], game_modes: ["Single Player"], last_played: 1,
             total_playtime: 125, local_multiplayer: true, online_multiplayer: true,
-            protondb_rating: "gold"}
+            protondb_rating: "gold", release_year: 1997, developer: "Rare", publisher: "Nintendo"}
         compare(GameArtwork.portraitIcon(game), "image://mudos-artwork/file%3A%2F%2F%2Fhome%2Flulu%2Fart%2Ficon.png")
         compare(GameArtwork.previewStill(game), "")
         game.preview_still_url = "file:///home/lulu/art/preview.jpg"
@@ -86,7 +86,7 @@ TestCase {
         var rows = GameMetadata.rows(game, function() { return "1 Jan 1970" })
         compare(rows.map(function(row) { return row.text }), ["Action", "Single Player",
             "1 Jan 1970", "Total Playtime  2h 5m", "Local Multiplayer", "Online Multiplayer",
-            "Gold", "PC", "Steam"])
+            "1997", "Rare", "Nintendo", "Gold", "PC", "Steam"])
         verify(rows.every(function(row) { return row.glyph.length > 0 }))
         var nfsModes = ["Single player", "Multiplayer", "Split screen"]
         var nfsRows = GameMetadata.rows({game_modes: nfsModes, platform: "PC", provider: "romm"}, function() {})

@@ -63,6 +63,17 @@ class EmulatorRuntimeTests(unittest.TestCase):
             ("/usr/bin/retroarch", "--command", "MENU_TOGGLE"),
         )
 
+    def test_installed_retroarch_platform_registry_includes_added_core_systems(self) -> None:
+        from lulu.emulation import PLATFORMS
+        from lulu.providers import load_providers
+
+        supported = set(load_providers()["retroarch"].supported_platforms)
+        for platform in ("gba", "gb", "gbc", "snes", "nds", "n64", "psx",
+                         "psp", "arcade", "dreamcast"):
+            self.assertIn(platform, PLATFORMS)
+            self.assertIsNotNone(PLATFORMS[platform].core)
+            self.assertIn(platform, supported)
+
     def test_other_provider_menus_are_not_advertised(self) -> None:
         for platform in ("ps2", "wii", "switch"):
             self.assertFalse(EmulatorRuntimeAdapter.supports_provider_menu(platform))

@@ -11,8 +11,14 @@ root=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 # development runtime do not depend on an ad-hoc host package install.
 pacman -S --needed --noconfirm qt6-webengine qt6-imageformats ffmpeg python-pillow
 "$root/provision-admin.sh"
-"$root/provision-acquisition-services.sh"
-"$root/provision-questarr.sh"
+# Acquisition services are optional OOBE selections. A base/runtime refresh
+# must not install or configure them simply because their provisioners exist.
+if [[ "${LULU_PROVISION_ACQUISITION_SERVICES:-0}" == "1" ]]; then
+    "$root/provision-acquisition-services.sh"
+fi
+if [[ "${LULU_PROVISION_QUESTARR:-0}" == "1" ]]; then
+    "$root/provision-questarr.sh"
+fi
 # Optional PC entitlement backends are independently idempotent.  They are
 # installed only when explicitly requested so a base appliance remains
 # offline-safe and does not pull frontend launchers into the image.

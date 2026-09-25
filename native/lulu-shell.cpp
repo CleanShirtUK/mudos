@@ -355,6 +355,7 @@ class SystemStatusBridge final : public QObject
 {
     Q_OBJECT
     Q_PROPERTY(bool networkConnected READ networkConnected NOTIFY networkConnectedChanged)
+    Q_PROPERTY(bool networkOnline READ networkOnline NOTIFY networkOnlineChanged)
     Q_PROPERTY(QString networkConnectionType READ networkConnectionType NOTIFY networkConnectionTypeChanged)
     Q_PROPERTY(QString bluetoothState READ bluetoothState NOTIFY bluetoothStateChanged)
     Q_PROPERTY(bool bluetoothPowered READ bluetoothPowered NOTIFY bluetoothStateChanged)
@@ -411,6 +412,7 @@ public:
     }
 
     bool networkConnected() const { return networkConnected_; }
+    bool networkOnline() const { return networkOnline_; }
     QString bluetoothState() const { return bluetoothState_; }
     QString networkConnectionType() const { return networkConnectionType_; }
     bool bluetoothPowered() const { return bluetoothState_ == QStringLiteral("powered"); }
@@ -420,6 +422,7 @@ public:
 
 signals:
     void networkConnectedChanged();
+    void networkOnlineChanged();
     void networkConnectionTypeChanged();
     void bluetoothStateChanged();
     void activeDownloadCountChanged();
@@ -508,7 +511,6 @@ private:
 
     static bool networkStateIsConnected(uint state)
     {
-        // NetworkManager: CONNECTED_LOCAL/SITE/GLOBAL are all usable links.
         return state >= 50 && state <= 70;
     }
 
@@ -522,10 +524,20 @@ private:
                                              QStringLiteral("org.freedesktop.NetworkManager"),
                                              QStringLiteral("State"));
         bool connected = false;
+        bool online = false;
         QString connectionType;
         if (reply.type() == QDBusMessage::ReplyMessage && !reply.arguments().isEmpty()) {
             const QVariant value = reply.arguments().constFirst().value<QDBusVariant>().variant();
             connected = networkStateIsConnected(value.toUInt());
+            online = value.toUInt() == 70;
+        }
+        QDBusMessage connectivityReply = properties.call(QStringLiteral("Get"),
+            QStringLiteral("org.freedesktop.NetworkManager"), QStringLiteral("Connectivity"));
+        if (connectivityReply.type() == QDBusMessage::ReplyMessage
+                && !connectivityReply.arguments().isEmpty()) {
+            const QVariant value = connectivityReply.arguments().constFirst()
+                .value<QDBusVariant>().variant();
+            online = value.toUInt() == 4;
         }
 
         QDBusMessage activeReply = properties.call(
@@ -575,6 +587,10 @@ private:
         if (connected != networkConnected_) {
             networkConnected_ = connected;
             emit networkConnectedChanged();
+        }
+        if (online != networkOnline_) {
+            networkOnline_ = online;
+            emit networkOnlineChanged();
         }
         if (connectionType != networkConnectionType_) {
             networkConnectionType_ = connectionType;
@@ -627,6 +643,7 @@ private:
     }
 
     bool networkConnected_ = false;
+    bool networkOnline_ = false;
     QString networkConnectionType_;
     QString bluetoothState_ = QStringLiteral("unavailable");
     uint activeDownloadCount_ = 0;
@@ -1042,6 +1059,13 @@ private:
                 return;
         }
         if (event == QStringLiteral("ui_guide")) {
+            // The Guide profile can emit duplicate down/up edges for the
+            // opening press. Since the menu is launched on release, those
+            // trailing edges must not be mistaken for a second press that
+            // immediately dismisses it.
+            if (guideProcess_ && compositePath == guideOwnerComposite_
+                && QDateTime::currentMSecsSinceEpoch() < guideIgnoreInputUntilMs_)
+                return;
             if (value == 1.0) {
                 if (guideProcess_ && compositePath == guideOwnerComposite_) {
                     guideProcess_->write("ui_guide edge=down\n");
@@ -1112,6 +1136,7 @@ private:
             finishGuide();
             return false;
         }
+        guideIgnoreInputUntilMs_ = QDateTime::currentMSecsSinceEpoch() + 350;
         captureGuideKeyboard();
         return true;
     }
@@ -1376,6 +1401,8 @@ private:
     }
     bool dispatchAllowed() const
     {
+        if (qEnvironmentVariableIntValue("LULU_RECOVERY_STANDALONE") != 0)
+            return window_ && !oskActive_ && !oskRequestPending_ && !rearmRequired_;
         return window_ && !oskActive_ && !oskRequestPending_ && !rearmRequired_
             && (luluPresented_ || guideProcess_);
     }
@@ -1578,6 +1605,7 @@ private:
     QHash<SDL_JoystickID, SDL_Gamepad *> allGamepads_;
     QHash<uint8_t, QString> guideKeyboardActions_;
     QString guideOwnerComposite_;
+    qint64 guideIgnoreInputUntilMs_ = 0;
     bool pendingGuide_ = false;
     bool guideChordConsumed_ = false;
     bool oskActive_ = false;

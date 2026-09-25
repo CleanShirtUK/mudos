@@ -37,6 +37,10 @@ Item {
     function setExternalActionMessage(value) { externalActionMessage = value || "" }
     function dispatchExternalNavigation(target, disposition) {
         var scheme = target.split(":")[0].toLowerCase()
+        if (scheme === "mudos" && target === "mudos://return") {
+            root.closed()
+            return true
+        }
         if (scheme === "http" || scheme === "https" || scheme === "about")
             return false
         root.suppressExternalNavigationError = true

@@ -1,0 +1,10 @@
+id = "snes"
+name = "Super Nintendo Entertainment System"
+[content]
+subdir = "snes"
+extensions = [".sfc", ".smc", ".zip"]
+[bios]
+required = false
+[providers]
+default = "retroarch"
+supported = ["retroarch"]

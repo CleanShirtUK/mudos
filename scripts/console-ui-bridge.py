@@ -15,6 +15,9 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from threading import Lock, Thread
 from urllib.parse import parse_qs, unquote, urlparse
 
+from lulu.onboarding import dismiss_onboarding, onboarding_state, reopen_onboarding
+from lulu.recovery import clear_failures, snapshot as recovery_snapshot
+
 
 LOGGER = logging.getLogger("lulu.console-ui-bridge")
 
@@ -322,7 +325,12 @@ class ConsoleUiBridge:
                          and item.get("content_identity") == content_identity
                          and item.get("state") == "failed"), None)
         if existing is not None:
-            if not existing.get("retryable", False):
+            error = existing.get("error") or {}
+            authentication_recovered = (
+                provider == "steam" and isinstance(error, dict)
+                and error.get("code") == "authentication-required"
+            )
+            if not existing.get("retryable", False) and not authentication_recovered:
                 raise ValueError("acquisition is not retryable")
             job_id = await self.acquisitiond.call_retry_job(str(existing["job_id"]))
         else:
@@ -623,6 +631,12 @@ class ApiHandler(BaseHTTPRequestHandler):
         self.wfile.write(data)
 
     def do_GET(self) -> None:
+        if urlparse(self.path).path == "/onboarding":
+            self._respond(200, onboarding_state())
+            return
+        if urlparse(self.path).path == "/recovery":
+            self._respond(200, recovery_snapshot())
+            return
         if urlparse(self.path).path == "/keyboard/status":
             try:
                 self._respond(200, self.bridge.call(self.bridge.keyboard("status")))
@@ -757,6 +771,27 @@ class ApiHandler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:
         path = urlparse(self.path).path
+        if path in {"/onboarding/dismiss", "/onboarding/reopen"}:
+            try:
+                state = dismiss_onboarding() if path.endswith("dismiss") else reopen_onboarding()
+                self._respond(200, state)
+            except Exception as error:
+                self._respond(500, {"error": str(error) or type(error).__name__})
+            return
+        if path in {"/recovery/retry", "/recovery/setup", "/recovery/reboot", "/recovery/shutdown"}:
+            try:
+                if path.endswith("setup"):
+                    reopen_onboarding()
+                if path.endswith(("retry", "setup")):
+                    clear_failures()
+                    result = self.bridge.call(self.bridge.reset_mudos(), timeout=5)
+                else:
+                    action = "reboot" if path.endswith("reboot") else "shutdown"
+                    result = self.bridge.call(self.bridge.system_power(action), timeout=5)
+                self._respond(200, result)
+            except Exception as error:
+                self._respond(409, {"error": str(error) or type(error).__name__})
+            return
         if path == "/ui-refresh":
             try:
                 group = parse_qs(urlparse(self.path).query).get("group", ["all"])[0]

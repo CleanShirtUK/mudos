@@ -221,6 +221,7 @@ def normalize_igdb_game(value: dict[str, object]) -> dict[str, object]:
     screenshots = value.get("screenshots")
     if isinstance(screenshots, list):
         widescreen: list[str] = []
+        usable_screenshots: list[str] = []
         screenshot_candidates: list[dict[str, object]] = []
         for screenshot in screenshots:
             if not isinstance(screenshot, dict):
@@ -232,23 +233,26 @@ def normalize_igdb_game(value: dict[str, object]) -> dict[str, object]:
                 continue
             screenshot_id = str(screenshot.get("image_id", "")).strip()
             url = str(screenshot.get("url", "")).strip()
-            if width >= 600 and height > 0 and width / height >= 1.4:
+            if width >= 200 and height >= 150:
                 if screenshot_id:
                     url = f"https://images.igdb.com/igdb/image/upload/t_screenshot_big/{screenshot_id}.jpg"
                 if url.startswith("//"):
                     url = "https:" + url
                 if url:
-                    widescreen.append(url)
+                    usable_screenshots.append(url)
                     screenshot_candidates.append({
                         "url": url,
                         "thumbnail": url.replace("t_screenshot_big", "t_thumb"),
                         "width": width, "height": height, "provider": "igdb",
                     })
+                    if width >= 600 and width / height >= 1.4:
+                        widescreen.append(url)
         result["preview_still_candidates"] = screenshot_candidates
-        if widescreen:
-            # IGDB preserves its canonical screenshot order; choosing the first
-            # valid landscape image keeps the preview stable between refreshes.
-            result["preview_still_url"] = widescreen[0]
+        stills = widescreen or usable_screenshots
+        if stills:
+            # Prefer landscape captures, but retain a usable in-game screenshot
+            # for titles whose IGDB captures are all 4:3 or otherwise small.
+            result["preview_still_url"] = stills[0]
             result["preview_still_provider"] = "igdb"
             result["preview_still_source_url"] = result["preview_still_url"]
     result["cover_width"] = int(cover["width"]) if str(cover.get("width", "")).isdigit() else None

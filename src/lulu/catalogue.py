@@ -616,6 +616,13 @@ class CatalogueStore:
 
     def _associate_romm_locked(self, romm: CatalogueGame, local: CatalogueGame,
                                deltas: list[CatalogueDelta]) -> None:
+        # The Installed Games surface presents the local ROM row and hides its
+        # linked RomM row. Carry the RomM/IGDB presentation onto that visible
+        # local row so it retains metadata after installation.
+        enriched_local = self._merge_romm_presentation(local, romm)
+        if enriched_local != local:
+            self._apply_existing_locked(local, enriched_local, deltas)
+            local = enriched_local
         linked = replace(
             romm,
             install_state="installed", launchable=local.launchable,
@@ -626,6 +633,73 @@ class CatalogueStore:
         merged_played = max(local.last_played, romm.last_played)
         if merged_played > local.last_played:
             self._apply_existing_locked(local, replace(local, last_played=merged_played), deltas)
+
+    @staticmethod
+    def _merge_romm_presentation(existing: CatalogueGame,
+                                 source: CatalogueGame) -> CatalogueGame:
+        """Fill missing local presentation and metadata from its RomM record."""
+        return replace(
+            existing,
+            artwork_url=existing.artwork_url or source.artwork_url,
+            artwork_type=existing.artwork_type or source.artwork_type,
+            artwork_provider=existing.artwork_provider or source.artwork_provider,
+            artwork_width=existing.artwork_width or source.artwork_width,
+            artwork_height=existing.artwork_height or source.artwork_height,
+            artwork_source_url=existing.artwork_source_url or source.artwork_source_url,
+            automatic_artwork_url=existing.automatic_artwork_url or source.automatic_artwork_url,
+            automatic_artwork_source_url=(existing.automatic_artwork_source_url
+                                          or source.automatic_artwork_source_url),
+            automatic_artwork_provider=(existing.automatic_artwork_provider
+                                        or source.automatic_artwork_provider),
+            automatic_artwork_type=existing.automatic_artwork_type or source.automatic_artwork_type,
+            automatic_artwork_width=existing.automatic_artwork_width or source.automatic_artwork_width,
+            automatic_artwork_height=existing.automatic_artwork_height or source.automatic_artwork_height,
+            selected_artwork_source_url=(existing.selected_artwork_source_url
+                                         or source.selected_artwork_source_url),
+            icon_url=existing.icon_url or source.icon_url,
+            canonical_cover_url=existing.canonical_cover_url or source.canonical_cover_url,
+            canonical_cover_width=existing.canonical_cover_width or source.canonical_cover_width,
+            canonical_cover_height=existing.canonical_cover_height or source.canonical_cover_height,
+            landscape_artwork_url=existing.landscape_artwork_url or source.landscape_artwork_url,
+            icon_square_url=existing.icon_square_url or source.icon_square_url,
+            icon_square_provider=existing.icon_square_provider or source.icon_square_provider,
+            icon_square_source_url=existing.icon_square_source_url or source.icon_square_source_url,
+            preview_video=existing.preview_video or source.preview_video,
+            preview_video_provider=existing.preview_video_provider or source.preview_video_provider,
+            preview_video_source_url=existing.preview_video_source_url or source.preview_video_source_url,
+            preview_video_url=existing.preview_video_url or source.preview_video_url,
+            preview_still_url=existing.preview_still_url or source.preview_still_url,
+            preview_still_provider=existing.preview_still_provider or source.preview_still_provider,
+            preview_still_source_url=existing.preview_still_source_url or source.preview_still_source_url,
+            preview_animation_url=existing.preview_animation_url or source.preview_animation_url,
+            genres=existing.genres or source.genres,
+            game_modes=existing.game_modes or source.game_modes,
+            summary=existing.summary or source.summary,
+            release_date=existing.release_date or source.release_date,
+            release_year=existing.release_year or source.release_year,
+            total_playtime=existing.total_playtime or source.total_playtime,
+            developer=existing.developer or source.developer,
+            publisher=existing.publisher or source.publisher,
+            platforms=existing.platforms or source.platforms,
+            franchise=existing.franchise or source.franchise,
+            collection=existing.collection or source.collection,
+            local_multiplayer=(existing.local_multiplayer if existing.local_multiplayer is not None
+                               else source.local_multiplayer),
+            online_multiplayer=(existing.online_multiplayer if existing.online_multiplayer is not None
+                                else source.online_multiplayer),
+            game_mode=existing.game_mode or source.game_mode,
+            protondb_rating=existing.protondb_rating or source.protondb_rating,
+            igdb_id=existing.igdb_id or source.igdb_id,
+            metadata_provider=existing.metadata_provider or source.metadata_provider,
+            metadata_game_id=existing.metadata_game_id or source.metadata_game_id,
+            canonical_title=existing.canonical_title or source.canonical_title,
+            match_status=existing.match_status or source.match_status,
+            match_method=existing.match_method or source.match_method,
+            match_confidence=existing.match_confidence or source.match_confidence,
+            metadata_checked_at=existing.metadata_checked_at or source.metadata_checked_at,
+            metadata_resolver_version=(existing.metadata_resolver_version
+                                       or source.metadata_resolver_version),
+        )
 
     def _unassociate_romm_locked(self, romm: CatalogueGame,
                                  deltas: list[CatalogueDelta]) -> None:
@@ -1053,6 +1127,10 @@ class CatalogueStore:
                 if local is None:
                     associated.append(game)
                 else:
+                    enriched_local = self._merge_romm_presentation(local, game)
+                    if enriched_local != local:
+                        self._apply_existing_locked(local, enriched_local, deltas)
+                        local = enriched_local
                     associated.append(replace(
                         game, install_state="installed", launchable=local.launchable,
                         install_dir=local.install_dir, availability_state="installed",
@@ -1113,7 +1191,20 @@ class CatalogueStore:
             query += " AND provider=?"; parameters = ("steam",)
         elif scope.startswith("platform:"):
             query += " AND catalogue_source='local' AND platform=?"; parameters = (scope.removeprefix("platform:"),)
-        return self._rows(query + " ORDER BY title COLLATE NOCASE", parameters)
+        games = self._rows(query + " ORDER BY title COLLATE NOCASE", parameters)
+        # RomM-linked ROMs are represented by their local row in the library.
+        # Some existing installations have the association but predate copying
+        # presentation data during reconciliation, so project the linked
+        # RomM metadata here as well as repairing it on subsequent writes.
+        romm_by_local = {
+            game.installed_game_id: game
+            for game in self._rows(
+                f"SELECT {SELECT_COLUMNS} FROM games WHERE provider='romm' AND installed_game_id<>''"
+            )
+        }
+        return [self._merge_romm_presentation(game, romm_by_local[game.game_id])
+                if game.catalogue_source == "local" and game.game_id in romm_by_local else game
+                for game in games]
 
     def list_catalogue_games(self) -> list[CatalogueGame]:
         return self._rows(f"SELECT {SELECT_COLUMNS} FROM games ORDER BY title COLLATE NOCASE")
@@ -1255,18 +1346,7 @@ class CatalogueStore:
         existing = self.get_game(game_id)
         if existing is None:
             return None
-        after = replace(
-            existing,
-            genres=existing.genres or source.genres,
-            summary=existing.summary or source.summary,
-            release_date=existing.release_date or source.release_date,
-            release_year=existing.release_year or source.release_year,
-            total_playtime=existing.total_playtime or source.total_playtime,
-            local_multiplayer=existing.local_multiplayer if existing.local_multiplayer is not None else source.local_multiplayer,
-            online_multiplayer=existing.online_multiplayer if existing.online_multiplayer is not None else source.online_multiplayer,
-            game_mode=existing.game_mode or source.game_mode,
-            protondb_rating=existing.protondb_rating or source.protondb_rating,
-        )
+        after = self._merge_romm_presentation(existing, source)
         with self.atomic():
             self._start_operation()
             delta = self._apply_existing_locked(existing, after)

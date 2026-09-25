@@ -239,6 +239,21 @@ class ControllerRegistry:
             else:
                 controller.connected = True
 
+        # Runtime handles can be recreated while a hotplug reconciliation is
+        # in flight. Fill any slots that were temporarily unavailable during
+        # connect(), without disturbing valid existing assignments.
+        used_players: set[int] = set()
+        for runtime_id in connected_ids:
+            controller = self.controllers[runtime_id]
+            if controller.player in range(1, 5) and controller.player not in used_players:
+                used_players.add(controller.player)
+            else:
+                controller.player = next(
+                    (player for player in range(1, 5) if player not in used_players), None
+                )
+                if controller.player is not None:
+                    used_players.add(controller.player)
+
         persisted_mode = self._policy.get("navigation_mode")
         if persisted_mode in {"all", "automatic", "specific"} and not self._runtime_seen:
             self.navigation_mode = persisted_mode

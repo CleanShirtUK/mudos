@@ -31,6 +31,13 @@ class FakeRomm:
 
 
 class RommExecutorTests(unittest.TestCase):
+    def test_gba_romm_platform_resolves_to_retroarch_content_root(self) -> None:
+        game = RommGame(145, "Apotris", 7, "gba", "Game Boy Advance", "Apotris.gba", ".gba",
+                        1, "", False, (RommFile(1450, "Apotris.gba", 1),))
+        destination = RommExecutor._destination(game, game.files[0])
+        self.assertEqual(destination.name, "Apotris.gba")
+        self.assertEqual(destination.parent.name, "gba")
+
     def test_content_set_keeps_one_parent_lifecycle_across_components(self) -> None:
         async def exercise() -> None:
             with tempfile.TemporaryDirectory() as directory:
@@ -96,7 +103,7 @@ class RommExecutorTests(unittest.TestCase):
         async def exercise() -> None:
             with tempfile.TemporaryDirectory() as directory:
                 fake = FakeRomm(b"rom")
-                fake.game = RommGame(7, "Unsupported", 99, "arcade", "Arcade", "test.zip", ".zip", 3, "", False,
+                fake.game = RommGame(7, "Unsupported", 99, "unsupported", "Unsupported", "test.zip", ".zip", 3, "", False,
                                      (RommFile(70, "test.zip", 3),))
                 executor = RommExecutor(fake)
                 manager = JobManager()

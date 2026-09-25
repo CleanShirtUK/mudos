@@ -1,0 +1,10 @@
+id = "nds"
+name = "Nintendo DS"
+[content]
+subdir = "nds"
+extensions = [".nds", ".zip"]
+[bios]
+required = false
+[providers]
+default = "retroarch"
+supported = ["retroarch"]

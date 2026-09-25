@@ -1,0 +1,10 @@
+id = "psx"
+name = "Sony PlayStation"
+[content]
+subdir = "psx"
+extensions = [".cue", ".chd", ".pbp", ".iso"]
+[bios]
+required = false
+[providers]
+default = "retroarch"
+supported = ["retroarch"]

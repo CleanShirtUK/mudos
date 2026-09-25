@@ -1,0 +1,44 @@
+[Unit]
+Description=Mudos independent controller-first Recovery UI on VT 2
+Requires=seatd.service user-runtime-dir@958.service user@958.service
+After=seatd.service systemd-logind.service systemd-user-sessions.service user-runtime-dir@958.service user@958.service lulu-session@2.service
+Conflicts=lulu-session@2.service getty@tty2.service
+Before=getty@tty2.service
+StartLimitIntervalSec=60s
+StartLimitBurst=3
+
+[Service]
+Type=simple
+User=lulu
+Group=lulu
+PAMName=lulu-session
+TTYPath=/dev/tty2
+StandardInput=tty
+StandardOutput=journal
+StandardError=journal
+TTYReset=yes
+TTYVHangup=yes
+TTYVTDisallocate=yes
+WorkingDirectory=/home/lulu
+Environment=PYTHONPATH=/opt/lulu/current/lib
+Environment=LULU_INSTALL_ROOT=/opt/lulu/current
+Environment=LULU_SHELL_EXECUTABLE=/opt/lulu/current/bin/lulu-shell
+Environment=HOME=/home/lulu
+Environment=USER=lulu
+Environment=LOGNAME=lulu
+Environment=XDG_CONFIG_HOME=/home/lulu/.config
+Environment=XDG_DATA_HOME=/home/lulu/.local/share
+Environment=XDG_CACHE_HOME=/home/lulu/.cache
+Environment=XDG_RUNTIME_DIR=/run/user/958
+Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/958/bus
+Environment=LULU_RECOVERY_STANDALONE=1
+EnvironmentFile=-/etc/lulu/presentation.conf
+ExecStartPre=+/opt/lulu/current/bin/lulu-vt activate 2
+ExecStart=/opt/lulu/current/scripts/mudos-recovery-ui.py
+ExecStopPost=+/opt/lulu/current/bin/lulu-vt restore
+Restart=on-failure
+RestartSec=2s
+TimeoutStopSec=20s
+KillMode=mixed
+
+[Install]

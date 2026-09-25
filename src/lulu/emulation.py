@@ -6,6 +6,7 @@ from pathlib import Path
 
 from .paths import PATHS
 from .platforms import load_platforms
+from .platforms.model import SetupFileRequirement
 
 
 ROM_ROOT = PATHS.rom_root
@@ -30,6 +31,7 @@ class RuntimePlatformDefinition:
     executable: Path
     core: Path | None = None
     bios_subdirectory: str | None = None
+    setup_files: tuple[SetupFileRequirement, ...] = ()
 
     @property
     def bios_root(self) -> Path:
@@ -46,12 +48,24 @@ def _path(variable: str, default: str) -> Path:
 
 _RUNTIME = {
     "retroarch": ("LULU_RETROARCH", "/usr/bin/retroarch"),
-    "pcsx2": ("LULU_PCSX2", "/usr/bin/pcsx2-qt"),
+    "pcsx2": ("LULU_PCSX2", "/usr/local/bin/pcsx2-qt"),
     "dolphin": ("LULU_DOLPHIN", "/usr/bin/dolphin-emu"),
-    "eden": ("LULU_EDEN", "/usr/bin/eden"),
+    "eden": ("LULU_EDEN", "/usr/local/bin/eden"),
 }
-_CORES = {"nes": ("LULU_NES_CORE", "/usr/lib/libretro/nestopia_libretro.so"),
-          "genesis": ("LULU_GENESIS_CORE", "/usr/lib/libretro/genesis_plus_gx_libretro.so")}
+_CORES = {
+    "nes": ("LULU_NES_CORE", "/usr/lib/libretro/nestopia_libretro.so"),
+    "genesis": ("LULU_GENESIS_CORE", "/usr/lib/libretro/genesis_plus_gx_libretro.so"),
+    "gba": ("LULU_GBA_CORE", "/usr/lib/libretro/mgba_libretro.so"),
+    "gb": ("LULU_GB_CORE", "/usr/lib/libretro/gambatte_libretro.so"),
+    "gbc": ("LULU_GBC_CORE", "/usr/lib/libretro/gambatte_libretro.so"),
+    "snes": ("LULU_SNES_CORE", "/usr/lib/libretro/snes9x_libretro.so"),
+    "nds": ("LULU_NDS_CORE", "/usr/lib/libretro/melonds_libretro.so"),
+    "n64": ("LULU_N64_CORE", "/usr/lib/libretro/mupen64plus_next_libretro.so"),
+    "psx": ("LULU_PSX_CORE", "/usr/lib/libretro/mednafen_psx_libretro.so"),
+    "psp": ("LULU_PSP_CORE", "/usr/lib/libretro/ppsspp_libretro.so"),
+    "arcade": ("LULU_ARCADE_CORE", "/usr/lib/libretro/fbneo_libretro.so"),
+    "dreamcast": ("LULU_DREAMCAST_CORE", "/usr/lib/libretro/flycast_libretro.so"),
+}
 PLATFORMS: dict[str, RuntimePlatformDefinition] = {}
 for _id, _definition in load_platforms().items():
     _runtime = _definition.default_provider or ""
@@ -62,6 +76,7 @@ for _id, _definition in load_platforms().items():
         _path(_env, _default) if _env else Path(_default),
         _path(*_core) if _core else None,
         _definition.bios.subdir,
+        _definition.setup_files,
     )
 
 

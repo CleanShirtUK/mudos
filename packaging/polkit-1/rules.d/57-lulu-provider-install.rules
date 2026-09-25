@@ -1,0 +1,32 @@
+// Only start the fixed, root-owned installer instances. The helper has its
+// own provider/package allowlist and accepts no command or package arguments.
+polkit.addRule(function(action, subject) {
+    var units = [
+        "lulu-provider-install@steam.service",
+        "lulu-provider-install@epic.service",
+        "lulu-provider-install@gog.service",
+        "lulu-provider-install@lutris.service",
+        "lulu-provider-install@flatpak.service",
+        "lulu-provider-install@retroarch.service",
+        "lulu-provider-install@dolphin.service",
+        "lulu-provider-install@pcsx2.service",
+        "lulu-provider-install@eden.service",
+        "lulu-provider-install@questarr.service",
+        "lulu-provider-install@torrent.service",
+        "lulu-provider-install@usenet.service"
+    ];
+    if (subject.user == "lulu" &&
+        action.id == "org.freedesktop.systemd1.manage-units" &&
+        units.indexOf(action.lookup("unit")) !== -1 &&
+        action.lookup("verb") == "start") {
+        return polkit.Result.YES;
+    }
+    // NZBGet applies news-server changes from its private config only after a
+    // restart. Permit that exact unit/verb, not arbitrary systemd operations.
+    if (subject.user == "lulu" &&
+        action.id == "org.freedesktop.systemd1.manage-units" &&
+        action.lookup("unit") == "nzbget.service" &&
+        action.lookup("verb") == "restart") {
+        return polkit.Result.YES;
+    }
+});

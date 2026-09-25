@@ -30,9 +30,70 @@ class SteamCmdParserTests(unittest.TestCase):
         self.assertEqual(self.parser.parse("ERROR (Timeout)").kind, "network-error")
         self.assertEqual(self.parser.parse("Cached credentials not found.").kind, "authentication-required")
         self.assertEqual(self.parser.parse("ERROR! Failed to request app info update, not online or not logged in to Steam.").kind, "authentication-required")
+        self.assertEqual(self.parser.parse("[2026-09-25] ERROR (Invalid Password)").kind,
+                         "authentication-invalid-password")
 
 
 class SteamCmdExecutorTests(unittest.TestCase):
+    def test_missing_steam_account_is_retryable_after_authentication_setup(self) -> None:
+        executor = SteamCmdExecutor(account="", platforms={"42": "linux"})
+        with self.assertRaises(SteamCmdError) as caught:
+            executor.command("42")
+        self.assertEqual(caught.exception.code, "authentication-required")
+        self.assertTrue(caught.exception.retryable)
+
+    def test_executor_uses_username_from_steam_ownership_configuration(self) -> None:
+        from types import SimpleNamespace
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            steam_dir = root / "steam"
+            steam_dir.mkdir()
+            (steam_dir / "steam.json").write_text(json.dumps({
+                "steam_id": "76561198000000000",
+                "steam_username": "configured-user",
+                "api_key_file": "secret:steam/web-api-key",
+            }))
+            with patch("lulu.plugins.steam.entitlements.PATHS",
+                       SimpleNamespace(plugins_root=root)), \
+                    patch("lulu.plugins.steam.cmd.SecretStore") as secrets:
+                secrets.return_value.get.return_value = ""
+                executor = SteamCmdExecutor(account="", platforms={"42": "linux"})
+
+        self.assertEqual(executor.account, "configured-user")
+        self.assertIn("+login", executor.command("42"))
+
+    def test_successful_steamcmd_verification_keeps_saved_password_for_future_sessions(self) -> None:
+        async def exercise() -> None:
+            class Process:
+                pid = 42
+                returncode = 0
+
+                def __init__(self) -> None:
+                    self.stdout = asyncio.StreamReader()
+                    self.stderr = asyncio.StreamReader()
+                    self.stdout.feed_data(b"Logged in OK\n")
+                    self.stdout.feed_eof()
+                    self.stderr.feed_eof()
+
+                async def wait(self) -> int:
+                    return self.returncode
+
+            class Secrets:
+                def __init__(self) -> None: self.cleared = []
+                def configured(self, _namespace, _key) -> bool: return True
+                def clear(self, namespace, key) -> None: self.cleared.append((namespace, key))
+
+            executor = SteamCmdExecutor(executable="/bin/true", account="user")
+            secrets = Secrets()
+            executor.secrets = secrets
+            with patch("asyncio.create_subprocess_exec", new=AsyncMock(return_value=Process())):
+                result = await executor.authenticate()
+            self.assertEqual(result, {"status": "authenticated"})
+            self.assertEqual(secrets.cleared, [])
+
+        asyncio.run(exercise())
+
     def test_steam_pause_is_explicitly_unsupported(self) -> None:
         executor = SteamCmdExecutor(account="user", platforms={"42": "linux"})
         self.assertFalse(executor.supports_pause)
@@ -68,6 +129,36 @@ class SteamCmdExecutorTests(unittest.TestCase):
                     owner={"provider": "steam", "job_id": "job-dead", "pid": 24157},
                 )
             self.assertEqual(error.exception.code, "provider-exited")
+
+        asyncio.run(exercise())
+
+    def test_saved_oobe_password_bypasses_interactive_password_prompt(self) -> None:
+        async def exercise() -> None:
+            class Stdin:
+                def __init__(self) -> None: self.values = []
+                def write(self, value: bytes) -> None: self.values.append(value)
+                async def drain(self) -> None: return None
+
+            class Process:
+                pid = 111
+                stdin = Stdin()
+                async def wait(self) -> int: return 0
+
+            class Secrets:
+                def __init__(self) -> None: self.cleared = []
+                def configured(self, _namespace, _key) -> bool: return True
+                def get(self, _namespace, _key) -> str: return "secret-from-oobe"
+                def clear(self, namespace, key) -> None: self.cleared.append((namespace, key))
+
+            async def unexpected_prompt(*_args):
+                raise AssertionError("saved password must not prompt the shell")
+
+            executor = SteamCmdExecutor(account="user", request_credential=unexpected_prompt)
+            executor.secrets = Secrets()
+            process = Process()
+            await executor._answer(CredentialInput.SECRET, "SteamCMD password", "Password", process)
+            self.assertEqual(process.stdin.values, [b"secret-from-oobe\n"])
+            self.assertEqual(executor.secrets.cleared, [])
 
         asyncio.run(exercise())
 
@@ -110,6 +201,29 @@ class SteamCmdExecutorTests(unittest.TestCase):
             self.assertEqual(requests[0][1], requests[1][1])
             self.assertEqual(process.stdin.values, [b"abcde\n"])
             process.stop.set()
+
+        asyncio.run(exercise())
+
+    def test_guard_wait_can_confirm_mobile_approval_without_entering_a_code(self) -> None:
+        async def exercise() -> None:
+            class Process:
+                pid = 79
+                stdin = type("Stdin", (), {"write": lambda *_: None,
+                                            "drain": AsyncMock()})()
+                async def wait(self) -> int:
+                    await asyncio.Event().wait()
+                    return 0
+
+            requests = []
+
+            async def request(input_type, _title, _prompt, _minimum, _maximum, _owner):
+                requests.append(input_type)
+                return "approved"
+
+            executor = SteamCmdExecutor(account="user", request_credential=request)
+            result = await executor._guard_interaction(Process(), "job-approved", "auth-2", 79)
+            self.assertEqual(result, "approved")
+            self.assertEqual(requests, [CredentialInput.WAITING])
 
         asyncio.run(exercise())
 
@@ -369,6 +483,8 @@ class SteamCmdExecutorTests(unittest.TestCase):
             root = Path(directory) / "Steam"
             staging = root / ".mudos-steam-staging/job-1/payload"
             (staging / "steamapps").mkdir(parents=True)
+            (staging / "steamapps/downloading").mkdir()
+            (staging / "steamapps/temp").mkdir()
             (staging / "game.bin").write_text("payload")
             (staging / "steamapps/appmanifest_42.acf").write_text(
                 '"AppState" { "appid" "42" "name" "Example" '
@@ -378,6 +494,7 @@ class SteamCmdExecutorTests(unittest.TestCase):
             target = executor._finalize_staged_install("42", staging)
             self.assertEqual(target, (root / "steamapps/common/Example").resolve())
             self.assertTrue((target / "game.bin").is_file())
+            self.assertFalse((target / "steamapps").exists())
             self.assertTrue((root / "steamapps/appmanifest_42.acf").is_file())
             self.assertFalse((root / ".mudos-steam-staging/job-1").exists())
 

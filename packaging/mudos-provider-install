@@ -1,0 +1,71 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+provider=${1:-}
+root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+case "$provider" in
+    steam)
+        pacman -Si steam >/dev/null
+        pacman -Si steam-devices >/dev/null
+        pacman -S --needed --noconfirm steam steam-devices
+        # SteamCMD owns a separate cache/session and is the Mudos acquisition
+        # executor. Provision its official Valve runtime without importing
+        # GUI Steam credentials or claiming acquisition authentication.
+        exec "$root/scripts/provision-steamcmd.sh"
+        ;;
+    epic) exec "$root/scripts/provision-legendary.sh" ;;
+    gog) exec "$root/scripts/provision-gogdl.sh" ;;
+    lutris) packages=(lutris) ;;
+    flatpak) packages=(flatpak) ;;
+    retroarch) packages=(retroarch); install_group=libretro ;;
+    dolphin) packages=(dolphin-emu) ;;
+    pcsx2|eden)
+        case "$provider" in
+            pcsx2) app_id=net.pcsx2.PCSX2; wrapper=pcsx2-qt; wrapper_source=pcsx2-qt-flatpak ;;
+            eden) app_id=dev.eden_emu.eden; wrapper=eden; wrapper_source=eden-flatpak ;;
+        esac
+        pacman -S --needed --noconfirm flatpak
+        flatpak remote-add --system --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+        flatpak install --system --assumeyes flathub "$app_id"
+        install -D -m 0755 "$root/packaging/$wrapper_source" "/usr/local/bin/$wrapper"
+        flatpak override --system --filesystem=/home/lulu/Games:ro "$app_id"
+        if [[ $provider == eden ]]; then
+            flatpak override --system --filesystem=/home/lulu/.config/lulu/providers/eden/config:ro "$app_id"
+        fi
+        exit 0
+        ;;
+    questarr) exec "$root/scripts/provision-questarr.sh" ;;
+    torrent|transmission) exec "$root/scripts/provision-transmission.sh" ;;
+    usenet|nzbget)
+        pacman -S --needed --noconfirm nzbget
+        exec "$root/scripts/provision-nzbget.sh"
+        ;;
+    *) echo "unsupported Mudos provider" >&2; exit 64 ;;
+esac
+
+for package in "${packages[@]}"; do
+    pacman -Si "$package" >/dev/null
+done
+if [[ ${install_group:-} == libretro ]]; then
+    pacman -Sg libretro >/dev/null
+    pacman -Si libretro-core-info >/dev/null
+    pacman -S --needed --noconfirm retroarch libretro libretro-core-info
+    config=/home/lulu/.config/retroarch/retroarch.cfg
+    install -d -o lulu -g lulu /home/lulu/.config/retroarch
+    if [[ ! -f $config ]]; then
+        install -o lulu -g lulu /dev/null "$config"
+    fi
+    if grep -qE '^[[:space:]]*libretro_directory[[:space:]]*=' "$config"; then
+        sed -i 's#^[[:space:]]*libretro_directory[[:space:]]*=.*#libretro_directory = "/usr/lib/libretro"#' "$config"
+    else
+        printf '\nlibretro_directory = "/usr/lib/libretro"\n' >> "$config"
+    fi
+    if grep -qE '^[[:space:]]*libretro_info_path[[:space:]]*=' "$config"; then
+        sed -i 's#^[[:space:]]*libretro_info_path[[:space:]]*=.*#libretro_info_path = "/usr/share/libretro/info"#' "$config"
+    else
+        printf 'libretro_info_path = "/usr/share/libretro/info"\n' >> "$config"
+    fi
+    chown lulu:lulu "$config"
+else
+    pacman -S --needed --noconfirm "${packages[@]}"
+fi

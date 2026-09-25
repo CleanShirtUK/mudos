@@ -128,12 +128,13 @@ class BrowserStoreLifecycleTests(unittest.TestCase):
         self.assertIn('keyboard: KeyEnter',
                       (ROOT / "config/inputplumber/profiles/osk.yaml").read_text())
 
-    def test_successful_questarr_capture_triggers_async_reconciliation_after_save(self) -> None:
+    def test_questarr_capture_does_not_blindly_trigger_reconciliation(self) -> None:
         consoled = (ROOT / "src/lulu/consoled.py").read_text()
         self.assertIn('self.web_credentials.save(profile_id, origin, username, password)', consoled)
-        self.assertIn('"lulu-questarr-reconcile.service"', consoled)
-        self.assertIn("subprocess.Popen", consoled)
-        self.assertIn("if profile_id == \"questarr\"", consoled)
+        self.assertNotIn('"lulu-questarr-reconcile.service"', consoled)
+        reconciler = (ROOT / "scripts/reconcile-questarr.py").read_text()
+        self.assertIn('"questarr" not in setup.get("selected_providers", [])', reconciler)
+        self.assertIn('readiness.get("status") != "ready"', reconciler)
 
     def test_browser_osk_cancel_and_repeated_activation_are_explicit(self) -> None:
         browser = (ROOT / "ui" / "MudosBrowser.qml").read_text()

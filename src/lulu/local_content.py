@@ -5,7 +5,7 @@ import hashlib
 from pathlib import Path
 import re
 
-from .emulation import PLATFORMS, PlatformDefinition
+from .emulation import PLATFORMS, PlatformDefinition, current_bios_root
 from .metadata import clean_local_title
 from .switch_content import SwitchContentRole, parent_name, role_from_unstructured_name, title_id
 
@@ -57,7 +57,7 @@ class LocalContentProvider:
                 bios_ready = self._bios_ready(platform, definition)
                 launchable = valid and runtime_ready and bios_ready
                 if valid and not bios_ready:
-                    reason = "bios-missing"
+                    reason = "bios-missing" if definition.bios_subdirectory is not None else "setup-files-missing"
                 if valid and not runtime_ready:
                     reason = "runtime-missing"
                 games.append(
@@ -93,9 +93,12 @@ class LocalContentProvider:
                          == SwitchContentRole.BASE), members[0])
             valid, reason = self._content_status("switch", base)
             runtime_ready = self.runtime_paths.get("switch", Path()).is_file()
-            launchable = valid and runtime_ready
+            files_ready = self._bios_ready("switch", definition)
+            launchable = valid and runtime_ready and files_ready
             if valid and not runtime_ready:
                 reason = "runtime-missing"
+            elif valid and not files_ready:
+                reason = "setup-files-missing"
             roles = tuple((role_from_unstructured_name(path.name) or SwitchContentRole.BASE).value
                           for path in members)
             ids = tuple(value for value in (title_id(path.name) for path in members) if value)
@@ -110,12 +113,22 @@ class LocalContentProvider:
         return result
 
     def _bios_ready(self, platform: str, definition: PlatformDefinition) -> bool:
-        if definition.bios_subdirectory is None:
-            return True
-        paths = self.bios_paths.get(platform, ())
-        if paths:
-            return any(path.is_file() for path in paths)
-        return any(path.is_file() for path in definition.bios_root.iterdir()) if definition.bios_root.is_dir() else False
+        if definition.bios_subdirectory is not None:
+            paths = self.bios_paths.get(platform, ())
+            if paths:
+                if not any(path.is_file() for path in paths):
+                    return False
+            elif not (any(path.is_file() for path in definition.bios_root.iterdir())
+                      if definition.bios_root.is_dir() else False):
+                return False
+        for requirement in definition.setup_files:
+            if not requirement.required:
+                continue
+            target = current_bios_root() / requirement.destination
+            files = {path.name.casefold() for path in target.rglob("*") if path.is_file()} if target.is_dir() else set()
+            if (not files or any(name not in files for name in requirement.required_names)):
+                return False
+        return True
 
     @staticmethod
     def _content_id(platform: str, content: Path) -> str:

@@ -11,6 +11,14 @@ SHELL_PROFILE = (ROOT / "config" / "inputplumber" / "profiles" / "shell.yaml").r
 
 
 class ConsoleUiTests(unittest.TestCase):
+    def test_external_installable_selection_refreshes_game_preview(self) -> None:
+        library_space = (ROOT / "ui" / "LibrarySpace.qml").read_text()
+        handler = library_space.split("onSelectedIndexChanged:", 1)[1].split(
+            "Component.onCompleted:", 1)[0]
+        self.assertIn("if (!committingProjection)", handler)
+        self.assertIn("if (!browsingExternalCategories)", handler)
+        self.assertIn("preparePreview()", handler)
+
     def test_game_options_scope_and_controller_text_entry_lifecycle(self) -> None:
         shell = (ROOT / "ui" / "ConsoleShell.qml").read_text()
         options = (ROOT / "ui" / "GameOptions.qml").read_text()
@@ -1091,7 +1099,8 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertIn("property var canonicalGames: []", library_space)
         self.assertIn("property var projectionState:", library_space)
         self.assertIn("readonly property var filteredGames: projectionState.games", library_space)
-        self.assertIn("onCanonicalGamesChanged: if (projectionInitialized) commitProjection(dimensionKey, \"\", \"\")", library_space)
+        self.assertIn("onCanonicalGamesChanged: {", library_space)
+        self.assertIn("Qt.callLater(recomputeDescription)", library_space)
         move_category = library_space[library_space.index("function moveCategory(delta)"):
                                       library_space.index("function moveGame(delta)")]
         self.assertIn("projectionState.categories[next].key", move_category)

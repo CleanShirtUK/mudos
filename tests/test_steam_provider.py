@@ -2,6 +2,7 @@ import asyncio
 import unittest
 from pathlib import Path
 import tempfile
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 from unittest.mock import patch
 import signal
@@ -72,6 +73,16 @@ class DelayedPresentation:
 
 
 class SteamProviderTests(unittest.TestCase):
+    def test_catalogue_scans_gui_and_canonical_mudos_steam_libraries(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            home = Path(directory)
+            managed = home / "Games/Executables/steam"
+            with patch("lulu.plugins.steam.provider.PATHS",
+                       SimpleNamespace(steam_library_root=managed)), \
+                    patch("pathlib.Path.home", return_value=home):
+                roots = SteamProvider()._library_roots()
+        self.assertEqual(roots, (managed, home / ".local/share/Steam", home / ".steam/steam"))
+
     def test_starting_retains_ownership_until_game_process_is_discovered(self) -> None:
         async def exercise() -> None:
             session = SessionStateModel()
@@ -402,6 +413,75 @@ class SteamProviderTests(unittest.TestCase):
             "40800", "Super Meat Boy", str(root / "steamapps/common/Super Meat Boy"),
             str(root), 123, 9,
         )])
+
+    def test_list_installed_scans_managed_root_without_libraryfolders(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "SteamCMD"
+            apps = root / "steamapps"
+            (apps / "common" / "A Difficult Game About Climbing").mkdir(parents=True)
+            (apps / "appmanifest_2497920.acf").write_text(
+                '"AppState" { "appid" "2497920" "name" "A Difficult Game About Climbing" '
+                '"StateFlags" "4" "installdir" "A Difficult Game About Climbing" '
+                '"SizeOnDisk" "596262606" "LastPlayed" "0" }'
+            )
+
+            games = SteamProvider().list_installed((root,))
+
+        self.assertEqual(games, [InstalledSteamGame(
+            "2497920", "A Difficult Game About Climbing",
+            str(root / "steamapps/common/A Difficult Game About Climbing"), str(root),
+            596262606, 0,
+        )])
+
+    def test_register_managed_library_preserves_steam_vdf_and_app_manifest(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            home = Path(directory)
+            managed = home / "Games/Executables/steam"
+            steamapps = managed / "steamapps"
+            (steamapps / "common/Example").mkdir(parents=True)
+            (steamapps / "appmanifest_42.acf").write_text(
+                '"AppState" { "appid" "42" "name" "Example" '
+                '"StateFlags" "4" "installdir" "Example" "SizeOnDisk" "123" }'
+            )
+            library_file = home / ".local/share/Steam/steamapps/libraryfolders.vdf"
+            library_file.parent.mkdir(parents=True)
+            library_file.write_text(
+                '"libraryfolders" { "0" { "path" "/old/Steam" "label" "" } }'
+            )
+            provider = SteamProvider()
+            with patch("lulu.plugins.steam.provider.PATHS",
+                       SimpleNamespace(steam_library_root=managed)), \
+                    patch("pathlib.Path.home", return_value=home):
+                self.assertTrue(provider.register_managed_library())
+                self.assertFalse(provider.register_managed_library())
+                updated = library_file.read_text()
+                parsed = provider._parse_vdf(updated)["libraryfolders"]
+
+        self.assertIn("/old/Steam", str(parsed["0"]))
+        self.assertEqual(parsed["1"]["path"], str(managed))
+        self.assertEqual(parsed["1"]["apps"]["42"], "123")
+
+    def test_launch_asks_for_steam_restart_before_registering_live_library(self) -> None:
+        async def exercise() -> None:
+            with tempfile.TemporaryDirectory() as directory:
+                home = Path(directory)
+                managed = home / "Games/Executables/steam"
+                library_file = home / ".local/share/Steam/steamapps/libraryfolders.vdf"
+                library_file.parent.mkdir(parents=True)
+                library_file.write_text(
+                    '"libraryfolders" { "0" { "path" "/old/Steam" } }'
+                )
+                provider = SteamProvider()
+                with patch("lulu.plugins.steam.provider.PATHS",
+                           SimpleNamespace(steam_library_root=managed)), \
+                        patch("pathlib.Path.home", return_value=home), \
+                        patch.object(provider, "_steam_client_pids", return_value=[123]), \
+                        patch.object(provider, "_candidate_pids", return_value=[]):
+                    with self.assertRaisesRegex(ValueError, "Quit Steam completely"):
+                        await provider.request_launch("42")
+                self.assertNotIn(str(managed), library_file.read_text())
+
+        asyncio.run(exercise())
 
     def test_manifest_without_payload_is_not_installed(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

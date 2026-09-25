@@ -21,6 +21,43 @@ class FakeSteamProvider:
 
 
 class CatalogueTests(unittest.TestCase):
+    def test_romm_metadata_is_inherited_by_visible_installed_local_record(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "roms"
+            (root / "nes").mkdir(parents=True)
+            content = root / "nes" / "Super Mario Bros (E).nes"
+            content.write_bytes(b"fixture")
+            store = CatalogueStore(Path(directory) / "catalogue.sqlite3")
+            store.reconcile_local(LocalContentProvider({"nes": Path("/usr/bin/true")}), root)
+            romm = CatalogueGame.from_romm(RommGame(
+                186, "Super Mario Bros.", 1, "nes", "Nintendo Entertainment System",
+                content.name, ".nes", content.stat().st_size, "", False,
+                (RommFile(1860, content.name),), genres=("Platform",),
+                release_year=1985, summary="Mario rescues Princess Peach.", igdb_id="358",
+            ))
+            romm = replace(romm, metadata_provider="igdb", metadata_game_id="358",
+                           developer="Nintendo R&D4", publisher="Nintendo",
+                           platforms=("Nintendo Entertainment System",),
+                           canonical_title="Super Mario Bros.", match_status="matched",
+                           artwork_url="file:///cache/mario-cover.jpg", artwork_type="cover",
+                           artwork_provider="steamgriddb",
+                           icon_square_url="file:///cache/mario-icon.png")
+
+            store.reconcile_romm([romm])
+            visible = store.list_games()
+            local = next(game for game in visible if game.catalogue_source == "local")
+
+            self.assertEqual(local.summary, "Mario rescues Princess Peach.")
+            self.assertEqual(local.genres, ("Platform",))
+            self.assertEqual(local.release_year, 1985)
+            self.assertEqual(local.developer, "Nintendo R&D4")
+            self.assertEqual(local.metadata_game_id, "358")
+            self.assertEqual(local.artwork_url, "file:///cache/mario-cover.jpg")
+            self.assertEqual(local.artwork_type, "cover")
+            self.assertEqual(local.artwork_provider, "steamgriddb")
+            self.assertEqual(local.icon_square_url, "file:///cache/mario-icon.png")
+            self.assertNotIn("romm:186", [game.game_id for game in visible])
+
     def test_manual_mapping_is_override_and_revert_restores_automatic_identity(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             store = CatalogueStore(Path(directory) / "catalogue.sqlite3")

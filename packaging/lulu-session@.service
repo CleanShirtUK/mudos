@@ -8,6 +8,7 @@ Conflicts=getty@tty%i.service
 Before=getty@tty%i.service
 StartLimitIntervalSec=60s
 StartLimitBurst=5
+OnFailure=mudos-recovery-guard.service
 
 [Service]
 Type=notify

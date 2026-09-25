@@ -75,6 +75,14 @@ class MetadataProviderTests(unittest.TestCase):
             "https://images.igdb.com/igdb/image/upload/t_screenshot_big/larger.jpg",
         ])
 
+    def test_igdb_uses_non_widescreen_screenshot_as_preview_fallback(self):
+        normalized = normalize_igdb_game({"id": 358, "name": "Super Mario Bros.",
+            "screenshots": [{"image_id": "sc84hp", "width": 256, "height": 224}]})
+        screenshot = "https://images.igdb.com/igdb/image/upload/t_screenshot_big/sc84hp.jpg"
+        self.assertEqual(normalized["preview_still_url"], screenshot)
+        self.assertEqual(normalized["preview_still_provider"], "igdb")
+        self.assertEqual(normalized["preview_still_candidates"][0]["url"], screenshot)
+
     def test_igdb_search_returns_controller_disambiguation_fields(self):
         with tempfile.TemporaryDirectory() as directory:
             store = CatalogueStore(Path(directory) / "catalogue.sqlite3")

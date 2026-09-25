@@ -37,6 +37,7 @@ class SteamEntitlementConfig:
     steam_id: str
     api_key_file: Path
     timeout: float = 8.0
+    steam_username: str = ""
 
     @classmethod
     def from_file(cls, path: Path | None = None) -> "SteamEntitlementConfig | None":
@@ -50,16 +51,24 @@ class SteamEntitlementConfig:
             steam_id = str(value.get("steam_id", "")).strip()
             key_file = str(value.get("api_key_file", "")).strip()
             timeout = float(value.get("timeout", 8.0))
+            username = str(value.get("steam_username", "")).strip()
             if not steam_id.isdecimal() or int(steam_id) < 1:
                 raise ValueError("steam_id must be a positive numeric SteamID")
             if not key_file or not 0 < timeout <= 60:
                 raise ValueError("api_key_file and a timeout between 0 and 60 seconds are required")
-            return cls(steam_id, Path(key_file).expanduser(), timeout)
+            return cls(steam_id, Path(key_file).expanduser(), timeout, username)
         except (OSError, TypeError, ValueError, json.JSONDecodeError) as error:
             LOGGER.warning("Steam entitlement configuration unavailable path=%s error=%s", path, error)
             return None
 
     def api_key(self) -> str:
+        if str(self.api_key_file).startswith("secret:"):
+            namespace, _, name = str(self.api_key_file).removeprefix("secret:").partition("/")
+            from ...credential import SecretStore
+            value = SecretStore().get(namespace, name) or ""
+            if not value:
+                raise SteamEntitlementError("Steam Web API key is unavailable")
+            return value
         try:
             mode = self.api_key_file.stat().st_mode & 0o777
             if mode & 0o077:
@@ -80,6 +89,7 @@ class SteamEntitlementSource:
     def __init__(self, config: SteamEntitlementConfig | None = None,
                  request: Callable[[str, float], bytes] | None = None,
                  snapshot_path: Path | None = None) -> None:
+        self._config_injected = config is not None
         self.config = config or SteamEntitlementConfig.from_file()
         self._request = request or self._http_request
         self._snapshot_path = snapshot_path or (PATHS.data_root / "steam-entitlements.json")
@@ -97,6 +107,11 @@ class SteamEntitlementSource:
 
     def refresh(self) -> tuple[SteamEntitlement, ...]:
         try:
+            # Setup may configure Steam after Consoled constructed this source.
+            # Reload on each explicit reconciliation so restarts are not
+            # required merely to pick up a saved SteamID/key reference.
+            if not self._config_injected:
+                self.config = SteamEntitlementConfig.from_file()
             if self.config is None:
                 raise SteamEntitlementError("Steam entitlement configuration is unavailable")
             payload = self._request(self._url(self.config), self.config.timeout)

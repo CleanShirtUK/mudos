@@ -206,7 +206,11 @@ Item {
         return -1
     }
 
-    onCanonicalGamesChanged: if (projectionInitialized) commitProjection(dimensionKey, "", "")
+    onCanonicalGamesChanged: {
+        if (projectionInitialized)
+            commitProjection(dimensionKey, "", "")
+        Qt.callLater(recomputeDescription)
+    }
     onDimensionKeyChanged: if (projectionInitialized) commitProjection(dimensionKey, "", "")
     onBrowseCategoriesChanged: if (projectionInitialized && browsingExternalCategories) commitProjection(dimensionKey, "", "")
     onBrowseCategoryIndexChanged: if (projectionInitialized && browsingExternalCategories) commitProjection(dimensionKey, "", "")
@@ -219,9 +223,10 @@ Item {
             previewAnimationReady = false
         }
     }
-    onSelectedIndexChanged: if (!committingProjection && !browsingExternalCategories) {
-        rememberSelection(categoryMode, projectionState.categoryKey,
-            selectedGame ? String(selectedGame.game_id) : "")
+    onSelectedIndexChanged: if (!committingProjection) {
+        if (!browsingExternalCategories)
+            rememberSelection(categoryMode, projectionState.categoryKey,
+                selectedGame ? String(selectedGame.game_id) : "")
         preparePreview()
         rowSync.restart()
     }

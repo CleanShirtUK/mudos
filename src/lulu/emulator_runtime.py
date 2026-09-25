@@ -22,7 +22,10 @@ class EmulatorLaunchIntent:
 class EmulatorRuntimeAdapter:
     """Build backend launch intent without exposing runtime details to QML."""
 
-    _retroarch_platforms = {"nes", "genesis"}
+    _retroarch_platforms = {
+        "nes", "genesis", "gba", "gb", "gbc", "snes", "nds", "n64",
+        "psx", "psp", "arcade", "dreamcast",
+    }
 
     def __init__(self, runtime_paths: dict[str, Path], core_paths: dict[str, Path] | None = None,
                  switch_provider: SwitchProvider | None = None,

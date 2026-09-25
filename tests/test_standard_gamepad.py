@@ -5,6 +5,7 @@ from pathlib import Path
 
 from lulu.controllerd import Controller, ControllerRegistry
 from lulu.controller_provisioning import ensure_provider_controller_config
+from lulu.inputplumber import normalized_controller_identity
 from lulu.switch_provider import SwitchProvider
 
 
@@ -18,10 +19,10 @@ class StandardGamepadTests(unittest.TestCase):
         module = importlib.util.module_from_spec(spec)
         assert spec.loader is not None
         spec.loader.exec_module(module)
-        content = module.render("event8", "usb-physical/input0")
+        content = module.render("event8")
         self.assertIn("handler: event*", content)
         self.assertIn("dev_node: /dev/event8", content)
-        self.assertIn("phys_path: 'usb-physical/input0'", content)
+        self.assertNotIn("phys_path:", content)
         self.assertNotIn("vendor_id", content)
         self.assertNotIn("product_id", content)
 
@@ -53,6 +54,71 @@ class StandardGamepadTests(unittest.TestCase):
         output = {"ID_INPUT_JOYSTICK=1", "ID_INPUT_WIDTH_MM=65535"}
         self.assertTrue(module._is_virtual_source(source))
         self.assertFalse(module._is_virtual_source(output))
+
+    def test_sysfs_identity_deduplicates_interfaces_but_keeps_receiver_slots_distinct(self) -> None:
+        spec = importlib.util.spec_from_file_location(
+            "provision_inputplumber_gamepads_identity",
+            Path(__file__).parents[1] / "scripts/provision-inputplumber-gamepads.py",
+        )
+        assert spec and spec.loader
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        interface_a = "/sys/devices/pci/usb6/6-1/6-1:1.0/input/input1676"
+        interface_a_second_event = "/sys/devices/pci/usb6/6-1/6-1:1.0/input/input1676"
+        interface_b = "/sys/devices/pci/usb6/6-1/6-1:1.2/input/input1680"
+        self.assertEqual(module.logical_device_key(interface_a),
+                         module.logical_device_key(interface_a_second_event))
+        self.assertNotEqual(module.logical_device_key(interface_a),
+                            module.logical_device_key(interface_b))
+
+    def test_hotplug_composite_activation_retries_until_ip_publishes_source(self) -> None:
+        spec = importlib.util.spec_from_file_location(
+            "provision_inputplumber_gamepads_retry",
+            Path(__file__).parents[1] / "scripts/provision-inputplumber-gamepads.py",
+        )
+        assert spec and spec.loader
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        clock = [0.0]
+        active = set()
+        attempts = []
+
+        def sleep(interval):
+            clock[0] += interval
+
+        def create():
+            attempts.append("create")
+            if len(attempts) == 2:
+                active.add("/dev/input/event19")
+
+        connected = module.ensure_source_composite(
+            "/dev/input/event19", lambda: set(active), create,
+            timeout=2.0, retry_interval=0.5, poll_interval=0.1,
+            clock=lambda: clock[0], sleep=sleep,
+        )
+        self.assertTrue(connected)
+        self.assertEqual(len(attempts), 2)
+
+    def test_serial_less_receiver_slots_get_stable_distinct_controller_identities(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            first_interface = root / "6-1:1.0"
+            second_interface = root / "6-1:1.2"
+            first_interface.mkdir()
+            second_interface.mkdir()
+            (first_interface / "bInterfaceNumber").write_text("00\n")
+            (second_interface / "bInterfaceNumber").write_text("02\n")
+            first_path = str(first_interface / "input/input100")
+            second_path = str(second_interface / "input/input101")
+            first = normalized_controller_identity("045e_0291", first_path, False)
+            first_again = normalized_controller_identity("045e_0291", first_path, False)
+            second = normalized_controller_identity("045e_0291", second_path, False)
+        self.assertEqual(first, first_again)
+        self.assertNotEqual(first, second)
+        self.assertEqual(
+            normalized_controller_identity("serial-bearing-id", first_path, True),
+            "serial-bearing-id",
+        )
 
     def _pad(self, ident: str, name: str, guid: str, index: int) -> Controller:
         return Controller(

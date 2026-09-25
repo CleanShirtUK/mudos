@@ -40,6 +40,17 @@ DESCRIPTOR = ServiceDescriptor(
 LOGGER = logging.getLogger("lulu.acquisitiond")
 
 
+def _completed_job_refresh_stages(provider: str) -> list[str]:
+    """Return catalogue stages invalidated by a completed provider job."""
+    stages = [provider]
+    if provider == "romm":
+        # RomM downloads are materialized into the local ROM library. Refresh
+        # that filesystem-backed catalogue too so the RomM row can be linked
+        # to its newly installed local content record.
+        stages.append("local")
+    return stages
+
+
 class AcquisitionInterface(ServiceInterface):
     def __init__(self, manager: JobManager, catalogue: CatalogueStore, plugins: PluginRegistry,
                  notifications: NotificationBroker | None = None,
@@ -95,7 +106,8 @@ class AcquisitionInterface(ServiceInterface):
             # callback, so no provider/job lifecycle lock is held.
             introspection = await self.bus.introspect("org.lulu.Consoled", "/org/lulu/Console")
             proxy = self.bus.get_proxy_object("org.lulu.Consoled", "/org/lulu/Console", introspection)
-            await proxy.get_interface("org.lulu.Console").call_refresh_stages([job.provider])
+            await proxy.get_interface("org.lulu.Console").call_refresh_stages(
+                _completed_job_refresh_stages(job.provider))
         except Exception:
             LOGGER.exception("completed acquisition reconciliation failed job=%s", job_id)
 
@@ -328,7 +340,8 @@ async def serve(bus_type: BusType = BusType.SESSION) -> None:
                     request = json.loads(await consoled.call_begin_owned_credential_request(
                         title, prompt, input_type.value, input_type is CredentialInput.SECRET,
                         min_length, max_length, owner_id, json.dumps(owner, sort_keys=True),
-                         json.dumps(["enter-code"] if input_type is CredentialInput.WAITING else []),
+                          json.dumps(["approved", "enter-code"]
+                                     if input_type is CredentialInput.WAITING else []),
                          False))
                     request_id = request["id"]
                     try:

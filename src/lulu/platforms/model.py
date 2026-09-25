@@ -17,6 +17,19 @@ class BiosDefinition:
 
 
 @dataclass(frozen=True, slots=True)
+class SetupFileRequirement:
+    requirement_id: str
+    label: str
+    destination: str
+    description: str
+    extensions: tuple[str, ...]
+    multiple: bool = False
+    archive: bool = False
+    required: bool = False
+    required_names: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
 class PlatformDefinition:
     platform_id: str
     name: str
@@ -25,6 +38,7 @@ class PlatformDefinition:
     supported_providers: tuple[str, ...]
     default_provider: str | None = None
     icon: str | None = None
+    setup_files: tuple[SetupFileRequirement, ...] = ()
 
     @property
     def label(self) -> str:

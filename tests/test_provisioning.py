@@ -116,6 +116,15 @@ class ProvisioningTests(unittest.TestCase):
         self.assertLess(restart, start)
         self.assertNotIn("systemctl restart lulu-acquisition.service lulu-consoled.service", script)
 
+    def test_dev_refresh_stages_provider_installer_inside_published_runtime(self) -> None:
+        script = (ROOT / "scripts/dev-runtime.sh").read_text()
+        self.assertIn('install -D -m 0755 "$staging/packaging/mudos-provider-install"', script)
+        self.assertIn('"$staging/bin/mudos-provider-install"', script)
+        self.assertNotIn('"$runtime/bin/mudos-provider-install"', script)
+        installer = (ROOT / "packaging/mudos-provider-install").read_text()
+        self.assertIn("pacman -S --needed --noconfirm steam steam-devices", installer)
+        self.assertIn('exec "$root/scripts/provision-steamcmd.sh"', installer)
+
     def test_logind_policy_reserves_console_session_vt(self) -> None:
         policy = (ROOT / "packaging/logind.conf.d/lulu.conf").read_text()
         self.assertIn("[Login]", policy)

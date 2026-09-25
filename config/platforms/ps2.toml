@@ -11,3 +11,12 @@ default = "pcsx2"
 supported = ["pcsx2"]
 [assets]
 icon = "platforms/ps2.svg"
+
+[[setup.files]]
+id = "bios"
+label = "PlayStation 2 BIOS files"
+destination = "ps2"
+description = "Select the PS2 BIOS files you are licensed to use. They will be stored in the Mudos PS2 BIOS folder."
+extensions = [".bin", ".rom", ".nvm", ".mec", ".erom"]
+multiple = true
+required = true

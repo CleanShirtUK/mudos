@@ -1,0 +1,10 @@
+id = "psp"
+name = "PlayStation Portable"
+[content]
+subdir = "psp"
+extensions = [".iso", ".cso", ".pbp", ".chd"]
+[bios]
+required = false
+[providers]
+default = "retroarch"
+supported = ["retroarch"]

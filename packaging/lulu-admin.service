@@ -1,7 +1,6 @@
 [Unit]
 Description=Mudos administration Web UI
-After=network-online.target
-Wants=network-online.target
+After=network.target
 
 [Service]
 Type=simple
@@ -16,11 +15,16 @@ ExecStart=/usr/bin/python -m lulu.admin_web
 Restart=on-failure
 RestartSec=3
 AmbientCapabilities=CAP_NET_BIND_SERVICE
-CapabilityBoundingSet=CAP_NET_BIND_SERVICE
-NoNewPrivileges=true
+# pkexec needs to switch credentials, and the allowlisted helper needs to read
+# the first-run state and update the protected shadow database.
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE CAP_SETUID CAP_SETGID CAP_DAC_OVERRIDE CAP_FOWNER CAP_AUDIT_WRITE
 PrivateTmp=true
 ProtectSystem=full
 ProtectHome=read-only
+# ProtectSystem's read-only /etc mount prevents chpasswd from atomically
+# creating its temporary account-database files. This daemon runs as lulu;
+# privileged writes are available only through the polkit-allowlisted helper.
+ProtectSystem=off
 ReadWritePaths=/home/lulu/.config/lulu /home/lulu/.local/share/lulu /var/lib/nzbget /var/lib/lulu-transmission
 
 [Install]

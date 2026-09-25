@@ -8,7 +8,7 @@ from lulu.local_content import LocalContentProvider
 
 class LocalContentTests(unittest.TestCase):
     def test_switch_runtime_uses_installed_eden_binary(self) -> None:
-        self.assertEqual(PLATFORMS["switch"].executable, Path("/usr/bin/eden"))
+        self.assertEqual(PLATFORMS["switch"].executable, Path("/usr/local/bin/eden"))
 
     def test_explicit_root_groups_cue_and_reports_missing_runtime(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

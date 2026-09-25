@@ -1,0 +1,10 @@
+id = "gbc"
+name = "Game Boy Color"
+[content]
+subdir = "gbc"
+extensions = [".gbc", ".gb", ".zip"]
+[bios]
+required = false
+[providers]
+default = "retroarch"
+supported = ["retroarch"]

@@ -96,6 +96,23 @@ refresh() {
         /etc/polkit-1/rules.d/55-lulu-transmission-config.rules
     install -D -m 0644 "$staging/packaging/polkit-1/rules.d/56-lulu-session-restart.rules" \
         /etc/polkit-1/rules.d/56-lulu-session-restart.rules
+    install -D -m 0644 "$staging/packaging/polkit-1/rules.d/57-lulu-provider-install.rules" \
+        /etc/polkit-1/rules.d/57-lulu-provider-install.rules
+    install -D -m 0644 "$staging/packaging/polkit-1/rules.d/58-lulu-recovery-power.rules" \
+        /etc/polkit-1/rules.d/58-lulu-recovery-power.rules
+    install -D -m 0644 "$staging/packaging/polkit-1/rules.d/59-lulu-initial-password.rules" \
+        /etc/polkit-1/rules.d/59-lulu-initial-password.rules
+    install -D -m 0755 "$staging/packaging/mudos-set-initial-password" \
+        /usr/libexec/mudos-set-initial-password
+    install -D -m 0755 "$staging/packaging/mudos-provider-install" \
+        "$staging/bin/mudos-provider-install"
+    install -D -m 0644 "$staging/packaging/avahi/mudos-http.service" \
+        /etc/avahi/services/mudos-http.service
+    install -D -m 0644 "$staging/ui/Onboarding.qml" "$runtime/ui/Onboarding.qml"
+    install -D -m 0644 "$staging/ui/Recovery.qml" "$runtime/ui/Recovery.qml"
+    sed "s#/opt/lulu/current#/opt/lulu/dev-current#g" \
+        "$staging/packaging/lulu-provider-install@.service" \
+        > /etc/systemd/system/lulu-provider-install@.service
     systemctl reload polkit.service 2>/dev/null || true
     # InputPlumber consumes system device definitions, not the mutable runtime
     # tree. Install the repo-owned generic policy on every refresh so an old
@@ -143,8 +160,14 @@ Environment=LULU_INSTALL_ROOT=$runtime
 EOF
     systemctl daemon-reload
     systemctl disable lulu-acquisition.service lulu-consoled.service >/dev/null 2>&1 || true
-    systemctl enable lulu-questarr-reconcile.service >/dev/null
+    # Provider reconciliation is opt-in and readiness-gated by Consoled.
+    # A runtime refresh must never start Questarr merely because its unit exists.
+    systemctl disable lulu-questarr-reconcile.service >/dev/null 2>&1 || true
     systemctl restart lulu-admin.service
+    # Provisioning installs the recovery units before the new runtime tree is
+    # swapped into place. Restart the independent control plane now so it
+    # imports the just-published dev-current source, not the previous tree.
+    systemctl restart mudos-recovery.service
     sudo -u lulu XDG_RUNTIME_DIR=/run/user/958 \
         DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/958/bus \
         systemctl --user daemon-reload
@@ -160,7 +183,6 @@ EOF
     sudo -u lulu XDG_RUNTIME_DIR=/run/user/958 \
         DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/958/bus \
         systemctl --user enable --now lulu-sunshine-dev.service
-    systemctl start lulu-questarr-reconcile.service
     logger -t lulu-runtime "event=refresh-complete target=$runtime head=$head" 2>/dev/null || true
     echo "refreshed non-promotable dev runtime: $runtime"
 }
@@ -184,6 +206,18 @@ immutable() {
         /etc/polkit-1/rules.d/50-lulu-storage.rules
     install -D -m 0644 "$immutable_root/packaging/polkit-1/rules.d/56-lulu-session-restart.rules" \
         /etc/polkit-1/rules.d/56-lulu-session-restart.rules
+    install -D -m 0644 "$immutable_root/packaging/polkit-1/rules.d/57-lulu-provider-install.rules" \
+        /etc/polkit-1/rules.d/57-lulu-provider-install.rules
+    install -D -m 0644 "$immutable_root/packaging/polkit-1/rules.d/58-lulu-recovery-power.rules" \
+        /etc/polkit-1/rules.d/58-lulu-recovery-power.rules
+    install -D -m 0644 "$immutable_root/packaging/polkit-1/rules.d/59-lulu-initial-password.rules" \
+        /etc/polkit-1/rules.d/59-lulu-initial-password.rules
+    install -D -m 0755 "$immutable_root/packaging/mudos-set-initial-password" \
+        /usr/libexec/mudos-set-initial-password
+    install -D -m 0644 "$immutable_root/packaging/avahi/mudos-http.service" \
+        /etc/avahi/services/mudos-http.service
+    install -m 0644 "$immutable_root/packaging/lulu-provider-install@.service" \
+        /etc/systemd/system/lulu-provider-install@.service
     udevadm control --reload-rules
     systemctl daemon-reload
     systemctl disable lulu-acquisition.service lulu-consoled.service >/dev/null 2>&1 || true

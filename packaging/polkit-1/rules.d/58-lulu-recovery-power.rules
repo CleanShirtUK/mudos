@@ -1,0 +1,9 @@
+// Recovery portal power controls are limited to the appliance account and
+// the two explicit logind power operations.
+polkit.addRule(function(action, subject) {
+    if (subject.user == "lulu" &&
+        (action.id == "org.freedesktop.login1.reboot" ||
+         action.id == "org.freedesktop.login1.power-off")) {
+        return polkit.Result.YES;
+    }
+});

@@ -5,7 +5,8 @@ function glyph(name) {
         genres: "\uf02c", lastPlayed: "\uf1da", clock: "\uf017",
         gameModes: "\uf0c0", localMultiplayer: "\uf0c0",
         onlineMultiplayer: "\uf0ac", protondb: "\ue27f",
-        platform: "\uf11b", provider: "\uf1e6"
+        platform: "\uf11b", provider: "\uf1e6", release: "\uf073",
+        developer: "\uf19c", publisher: "\uf1ad"
     }
     return glyphs[name] || ""
 }
@@ -77,6 +78,9 @@ function rows(game, dateLabel) {
         add("Local Multiplayer", "localMultiplayer")
     if (game.online_multiplayer === true)
         add("Online Multiplayer", "onlineMultiplayer")
+    add(game.release_year || game.release_date, "release")
+    add(game.developer, "developer")
+    add(game.publisher, "publisher")
     var proton = protonDbText(game.provider, game.platform, game.protondb_rating)
     if (proton)
         add(proton, "protondb")

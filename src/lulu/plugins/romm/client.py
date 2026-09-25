@@ -433,7 +433,9 @@ class RommClient:
                 # but allow the streaming socket a conservative idle window.
                 return self.transport.open("GET", self.config.api_url + path, headers,
                                            max(self.config.timeout, 60.0), offset)
-            except (HTTPError, URLError, OSError, TimeoutError) as error:
+            except HTTPError as error:
+                raise RommApiError(f"RomM returned HTTP {error.code} for {path}") from error
+            except (URLError, OSError, TimeoutError) as error:
                 raise RommApiError(f"RomM request failed: GET {path}") from error
         # Test/custom transports expose only the existing bounded request API.
         # Keep this compatibility fallback; production uses UrlLibTransport.
@@ -457,7 +459,9 @@ class RommClient:
             headers["Authorization"] = auth
         try:
             status, payload = self.transport.request(method, self.config.api_url + path, headers, self.config.timeout)
-        except (HTTPError, URLError, OSError, TimeoutError) as error:
+        except HTTPError as error:
+            raise RommApiError(f"RomM returned HTTP {error.code} for {path}") from error
+        except (URLError, OSError, TimeoutError) as error:
             raise RommApiError(f"RomM request failed: {method} {path}") from error
         if not 200 <= status < 300:
             raise RommApiError(f"RomM returned HTTP {status} for {path}")

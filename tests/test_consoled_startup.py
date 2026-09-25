@@ -2,13 +2,24 @@ from pathlib import Path
 import asyncio
 import threading
 import unittest
+from types import SimpleNamespace
+from unittest.mock import Mock
 
-from lulu.consoled import ConsoleInterface
+from lulu.consoled import ConsoleCatalog, ConsoleInterface
 
 ROOT = Path(__file__).parents[1]
 
 
 class ConsoledStartupTests(unittest.TestCase):
+    def test_empty_dbus_provider_means_combined_installable_catalogue(self) -> None:
+        store = Mock()
+        store.list_available_games.return_value = []
+
+        result = ConsoleCatalog.available_games(SimpleNamespace(store=store), "")
+
+        self.assertEqual(result, [])
+        store.list_available_games.assert_called_once_with(None)
+
     def test_dbus_name_is_published_before_provider_refresh(self) -> None:
         source = (ROOT / "src/lulu/consoled.py").read_text()
         serve = source[source.index("async def serve()") :]
@@ -24,6 +35,10 @@ class ConsoledStartupTests(unittest.TestCase):
         source = (ROOT / "src/lulu/consoled.py").read_text()
         self.assertIn('startup_stages = {"steam", "local"}', source)
         self.assertIn("mark_startup_reconciliation_ready", source)
+        synchronize = source[source.index("async def synchronize()"):
+                             source.index("asyncio.create_task(synchronize()")]
+        self.assertLess(synchronize.index("mark_startup_reconciliation_ready()"),
+                        synchronize.index("await interface.refresh_catalogue(stages)"))
         self.assertIn('"romm", "components", "romm-artwork",', source)
         self.assertIn('"protondb", "artwork"', source)
         self.assertIn("GetStartupReadiness", source)
@@ -54,6 +69,12 @@ class ConsoledStartupTests(unittest.TestCase):
             self.assertEqual(catalogue.calls, 1)
 
         asyncio.run(exercise())
+
+    def test_steam_authentication_uses_shell_credential_broker(self) -> None:
+        interface = ConsoleInterface(SimpleNamespace())
+        auth = interface._plugins.for_plugin("steam", "authentication")
+        self.assertTrue(auth)
+        self.assertIs(auth[0].acquisition.credentials, interface.credentials)
 
 
 if __name__ == "__main__":

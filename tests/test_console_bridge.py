@@ -14,6 +14,37 @@ SPEC.loader.exec_module(BRIDGE)
 
 
 class ConsoleBridgeTests(unittest.TestCase):
+    def test_steam_authentication_failure_can_be_retried_after_auth_is_fixed(self) -> None:
+        async def exercise():
+            class Consoled:
+                async def call_resolve_steam_install(self, _game_id): return "123"
+
+            class Acquisition:
+                def __init__(self): self.retried = None
+                async def call_get_snapshot(self):
+                    return json.dumps({"jobs": [{
+                        "job_id": "old-failed-job", "provider": "steam",
+                        "content_identity": "steam:123", "state": "failed",
+                        "retryable": False,
+                        "error": {"code": "authentication-required"},
+                    }]})
+                async def call_retry_job(self, job_id):
+                    self.retried = job_id
+                    return "new-retry-job"
+
+            acquisition = Acquisition()
+            bridge = BRIDGE.ConsoleUiBridge(asyncio.get_running_loop(), Consoled(),
+                                             object(), acquisition)
+            bridge.list_available_games = lambda _provider: asyncio.sleep(0, result=[{
+                "game_id": "steam:123", "provider": "steam", "title": "Fixture",
+            }])
+            result = await bridge.install_game("steam:123")
+            await asyncio.sleep(0)
+            self.assertEqual(result, {"token": "new-retry-job"})
+            self.assertEqual(acquisition.retried, "old-failed-job")
+
+        asyncio.run(exercise())
+
     def test_selected_mapping_candidate_preserves_its_igdb_identity(self) -> None:
         class Consoled:
             def __init__(self): self.selected = None

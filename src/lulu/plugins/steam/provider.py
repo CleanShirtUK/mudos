@@ -8,6 +8,7 @@ from pathlib import Path
 import re
 import signal
 import subprocess
+import tempfile
 from ...launch_identity import LaunchIdentity
 from ...paths import PATHS
 
@@ -149,14 +150,18 @@ class SteamProvider:
         roots = roots or self._library_roots()
         games: list[InstalledSteamGame] = []
         for root in roots:
+            library_roots = {root}
             folders = root / "steamapps" / "libraryfolders.vdf"
-            if not folders.exists():
-                continue
-            libraries = self._parse_vdf(folders.read_text(errors="replace")).get("libraryfolders", {})
-            for folder in libraries.values():
-                library_root = Path(folder.get("path", ""))
-                if not library_root:
-                    continue
+            if folders.is_file():
+                libraries = self._parse_vdf(folders.read_text(errors="replace")).get(
+                    "libraryfolders", {})
+                for folder in libraries.values():
+                    folder_path = folder.get("path", "") if isinstance(folder, dict) else folder
+                    if folder_path:
+                        library_roots.add(Path(str(folder_path)))
+            # SteamCMD's isolated Mudos library is a valid library root even
+            # before Steam Desktop has generated libraryfolders.vdf there.
+            for library_root in sorted(library_roots, key=str):
                 for manifest in sorted((library_root / "steamapps").glob("appmanifest_*.acf")):
                     app = self._parse_vdf(manifest.read_text(errors="replace")).get("AppState", {})
                     if not self._is_launchable_app(app):
@@ -185,7 +190,88 @@ class SteamProvider:
         return sorted({game.app_id: game for game in games}.values(), key=lambda game: game.title.casefold())
 
     def _library_roots(self) -> tuple[Path, ...]:
-        return (PATHS.steam_library_root,)
+        # Steam's GUI client starts in its XDG data directory; MudosCMD uses
+        # the managed Games/Executables/steam library. Read both library
+        # manifests so GUI-installed games are discovered without moving or
+        # duplicating manifests. AppID remains the deduplication identity.
+        roots = (PATHS.steam_library_root,
+                 Path.home() / ".local/share/Steam",
+                 Path.home() / ".steam/steam")
+        return tuple(dict.fromkeys(roots))
+
+    @staticmethod
+    def _desktop_libraryfolders_path() -> Path:
+        return Path.home() / ".local/share/Steam/steamapps/libraryfolders.vdf"
+
+    def managed_library_registered(self) -> bool:
+        library_file = self._desktop_libraryfolders_path()
+        if not library_file.is_file():
+            return False
+        libraries = self._parse_vdf(library_file.read_text(errors="replace")).get(
+            "libraryfolders", {})
+        managed = PATHS.steam_library_root.resolve(strict=False)
+        if not isinstance(libraries, dict):
+            return False
+        for folder in libraries.values():
+            value = folder.get("path", "") if isinstance(folder, dict) else folder
+            if value and Path(str(value)).resolve(strict=False) == managed:
+                return True
+        return False
+
+    def register_managed_library(self) -> bool:
+        """Register Mudos's SteamCMD library with Steam Desktop, preserving VDF data."""
+        if self.managed_library_registered():
+            return False
+        library_root = PATHS.steam_library_root.resolve(strict=False)
+        library_file = self._desktop_libraryfolders_path()
+        library_file.parent.mkdir(parents=True, exist_ok=True)
+        if library_file.is_file():
+            original = library_file.read_text(errors="replace")
+            libraries = self._parse_vdf(original).get("libraryfolders", {})
+            if not isinstance(libraries, dict):
+                raise ValueError("Steam libraryfolders.vdf is invalid")
+        else:
+            original = '"libraryfolders"\n{\n}\n'
+            libraries = {}
+        numeric_ids = [int(key) for key in libraries if str(key).isdecimal()]
+        next_id = str(max(numeric_ids, default=-1) + 1)
+        app_entries: list[str] = []
+        for manifest in sorted((library_root / "steamapps").glob("appmanifest_*.acf")):
+            try:
+                app = self._parse_vdf(manifest.read_text(errors="replace")).get("AppState", {})
+                if self._is_launchable_app(app):
+                    app_entries.append(f'\t\t\t"{app["appid"]}"\t"{app.get("SizeOnDisk", "0")}"')
+            except (OSError, ValueError, KeyError):
+                continue
+        escaped_root = str(library_root).replace("\\", "\\\\").replace('"', '\\"')
+        block = (
+            f'\t"{next_id}"\n\t{{\n'
+            f'\t\t"path"\t\t"{escaped_root}"\n'
+            '\t\t"label"\t\t"Mudos Managed"\n'
+            '\t\t"apps"\n\t\t{\n'
+            + ("\n".join(app_entries) + "\n" if app_entries else "")
+            + "\t\t}\n\t}\n"
+        )
+        close = original.rfind("}")
+        if close < 0:
+            raise ValueError("Steam libraryfolders.vdf is invalid")
+        updated = original[:close] + block + original[close:]
+        mode = library_file.stat().st_mode & 0o777 if library_file.exists() else 0o600
+        descriptor, temporary = tempfile.mkstemp(prefix=".libraryfolders-", dir=library_file.parent)
+        try:
+            with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
+                stream.write(updated)
+                stream.flush()
+                os.fsync(stream.fileno())
+            os.chmod(temporary, mode)
+            os.replace(temporary, library_file)
+        except Exception:
+            try:
+                os.unlink(temporary)
+            except FileNotFoundError:
+                pass
+            raise
+        return True
 
     @staticmethod
     def _is_launchable_app(app: dict[str, object]) -> bool:
@@ -320,6 +406,12 @@ class SteamProvider:
         environment.setdefault("DISPLAY", ":0")
         steam_pids = self._steam_client_pids()
         self._logger.info("launch request app_id=%s steam_pids=%s", app_id, steam_pids)
+        if not self.managed_library_registered():
+            if steam_pids:
+                raise ValueError(
+                    "Quit Steam completely once so Mudos can register its managed library, then launch again"
+                )
+            await asyncio.to_thread(self.register_managed_library)
         if not steam_pids:
             await self.ensure_client(set(steam_pids))
         process = await asyncio.create_subprocess_exec(

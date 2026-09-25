@@ -5,17 +5,17 @@ configuration mutation to ProviderConfigurationService and SecretStore.
 """
 from __future__ import annotations
 
-import base64
-import hashlib
 import hmac
 import html
 import http.server
 import json
 import logging
 import os
+import pwd
 from pathlib import Path
 import secrets
 import subprocess
+import tempfile
 import time
 import urllib.parse
 import urllib.error
@@ -27,13 +27,15 @@ from .auth_transactions import AuthTransactionState, AuthTransactionStore
 from .provider_config import ProviderConfigurationService
 from .paths import PATHS
 from .plugins import ComponentRegistry, PluginRegistry
+from .onboarding import (INTEGRATION_METADATA, dismiss_onboarding, finish_onboarding,
+                         integration_manifest, onboarding_state, provider_manifest,
+                         save_admin_password_configured, save_progress, save_validation)
+from .recovery import snapshot as recovery_state_snapshot
 
 LOGGER = logging.getLogger("lulu.admin")
 
 PORT = 80
 SESSION_SECONDS = 1800
-ADMIN_NAMESPACE = "admin"
-ADMIN_SECRET = "password-hash"
 
 PROVIDERS = (
     ("steam", "Steam"), ("gog", "GOG"), ("epic", "Epic Games"), ("providers.romm", "RomM"),
@@ -75,23 +77,6 @@ SERVICES = (
 )
 
 
-def _hash_password(password: str, salt: bytes | None = None) -> str:
-    salt = salt or secrets.token_bytes(16)
-    digest = hashlib.pbkdf2_hmac("sha256", password.encode(), salt, 240_000)
-    return f"pbkdf2-sha256$240000${base64.urlsafe_b64encode(salt).decode()}${base64.urlsafe_b64encode(digest).decode()}"
-
-
-def _check_password(password: str, encoded: str) -> bool:
-    try:
-        algorithm, rounds, salt, expected = encoded.split("$", 3)
-        if algorithm != "pbkdf2-sha256":
-            return False
-        actual = _hash_password(password, base64.urlsafe_b64decode(salt + "==")).split("$", 3)[3]
-        return hmac.compare_digest(actual, expected) and int(rounds) == 240000
-    except (ValueError, TypeError):
-        return False
-
-
 def _host(request: http.server.BaseHTTPRequestHandler) -> str:
     value = request.headers.get("Host", "mudos.local").split(":", 1)[0]
     return value if value else "mudos.local"
@@ -118,6 +103,64 @@ def _deployment() -> str:
         return f"dev {values.get('head', 'unknown')} ({values.get('branch', 'unknown')})"
     release = root / "RELEASE"
     return release.read_text().strip() if release.is_file() else root.name
+
+
+def _string_list(value: object) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [str(item)[:100] for item in value[:64] if isinstance(item, str)]
+
+
+def _setup_service_url(value: object, label: str) -> str:
+    url = str(value or "").strip().rstrip("/")
+    parsed = urllib.parse.urlsplit(url)
+    if label == "RomM" and parsed.scheme not in {"http", "https"}:
+        raise ValueError("Enter a RomM URL beginning with http:// or https://")
+    if (parsed.scheme not in {"http", "https"} or not parsed.hostname
+            or parsed.username is not None or parsed.password is not None
+            or parsed.query or parsed.fragment):
+        raise ValueError(f"Enter a valid {label} URL without embedded credentials")
+    try:
+        parsed.port
+    except ValueError as error:
+        raise ValueError(f"Enter a valid {label} URL") from error
+    return url
+
+
+def _setup_page_document(body: str) -> bytes:
+    styles = '''
+*{box-sizing:border-box}body{margin:0;background:#10131a;color:#f3f4f6;font:16px/1.55 system-ui,sans-serif}
+.setup-wrap{max-width:1080px;margin:auto;padding:clamp(22px,5vw,64px)}h1{font-size:clamp(2rem,5vw,3.5rem);line-height:1.08;margin:.15em 0}h2{margin-top:0}.eyebrow{letter-spacing:.16em;color:#91b5ff;font-weight:700}
+.steps,.actions{display:flex;gap:12px;flex-wrap:wrap;margin:22px 0}.steps span,.card{background:#1a1f29;border:1px solid #343b49;border-radius:14px;padding:16px}.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr));gap:14px}.card{display:flex;flex-direction:column;gap:9px}.card span,.card small{color:#bac3d2}.card input[type=checkbox]{width:20px;height:20px;accent-color:#8ab4ff}button,.button{display:inline-block;border:0;border-radius:9px;background:#8ab4ff;color:#10131a;padding:12px 18px;font:inherit;font-weight:700;text-decoration:none;cursor:pointer}.secondary{background:#303846;color:#f3f4f6}label{display:grid;gap:6px}.setup-wrap [hidden]{display:none!important}input:not([type=checkbox]){width:100%;padding:12px;border:1px solid #515b6b;border-radius:8px;background:#0e1117;color:#fff;font:inherit}.credential{margin:16px 0}a{color:#a9c9ff}#notice{min-height:1.6em;color:#ffd17d}button:focus,a:focus,input:focus{outline:3px solid #a9c9ff;outline-offset:2px}@media(max-width:520px){.setup-wrap{padding:22px 16px}.steps span{flex:1 1 100%}}
+'''
+    return ("<!doctype html><html lang=en><head><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'>"
+            "<meta name=color-scheme content='dark'><title>Mudos Setup</title><style>" + styles
+            + "</style></head><body>" + body + "</body></html>").encode()
+
+
+def _recovery_snapshot() -> dict[str, object]:
+    try:
+        with urllib.request.urlopen("http://127.0.0.1:38124/v1/status", timeout=4) as response:
+            value = json.loads(response.read(256 * 1024))
+            if isinstance(value, dict):
+                return value
+    except (OSError, urllib.error.URLError, TimeoutError, ValueError, json.JSONDecodeError):
+        pass
+    diagnostic = recovery_state_snapshot()
+    return {
+        "schema_version": 1,
+        "overall_state": "unknown",
+        "checked_at": "",
+        "components": {},
+        "actions": [],
+        "control_plane_available": False,
+        "failure_history": {
+            "active": bool(diagnostic.get("active", False)),
+            "failure_count": int(diagnostic.get("failure_count", 0)),
+            "last_failure": str(diagnostic.get("last_failure", ""))[:240],
+        },
+        "message": "The independent Mudos Recovery control plane is unavailable.",
+    }
 
 
 def _status_label(value: str) -> tuple[str, str]:
@@ -222,12 +265,460 @@ class AdminApp:
         self.components.discover()
         self.auth_transactions = AuthTransactionStore()
 
+    def setup_snapshot(self) -> dict[str, object]:
+        integrations = []
+        config_ids = {"providers.romm": "providers.romm",
+                      "providers.steam": "providers.steam",
+                      "providers.prowlarr": "providers.prowlarr",
+                      "providers.usenet.server": "providers.usenet.server",
+                      "metadata.igdb": "metadata.igdb",
+                      "metadata.steamgriddb": "metadata.steamgriddb",
+                      "questarr": "questarr"}
+        state = onboarding_state()
+        selected = set(state.get("selected_providers", []))
+        visible_integrations = {"metadata.igdb", "metadata.steamgriddb"}
+        if "romm" in selected:
+            visible_integrations.add("providers.romm")
+        if "steam" in selected:
+            visible_integrations.add("providers.steam")
+        if "questarr" in selected:
+            visible_integrations.add("providers.prowlarr")
+        if "usenet" in selected:
+            visible_integrations.add("providers.usenet.server")
+        for item in integration_manifest():
+            if item["id"] not in visible_integrations:
+                continue
+            provider_id = config_ids[item["id"]]
+            metadata = dict(item)
+            if provider_id == "questarr":
+                metadata["configured"] = self.service_state("lulu-questarr.service") == "active"
+                metadata["enabled"] = metadata["configured"]
+            elif provider_id == "providers.romm":
+                from .plugins.romm import RommConfig
+                from .plugins.romm.readiness import RommReadinessStore
+                romm = RommConfig.from_file()
+                metadata["configured"] = bool(romm and self.secrets.configured("romm", "api-key"))
+                metadata["enabled"] = bool(romm)
+                onboarding = onboarding_state()
+                metadata["readiness"] = RommReadinessStore().snapshot(
+                    selected=("providers.romm" in onboarding.get("selected_integrations", [])),
+                    installed=True, config=romm,
+                )
+            elif provider_id == "providers.steam":
+                from .plugins.steam.entitlements import SteamEntitlementConfig
+                steam_config = SteamEntitlementConfig.from_file()
+                metadata["configured"] = bool(steam_config and self.secrets.configured("steam", "web-api-key"))
+                metadata["enabled"] = metadata["configured"]
+                metadata["readiness"] = {"status": "ready" if steam_config and self.secrets.configured(
+                    "steam", "web-api-key") else "configuration_required",
+                    "message": "Steam ownership configuration is ready." if steam_config and self.secrets.configured(
+                        "steam", "web-api-key") else "A SteamID64 and Web API key are required to query owned titles."}
+            else:
+                config = self.config.provider(provider_id)
+                metadata["configured"] = config.configured
+                metadata["enabled"] = config.enabled
+            integrations.append(metadata)
+        from .setup_files import file_setup_manifest
+        return {"onboarding": onboarding_state(),
+                "providers": self.setup_provider_states(),
+                "integrations": integrations,
+                "setup_files": file_setup_manifest(selected)}
+
+    def setup_provider_states(self) -> list[dict[str, object]]:
+        from .provider_readiness import ProviderReadinessStore
+        selected = set(onboarding_state().get("selected_providers", []))
+        readiness = ProviderReadinessStore()
+        result = []
+        installable_ids = {"steam", "epic", "gog", "lutris", "flatpak", "retroarch",
+                           "dolphin", "pcsx2", "eden", "questarr", "torrent", "usenet"}
+        for source in provider_manifest(self.components):
+            row = dict(source)
+            provider_id = str(row["id"])
+            row["selected"] = provider_id in selected
+            if provider_id not in selected:
+                row["status"] = "not_selected"
+                row["status_message"] = "Not selected."
+            elif not row.get("installed"):
+                state = (self.provider_install_status(provider_id)
+                         if provider_id in installable_ids else {"status": "selected"})
+                row["status"] = state["status"]
+                row["status_message"] = state.get("message", "Selected; installation is required.")
+            elif provider_id == "romm":
+                from .plugins.romm import RommConfig
+                from .plugins.romm.readiness import RommReadinessStore
+                value = RommReadinessStore().snapshot(
+                    selected=True, installed=True, config=RommConfig.from_file())
+                state = value.get("status", "configuration_required")
+                row["status"] = state
+                row["status_message"] = value.get("message", "Configure the RomM URL and Client API Token.")
+            elif provider_id in {"steam", "epic", "gog"}:
+                value = readiness.get(provider_id)
+                if value.get("status") == "ready":
+                    row["status"] = "ready"
+                    row["status_message"] = value.get("message", "Account validated and catalogue reconciled.")
+                elif provider_id == "steam":
+                    auth = self.steam_auth_status()
+                    current = str(value.get("status", ""))
+                    if current in {"auth_failed", "authorization_pending", "authenticated",
+                                   "configuration_required", "reconciling", "sync_failed"}:
+                        row["status"] = current
+                        row["status_message"] = str(value.get("message", ""))
+                    elif auth.get("authenticated"):
+                        row["status"] = ("configuration_required" if not auth.get("entitlement_configured")
+                                          else "authenticated")
+                        row["status_message"] = (
+                            "Steam GUI account authenticated; configure the Steam ownership API to reconcile titles."
+                            if row["status"] == "configuration_required"
+                            else "Steam account authenticated; owned-library reconciliation is pending.")
+                    else:
+                        row["status"] = "authentication_required"
+                        row["status_message"] = (str(value.get("message")) if current == "authenticating"
+                                                  else "Authenticate in the Steam client using its QR or Steam Guard flow.")
+                    row["authentication"] = auth
+                else:
+                    auth = self.auth_status(provider_id)
+                    if not auth.get("authenticated", False):
+                        row["status"] = "authentication_required"
+                        row["status_message"] = f"Sign in to {row['name']} to continue."
+                    else:
+                        row["status"] = value.get("status", "syncing")
+                        row["status_message"] = value.get("message", "Account catalogue reconciliation is pending.")
+                    row["authentication"] = {"status": auth.get("status", "authentication_required"),
+                                              "methods": auth.get("methods", [])}
+            elif provider_id == "questarr":
+                ok, message = self.test_provider("questarr")
+                row["status"] = "ready" if ok else "configuration_required"
+                row["status_message"] = message
+            elif provider_id in {"torrent", "usenet"}:
+                target = "providers.torrent" if provider_id == "torrent" else "providers.usenet"
+                ok, message = self.test_provider(target)
+                row["status"] = "ready" if ok else "configuration_required"
+                row["status_message"] = message
+            else:
+                row["status"] = "ready"
+                row["status_message"] = "Installed and available to contribute local content."
+            result.append(row)
+        return result
+
+    def save_setup_credentials(self, provider_id: str, payload: dict[str, object]) -> dict[str, object]:
+        if provider_id not in INTEGRATION_METADATA:
+            raise ValueError("unsupported setup integration")
+        if provider_id == "questarr":
+            return {"configured": self.service_state("lulu-questarr.service") == "active"}
+        if provider_id == "providers.steam":
+            auth = self.steam_auth_status()
+            steam_id = str(auth.get("steam_id", "")).strip()
+            username = str(payload.get("steam_username", "")).strip()
+            steam_password = str(payload.get("steam_password", ""))
+            api_key = str(payload.get("api_key", ""))
+            if not auth.get("authenticated") or not steam_id.isdecimal() or int(steam_id) < 1:
+                raise ValueError("Steam sign-in must be active so Mudos can read your account ID")
+            identities = {str(auth.get(key, "")).strip().casefold()
+                          for key in ("account", "persona") if auth.get(key)}
+            if not username or username.casefold() not in identities:
+                raise ValueError("Enter the Steam username shown for the signed-in account")
+            if not steam_password and not self.secrets.configured("steam", "password"):
+                raise ValueError("Enter your Steam account password for SteamCMD verification")
+            if not api_key and not self.secrets.configured("steam", "web-api-key"):
+                raise ValueError("Enter your Steam Web API key")
+            self.secrets.put("steam", "username", username)
+            if steam_password:
+                self.secrets.put("steam", "password", steam_password)
+            if api_key:
+                self.secrets.put("steam", "web-api-key", api_key)
+            config_path = PATHS.plugins_root / "steam" / "steam.json"
+            config_path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+            descriptor, temporary = tempfile.mkstemp(prefix=".steam-config-", dir=config_path.parent)
+            try:
+                with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
+                    json.dump({"steam_id": steam_id, "steam_username": username,
+                               "api_key_file": "secret:steam/web-api-key", "timeout": 8}, stream)
+                    stream.flush()
+                    os.fsync(stream.fileno())
+                os.chmod(temporary, 0o600)
+                os.replace(temporary, config_path)
+            finally:
+                try:
+                    os.unlink(temporary)
+                except FileNotFoundError:
+                    pass
+            return {"configured": True}
+        values: dict[str, object] = {"enabled": True}
+        secrets_in: dict[str, str] = {}
+        references: dict[str, str] = {}
+        if provider_id == "metadata.igdb":
+            values["client_id"] = str(payload.get("client_id", "")).strip()
+            secrets_in["client_secret"] = str(payload.get("client_secret", ""))
+            references["client_secret"] = "metadata/igdb-client-secret"
+        elif provider_id == "metadata.steamgriddb":
+            secrets_in["api_key"] = str(payload.get("api_key", ""))
+            references["api_key"] = "metadata/steamgriddb-api-key"
+        elif provider_id == "providers.romm":
+            from .plugins.romm import RommConfig
+            endpoint = _setup_service_url(payload.get("url", ""), "RomM") if payload.get("url") else ""
+            current_romm = RommConfig.from_file()
+            if endpoint:
+                RommConfig.save_url(endpoint)
+            elif current_romm is None:
+                raise ValueError("Enter your RomM server/base URL")
+            token = str(payload.get("api_key", ""))
+            if token:
+                self.secrets.put("romm", "api-key", token)
+            elif not self.secrets.configured("romm", "api-key"):
+                raise ValueError("Enter the RomM Client API Token")
+            return {"configured": bool(RommConfig.from_file()
+                                        and self.secrets.configured("romm", "api-key"))}
+        elif provider_id == "providers.prowlarr":
+            values["endpoint"] = (_setup_service_url(payload.get("endpoint", ""), "Prowlarr")
+                                   if payload.get("endpoint") else "")
+            secrets_in["api_key"] = str(payload.get("api_key", ""))
+            references["api_key"] = "prowlarr/api-key"
+        elif provider_id == "providers.usenet.server":
+            values = {
+                "host": str(payload.get("host", "")).strip(),
+                "port": int(payload.get("port", 563) or 563),
+                "tls": str(payload.get("tls", "true")).casefold() in {"true", "1", "yes", "on"},
+                "connections": int(payload.get("connections", 8) or 8),
+                "enabled": True,
+            }
+            if not values["host"]:
+                raise ValueError("Enter the hostname supplied by your Usenet provider")
+            secrets_in.update({
+                "username": str(payload.get("username", "")),
+                "password": str(payload.get("password", "")),
+            })
+            references.update({"username": "usenet/server-username",
+                               "password": "usenet/server-password"})
+        current = self.config.provider(provider_id)
+        if provider_id in {"providers.romm", "providers.prowlarr"} and not values.get("endpoint"):
+            if not current.get("endpoint", ""):
+                raise ValueError("Enter the service address")
+            values.pop("endpoint", None)
+        if provider_id == "metadata.igdb" and not values.get("client_id"):
+            if not current.get("client_id", ""):
+                raise ValueError("Enter the Twitch application Client ID")
+            values.pop("client_id", None)
+        values = {key: value for key, value in values.items() if value is not None}
+        missing_secrets = [key for key, value in secrets_in.items()
+                           if not value and not current.secret_available(key)]
+        if missing_secrets:
+            label = {"metadata.igdb": "Client Secret", "metadata.steamgriddb": "API key",
+                     "providers.romm": "Client API Token", "providers.prowlarr": "API key",
+                     "providers.usenet.server": "Usenet server credentials"}[provider_id]
+            raise ValueError(f"Enter the {label}")
+        self.config.update_provider(provider_id, values, secrets_in, secret_references=references)
+        if provider_id == "providers.usenet.server":
+            updated = self.config.provider(provider_id)
+            from .nzbget_admin import apply_news_server
+            apply_news_server(str(updated.get("host", "")), int(updated.get("port", 563)),
+                              bool(updated.get("tls", True)), int(updated.get("connections", 8)),
+                              updated.secret("username") or "", updated.secret("password") or "",
+                              bool(updated.get("enabled", True)))
+            subprocess.run(["systemctl", "restart", "nzbget.service"],
+                           stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                           stderr=subprocess.DEVNULL, check=True, timeout=10)
+        return {"configured": self.config.provider(provider_id).configured}
+
+    @staticmethod
+    def start_provider_install(provider_id: str) -> dict[str, str]:
+        allowed = {"steam", "epic", "gog", "lutris", "flatpak", "retroarch",
+                   "dolphin", "pcsx2", "eden", "questarr", "torrent", "usenet"}
+        if provider_id not in allowed:
+            raise ValueError("This provider has no allowlisted installer")
+        unit = f"lulu-provider-install@{provider_id}.service"
+        subprocess.run(["systemctl", "reset-failed", unit],
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                       timeout=5, check=False)
+        result = subprocess.run(["systemctl", "--no-block", "start", unit],
+                                capture_output=True, text=True, timeout=5, check=False)
+        if result.returncode:
+            LOGGER.warning("provider install request failed provider=%s error=%s", provider_id,
+                           result.stderr.strip().splitlines()[0] if result.stderr else "unknown")
+            raise ValueError("The provider installer could not be started")
+        return {"provider": provider_id, "status": "installing"}
+
+    @staticmethod
+    def provider_install_status(provider_id: str) -> dict[str, str]:
+        if provider_id not in {"steam", "epic", "gog", "lutris", "flatpak", "retroarch",
+                               "dolphin", "pcsx2", "eden", "questarr", "torrent", "usenet"}:
+            raise ValueError("Unknown provider installer")
+        unit = f"lulu-provider-install@{provider_id}.service"
+        result = subprocess.run(["systemctl", "show", unit,
+                                 "--property=ActiveState,SubState,Result,ExecMainStatus,ExecMainStartTimestamp"],
+                                capture_output=True, text=True, timeout=3, check=False)
+        values = dict(line.split("=", 1) for line in result.stdout.splitlines() if "=" in line)
+        if values.get("ActiveState") in {"activating", "active"}:
+            status = "installing"
+        else:
+            from .onboarding import PROVIDER_INFO, _provider_installed
+            actual_id = {"transmission": "torrent", "nzbget": "usenet"}.get(provider_id, provider_id)
+            info = PROVIDER_INFO.get(actual_id)
+            installed = bool(info and _provider_installed(actual_id, info))
+            if installed:
+                status = "installed"
+            elif (values.get("ActiveState") == "failed"
+                  or values.get("ExecMainStartTimestamp") and values.get("Result") != "success"):
+                status = "install_failed"
+            elif (values.get("ExecMainStartTimestamp")
+                  and values.get("ExecMainStatus") not in {"", "0"}):
+                status = "install_failed"
+            else:
+                status = "selected"
+        messages = {"installing": "Installation is running.",
+                            "installed": "Installed.",
+                            "install_failed": "Installation failed. See the service log for the actionable error.",
+                            "selected": "Selected; installation has not started."}
+        if status == "install_failed":
+            try:
+                detail = subprocess.run(["journalctl", "-u", unit, "-n", "12", "-o", "cat", "--no-pager"],
+                                        capture_output=True, text=True, timeout=3, check=False).stdout.strip()
+                if detail:
+                    messages[status] = detail[-700:]
+            except (OSError, subprocess.SubprocessError):
+                pass
+        return {"provider": provider_id, "status": status, "message": messages[status]}
+
+    def begin_steam_oobe_auth(self) -> dict[str, object]:
+        from .provider_readiness import ProviderReadinessStore
+        readiness = ProviderReadinessStore()
+        readiness.set("steam", "authenticating",
+                      message="Starting the Steam client authentication flow.")
+        account = pwd.getpwnam("lulu")
+        environment = dict(os.environ)
+        environment.update({"HOME": account.pw_dir,
+                            "XDG_CONFIG_HOME": str(Path(account.pw_dir) / ".config"),
+                            "XDG_DATA_HOME": str(Path(account.pw_dir) / ".local/share"),
+                            "XDG_RUNTIME_DIR": f"/run/user/{account.pw_uid}",
+                            "DBUS_SESSION_BUS_ADDRESS": f"unix:path=/run/user/{account.pw_uid}/bus"})
+        message = ("Steam is opening on the Mudos screen. Startup can take a little while; "
+                   "sign in there, then return to setup.")
+        try:
+            result = subprocess.run(
+                ["busctl", "--user", "--timeout=30s", "call", "org.lulu.Consoled",
+                 "/org/lulu/Console", "org.lulu.Console", "BeginPluginAuthentication", "s", "steam"],
+                stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=35,
+                check=False, env=environment)
+        except subprocess.TimeoutExpired:
+            readiness.set("steam", "authorization_pending", message=message)
+            return {"status": "authorization_pending", "message": message}
+        if result.returncode:
+            # The delegated launch request may be accepted before the GUI
+            # process becomes visible. Keep this stage retryable rather than
+            # displaying a false failure during Steam's startup interval.
+            readiness.set("steam", "authorization_pending", message=message)
+            return {"status": "authorization_pending", "message": message}
+        readiness.set("steam", "authorization_pending",
+                      message="Steam is open. Complete QR sign-in or Steam Guard approval on the console.")
+        return {"status": "authorization_pending",
+                "message": "Steam is open. Complete QR sign-in or Steam Guard approval on the console."}
+
+    def steam_oobe_auth_status(self) -> dict[str, object]:
+        from .provider_readiness import ProviderReadinessStore
+        auth = self.steam_auth_status()
+        readiness = ProviderReadinessStore()
+        current = readiness.get("steam")
+        if auth.get("authenticated"):
+            state = "authenticated" if auth.get("entitlement_configured") else "configuration_required"
+            message = ("Steam account authenticated; owned-library reconciliation can start."
+                       if state == "authenticated" else
+                       "Steam account authenticated; Steam Web API ownership configuration is required.")
+            readiness.set("steam", state, message=message)
+            return {"status": state, "message": message, "authentication": auth}
+        if current.get("status") == "authorization_pending" and auth.get("client_running"):
+            return {"status": "authorization_pending", "message": current.get("message", "Waiting for Steam approval."),
+                    "authentication": auth}
+        if current.get("status") == "authorization_pending":
+            try:
+                age = max(0, int(time.time()) - int(current.get("updated_at", 0)))
+            except (TypeError, ValueError):
+                age = 60
+            if age < 45:
+                return {"status": "authorization_pending",
+                        "message": "Steam is opening on the Mudos screen. Startup can take a little while.",
+                        "authentication": auth}
+        if current.get("status") in {"authorization_pending", "authenticating"}:
+            message = "The Steam sign-in window is no longer open. Resume authentication to continue QR or Guard approval."
+            readiness.set("steam", "authentication_required", message=message)
+            return {"status": "authentication_required", "message": message,
+                    "authentication": auth}
+        return {"status": "authentication_required",
+                "message": "Authenticate in the Steam client using its QR or Steam Guard flow.",
+                "authentication": auth}
+
+    def steam_auth_status(self) -> dict[str, object]:
+        """Read GUI auth state from Consoled's public plugin-auth boundary."""
+        account = pwd.getpwnam("lulu")
+        environment = dict(os.environ)
+        environment.update({"HOME": account.pw_dir,
+                            "XDG_CONFIG_HOME": str(Path(account.pw_dir) / ".config"),
+                            "XDG_DATA_HOME": str(Path(account.pw_dir) / ".local/share"),
+                            "XDG_RUNTIME_DIR": f"/run/user/{account.pw_uid}",
+                            "DBUS_SESSION_BUS_ADDRESS": f"unix:path=/run/user/{account.pw_uid}/bus"})
+        try:
+            result = subprocess.run(
+                ["busctl", "--user", "--json=short", "call", "org.lulu.Consoled",
+                 "/org/lulu/Console", "org.lulu.Console", "GetPluginAuthStatus", "s", "steam"],
+                stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=5,
+                check=True, env=environment)
+            response = json.loads(result.stdout)
+            values = response.get("data", []) if isinstance(response, dict) else []
+            if isinstance(values, list) and len(values) == 1:
+                status = json.loads(values[0])
+                if isinstance(status, dict):
+                    return status
+        except (OSError, ValueError, TypeError, subprocess.SubprocessError):
+            LOGGER.info("Consoled Steam auth status unavailable; using local status source")
+        return self.auth_status("steam")
+
     def password_configured(self) -> bool:
-        return self.secrets.configured(ADMIN_NAMESPACE, ADMIN_SECRET)
+        return bool(onboarding_state().get("admin_password_configured", False))
 
     def authenticate(self, password: str) -> bool:
-        stored = self.secrets.get(ADMIN_NAMESPACE, ADMIN_SECRET)
-        return bool(stored and _check_password(password, stored))
+        from .managed_account import MANAGED_ADMIN_ACCOUNT, authenticate_managed_account
+        return authenticate_managed_account(password, MANAGED_ADMIN_ACCOUNT)
+
+    def set_initial_admin_password(self, password: str, confirmation: str) -> bool:
+        state = onboarding_state()
+        if (state.get("status") not in {"never", "partial", "dismissed"}
+                or self.password_configured()):
+            raise ValueError("Initial password establishment is no longer available")
+        if password != confirmation:
+            raise ValueError("The new passwords do not match.")
+        if len(password) < 8 or len(password) > 1024 or "\0" in password:
+            raise ValueError("Use a password of at least 8 characters.")
+        try:
+            result = subprocess.run(
+                ["/usr/bin/pkexec", "/usr/libexec/mudos-set-initial-password"],
+                input=f"{password}\n{confirmation}\n", capture_output=True,
+                text=True, timeout=30, check=False,
+            )
+        except (OSError, subprocess.SubprocessError) as error:
+            LOGGER.warning("initial managed-account password operation failed error_type=%s",
+                           type(error).__name__)
+            return False
+        if result.returncode:
+            diagnostic = (result.stderr or result.stdout or "").strip().splitlines()
+            LOGGER.warning("initial managed-account password operation failed status=%d detail=%s",
+                           result.returncode, diagnostic[0][:180] if diagnostic else "unavailable")
+            return False
+        from .managed_account import MANAGED_ADMIN_ACCOUNT, authenticate_managed_account
+        if not authenticate_managed_account(password, MANAGED_ADMIN_ACCOUNT):
+            LOGGER.error("initial managed-account password was written but PAM verification failed")
+            return False
+        self.secrets.clear("admin", "password-hash")
+        save_admin_password_configured()
+        return True
+
+    def change_admin_password(self, current_password: str, new_password: str) -> bool:
+        from .managed_account import MANAGED_ADMIN_ACCOUNT, change_managed_account_password
+        changed = change_managed_account_password(current_password, new_password,
+                                                  MANAGED_ADMIN_ACCOUNT)
+        if changed:
+            # A former separate web hash must never remain a parallel login
+            # authority after the OS account becomes authoritative.
+            self.secrets.clear("admin", "password-hash")
+            save_admin_password_configured()
+        return changed
 
     def login(self) -> tuple[str, str]:
         token = secrets.token_urlsafe(32)
@@ -309,6 +800,35 @@ class AdminApp:
             self.auth_transactions.update(transaction_id, AuthTransactionState.FAILED, error=str(error))
             raise
 
+    def complete_setup_auth(self, provider_id: str, transaction_id: str, code: str) -> dict[str, object]:
+        if provider_id not in {"epic", "gog"}:
+            raise ValueError("OOBE browser sign-in is unavailable for this provider")
+        transaction = self.auth_transactions.get(transaction_id)
+        if transaction is None or transaction.provider != provider_id:
+            raise ValueError("authentication transaction expired")
+        try:
+            self.complete_auth(transaction_id, code)
+        except FileNotFoundError as error:
+            if provider_id in {"epic", "gog"}:
+                provider_name = "Legendary" if provider_id == "epic" else "gogdl"
+                raise ValueError(
+                    f"{provider_id.title()} sign-in could not start because {provider_name} is "
+                    "missing or incomplete. Retry the provider installation, then enter a fresh "
+                    "authorization code."
+                ) from error
+            raise
+        except RuntimeError as error:
+            if provider_id == "gog" and "heroic-gogdl Python module is unavailable" in str(error):
+                raise ValueError(
+                    "GOG sign-in could not start because gogdl is missing or incomplete. "
+                    "Retry the GOG provider installation, then enter a fresh authorization code."
+                ) from error
+            raise
+        auth = self.auth_status(provider_id)
+        if not auth.get("authenticated"):
+            raise ValueError(f"{provider_id.title()} did not confirm the sign-in")
+        return {"status": "authenticated", "provider": provider_id}
+
     def cancel_auth(self, transaction_id: str) -> None:
         if self.auth_transactions.get(transaction_id):
             self.auth_transactions.update(transaction_id, AuthTransactionState.CANCELLED)
@@ -339,6 +859,50 @@ class AdminApp:
 
     def test_provider(self, provider_id: str) -> tuple[bool, str]:
         config = self.config.provider(provider_id)
+        if provider_id == "providers.steam":
+            try:
+                from .plugins.steam.entitlements import SteamEntitlementConfig, SteamEntitlementSource
+                source = SteamEntitlementSource()
+                games = source.refresh()
+                if not source.last_refresh_succeeded:
+                    return False, source.last_error or "Steam ownership query failed"
+                account = pwd.getpwnam("lulu")
+                environment = dict(os.environ)
+                environment.update({"HOME": account.pw_dir,
+                                    "XDG_CONFIG_HOME": str(Path(account.pw_dir) / ".config"),
+                                    "XDG_DATA_HOME": str(Path(account.pw_dir) / ".local/share"),
+                                    "XDG_RUNTIME_DIR": f"/run/user/{account.pw_uid}",
+                                    "DBUS_SESSION_BUS_ADDRESS": f"unix:path=/run/user/{account.pw_uid}/bus"})
+                result = subprocess.run(
+                    ["busctl", "--user", "--timeout=120s", "call", "org.lulu.Consoled",
+                     "/org/lulu/Console", "org.lulu.Console", "RefreshStages", "as", "1", "steam"],
+                    stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=125,
+                    check=False, env=environment)
+                if result.returncode:
+                    return False, "Steam titles were fetched, but catalogue reconciliation failed"
+                authentication = subprocess.run(
+                    ["busctl", "--user", "--timeout=360s", "call", "org.lulu.Consoled",
+                     "/org/lulu/Console", "org.lulu.Console", "VerifySteamAcquisition"],
+                    stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=365,
+                    check=False, env=environment)
+                if authentication.returncode:
+                    return False, ("Steam ownership is configured, but SteamCMD authentication "
+                                   "was not completed. Approve the login on your Steam Guard device "
+                                   "or choose Enter Code on the Mudos screen.")
+                return True, f"Steam ownership validated; {len(games)} titles reconciled into Installable"
+            except Exception:
+                LOGGER.exception("Steam ownership validation/reconciliation failed")
+                return False, "Steam ownership validation or catalogue reconciliation failed"
+        if provider_id == "questarr":
+            if self.service_state("lulu-questarr.service") != "active":
+                return False, "Questarr service is not installed or running"
+            questarr_service = next((item for item in SERVICES if item[0] == "questarr"), None)
+            if questarr_service is None or self.service_health(questarr_service) != "healthy":
+                return False, "Questarr API health check failed"
+            backends = [self.test_provider("providers.torrent"), self.test_provider("providers.usenet")]
+            if not any(ok for ok, _ in backends):
+                return False, "Questarr is running but no Transmission or NZBGet backend is ready"
+            return True, "Questarr and at least one acquisition backend are healthy"
         if provider_id == "metadata.igdb":
             try:
                 from .igdb import IGDBClient, IGDBError
@@ -362,6 +926,35 @@ class AdminApp:
                 return False, "SteamGridDB service unavailable"
             except Exception:
                 return False, "SteamGridDB service unavailable"
+        if provider_id == "providers.romm":
+            romm = None
+            try:
+                from .plugins.romm import RommClient, RommConfig, RommApiError
+                from .plugins.romm.readiness import RommReadinessStore
+                romm = RommConfig.from_file()
+                if romm is None or not romm.client_token:
+                    RommReadinessStore().set("missing_configuration", romm,
+                                             message="RomM server URL and Client API Token are required.")
+                    return False, "RomM address or Client API Token is missing"
+                games = RommClient(romm).list_games()
+                RommReadinessStore().set(
+                    "authenticated", romm,
+                    message="RomM Client API Token validated; initial catalogue sync is starting.",
+                )
+                return True, f"RomM authenticated; {len(games)} library records are accessible"
+            except RommApiError as error:
+                text = str(error).casefold()
+                if "401" in text or "403" in text or "unauthor" in text:
+                    from .plugins.romm.readiness import RommReadinessStore
+                    RommReadinessStore().set("configuration_invalid", romm,
+                                             message="RomM rejected the Client API Token.")
+                    return False, "RomM rejected the Client API Token"
+                from .plugins.romm.readiness import RommReadinessStore
+                RommReadinessStore().set("sync_failed", romm,
+                                         message="RomM authentication or library validation failed.")
+                return False, "RomM service unavailable or returned an unsupported response"
+            except Exception:
+                return False, "RomM service unavailable or returned an unsupported response"
         if provider_id == "providers.prowlarr":
             try:
                 endpoint = str(config.get("endpoint", "")).rstrip("/")
@@ -378,6 +971,54 @@ class AdminApp:
                 return True, f"Prowlarr API healthy (version {version})"
             except (OSError, urllib.error.URLError, ValueError, json.JSONDecodeError):
                 return False, "Prowlarr API unavailable or not authenticated"
+        if provider_id == "providers.usenet.server":
+            config = self.config.provider(provider_id)
+            host = str(config.get("host", "")).strip()
+            username = config.secret("username") or ""
+            password = config.secret("password") or ""
+            try:
+                port = int(config.get("port", 0))
+            except (TypeError, ValueError):
+                port = 0
+            if not host or not (1 <= port <= 65535) or not username or not password:
+                return False, "Usenet server hostname, port and credentials are required"
+            try:
+                import socket
+                import ssl
+                if any(char in host + username + password for char in "\r\n"):
+                    return False, "Usenet server settings contain invalid line breaks"
+                with socket.create_connection((host, port), timeout=6) as raw:
+                    raw.settimeout(6)
+                    connection = (ssl.create_default_context().wrap_socket(raw, server_hostname=host)
+                                  if bool(config.get("tls", True)) else raw)
+                    pending = b""
+
+                    def response() -> int:
+                        nonlocal pending
+                        while b"\n" not in pending:
+                            chunk = connection.recv(512)
+                            if not chunk or len(pending) + len(chunk) > 4096:
+                                raise OSError("invalid NNTP response")
+                            pending += chunk
+                        line, pending = pending.split(b"\n", 1)
+                        line = line.rstrip(b"\r")
+                        if len(line) < 3 or not line[:3].isdigit():
+                            raise OSError("invalid NNTP response")
+                        return int(line[:3])
+
+                    if response() not in {200, 201}:
+                        return False, "Usenet server rejected the NNTP connection"
+                    connection.sendall(b"AUTHINFO USER " + username.encode("utf-8") + b"\r\n")
+                    status = response()
+                    if status == 381:
+                        connection.sendall(b"AUTHINFO PASS " + password.encode("utf-8") + b"\r\n")
+                        status = response()
+                    if status != 281:
+                        return False, "Usenet server did not accept the configured credentials"
+                    connection.sendall(b"QUIT\r\n")
+                    return True, "Usenet NNTP server authenticated successfully"
+            except (OSError, ssl.SSLError, UnicodeError, TimeoutError):
+                return False, "Usenet server is unavailable or did not accept the configured credentials"
         if provider_id == "providers.usenet":
             try:
                 import asyncio
@@ -406,6 +1047,38 @@ class AdminApp:
                     return False, "The provider is not installed"
                 return True, "Provider is available"
         return False, "No normalized health check is available for this provider"
+
+    def reconcile_romm_catalogue(self) -> dict[str, object]:
+        """Run the normal Consoled RomM reconciliation and wait for its result."""
+        import pwd
+        account = pwd.getpwnam("lulu")
+        environment = dict(os.environ)
+        environment.update({
+            "HOME": account.pw_dir,
+            "XDG_CONFIG_HOME": str(Path(account.pw_dir) / ".config"),
+            "XDG_DATA_HOME": str(Path(account.pw_dir) / ".local/share"),
+            "XDG_RUNTIME_DIR": f"/run/user/{account.pw_uid}",
+            "DBUS_SESSION_BUS_ADDRESS": f"unix:path=/run/user/{account.pw_uid}/bus",
+        })
+        command = ["busctl", "--user", "--timeout=180s", "call", "org.lulu.Consoled",
+                   "/org/lulu/Console", "org.lulu.Console", "RefreshStages", "as", "1", "romm"]
+        try:
+            result = subprocess.run(command, stdin=subprocess.DEVNULL, capture_output=True,
+                                    text=True, timeout=185, check=False, env=environment)
+        except (OSError, subprocess.TimeoutExpired) as error:
+            LOGGER.warning("RomM initial reconciliation could not be requested error_type=%s",
+                           type(error).__name__)
+            return {"ok": False, "status": "sync_failed",
+                    "message": "RomM authenticated, but its initial catalogue sync could not start."}
+        if result.returncode:
+            LOGGER.warning("RomM initial reconciliation failed to run exit=%d", result.returncode)
+            return {"ok": False, "status": "sync_failed",
+                    "message": "RomM authenticated, but its initial catalogue sync failed."}
+        from .plugins.romm import RommConfig
+        from .plugins.romm.readiness import RommReadinessStore
+        state = RommReadinessStore().snapshot(selected=True, installed=True,
+                                               config=RommConfig.from_file())
+        return {**state, "ok": state.get("status") == "ready"}
 
 
 APP = AdminApp()
@@ -447,6 +1120,22 @@ class Handler(http.server.BaseHTTPRequestHandler):
         for key, value in (headers or {}).items(): self.send_header(key, value)
         self.end_headers(); self.wfile.write(content)
 
+    def _json(self, value: object, status: int = 200) -> None:
+        data = json.dumps(value, separators=(",", ":")).encode()
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(data)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(data)
+
+    def _json_body(self) -> dict[str, object]:
+        length = min(int(self.headers.get("Content-Length", "0")), 65536)
+        value = json.loads(self.rfile.read(length) or b"{}")
+        if not isinstance(value, dict):
+            raise ValueError("Expected a JSON object")
+        return value
+
     def _redirect(self, location: str, cookie: str | None = None) -> None:
         headers = {"Location": location}
         if cookie: headers["Set-Cookie"] = cookie
@@ -459,15 +1148,69 @@ class Handler(http.server.BaseHTTPRequestHandler):
     def _require(self) -> str | None:
         csrf = APP.session(self._token())
         if csrf is None:
-            self._redirect("/login")
+            if urllib.parse.urlsplit(self.path).path.startswith("/api/"):
+                self._json({"error": "Your admin session expired. Sign in again to continue setup."}, 401)
+            else:
+                self._redirect("/login")
         return csrf
 
     def do_GET(self) -> None:
         path = urllib.parse.urlsplit(self.path).path
         query = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
         if path == "/login":
+            if not APP.password_configured():
+                self._redirect("/setup")
+                return
             message = "" if APP.password_configured() else "Admin access has not been set up yet."
             self._send(_login_page(message) if message else _login_page()); return
+        if path == "/setup":
+            if APP.password_configured() and self._require() is None:
+                return
+            self._setup_page(query.get("local", [""])[0] == "1")
+            return
+        if path in {"/setup/qr.png", "/recovery/qr.png"}:
+            try:
+                target = "http://mudos.local/recovery" if path.startswith("/recovery/") \
+                    else "http://mudos.local/setup"
+                result = subprocess.run(["qrencode", "-t", "PNG", "-o", "-", target],
+                                        capture_output=True, timeout=3, check=True)
+                self.send_response(200); self.send_header("Content-Type", "image/png")
+                self.send_header("Cache-Control", "public, max-age=3600")
+                self.send_header("Content-Length", str(len(result.stdout))); self.end_headers()
+                self.wfile.write(result.stdout)
+            except (OSError, subprocess.SubprocessError):
+                self._send(b"QR code generator is unavailable", 503)
+            return
+        if path == "/recovery":
+            if APP.password_configured() and self._require() is None:
+                return
+            self._recovery_page()
+            return
+        if path == "/api/setup/state":
+            if (APP.password_configured() or onboarding_state().get("status") == "completed") \
+                    and self._require() is None:
+                return
+            self._json(APP.setup_snapshot())
+            return
+        if path == "/api/setup/steam/auth-status":
+            if (APP.password_configured() or onboarding_state().get("status") == "completed") \
+                    and self._require() is None:
+                return
+            self._json(APP.steam_oobe_auth_status())
+            return
+        if path.startswith("/api/setup/install/"):
+            if (APP.password_configured() or onboarding_state().get("status") == "completed") \
+                    and self._require() is None:
+                return
+            provider_id = urllib.parse.unquote(path.removeprefix("/api/setup/install/"))
+            try:
+                self._json(APP.provider_install_status(provider_id))
+            except (ValueError, OSError, subprocess.SubprocessError) as error:
+                self._json({"error": str(error)}, 400)
+            return
+        if path == "/api/recovery/status":
+            self._json(_recovery_snapshot())
+            return
         if self._require() is None: return
         if path == "/": self._dashboard(); return
         if path == "/providers": self._redirect("/integrations"); return
@@ -497,6 +1240,206 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if self.path == "/login":
             if self.authenticate_form(): return
             self._send(_login_page("The password was not accepted.", status=401), 401); return
+        path = urllib.parse.urlsplit(self.path).path
+        request_payload = None
+        protected_setup = APP.password_configured() or onboarding_state().get("status") == "completed"
+        if protected_setup and (path.startswith("/api/setup/") or path == "/api/setup/install"):
+            if self._require() is None:
+                return
+            token = self._token()
+            csrf = APP.session(token)
+            if path != "/api/setup/files":
+                request_payload = self._json_body()
+                if not hmac.compare_digest(str(request_payload.get("csrf", "")), csrf or ""):
+                    self._json({"error": "Request rejected"}, 403)
+                    return
+        if path.startswith("/api/setup/") and path != "/api/setup/install":
+            try:
+                if path == "/api/setup/files":
+                    from .setup_files import read_multipart, save_platform_files
+                    content_length = int(self.headers.get("Content-Length", "0"))
+                    fields, uploads = read_multipart(
+                        self.rfile, self.headers.get("Content-Type", ""), content_length)
+                    if protected_setup:
+                        csrf = APP.session(self._token())
+                        if not hmac.compare_digest(fields.get("csrf", ""), csrf or ""):
+                            for upload in uploads:
+                                upload.path.unlink(missing_ok=True)
+                            self._json({"error": "Request rejected"}, 403)
+                            return
+                    try:
+                        saved = save_platform_files(
+                            fields.get("platform", ""), fields.get("requirement", ""), uploads)
+                    except Exception:
+                        for upload in uploads:
+                            upload.path.unlink(missing_ok=True)
+                        raise
+                    try:
+                        refresh = urllib.request.Request(
+                            "http://127.0.0.1:38123/refresh?stage=local",
+                            data=b"", method="POST")
+                        with urllib.request.urlopen(refresh, timeout=30):
+                            pass
+                        update_view = urllib.request.Request(
+                            "http://127.0.0.1:38123/ui-refresh?group=library-platforms",
+                            data=b"", method="POST")
+                        with urllib.request.urlopen(update_view, timeout=5):
+                            pass
+                    except (OSError, urllib.error.URLError, TimeoutError):
+                        LOGGER.info("emulator setup file uploaded; live catalogue refresh unavailable")
+                    self._json({"saved": saved, "setup_files": __import__(
+                        "lulu.setup_files", fromlist=["file_setup_manifest"]
+                    ).file_setup_manifest(set(onboarding_state().get("selected_providers", [])))})
+                    return
+                payload = request_payload if request_payload is not None else self._json_body()
+                action = path.removeprefix("/api/setup/")
+                if action == "progress":
+                    requested = (_string_list(payload["providers"])
+                                 if "providers" in payload else None)
+                    if requested is not None:
+                        plan = APP.components.resolve_selection(requested)
+                        if plan.unknown:
+                            raise ValueError("Unknown Mudos component selection: " + ", ".join(plan.unknown))
+                        if plan.missing_any:
+                            missing = "; ".join(f"{component} needs one of {', '.join(options)}"
+                                                 for component, options in plan.missing_any)
+                            raise ValueError(missing)
+                        requested = list(plan.selected)
+                    state = save_progress(
+                        providers=requested,
+                        integrations=_string_list(payload["integrations"]) if "integrations" in payload else None)
+                    self._json({"state": state})
+                elif action == "steam/authenticate":
+                    self._json(APP.begin_steam_oobe_auth())
+                elif action == "provider-authenticate":
+                    provider_id = str(payload.get("provider", ""))
+                    if provider_id not in {"epic", "gog"}:
+                        raise ValueError("OOBE browser sign-in is unavailable for this provider")
+                    if provider_id not in onboarding_state().get("selected_providers", []):
+                        raise ValueError("Select and install this provider before signing in")
+                    transaction = APP.begin_auth(provider_id)
+                    self._json(transaction.public())
+                elif action == "provider-auth-complete":
+                    provider_id = str(payload.get("provider", ""))
+                    transaction_id = str(payload.get("transaction_id", ""))
+                    code = str(payload.get("code", ""))
+                    result = APP.complete_setup_auth(provider_id, transaction_id, code)
+                    try:
+                        refresh = urllib.request.Request(
+                            f"http://127.0.0.1:38123/refresh?stage={urllib.parse.quote(provider_id)}",
+                            data=b"", method="POST")
+                        with urllib.request.urlopen(refresh, timeout=90):
+                            pass
+                        update_view = urllib.request.Request(
+                            "http://127.0.0.1:38123/ui-refresh?group=store",
+                            data=b"", method="POST")
+                        with urllib.request.urlopen(update_view, timeout=5):
+                            pass
+                    except (OSError, urllib.error.URLError, TimeoutError):
+                        LOGGER.info("provider authentication completed; live catalogue refresh unavailable provider=%s",
+                                    provider_id)
+                    self._json(result)
+                elif action == "credentials":
+                    result = APP.save_setup_credentials(str(payload.get("integration", "")), payload)
+                    self._json(result)
+                elif action == "test":
+                    integration = str(payload.get("integration", ""))
+                    ok, message = APP.test_provider(integration)
+                    result = {"ok": ok, "message": message}
+                    if ok and integration == "providers.romm":
+                        result.update(APP.reconcile_romm_catalogue())
+                        ok = bool(result.get("ok"))
+                        message = ("RomM is Ready and its catalogue has been reconciled."
+                                   if ok else str(result.get("message", "RomM initial catalogue sync failed.")))
+                        result.update({"ok": ok, "message": message})
+                    save_validation(integration, ok, message)
+                    self._json(result, 200 if ok else 422)
+                elif action == "initial-password":
+                    password = str(payload.get("new_password", ""))
+                    confirmation = str(payload.get("confirm_password", ""))
+                    if not APP.set_initial_admin_password(password, confirmation):
+                        self._json({"error": "Initial Linux account password could not be established."}, 422)
+                    else:
+                        if bool(payload.get("finish", False)):
+                            finish_onboarding()
+                        self._json({"configured": True,
+                                    "account": __import__("lulu.managed_account", fromlist=["MANAGED_ADMIN_ACCOUNT"]).MANAGED_ADMIN_ACCOUNT,
+                                    "completed": bool(payload.get("finish", False))})
+                elif action == "admin-password":
+                    if (onboarding_state().get("status") != "completed"
+                            or not APP.password_configured()):
+                        self._json({"error": "Normal password changes are available after setup is complete."}, 409)
+                        return
+                    current = str(payload.get("current_password", ""))
+                    password = str(payload.get("new_password", ""))
+                    if password != str(payload.get("confirm_password", "")):
+                        self._json({"error": "The new passwords do not match."}, 400)
+                    elif not APP.change_admin_password(current, password):
+                        self._json({"error": "The current account password was not accepted."}, 422)
+                    else:
+                        if bool(payload.get("finish", False)):
+                            finish_onboarding()
+                        self._json({"configured": True,
+                                    "account": __import__("lulu.managed_account", fromlist=["MANAGED_ADMIN_ACCOUNT"]).MANAGED_ADMIN_ACCOUNT,
+                                    "completed": bool(payload.get("finish", False))})
+                elif action == "finish":
+                    if not APP.password_configured():
+                        self._json({"error": "Set the managed Mudos account password before finishing setup."}, 409)
+                        return
+                    self._json({"state": finish_onboarding()})
+                elif action == "dismiss":
+                    self._json({"state": dismiss_onboarding()})
+                else:
+                    self._json({"error": "Unknown setup operation"}, 404)
+            except (ValueError, TypeError, KeyError, json.JSONDecodeError) as error:
+                self._json({"error": str(error)}, 400)
+            except Exception as error:
+                LOGGER.exception("setup operation failed action=%s", path.rsplit("/", 1)[-1])
+                self._json({"error": "Setup could not complete this operation"}, 500)
+            return
+        if path == "/api/setup/install":
+            try:
+                payload = request_payload if request_payload is not None else self._json_body()
+                self._json(APP.start_provider_install(str(payload.get("provider", ""))))
+            except ValueError as error:
+                self._json({"error": str(error)}, 400)
+            except (OSError, subprocess.SubprocessError):
+                self._json({"error": "The provider installer is unavailable"}, 503)
+            return
+        if path in {"/api/recovery/retry", "/api/recovery/setup",
+                    "/api/recovery/reboot", "/api/recovery/shutdown"}:
+            try:
+                if not APP.password_configured():
+                    self._json({"error": "Set the Admin password before requesting recovery mutations."}, 403)
+                    return
+                csrf = self._require()
+                if csrf is None:
+                    return
+                token = self._token()
+                expected = APP.session(token)
+                supplied = self.headers.get("X-CSRF-Token", "")
+                if not expected or not hmac.compare_digest(supplied, expected):
+                    self._json({"error": "Request rejected."}, 403)
+                    return
+                payload = self._json_body()
+                if path.endswith("setup"):
+                    from .onboarding import reopen_onboarding
+                    reopen_onboarding()
+                action_id = ("restart_mudos" if path.endswith(("retry", "setup")) else
+                             "reboot" if path.endswith("reboot") else "shutdown")
+                request = urllib.request.Request(
+                    "http://127.0.0.1:38124/v1/action",
+                    data=json.dumps({"action_id": action_id,
+                                     "confirmed": payload.get("confirmed") is True}).encode(),
+                    headers={"Content-Type": "application/json"}, method="POST")
+                with urllib.request.urlopen(request, timeout=5) as response:
+                    self._json(json.loads(response.read(65536)), response.status)
+            except ValueError as error:
+                self._json({"error": str(error)}, 409)
+            except (OSError, urllib.error.URLError, subprocess.SubprocessError,
+                    TimeoutError, json.JSONDecodeError):
+                self._json({"error": "The independent Recovery control plane is unavailable."}, 503)
+            return
         token = self._token(); csrf = APP.session(token)
         if csrf is None: self._redirect("/login"); return
         form = self._form()
@@ -516,6 +1459,83 @@ class Handler(http.server.BaseHTTPRequestHandler):
             notice = _notice("Connection successful" if ok else "Connection needs attention", message, "success" if ok else "error")
             self._send(_page(title, notice + f'<p><a class="button button-secondary" href="/integration/{urllib.parse.quote(provider_id)}">Back to settings</a></p>', subtitle="Connection test", active="integrations")); return
         self._send(_page("Not found", "<p>Not found.</p>"), 404)
+
+    def _setup_page(self, local: bool) -> None:
+        local_return = '<a class="button secondary" href="mudos://return">Return to Mudos</a>' if local else ""
+        csrf = APP.session(self._token()) or ""
+        from .managed_account import MANAGED_ADMIN_ACCOUNT
+        managed_account = html.escape(MANAGED_ADMIN_ACCOUNT, quote=True)
+        body = f'''<main class="setup-wrap"><header><p class="eyebrow">MUDOS SETUP</p><h1>Welcome to Mudos</h1>
+<p>Choose the Mudos providers and plugins you want. You can configure connections next and return to setup later.</p></header>
+        <nav class="steps"><span>1 · Install providers</span><span>2 · Steam sign-in</span><span>3 · Integrations and required system files</span><span>4 · Review</span></nav>
+<section id="content" aria-live="polite"><p>Loading your available Mudos components…</p></section>
+<p id="notice" role="status"></p>{local_return}</main>
+<script>
+const localSetup={str(local).lower()},setupCsrf={json.dumps(csrf)},managedAccount={json.dumps(managed_account)};let data=null,step=0,providerChoices=[],integrationChoices=[],validationResults={{}},steamAuthBusy=false,steamSignin=false,steamAuthTimer=null,providerSignin='',providerTransaction=null;
+const statusNames={{not_selected:'Not selected',selected:'Selected',installing:'Installing',install_failed:'Installation failed',installed:'Installed',configuration_required:'Configuration required',authentication_required:'Authentication required',authenticating:'Authenticating',authorization_pending:'Waiting for Steam approval',auth_failed:'Authentication failed',authenticated:'Authenticated',reconciling:'Reconciling library',validating:'Validating',syncing:'Syncing catalogue',sync_failed:'Catalogue sync failed',ready:'Ready',not_configured:'Not configured'}};
+function stateName(value){{return statusNames[value]||String(value||'Unknown').replaceAll('_',' ')}}
+function esc(v){{return String(v||"").replace(/[&<>\"']/g,c=>({{'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'":'&#39;'}}[c]))}}
+async function api(path,body){{let payload=body?{{...body,csrf:setupCsrf}}:undefined;let r=await fetch(path,{{method:body?'POST':'GET',headers:body?{{'Content-Type':'application/json'}}:{{}},body:body?JSON.stringify(payload):undefined}});let type=r.headers.get('content-type')||'';if(!type.includes('application/json')){{if(r.redirected||r.status===401)throw Error('Your admin session expired. Sign in again, then continue setup.');throw Error('Setup returned an unexpected response. Reload the page and try again.')}}let v=await r.json();if(!r.ok)throw Error(v.error||v.message||'Request failed');return v}}
+function notice(text){{document.querySelector('#notice').textContent=text}}
+function stopSteamAuthPolling(){{if(steamAuthTimer){{clearInterval(steamAuthTimer);steamAuthTimer=null}}}}
+ function renderSteamSignin(){{stopSteamAuthPolling();let provider=data.providers.find(p=>p.id==='steam');let auth=provider?.authentication||{{}};let identity=auth.persona||auth.account||'';let ready=!!auth.authenticated;let root=document.querySelector('#content');root.innerHTML='<section class="card"><p class="eyebrow">STEAM ACCOUNT</p><h2>Sign in to Steam</h2><p>Steam is installed. Select Open Steam sign-in to show Steam on your Mudos screen, then sign in there. Afterward, setup verifies SteamCMD separately: enter your Steam password in the secure setup field, then approve the login on your Steam Guard device or choose Enter Code on the Mudos screen.</p><p id="steam-auth-state" role="status">'+(ready?'✓ Signed in as '+esc(identity||'Steam account'):'Waiting for Steam sign-in…')+'</p><div class="actions"><button id="steam-open" onclick="beginSteamAuth()">Open Steam sign-in</button><button id="steam-continue" '+(ready?'':'disabled')+' onclick="continueSteamSignin()">Continue</button><button class="secondary" onclick="steamSignin=false;step=0;render()">Back</button></div></section>';setTimeout(()=>document.querySelector('#steam-open')?.focus(),0);if(!ready)steamAuthTimer=setInterval(()=>void checkSteamAuth(),3000)}}
+function render(){{if(steamSignin){{renderSteamSignin();return}}if(providerSignin){{renderProviderSignin();return}}stopSteamAuthPolling();renderSetupPage()}}
+async function checkSteamAuth(){{if(!steamSignin)return false;try{{let state=await api('/api/setup/steam/auth-status');let auth=state.authentication||{{}};let ready=!!auth.authenticated;let label=document.querySelector('#steam-auth-state');let next=document.querySelector('#steam-continue');if(label)label.textContent=ready?'✓ Signed in as '+(auth.persona||auth.account||'Steam account'):state.status==='authorization_pending'?'Waiting for Steam sign-in…':'Steam sign-in is incomplete. Open Steam to retry.';if(next)next.disabled=!ready;let provider=data.providers.find(p=>p.id==='steam');if(provider){{provider.status=ready?'authenticated':state.status;provider.authentication=auth}}return ready}}catch(e){{let label=document.querySelector('#steam-auth-state');if(label)label.textContent='Steam sign-in status is temporarily unavailable. Retry shortly.';return false}}}}
+async function beginSteamAuth(){{if(steamAuthBusy)return;steamAuthBusy=true;let button=document.querySelector('#steam-open');if(button)button.disabled=true;let label=document.querySelector('#steam-auth-state');if(label)label.textContent='Opening Steam sign-in…';try{{let result=await api('/api/setup/steam/authenticate',{{}});notice(result.message||'Steam was opened. Complete sign-in in Steam.');await checkSteamAuth()}}catch(e){{notice(e.message);if(label)label.textContent='Steam could not be opened. You can retry.'}}finally{{steamAuthBusy=false;if(button)button.disabled=false}}}}
+async function continueSteamSignin(){{if(!await checkSteamAuth()){{notice('Steam sign-in is not verified yet. Complete sign-in on Mudos, wait for your account name to appear here, then select Continue.');return}}stopSteamAuthPolling();integrationChoices=[...new Set([...integrationChoices,'providers.steam'])];await api('/api/setup/progress',{{providers:providerChoices,integrations:integrationChoices}});steamSignin=false;step=1;render()}}
+function renderProviderSignin(){{let provider=data.providers.find(p=>p.id===providerSignin);let root=document.querySelector('#content');let transaction=providerTransaction;root.innerHTML=`<section class="card"><p class="eyebrow">ACCOUNT SIGN-IN</p><h2>Sign in to ${{esc(provider?.name||providerSignin)}}</h2><p>Open the provider sign-in page, complete sign-in, then paste its one-time authorization code here. Mudos does not store the code or your provider password.</p>${{transaction?.verification_url?`<p><a class="button" href="${{esc(transaction.verification_url)}}" target="_blank" rel="noopener noreferrer">Open ${{esc(provider?.name||providerSignin)}} sign-in</a></p>`:''}}<label>One-time authorization code<input id="provider-auth-code" type="text" autocomplete="one-time-code" value="" required></label><div class="actions"><button onclick="completeProviderSignin()" ${{transaction?'':'disabled'}}>Complete sign-in</button><button class="secondary" onclick="providerSignin='';providerTransaction=null;step=1;render()">Back to setup</button></div></section>`}}
+async function beginProviderSignin(id){{providerSignin=id;providerTransaction=null;render();try{{providerTransaction=await api('/api/setup/provider-authenticate',{{provider:id}});render()}}catch(e){{notice(e.message);providerSignin='';render()}}}}
+async function completeProviderSignin(){{let code=document.querySelector('#provider-auth-code')?.value||'';if(!code.trim()){{notice('Enter the one-time authorization code from the provider page.');return}}try{{await api('/api/setup/provider-auth-complete',{{provider:providerSignin,transaction_id:providerTransaction?.transaction_id,code}});data=await api('/api/setup/state');providerSignin='';providerTransaction=null;step=1;render();notice('Provider sign-in completed. Catalogue reconciliation will continue in the background.')}}catch(e){{notice(e.message)}}}}
+async function nextProviders(){{await nextProvidersOriginal();if(providerChoices.includes('steam')){{let steam=data.providers.find(p=>p.id==='steam');if(!steam?.installed){{step=0;render();notice('Steam installation must succeed before sign-in. Review the installation status and retry.');return}}integrationChoices=[...new Set([...integrationChoices,'providers.steam'])];await api('/api/setup/progress',{{providers:providerChoices,integrations:integrationChoices}});steamSignin=true;render();await checkSteamAuth()}}}}
+function renderSetupPage(){{let root=document.querySelector('#content');if(!data)return;if(step===3)setTimeout(()=>{{let initial=!data.onboarding.admin_password_configured&&data.onboarding.status!=='completed';let current=document.querySelector('#admin-current');if(current)current.closest('label').hidden=initial;let intro=root.querySelector('p');if(intro)intro.textContent=initial?'Choose an initial password for the managed Mudos Linux account ('+managedAccount+'). You do not need its existing password. After setup, password changes require the current account password.':'Admin authentication uses the same password as the managed Mudos Linux account ('+managedAccount+'). Enter its current password and choose a replacement password of at least 8 characters.'}},0);
+if(step===0){{let cards=data.providers.map(p=>`<label class="card"><input type="checkbox" data-provider="${{esc(p.id)}}" ${{providerChoices.includes(p.id)?'checked':''}}><strong>${{esc(p.name)}}</strong><span>${{esc(p.summary)}}</span><small>Status: ${{esc(stateName(p.status))}}</small>${{p.dependencies.length||p.dependencies_any.length?`<small>Dependencies: ${{esc([...p.dependencies,...p.dependencies_any.flat()].join(', '))}}</small>`:''}}</label>`).join('');root.innerHTML='<h2>Providers and Plugins</h2><div class="cards">'+cards+'</div><div class="actions"><button onclick="nextProviders()">Install selected and continue</button><button class="secondary" onclick="skipSetup()">Continue to Home</button></div>'}}
+ else if(step===1){{let accounts=data.providers.filter(p=>providerChoices.includes(p.id)&&['epic','gog'].includes(p.id));let accountCards=accounts.map(p=>`<article class="card"><strong>${{esc(p.name)}} account</strong><p>${{esc(p.status_message||stateName(p.status))}}</p><button class="secondary" onclick="beginProviderSignin('${{esc(p.id)}}')">${{p.authentication?.authenticated?'Reconnect':'Sign in'}}</button></article>`).join('');root.innerHTML='<h2>Integrations and system files</h2>'+(accountCards?'<h3>Store accounts</h3><div class="cards">'+accountCards+'</div>':'')+'<div class="cards">'+data.integrations.map(i=>`<label class="card"><input type="checkbox" data-integration="${{esc(i.id)}}" ${{integrationChoices.includes(i.id)?'checked':''}}><strong>${{esc(i.name)}}</strong><span>${{esc(i.description||'Optional connection used by Mudos.')}}</span><small>${{i.configured?'Configured':'Optional'}}</small></label>`).join('')+'</div><div id="setup-files-section">'+setupFilesMarkup()+'</div><div class="actions"><button onclick="nextCredentials()">Continue</button><button class="secondary" onclick="step=0;render()">Back</button></div>'}}
+  else if(step===2){{root.innerHTML='<h2>Connection details</h2>'+integrationChoices.map(id=>credentialForm(id)).join('')+'<div class="actions"><button onclick="reviewSetup()">'+(integrationChoices.includes('providers.steam')?'Verify Steam and Review':'Review Setup')+'</button><button class="secondary" onclick="step=1;render()">Back</button><button class="secondary" onclick="skipSetup()">Skip for now</button></div>'}}
+else {{let selectedProviders=data.providers.filter(p=>providerChoices.includes(p.id));let selectedIntegrations=data.integrations.filter(i=>integrationChoices.includes(i.id));root.innerHTML='<h2>Setup review</h2><h3>Providers and Plugins</h3><ul>'+ (selectedProviders.map(p=>`<li><strong>${{esc(p.name)}} — ${{esc(stateName(p.status))}}</strong>${{p.status_message?`<br><small>${{esc(p.status_message)}}</small>`:''}}</li>`).join('')||'<li>None selected</li>')+'</ul><h3>Integrations</h3><ul>'+ (selectedIntegrations.map(i=>{{let result=validationResults[i.id]||data.onboarding.validation?.[i.id];let status=result?(result.ok?'Ready':'Validation failed'):i.readiness?stateName(i.readiness.status):i.configured?'Configured; not validated':'Configuration required';let message=result?.message||i.readiness?.message||'';return `<li><strong>${{esc(i.name)}} — ${{esc(status)}}</strong>${{message?`<br><small>${{esc(message)}}</small>`:''}}</li>`}}).join('')||'<li>None selected</li>')+'</ul><p>Admin authentication uses the same password as the managed Mudos Linux account ('+esc(managedAccount)+'). Enter its current password and choose a new password of at least 8 characters. This change is explicit and will also change Linux account authentication.</p><label>Current Mudos account password<input id="admin-current" type="password" autocomplete="current-password"></label><label>New Mudos admin password<input id="admin-new" type="password" autocomplete="new-password" minlength="8"></label><label>Confirm new password<input id="admin-confirm" type="password" autocomplete="new-password" minlength="8"></label><p>After setup, open <a href="http://mudos.local/">mudos.local</a> for Mudos administration. Return to <a href="http://mudos.local/setup">mudos.local/setup</a> to change selections.</p><div class="actions"><button onclick="finishSetup()">Set Password &amp; Finish Setup</button>'+(localSetup?'<a class="button secondary" href="mudos://return">Return to Mudos</a>':'')+'<button class="secondary" onclick="step=2;render()">Back</button></div>'}}}}
+function fieldDefault(id,f){{if(id==='providers.steam'&&f.name==='steam_username'){{let auth=data.providers.find(p=>p.id==='steam')?.authentication||{{}};return auth.account||auth.persona||''}}return f.default??''}}
+function credentialForm(id){{let i=data.integrations.find(x=>x.id===id);if(!i)return '';return `<article class="card credential"><h3>${{esc(i.name)}}</h3><p><a href="${{esc(i.help)}}" target="_blank" rel="noreferrer">Where do I get this?</a></p>${{i.fields.map(f=>`<label>${{esc(f.label)}}<input autocomplete="off" type="${{f.type==='secret'?'password':f.type==='url'?'url':f.type==='checkbox'?'checkbox':f.type==='number'?'number':'text'}}" data-integration="${{esc(id)}}" data-field="${{esc(f.name)}}" ${{f.type==='checkbox'&&f.default?'checked':''}} ${{f.required?'required':''}} value="${{f.type==='checkbox'?'on':esc(fieldDefault(id,f))}}" placeholder="${{f.type==='secret'?'Leave blank to keep saved value':''}}">${{id==='providers.romm'&&f.name==='url'?'<small class="field-error" role="alert"></small>':''}}</label>`).join('')}}<div class="actions"><button class="secondary" onclick="saveIntegration('${{esc(id)}}')">Save</button><button class="secondary" onclick="testIntegration('${{esc(id)}}')">Validate and Sync</button><small>${{i.configured?'Configured; secret values remain private':''}}</small></div></article>`}}
+function setupFilesMarkup(){{let rows=data.setup_files||[];if(!rows.length)return '';return '<h2>BIOS, keys and firmware</h2><p>Provide any required BIOS, keys, or firmware for selected systems now or later. Files are stored in the matching Mudos BIOS folder.</p>'+rows.map(function(system){{let requirements=system.requirements.map(function(req){{let status=req.ready?'Added':(req.required?'Required':'Optional');let present=req.present.length?'Current files: '+esc(req.present.join(', ')):'No files uploaded';return '<label><strong>'+esc(req.label)+' — '+status+'</strong><span>'+esc(req.description)+'</span><small>'+present+'</small><input type="file" data-platform="'+esc(system.platform)+'" data-requirement="'+esc(req.id)+'" accept="'+req.extensions.join(',')+'" '+(req.multiple?'multiple':'')+' onchange="uploadSetupFiles(this)"></label>'}}).join('');return '<article class="card credential"><h3>'+esc(system.platform_label)+'</h3>'+requirements+'</article>'}}).join('')}}
+async function uploadSetupFiles(input){{if(!input.files||!input.files.length)return;let body=new FormData();body.append('csrf',setupCsrf);body.append('platform',input.dataset.platform);body.append('requirement',input.dataset.requirement);for(let file of input.files)body.append('file',file,file.name);input.disabled=true;notice('Uploading system files…');try{{let response=await fetch('/api/setup/files',{{method:'POST',body:body}});let result=await response.json();if(!response.ok)throw Error(result.error||'Upload failed');data.setup_files=result.setup_files||[];document.querySelector('#setup-files-section').innerHTML=setupFilesMarkup();notice('System files uploaded.')}}catch(error){{notice(error.message);input.disabled=false}}}}
+async function nextProvidersOriginal(){{providerChoices=[...document.querySelectorAll('[data-provider]:checked')].map(e=>e.dataset.provider);let saved=await api('/api/setup/progress',{{providers:providerChoices}});providerChoices=saved.state.selected_providers||providerChoices;for(const id of providerChoices){{let p=data.providers.find(x=>x.id===id);if(!p||p.installed||!p.installable)continue;notice(`Installing ${{p.name}}…`);try{{await api('/api/setup/install',{{provider:id}});let result={{status:'installing',message:''}};while(result.status==='installing'){{await new Promise(r=>setTimeout(r,1600));result=await api('/api/setup/install/'+encodeURIComponent(id));if(result.status==='installing')notice(id==='retroarch'?'Installing official RetroArch cores…':`Installing ${{p.name}}…`)}}if(result.status==='installed')notice(`${{p.name}} installed; checking readiness…`);else notice(`${{p.name}} installation failed: ${{result.message||'installer did not verify the installed provider'}}`)}}catch(e){{notice(`${{p.name}} installation failed: ${{e.message}}`)}}}}await api('/api/setup/progress',{{integrations:integrationChoices}});data=await api('/api/setup/state');step=1;render()}}
+async function nextCredentials(){{integrationChoices=[...document.querySelectorAll('[data-integration]:checked')].map(e=>e.dataset.integration);await api('/api/setup/progress',{{providers:providerChoices,integrations:integrationChoices}});step=2;render()}}
+async function reviewSetup(){{try{{if(integrationChoices.includes('providers.steam')){{await api('/api/setup/credentials',integrationPayload('providers.steam'));notice('Verifying SteamCMD. Approve the login on your Steam Guard device, or choose Enter Code on the Mudos screen.');let result=await api('/api/setup/test',{{integration:'providers.steam'}});if(!result.ok)throw Error(result.message||'SteamCMD authentication was not completed.');validationResults['providers.steam']=result}}await api('/api/setup/progress',{{providers:providerChoices,integrations:integrationChoices}});data=await api('/api/setup/state');step=3;render()}}catch(e){{notice(e.message)}}}}
+function integrationPayload(id){{let payload={{integration:id}};document.querySelectorAll(`[data-integration="${{CSS.escape(id)}}"][data-field]`).forEach(e=>payload[e.dataset.field]=e.type==='checkbox'?e.checked:e.value);return payload}}
+function rommUrlCheck(id){{if(id!=='providers.romm')return true;let input=document.querySelector('[data-integration="providers.romm"][data-field="url"]');let error=input?.closest('label')?.querySelector('.field-error');if(!input||!input.value.trim())return true;let valid=/^https?:[/][/]/i.test(input.value.trim());if(error)error.textContent=valid?'':'Enter a RomM URL beginning with http:// or https://';input.setAttribute('aria-invalid',valid?'false':'true');return valid}}
+async function saveIntegration(id){{if(!rommUrlCheck(id))return;try{{await api('/api/setup/credentials',integrationPayload(id));notice('Saved. Secret values are stored securely and will not be shown again.');data=await api('/api/setup/state');render()}}catch(e){{notice(e.message)}}}}
+async function testIntegration(id){{if(!rommUrlCheck(id))return;try{{await api('/api/setup/credentials',integrationPayload(id));let v=await api('/api/setup/test',{{integration:id}});validationResults[id]=v;data=await api('/api/setup/state');notice(v.message);render()}}catch(e){{notice(e.message)}}}}
+async function finishSetup(){{try{{let current=document.querySelector('#admin-current')?.value||'',newPassword=document.querySelector('#admin-new').value,confirmation=document.querySelector('#admin-confirm').value;if(newPassword!==confirmation)throw Error('The new passwords do not match.');if(newPassword.length<8)throw Error('Use a new password of at least 8 characters.');let initial=!data.onboarding.admin_password_configured&&data.onboarding.status!=='completed';await api(initial?'/api/setup/initial-password':'/api/setup/admin-password',{{current_password:current,new_password:newPassword,confirm_password:confirmation,finish:true}});window.location.assign('/')}}catch(e){{notice(e.message)}}}}
+async function skipSetup(){{try{{await api('/api/setup/dismiss',{{}});notice('Setup skipped. You can return any time at mudos.local/setup.')}}catch(e){{notice(e.message)}}}}
+api('/api/setup/state').then(v=>{{data=v;providerChoices=v.onboarding.selected_providers||[];integrationChoices=v.onboarding.selected_integrations||[];validationResults=v.onboarding.validation||{{}};steamSignin=providerChoices.includes('steam')&&!!data.providers.find(p=>p.id==='steam')?.installed;render();if(steamSignin)void checkSteamAuth()}}).catch(e=>notice(e.message));
+</script>'''
+        self._send(_setup_page_document(body))
+
+    def _recovery_page(self) -> None:
+        csrf = APP.session(self._token()) or ""
+        body = f'''<main class="setup-wrap"><p class="eyebrow">MUDOS RECOVERY</p><h1>What needs attention?</h1>
+<p>The Recovery control plane runs separately from the Mudos graphical session. Actions are sent only to its fixed, allowlisted API.</p>
+<section class="card"><h2 id="overall">Loading system health…</h2><div id="state">Checking component evidence…</div></section>
+<section class="card"><h2>Safe actions</h2><div id="actions" class="actions"></div><p id="notice" role="status"></p></section>
+<p><a href="/setup">Open Setup / Reconfigure</a></p></main>
+<script>
+const csrf={json.dumps(csrf)};
+const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}}[c]));
+async function confirmAction(action){{
+ if(!confirm(`${{action.label}}?\\n\\n${{(action.impact||[]).join('\\n')}}`))return;
+ const notice=document.querySelector('#notice');notice.textContent='Sending request…';
+ try{{const response=await fetch('/api/recovery/'+({{restart_mudos:'retry',reboot:'reboot',shutdown:'shutdown'}}[action.action_id]||'retry'),{{method:'POST',headers:{{'Content-Type':'application/json','X-CSRF-Token':csrf}},body:JSON.stringify({{confirmed:true}})}});const value=await response.json();notice.textContent=response.ok?'Request accepted.':(value.error||'Request rejected.');setTimeout(load,1200)}}catch(error){{notice.textContent='The independent Recovery control plane is unavailable.'}}
+}}
+async function load(){{
+ try{{const response=await fetch('/api/recovery/status',{{cache:'no-store'}});const s=await response.json();
+ document.querySelector('#overall').textContent='Overall state: '+(s.overall_state||'unknown').replaceAll('_',' ');
+ const components=s.components||{{}};document.querySelector('#state').innerHTML=Object.entries(components).map(([id,c])=>`<article class="card"><strong>${{esc(id.replaceAll('_',' '))}} · ${{esc(c.state||'unknown')}}</strong><p>${{esc(c.summary||'Evidence unavailable')}}</p><small>Checked: ${{esc(c.checked_at||'unknown')}} · evidence: ${{esc(c.freshness||'unknown')}}</small>${{c.last_error?`<p>${{esc(c.last_error)}}</p>`:''}}</article>`).join('')||'<p>Component evidence is unavailable.</p>';
+ const actions=document.querySelector('#actions');actions.replaceChildren();
+ for(const action of (s.actions||[])){{if(action.action_id==='restart_consoled'||action.action_id==='restart_acquisitiond'||action.action_id==='restart_admin')continue;const button=document.createElement('button');button.textContent=action.label;button.onclick=()=>confirmAction(action);actions.append(button)}}
+ if(!csrf){{actions.innerHTML='<p>Sign in to Mudos Admin to authorize recovery actions.</p>'}}
+ }}catch(error){{document.querySelector('#overall').textContent='Recovery status unavailable';document.querySelector('#state').textContent='The independent recovery service is not responding.'}}
+}}
+load();setInterval(load,10000);
+</script>'''
+        self._send(_setup_page_document(body))
 
     def authenticate_form(self) -> bool:
         form = self._form(); password = form.get("password", [""])[0]
@@ -744,7 +1764,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     commit=commit,
                     rollback_commit=rollback_commit,
                     refresh=lambda: systemctl("restart", "lulu-acquisition.service"),
-                    reconcile=lambda: systemctl("start", "lulu-questarr-reconcile.service"),
+                    # Questarr reconciliation is deferred until its setup
+                    # selection and persisted readiness state authorize it.
+                    reconcile=lambda: None,
                 )
             else:
                 APP.config.update_provider(provider_id, values, secrets_in, clears, secret_references)
@@ -780,11 +1802,6 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 subprocess.run(["systemctl", "restart", "lulu-acquisition.service"],
                                stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
                                stderr=subprocess.DEVNULL, check=True, timeout=10)
-            if provider_id in {"providers.torrent", "providers.usenet", "providers.prowlarr"}:
-                # The reconciler is optional on immutable installations.
-                subprocess.run(["systemctl", "start", "lulu-questarr-reconcile.service"],
-                               stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-                               stderr=subprocess.DEVNULL, check=False, timeout=10)
         except Exception as error:
             # Restore both configuration layers if materialization or the
             # required daemon restart fails; do not leave a new SecretStore

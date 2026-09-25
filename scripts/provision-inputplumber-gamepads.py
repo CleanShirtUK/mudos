@@ -11,6 +11,7 @@ import os
 import re
 import subprocess
 import sys
+import time
 
 
 def _has_bit(path: Path, bit: int) -> bool:
@@ -50,8 +51,16 @@ def _is_virtual_source(properties: set[str]) -> bool:
     return "ID_INPUT_WIDTH_MM=65535" not in properties
 
 
-def gamepad_devices() -> list[tuple[str, str]]:
-    devices: list[tuple[str, str]] = []
+def logical_device_key(sysfs_path: str) -> str:
+    """Collapse event interfaces on one Linux device without merging slots."""
+    path = Path(sysfs_path)
+    if "virtual" in path.parts:
+        return str(path)
+    return re.sub(r"/input/input\d+$", "", str(path))
+
+
+def gamepad_devices() -> list[str]:
+    devices: dict[str, str] = {}
     for event in sorted(Path("/sys/class/input").glob("event*/device")):
         capabilities = event / "capabilities"
         # BTN_JOYSTICK through BTN_GAMEPAD covers standard Linux gamepads;
@@ -65,21 +74,23 @@ def gamepad_devices() -> list[tuple[str, str]]:
         properties = _udev_properties(event.parent.name)
         if not has_gamepad_button or not has_axes or not _is_joystick(properties):
             continue
-        phys_file = event / "phys"
-        phys = phys_file.read_text(encoding="utf-8").strip() if phys_file.is_file() else ""
         # A physical source has a stable sysfs path. A generic virtual source
         # has no phys path, so retain it only while IP marks it as a source;
         # otherwise it is an output composite and would recurse forever.
-        if not phys and not _is_virtual_source(properties):
+        if not _is_virtual_source(properties):
             continue
-        devices.append((event.parent.name, phys))
-    return devices
+        sysfs_path = event.resolve()
+        # Multiple event interfaces on one Linux input device belong to a
+        # single pad. Receiver slots expose separate USB interfaces, so their
+        # interface parent (for example :1.0 vs :1.2) keeps them distinct.
+        logical_device = logical_device_key(str(sysfs_path))
+        devices.setdefault(logical_device, event.parent.name)
+    return sorted(devices.values())
 
 
-def render(event: str, phys: str = "") -> str:
-    physical_match = f"      phys_path: {phys!r}\n" if phys else ""
+def render(event: str) -> str:
     return (
-        "# Generated from Linux input capabilities; identity is intentionally not used.\n"
+        "# Generated from Linux input capabilities and logical sysfs device.\n"
         "version: 1\n"
         "kind: CompositeDevice\n"
         "name: Lulu Controller\n"
@@ -91,7 +102,6 @@ def render(event: str, phys: str = "") -> str:
         "    evdev:\n"
         "      handler: event*\n"
         f"      dev_node: /dev/{event}\n"
-        f"{physical_match}"
         "options:\n"
         "  auto_manage: true\n"
         "  persist: false\n"
@@ -130,51 +140,83 @@ def _write(path: Path, content: str) -> bool:
     return True
 
 
+def ensure_source_composite(source: str, probe, create, *, timeout: float = 12.0,
+                            retry_interval: float = 1.0, poll_interval: float = 0.25,
+                            clock=time.monotonic, sleep=time.sleep) -> bool:
+    """Wait for InputPlumber auto-management and retry transient add races."""
+    deadline = clock() + timeout
+    last_create = float("-inf")
+    while True:
+        if source in probe():
+            return True
+        now = clock()
+        if now >= deadline:
+            return False
+        if now - last_create >= retry_interval:
+            create()
+            last_create = now
+        sleep(min(poll_interval, max(0.0, deadline - clock())))
+
+
 def _activate(output: Path, profiles: list[Path]) -> None:
     """Reconcile this generator's composites with the current source set."""
-    tree = subprocess.run(
-        ["busctl", "tree", "org.shadowblip.InputPlumber"],
-        check=False, capture_output=True, text=True,
-    ).stdout
-    composites = re.findall(r"(/org/shadowblip/InputPlumber/CompositeDevice\d+)", tree)
     expected = {
         f"/dev/input/{event.group(1)}"
         for profile in profiles
         for event in [re.search(r"dev_node: /dev/(event\d+)", profile.read_text(encoding="utf-8"))]
         if event
     }
-    existing: set[str] = set()
-    for composite in set(composites):
-        result = subprocess.run(
-            ["busctl", "get-property", "org.shadowblip.InputPlumber", composite,
-             "org.shadowblip.Input.CompositeDevice", "SourceDevicePaths"],
+    time.sleep(0.25)  # Let udev and InputPlumber finish handling the device event.
+
+    def composite_snapshot() -> list[tuple[str, str, set[str]]]:
+        tree = subprocess.run(
+            ["busctl", "tree", "org.shadowblip.InputPlumber"],
             check=False, capture_output=True, text=True,
         ).stdout
-        sources = set(re.findall(r'"(/dev/input/event\d+)"', result))
-        name = subprocess.run(
-            ["busctl", "get-property", "org.shadowblip.InputPlumber", composite,
-             "org.shadowblip.Input.CompositeDevice", "Name"],
-            check=False, capture_output=True, text=True,
-        ).stdout
+        result = []
+        for composite in set(re.findall(r"(/org/shadowblip/InputPlumber/CompositeDevice\d+)", tree)):
+            sources = subprocess.run(
+                ["busctl", "get-property", "org.shadowblip.InputPlumber", composite,
+                 "org.shadowblip.Input.CompositeDevice", "SourceDevicePaths"],
+                check=False, capture_output=True, text=True,
+            ).stdout
+            name = subprocess.run(
+                ["busctl", "get-property", "org.shadowblip.InputPlumber", composite,
+                 "org.shadowblip.Input.CompositeDevice", "Name"],
+                check=False, capture_output=True, text=True,
+            ).stdout
+            result.append((composite, name, set(re.findall(r'"(/dev/input/event\d+)"', sources))))
+        return result
+
+    initial = composite_snapshot()
+    for composite, name, sources in initial:
         if sources and sources.isdisjoint(expected) and 's "Lulu Controller"' in name:
             subprocess.run(
                 ["busctl", "call", "org.shadowblip.InputPlumber", composite,
                  "org.shadowblip.Input.CompositeDevice", "Stop"],
-                check=False,
+                check=False, capture_output=True, text=True,
             )
-            continue
-        existing.update(sources)
+
+    def active_sources() -> set[str]:
+        return set().union(*(sources for _, _, sources in composite_snapshot()))
+
     for profile in profiles:
         content = profile.read_text(encoding="utf-8")
         event = re.search(r"dev_node: /dev/(event\d+)", content)
-        if event and f"/dev/input/{event.group(1)}" in existing:
+        if not event:
             continue
-        subprocess.run(
-            ["busctl", "call", "org.shadowblip.InputPlumber",
-             "/org/shadowblip/InputPlumber/Manager",
-             "org.shadowblip.InputManager", "CreateCompositeDevice", "s", str(profile)],
-            check=False,
-        )
+        source = f"/dev/input/{event.group(1)}"
+
+        def create() -> None:
+            subprocess.run(
+                ["busctl", "call", "org.shadowblip.InputPlumber",
+                 "/org/shadowblip/InputPlumber/Manager",
+                 "org.shadowblip.InputManager", "CreateCompositeDevice", "s", str(profile)],
+                check=False, capture_output=True, text=True,
+            )
+
+        if not ensure_source_composite(source, active_sources, create):
+            print(f"InputPlumber did not activate logical gamepad source {source}", file=sys.stderr)
 
 
 def main() -> int:
@@ -185,11 +227,11 @@ def main() -> int:
     output.parent.mkdir(parents=True, exist_ok=True)
     devices = gamepad_devices()
     profiles: list[Path] = []
-    for index, (event, phys) in enumerate(devices):
+    for index, event in enumerate(devices):
         # Keep the established filename for the first device. Additional
         # devices get independent files so each profile creates one composite.
         profile = output if index == 0 else output.parent / f"lulu-gamepad-{event}.yaml"
-        _write(profile, render(event, phys))
+        _write(profile, render(event))
         profiles.append(profile)
     for stale in output.parent.glob("lulu-gamepad-event*.yaml"):
         if stale not in profiles:

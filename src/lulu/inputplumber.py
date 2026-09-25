@@ -1,6 +1,7 @@
 """Small command adapter for the documented InputPlumber D-Bus API."""
 
 from dataclasses import dataclass
+import hashlib
 import logging
 from pathlib import Path
 import re
@@ -12,6 +13,19 @@ from .contracts import InputMode
 DEFAULT_PROFILE_PATH = "/usr/share/inputplumber/profiles/default.yaml"
 LOGGER = logging.getLogger("lulu.inputplumber")
 
+
+def normalized_controller_identity(persistent_id: str, sysfs_device_path: str,
+                                   has_device_serial: bool) -> str:
+    """Keep stable unique IDs; disambiguate serial-less logical device paths."""
+    if has_device_serial:
+        return persistent_id
+    path = Path(sysfs_device_path)
+    interface = next((parent for parent in (path, *path.parents)
+                      if (parent / "bInterfaceNumber").is_file()), None)
+    logical_path = str(interface or path)
+    logical_path = re.sub(r"/input/input\d+(?:/event\d+)?$", "", logical_path)
+    digest = hashlib.sha256(logical_path.encode()).hexdigest()[:16]
+    return f"{persistent_id}@{digest}"
 
 @dataclass(frozen=True, slots=True)
 class InputPlumberClient:
@@ -179,12 +193,26 @@ class InputPlumberClient:
             )
         composites = {path: self.composite_status(path) for path in paths}
         if composites:
-            return composites
-        # The shell has a direct SDL navigation path and can therefore remain
-        # usable while an InputPlumber composite is absent (for example when
-        # an installed device profile is stale). Expose a capability-verified
-        # source as a provisional logical gamepad so inventory, assignment,
-        # and providers do not collapse to an empty list.
+            normalized = {}
+            for runtime_path, (persistent_id, source_paths) in composites.items():
+                identity = persistent_id
+                if source_paths:
+                    source = Path(source_paths[0]).name
+                    device_path = Path("/sys/class/input") / source / "device"
+                    try:
+                        sysfs_path = str(device_path.resolve(strict=True))
+                        interface = next((parent for parent in (Path(sysfs_path), *Path(sysfs_path).parents)
+                                          if (parent / "bInterfaceNumber").is_file()), None)
+                        serial_path = interface.parent / "serial" if interface else None
+                        has_serial = bool(serial_path and serial_path.is_file()
+                                          and serial_path.read_text(errors="replace").strip())
+                        identity = normalized_controller_identity(persistent_id, sysfs_path, has_serial)
+                    except OSError:
+                        pass
+                normalized[runtime_path] = (identity, source_paths)
+            return normalized
+        # Retain the existing provisional inventory path for a source exposed
+        # before InputPlumber's composite order has converged.
         source = self._source_gamepad_path()
         if source:
             return {
@@ -223,9 +251,6 @@ class InputPlumberClient:
                      "org.shadowblip.Input.Source.EventDevice", "PhysPath"],
                     check=False, capture_output=True, text=True,
                 ).stdout
-                # Virtual OSK/navigation devices also advertise joystick
-                # capabilities. They are not physical gameplay controllers
-                # and must not populate the provisional inventory.
                 if 's ""' not in phys and 'virtual/' not in phys:
                     return source
         return None

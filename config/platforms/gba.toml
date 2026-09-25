@@ -1,0 +1,10 @@
+id = "gba"
+name = "Game Boy Advance"
+[content]
+subdir = "gba"
+extensions = [".gba", ".zip"]
+[bios]
+required = false
+[providers]
+default = "retroarch"
+supported = ["retroarch"]

@@ -44,6 +44,12 @@ class GuideChordSourceTests(unittest.TestCase):
         self.assertIn('" edge=" + edge', self.source)
         self.assertIn("value != 1.0 && value != 0.0", self.source)
 
+    def test_duplicate_opening_guide_edges_cannot_close_new_menu(self) -> None:
+        guard = "QDateTime::currentMSecsSinceEpoch() < guideIgnoreInputUntilMs_"
+        self.assertIn(guard, self.source)
+        self.assertIn("guideIgnoreInputUntilMs_ = QDateTime::currentMSecsSinceEpoch() + 350", self.source)
+        self.assertLess(self.source.index(guard), self.source.index('guideProcess_->write("ui_guide edge=down\\n")'))
+
     def test_guide_release_path_resets_on_target_loss(self) -> None:
         self.assertIn('guideProcess_->write("reset_edges\\n")', self.source)
 

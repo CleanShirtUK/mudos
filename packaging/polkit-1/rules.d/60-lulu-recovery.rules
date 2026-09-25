@@ -1,0 +1,15 @@
+// Recovery clients cannot choose unit names or systemd verbs. The control
+// plane runs as lulu and invokes only these exact service operations.
+polkit.addRule(function(action, subject) {
+    if (subject.user != "lulu" ||
+        action.id != "org.freedesktop.systemd1.manage-units")
+        return polkit.Result.NOT_HANDLED;
+
+    var unit = action.lookup("unit");
+    var verb = action.lookup("verb");
+    if ((unit == "mudos-recovery-ui.service" && verb == "start") ||
+        ((unit == "lulu-consoled.service" ||
+          unit == "lulu-acquisition.service" ||
+          unit == "lulu-admin.service") && verb == "restart"))
+        return polkit.Result.YES;
+});

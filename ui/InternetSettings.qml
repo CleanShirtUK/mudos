@@ -9,6 +9,7 @@ Item {
     property string selectedSsid: ""
     property string password: ""
     property string message: ""
+    property bool onboardingMode: false
     property real uiScale: 1
     property var typography
     property var luluPalette
@@ -32,7 +33,8 @@ Item {
                          + (network.connected ? " · Connected" : ""), action: "network", network: network})
         for (var saved of (networkData.known || []))
             result.push({label: "Forget " + saved, value: "Saved", action: "forget", ssid: saved})
-        result.push({label: "Back", value: "", action: "back"})
+        if (!onboardingMode)
+            result.push({label: "Back", value: "", action: "back"})
         return result
     }
 
@@ -81,7 +83,7 @@ Item {
 
     MudosSettingsPage {
         anchors.fill: parent
-        title: "INTERNET"
+        title: root.onboardingMode ? "CONNECT TO WI-FI" : "INTERNET"
         rows: root.rows()
         selectedIndex: root.selectedIndex
         rowsVisible: !root.credentialView
@@ -96,7 +98,9 @@ Item {
         expandedShellWidth: root.expandedShellWidth
         expandedShellHeight: root.expandedShellHeight
         expandedShellBottom: root.expandedShellBottom
-        footerText: root.message || root.networkData.error
+        footerText: root.message || (root.onboardingMode
+                                     ? "Choose a network and press A to connect. Back stays in required onboarding."
+                                     : root.networkData.error)
         onRowActivated: {
             root.selectedIndex = index
             root.activate()

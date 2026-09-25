@@ -24,6 +24,7 @@ from .process_supervisor import ProcessSupervisor
 from .process_supervisor import ProcessResult
 from .paths import PATHS
 from .service_readiness import wait_for_lulu_services
+from .recovery import clear_failures, record_failure, recovery_required
 
 
 BUS_NAME = "org.lulu.ConsoleSessiond"
@@ -263,6 +264,10 @@ class ConsoleSessionInterface(ServiceInterface):
             nested_height=invocation.nested_height,
         )
         shell = str(Path(__file__).resolve().parents[2] / "scripts" / "console-ui.sh")
+        qml = "Recovery.qml" if getattr(self, "recovery_mode", False) else "ConsoleShell.qml"
+        os.environ["LULU_UI_FILE"] = str(PATHS.install_root / "ui" / qml)
+        if getattr(self, "recovery_mode", False):
+            LOGGER.error("recovery surface selected after repeated graphical failures")
         await self.supervisor.launch_shell(invocation.argv([shell]), 15000, select_shell=False)
         self._shell_selection_task = asyncio.create_task(self._select_ready_shell())
 
@@ -632,13 +637,18 @@ async def serve(bus_type: BusType = BusType.SESSION, bootstrap_shell: bool = Fal
     bus = await MessageBus(bus_type=bus_type).connect()
     model = SessionStateModel()
     interface = ConsoleSessionInterface(model)
+    interface.recovery_mode = recovery_required()
     bus.export(OBJECT_PATH, interface)
     await bus.request_name(BUS_NAME)
     await interface.start_controller_monitor()
     _notify_systemd_ready()
     LOGGER.info("Sessiond D-Bus API ready; systemd dependents may now start")
     if bootstrap_shell:
-        await bootstrap_after_services_ready(interface, bus)
+        try:
+            await bootstrap_after_services_ready(interface, bus)
+        except Exception as error:
+            record_failure(f"graphical bootstrap failed: {type(error).__name__}: {error}")
+            raise
     stop_event = asyncio.Event()
     loop = asyncio.get_running_loop()
     def request_stop(stop_signal: os_signal.Signals) -> None:
@@ -648,7 +658,27 @@ async def serve(bus_type: BusType = BusType.SESSION, bootstrap_shell: bool = Fal
 
     for stop_signal in (os_signal.SIGINT, os_signal.SIGTERM):
         loop.add_signal_handler(stop_signal, request_stop, stop_signal)
-    await _wait_for_stop(stop_event)
+    stable_task = None
+    shell_task = getattr(interface.supervisor, "_shell_watch_task", None)
+    if bootstrap_shell and not interface.recovery_mode:
+        async def clear_after_stable_session() -> None:
+            await asyncio.sleep(120)
+            clear_failures()
+            LOGGER.info("graphical session stable; recovery failure history cleared")
+        stable_task = asyncio.create_task(clear_after_stable_session())
+    stop_task = asyncio.create_task(_wait_for_stop(stop_event))
+    if shell_task is not None:
+        done, _ = await asyncio.wait((stop_task, shell_task), return_when=asyncio.FIRST_COMPLETED)
+        if shell_task in done and not stop_event.is_set():
+            state = model.state
+            reason = str(model.last_failure_reason or "shell presentation process exited unexpectedly")
+            record_failure(reason)
+            raise RuntimeError(reason)
+    else:
+        await stop_task
+    if stable_task is not None:
+        stable_task.cancel()
+        await asyncio.gather(stable_task, return_exceptions=True)
     await interface.stop_controller_monitor()
     await interface.supervisor.stop()
     LOGGER.info("session_lifecycle event=stop pid=%s", os.getpid())

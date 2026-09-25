@@ -12,6 +12,14 @@ if [[ $(id -u) -ne 0 ]]; then
     exec sudo -n "$0" "$@"
 fi
 
+# NZBGet is optional. A normal dev-runtime refresh must not create account,
+# secret, directory, or provider-configuration state for a service that is not
+# installed on this machine.
+if ! command -v nzbget >/dev/null 2>&1 || ! systemctl cat nzbget.service >/dev/null 2>&1; then
+    echo "skipping optional NZBGet provisioning: service is not installed"
+    exit 0
+fi
+
 getent passwd nzbget >/dev/null || useradd --system --home-dir /var/lib/nzbget \
     --create-home --shell /usr/bin/nologin nzbget
 install -d -o nzbget -g nzbget -m 0750 /var/lib/nzbget

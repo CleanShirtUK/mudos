@@ -1,0 +1,10 @@
+id = "arcade"
+name = "Arcade"
+[content]
+subdir = "arcade"
+extensions = [".zip"]
+[bios]
+required = false
+[providers]
+default = "retroarch"
+supported = ["retroarch"]

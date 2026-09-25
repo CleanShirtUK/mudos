@@ -434,6 +434,19 @@ class BoundaryTests(unittest.TestCase):
             },
         )
 
+    def test_runtime_reconciliation_fills_unassigned_connected_player_slots(self) -> None:
+        registry = ControllerRegistry()
+        registry.observe_runtime_composites({
+            "CompositeDevice3": ("receiver@slot-a", ("/dev/input/event15",)),
+            "CompositeDevice4": ("receiver@slot-b", ("/dev/input/event19",)),
+            "CompositeDevice5": ("series", ("/dev/input/event13",)),
+        })
+        self.assertEqual(
+            {controller.player for controller in registry.controllers.values()
+             if controller.connected},
+            {1, 2, 3},
+        )
+
     def test_intercept_mode_is_bounded_to_inputplumber_api_values(self) -> None:
         client = default_inputplumber_client(Path("config/inputplumber"))
         self.assertEqual(client.set_intercept_mode(2, execute=False)[-1], "2")

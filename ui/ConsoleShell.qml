@@ -14,6 +14,11 @@ import QtQuick.Controls
     property var domains: ["System", "Store", "Library", "Recent"]
     property int selectedCategoryIndex: 3
     property int desiredCategoryIndex: 3
+    property bool onboardingOpen: false
+    property bool onboardingNetworkSettings: false
+    property bool onboardingCompletionPending: false
+    property bool onboardingSetupCompleted: false
+    property bool onboardingWifiAvailable: true
     readonly property bool perfDiagnostics: typeof mudosPerfDiagnostics !== "undefined"
         && mudosPerfDiagnostics
     property int perfFrameCount: 0
@@ -78,6 +83,56 @@ import QtQuick.Controls
         if (!event)
             return
         uiAudioEngine.play(event)
+    }
+
+    function loadOnboardingState() {
+        request("/onboarding", "GET", "", function(state) {
+            if (state.status === "completed") {
+                onboardingSetupCompleted = true
+                if (onboardingOpen) {
+                    onboardingCompletionPending = true
+                    onboardingOpen = false
+                    onboardingNetworkSettings = false
+                    if (startupLibraryReady) {
+                        startupLifecycle = "READY_FOR_INTRO"
+                        tryBeginStartup()
+                    }
+                }
+            }
+            if (state.required) {
+                onboardingOpen = true
+                if (systemStatus && systemStatus.networkOnline) {
+                    onboardingNetworkSettings = false
+                    space = "home"
+                }
+                request("/network", "GET", "", function(network) {
+                    onboardingWifiAvailable = !!network.wifi_available
+                    if (!systemStatus || !systemStatus.networkOnline) {
+                        if (onboardingWifiAvailable)
+                            onboardingOpenNetwork()
+                    }
+                })
+            }
+        })
+    }
+
+    function onboardingContinueHome() {
+        request("/onboarding/dismiss", "POST", "", function() {
+            onboardingOpen = false
+            onboardingNetworkSettings = false
+            onboardingSetupCompleted = true
+            space = "home"
+            inputSurface.forceActiveFocus()
+        }, "Could not save onboarding choice")
+    }
+
+    function onboardingOpenLocalSetup() {
+        openBrowser("http://127.0.0.1/setup?local=1")
+    }
+
+    function onboardingOpenNetwork() {
+        onboardingNetworkSettings = true
+        openSystemCategory(systemCategories.indexOf("Network"))
     }
 
     readonly property real activeHeadingHeight: design(37)
@@ -777,6 +832,9 @@ import QtQuick.Controls
     }
 
     function tryBeginStartup() {
+        if (onboardingCompletionPending && startupLibraryReady
+                && startupLifecycle === "HOME")
+            startupLifecycle = "READY_FOR_INTRO"
         traceLaunchEvent("STARTUP_TRY_INTRO", {
             libraryReady: startupLibraryReady,
             lifecycle: startupLifecycle,
@@ -786,12 +844,15 @@ import QtQuick.Controls
                 || !presentationCoordinator.ready)
             return
         startupLifecycle = "PLAYING_INTRO"
+        onboardingCompletionPending = false
         traceLaunchEvent("STARTUP_INTRO_BEGIN", {})
         presentationCoordinator.beginStartup()
     }
 
     function refreshCataloguePair(group) {
-        if (group === "recent-library") {
+        if (group === "store") {
+            refreshStore()
+        } else if (group === "recent-library") {
             refreshLibrary()
         } else if (group === "recent-platforms") {
             refreshPlatformsCatalogue()
@@ -1174,13 +1235,11 @@ import QtQuick.Controls
 
     Timer {
         id: credentialTimer
-        interval: 500
+        interval: 1000
         repeat: true
-        // Credential requests created by the UI are returned immediately by
-        // their begin call. Poll only while one is active; idle Home/Library
-        // no longer performs an IPC request twice per second.
-        running: root.credentialRequest.status === "requested"
-            || root.credentialRequest.status === "waiting"
+        // Acquisitiond may create a request without a preceding shell request.
+        // Poll while active so SteamCMD password/Guard prompts are discovered.
+        running: true
         onTriggered: root.request("/credential", "GET", "", function(data) {
             root.credentialRequest = data
         })
@@ -1327,7 +1386,7 @@ import QtQuick.Controls
             anchors.verticalCenterOffset: 100
             visible: root.credentialRequest.presentation !== "attached"
             text: root.credentialRequest.input_type === "waiting"
-                ? "A: Enter Code Instead   B: Cancel"
+                ? "A: I Approved   X: Enter Code   B: Cancel"
                 : (root.credentialRequest.status === "waiting"
                     ? "Waiting…  A: continue   B: cancel" : "A: submit   B: cancel")
             color: luluPalette.secondaryText
@@ -1791,14 +1850,14 @@ import QtQuick.Controls
         })
     }
 
-    function submitCredential(submitWithEnter) {
+    function submitCredential(submitWithEnter, waitingChoice) {
         if (credentialRequest.status !== "requested" && credentialRequest.status !== "waiting")
             return
         if (credentialSubmitInFlight)
             return
         credentialSubmitInFlight = true
         root.lastCredentialValue = credentialRequest.input_type === "waiting"
-            ? "enter-code" : credentialValue
+            ? (waitingChoice || "approved") : credentialValue
         var target = credentialTarget
         root.request("/credential/submit", "POST", JSON.stringify({id: credentialRequest.id, value: root.lastCredentialValue}),
             function(data) {
@@ -2254,6 +2313,10 @@ import QtQuick.Controls
         if (root.homeLaunchGated)
             return
         playAudioEvent(audioEventForAction("confirm"))
+        if (root.onboardingOpen && !root.onboardingNetworkSettings && !root.browserVisible) {
+            onboardingPage.activate()
+            return
+        }
         if (root.browserVisible) {
             root.browserSurface.activate()
             return
@@ -2472,6 +2535,15 @@ import QtQuick.Controls
                          }, "Credential cancellation failed")
             return
         }
+        if (onboardingOpen && (!systemStatus || !systemStatus.networkOnline)) {
+            if (onboardingNetworkSettings && internetSettingsRef
+                    && internetSettingsRef.credentialView) {
+                internetSettingsRef.credentialView = false
+                request("/keyboard/hide", "POST", "", function(data) {})
+            }
+            message = "Connect to Wi-Fi to continue onboarding."
+            return
+        }
         if (launchOverlayEffectiveVisible) {
             cancelLaunch()
             return
@@ -2684,6 +2756,27 @@ import QtQuick.Controls
         startupLifecycle = "RECONCILING_LIBRARY"
         traceLaunchEvent("STARTUP_RECONCILE_BEGIN", {})
         requestStartupReadiness()
+        loadOnboardingState()
+    }
+
+    Connections {
+        target: systemStatus
+        function onNetworkOnlineChanged() {
+            if (root.onboardingOpen && root.onboardingNetworkSettings
+                    && systemStatus.networkOnline) {
+                root.onboardingNetworkSettings = false
+                root.space = "home"
+                root.message = "Network connected. Setup is ready."
+                inputSurface.forceActiveFocus()
+            }
+        }
+    }
+
+    Timer {
+        interval: 3000
+        repeat: true
+        running: root.onboardingOpen
+        onTriggered: root.loadOnboardingState()
     }
 
     function controllerUp() {
@@ -2691,6 +2784,10 @@ import QtQuick.Controls
                         "space", root.space)
             if (root.homeLaunchGated) return
             root.playAudioEvent(root.audioEventForAction("up"))
+            if (root.onboardingOpen && !root.onboardingNetworkSettings && !root.browserVisible) {
+                onboardingPage.move(-1)
+                return
+            }
             if (root.browserVisible) { root.browserSurface.directional("up"); return }
             if (root.gameOptionsOpen) root.moveGameOptions(-1)
             else if (root.space === "home") root.moveDomain(-1)
@@ -2720,6 +2817,10 @@ import QtQuick.Controls
                         "space", root.space)
             if (root.homeLaunchGated) return
             root.playAudioEvent(root.audioEventForAction("down"))
+            if (root.onboardingOpen && !root.onboardingNetworkSettings && !root.browserVisible) {
+                onboardingPage.move(1)
+                return
+            }
             if (root.browserVisible) { root.browserSurface.directional("down"); return }
             if (root.gameOptionsOpen) root.moveGameOptions(1)
             else if (root.space === "home") root.moveDomain(1)
@@ -2749,6 +2850,8 @@ import QtQuick.Controls
                         "space", root.space)
             if (root.homeLaunchGated) return
             root.playAudioEvent(root.audioEventForAction("left"))
+            if (root.onboardingOpen && !root.onboardingNetworkSettings && !root.browserVisible)
+                return
             if (root.browserVisible) { root.browserSurface.directional("left"); return }
             if (root.gameOptionsOpen) root.moveGameOptions(-1)
             else if (root.space === "home") {
@@ -2781,6 +2884,8 @@ import QtQuick.Controls
                         "space", root.space)
             if (root.homeLaunchGated) return
             root.playAudioEvent(root.audioEventForAction("right"))
+            if (root.onboardingOpen && !root.onboardingNetworkSettings && !root.browserVisible)
+                return
             if (root.browserVisible) { root.browserSurface.directional("right"); return }
             if (root.gameOptionsOpen) root.moveGameOptions(1)
             else if (root.space === "home") {
@@ -2877,6 +2982,10 @@ import QtQuick.Controls
                     || root.credentialRequest.status === "waiting") {
                 if (event.key === Qt.Key_Escape) {
                     root.back()
+                    event.accepted = true
+                } else if (root.credentialRequest.input_type === "waiting"
+                           && event.key === Qt.Key_X) {
+                    root.submitCredential(false, "enter-code")
                     event.accepted = true
                 } else if ((event.key === Qt.Key_Return || event.key === Qt.Key_Enter)
                            && !root.credentialRequest.multiline) {
@@ -3502,6 +3611,7 @@ import QtQuick.Controls
 
         InternetSettings {
             id: internetSettings
+            onboardingMode: root.onboardingOpen && root.onboardingNetworkSettings
             anchors.fill: parent
             visible: root.space === "system" && !root.systemLanding
                 && root.systemCategories[root.systemCategoryIndex] === "Network"
@@ -3860,6 +3970,20 @@ import QtQuick.Controls
                 elide: Text.ElideRight
             }
         }
+    }
+
+    Onboarding {
+        id: onboardingPage
+        z: 500
+        visible: root.onboardingOpen && !root.onboardingNetworkSettings && !root.browserVisible
+        online: typeof systemStatus !== "undefined" && systemStatus.networkOnline
+        networkAdapterAvailable: root.onboardingWifiAvailable
+        uiScale: root.uiScale
+        typography: typography
+        luluPalette: luluPalette
+        onOpenNetworkSettings: root.onboardingOpenNetwork()
+        onContinueToHome: root.onboardingContinueHome()
+        onSetUpLocally: root.onboardingOpenLocalSetup()
     }
 
     Timer {

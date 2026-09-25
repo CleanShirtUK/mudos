@@ -96,13 +96,18 @@ class NetworkManagerAdapter:
         return result
 
     async def snapshot(self) -> dict[str, Any]:
-        base = {"available": False, "wifi_enabled": False, "state": "unavailable",
+        base = {"available": False, "wifi_available": False, "online": False,
+                "wifi_enabled": False, "state": "unavailable",
                 "current": None, "networks": [], "error": "NetworkManager unavailable"}
         try:
             if self.nm is None:
                 await self.connect()
             enabled = bool(await self._property(NM_PATH, NM, "WirelessEnabled"))
             state_code = int(await self._property(NM_PATH, NM, "State"))
+            try:
+                connectivity = int(await self._property(NM_PATH, NM, "Connectivity"))
+            except Exception:
+                connectivity = 4 if state_code == 70 else 1
             wifi = await self._wifi_device()
             profiles = await self._profiles()
             known = {item["ssid"] for item in profiles if item["ssid"]}
@@ -128,12 +133,13 @@ class NetworkManagerAdapter:
                                      "known": ssid in known})
             networks.sort(key=lambda item: (-item["strength"], item["ssid"]))
             state = "connected" if current else "disconnected" if enabled else "disabled"
-            return {"available": True, "wifi_enabled": enabled, "state": state,
+            return {"available": True, "wifi_available": bool(wifi),
+                    "online": connectivity == 4, "wifi_enabled": enabled, "state": state,
                     "current": current, "networks": networks, "known": sorted(known),
                     "error": ""}
         except Exception as error:
             LOGGER.warning("NetworkManager snapshot failed: %s", error)
-            return base | {"error": str(error)}
+            return base | {"wifi_available": False, "online": False, "error": str(error)}
 
     async def set_enabled(self, enabled: bool) -> dict[str, Any]:
         try:

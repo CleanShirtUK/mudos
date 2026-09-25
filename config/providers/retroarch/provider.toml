@@ -4,7 +4,7 @@ name = "RetroArch"
 launch = true
 settings = true
 [platforms]
-supported = ["nes", "genesis"]
+supported = ["nes", "genesis", "gba", "gb", "gbc", "snes", "nds", "n64", "psx", "psp", "arcade", "dreamcast"]
 [config]
 strategy = "direct"
 directory = "config"

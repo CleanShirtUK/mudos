@@ -1,0 +1,14 @@
+[Unit]
+Description=Install supported Mudos provider %i
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/opt/lulu/current/bin/mudos-provider-install %i
+TimeoutStartSec=20min
+StandardOutput=journal
+StandardError=journal
+NoNewPrivileges=true
+ProtectHome=read-only
+ReadWritePaths=/home/lulu/.config /home/lulu/.local/share/lulu /var/cache/pacman/pkg /var/lib/lulu /usr/local/bin

@@ -14,7 +14,8 @@ function portraitIcon(game) {
     if (!game || game.artwork_suppressed)
         return ""
     return localDisplaySource(game.icon_square_url || game.icon_url
-                              || (game.artwork_type === "icon" ? game.artwork_url : ""))
+                              || (game.artwork_type === "icon" ? game.artwork_url : "")
+                              || game.preview_still_url)
 }
 
 function previewStill(game) {
