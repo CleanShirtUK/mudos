@@ -23,6 +23,14 @@ class RecoveryServiceTests(unittest.TestCase):
                 recovery.perform_action("reboot", False)
         request.assert_not_called()
 
+    def test_action_api_authenticates_local_mutation_clients(self):
+        with patch.dict("os.environ", {"LULU_RECOVERY_TOKEN": "a" * 64}):
+            self.assertFalse(recovery._authorized_action_request(None))
+            self.assertFalse(recovery._authorized_action_request("Bearer " + "b" * 64))
+            self.assertTrue(recovery._authorized_action_request("Bearer " + "a" * 64))
+        with patch.dict("os.environ", {"LULU_RECOVERY_TOKEN": ""}):
+            self.assertFalse(recovery._authorized_action_request("Bearer " + "a" * 64))
+
     def test_each_action_advertises_impact_and_data_risk(self):
         actions = recovery.available_actions({
             "mudos_session": {"state": "failed"},

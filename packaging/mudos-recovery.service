@@ -13,6 +13,7 @@ Environment=XDG_CONFIG_HOME=/home/lulu/.config
 Environment=XDG_DATA_HOME=/home/lulu/.local/share
 Environment=XDG_RUNTIME_DIR=/run/user/958
 Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/958/bus
+EnvironmentFile=/etc/lulu/mudos-recovery-token
 ExecStart=/usr/bin/python -m lulu.recovery_service
 Restart=on-failure
 RestartSec=2s

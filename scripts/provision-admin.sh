@@ -3,6 +3,20 @@ set -euo pipefail
 if [[ $(id -u) -ne 0 ]]; then exec sudo -n "$0" "$@"; fi
 root=${LULU_INSTALL_ROOT:-$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)}
 service_root=${LULU_SERVICE_ROOT:-$root}
+recovery_token_file=/etc/lulu/mudos-recovery-token
+if [[ ! -s "$recovery_token_file" ]]; then
+    token_temp=$(mktemp /etc/lulu/.mudos-recovery-token.XXXXXX)
+    recovery_token=$(od -An -N32 -tx1 /dev/urandom | tr -d ' \n')
+    printf 'LULU_RECOVERY_TOKEN=%s\n' "$recovery_token" > "$token_temp"
+    unset recovery_token
+    chown root:lulu "$token_temp"
+    chmod 0640 "$token_temp"
+    if [[ ! -e "$recovery_token_file" ]]; then
+        mv "$token_temp" "$recovery_token_file"
+    else
+        rm -f "$token_temp"
+    fi
+fi
 sed "s#/opt/lulu/current#$service_root#g" "$root/packaging/lulu-admin.service" > /etc/systemd/system/lulu-admin.service
 install -D -m 0755 "$root/packaging/mudos-provider-install" "$service_root/bin/mudos-provider-install"
 sed "s#/opt/lulu/current#$service_root#g" "$root/packaging/lulu-provider-install@.service" \

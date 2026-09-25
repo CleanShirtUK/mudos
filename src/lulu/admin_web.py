@@ -1431,7 +1431,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     "http://127.0.0.1:38124/v1/action",
                     data=json.dumps({"action_id": action_id,
                                      "confirmed": payload.get("confirmed") is True}).encode(),
-                    headers={"Content-Type": "application/json"}, method="POST")
+                    headers={"Content-Type": "application/json",
+                             "Authorization": "Bearer " + os.environ.get("LULU_RECOVERY_TOKEN", "")},
+                    method="POST")
                 with urllib.request.urlopen(request, timeout=5) as response:
                     self._json(json.loads(response.read(65536)), response.status)
             except ValueError as error:

@@ -32,6 +32,7 @@ Environment=XDG_CACHE_HOME=/home/lulu/.cache
 Environment=XDG_RUNTIME_DIR=/run/user/958
 Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/958/bus
 Environment=LULU_RECOVERY_STANDALONE=1
+EnvironmentFile=/etc/lulu/mudos-recovery-token
 EnvironmentFile=-/etc/lulu/presentation.conf
 ExecStartPre=+/opt/lulu/current/bin/lulu-vt activate 2
 ExecStart=/opt/lulu/current/scripts/mudos-recovery-ui.py

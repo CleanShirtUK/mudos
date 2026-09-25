@@ -11,6 +11,7 @@ Environment=LULU_INSTALL_ROOT=/opt/lulu/current
 Environment=HOME=/home/lulu
 Environment=XDG_CONFIG_HOME=/home/lulu/.config
 Environment=XDG_DATA_HOME=/home/lulu/.local/share
+EnvironmentFile=/etc/lulu/mudos-recovery-token
 ExecStart=/usr/bin/python -m lulu.admin_web
 Restart=on-failure
 RestartSec=3

@@ -77,6 +77,7 @@ Window {
         var xhr = new XMLHttpRequest()
         xhr.open("POST", apiBase + "/action")
         xhr.setRequestHeader("Content-Type", "application/json")
+        xhr.setRequestHeader("Authorization", "Bearer " + controllerBridge.recoveryToken)
         xhr.onreadystatechange = function() {
             if (xhr.readyState !== XMLHttpRequest.DONE) return
             confirmOpen = false

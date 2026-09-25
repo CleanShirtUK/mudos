@@ -9,13 +9,12 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import hmac
 import json
 import logging
 import os
 from pathlib import Path
 import shutil
-import socket
-import struct
 import subprocess
 import time
 from typing import Any
@@ -91,6 +90,14 @@ POWER_ACTIONS = {
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+
+
+def _authorized_action_request(header: str | None) -> bool:
+    expected = os.environ.get("LULU_RECOVERY_TOKEN", "")
+    if not expected or not header or not header.startswith("Bearer "):
+        return False
+    supplied = header.removeprefix("Bearer ")
+    return bool(supplied) and hmac.compare_digest(supplied, expected)
 
 
 def _run(command: list[str], *, timeout: float = 2.0) -> subprocess.CompletedProcess[str] | None:
@@ -483,16 +490,6 @@ class RecoveryHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
-    def _trusted_local_peer(self) -> bool:
-        """Permit the appliance account/root only, even on loopback TCP."""
-        try:
-            credentials = self.connection.getsockopt(
-                socket.SOL_SOCKET, socket.SO_PEERCRED, struct.calcsize("3i"))
-            _pid, uid, _gid = struct.unpack("3i", credentials)
-            return uid in {0, 958}
-        except (AttributeError, OSError, struct.error):
-            return False
-
     def do_GET(self) -> None:
         if self.path == "/v1/status":
             self._json(collect_health())
@@ -502,8 +499,8 @@ class RecoveryHandler(BaseHTTPRequestHandler):
             self._json({"error": "Not found"}, 404)
 
     def do_POST(self) -> None:
-        if not self._trusted_local_peer():
-            self._json({"error": "Recovery actions are restricted to the appliance account."}, 403)
+        if not _authorized_action_request(self.headers.get("Authorization")):
+            self._json({"error": "Recovery action authorization failed."}, 403)
             return
         if self.path != "/v1/action":
             self._json({"error": "Not found"}, 404)

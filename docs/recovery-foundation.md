@@ -16,16 +16,19 @@ available to another LAN host. Its POST body accepts only `action_id` and
 cannot select commands, paths, units, arguments, or D-Bus destinations. Every
 mutation requires `confirmed: true`. The service runs as `lulu`, and polkit
 grants only the exact systemd verbs/units needed by the recovery control/UI
-path. Linux peer credentials further restrict mutations to UID 958 (`lulu`) or
-root, even when requests originate on loopback. It is not a general command
-proxy.
+path. The action API also requires a random installation-local bearer token
+stored in `/etc/lulu/mudos-recovery-token`, owned by root and readable only by
+the `lulu` group. Admin and the standalone UI receive the token through their
+service environment; unauthenticated loopback clients cannot issue mutations.
+It is not a general command proxy.
 
 Admin remains available as the network/remote read-and-act client. Recovery
 mutation routes now require an established Admin password, authenticated
 session cookie, and matching `X-CSRF-Token`. An unconfigured Admin page is
 read-only. This keeps the useful remote portal while removing the previous
-unauthenticated LAN mutation path. Local processes running as UID 958 remain
-within the appliance trust boundary; compromise of that account is outside
+unauthenticated LAN mutation path. The control plane listener remains
+loopback-only. The installation-local token is available only to the
+appliance-account services and root; compromise of that account is outside
 this HTTP boundary.
 
 The standalone UI uses the existing native `lulu-shell` SDL controller bridge,

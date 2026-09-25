@@ -687,6 +687,7 @@ public:
         const bool initialized = SDL_Init(SDL_INIT_GAMEPAD);
         qInfo() << "controller SDL init" << initialized;
         insert("controllerConnected", false);
+        insert("recoveryToken", qEnvironmentVariable("LULU_RECOVERY_TOKEN"));
         insert("controllerIndex", -1);
         insert("controllerIdentity", QString());
         insert("action", QString());
