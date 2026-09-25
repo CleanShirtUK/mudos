@@ -172,15 +172,6 @@ class ConsoleCatalog:
         if "components" in selected and not selected_providers:
             LOGGER.info("catalogue stage skipped name=components reason=no-selected-providers")
             selected.discard("components")
-        catalogue_records = self.store.list_catalogue_games()
-        library_ids = {game.game_id for game in self.store.list_games()}
-        available_ids = {game.game_id for game in self.store.list_available_games()}
-        eligible_ids = {game.game_id for game in catalogue_records if canonical_metadata_required(
-            game, in_library=game.game_id in library_ids,
-            available_to_download=game.game_id in available_ids)}
-        LOGGER.info("canonical migration set total=%d library=%d available=%d overlap=%d eligible=%d",
-                    len(catalogue_records), len(library_ids), len(available_ids),
-                    len(library_ids & available_ids), len(eligible_ids))
         self.last_delta_batches = []
         LOGGER.info("catalogue refresh worker started stages=%s", ",".join(sorted(selected)) or "none")
         LOGGER.info("catalogue refresh worker thread=%s in_transaction=%s",
@@ -631,6 +622,17 @@ class ConsoleCatalog:
                         message="RomM catalogue reconciliation failed.",
                     )
                 LOGGER.exception("RomM catalogue reconciliation failed")
+        # Provider reconciliation above can add or remove presentation records.
+        # Resolve eligibility now so first-sync games receive media in this pass.
+        catalogue_records = self.store.list_catalogue_games()
+        library_ids = {game.game_id for game in self.store.list_games()}
+        available_ids = {game.game_id for game in self.store.list_available_games()}
+        eligible_ids = {game.game_id for game in catalogue_records if canonical_metadata_required(
+            game, in_library=game.game_id in library_ids,
+            available_to_download=game.game_id in available_ids)}
+        LOGGER.info("canonical migration set total=%d library=%d available=%d overlap=%d eligible=%d",
+                    len(catalogue_records), len(library_ids), len(available_ids),
+                    len(library_ids & available_ids), len(eligible_ids))
         if "metadata" in selected:
             LOGGER.info("catalogue stage started name=metadata")
             metadata_count = 0
@@ -657,7 +659,7 @@ class ConsoleCatalog:
         if "metadata-enrichment" in selected:
             LOGGER.info("catalogue stage started name=metadata-enrichment")
             deltas = self.enrichment.enrich_all(
-                [game for game in catalogue_records if game.game_id in eligible_ids])
+                [game for game in self.store.list_catalogue_games() if game.game_id in eligible_ids])
             if deltas:
                 self.last_delta_batches.append(deltas)
             LOGGER.info("catalogue stage completed name=metadata-enrichment items=%d",

@@ -4,7 +4,7 @@ from pathlib import Path
 import tempfile
 import unittest
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from lulu.catalogue import CatalogueGame, CatalogueStore
 from lulu.consoled import ConsoleCatalog, ConsoleInterface
@@ -14,6 +14,8 @@ from lulu.metadata_enrichment import MetadataEnrichmentService
 from lulu.protondb import ProtonDBClient
 from lulu.metadata_enrichment import _exact_candidates
 from lulu.steam_media import SteamStoreMedia
+from lulu.metadata import MetadataMatch
+from lulu.plugins.external import OwnedProviderGame
 
 
 class Config:
@@ -34,6 +36,42 @@ class Config:
 
 
 class MetadataProviderTests(unittest.TestCase):
+    def test_first_provider_sync_enriches_fresh_canonical_identity(self):
+        for provider in ("epic", "gog"):
+            with self.subTest(provider=provider), tempfile.TemporaryDirectory() as directory:
+                store = CatalogueStore(Path(directory) / "catalogue.sqlite3")
+                auth = Path(directory) / "auth.json"
+                auth.write_text("{}")
+                source = SimpleNamespace(provider_id=provider, config_path=auth,
+                    snapshot=(OwnedProviderGame("123", "Fixture"),),
+                    installed=lambda: (), refresh=lambda: None, last_error="")
+                enrichment = Mock()
+                enrichment.canonical_match.return_value = MetadataMatch(
+                    "matched", "igdb", "55", "Canonical Fixture", "title-platform", 0.95)
+                enrichment.enrich_all.return_value = ()
+                catalog = SimpleNamespace(store=store, external_entitlements=(source,),
+                    steam_entitlements=None,
+                    provider_readiness=Mock(), _romm_injected=True, romm=None,
+                    enrichment=enrichment)
+                with patch("lulu.onboarding.onboarding_state", return_value={
+                        "selected_providers": [provider]}):
+                    ConsoleCatalog.refresh(catalog, {provider, "metadata", "metadata-enrichment"})
+                matched = enrichment.canonical_match.call_args.args[0]
+                self.assertEqual(matched.game_id, provider + ":123")
+                enriched = enrichment.enrich_all.call_args.args[0]
+                self.assertEqual(len(enriched), 1)
+                self.assertEqual(enriched[0].metadata_game_id, "55")
+                self.assertEqual(enriched[0].provider, provider)
+                self.assertEqual(enriched[0].install_state, "available")
+                store.connection.close()
+
+    def test_empty_enrichment_scope_does_not_expand_to_catalogue(self):
+        store = Mock()
+        service = MetadataEnrichmentService(store, SimpleNamespace(configured=False),
+                                            SimpleNamespace(enabled=False))
+        self.assertEqual(service.enrich_all([]), ())
+        store.list_catalogue_games.assert_not_called()
+
     def test_preexisting_records_receive_one_versioned_media_backfill_attempt(self):
         with tempfile.TemporaryDirectory() as directory:
             store = CatalogueStore(Path(directory) / "catalogue.sqlite3")

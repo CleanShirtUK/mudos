@@ -271,7 +271,7 @@ class MetadataEnrichmentService:
         if callable(reload_config):
             reload_config()
         deltas: list[CatalogueDelta] = []
-        for game in games or self.store.list_catalogue_games():
+        for game in self.store.list_catalogue_games() if games is None else games:
             deltas.extend(self.enrich_game(game, force=force))
         return tuple(deltas)
 

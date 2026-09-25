@@ -42,6 +42,18 @@ New defect TEST-001: provisioning test wrongly required source QML to equal hist
 - QML: **95 passed, 9 baseline failures**; no new failures.
 - VP-011 remains OPEN (glass/border treatment); VP-018 remains OPEN (backend metadata/media trace).
 - Next: commit this bounded checkpoint, refresh canonical dev runtime and verify provenance/services; then metadata/media and remaining shared surfaces.
+
+## Current batch — catalogue/media freshness (VP-018 / PROV-002)
+
+Previous checkpoint: `181de6a`; canonical dev refresh launched in background (result pending).
+Deployment completed successfully: native build passed through canonical refresh; `/opt/lulu/dev-current/NON_PROMOTABLE` records `181de6a96902226d7be227f4f283eb8ad0a5e750`, dirty=false. Session, Consoled, Acquisition, Admin, Recovery and InputPlumber all active. `/opt/lulu/current` still selects `1b18377-candidate-20260919133154`. CTest 1/1 passed. No physical input/visual acceptance claimed.
+Confirmed root cause: refresh captures catalogue records/eligible presentation IDs **before** provider reconciliation; newly discovered Epic/GOG/RomM records are excluded from matching/artwork in the same pass. Enrichment also receives pre-match records, ignoring freshly established canonical identity. Additional METADATA-001: `enrich_all([])` incorrectly expands an explicitly empty eligible set to the entire catalogue. Implement post-discovery eligibility and fresh matched records, with regression tests using temporary databases and no live credentials. Broader live missing-art diagnosis remains pending; do not claim all upstream omissions solved by these fixes.
+
+Implemented and validated: post-discovery eligibility, post-match enrichment inputs, explicit empty scope honored. Temporary SQLite regression runs actual refresh/reconciliation for both Epic and GOG and checks fresh IGDB identity while preserving installable provider ownership. Targeted metadata suite 23 passed +2 subtests; full Python **743 passed +25 subtests**. METADATA-001 DONE; VP-018/PROV-002 PARTIALLY IMPLEMENTED, live residual diagnosis remains.
+
+Read-only runtime aggregate evidence (no titles or secrets exported): Epic 6 available /4 canonical /4 local previews; GOG 2/2/2; Steam 94/91/91; RomM 79/74/31. Missing Epic records are one ambiguous and one no-exact title/platform match, so do not substitute fake metadata. Missing RomM previews: 43 matched records without source screenshot or IGDB enrichment cache, plus 5 unmatched/ambiguous. Continue by tracing backfill/cache state for these records before claiming VP-018 closed. Recovery `/v1/status` reports overall healthy, 13 healthy components, one connected controller. `job_snapshot_available=false` despite acquisition API available is an observation to investigate in Recovery status audit (not yet proven new defect).
+
+Next checkpoint: commit bounded metadata freshness fix, then continue missing-media diagnosis or another independent actionable batch. Runtime remains at clean `181de6a` until next canonical refresh.
 Tests/runtime: baseline provenance inspection only; no deployment this run yet.
 Commits: initial persistent execution checkpoint (see Git history).
 Physical acceptance: list navigation/media/focus require controller/display review after implementation.
