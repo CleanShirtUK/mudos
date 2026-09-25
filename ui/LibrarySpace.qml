@@ -75,7 +75,7 @@ Item {
         Math.max(0, contentBounds.width - 2 * frameMargin),
         Math.max(0, contentBounds.height - 2 * frameMargin))
     readonly property real panelGap: 22 * uiScale
-    readonly property real panelTop: 116 * uiScale
+    readonly property real panelTop: 92 * uiScale
     readonly property real panelBottomMargin: 2 * uiScale
     readonly property real detailInset: 18 * uiScale
     readonly property real detailGutter: 16 * uiScale
@@ -92,6 +92,7 @@ Item {
     signal launchRequested(var game, var acquisitionJob)
     signal specialActivated(var game)
     signal browseCategoryRequested(int index)
+    signal browseGameRequested(int index)
 
     function acquisitionJobFor(game) {
         if (!game) return null
@@ -281,7 +282,8 @@ Item {
             x: 0; y: 0
             width: Math.max(0, categoryTape.x + categoryTape.width - x)
             height: 42 * root.uiScale
-            text: "LIBRARY: " + String(root.categoryMode).replace(/_/g, " ").toUpperCase()
+            text: root.browsingExternalCategories ? root.headingText
+                : root.headingText + ": " + String(root.categoryMode).replace(/_/g, " ").toUpperCase()
             color: root.luluPalette.headingAccent
             font.family: root.libraryFontFamily
             font.pixelSize: root.typography ? root.typography.size("section", 27) : 27 * root.uiScale
@@ -293,7 +295,7 @@ Item {
         ListView {
             id: categoryTape
             x: 0; y: 50 * root.uiScale
-            width: parent.width; height: 38 * root.uiScale
+            width: parent.width; height: 28 * root.uiScale
             orientation: ListView.Horizontal
             spacing: 26 * root.uiScale
             clip: true; interactive: false
@@ -348,8 +350,12 @@ Item {
                            root.internalSurfaceOpacity)
             ListView {
                 id: gameRows
-                anchors.fill: parent
-                anchors.margins: 10 * root.uiScale
+                objectName: "libraryGameRows"
+                x: 10 * root.uiScale
+                y: 10 * root.uiScale
+                width: Math.max(0, parent.width - 20 * root.uiScale)
+                height: Math.min(8, Math.max(0, Math.floor(
+                    (parent.height - 20 * root.uiScale) / root.rowHeight))) * root.rowHeight
                 clip: true
                 interactive: false
                 model: root.filteredGames
@@ -416,7 +422,11 @@ Item {
                     }
                     MouseArea {
                         anchors.fill: parent
-                        onClicked: root.selectedIndex = gameRow.index
+                        onClicked: {
+                            if (root.browsingExternalCategories)
+                                root.browseGameRequested(gameRow.index)
+                            else root.selectedIndex = gameRow.index
+                        }
                     }
                 }
                 onCurrentIndexChanged: if (currentIndex >= 0)
@@ -544,11 +554,12 @@ Item {
                     clip: true
                     Rectangle {
                         anchors.fill: parent
-                        color: Qt.rgba(root.luluPalette.primaryText.r,
-                                       root.luluPalette.primaryText.g,
-                                       root.luluPalette.primaryText.b, 0.045)
+                        color: "black"
                         MudosIcon {
                             anchors.centerIn: parent
+                            visible: !root.previewAnimationReady
+                                && root.previewAnimationSource === ""
+                                && (!landscapeImage.source || landscapeImage.status === Image.Error)
                             glyph: MudosAssetCatalog.icon("fallback")
                             iconSize: 52 * root.uiScale
                             typography: root.typography
@@ -560,7 +571,7 @@ Item {
                         anchors.fill: parent
                         source: GameArtwork.previewStill(root.selectedGame)
                         sourceSize: Qt.size(1600, 720)
-                        fillMode: Image.PreserveAspectCrop
+                        fillMode: Image.PreserveAspectFit
                         asynchronous: true
                         cache: false
                         opacity: root.previewAnimationReady ? 0 : 1
@@ -587,7 +598,7 @@ Item {
                 Column {
                     id: detailMetadataColumn
                     anchors.left: parent.left
-                    anchors.bottom: parent.bottom
+                    anchors.top: parent.top
                     width: parent.width
                     height: implicitHeight
                     spacing: root.metadataRowSpacing
@@ -607,6 +618,7 @@ Item {
                             textSize: root.typography ? root.typography.size("hint", 12) : 12 * root.uiScale
                             glyphColumnWidth: 20 * root.uiScale
                             wrapText: true
+                            trailingGlyph: true
                             maximumLineCount: 0
                         }
                     }
@@ -622,7 +634,7 @@ Item {
         AnimatedImage {
             anchors.fill: parent
             source: root.previewAnimationSource
-            fillMode: Image.PreserveAspectCrop
+            fillMode: Image.PreserveAspectFit
             asynchronous: true
             cache: false
             playing: true

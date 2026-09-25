@@ -12,6 +12,7 @@ Item {
     property real textSize: 17 * uiScale
     property real glyphColumnWidth: 18 * uiScale
     property bool wrapText: false
+    property bool trailingGlyph: false
     property int maximumLineCount: 1
     property bool fitText: false
     property real minimumTextSize: 9 * uiScale
@@ -19,7 +20,8 @@ Item {
     implicitHeight: Math.max(22 * uiScale, metadataText.implicitHeight)
 
     StatusGlyph {
-        anchors.left: parent.left
+        anchors.left: root.trailingGlyph ? undefined : parent.left
+        anchors.right: root.trailingGlyph ? parent.right : undefined
         anchors.top: root.wrapText ? parent.top : undefined
         anchors.verticalCenter: root.wrapText ? undefined : parent.verticalCenter
         glyph: root.glyph
@@ -31,8 +33,10 @@ Item {
     Text {
         id: metadataText
         anchors.left: parent.left
-        anchors.leftMargin: root.leftTextMargin
+        anchors.leftMargin: root.trailingGlyph ? 0 : root.leftTextMargin
         anchors.right: parent.right
+        anchors.rightMargin: root.trailingGlyph ? root.leftTextMargin : 0
+        horizontalAlignment: root.trailingGlyph ? Text.AlignRight : Text.AlignLeft
         anchors.top: root.wrapText ? parent.top : undefined
         anchors.verticalCenter: root.wrapText ? undefined : parent.verticalCenter
         text: root.text

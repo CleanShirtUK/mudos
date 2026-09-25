@@ -1,12 +1,13 @@
 import QtQuick
 import "MudosAssetCatalog.js" as MudosAssetCatalog
+import "InstallableProjection.js" as InstallableProjection
 Item {
     id: root
     property real cardHeight: 0
     property real cardWidth: 0
     property var availableGames: []
     property var acquisitionJobs: ({})
-    property var categories: [{"label": "Installable", "scope": "all"}]
+    property var categories: InstallableProjection.categories([])
     property string errorMessage: ""
     property real contentOpacity: 1
     property int categoryIndex: 0
@@ -56,16 +57,13 @@ Item {
     signal downloadsRequested()
 
     function filteredGames() {
-        var scope = categories.length > displayCategoryIndex
-            ? categories[displayCategoryIndex].scope : "all"
+        var category = categories.length > displayCategoryIndex
+            ? categories[displayCategoryIndex] : null
         var result = []
         var seen = ({})
         for (var index = 0; index < availableGames.length; index++) {
             var game = availableGames[index]
-            if (!game || game.availability_state !== "available"
-                    || game.install_state !== "available")
-                continue
-            if (scope !== "all" && game.platform !== scope)
+            if (!InstallableProjection.matches(game, category))
                 continue
             var gameId = String(game.game_id)
             if (seen[gameId])
@@ -136,17 +134,7 @@ Item {
     }
 
     function moveVertical(delta) {
-        if (!displayGames.length)
-            return
-        var column = selectedIndex % 6
-        var row = Math.floor(selectedIndex / 6) + delta
-        if (row < 0 || row * 6 >= displayGames.length)
-            return
-        selectedIndex = Math.min(row * 6 + column, displayGames.length - 1)
-        if (row >= firstVisibleRow + 2)
-            firstVisibleRow = row - 1
-        else if (row < firstVisibleRow)
-            firstVisibleRow = row
+        moveGame(delta)
     }
 
     function activateSelected() {
@@ -311,6 +299,7 @@ Item {
         canonicalCoordinateRoot: root.canonicalCoordinateRoot
         canonicalSize: root.canonicalSize
         onBrowseCategoryRequested: root.categoryIndex = index
+        onBrowseGameRequested: root.selectedIndex = index
         onLaunchRequested: root.activateGame(game, acquisitionJob)
     }
 

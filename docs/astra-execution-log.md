@@ -28,8 +28,20 @@ Status: IN PROGRESS (reconnaissance).
 
 Intended IDs: VP-009/010/011/012/013/015/016/017/018/019. Inspect shared model/QML architecture first; fix confirmed defects together and test relevant contracts. Trace metadata separately if its ownership requires a backend batch.
 
-Diagnosis: pending source inspection.
-Implementation: none yet.
+Diagnosis: StoreHome retained six-column grid movement despite using LibrarySpace; shell Left/Right moved games and shoulders categories. Shared list viewport was arbitrary height, previews cropped, fallback glyph always behind loading images, metadata bottom/left aligned.
+Implementation (unvalidated intermediate): one-row vertical movement, Left/Right categories and no shoulder categories; selection feedback to StoreHome; shared integral maximum-eight-row viewport; tighter category spacing; fit/black preview backing and loading fallback gating; trailing right-aligned metadata beneath artwork. VP-011/018/019 still require investigation.
+Additional implementation: VP-019 uses an explicit provider category dimension (All/Steam/Epic/GOG plus platform categories), with a shared JS projection helper and executable provider-vs-PC filtering test. Initial targeted checks: new projection QML test 3 passed; Store acquisition stability Python tests 5 passed. Shared real-component selection/scroll test added, execution pending.
+Validation update: real LibrarySpace test passed (3 including lifecycle), traversing 30 entries and checking viewport containment/integral maximum-eight-row geometry. Full QML: 95 passed, exactly the 9 documented baseline failures. First full Python invocation omitted PYTHONPATH (collection errors); correct command is `PYTHONPATH=src python -m pytest -q --tb=short`. Then identified obsolete source-string layout expectations and compatibility payload equality; updated them to the new specified layout and canonical-source authority. Latest run 740 passed/1 outdated assertion, now corrected; final rerun pending. Keyboard Left/Right and shoulder hints also aligned with controller behavior. Mouse selection uses an explicit external selection signal to preserve the parent-owned binding.
+New defect TEST-001: provisioning test wrongly required source QML to equal historical `deploy/payload`; corrected to lint canonical and compatibility trees independently while retaining payload manifest verification. No payload mutation.
+
+### First implementation checkpoint
+
+- VP-009/010/012/013/015/016/017/019: IMPLEMENTED; executable list/projection checks passed; PHYSICAL ACCEPTANCE PENDING for controller/display presentation.
+- TEST-001: DONE.
+- Full Python final result: **741 passed, 23 subtests passed** (includes provisioning and OSK checks).
+- QML: **95 passed, 9 baseline failures**; no new failures.
+- VP-011 remains OPEN (glass/border treatment); VP-018 remains OPEN (backend metadata/media trace).
+- Next: commit this bounded checkpoint, refresh canonical dev runtime and verify provenance/services; then metadata/media and remaining shared surfaces.
 Tests/runtime: baseline provenance inspection only; no deployment this run yet.
 Commits: initial persistent execution checkpoint (see Git history).
 Physical acceptance: list navigation/media/focus require controller/display review after implementation.

@@ -1,4 +1,5 @@
 import QtQuick
+import "InstallableProjection.js" as InstallableProjection
 import QtQuick.Window
 import QtQuick.Controls
 
@@ -299,7 +300,7 @@ import QtQuick.Controls
     property bool storeOptionsOpen: false
     property var acquisitionJobs: ({})
     property var acquisitionCompletionSeen: ({})
-    property var storeCategories: [{"label": "Installable", "scope": "all"}]
+    property var storeCategories: InstallableProjection.categories([])
     property var storeHomeRef: null
     property var storeHomeLandingRef: null
     property string storeError: ""
@@ -509,15 +510,13 @@ import QtQuick.Controls
                 return
             if (request.status !== 200) {
                 storeAvailableGames = []
-                storeCategories = [{"label": "Installable", "scope": "all"}]
+                storeCategories = InstallableProjection.categories([])
                 storeError = "Installable titles unavailable"
                 return
             }
             try {
                 var rows = JSON.parse(request.responseText)
                 var games = []
-                var categories = [{"label": "Installable", "scope": "all"}]
-                var categorySeen = ({})
                 var seen = ({})
                 for (var index = 0; index < rows.length; index++) {
                     var game = rows[index]
@@ -529,19 +528,13 @@ import QtQuick.Controls
                         continue
                     seen[gameId] = true
                     games.push(game)
-                    var scope = String(game.platform || "")
-                    var label = String(game.platform_label || scope)
-                    if (scope && !categorySeen[scope]) {
-                        categorySeen[scope] = true
-                        categories.push({"label": label, "scope": scope})
-                    }
                 }
                 storeAvailableGames = games
-                storeCategories = categories
+                storeCategories = InstallableProjection.categories(games)
                 storeError = ""
             } catch (error) {
                 storeAvailableGames = []
-                storeCategories = [{"label": "Installable", "scope": "all"}]
+                storeCategories = InstallableProjection.categories([])
                 storeError = "Installable titles unavailable"
             }
         }
@@ -2863,7 +2856,7 @@ import QtQuick.Controls
                 root.moveLibraryCategory(-1)
             } else if (root.space === "store") {
                 if (root.browserVisible) root.browserSurface.directional("left")
-                else root.moveStoreGame(-1)
+                else root.moveStoreCategory(-1)
             } else if (root.space === "system") {
                 if (root.systemLanding) root.moveSystemCategory(-1)
                 else if (root.systemCategories[root.systemCategoryIndex] === "Network" && root.internetSettingsRef)
@@ -2897,7 +2890,7 @@ import QtQuick.Controls
                 root.moveLibraryCategory(1)
             } else if (root.space === "store") {
                 if (root.browserVisible) root.browserSurface.directional("right")
-                else root.moveStoreGame(1)
+                else root.moveStoreCategory(1)
             } else if (root.space === "downloads") {
                 root.moveDownloads(1)
             } else if (root.space === "system") {
@@ -2916,11 +2909,10 @@ import QtQuick.Controls
             }
     }
     function controllerShoulder(delta) {
-        if (root.space === "library" || root.space === "store"
+        if (root.space === "library"
                 || (root.space === "system" && !root.systemLanding))
             root.playAudioEvent(root.audioEventForAction(delta < 0 ? "leftShoulder" : "rightShoulder"))
         if (root.space === "library") root.moveLibraryCollection(delta)
-        else if (root.space === "store") root.moveStoreCategory(delta)
         else if (root.space === "system" && !root.systemLanding) {
             root.systemCategoryIndex = Math.max(0, Math.min(root.systemCategories.length - 1,
                 root.systemCategoryIndex + delta))
@@ -3095,10 +3087,10 @@ import QtQuick.Controls
                     moveStoreGameVertical(1)
                     event.accepted = true
                 } else if (event.key === Qt.Key_Left) {
-                    moveStoreGame(-1)
+                    moveStoreCategory(-1)
                     event.accepted = true
                 } else if (event.key === Qt.Key_Right) {
-                    moveStoreGame(1)
+                    moveStoreCategory(1)
                     event.accepted = true
                 }
             } else if (space === "downloads") {
@@ -3805,6 +3797,7 @@ import QtQuick.Controls
                 }
                 ControllerHint {
                     action: "previousCollection"
+                    visible: root.space === "library"
                     label: root.libraryDimensionLabel(root.adjacentLibraryDimension(-1))
                     fontFamily: root.space === "library" ? "JetBrains Mono" : typography.interfaceFamily
                     uiScale: root.uiScale
@@ -3813,6 +3806,7 @@ import QtQuick.Controls
                 }
                 ControllerHint {
                     action: "nextCollection"
+                    visible: root.space === "library"
                     label: root.libraryDimensionLabel(root.adjacentLibraryDimension(1))
                     fontFamily: root.space === "library" ? "JetBrains Mono" : typography.interfaceFamily
                     uiScale: root.uiScale

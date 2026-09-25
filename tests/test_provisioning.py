@@ -15,25 +15,22 @@ class ProvisioningTests(unittest.TestCase):
         provisioning = (ROOT / "scripts" / "provision-appliance-services.sh").read_text()
         self.assertIn("qt6-webengine qt6-imageformats ffmpeg python-pillow", provisioning)
 
-    def test_shipped_qml_is_complete_and_lintable(self) -> None:
+    def test_canonical_and_compatibility_qml_are_lintable(self) -> None:
         source = ROOT / "ui"
         shipped = PAYLOAD / "ui"
-        source_files = {path.name for path in source.glob("*.qml")}
-        shipped_files = {path.name for path in shipped.glob("*.qml")}
-        self.assertEqual(shipped_files, source_files)
-        for name in sorted(source_files):
-            self.assertEqual((shipped / name).read_bytes(), (source / name).read_bytes(), name)
-        for name in ("LibraryProjection.js", "GameArtwork.js", "GameMetadata.js"):
-            self.assertEqual((shipped / name).read_bytes(), (source / name).read_bytes(), name)
+        # deploy/payload is historical installation compatibility material,
+        # not source. Its integrity is checked by the manifest test below;
+        # current development/release builders consume the canonical ui tree.
         qmllint = shutil.which("qmllint") or "/usr/lib/qt6/bin/qmllint"
         if not Path(qmllint).exists():
             self.skipTest("qmllint is not installed")
-        result = subprocess.run(
-            [qmllint, "--max-warnings", "-1", "-I", str(shipped),
-             *(str(path) for path in sorted(shipped.glob("*.qml")))],
-            capture_output=True, text=True,
-        )
-        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        for tree in (source, shipped):
+            result = subprocess.run(
+                [qmllint, "--max-warnings", "-1", "-I", str(tree),
+                 *(str(path) for path in sorted(tree.glob("*.qml")))],
+                capture_output=True, text=True,
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def test_shipped_ui_audio_contract_matches_authoritative_source(self) -> None:
         source = ROOT / "ui/sounds"
