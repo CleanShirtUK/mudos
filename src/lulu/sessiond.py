@@ -441,6 +441,25 @@ class ConsoleSessionInterface(ServiceInterface):
         self.StateChanged(self._state_json())
 
     @method()
+    async def QuitActiveSession(self) -> "s":
+        """Quit only the process group recorded by Sessiond for this session."""
+        if self._local_identity is not None:
+            if self.model.state.launch_token != self._local_identity.token:
+                raise self._error(ValueError("local session no longer owns the launch"))
+            try:
+                os.killpg(self._local_identity.pgid, os_signal.SIGTERM)
+            except ProcessLookupError:
+                pass
+            except OSError as error:
+                raise self._error(ValueError(f"could not quit the owned local session: {error}")) from error
+            return "quit-requested"
+        try:
+            await self.supervisor.quit_active_session()
+        except (OSError, ValueError) as error:
+            raise self._error(ValueError(str(error))) from error
+        return "executed"
+
+    @method()
     async def RequestLaunch(self, command: "as", startup_timeout_ms: "u") -> "s":
         try:
             token = await self.supervisor.launch(list(command), startup_timeout_ms)

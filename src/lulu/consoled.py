@@ -697,8 +697,9 @@ class ConsoleCatalog:
             LOGGER.info("catalogue stage started name=artwork")
             # Presentation media has an independent generation marker so older
             # records receive one bounded AppID/IGDB screenshot backfill.
-            media_games = [game for game in self.store.list_catalogue_games()
-                           if game.game_id in eligible_ids]
+            media_games = self.enrichment.presentation_media_backfill_batch(
+                [game for game in self.store.list_catalogue_games()
+                 if game.game_id in eligible_ids])
             igdb_configured = bool(getattr(self.enrichment.igdb, "configured", False))
             for game in media_games:
                 if (not self.enrichment.presentation_media_backfill_needed(game.game_id)
@@ -1474,6 +1475,11 @@ class ConsoleInterface(ServiceInterface):
         game = self.catalogue.store.get_game(game_id)
         if game is None or game.provider != "local":
             return None
+        try:
+            platform = self._platforms.get(game.platform)
+            return self._providers.get(platform.default_provider or "")
+        except KeyError:
+            return None
 
     def _guide_context(self, state: dict[str, object]) -> tuple[str, object | None]:
         if str(state.get("delegated_surface", "")) == "browser":
@@ -1542,7 +1548,8 @@ class ConsoleInterface(ServiceInterface):
             state = json.loads(await self.sessiond.call_get_state())
             if not state.get("active_identity"):
                 raise ValueError("no owned process is active")
-            return "process-group-terminate"
+            await self.sessiond.call_quit_active_session()
+            return "executed"
         action = next((item for item in self._base_guide if item.action_id == action_id), None)
         if action is None:
             action = next((item for item in self._mudos_guide if item.action_id == action_id), None)
@@ -1558,7 +1565,8 @@ class ConsoleInterface(ServiceInterface):
             elif action.target == "mudos:downloads":
                 await self.sessiond.call_request_mudos_downloads()
             elif action.target == "process-group-terminate":
-                return action.target
+                await self.sessiond.call_quit_active_session()
+                return "executed"
             elif action.target == "browser:quit":
                 await self.sessiond.call_set_delegated_surface("")
             else:
@@ -1575,12 +1583,10 @@ class ConsoleInterface(ServiceInterface):
         if selected.target == "mudos:downloads":
             await self.sessiond.call_request_mudos_downloads()
             return "executed"
+        if selected.target == "process-group-terminate":
+            await self.sessiond.call_quit_active_session()
+            return "executed"
         return selected.target
-        try:
-            platform = self._platforms.get(game.platform)
-            return self._providers.get(platform.default_provider or "")
-        except KeyError:
-            return None
 
     def _provider_setting(self, provider_id: str) -> NativeConfigAdapter | None:
         if provider_id != "retroarch":

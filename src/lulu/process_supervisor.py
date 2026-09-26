@@ -722,6 +722,15 @@ class ProcessSupervisor:
         if self._watch_task is not None:
             await self._watch_task
 
+    async def quit_active_session(self) -> None:
+        """Quit only the process group owned by the active launch transaction."""
+        identity = self.active_identity
+        if identity is None or self.model.state.launch_token != identity.token:
+            raise ValueError("no owned game session is active")
+        await self._terminate_group(identity.pgid)
+        if self._watch_task is not None:
+            await self._watch_task
+
     def state_details(self) -> dict[str, object]:
         identity = self.active_identity
         return {

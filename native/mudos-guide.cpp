@@ -20,7 +20,6 @@
 #include <xcb/xcb_keysyms.h>
 #include <X11/keysym.h>
 
-#include <csignal>
 #include <cstdlib>
 #include <cstring>
 #include <dirent.h>
@@ -171,7 +170,9 @@ private:
         if (target == "executed") return true;
         if (target == "window-delete") return sendDelete();
         if (target == "window-unfullscreen") return removeFullscreen();
-        if (target == "process-group-terminate") return terminateProcessGroup();
+        // Process termination is owned by Sessiond. Never signal the PID or
+        // process group inferred from whichever X11 window happens to be focused.
+        if (target == "process-group-terminate") return false;
         if (target.startsWith("key:")) return sendKey(target.mid(4));
         if (target.startsWith("command:")) return runCommand(target.mid(8));
         qWarning() << "Guide action returned unusable target" << id << target;
@@ -193,20 +194,6 @@ private:
         xcb_flush(x11->connection());
         return true;
     }
-    bool terminateProcessGroup()
-    {
-        const auto group = ::getpgid(static_cast<pid_t>(targetPid_));
-        if (group <= 1)
-            return false;
-        if (::kill(-group, SIGTERM) < 0)
-            return false;
-        ::usleep(100000);
-        if (::kill(-group, 0) == 0)
-            ::kill(-group, SIGKILL);
-        return true;
-    }
-
-
     bool sendDelete()
     {
         auto *x11 = qGuiApp->nativeInterface<QNativeInterface::QX11Application>();

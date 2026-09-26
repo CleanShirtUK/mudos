@@ -1045,6 +1045,29 @@ var fetch=async function(path,options){calls.push(path);let body=options&&option
             rows = app.provider_rows()
             self.assertTrue(all(all(isinstance(value, bool) for value in row["secrets"].values()) for row in rows))
 
+    def test_store_provider_rows_use_the_same_auth_files_as_oobe_and_catalogue(self):
+        class Config:
+            status = "not_configured"
+            configured = False
+            secret_refs = {}
+
+            @staticmethod
+            def secret_available(_key):
+                return False
+
+        class Auth:
+            @staticmethod
+            def status():
+                return {"configured": True, "authenticated": True}
+
+        app = AdminApp()
+        app.config.provider = lambda _provider: Config()
+        app._auth = lambda provider: Auth() if provider in {"epic", "gog"} else None
+        rows = {row["id"]: row for row in app.provider_rows()}
+        for provider in ("epic", "gog"):
+            self.assertEqual(rows[provider]["status"], "configured")
+            self.assertTrue(rows[provider]["configured"])
+
     def test_provider_configuration_does_not_blindly_trigger_questarr_reconcile(self):
         admin = (Path(__file__).parents[1] / "src/lulu/admin_web.py").read_text()
         self.assertNotIn('if provider_id in {"providers.torrent", "providers.usenet", "providers.prowlarr"}', admin)

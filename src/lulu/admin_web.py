@@ -949,9 +949,29 @@ class AdminApp:
         for provider_id, name in declared:
             config = self.config.provider(provider_id)
             auth = self._auth(provider_id)
-            rows.append({"id": provider_id, "name": name, "status": config.status,
+            auth_state = auth.status() if auth else {"status": "unavailable"}
+            status = config.status
+            configured = config.configured
+            if provider_id in {"epic", "gog"}:
+                # OOBE and the catalogue/acquisition clients use Legendary's
+                # and gogdl's provider-owned auth files. Generic TOML config is
+                # not their authentication authority.
+                configured = bool(auth_state.get("authenticated") or auth_state.get("configured"))
+                status = "configured" if configured else "not_configured"
+            elif provider_id == "providers.romm":
+                from .plugins.romm import RommConfig
+                romm = RommConfig.from_file()
+                configured = bool(romm and romm.client_token)
+                status = "configured" if configured else "not_configured"
+            elif provider_id == "steam":
+                from .plugins.steam.entitlements import SteamEntitlementConfig
+                steam = SteamEntitlementConfig.from_file()
+                configured = bool(steam and self.secrets.configured("steam", "web-api-key"))
+                status = "configured" if configured else "not_configured"
+            rows.append({"id": provider_id, "name": name, "status": status,
+                         "configured": configured,
                          "secrets": {key: config.secret_available(key) for key in config.secret_refs},
-                         "authentication": auth.status() if auth else {"status": "unavailable"}})
+                         "authentication": auth_state})
         return rows
 
     def _auth(self, provider_id: str) -> object | None:

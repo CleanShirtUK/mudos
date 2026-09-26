@@ -17,6 +17,7 @@ IGDB_TTL = 30 * 24 * 60 * 60
 PROTONDB_TTL = 24 * 60 * 60
 PRESENTATION_MEDIA_GENERATION = 1
 PRESENTATION_MEDIA_RETRY_SECONDS = 24 * 60 * 60
+PRESENTATION_MEDIA_BATCH_SIZE = 8
 PLATFORM_IDS = {"nes": 18, "gb": 33, "gbc": 22, "gba": 24, "nds": 20,
                 "genesis": 29, "gamecube": 21, "ngc": 21, "wii": 5, "switch": 130,
                 "ps1": 7, "psx": 7, "ps2": 8, "ps3": 9, "snes": 19,
@@ -72,8 +73,24 @@ class MetadataEnrichmentService:
         igdb_record = self.store.enrichment_record("igdb", game_id)
         return bool(game and game.metadata_provider == "igdb" and game.metadata_game_id
                     and (igdb_record is None or igdb_record.get("status") != "matched")
-                    and not self.store.enrichment_is_fresh(
+                     and not self.store.enrichment_is_fresh(
                         "presentation-media", game_id, PRESENTATION_MEDIA_RETRY_SECONDS))
+
+    def presentation_media_backfill_batch(self, games: list[CatalogueGame], *,
+                                          limit: int = PRESENTATION_MEDIA_BATCH_SIZE) -> list[CatalogueGame]:
+        """Choose due rows fairly: never-attempted first, then oldest attempt.
+
+        A bounded batch avoids bursts against IGDB while durable attempt
+        timestamps rotate later catalogue rows ahead of repeatedly retried
+        early rows.
+        """
+        candidates = [game for game in games if self.presentation_media_backfill_needed(game.game_id)]
+        def order(game: CatalogueGame) -> tuple[int, str, str]:
+            record = self.store.enrichment_record("presentation-media", game.game_id)
+            fetched = str(record.get("fetched_at", "")) if record else ""
+            return (0 if not fetched else 1, fetched, game.game_id)
+        candidates.sort(key=order)
+        return candidates[:max(0, int(limit))]
 
     def backfill_presentation_media(self, game_id: str) -> CatalogueDelta | None:
         current = self.store.get_game(game_id)
