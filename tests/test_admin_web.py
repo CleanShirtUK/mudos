@@ -310,6 +310,26 @@ var fetch=async function(path,options){let body=options&&options.body?JSON.parse
         evaluate(retried, "reviewSetup()")
         self.assertEqual(evaluate(retried, "String(step)"), "3")
 
+        multiple = context()
+        evaluate(multiple, "fixture.integrations.push({id:'providers.second',name:'Second',help:'#',"
+                 "fields:[{name:'url',label:'URL',type:'url',required:true}],configured:false});"
+                 "integrationChoices=['providers.romm','providers.second'];step=2;render()")
+        self.assertIn("Integration 1 of 2", evaluate(multiple, "content.innerHTML"))
+        self.assertIn("RomM", evaluate(multiple, "content.innerHTML"))
+        self.assertNotIn("Second", evaluate(multiple, "content.innerHTML"))
+        evaluate(multiple, "fixtureFail=false;testAndSave('providers.romm')")
+        self.assertIn("Next integration", evaluate(multiple, "content.innerHTML"))
+        evaluate(multiple, "nextCredential()")
+        self.assertIn("Integration 2 of 2", evaluate(multiple, "content.innerHTML"))
+        self.assertNotIn("RomM", evaluate(multiple, "content.innerHTML"))
+        evaluate(multiple, "fixtureFail=true;testAndSave('providers.second')")
+        self.assertIn("Retry", evaluate(multiple, "content.innerHTML"))
+        self.assertNotIn("Review Setup", evaluate(multiple, "content.innerHTML"))
+        evaluate(multiple, "skipIntegration('providers.second')")
+        self.assertIn("All selected connections are complete", evaluate(multiple, "content.innerHTML"))
+        evaluate(multiple, "reviewSetup()")
+        self.assertEqual(evaluate(multiple, "String(step)"), "3")
+
     def test_setup_shows_provider_install_progress_with_real_completed_counts(self):
         import gi
         gi.require_version("JavaScriptCore", "4.1")
