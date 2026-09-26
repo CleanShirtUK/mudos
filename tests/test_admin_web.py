@@ -1,5 +1,6 @@
 import tempfile
 import unittest
+import re
 from pathlib import Path
 from unittest.mock import patch
 
@@ -243,6 +244,71 @@ class AdminWebTests(unittest.TestCase):
         self.assertIn("i.configured?'Configured':'Not configured'", review)
         self.assertIn("Scroll to see all providers", review)
         self.assertNotIn("overflow:hidden", page)
+
+    def test_setup_credentials_require_test_and_save_then_retry_or_skip(self):
+        import gi
+        gi.require_version("JavaScriptCore", "4.1")
+        from gi.repository import JavaScriptCore
+
+        handler = object.__new__(Handler)
+        with patch.object(Handler, "_token", return_value=""), \
+                patch.object(Handler, "_send") as send, \
+                patch("lulu.admin_web.APP.session", return_value=""):
+            handler._setup_page(False)
+        script = re.search(r"<script>(.*?)</script>", send.call_args.args[0].decode(), re.S).group(1)
+        fixture = """
+var fixtureFail=true;
+var fixture={providers:[],integrations:[{id:'providers.romm',name:'RomM',help:'#',
+ fields:[{name:'url',label:'URL',type:'url',required:true}],configured:false}],setup_files:[],
+ onboarding:{selected_providers:[],selected_integrations:['providers.romm'],validation:{},
+ admin_password_configured:false,status:'partial'}};
+var content={innerHTML:'',querySelector:()=>null}, noticeElement={textContent:''};
+var document={querySelector:s=>s==='#content'?content:s==='#notice'?noticeElement:null,
+ querySelectorAll:()=>[{dataset:{field:'url'},type:'url',value:'https://fixture.local'}]};
+var window={location:{assign:()=>{}}},CSS={escape:x=>x};
+var setTimeout=()=>0,clearInterval=()=>{},setInterval=()=>0;
+var fetch=async function(path,options){let body=options&&options.body?JSON.parse(options.body):{};
+ if(path==='/api/setup/progress')fixture.onboarding.selected_integrations=body.integrations||[];
+ if(path==='/api/setup/credentials')fixture.integrations[0].configured=true;
+ let value=path==='/api/setup/test'?{ok:!fixtureFail,message:fixtureFail?'Fixture failed':'Fixture ready'}
+ :path==='/api/setup/progress'?{state:{selected_integrations:fixture.onboarding.selected_integrations}}
+ :fixture;
+ return {ok:true,headers:{get:()=> 'application/json'},json:async()=>value};};
+"""
+
+        def context():
+            engine = JavaScriptCore.Context.new()
+            engine.evaluate(fixture, -1)
+            engine.evaluate(script, -1)
+            self.assertIsNone(engine.get_exception())
+            return engine
+
+        def evaluate(engine, code):
+            value = engine.evaluate(code, -1)
+            self.assertIsNone(engine.get_exception(), code)
+            return value.to_string()
+
+        failed = context()
+        evaluate(failed, "step=2;render()")
+        self.assertIn("Test and Save", evaluate(failed, "content.innerHTML"))
+        evaluate(failed, "testAndSave('providers.romm')")
+        self.assertIn("Retry", evaluate(failed, "content.innerHTML"))
+        self.assertIn("Skip", evaluate(failed, "content.innerHTML"))
+        self.assertNotIn("Review Setup", evaluate(failed, "content.innerHTML"))
+        evaluate(failed, "reviewSetup()")
+        self.assertEqual(evaluate(failed, "String(step)"), "2")
+        evaluate(failed, "skipIntegration('providers.romm')")
+        self.assertEqual(evaluate(failed, "String(integrationChoices.length)"), "0")
+        evaluate(failed, "reviewSetup()")
+        self.assertEqual(evaluate(failed, "String(step)"), "3")
+        self.assertIn("Skipped", evaluate(failed, "content.innerHTML"))
+
+        retried = context()
+        evaluate(retried, "step=2;render();testAndSave('providers.romm')")
+        evaluate(retried, "fixtureFail=false;testAndSave('providers.romm')")
+        self.assertIn("Review Setup", evaluate(retried, "content.innerHTML"))
+        evaluate(retried, "reviewSetup()")
+        self.assertEqual(evaluate(retried, "String(step)"), "3")
 
     def test_provider_mutation_uses_secret_store_and_blank_preserves(self):
         with tempfile.TemporaryDirectory() as directory:

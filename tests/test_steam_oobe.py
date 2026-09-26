@@ -60,8 +60,10 @@ class SteamOobeTests(unittest.TestCase):
         self.assertIn("A: I Approved   X: Enter Code   B: Cancel", shell)
         self.assertIn('"approved", "enter-code"',
                       (Path(__file__).parents[1] / "src/lulu/acquisitiond.py").read_text())
-        self.assertIn("Verify Steam and Review", text)
-        self.assertIn("integration:'providers.steam'", text)
+        self.assertIn("function testAndSave(id)", text)
+        self.assertIn("id==='providers.steam'", text)
+        self.assertIn("api('/api/setup/test',{{integration:id}})", text)
+        self.assertNotIn("Verify Steam and Review", text)
 
     def test_acquisition_credentials_are_discovered_while_shell_is_idle(self):
         root = Path(__file__).parents[1]
