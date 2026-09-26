@@ -24,6 +24,23 @@ class ProviderLaunchContractTests(unittest.TestCase):
                          ["steam-quit"])
         self.assertEqual(providers.guide_actions("romm", "game"), ())
 
+    def test_dolphin_and_eden_can_reveal_ui_without_quitting_or_toggling_fullscreen(self) -> None:
+        providers = load_providers()
+        for provider_id in ("dolphin", "eden"):
+            for context in ("game", "standalone"):
+                actions = providers.guide_actions(provider_id, context)
+                self.assertEqual(actions[0].action_id, f"{provider_id}-show-ui")
+                self.assertEqual(actions[0].target, "window-unfullscreen")
+                self.assertFalse(actions[0].confirm)
+                self.assertEqual(actions[-1].role, "quit")
+        source = (Path(__file__).parents[1] / "native/mudos-guide.cpp").read_text()
+        reveal = source.split("bool removeFullscreen()", 1)[1].split("bool sendKey(", 1)[0]
+        self.assertIn('target == "window-unfullscreen"', source)
+        self.assertIn('"_NET_WM_STATE_FULLSCREEN"', reveal)
+        self.assertIn("message.data.data32[0] = 0", reveal)
+        self.assertIn("message.window = targetXid_", reveal)
+        self.assertNotIn("kill(", reveal)
+
     def test_launch_contract_is_separate_and_menu_order_is_deterministic(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

@@ -15,6 +15,14 @@ controller_mode = "compat"
 command = "/usr/bin/eden"
 
 [[guide.actions]]
+id = "eden-show-ui"
+label = "Show Eden settings"
+role = "provider"
+target = "window-unfullscreen"
+contexts = ["game", "standalone"]
+order = 40
+
+[[guide.actions]]
 id = "eden-quit"
 label = "Quit Eden"
 role = "quit"

@@ -16,6 +16,14 @@ controller_mode = "compat"
 command = "/usr/bin/dolphin-emu"
 
 [[guide.actions]]
+id = "dolphin-show-ui"
+label = "Show Dolphin settings"
+role = "provider"
+target = "window-unfullscreen"
+contexts = ["game", "standalone"]
+order = 40
+
+[[guide.actions]]
 id = "dolphin-quit"
 label = "Quit Dolphin"
 role = "quit"

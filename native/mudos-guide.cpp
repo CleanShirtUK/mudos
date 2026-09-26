@@ -170,6 +170,7 @@ private:
         const QString target = reply.arguments().value(0).toString();
         if (target == "executed") return true;
         if (target == "window-delete") return sendDelete();
+        if (target == "window-unfullscreen") return removeFullscreen();
         if (target == "process-group-terminate") return terminateProcessGroup();
         if (target.startsWith("key:")) return sendKey(target.mid(4));
         if (target.startsWith("command:")) return runCommand(target.mid(8));
@@ -234,6 +235,42 @@ private:
         xcb_flush(x11->connection());
         free(protocolReply);
         free(deleteReply);
+        return true;
+    }
+
+    bool removeFullscreen()
+    {
+        auto *x11 = qGuiApp->nativeInterface<QNativeInterface::QX11Application>();
+        if (!targetXid_ || !x11 || !x11->connection())
+            return false;
+        auto *connection = x11->connection();
+        const auto state = xcb_intern_atom(connection, 0,
+                                           sizeof("_NET_WM_STATE") - 1, "_NET_WM_STATE");
+        const auto fullscreen = xcb_intern_atom(connection, 0,
+                                                sizeof("_NET_WM_STATE_FULLSCREEN") - 1,
+                                                "_NET_WM_STATE_FULLSCREEN");
+        auto *stateReply = xcb_intern_atom_reply(connection, state, nullptr);
+        auto *fullscreenReply = xcb_intern_atom_reply(connection, fullscreen, nullptr);
+        if (!stateReply || !fullscreenReply) {
+            free(stateReply);
+            free(fullscreenReply);
+            return false;
+        }
+        xcb_client_message_event_t message{};
+        message.response_type = XCB_CLIENT_MESSAGE;
+        message.window = targetXid_;
+        message.type = stateReply->atom;
+        message.format = 32;
+        message.data.data32[0] = 0; // EWMH remove, never toggle into fullscreen.
+        message.data.data32[1] = fullscreenReply->atom;
+        message.data.data32[3] = 1; // EWMH application request for the captured window.
+        const auto screen = xcb_setup_roots_iterator(xcb_get_setup(connection)).data;
+        xcb_send_event(connection, 0, screen->root,
+                       XCB_EVENT_MASK_SUBSTRUCTURE_REDIRECT | XCB_EVENT_MASK_SUBSTRUCTURE_NOTIFY,
+                       reinterpret_cast<const char *>(&message));
+        xcb_flush(connection);
+        free(stateReply);
+        free(fullscreenReply);
         return true;
     }
 
