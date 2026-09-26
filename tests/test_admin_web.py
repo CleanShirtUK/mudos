@@ -187,6 +187,23 @@ class AdminWebTests(unittest.TestCase):
         self.assertIn('beginPluginCredential("steam", "password", "SteamCMD Password", "Password", "secret", true)', console)
         self.assertIn('else if (target.kind === "secret")', console)
 
+    def test_setup_review_lists_all_components_in_a_scrollable_document(self):
+        handler = object.__new__(Handler)
+        with patch.object(Handler, "_token", return_value=""), \
+                patch.object(Handler, "_send") as send, \
+                patch("lulu.admin_web.APP.session", return_value=""):
+            handler._setup_page(False)
+        page = send.call_args.args[0].decode()
+        review = page.split("else {root.innerHTML='<h2>Setup review", 1)[1].split("function fieldDefault", 1)[0]
+        self.assertIn("data.providers.map(p=>", review)
+        self.assertIn("data.integrations.map(i=>", review)
+        self.assertNotIn("filter(p=>providerChoices.includes", review)
+        self.assertNotIn("filter(i=>integrationChoices.includes", review)
+        self.assertIn("p.installed?'Installed':'Not installed'", review)
+        self.assertIn("i.configured?'Configured':'Not configured'", review)
+        self.assertIn("Scroll to see all providers", review)
+        self.assertNotIn("overflow:hidden", page)
+
     def test_provider_mutation_uses_secret_store_and_blank_preserves(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
