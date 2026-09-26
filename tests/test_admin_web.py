@@ -20,6 +20,90 @@ class FakeSecrets:
 
 
 class AdminWebTests(unittest.TestCase):
+    def test_setup_epic_gog_status_exposes_verified_authentication(self):
+        app = AdminApp()
+        rows = [dict(id=id, name=name, installed=True) for id, name in
+                (("epic", "Epic Games"), ("gog", "GOG"))]
+        with patch("lulu.admin_web.provider_manifest", return_value=rows), \
+                patch("lulu.admin_web.onboarding_state", return_value={
+                    "selected_providers": ["epic", "gog"]}), \
+                patch("lulu.provider_readiness.ProviderReadinessStore") as store, \
+                patch.object(app, "auth_status", side_effect=lambda id: {
+                    "authenticated": id == "epic", "status": "authenticated" if id == "epic"
+                    else "authentication_required", "methods": ["auth_browser"]}):
+            store.return_value.get.return_value = {"status": "syncing"}
+            states = app.setup_provider_states()
+        self.assertTrue(states[0]["authentication"]["authenticated"])
+        self.assertFalse(states[1]["authentication"]["authenticated"])
+        self.assertEqual(states[1]["status"], "authentication_required")
+
+    def test_setup_store_accounts_have_sequential_signin_before_integrations(self):
+        import gi
+        gi.require_version("JavaScriptCore", "4.1")
+        from gi.repository import JavaScriptCore
+
+        handler = object.__new__(Handler)
+        with patch.object(Handler, "_token", return_value=""), \
+                patch.object(Handler, "_send") as send, \
+                patch("lulu.admin_web.APP.session", return_value=""):
+            handler._setup_page(False)
+        script = re.search(r"<script>(.*?)</script>", send.call_args.args[0].decode(), re.S).group(1)
+        fixture = """
+var calls=[];
+var fixture={providers:[
+ {id:'epic',name:'Epic Games',installed:true,installable:true,dependencies:[],dependencies_any:[],
+ authentication:{authenticated:true},status:'ready'},
+ {id:'gog',name:'GOG',installed:true,installable:true,dependencies:[],dependencies_any:[],
+ authentication:{authenticated:false},status:'authentication_required',status_message:'Sign in to GOG.'}],
+ integrations:[{id:'metadata.igdb',name:'IGDB',configured:false}],setup_files:[],
+ onboarding:{selected_providers:['epic','gog'],selected_integrations:[],validation:{}}};
+var content={innerHTML:'',querySelector:()=>null},noticeElement={textContent:''};
+var document={querySelector:s=>s==='#content'?content:s==='#notice'?noticeElement
+ :s==='#provider-auth-code'?{value:'fixture-code'}:null,
+ querySelectorAll:s=>s==='[data-provider]:checked'?['epic','gog'].map(id=>({dataset:{provider:id}})):[]};
+var window={location:{assign:()=>{}}},CSS={escape:x=>x};
+var setTimeout=()=>0,clearInterval=()=>{},setInterval=()=>0;
+var fetch=async function(path,options){calls.push(path);let body=options&&options.body?JSON.parse(options.body):{};
+ if(path==='/api/setup/provider-auth-complete')fixture.providers[1].authentication.authenticated=true;
+ let value=path==='/api/setup/progress'?{state:{selected_providers:['epic','gog']}}
+ :path==='/api/setup/provider-authenticate'?{transaction_id:'fixture',verification_url:'https://fixture.local'}
+ :fixture;
+ return {ok:true,headers:{get:()=> 'application/json'},json:async()=>value};};
+"""
+        engine = JavaScriptCore.Context.new()
+        engine.evaluate(fixture, -1)
+        engine.evaluate(script, -1)
+
+        def value(code):
+            result = engine.evaluate(code, -1)
+            self.assertIsNone(engine.get_exception(), code)
+            return result.to_string()
+
+        value("nextProviders()")
+        self.assertEqual(value("String(accountStep)"), "true")
+        self.assertIn("Epic Games sign-in", value("content.innerHTML"))
+        self.assertIn("Next store", value("content.innerHTML"))
+        self.assertNotIn("IGDB", value("content.innerHTML"))
+        value("advanceAccountStep()")
+        self.assertIn("GOG sign-in", value("content.innerHTML"))
+        self.assertIn("Skip for now", value("content.innerHTML"))
+        value("beginProviderSignin('gog')")
+        self.assertIn("One-time authorization code", value("content.innerHTML"))
+        value("completeProviderSignin()")
+        self.assertIn("Account signed in", value("content.innerHTML"))
+        self.assertIn("Reconnect", value("content.innerHTML"))
+        value("advanceAccountStep()")
+        self.assertEqual(value("String(accountStep)"), "false")
+        self.assertIn("IGDB", value("content.innerHTML"))
+        self.assertNotIn("GOG account", value("content.innerHTML"))
+        value("backToAccountStep()")
+        self.assertIn("GOG sign-in", value("content.innerHTML"))
+        value("fixture.providers[1].authentication.authenticated=false;render()")
+        self.assertIn("Skip for now", value("content.innerHTML"))
+        value("advanceAccountStep()")
+        self.assertIn("IGDB", value("content.innerHTML"))
+        self.assertEqual(value("String(calls.includes('/api/setup/install'))"), "false")
+
     def test_status_badges_do_not_conflate_configured_with_connected(self):
         self.assertEqual(_status_label("configured"), ("Configured", "muted"))
         self.assertEqual(_status_label("unconfigured"), ("Not configured", "muted"))
