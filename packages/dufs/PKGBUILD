@@ -1,0 +1,24 @@
+pkgname=dufs
+pkgver=0.46.0
+pkgrel=1
+pkgdesc='A file server supporting static serving, uploading, and WebDAV'
+arch=('x86_64')
+url='https://github.com/sigoden/dufs'
+license=('MIT' 'Apache')
+makedepends=('cargo')
+source=("https://github.com/sigoden/dufs/releases/download/v${pkgver}/dufs-v${pkgver}-x86_64-unknown-linux-musl.tar.gz")
+sha256sums=('817769f726613194bcff9d0e3e481eaccc86ac11208857614f36a8c02f410977')
+
+prepare() {
+    mkdir -p "$pkgname-$pkgver"
+    tar -xzf "$srcdir/dufs-v${pkgver}-x86_64-unknown-linux-musl.tar.gz" -C "$pkgname-$pkgver"
+}
+
+build() {
+    :
+}
+
+package() {
+    cd "$pkgname-$pkgver"
+    install -Dm755 dufs "$pkgdir/usr/bin/dufs"
+}

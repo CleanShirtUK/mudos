@@ -478,6 +478,9 @@ def do_install(repo: Path, manifest: dict, dry_run: bool) -> None:
     # The on-screen keyboard is required for controller-driven OOBE. Reuse
     # the checksum-pinned canonical provisioner and keep its output mutable.
     run(["bash", str(release / "scripts/provision-gamepad-osk.sh")])
+    # DUFS is a core appliance service; provision its package and private
+    # authentication configuration on every canonical installation.
+    run(["bash", str(repo / "scripts/provision-dufs.sh")])
     # Release creation must not depend on mutable paths; install only from current.
     install_integration(repo, release, manifest, session_was_active=session_was_active)
     print(f"installed immutable release {release} from {sha}")
@@ -538,6 +541,14 @@ def verify(repo: Path, manifest: dict) -> None:
                              if line.startswith("revision=")), "")
     if release_revision != source_sha:
         raise InstallError("selected immutable release does not match the clean source checkout")
+    if shutil.which("dufs") is None:
+        raise InstallError("core DUFS file manager package is not installed")
+    file_browser_config = Path("/etc/lulu/file-browser.env")
+    if not file_browser_config.is_file():
+        raise InstallError("core DUFS file manager configuration is missing")
+    config_stat = file_browser_config.stat()
+    if (config_stat.st_uid, config_stat.st_gid, config_stat.st_mode & 0o777) != (0, 0, 0o600):
+        raise InstallError("core DUFS file manager configuration has unsafe ownership or mode")
     # These units are required on every supported installation and are copied
     # from the selected release without host-specific transformations.
     required_units = ("lulu.target", "lulu-session@.service", "lulu-consoled.service",

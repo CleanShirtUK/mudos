@@ -335,6 +335,18 @@ def test_file_browser_bind_sources_are_initialized_for_first_start():
         assert source in initial
 
 
+def test_dufs_is_provisioned_as_a_canonical_core_service():
+    provisioner = (ROOT / "scripts/provision-dufs.sh").read_text()
+    pkgbuild = (ROOT / "packages/dufs/PKGBUILD").read_text()
+    installer_source = (ROOT / "scripts/install_mudos.py").read_text()
+    assert "provision-dufs.sh" in installer_source
+    assert "file-browser.env" in provisioner
+    assert "makepkg --cleanbuild" in provisioner
+    assert "pacman -U" in provisioner
+    assert "817769f726613194bcff9d0e3e481eaccc86ac11208857614f36a8c02f410977" in pkgbuild
+    assert "core DUFS file manager package is not installed" in installer_source
+
+
 def test_questarr_restart_is_rate_limited_and_has_bounded_retries():
     unit = (ROOT / "packaging/lulu-questarr.service").read_text()
     assert "StartLimitIntervalSec=300" in unit
