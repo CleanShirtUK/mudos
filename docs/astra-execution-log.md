@@ -90,11 +90,22 @@
   connected receiver from current logging alone. A USB Series controller is
   not present in the observed `/proc/bus/input/devices`; the receiver is the
   available simultaneous second controller.
-- Remaining physical acceptance: verify Series-attributed navigation on the
-  screen, observe status-strip count/state during off/on, verify the stable
-  identity after reconnect with the latest Sessiond source, and confirm
-  receiver + Bluetooth Series coexistence/navigation without changing mappings.
-  No release-manifest investigation or candidate creation before those checks.
+- The operator then confirmed all requested on-screen acceptance with the
+  paired Series controller: controller-only navigation, status/inventory
+  increment, power-off disappearance, power-on reconnection without pairing,
+  restored navigation, and simultaneous operation with the Xbox 360 receiver
+  left connected. The verified source/runtime state after the test remains two
+  connected composites, All navigation, two SDL gamepads opened, and the
+  Bluetooth MAC (without a volatile sysfs suffix) as the stable physical
+  identity. BlueZ still reports paired/trusted/connected and 71% battery.
+- The attached kernel inventory during this session included the Xbox 360
+  receiver and Bluetooth Series, but did not enumerate a separate USB Series
+  controller. The successful simultaneous second path was the Xbox 360 receiver;
+  no assertion is made that a separate USB Series device was physically tested.
+  No controller mappings or model-specific allowlists were changed. Bluetooth
+  controller integration is accepted for the tested hardware path. Continue to
+  the deferred release-manifest investigation only after the broader Round 2
+  and pre-candidate gates; do not promote V1.
 
 ## Bluetooth Settings implementation and hardware probe — 2026-09-26
 
