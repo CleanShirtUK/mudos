@@ -310,6 +310,59 @@ var fetch=async function(path,options){let body=options&&options.body?JSON.parse
         evaluate(retried, "reviewSetup()")
         self.assertEqual(evaluate(retried, "String(step)"), "3")
 
+    def test_setup_shows_provider_install_progress_with_real_completed_counts(self):
+        import gi
+        gi.require_version("JavaScriptCore", "4.1")
+        from gi.repository import JavaScriptCore
+
+        handler = object.__new__(Handler)
+        with patch.object(Handler, "_token", return_value=""), \
+                patch.object(Handler, "_send") as send, \
+                patch("lulu.admin_web.APP.session", return_value=""):
+            handler._setup_page(False)
+        script = re.search(r"<script>(.*?)</script>", send.call_args.args[0].decode(), re.S).group(1)
+        fixture = """
+var screens=[],calls=[];
+var fixture={providers:[
+ {id:'first',name:'First',installed:false,installable:true,dependencies:[],dependencies_any:[]},
+ {id:'second',name:'Second',installed:false,installable:true,dependencies:[],dependencies_any:[]},
+ {id:'existing',name:'Existing',installed:true,installable:true,dependencies:[],dependencies_any:[]}],
+ integrations:[],setup_files:[],onboarding:{selected_providers:[],selected_integrations:[],validation:{}}};
+var content={};Object.defineProperty(content,'innerHTML',{set:html=>screens.push(html),get:()=>screens.at(-1)});
+var document={querySelector:s=>s==='#content'?content:{textContent:''},
+ querySelectorAll:s=>s==='[data-provider]:checked'?['first','second','existing'].map(id=>({dataset:{provider:id}})):[]};
+var window={location:{assign:()=>{}}},CSS={escape:x=>x};
+var setTimeout=callback=>callback(),clearInterval=()=>{},setInterval=()=>0;
+var fetch=async function(path,options){calls.push(path);let body=options&&options.body?JSON.parse(options.body):{};
+ if(path==='/api/setup/progress'&&body.providers)fixture.onboarding.selected_providers=body.providers;
+ let value=path==='/api/setup/progress'?{state:fixture.onboarding}
+ :path==='/api/setup/install/first'?{status:'installed'}
+ :path==='/api/setup/install/second'?{status:'install_failed',message:'Fixture failure'}
+ :fixture;
+ return {ok:true,headers:{get:()=> 'application/json'},json:async()=>value};};
+"""
+        engine = JavaScriptCore.Context.new()
+        engine.evaluate(fixture, -1)
+        engine.evaluate(script, -1)
+        engine.evaluate("nextProvidersOriginal()", -1)
+        self.assertIsNone(engine.get_exception())
+
+        def value(expression):
+            result = engine.evaluate(expression, -1)
+            self.assertIsNone(engine.get_exception(), expression)
+            return result.to_string()
+
+        self.assertEqual(value("String(step)"), "1")
+        history = value("screens.join(' ')")
+        self.assertIn("Installing First", history)
+        self.assertIn("Installing Second", history)
+        self.assertIn('max="3"', history)
+        self.assertIn("1 of 3 completed", history)
+        self.assertIn("3 of 3 completed", history)
+        self.assertIn("Fixture failure", history)
+        self.assertEqual(value("String(calls.includes('/api/setup/install'))"), "true")
+        self.assertEqual(value("String(calls.includes('/api/setup/install/existing'))"), "false")
+
     def test_provider_mutation_uses_secret_store_and_blank_preserves(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
