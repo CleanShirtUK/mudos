@@ -413,8 +413,21 @@ class AdminApp:
             elif provider_id in {"torrent", "usenet"}:
                 target = "providers.torrent" if provider_id == "torrent" else "providers.usenet"
                 ok, message = self.test_provider(target)
-                row["status"] = "ready" if ok else "configuration_required"
-                row["status_message"] = message
+                if not ok:
+                    row["status"] = "configuration_required"
+                    row["status_message"] = message
+                elif provider_id == "usenet":
+                    server = self.config.provider("providers.usenet.server")
+                    server_configured = (server.enabled and bool(str(server.get("host", "")).strip())
+                                         and server.secret_available("username")
+                                         and server.secret_available("password"))
+                    row["status"] = "configured" if server_configured else "configuration_required"
+                    row["status_message"] = ("NZBGet RPC healthy; verify the news server and a real transfer before Ready."
+                                             if server_configured else
+                                             "NZBGet RPC healthy; configure a news server before downloads can be Ready.")
+                else:
+                    row["status"] = "configured"
+                    row["status_message"] = "Transmission RPC healthy; a real transfer has not been validated."
             else:
                 row["status"] = "installed"
                 row["status_message"] = "Installed; game and content launch readiness has not been validated."
@@ -1559,7 +1572,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
 const localSetup={str(local).lower()},setupCsrf={json.dumps(csrf)},managedAccount={json.dumps(managed_account)};let data=null,step=0,providerChoices=[],integrationChoices=[],credentialIndex=0,validationResults={{}},failedCredentialIds=new Set(),skippedCredentialIds=new Set(),testingCredentialIds=new Set(),providerInstallProgress=null,steamAuthBusy=false,steamSignin=false,steamAuthTimer=null,steamOobeLaunchToken=readSteamLaunchToken(),accountStep=false,accountIds=[],accountIndex=0,providerSignin='',providerTransaction=null;
 function readSteamLaunchToken(){{try{{return sessionStorage.getItem('mudos-setup-steam-launch')||''}}catch(e){{return ''}}}}
 function rememberSteamLaunchToken(token){{try{{if(token)sessionStorage.setItem('mudos-setup-steam-launch',token);else sessionStorage.removeItem('mudos-setup-steam-launch')}}catch(e){{}}}}
-const statusNames={{not_selected:'Not selected',selected:'Selected',installing:'Installing',install_failed:'Installation failed',installed:'Installed',configuration_required:'Configuration required',authentication_required:'Authentication required',authenticating:'Authenticating',authorization_pending:'Waiting for Steam approval',auth_failed:'Authentication failed',authenticated:'Authenticated',reconciling:'Reconciling library',validating:'Validating',syncing:'Syncing catalogue',sync_failed:'Catalogue sync failed',ready:'Ready',not_configured:'Not configured'}};
+const statusNames={{not_selected:'Not selected',selected:'Selected',installing:'Installing',install_failed:'Installation failed',installed:'Installed',configured:'Configured',configuration_required:'Configuration required',authentication_required:'Authentication required',authenticating:'Authenticating',authorization_pending:'Waiting for Steam approval',auth_failed:'Authentication failed',authenticated:'Authenticated',reconciling:'Reconciling library',validating:'Validating',syncing:'Syncing catalogue',sync_failed:'Catalogue sync failed',ready:'Ready',not_configured:'Not configured'}};
 function stateName(value){{return statusNames[value]||String(value||'Unknown').replaceAll('_',' ')}}
 function esc(v){{return String(v||"").replace(/[&<>\"']/g,c=>({{'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'":'&#39;'}}[c]))}}
 async function api(path,body){{let payload=body?{{...body,csrf:setupCsrf}}:undefined;let r=await fetch(path,{{method:body?'POST':'GET',headers:body?{{'Content-Type':'application/json'}}:{{}},body:body?JSON.stringify(payload):undefined}});let type=r.headers.get('content-type')||'';if(!type.includes('application/json')){{if(r.redirected||r.status===401)throw Error('Your admin session expired. Sign in again, then continue setup.');throw Error('Setup returned an unexpected response. Reload the page and try again.')}}let v=await r.json();if(!r.ok)throw Error(v.error||v.message||'Request failed');return v}}

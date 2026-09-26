@@ -34,6 +34,40 @@ class AdminWebTests(unittest.TestCase):
         self.assertTrue(all("not been validated" in state["status_message"] for state in states))
         self.assertTrue(all(state["installed"] for state in states))
 
+    def test_setup_downloaders_separate_rpc_health_from_download_readiness(self):
+        app = AdminApp()
+        rows = [dict(id="torrent", name="Transmission", installed=True),
+                dict(id="usenet", name="NZBGet", installed=True)]
+        class NewsServer:
+            enabled = True
+            def __init__(self, host, password): self.host, self.password = host, password
+            def get(self, key, default=None): return self.host if key == "host" else default
+            def secret_available(self, key): return key == "username" or self.password
+
+        with patch("lulu.admin_web.provider_manifest", return_value=rows), \
+                patch("lulu.admin_web.onboarding_state", return_value={
+                    "selected_providers": ["torrent", "usenet"]}), \
+                patch.object(app, "test_provider", return_value=(True, "RPC healthy")), \
+                patch.object(app.config, "provider", return_value=NewsServer("", False)):
+            states = app.setup_provider_states()
+        self.assertEqual([row["status"] for row in states], ["configured", "configuration_required"])
+        self.assertIn("news server", states[1]["status_message"])
+        with patch("lulu.admin_web.provider_manifest", return_value=rows), \
+                patch("lulu.admin_web.onboarding_state", return_value={
+                    "selected_providers": ["torrent", "usenet"]}), \
+                patch.object(app, "test_provider", return_value=(True, "RPC healthy")), \
+                patch.object(app.config, "provider", return_value=NewsServer("news.example", True)):
+            states = app.setup_provider_states()
+        self.assertEqual([row["status"] for row in states], ["configured", "configured"])
+        self.assertIn("real transfer", states[0]["status_message"])
+        self.assertIn("real transfer", states[1]["status_message"])
+        with patch("lulu.admin_web.provider_manifest", return_value=rows), \
+                patch("lulu.admin_web.onboarding_state", return_value={
+                    "selected_providers": ["torrent", "usenet"]}), \
+                patch.object(app, "test_provider", return_value=(False, "RPC unavailable")):
+            states = app.setup_provider_states()
+        self.assertEqual([row["status"] for row in states], ["configuration_required"] * 2)
+
     def test_questarr_account_probe_and_setup_do_not_conflate_health_with_readiness(self):
         app = AdminApp()
         with patch("lulu.admin_web.urllib.request.urlopen", return_value=io.BytesIO(b'{"hasUsers":false}')):

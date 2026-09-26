@@ -55,11 +55,13 @@ Append findings in order. Do not repair defects during the rehearsal.
 
 12. **OOBE-012 — NZBGet was not configured by onboarding**
     - Observed: Setup did not collect/configure required NZBGet connection/authentication information.
-    - Follow-up: Audit actual NZBGet requirements and include it correctly in setup; defer during RomM-only correction unless a shared readiness abstraction is directly useful.
+   - Follow-up: Audit actual NZBGet requirements and include it correctly in setup; defer during RomM-only correction unless a shared readiness abstraction is directly useful.
+   - Status follow-up: A healthy NZBGet RPC no longer marks the Usenet provider Ready. Setup distinguishes a missing enabled news-server host/credential references from a configured-but-not-transfer-validated backend. The existing separate news-server Test and Save remains the connection test; real submission/fresh-install acceptance is still outstanding.
 
 13. **OOBE-013 — Transmission setup is unproven**
     - Observed: Fresh onboarding did not establish whether Transmission installation/configuration is correct.
-    - Follow-up: Audit installation, RPC, ownership paths, readiness, and Questarr submission. Development-machine state is not proof of fresh-install behavior.
+   - Follow-up: Audit installation, RPC, ownership paths, readiness, and Questarr submission. Development-machine state is not proof of fresh-install behavior.
+   - Status follow-up: A healthy Transmission RPC is now Configured, not Ready; a real transfer/Questarr submission remains unproven.
 
 14. **OOBE-014 — Provider installation is confused with readiness**
     - Observed: Package/install state was shown without required authentication/readiness proof.
