@@ -1,5 +1,6 @@
 import tempfile
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from pathlib import Path
 
@@ -21,6 +22,16 @@ class FakeSteamProvider:
 
 
 class CatalogueTests(unittest.TestCase):
+    def test_simultaneous_first_open_tolerates_peer_schema_migration(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "catalogue.sqlite3"
+            with ThreadPoolExecutor(max_workers=2) as workers:
+                stores = list(workers.map(lambda _index: CatalogueStore(path), range(2)))
+            columns = {row[1] for row in stores[0].connection.execute("PRAGMA table_info(games)")}
+            self.assertIn("preview_animation_url", columns)
+            for store in stores:
+                store.connection.close()
+
     def test_romm_metadata_is_inherited_by_visible_installed_local_record(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory) / "roms"

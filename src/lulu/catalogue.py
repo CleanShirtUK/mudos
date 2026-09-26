@@ -477,7 +477,18 @@ class CatalogueStore:
                             "preview_animation_url": "TEXT NOT NULL DEFAULT ''"}
         for name, definition in migrations.items():
             if name not in columns:
-                self.connection.execute(f"ALTER TABLE games ADD COLUMN {name} {definition}")
+                try:
+                    self.connection.execute(f"ALTER TABLE games ADD COLUMN {name} {definition}")
+                except sqlite3.OperationalError as error:
+                    # Consoled and Acquisitiond can open this shared catalogue
+                    # concurrently on first boot. A peer may have completed
+                    # this exact additive migration after our PRAGMA snapshot.
+                    if "duplicate column name" not in str(error).lower():
+                        raise
+                    refreshed = {row[1] for row in self.connection.execute(
+                        "PRAGMA table_info(games)").fetchall()}
+                    if name not in refreshed:
+                        raise
         # Preserve legacy locked mappings as manual overrides. Their previous
         # automatic identity cannot be inferred from the overwritten columns.
         self.connection.execute(
