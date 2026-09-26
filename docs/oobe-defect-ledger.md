@@ -34,6 +34,7 @@ Append findings in order. Do not repair defects during the rehearsal.
 7. **OOBE-007 — Provider install failure is lost in review**
    - Observed: Steam install explicitly failed, but review collapsed this to “selected; installation may be incomplete.”
    - Expected: Preserve authoritative selected/installing/installed/failed/configured/authenticated/ready status through review.
+   - Follow-up: The installer unit's failed state and diagnostic are now carried by setup provider state into review; the provider-selection screen also shows that escaped failure reason when the user returns to retry. Source-generated JavaScriptCore coverage checks both screens. A start request rejected before the unit records a failure, and fresh-install/physical browser behavior, are not yet proven durable across reload.
 
 8. **OOBE-008 — Eden and PCSX2 review status disagrees with provider page**
    - Observed: Both appeared installed without errors on provider selection, but review reported both not installed.

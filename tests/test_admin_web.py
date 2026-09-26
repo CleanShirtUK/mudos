@@ -203,6 +203,44 @@ var fetch=async function(path,options){calls.push(path);let body=options&&option
         self.assertEqual(state["status"], "install_failed")
         self.assertIn("missing executable", state["message"])
 
+    def test_setup_selection_and_review_explain_failed_provider_install(self):
+        import gi
+        gi.require_version("JavaScriptCore", "4.1")
+        from gi.repository import JavaScriptCore
+
+        handler = object.__new__(Handler)
+        with patch.object(Handler, "_token", return_value=""), \
+                patch.object(Handler, "_send") as send, \
+                patch("lulu.admin_web.APP.session", return_value=""):
+            handler._setup_page(False)
+        script = re.search(r"<script>(.*?)</script>", send.call_args.args[0].decode(), re.S).group(1)
+        engine = JavaScriptCore.Context.new()
+        engine.evaluate("""
+var content={innerHTML:'',querySelector:()=>null},noticeElement={textContent:''};
+var document={querySelector:s=>s==='#content'?content:s==='#notice'?noticeElement:null};
+var window={location:{assign:()=>{}}},sessionStorage={getItem:()=>'',removeItem:()=>{}};
+var setTimeout=()=>0,clearInterval=()=>{},setInterval=()=>0;
+var fetch=()=>new Promise(()=>{});
+""", -1)
+        engine.evaluate(script, -1)
+        engine.evaluate("""
+data={providers:[{id:'steam',name:'Steam',summary:'Games',installed:false,
+ installable:true,status:'install_failed',status_message:'Failed <at step EXEC>',
+ dependencies:[],dependencies_any:[]}],integrations:[],onboarding:{},setup_files:[]};
+providerChoices=['steam'];step=0;render();
+""", -1)
+        self.assertIsNone(engine.get_exception())
+        selection = engine.evaluate("content.innerHTML", -1).to_string()
+        self.assertIn("Installation failed", selection)
+        self.assertIn("Failed &lt;at step EXEC&gt;", selection)
+        self.assertNotIn("Failed <at step EXEC>", selection)
+        engine.evaluate("step=3;render()", -1)
+        self.assertIsNone(engine.get_exception())
+        review = engine.evaluate("content.innerHTML", -1).to_string()
+        self.assertIn("Not installed", review)
+        self.assertIn("Installation failed", review)
+        self.assertIn("Failed &lt;at step EXEC&gt;", review)
+
     def test_romm_setup_requires_explicit_http_or_https_scheme(self):
         with self.assertRaisesRegex(ValueError, "beginning with http:// or https://"):
             _setup_service_url("romm.example", "RomM")
