@@ -355,6 +355,29 @@ class BoundaryTests(unittest.TestCase):
         interface.EndLocalSession(interface._local_identity.token, 0)
         self.assertEqual(presentation.selected[-1], ("shell", 99))
 
+    def test_local_runtime_window_is_selected_and_shell_restored_on_exit(self) -> None:
+        class Presentation:
+            def __init__(self):
+                self.selected = []
+
+            def select_pids(self, pids, timeout):
+                self.selected.append((pids, timeout))
+
+            def select_shell(self, pid):
+                self.selected.append(("shell", pid))
+
+        interface = input_mode_interface(RecordingInputPlumber({}))
+        presentation = Presentation()
+        interface.supervisor = type("Supervisor", (), {
+            "state_details": lambda self: {}, "_presentation": presentation,
+            "_shell_process": type("Shell", (), {"pid": 99})(),
+        })()
+        interface.BeginLocalSession("local:gamecube:fixture", 123, 123,
+                                    "/usr/bin/dolphin-emu", ["dolphin-emu", "fixture.iso"])
+        self.assertEqual(presentation.selected, [([123], 15.0)])
+        interface.EndLocalSession(interface._local_identity.token, 0)
+        self.assertEqual(presentation.selected[-1], ("shell", 99))
+
     def test_failed_local_session_does_not_leave_state_owned(self) -> None:
         class FailingInputPlumber(RecordingInputPlumber):
             def load_mode(self, mode, object_path=None, *, execute=True):

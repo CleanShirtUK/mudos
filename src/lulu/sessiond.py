@@ -357,6 +357,12 @@ class ConsoleSessionInterface(ServiceInterface):
             token = self.model.request_launch(game_id)
             self.model.launch_starting(token)
             self._local_identity = LaunchIdentity(token, pid, pgid, executable, tuple(argv))
+            presentation = getattr(self.supervisor, "_presentation", None)
+            if presentation is not None:
+                # Consoled starts local runtimes directly (rather than through
+                # ProcessSupervisor.launch); give Gamescope the same explicit
+                # window handoff for emulator and delegated game surfaces.
+                presentation.select_pids([pid], 15.0)
             self._apply_input_mode(InputMode.GAME)
             self.model.primary_started(token, input_mode=InputMode.GAME)
         except (OSError, ValueError, TimeoutError) as error:
@@ -407,7 +413,6 @@ class ConsoleSessionInterface(ServiceInterface):
         if self._local_identity is None or self._local_identity.token != token:
             return
         identity = self._local_identity
-        restore_steam_shell = getattr(self, "_local_provider_id", "") == "steam"
         if self.model.state.lifecycle is Lifecycle.GAME:
             self.model.primary_exited(token, success=exit_code == 0)
             self.model.record_result(ProcessResult(
@@ -424,12 +429,13 @@ class ConsoleSessionInterface(ServiceInterface):
             self._apply_input_mode(InputMode.SHELL)
             self.model.set_input_mode(InputMode.SHELL)
             self.model.return_complete(token)
-            if (restore_steam_shell and self.supervisor._presentation is not None
-                    and self.supervisor._shell_process is not None):
+            presentation = getattr(self.supervisor, "_presentation", None)
+            shell_process = getattr(self.supervisor, "_shell_process", None)
+            if presentation is not None and shell_process is not None:
                 try:
-                    self.supervisor._presentation.select_shell(self.supervisor._shell_process.pid)
+                    presentation.select_shell(shell_process.pid)
                 except (OSError, RuntimeError, TimeoutError, subprocess.SubprocessError):
-                    LOGGER.exception("Steam OOBE dismissal could not restore the Mudos shell surface")
+                    LOGGER.exception("local session return could not restore the Mudos shell surface")
         self._local_identity = None
         self._local_provider_id = ""
         self.StateChanged(self._state_json())
