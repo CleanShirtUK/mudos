@@ -165,11 +165,23 @@ def _recovery_snapshot() -> dict[str, object]:
 
 def _status_label(value: str) -> tuple[str, str]:
     normalized = value.casefold()
-    if normalized in {"configured", "healthy", "active", "connected"}:
+    if normalized == "connected":
         return "Connected", "success"
+    if normalized == "healthy":
+        return "Healthy", "success"
+    if normalized == "active":
+        return "Running", "success"
+    if normalized == "authenticated":
+        return "Authenticated", "success"
+    if normalized == "configured":
+        return "Configured", "muted"
     if normalized in {"disabled", "n/a"}:
         return "Not configured", "muted"
-    if normalized in {"inactive", "unhealthy", "unconfigured"}:
+    if normalized == "unconfigured":
+        return "Not configured", "muted"
+    if normalized == "inactive":
+        return "Stopped", "warning"
+    if normalized == "unhealthy":
         return "Needs attention", "warning"
     return value.replace("_", " ").title(), "muted"
 
@@ -1833,7 +1845,7 @@ load();setInterval(load,10000);
                         if service.url else "")
                 generic_rows.append(
                     f'<div class="service-row"><div><div class="card-head"><h3>{html.escape(service.name)}</h3>'
-                    f'{_badge("active")}</div><p>{html.escape(service.description)}</p></div>{link}</div>')
+                    f'{_badge("unknown")}</div><p>{html.escape(service.description)}</p></div>{link}</div>')
         rows += "".join(generic_rows)
         self._send(_page("Services", f'<div class="service-list">{rows}</div>', subtitle="Open the appliance services you use every day. Editing stays on Integrations.", active="services"))
 

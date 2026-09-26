@@ -3,10 +3,11 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from lulu.admin_web import (AdminApp, Handler, SERVICES, _login_page, _page,
+from lulu.admin_web import (APP, AdminApp, Handler, SERVICES, _login_page, _page, _status_label,
                             _service_url, _setup_service_url)
 from lulu.provider_config import ProviderConfigurationService
 from lulu.plugins import ComponentRegistry
+from lulu.plugins.core import ComponentDescriptor, ServiceContribution
 
 
 class FakeSecrets:
@@ -18,6 +19,31 @@ class FakeSecrets:
 
 
 class AdminWebTests(unittest.TestCase):
+    def test_status_badges_do_not_conflate_configured_with_connected(self):
+        self.assertEqual(_status_label("configured"), ("Configured", "muted"))
+        self.assertEqual(_status_label("unconfigured"), ("Not configured", "muted"))
+        self.assertEqual(_status_label("connected"), ("Connected", "success"))
+        self.assertEqual(_status_label("authenticated"), ("Authenticated", "success"))
+        self.assertEqual(_status_label("healthy"), ("Healthy", "success"))
+        self.assertEqual(_status_label("active"), ("Running", "success"))
+        self.assertEqual(_status_label("inactive"), ("Stopped", "warning"))
+
+    def test_plugin_service_without_a_live_status_is_not_reported_active(self):
+        handler = object.__new__(Handler)
+        handler.headers = {"Host": "mudos.local"}
+        component = ComponentDescriptor("fixture", "Fixture", "Test", "plugin",
+            services=(ServiceContribution("fixture-service", "Fixture Service", "Example"),))
+        with patch.object(Handler, "_send") as send, \
+                patch.object(APP, "service_state", return_value="inactive"), \
+                patch.object(APP, "service_health", return_value="unhealthy"), \
+                patch.object(APP.components, "all", return_value=(component,)):
+            handler._services()
+        page = send.call_args.args[0].decode()
+        self.assertIn("Fixture Service", page)
+        self.assertIn("Unknown", page.split("Fixture Service", 1)[1])
+        self.assertIn("Stopped", page)
+        self.assertIn("Needs attention", page)
+
     def test_epic_setup_auth_returns_actionable_error_for_missing_legendary_runtime(self):
         app = AdminApp()
         transaction = app.auth_transactions.create(
