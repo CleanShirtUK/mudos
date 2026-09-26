@@ -25,7 +25,7 @@ claims.
 | Emulator/ROM | Registry, root-scoped discovery, readiness checks, launch intents, and direct local runtime launch | PARTIAL: providers and authoritative lifecycle integration are incomplete |
 | Background services | `consoled` provides catalogue/settings/launch boundaries; `console-sessiond` provides lifecycle/process/input monitoring | PARTIAL: `controllerd`, `applicationd`, and `console-ui` remain boundary/placeholder services |
 | Configuration | Environment-driven runtime configuration, InputPlumber profiles, RetroArch config, and a settings library | PARTIAL: settings persistence is not wired into UI/services |
-| System integration | systemd units/target, PAM/logind, VT, seatd/InputPlumber ordering, PipeWire fallback, native Qt/X11 shell | PARTIAL: installer/package policy and mutable system settings are incomplete |
+| System integration | `./install-mudos.sh`, machine-readable `packaging/mudos-ownership.json`, systemd units/target, PAM/logind, VT, seatd/InputPlumber ordering, native Qt/X11 shell | Production install/uninstall/purge contract implemented; shared system settings outside declared ownership remain untouched |
 | Recovery | Token ownership, process-group escalation, reconnect handling, and evidenced natural Gamescope fallback | PARTIAL: recovery behavior varies by launch path and has no unified retry UI |
 | Evidence/tests | Python unit tests plus dated manual/runtime evidence under `docs/` | PARTIAL: no complete hardware or real service integration matrix |
 
@@ -46,4 +46,4 @@ claims.
   power.
 - ROM import, metadata enrichment, local artwork, and BIOS management UI.
 - Complete controller identity, assignment, battery, vibration, and persistence.
-- Complete production installer and permanent Gamescope/AppID policy.
+- Permanent Gamescope/AppID policy.

@@ -5,4 +5,4 @@ Wants=inputplumber.service
 
 [Service]
 Type=oneshot
-ExecStart=/opt/lulu/dev-current/scripts/provision-inputplumber-gamepads.py /etc/inputplumber/devices.d/lulu-composite.yaml --activate
+ExecStart=/opt/lulu/current/scripts/provision-inputplumber-gamepads.py /etc/inputplumber/devices.d/lulu-composite.yaml --activate

@@ -17,7 +17,10 @@ state=${LULU_TRANSMISSION_STATE:-/var/lib/lulu-transmission}
 service=${LULU_TRANSMISSION_SERVICE:-lulu-transmission.service}
 lulu_user=${LULU_PROVIDER_CONFIG_USER:-lulu}
 runtime_root=${LULU_INSTALL_ROOT:-$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)}
-if [ -d "$runtime_root/lib" ]; then provider_pythonpath="$runtime_root/lib"; else provider_pythonpath=/opt/lulu/dev-current/lib; fi
+if [ -d "$runtime_root/lib" ]; then provider_pythonpath="$runtime_root/lib"; else
+    echo "Mudos runtime library missing at $runtime_root/lib" >&2
+    exit 1
+fi
 
 pacman -S --needed --noconfirm transmission-cli
 if ! getent group "$group" >/dev/null; then groupadd --system "$group"; fi

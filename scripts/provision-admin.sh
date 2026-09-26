@@ -18,7 +18,10 @@ if [[ ! -s "$recovery_token_file" ]]; then
     fi
 fi
 sed "s#/opt/lulu/current#$service_root#g" "$root/packaging/lulu-admin.service" > /etc/systemd/system/lulu-admin.service
-install -D -m 0755 "$root/packaging/mudos-provider-install" "$service_root/bin/mudos-provider-install"
+if [[ ! -x "$service_root/bin/mudos-provider-install" ]]; then
+    echo "immutable runtime is missing bin/mudos-provider-install: $service_root" >&2
+    exit 1
+fi
 sed "s#/opt/lulu/current#$service_root#g" "$root/packaging/lulu-provider-install@.service" \
     > /etc/systemd/system/lulu-provider-install@.service
 install -D -m 0644 "$root/packaging/polkit-1/rules.d/57-lulu-provider-install.rules" \
@@ -38,25 +41,10 @@ install -D -m 0644 "$root/packaging/polkit-1/rules.d/59-lulu-initial-password.ru
 install -D -m 0644 "$root/packaging/avahi/mudos-http.service" \
     /etc/avahi/services/mudos-http.service
 
-# Avahi owns the appliance's mDNS/DNS-SD socket.  systemd-resolved may still
-# provide ordinary DNS, but its independent mDNS listener conflicts with
-# Avahi on UDP 5353 and makes .local resolution unreliable.
-mkdir -p /etc/systemd/resolved.conf.d
-cat > /etc/systemd/resolved.conf.d/50-lulu-avahi.conf <<'EOF'
-[Resolve]
-MulticastDNS=no
-EOF
-if grep -q '^hosts:' /etc/nsswitch.conf && ! grep -q '^hosts:.*mdns_minimal' /etc/nsswitch.conf; then
-    sed -i 's/^hosts: /hosts: mdns_minimal [NOTFOUND=return] /' /etc/nsswitch.conf
-fi
-systemctl restart systemd-resolved.service
-if [[ -f /etc/avahi/avahi-daemon.conf ]]; then
-    if grep -q '^#\?host-name=' /etc/avahi/avahi-daemon.conf; then
-        sed -i 's/^#\?host-name=.*/host-name=mudos/' /etc/avahi/avahi-daemon.conf
-    else
-        printf '\nhost-name=mudos\n' >> /etc/avahi/avahi-daemon.conf
-    fi
-fi
+# Avahi is enabled for service discovery, but this provisioner deliberately
+# leaves the base resolver and Avahi configuration untouched.  A deployment
+# requiring resolver/NSS policy must install a separately owned reversible
+# drop-in rather than editing shared system files in place.
 systemctl enable --now avahi-daemon.service 2>/dev/null || true
 systemctl restart avahi-daemon.service 2>/dev/null || true
 systemctl daemon-reload

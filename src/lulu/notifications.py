@@ -152,7 +152,7 @@ class NotificationPresenter:
 
     def __init__(self, executable: str | None = None, duration: float = 4.0) -> None:
         self.executable = executable or str(
-            Path(os.environ.get("LULU_INSTALL_ROOT", "/opt/lulu/dev-current"))
+            Path(os.environ.get("LULU_INSTALL_ROOT", "/opt/lulu/current"))
             / "bin" / "mudos-notification"
         )
         self.duration = duration
@@ -161,7 +161,7 @@ class NotificationPresenter:
     async def _ensure_process(self) -> asyncio.subprocess.Process:
         if self._process is not None and self._process.returncode is None:
             return self._process
-        install_root = Path(os.environ.get("LULU_INSTALL_ROOT", "/opt/lulu/dev-current"))
+        install_root = Path(os.environ.get("LULU_INSTALL_ROOT", "/opt/lulu/current"))
         env = {**os.environ, "DISPLAY": os.environ.get("DISPLAY", ":0"),
                "WAYLAND_DISPLAY": os.environ.get("WAYLAND_DISPLAY", "gamescope-0"),
                "XDG_RUNTIME_DIR": os.environ.get("XDG_RUNTIME_DIR", "/run/user/958"),

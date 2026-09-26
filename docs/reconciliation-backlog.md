@@ -16,7 +16,7 @@ does not add product proposals.
 | PARTIAL | Controller | Complete discovery/persistence and management controls; retain the validated InputPlumber reconnect design. `controller-architecture.md`, `system-settings-status-20260909.md` |
 | PARTIAL | Settings | Prove and then implement display, audio, network, Bluetooth, storage, power, and Mudos preference capabilities. `system-settings-status-20260909.md` |
 | PLANNED | Store | Replace the explicit Store placeholder only if the existing Store/package scope is confirmed. `ui/ConsoleShell.qml`, `src/lulu/applicationd.py` |
-| PARTIAL | Packaging | Complete production installer/package definition and appliance deployment policy. `packaging/`, `docs/steam-appliance-ownership.md` |
+| IMPLEMENTED (fresh appliance acceptance pending) | Packaging | Canonical install/uninstall/purge and machine-readable ownership contract are in `install-mudos.sh`, `scripts/install_mudos.py`, and `packaging/mudos-ownership.json`; physical fresh-install/OOBE acceptance remains separate. `docs/installation.md` |
 | NOT TESTED | Hardware | Validate accepted visual/UI baseline on BC-250 hardware; host evidence is not hardware evidence. `liquid-glass-optical-evidence.md` |
 | NOT TESTED | Integration | Exercise real D-Bus, InputPlumber, Gamescope, Steam, and emulator launch/recovery paths without relying only on unit tests. `tests/`, dated evidence docs |
 

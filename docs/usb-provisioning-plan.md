@@ -1,16 +1,13 @@
 # USB Provisioning Plan
 
-Status: first implementation. This document defines the production deployment
-mechanism for a fresh CachyOS installation. The implementation is under
-`deploy/`; it does not deploy to, or make assumptions about, the BC-250
-hardware.
+Status: historical USB deployment design. The supported production installation
+entry point is now `./install-mudos.sh`; see `docs/installation.md`. This plan
+is retained as historical evidence only and is not an executable install path.
 
-> **Historical USB workflow.** This document is retained for installation
-> evidence only. Current Mudos development and promotable releases use only
-> `lulu:/home/josh/src/lulu` and its canonical `scripts/release.py` builder.
-> Do not run the legacy payload refresh or installer for current deployment.
+> Do not run the removed legacy USB installer or payload refresh. Production
+> installs use the committed clean checkout and canonical root-level command.
 
-## Scope
+## Historical scope (superseded)
 
 The production mechanism is one repository-owned script at the USB root:
 

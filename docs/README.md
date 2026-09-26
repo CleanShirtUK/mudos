@@ -7,6 +7,7 @@ and conditions that were true when they were captured.
 ## Current Orientation
 
 - [Implementation inventory](mudos-implementation-inventory.md): repository-derived map of the current system.
+- [Production installation](installation.md): canonical install, immutable runtime, ownership, uninstall, and purge contract.
 - [Native catalogue and Recent model](catalogue-model-architecture.md): authoritative model transport, Recent migration, and physical evidence.
 - [Reconciliation backlog](reconciliation-backlog.md): known gaps, deferred work, and superseded material.
 - [Manual validation matrix](manual-validation-matrix.md): evidence-bounded validation status; no interactive tests are implied.
@@ -26,7 +27,7 @@ and conditions that were true when they were captured.
 - [Emulator controller provisioning](emulator-controller-provisioning.md): native PCSX2 and Dolphin profile contract
 - [Nintendo Switch provider](switch-provider.md): Eden launch, controller profile, and user-owned prerequisites
 - [Known-good test environment](known-good-test-environment-20260910.md): complete CachyOS milestone audit and reproduction boundary
-- [USB provisioning plan](usb-provisioning-plan.md): single-script fresh CachyOS deployment design
+- [USB provisioning plan](usb-provisioning-plan.md): superseded historical deployment design
 
 ## Dated Validation And Research
 

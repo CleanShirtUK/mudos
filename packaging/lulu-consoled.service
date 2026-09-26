@@ -8,6 +8,7 @@ After=user@958.service lulu-session@2.service
 Type=simple
 User=lulu
 Environment=PYTHONPATH=/opt/lulu/lib
+Environment=LULU_INSTALL_ROOT=/opt/lulu/current
 Environment=HOME=/home/lulu
 Environment=USER=lulu
 Environment=LOGNAME=lulu

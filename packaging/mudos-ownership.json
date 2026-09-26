@@ -1,0 +1,74 @@
+{
+  "schema": 1,
+  "account": {"name": "lulu", "uid": 958, "gid": 958, "home": "/home/lulu"},
+  "immutable": {
+    "release_root": "/opt/lulu/releases",
+    "selector": "/opt/lulu/current",
+    "application_roots": ["/opt/lulu/bin", "/opt/lulu/lib", "/opt/lulu/ui", "/opt/lulu/config", "/opt/lulu/scripts"]
+  },
+  "system_integration": {
+    "systemd_files": [
+      "/etc/systemd/system/lulu.target", "/etc/systemd/system/lulu-session@.service",
+      "/etc/systemd/system/lulu-consoled.service", "/etc/systemd/system/lulu-acquisition.service",
+      "/etc/systemd/system/lulu-admin.service", "/etc/systemd/system/lulu-provider-install@.service",
+      "/etc/systemd/system/mudos-recovery.service", "/etc/systemd/system/mudos-recovery-guard.service",
+      "/etc/systemd/system/mudos-recovery-ui.service", "/etc/systemd/system/lulu-inputplumber-hotplug.service",
+      "/etc/systemd/system/lulu.target.wants/lulu-session@2.service",
+      "/etc/systemd/system/multi-user.target.wants/lulu.target",
+      "/etc/systemd/system/multi-user.target.wants/lulu-admin.service",
+      "/etc/systemd/system/multi-user.target.wants/mudos-recovery.service",
+      "/etc/systemd/system/lulu-session@.service.d/dev-runtime.conf",
+      "/etc/systemd/system/lulu-consoled.service.d/dev-runtime.conf",
+      "/etc/systemd/system/lulu-acquisition.service.d/dev-runtime.conf",
+      "/etc/systemd/system/lulu-transmission.service", "/etc/systemd/system/lulu-questarr.service",
+      "/etc/systemd/system/lulu-questarr-reconcile.service",
+      "/etc/systemd/system/multi-user.target.wants/lulu-transmission.service",
+      "/etc/systemd/system/multi-user.target.wants/lulu-questarr.service"
+    ],
+    "system_files": [
+      "/etc/pam.d/lulu-session", "/etc/lulu/presentation.conf", "/etc/lulu/mudos-recovery-token",
+      "/etc/lulu/provider-services.toml", "/etc/lulu/file-browser.env",
+      "/etc/udev/rules.d/80-lulu-osk.rules", "/etc/udev/rules.d/81-lulu-gamepad-hotplug.rules",
+      "/etc/inputplumber/devices.d/lulu-composite.yaml",
+      "/etc/polkit-1/rules.d/49-lulu-network.rules", "/etc/polkit-1/rules.d/50-lulu-storage.rules",
+      "/etc/polkit-1/rules.d/56-lulu-session-restart.rules", "/etc/polkit-1/rules.d/57-lulu-provider-install.rules",
+      "/etc/polkit-1/rules.d/58-lulu-recovery-power.rules", "/etc/polkit-1/rules.d/59-lulu-initial-password.rules",
+      "/etc/polkit-1/rules.d/60-lulu-recovery.rules", "/usr/libexec/mudos-set-initial-password",
+      "/etc/avahi/services/mudos-http.service", "/etc/tmpfiles.d/lulu.conf",
+      "/etc/systemd/system/inputplumber.service.d/lulu.conf"
+    ],
+    "patterns": ["/etc/inputplumber/devices.d/lulu-gamepad-event*.yaml"]
+  },
+  "mutable": {
+    "exact_paths": [
+      "/home/lulu/.config/lulu", "/home/lulu/.local/share/lulu", "/home/lulu/.cache/lulu",
+      "/home/lulu/Games/ROMs", "/home/lulu/Games/BIOS", "/home/lulu/Games/Executables",
+      "/home/lulu/Games/.acquisition", "/home/lulu/.local/share/Steam", "/home/lulu/.steam/steam",
+      "/home/lulu/.config/dolphin-emu", "/home/lulu/.config/PCSX2", "/home/lulu/.config/retroarch",
+      "/home/lulu/.config/eden", "/home/lulu/.config/legendary", "/home/lulu/.config/heroic",
+      "/home/lulu/.config/gogdl", "/home/lulu/.config/lutris", "/home/lulu/.local/share/lutris",
+      "/home/lulu/.config/sunshine", "/home/lulu/.config/systemd/user/lulu-sunshine-dev.service",
+      "/home/lulu/.config/systemd/user/default.target.wants/lulu-sunshine-dev.service",
+      "/var/lib/lulu", "/var/lib/lulu-questarr",
+      "/var/lib/lulu-transmission", "/var/lib/nzbget"
+    ],
+    "directories": ["/home/lulu/.config/lulu", "/home/lulu/.local/share/lulu", "/home/lulu/.cache/lulu", "/var/lib/lulu"],
+    "initial_directories": [
+      {"path": "/home/lulu/Games", "owner": "lulu", "mode": "0750"},
+      {"path": "/home/lulu/Games/ROMs", "owner": "lulu", "mode": "0750"},
+      {"path": "/home/lulu/Games/BIOS", "owner": "lulu", "mode": "0750"},
+      {"path": "/home/lulu/Games/Executables", "owner": "lulu", "mode": "0750"},
+      {"path": "/home/lulu/.config/lulu", "owner": "lulu", "mode": "0750"},
+      {"path": "/home/lulu/.local/share/lulu", "owner": "lulu", "mode": "0750"},
+      {"path": "/home/lulu/.cache/lulu", "owner": "lulu", "mode": "0750"},
+      {"path": "/var/lib/lulu", "owner": "lulu", "mode": "0750"}
+    ]
+  },
+  "developer_runtime": {"path": "/opt/lulu/dev-current", "staging_prefix": "/opt/lulu/.dev-staging-"},
+  "configured_storage_policy": "When storage-targets.json configures game_path or emulation_path, Mudos owns only the child <configured-path>/Mudos tree and its ROMs, BIOS, Executables, and .acquisition subtrees. Never purge the configured mount/root itself.",
+  "shared_dependencies": {
+    "package_manager": "pacman",
+    "packages": ["base-devel", "pkgconf", "qt6-base", "qt6-declarative", "qt6-webengine", "qt6-imageformats", "sdl3", "xcb-util", "xcb-util-keysyms", "xcb-util-wm", "python", "python-dbus-next", "python-pillow", "systemd", "seatd", "inputplumber", "gamescope", "steam", "steam-devices", "pipewire", "wireplumber", "avahi", "ufw", "git", "curl", "polkit", "acl", "ffmpeg", "fontconfig", "ttf-jetbrains-mono-nerd"]
+  },
+  "protected": ["/home/josh/src/lulu", "/opt/lulu/releases", "/opt/lulu/rollback"]
+}

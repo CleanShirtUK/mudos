@@ -4,14 +4,15 @@ set(CMAKE_AUTOMOC ON)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 find_package(PkgConfig REQUIRED)
-find_package(Qt6 REQUIRED COMPONENTS DBus Gui Qml Quick Test)
+find_package(Qt6 REQUIRED COMPONENTS DBus Gui Network Qml Quick Test WebEngineQuick)
 pkg_check_modules(XCB_XTEST REQUIRED IMPORTED_TARGET xcb-xtest)
 pkg_check_modules(XCB_KEYSYMS REQUIRED IMPORTED_TARGET xcb-keysyms)
 pkg_check_modules(XCB REQUIRED IMPORTED_TARGET xcb)
 pkg_check_modules(SDL3 REQUIRED IMPORTED_TARGET sdl3)
 
 add_executable(lulu-shell lulu-shell.cpp catalogue-model.cpp recent-model.cpp mudos-glass-item.cpp)
-target_link_libraries(lulu-shell PRIVATE Qt6::DBus Qt6::Gui Qt6::Qml Qt6::Quick PkgConfig::XCB PkgConfig::SDL3)
+target_link_libraries(lulu-shell PRIVATE Qt6::DBus Qt6::Gui Qt6::Network Qt6::Qml Qt6::Quick Qt6::WebEngineQuick
+    PkgConfig::XCB PkgConfig::XCB_KEYSYMS PkgConfig::SDL3)
 
 enable_testing()
 add_executable(catalogue-model-test catalogue-model-test.cpp catalogue-model.cpp recent-model.cpp)
