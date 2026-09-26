@@ -23,6 +23,33 @@ class SessiondTests(unittest.TestCase):
 
         self.assertTrue(supervisor.cancelled)
 
+    def test_guide_quit_targets_only_the_sessiond_owned_local_process_group(self) -> None:
+        from types import SimpleNamespace
+        from lulu.launch_identity import LaunchIdentity
+
+        interface = ConsoleSessionInterface.__new__(ConsoleSessionInterface)
+        interface._local_identity = LaunchIdentity("owned-token", 1234, 1234, "/game", ("/game",))
+        interface.model = SimpleNamespace(state=SimpleNamespace(launch_token="owned-token"))
+        interface.supervisor = SimpleNamespace()
+        with patch("lulu.sessiond.os.killpg") as killpg:
+            result = asyncio.run(ConsoleSessionInterface.QuitActiveSession.__wrapped__(interface))
+        self.assertEqual(result, "quit-requested")
+        killpg.assert_called_once_with(1234, __import__("signal").SIGTERM)
+
+    def test_guide_quit_rejects_a_stale_session_identity(self) -> None:
+        from types import SimpleNamespace
+        from lulu.launch_identity import LaunchIdentity
+        from dbus_next import DBusError
+
+        interface = ConsoleSessionInterface.__new__(ConsoleSessionInterface)
+        interface._local_identity = LaunchIdentity("old-token", 1234, 1234, "/game", ("/game",))
+        interface.model = SimpleNamespace(state=SimpleNamespace(launch_token="new-token"))
+        interface.supervisor = SimpleNamespace()
+        with patch("lulu.sessiond.os.killpg") as killpg:
+            with self.assertRaises(DBusError):
+                asyncio.run(ConsoleSessionInterface.QuitActiveSession.__wrapped__(interface))
+        killpg.assert_not_called()
+
     def test_idle_session_waits_for_explicit_stop_signal(self) -> None:
         async def exercise() -> None:
             stop_event = asyncio.Event()

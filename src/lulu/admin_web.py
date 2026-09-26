@@ -651,6 +651,9 @@ class AdminApp:
                 subprocess.run(["systemctl", "restart", "nzbget.service"],
                                stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
                                stderr=subprocess.DEVNULL, check=True, timeout=10)
+                ready, readiness_message = self.wait_for_nzbget_rpc()
+                if not ready:
+                    raise RuntimeError(readiness_message)
                 # Acquisitiond registers this executor from the generic
                 # providers.usenet configuration at service startup. NNTP-only
                 # settings must not leave a healthy NZBGet daemon with no job
@@ -665,7 +668,7 @@ class AdminApp:
                                                 {"enabled": usenet_acquisition_was_enabled})
                     raise ValueError("Usenet settings were applied to NZBGet, but Acquisitiond could not "
                                      "reload its provider executor. Check lulu-acquisition.service.") from None
-            except (OSError, subprocess.SubprocessError):
+            except (OSError, subprocess.SubprocessError, RuntimeError):
                 # The generic provider settings and encrypted references have
                 # already been saved. Report the daemon failure distinctly;
                 # callers must not interpret that as a working transfer route.
@@ -1303,6 +1306,18 @@ class AdminApp:
                     return False, "The provider is not installed"
                 return True, "Provider is available"
         return False, "No normalized health check is available for this provider"
+
+    def wait_for_nzbget_rpc(self, *, attempts: int = 20, interval: float = 0.25) -> tuple[bool, str]:
+        """Wait for a restarted NZBGet daemon to expose authenticated JSON-RPC."""
+        import time
+        result = (False, "NZBGet RPC did not become ready")
+        for attempt in range(max(1, attempts)):
+            result = self.test_provider("providers.usenet")
+            if result[0]:
+                return result
+            if attempt + 1 < attempts:
+                time.sleep(max(0.0, interval))
+        return result
 
     def reconcile_romm_catalogue(self) -> dict[str, object]:
         """Run the normal Consoled RomM reconciliation and wait for its result."""
@@ -2096,6 +2111,9 @@ load();setInterval(load,10000);
                 subprocess.run(["systemctl", "restart", "nzbget.service"],
                                stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
                                stderr=subprocess.DEVNULL, check=True, timeout=10)
+                ready, readiness_message = APP.wait_for_nzbget_rpc()
+                if not ready:
+                    raise RuntimeError(readiness_message)
             if provider_id == "providers.usenet.server":
                 from .nzbget_admin import apply_news_server, apply_packaged_paths
                 updated = APP.config.provider(provider_id)
@@ -2131,6 +2149,7 @@ load();setInterval(load,10000);
                                                before_usenet_parent_secrets)
             except (OSError, ValueError):
                 pass
+            LOGGER.exception("provider save failed provider=%s error_type=%s", provider_id, type(error).__name__)
             message = ("Could not update Transmission credentials; previous credentials were preserved."
                        if provider_id == "providers.torrent"
                        else "Could not save these settings. Your previous settings were kept.")

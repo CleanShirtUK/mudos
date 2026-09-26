@@ -4,7 +4,7 @@ import re
 import io
 import urllib.error
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from lulu.admin_web import (APP, AdminApp, Handler, SERVICES, _login_page, _page, _status_label,
                             _service_url, _setup_service_url)
@@ -234,7 +234,8 @@ class AdminWebTests(unittest.TestCase):
             app.config = ProviderConfigurationService(
                 system_path=root / "system.toml", user_path=root / "user.toml",
                 secrets=Secrets())
-            with patch("lulu.nzbget_admin.apply_news_server") as apply, \
+            with patch.object(app, "wait_for_nzbget_rpc", return_value=(True, "NZBGet RPC healthy")), \
+                    patch("lulu.nzbget_admin.apply_news_server") as apply, \
                     patch("lulu.admin_web.subprocess.run") as run:
                 result = app.save_setup_credentials("providers.usenet.server", {
                     "host": "news.example", "port": 563, "tls": "true", "connections": 8,
@@ -1045,6 +1046,15 @@ var fetch=async function(path,options){calls.push(path);let body=options&&option
             rows = app.provider_rows()
             self.assertTrue(all(all(isinstance(value, bool) for value in row["secrets"].values()) for row in rows))
 
+    def test_nzbget_restart_readiness_waits_for_authenticated_rpc(self):
+        app = AdminApp()
+        app.test_provider = Mock(side_effect=[(False, "starting"), (True, "NZBGet RPC healthy")])
+        with patch("time.sleep") as sleep:
+            result = app.wait_for_nzbget_rpc(attempts=3, interval=0.1)
+        self.assertEqual(result, (True, "NZBGet RPC healthy"))
+        self.assertEqual(app.test_provider.call_count, 2)
+        sleep.assert_called_once_with(0.1)
+
     def test_store_provider_rows_use_the_same_auth_files_as_oobe_and_catalogue(self):
         class Config:
             status = "not_configured"
@@ -1063,10 +1073,14 @@ var fetch=async function(path,options){calls.push(path);let body=options&&option
         app = AdminApp()
         app.config.provider = lambda _provider: Config()
         app._auth = lambda provider: Auth() if provider in {"epic", "gog"} else None
-        rows = {row["id"]: row for row in app.provider_rows()}
+        with patch("lulu.plugins.romm.RommConfig.from_file",
+                   return_value=type("Romm", (), {"client_token": "stored-secret-reference"})()):
+            rows = {row["id"]: row for row in app.provider_rows()}
         for provider in ("epic", "gog"):
             self.assertEqual(rows[provider]["status"], "configured")
             self.assertTrue(rows[provider]["configured"])
+        self.assertEqual(rows["providers.romm"]["status"], "configured")
+        self.assertTrue(rows["providers.romm"]["configured"])
 
     def test_provider_configuration_does_not_blindly_trigger_questarr_reconcile(self):
         admin = (Path(__file__).parents[1] / "src/lulu/admin_web.py").read_text()

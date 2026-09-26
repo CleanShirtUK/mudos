@@ -506,9 +506,9 @@ import QtQuick.Controls
                 if (generation !== undefined) {
                     launchStatus = "failed"
                     launchStatusTimer.stop()
-                    if (failureCallback)
-                        failureCallback()
                 }
+                if (failureCallback)
+                    failureCallback()
             }
         }
         request.open(method, apiUrl + path)
@@ -1751,7 +1751,7 @@ import QtQuick.Controls
 
     function openBrowser(url, trustProfile, trustOrigin) {
         browserSuspended = false
-        browserVisible = true
+        browserVisible = false
         browserLaunchUrl = url
         browserTrustProfile = trustProfile || ""
         browserTrustOrigin = trustOrigin || ""
@@ -1761,12 +1761,21 @@ import QtQuick.Controls
             request("/browser-surface/active", "POST", JSON.stringify({active: true}), function() {
                 request("/input-mode/compat", "POST", "", function() {
                     browserInputModePending = false
+                    browserVisible = true
                     browserSurface.trustedProfile = browserTrustProfile
                     browserSurface.trustedOrigin = browserTrustOrigin
                     browserSurface.open(url)
-                }, "Browser compatibility mode unavailable")
-            }, "Browser session unavailable")
-        }, "Browser session state unavailable")
+                }, "Browser compatibility mode unavailable", undefined, function() {
+                    request("/browser-surface/active", "POST", JSON.stringify({active: false}), function() {})
+                    request("/input-mode/" + encodeURIComponent(browserPriorInputMode), "POST", "", function() {})
+                    browserInputModePending = false
+                })
+            }, "Browser session unavailable", undefined, function() {
+                browserInputModePending = false
+            })
+        }, "Browser session state unavailable", undefined, function() {
+            browserInputModePending = false
+        })
     }
 
     function launchHomeStore(id, displayName, url) {

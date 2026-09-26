@@ -95,6 +95,22 @@ class EmulatorRuntimeTests(unittest.TestCase):
         self.assertEqual(intent.executable, str(executable))
         self.assertEqual(intent.arguments, ("-L", str(core), str(content)))
 
+    def test_retroarch_launches_the_generated_multi_disc_playlist_descriptor(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            executable = root / "retroarch"
+            core = root / "pcsx_rearmed_libretro.so"
+            playlist = root / "Final Fantasy [fixture].m3u"
+            for path in (executable, core):
+                path.write_bytes(b"fixture")
+            playlist.write_text("disc1.cue\ndisc2.cue\n")
+            game = LocalContentGame("local:psx:playlist", "Final Fantasy", "psx", str(playlist),
+                                    True, "installed", "ready")
+
+            intent = EmulatorRuntimeAdapter({"psx": executable}, {"psx": core}).launch_intent(game)
+
+        self.assertEqual(intent.arguments, ("-L", str(core), str(playlist)))
+
     def test_unlaunchable_content_is_rejected_before_runtime_invocation(self) -> None:
         game = LocalContentGame("local:switch:id", "Switch", "switch", "/fixture/game.nsp", False, "installed", "runtime-missing")
 

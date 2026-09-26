@@ -1,5 +1,6 @@
 import tempfile
 import asyncio
+import json
 from types import SimpleNamespace
 from unittest.mock import patch
 from pathlib import Path
@@ -11,6 +12,10 @@ from lulu.plugins.external import (CliAcquisitionExecutor, OwnedProviderGame,
 from lulu.plugins.epic import EpicAcquisitionExecutor, EpicAuthentication
 from lulu.plugins.gog import GogAuthentication
 from lulu.jobs import DownloadJob, JobOperation
+from lulu.consoled import ConsoleCatalog, ConsoleInterface
+from lulu.acquisitiond import AcquisitionInterface
+from lulu.job_manager import JobManager
+from lulu.jobs import JobState
 
 
 class ExternalProviderTests(unittest.TestCase):
@@ -75,6 +80,97 @@ class ExternalProviderTests(unittest.TestCase):
                     self.assertEqual(projected.install_state, "installed")
                     self.assertTrue(projected.launchable)
                     self.assertEqual(projected.install_dir, str(destination))
+
+    def test_gog_completion_refresh_projects_library_and_dispatches_managed_launch(self) -> None:
+        from unittest.mock import AsyncMock, Mock
+        from lulu.plugins.gog import GogEntitlementSource, GogLauncher
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            library = root / "Games" / "Executables" / "gog"
+            install = library / "black-flower"
+            payload = install / "game" / "gameinfo"
+            payload.parent.mkdir(parents=True)
+            payload.write_text("fixture")
+            (install / ".mudos-game.json").write_text(json.dumps({
+                "provider_id": "black-flower", "title": "Black Flower",
+                "install_dir": str(install),
+            }))
+            auth_path = root / "config" / "heroic" / "gog_store" / "auth.json"
+            auth_path.parent.mkdir(parents=True)
+            auth_path.write_text("{}")
+
+            class Plugins:
+                def with_capability(self, capability):
+                    if capability == "installed_catalogue":
+                        return (GogEntitlementSource(),)
+                    return ()
+
+            with patch("lulu.plugins.gog.PATHS", SimpleNamespace(
+                    provider_root=lambda _id: root / "state",
+                    provider_config_root=lambda _id: root / "config",
+                    gog_library_root=library)), \
+                    patch("lulu.onboarding.onboarding_state", return_value={
+                        "selected_providers": ["gog"], "selected_integrations": []}), \
+                    patch("lulu.consoled._load_plugin_registry", return_value=Plugins()):
+                source = GogEntitlementSource()
+                # A failed entitlement network sync must still leave the
+                # Mudos-owned installation marker eligible for projection.
+                source.refresh = Mock(return_value=())
+                source._last_good = ()
+                plugins = Plugins()
+                plugins.with_capability = Mock(side_effect=lambda capability: (
+                    (source,) if capability == "installed_catalogue" else ()))
+                store = CatalogueStore(root / "catalogue.sqlite3")
+                catalog = ConsoleCatalog(store=store, plugin_registry=plugins)
+                catalog.external_entitlements = (source,)
+                job = DownloadJob("completed-gog", "gog", "Black Flower",
+                                  content_identity="gog:black-flower", state=JobState.COMPLETED)
+                manager = JobManager()
+                manager.jobs[job.job_id] = job
+
+                class Bus:
+                    async def introspect(self, *_args):
+                        return object()
+                    def get_proxy_object(self, *_args):
+                        class Proxy:
+                            @staticmethod
+                            def get_interface(_name):
+                                class Consoled:
+                                    @staticmethod
+                                    async def call_refresh_stages(stages):
+                                        self_ref = catalog
+                                        self_ref.refresh(set(stages))
+                                return Consoled()
+                        return Proxy()
+
+                acquisition = AcquisitionInterface(manager, store, plugins, bus=Bus())
+                asyncio.run(acquisition._reconcile_completed_job(job.job_id))
+
+                game = store.get_game("gog:black-flower")
+                self.assertIsNotNone(game)
+                self.assertEqual(game.install_state, "installed")
+                self.assertTrue(game.launchable)
+                self.assertEqual(game.install_dir, str(install))
+
+                session = SimpleNamespace(
+                    call_set_delegated_launch_context=AsyncMock(),
+                    call_request_game_launch=AsyncMock(return_value="token"),
+                )
+                interface = object.__new__(ConsoleInterface)
+                interface.catalogue = catalog
+                interface._plugins = SimpleNamespace(with_capability=lambda _cap: (GogLauncher(),))
+                interface.sessiond = session
+                interface._publish_delta = Mock()
+                interface.CatalogueChanged = Mock()
+                with patch("lulu.plugins.gog.PATHS", SimpleNamespace(
+                        gog_library_root=library,
+                        provider_config_root=lambda _id: root / "config")):
+                    command = GogLauncher().launch_command("black-flower")
+                self.assertEqual(command[command.index("launch") + 1], str(payload.parent))
+                self.assertEqual(asyncio.run(ConsoleInterface.LaunchGame.__wrapped__(
+                    interface, game.game_id, 15000)), "token")
+                session.call_request_game_launch.assert_awaited_once_with(game.game_id, command, 15000)
 
     def test_cli_install_is_not_complete_without_real_provider_payload(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

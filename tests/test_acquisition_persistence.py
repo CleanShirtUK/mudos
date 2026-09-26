@@ -32,6 +32,7 @@ class AcquisitionPersistenceTests(unittest.TestCase):
     def test_romm_completion_refreshes_remote_and_local_catalogues(self) -> None:
         self.assertEqual(_completed_job_refresh_stages("romm"), ["romm", "local"])
         self.assertEqual(_completed_job_refresh_stages("steam"), ["steam"])
+        self.assertEqual(_completed_job_refresh_stages("gog"), ["gog"])
 
     def test_timestamps_and_reconstruction(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

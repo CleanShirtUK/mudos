@@ -1025,7 +1025,11 @@ class ApiHandler(BaseHTTPRequestHandler):
                 elif action == "refresh-metadata":
                     result = self.bridge.refresh_catalogue_stages(["metadata"])
                 elif action == "refresh-library":
-                    result = self.bridge.refresh_catalogue_stages(["steam", "local", "romm", "artwork"])
+                    # Native PC storefront installs are projected by their
+                    # provider-owned marker/catalogue sources, not filesystem
+                    # discovery; include them in an explicit Library refresh.
+                    result = self.bridge.refresh_catalogue_stages(
+                        ["steam", "gog", "epic", "local", "romm", "artwork"])
                 elif action == "refresh-downloads":
                     result = self.bridge.refresh_catalogue_stages(["steam", "romm"])
                 else:

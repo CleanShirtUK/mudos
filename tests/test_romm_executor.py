@@ -1,5 +1,6 @@
 import asyncio
 from io import BytesIO
+import zipfile
 from pathlib import Path
 import tempfile
 import unittest
@@ -31,6 +32,122 @@ class FakeRomm:
 
 
 class RommExecutorTests(unittest.TestCase):
+    def test_ps1_cue_track_set_is_preserved_and_launches_the_cue(self) -> None:
+        async def exercise() -> None:
+            with tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                cue = b'FILE "track 1.bin" BINARY\nFILE "track 2.bin" BINARY\n'
+                files = (RommFile(701, "disc.cue", len(cue)),
+                         RommFile(702, "track 1.bin", 3), RommFile(703, "track 2.bin", 3))
+
+                class Client(FakeRomm):
+                    def __init__(self):
+                        self.game = RommGame(7, "Fixture Disc", 7, "psx", "PlayStation", "disc.cue",
+                                             ".cue", len(cue), "", False, files)
+                        self.payloads = {701: cue, 702: b"one", 703: b"two"}
+
+                    def open_file_stream(self, romm_file, offset=0):
+                        return BytesIO(self.payloads[romm_file.file_id][offset:])
+
+                executor = RommExecutor(Client(), chunk_size=2)
+                manager = JobManager()
+                manager.register_executor("romm", executor, limit=1)
+                with patch.dict("os.environ", {"LULU_ROM_ROOT": str(root)}), \
+                        patch("lulu.plugins.romm.executor.ensure_storage"):
+                    job = manager.submit("romm", "romm:7", "Fixture Disc")
+                    await manager._tasks[job.job_id]
+                self.assertEqual(manager.jobs[job.job_id].state, JobState.COMPLETED)
+                disc = root / "psx" / "romm-7"
+                self.assertEqual((disc / "track 1.bin").read_bytes(), b"one")
+                self.assertEqual((disc / "track 2.bin").read_bytes(), b"two")
+                runtime = root / "retroarch"
+                runtime.touch()
+                from lulu.local_content import LocalContentProvider
+                installed = LocalContentProvider(runtime_paths={"psx": runtime}).list_installed(root)
+                self.assertEqual([Path(item.content_path).name for item in installed], ["disc.cue"])
+                self.assertTrue(installed[0].launchable)
+
+        asyncio.run(exercise())
+
+    def test_ps1_zip_disc_archive_extracts_a_cue_and_related_tracks(self) -> None:
+        async def exercise() -> None:
+            with tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                archive_bytes = BytesIO()
+                with zipfile.ZipFile(archive_bytes, "w") as archive:
+                    archive.writestr("Disc 1/game.cue", 'FILE "game.bin" BINARY\n')
+                    archive.writestr("Disc 1/game.bin", b"disc-data")
+                payload = archive_bytes.getvalue()
+                class Client(FakeRomm):
+                    def __init__(self):
+                        self.game = RommGame(8, "Archive Disc", 7, "psx", "PlayStation", "disc-set.zip",
+                                             ".zip", len(payload), "", False,
+                                             (RommFile(801, "disc-set.zip", len(payload)),))
+                    def open_file_stream(self, _romm_file, offset=0):
+                        return BytesIO(payload[offset:])
+
+                executor = RommExecutor(Client(), chunk_size=32)
+                manager = JobManager()
+                manager.register_executor("romm", executor, limit=1)
+                with patch.dict("os.environ", {"LULU_ROM_ROOT": str(root)}), \
+                        patch("lulu.plugins.romm.executor.ensure_storage"):
+                    job = manager.submit("romm", "romm:8", "Archive Disc")
+                    await manager._tasks[job.job_id]
+                self.assertEqual(manager.jobs[job.job_id].state, JobState.COMPLETED)
+                disc = root / "psx" / "romm-8" / "Disc 1"
+                self.assertTrue((disc / "game.cue").is_file())
+                self.assertEqual((disc / "game.bin").read_bytes(), b"disc-data")
+                runtime = root / "retroarch"
+                runtime.touch()
+                from lulu.local_content import LocalContentProvider
+                installed = LocalContentProvider(runtime_paths={"psx": runtime}).list_installed(root)
+                self.assertEqual(len(installed), 1)
+                self.assertEqual(Path(installed[0].content_path), disc / "game.cue")
+                self.assertTrue(installed[0].launchable)
+
+        asyncio.run(exercise())
+
+    def test_multi_disc_romm_content_set_creates_one_retroarch_playlist_target(self) -> None:
+        async def exercise() -> None:
+            with tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                games = []
+                payloads = {}
+                for rom_id, label in ((7, "disc1"), (8, "disc2")):
+                    cue = f'FILE "{label}.bin" BINARY\n'.encode()
+                    cue_file = RommFile(rom_id * 100, f"{label}.cue", len(cue), "game", rom_id=rom_id)
+                    bin_file = RommFile(rom_id * 100 + 1, f"{label}.bin", 4, "game", rom_id=rom_id)
+                    games.append(RommGame(rom_id, f"Fixture Disc {rom_id}", 7, "psx", "PlayStation",
+                                          cue_file.name, ".cue", len(cue), "", False, (cue_file, bin_file)))
+                    payloads[cue_file.file_id] = cue
+                    payloads[bin_file.file_id] = label.encode()
+
+                class Client:
+                    def list_games(self): return games
+                    def open_file_stream(self, romm_file, offset=0):
+                        return BytesIO(payloads[romm_file.file_id][offset:])
+
+                executor = RommExecutor(Client(), chunk_size=16)
+                manager = JobManager()
+                manager.register_executor("romm", executor, limit=1)
+                with patch.dict("os.environ", {"LULU_ROM_ROOT": str(root)}), \
+                        patch("lulu.plugins.romm.executor.ensure_storage"):
+                    job = manager.submit("romm", "romm-set:7,8", "Fixture Multi Disc")
+                    await manager._tasks[job.job_id]
+                self.assertEqual(manager.jobs[job.job_id].state, JobState.COMPLETED)
+                playlist = root / "psx" / f"Fixture Multi Disc [{job.job_id[:8]}].m3u"
+                self.assertEqual(playlist.read_text().splitlines(), [
+                    "romm-7/disc1.cue", "romm-8/disc2.cue"])
+                runtime = root / "retroarch"
+                runtime.touch()
+                from lulu.local_content import LocalContentProvider
+                installed = LocalContentProvider(runtime_paths={"psx": runtime}).list_installed(root)
+                self.assertEqual(len(installed), 1)
+                self.assertEqual(Path(installed[0].content_path), playlist)
+                self.assertTrue(installed[0].launchable)
+
+        asyncio.run(exercise())
+
     def test_saved_romm_configuration_is_observed_without_service_restart(self) -> None:
         from lulu.plugins.romm.client import RommConfig
 

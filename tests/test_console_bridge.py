@@ -169,6 +169,10 @@ class ConsoleBridgeTests(unittest.TestCase):
                             "call_clear_title_override", "call_suppress_artwork", "call_restore_artwork"):
             self.assertIn(method_name, source)
 
+    def test_library_refresh_includes_native_storefront_install_projection(self) -> None:
+        source = (ROOT / "scripts" / "console-ui-bridge.py").read_text()
+        self.assertIn('["steam", "gog", "epic", "local", "romm", "artwork"]', source)
+
 
     def test_launch_endpoint_returns_bridge_result_without_double_wrap(self) -> None:
         class Logs:

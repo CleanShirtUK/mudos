@@ -35,6 +35,7 @@ class NzbGetClientTests(unittest.TestCase):
             self.assertEqual(values["Server1.Encryption"], "yes")
             self.assertEqual(values["Server1.Connections"], "50")
             self.assertEqual(values["Server1.Active"], "yes")
+            self.assertEqual(path.stat().st_mode & 0o777, 0o660)
 
     def test_packaged_paths_are_materialized(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

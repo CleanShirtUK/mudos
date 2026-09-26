@@ -86,6 +86,24 @@ class MetadataProviderTests(unittest.TestCase):
             service.mark_presentation_media_backfill_attempted(game.game_id)
             self.assertFalse(service.presentation_media_backfill_needed(game.game_id))
 
+    def test_presentation_media_batch_rotates_oldest_durable_attempts_first(self):
+        store = Mock()
+        games = [type("Game", (), {"game_id": f"game-{index}"})() for index in range(4)]
+        service = MetadataEnrichmentService(store, SimpleNamespace(configured=True),
+                                            SimpleNamespace(enabled=False))
+        service.presentation_media_backfill_needed = Mock(return_value=True)
+        attempted = {
+            "game-0": {"fetched_at": "2025-01-01T00:00:00Z"},
+            "game-1": None,
+            "game-2": {"fetched_at": "2024-01-01T00:00:00Z"},
+            "game-3": {"fetched_at": "2026-01-01T00:00:00Z"},
+        }
+        store.enrichment_record.side_effect = lambda _provider, game_id: attempted[game_id]
+
+        batch = service.presentation_media_backfill_batch(games, limit=2)
+
+        self.assertEqual([game.game_id for game in batch], ["game-1", "game-2"])
+
     def test_media_backfill_enriches_new_match_and_retries_missing_cache_daily(self):
         with tempfile.TemporaryDirectory() as directory:
             store = CatalogueStore(Path(directory) / "catalogue.sqlite3")

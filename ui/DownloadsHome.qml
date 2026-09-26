@@ -217,8 +217,11 @@ Item {
 
         Column {
             anchors.fill: parent
-            anchors.margins: 24 * root.uiScale
-            spacing: 18 * root.uiScale
+            anchors.leftMargin: 24 * root.uiScale
+            anchors.rightMargin: 24 * root.uiScale
+            anchors.topMargin: 12 * root.uiScale
+            anchors.bottomMargin: 12 * root.uiScale
+            spacing: 8 * root.uiScale
 
             Text {
                 text: root.confirmationPending ? "CONFIRM" : "DOWNLOADS"
@@ -248,7 +251,8 @@ Item {
                 visible: !root.confirmationPending && root.jobs.length > 0
                 width: parent.width - 8 * root.uiScale
                 anchors.horizontalCenter: parent.horizontalCenter
-                height: Math.min(contentHeight + 8 * root.uiScale, 540 * root.uiScale)
+                implicitHeight: Math.min(contentHeight + 8 * root.uiScale, 576 * root.uiScale)
+                height: implicitHeight
                 spacing: 8 * root.uiScale
                 clip: true
                 topMargin: 4 * root.uiScale
@@ -311,33 +315,38 @@ Item {
 
             Text { visible: !root.confirmationPending && root.jobs.length === 0; text: "No active downloads"; color: root.luluPalette.secondaryText; font.family: root.typography.interfaceFamily; font.pixelSize: root.typography.size("body", 20); horizontalAlignment: Text.AlignHCenter; width: parent.width; topPadding: 100 * root.uiScale } // No downloads
             Text { visible: root.confirmationPending; text: "Cancel Download"; color: root.luluPalette.secondaryText; font.family: root.typography.interfaceFamily; font.pixelSize: root.typography.size("body", 17); width: parent.width; horizontalAlignment: Text.AlignHCenter }
-            Item { width: 1; height: 1 }
-            Row {
-                spacing: 14 * root.uiScale
-                ControllerHint {
-                    visible: root.confirmationPending || root.actionLabel(root.selectedJob()) !== ""
-                    action: "confirm"
-                        label: root.confirmationPending ? "Confirm" : (root.selectedJob() === null ? "" : root.actionText(root.selectedJob()))
-                    uiScale: root.uiScale
-                    typography: root.typography
-                    luluPalette: root.luluPalette
-                }
-                ControllerHint {
-                     visible: !root.confirmationPending && root.selectedJob() !== null
-                         && String(root.selectedJob().state) !== "cancelling"
-                     action: "options"
-                     label: root.selectedJob() === null ? "" : (String(root.selectedJob().state) === "failed" ? "Clear" : "Cancel")
-                    uiScale: root.uiScale
-                    typography: root.typography
-                    luluPalette: root.luluPalette
-                }
-                ControllerHint {
-                    action: "back"
-                    label: "Back"
-                    uiScale: root.uiScale
-                    typography: root.typography
-                    luluPalette: root.luluPalette
-                }
+        }
+
+        Row {
+            objectName: "downloadControllerHints"
+            anchors.left: parent.left
+            anchors.leftMargin: 24 * root.uiScale
+            anchors.bottom: parent.bottom
+            anchors.bottomMargin: 12 * root.uiScale
+            spacing: 14 * root.uiScale
+            ControllerHint {
+                visible: root.confirmationPending || root.actionLabel(root.selectedJob()) !== ""
+                action: "confirm"
+                label: root.confirmationPending ? "Confirm" : (root.selectedJob() === null ? "" : root.actionText(root.selectedJob()))
+                uiScale: root.uiScale
+                typography: root.typography
+                luluPalette: root.luluPalette
+            }
+            ControllerHint {
+                visible: !root.confirmationPending && root.selectedJob() !== null
+                    && String(root.selectedJob().state) !== "cancelling"
+                action: "options"
+                label: root.selectedJob() === null ? "" : (String(root.selectedJob().state) === "failed" ? "Clear" : "Cancel")
+                uiScale: root.uiScale
+                typography: root.typography
+                luluPalette: root.luluPalette
+            }
+            ControllerHint {
+                action: "back"
+                label: "Back"
+                uiScale: root.uiScale
+                typography: root.typography
+                luluPalette: root.luluPalette
             }
         }
     }

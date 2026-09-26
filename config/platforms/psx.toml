@@ -2,7 +2,7 @@ id = "psx"
 name = "Sony PlayStation"
 [content]
 subdir = "psx"
-extensions = [".cue", ".chd", ".pbp", ".iso"]
+extensions = [".cue", ".chd", ".pbp", ".iso", ".m3u"]
 [bios]
 required = false
 [providers]

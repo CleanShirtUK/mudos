@@ -6,6 +6,9 @@ import asyncio
 import os
 from pathlib import Path
 from dataclasses import replace
+import shutil
+import stat
+import zipfile
 
 from ...emulation import PLATFORMS, ROM_ROOT, canonical_platform_id, current_rom_root, ensure_storage
 from ...job_manager import JobExecutionError, JobReporter
@@ -78,20 +81,82 @@ class RommExecutor:
         root = Path(os.environ.get("LULU_ROM_ROOT", str(ROM_ROOT))).expanduser()
         return root / definition.platform_id / filename
 
+    @staticmethod
+    def _disc_destination(game: RommGame, romm_file: RommFile) -> Path:
+        """Keep PS1 descriptors/tracks together without making BIN a ROM type."""
+        definition = PLATFORMS.get(canonical_platform_id(game.platform_slug))
+        filename = Path(romm_file.name).name
+        suffix = Path(filename).suffix.casefold()
+        if definition is None or definition.platform_id != "psx" or filename != romm_file.name:
+            raise JobExecutionError("unsupported-file", "Invalid PS1 disc-set file")
+        if suffix not in {".cue", ".bin", ".zip"}:
+            raise JobExecutionError("unsupported-file", f"Unsupported PS1 disc-set member: {filename}")
+        root = Path(os.environ.get("LULU_ROM_ROOT", str(ROM_ROOT))).expanduser()
+        return root / "psx" / f"romm-{game.rom_id}" / filename
+
+    @staticmethod
+    def _extract_psx_zip(archive: Path, destination: Path) -> None:
+        """Extract CUE/BIN members without allowing traversal or symlinks."""
+        try:
+            with zipfile.ZipFile(archive) as bundle:
+                for member in bundle.infolist():
+                    if member.is_dir():
+                        continue
+                    mode = member.external_attr >> 16
+                    if stat.S_ISLNK(mode):
+                        raise JobExecutionError("unsafe-archive", "PS1 archive contains a symbolic link")
+                    target = (destination / member.filename).resolve()
+                    try:
+                        target.relative_to(destination.resolve())
+                    except ValueError as error:
+                        raise JobExecutionError("unsafe-archive", "PS1 archive member escapes its disc folder") from error
+                    if Path(member.filename).suffix.casefold() not in {".cue", ".bin"}:
+                        continue
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    with bundle.open(member) as source, target.open("wb") as output:
+                        shutil.copyfileobj(source, output)
+        except zipfile.BadZipFile as error:
+            raise JobExecutionError("invalid-archive", "RomM PS1 archive is not a valid ZIP file") from error
+
     async def run(self, job: DownloadJob, reporter: JobReporter) -> None:
         self._refresh_saved_client()
+        if job.content_identity.startswith("romm:") and not job.content_identity.startswith("romm-file:"):
+            game, _ = await asyncio.to_thread(self._resolve, job.content_identity)
+            if canonical_platform_id(game.platform_slug) == "psx":
+                files = [item for item in game.files if item.category in {None, "", "game", "update", "dlc"}
+                         and not item.name.startswith(".")]
+                archives = [item for item in files if Path(item.name).suffix.casefold() == ".zip"]
+                cues = [item for item in files if Path(item.name).suffix.casefold() == ".cue"]
+                if archives:
+                    files = archives
+                elif cues:
+                    files = cues + [item for item in files
+                                    if Path(item.name).suffix.casefold() == ".bin"]
+                if len(files) > 1 or archives:
+                    await self._run_disc_files(job, game, files, reporter)
+                    return
         if job.content_identity.startswith("romm-set:"):
             identities = [item for item in job.content_identity.removeprefix("romm-set:").split(",") if item]
             if not identities:
                 raise JobExecutionError("invalid-content-set", "RomM content set is empty")
-            expanded: list[str] = []
+            expanded: list[tuple[str, bool, RommGame, RommFile]] = []
             selected_files: list[tuple[RommGame, RommFile]] = []
             for identity in identities:
                 game, _ = await asyncio.to_thread(self._resolve, f"romm:{identity}")
-                selected = [item for item in game.files if item.category in {"game", "update", "dlc"}
+                selected = [item for item in game.files if item.category in {None, "", "game", "update", "dlc"}
                             and not item.name.startswith(".")]
+                disc_layout = canonical_platform_id(game.platform_slug) == "psx"
+                if disc_layout:
+                    archives = [item for item in selected if Path(item.name).suffix.casefold() == ".zip"]
+                    cues = [item for item in selected if Path(item.name).suffix.casefold() == ".cue"]
+                    if archives:
+                        selected = archives
+                    elif cues:
+                        selected = cues + [item for item in selected
+                                           if Path(item.name).suffix.casefold() == ".bin"]
                 selected_files.extend((game, item) for item in selected)
-                expanded.extend(f"{game.rom_id}:{item.file_id}" for item in selected)
+                expanded.extend((f"{game.rom_id}:{item.file_id}", disc_layout, game, item)
+                                for item in selected)
             if not expanded:
                 raise JobExecutionError("romm-file-missing", "RomM content set has no installable files")
             await reporter.metadata(artifact_files=tuple({
@@ -107,16 +172,65 @@ class RommExecutor:
             # every component has been installed; otherwise the manager
             # attempts STARTING for the next component after FINALIZING.
             await reporter.state(JobState.STARTING, stage="starting")
-            for identity in expanded:
+            disc_cues: list[Path] = []
+            for identity, disc_layout, game, item in expanded:
                 await self._run_one(replace(job, content_identity=f"romm-file:{identity}"), reporter,
-                                    transition_states=False)
+                                    transition_states=False, disc_layout=disc_layout)
+                if disc_layout and Path(item.name).suffix.casefold() == ".zip":
+                    archive = self._disc_destination(game, item)
+                    await asyncio.to_thread(self._extract_psx_zip, archive, archive.parent)
+                    disc_cues.extend(archive.parent.rglob("*.cue"))
+                    disc_cues.extend(archive.parent.rglob("*.CUE"))
+                elif disc_layout and Path(item.name).suffix.casefold() == ".cue":
+                    disc_cues.append(self._disc_destination(game, item))
+            if len(disc_cues) > 1:
+                platform_root = Path(os.environ.get("LULU_ROM_ROOT", str(ROM_ROOT))).expanduser() / "psx"
+                title = "".join(character if character.isalnum() or character in " -_" else "_"
+                                for character in job.title).strip(" ._")
+                playlist = platform_root / f"{title or 'PlayStation Set'} [{job.job_id[:8]}].m3u"
+                playlist.write_text("\n".join(
+                    path.relative_to(platform_root).as_posix()
+                    for path in dict.fromkeys(disc_cues)) + "\n")
             await reporter.progress(1.0, stage="finalizing")
             await reporter.state(JobState.FINALIZING, stage="finalizing")
             return
         await self._run_one(job, reporter)
 
+    async def _run_disc_files(self, job: DownloadJob, game: RommGame,
+                              files: list[RommFile], reporter: JobReporter) -> None:
+        if not files:
+            raise JobExecutionError("romm-file-missing", "PS1 disc set has no CUE or archive")
+        await reporter.metadata(artifact_files=tuple({
+            "rom_id": game.rom_id, "file_id": item.file_id, "name": item.name,
+            "category": item.category,
+        } for item in files))
+        await reporter.state(JobState.STARTING, stage="starting")
+        for item in files:
+            await self._run_one(replace(job, content_identity=f"romm-file:{game.rom_id}:{item.file_id}"),
+                                reporter, transition_states=False, disc_layout=True)
+        for item in files:
+            if Path(item.name).suffix.casefold() == ".zip":
+                archive = self._disc_destination(game, item)
+                await asyncio.to_thread(self._extract_psx_zip, archive, archive.parent)
+        cues = [self._disc_destination(game, item) for item in files
+                if Path(item.name).suffix.casefold() == ".cue"]
+        for item in files:
+            if Path(item.name).suffix.casefold() == ".zip":
+                archive = self._disc_destination(game, item)
+                cues.extend(archive.parent.rglob("*.cue"))
+                cues.extend(archive.parent.rglob("*.CUE"))
+        cues = list(dict.fromkeys(cues))
+        if len(cues) > 1:
+            title = "".join(character if character.isalnum() or character in " -_" else "_"
+                            for character in game.title).strip(" ._")
+            playlist = cues[0].parent / f"{title or 'PlayStation Set'}.m3u"
+            playlist.write_text("\n".join(
+                path.relative_to(playlist.parent).as_posix() for path in cues) + "\n")
+        await reporter.progress(1.0, stage="finalizing")
+        await reporter.state(JobState.FINALIZING, stage="finalizing")
+
     async def _run_one(self, job: DownloadJob, reporter: JobReporter, *,
-                       transition_states: bool = True) -> None:
+                       transition_states: bool = True, disc_layout: bool = False) -> None:
         # Pairing replaces the encrypted token while acquisitiond remains
         # alive. Refresh production clients per job; injected test doubles are
         # intentionally left untouched.
@@ -124,7 +238,8 @@ class RommExecutor:
         if transition_states:
             await reporter.state(JobState.STARTING, stage="starting")
         game, romm_file = await asyncio.to_thread(self._resolve, job.content_identity)
-        destination = self._destination(game, romm_file)
+        destination = (self._disc_destination(game, romm_file) if disc_layout
+                       else self._destination(game, romm_file))
         ensure_storage()
         destination.parent.mkdir(parents=True, exist_ok=True)
         # Retries carry the failed attempt as parent_job_id.  Reusing that

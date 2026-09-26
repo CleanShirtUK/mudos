@@ -1899,3 +1899,32 @@ restart may be required for InputPlumber to publish a newly created target.
   `flatpak+https://dl.flathub.org/repo/appstream/org.openttd.OpenTTD.flatpakref`.
   Job `job-f4431d16479449a58b1296bda086601d` completed successfully and the
   presenter remained alive without QML or connection-reset errors.
+
+## Round 2 acceptance source corrections — 2026-09-26
+
+- GOG/Epic manual Library refresh omitted their provider-owned catalogue
+  stages. The Library refresh now includes both; a GOG fixture traverses
+  Acquisitiond completion reconciliation, the installed marker, provider
+  catalogue projection, Library state, launch descriptor, and Sessiond launch
+  dispatch.
+- The NZBGet appliance investigation recorded above established the physical
+  cause: an older Admin service revision and a sandbox denying writes to
+  `/var/lib/nzbget`, plus missing Server1 materialization and stale
+  Acquisitiond credentials. Current source has the narrow optional write
+  allowance and materialize/restart path; saves now also wait for authenticated
+  NZBGet RPC after restart. This development host has no NZBGet config and an
+  inactive unit, so appliance-state replay is not claimed here.
+- RomM PS1 acquisition now preserves CUE/BIN track sets, extracts safe ZIP
+  disc archives, and creates a RetroArch M3U target for multi-disc sets.
+  Local discovery validates every referenced CUE track and suppresses duplicate
+  per-disc cards when a playlist owns the set.
+- Browser visibility now waits until Sessiond has accepted the delegated
+  surface and compatibility input mode; failed entry rolls back ownership and
+  input mode. Guide Quit is Sessiond-identity-owned, not based on the focused
+  X11 PID. Controller/display interaction remains physical acceptance.
+- Presentation-media retry batches are bounded and ordered by durable attempt
+  age. Downloads lays out six normal rows, places controller hints at the
+  panel bottom, and has a geometry regression for row/hint overlap.
+- Source validation: Python **856 passed + 25 subtests**, Python compilation,
+  native build and CTest **1/1** passed. Full QML: **124 passed, 9 established
+  baseline failures**. No immutable candidate or reinstall was performed.

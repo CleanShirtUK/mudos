@@ -99,4 +99,27 @@ TestCase {
         compare(downloads.selectedIndex, 1)
         compare(downloads.selectedJobId, "job-c")
     }
+
+    function test_six_normal_rows_fit_without_clipping_the_last_row() {
+        var rows = []
+        for (var i = 0; i < 6; ++i)
+            rows.push({job_id: "row-" + i, state: "queued", title: "Download " + i})
+        downloads.snapshot = JSON.stringify({jobs: rows})
+        wait(1)
+        var list = findChild(downloads, "downloadJobRows")
+        verify(list !== null)
+        verify(list.height >= list.contentHeight,
+               "the visible viewport should contain all six normal rows")
+        verify(list.contentHeight >= 6 * 88,
+               "six complete row delegates should be laid out")
+        var hints = findChild(downloads, "downloadControllerHints")
+        verify(hints !== null)
+        var listBottom = list.mapToItem(downloads, 0, list.height).y
+        var hintsTop = hints.mapToItem(downloads, 0, 0).y
+        verify(hintsTop >= listBottom,
+               "controller hints must not overlap the last visible row: hints="
+               + hintsTop + " listBottom=" + listBottom)
+        verify(hintsTop + hints.height <= downloads.height,
+               "controller hints must remain inside the Downloads surface")
+    }
 }

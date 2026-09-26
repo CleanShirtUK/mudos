@@ -27,6 +27,10 @@ class BrowserStoreLifecycleTests(unittest.TestCase):
         self.assertIn('"/input-mode/compat"', self.shell)
         self.assertIn('"/input-mode/" + encodeURIComponent(browserPriorInputMode)', self.shell)
         self.assertIn('SetDelegatedSurface', self.session)
+        opening = self.shell.split("function openBrowser", 1)[1].split("function launchHomeStore", 1)[0]
+        self.assertLess(opening.index('request("/input-mode/compat"'), opening.index("browserVisible = true"))
+        self.assertIn('JSON.stringify({active: false})', opening)
+        self.assertIn("browserInputModePending = false", opening)
 
     def test_browser_quit_is_guide_owned_and_history_back_is_contextual(self) -> None:
         self.assertIn('browser-quit', self.consoled)

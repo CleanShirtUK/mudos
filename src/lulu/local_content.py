@@ -46,8 +46,21 @@ class LocalContentProvider:
         games: list[LocalContentGame] = []
         for platform, definition in PLATFORMS.items():
             platform_root = root / platform
-            contents = [content for content in sorted(platform_root.iterdir() if platform_root.is_dir() else ())
+            candidates = (platform_root.rglob("*") if platform == "psx" and platform_root.is_dir()
+                          else platform_root.iterdir() if platform_root.is_dir() else ())
+            contents = [content for content in sorted(candidates)
                         if content.suffix.lower() in definition.extensions and content.is_file()]
+            playlist_members: set[Path] = set()
+            if platform == "psx":
+                for playlist in (path for path in contents if path.suffix.casefold() == ".m3u"):
+                    try:
+                        playlist_members.update((playlist.parent / line.strip()).resolve()
+                                                for line in playlist.read_text(errors="replace").splitlines()
+                                                if line.strip() and not line.lstrip().startswith("#"))
+                    except OSError:
+                        continue
+                contents = [path for path in contents
+                            if path.suffix.casefold() == ".m3u" or path.resolve() not in playlist_members]
             if platform == "switch":
                 games.extend(self._list_switch(contents, root, definition))
                 continue
@@ -137,11 +150,45 @@ class LocalContentProvider:
 
     @staticmethod
     def _content_status(platform: str, content: Path) -> tuple[bool, str]:
-        if platform != "ps2" or content.suffix.lower() != ".cue":
+        if platform == "psx" and content.suffix.casefold() == ".m3u":
+            try:
+                members = [(content.parent / line.strip()).resolve()
+                           for line in content.read_text(errors="replace").splitlines()
+                           if line.strip() and not line.lstrip().startswith("#")]
+                if not members:
+                    return False, "malformed-disc-playlist"
+                root = content.parent.resolve()
+                for member in members:
+                    member.relative_to(root)
+                    if member.suffix.casefold() != ".cue" or not member.is_file():
+                        return False, "missing-disc-image"
+                    valid, reason = LocalContentProvider._cue_status(member)
+                    if not valid:
+                        return False, reason
+                return True, "ready"
+            except (OSError, ValueError):
+                return False, "malformed-disc-playlist"
+        if platform not in {"ps1", "psx", "ps2"} or content.suffix.lower() != ".cue":
             return True, "ready"
+        if platform == "ps2":
+            for line in content.read_text(errors="replace").splitlines():
+                match = re.match(r"\s*FILE\s+\"([^\"]+)\"", line, re.IGNORECASE)
+                if match:
+                    referenced = content.parent / match.group(1)
+                    return (referenced.is_file(), "ready" if referenced.is_file() else "missing-disc-image")
+            return False, "malformed-cue"
+        return LocalContentProvider._cue_status(content)
+
+    @staticmethod
+    def _cue_status(content: Path) -> tuple[bool, str]:
+        if content.suffix.lower() != ".cue":
+            return True, "ready"
+        references = []
         for line in content.read_text(errors="replace").splitlines():
-            match = re.match(r"\s*FILE\s+\"([^\"]+)\"", line, re.IGNORECASE)
+            match = re.match(r"\s*FILE\s+(?:\"([^\"]+)\"|([^\s]+))", line, re.IGNORECASE)
             if match:
-                referenced = content.parent / match.group(1)
-                return (referenced.is_file(), "ready" if referenced.is_file() else "missing-disc-image")
-        return False, "malformed-cue"
+                references.append(content.parent / (match.group(1) or match.group(2)))
+        if not references:
+            return False, "malformed-cue"
+        return (all(path.is_file() for path in references),
+                "ready" if all(path.is_file() for path in references) else "missing-disc-image")
