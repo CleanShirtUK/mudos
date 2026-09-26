@@ -513,7 +513,7 @@ var fetch=async function(path,options){calls.push(path);let failure=path==='/api
             handler._setup_page(False)
         script = re.search(r"<script>(.*?)</script>", send.call_args.args[0].decode(), re.S).group(1)
         fixture = """
-var screens=[],calls=[];
+var screens=[],calls=[],firstPoll=0,secondPoll=0,stuck=false;
 var fixture={providers:[
  {id:'first',name:'First',installed:false,installable:true,dependencies:[],dependencies_any:[]},
  {id:'second',name:'Second',installed:false,installable:true,dependencies:[],dependencies_any:[]},
@@ -527,8 +527,10 @@ var setTimeout=callback=>callback(),clearInterval=()=>{},setInterval=()=>0;
 var fetch=async function(path,options){calls.push(path);let body=options&&options.body?JSON.parse(options.body):{};
  if(path==='/api/setup/progress'&&body.providers)fixture.onboarding.selected_providers=body.providers;
  let value=path==='/api/setup/progress'?{state:fixture.onboarding}
- :path==='/api/setup/install/first'?{status:'installed'}
- :path==='/api/setup/install/second'?{status:'install_failed',message:'Fixture failure'}
+ :path==='/api/setup/install/first'?(++firstPoll===1?{status:'selected'}:
+    firstPoll===2?{status:'installing'}:{status:'installed'})
+ :path==='/api/setup/install/second'?(++secondPoll&&stuck?{status:'selected'}:
+    {status:'install_failed',message:'Fixture failure'})
  :fixture;
  return {ok:true,headers:{get:()=> 'application/json'},json:async()=>value};};
 """
@@ -551,8 +553,22 @@ var fetch=async function(path,options){calls.push(path);let body=options&&option
         self.assertIn("1 of 3 completed", history)
         self.assertIn("3 of 3 completed", history)
         self.assertIn("Fixture failure", history)
+        self.assertEqual(value("String(firstPoll)"), "3")
+        self.assertNotIn("First — Failed", history)
         self.assertEqual(value("String(calls.includes('/api/setup/install'))"), "true")
         self.assertEqual(value("String(calls.includes('/api/setup/install/existing'))"), "false")
+
+        timed_out = JavaScriptCore.Context.new()
+        timed_out.evaluate(fixture, -1)
+        timed_out.evaluate(script, -1)
+        timed_out.evaluate("stuck=true;nextProvidersOriginal()", -1)
+        self.assertIsNone(timed_out.get_exception())
+        polls = timed_out.evaluate("String(secondPoll)", -1)
+        self.assertIsNone(timed_out.get_exception())
+        self.assertEqual(polls.to_string(), "10")
+        history = timed_out.evaluate("screens.join(' ')", -1)
+        self.assertIsNone(timed_out.get_exception())
+        self.assertIn("Installer did not start within 16 seconds", history.to_string())
 
     def test_provider_mutation_uses_secret_store_and_blank_preserves(self):
         with tempfile.TemporaryDirectory() as directory:
