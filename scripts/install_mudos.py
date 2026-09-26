@@ -335,7 +335,8 @@ def stop_services(apply: bool, manifest: dict, *, stop_host_mounts: bool) -> Non
             print(f"would stop (preserve host fstab entry for) {mount['unit']}")
 
 
-def install_integration(repo: Path, release: Path, manifest: dict) -> None:
+def install_integration(repo: Path, release: Path, manifest: dict,
+                       *, session_was_active: bool = False) -> None:
     root = Path("/")
     packaging = release / "packaging"
     systemd = {
@@ -424,8 +425,18 @@ def install_integration(repo: Path, release: Path, manifest: dict) -> None:
     run(["systemctl", "enable", "inputplumber.service"])
     run(["systemctl", "start", "mudos-recovery.service"])
     run(["systemctl", "start", "lulu-admin.service"])
+    start_runtime(session_was_active=session_was_active)
+
+
+def start_runtime(*, session_was_active: bool) -> None:
     # The supported installation ends at the genuine shell first-run route.
     run(["systemctl", "start", "lulu.target"])
+    if session_was_active:
+        # `start lulu.target` does not replace an already-running shell after
+        # /opt/lulu/current changes. Restart only an existing session so its
+        # sessiond, Consoled and Acquisitiond processes all reload the selected
+        # immutable release; a fresh install still starts the target once.
+        run(["systemctl", "restart", "lulu-session@2.service"])
 
 
 def do_install(repo: Path, manifest: dict, dry_run: bool) -> None:
@@ -439,6 +450,8 @@ def do_install(repo: Path, manifest: dict, dry_run: bool) -> None:
     if os.geteuid() != 0:
         raise InstallError("installation needs root; rerun as root or with sudo")
     validate_configured_storage_targets(manifest)
+    session_was_active = (run(["systemctl", "is-active", "lulu-session@2.service"],
+                              check=False, capture=True).returncode == 0)
     dependency = manifest["shared_dependencies"]
     packages = packages_to_install(dependency["packages"], dependency.get("alternatives", {}))
     if packages:
@@ -466,7 +479,7 @@ def do_install(repo: Path, manifest: dict, dry_run: bool) -> None:
     # the checksum-pinned canonical provisioner and keep its output mutable.
     run(["bash", str(release / "scripts/provision-gamepad-osk.sh")])
     # Release creation must not depend on mutable paths; install only from current.
-    install_integration(repo, release, manifest)
+    install_integration(repo, release, manifest, session_was_active=session_was_active)
     print(f"installed immutable release {release} from {sha}")
 
 

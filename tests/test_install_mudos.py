@@ -49,6 +49,21 @@ def test_lulu_target_is_installable_and_installer_verifies_boot_enablement():
     assert "Lulu appliance target is not enabled for boot" in installer_source
 
 
+def test_reinstall_restarts_preexisting_session_to_load_new_immutable_release(monkeypatch):
+    calls = []
+    monkeypatch.setattr(installer, "run", lambda args, **_kwargs: calls.append(args))
+    installer.start_runtime(session_was_active=True)
+    assert calls == [["systemctl", "start", "lulu.target"],
+                     ["systemctl", "restart", "lulu-session@2.service"]]
+
+
+def test_first_install_starts_target_without_redundant_session_restart(monkeypatch):
+    calls = []
+    monkeypatch.setattr(installer, "run", lambda args, **_kwargs: calls.append(args))
+    installer.start_runtime(session_was_active=False)
+    assert calls == [["systemctl", "start", "lulu.target"]]
+
+
 @pytest.mark.parametrize("bad", ["relative/path", "/../../etc", "/"])
 def test_manifest_rejects_unsafe_mutable_paths(tmp_path, bad):
     data = json.loads((ROOT / "packaging/mudos-ownership.json").read_text())
