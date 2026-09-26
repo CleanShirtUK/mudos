@@ -75,7 +75,9 @@ class AcquisitionInterface(ServiceInterface):
     def _snapshot(self) -> str:
         return json.dumps({
             "jobs": [job_to_dict(job) for job in self.manager.snapshot()],
-            "activeDownloadCount": self.manager.active_download_count,
+            # This legacy field feeds the shell's download badge; its product
+            # meaning is the full actionable queue, not only active sockets.
+            "activeDownloadCount": self.manager.actionable_download_count,
         }, sort_keys=True)
 
     def _publish(self, *_: object) -> None:

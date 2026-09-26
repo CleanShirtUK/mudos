@@ -56,6 +56,21 @@ class SetupFileTests(unittest.TestCase):
             self.assertEqual((root / "BIOS/switch/keys/prod.keys").read_bytes(), b"test key")
             self.assertFalse(upload_path.exists())
 
+    def test_nested_default_target_upload_creates_bios_path(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            upload_path = root / "incoming"
+            upload_path.write_bytes(b"bios image")
+            upload = UploadedPart("file", "SCPH10000.bin", upload_path)
+            platforms = Path(__file__).parents[1] / "config/platforms"
+            paths = type("Paths", (), {"bios_root": root / "home/Games/BIOS",
+                                        "platforms_root": platforms})()
+            with patch("lulu.setup_files.PATHS", paths), \
+                    patch("lulu.platforms.registry.PATHS", paths):
+                saved = save_platform_files("ps2", "bios", [upload])
+            self.assertEqual(saved, ["SCPH10000.bin"])
+            self.assertEqual((root / "home/Games/BIOS/ps2/SCPH10000.bin").read_bytes(), b"bios image")
+
     def test_setup_manifest_detects_required_files_in_nested_upload_directories(self) -> None:
         from lulu.setup_files import file_setup_manifest
         with tempfile.TemporaryDirectory() as directory:

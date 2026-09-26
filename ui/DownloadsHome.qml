@@ -10,6 +10,7 @@ Item {
     property int selectedIndex: 0
     property string selectedJobId: ""
     property bool confirmationPending: false
+    property bool reconcilingSnapshot: false
     property real uiScale: 1
     property var typography
     property var luluPalette
@@ -60,6 +61,7 @@ Item {
         // the canonical history ordering expression used by older consumers.
         var previousIndex = selectedIndex
         var previousId = selectedJobId
+        reconcilingSnapshot = true
         jobs = current
         var nextIndex = -1
         for (var j = 0; j < jobs.length; j++) {
@@ -72,6 +74,10 @@ Item {
             nextIndex = Math.min(previousIndex, Math.max(0, jobs.length - 1))
         selectedIndex = nextIndex
         selectedJobId = jobs.length ? String(jobs[selectedIndex].job_id || "") : ""
+        // Replacing the JS-array model makes ListView transiently report row 0.
+        // Restore identity-derived selection after the new delegates are built.
+        jobsList.currentIndex = selectedIndex
+        reconcilingSnapshot = false
         if (confirmationPending && !selectedJob())
             confirmationPending = false
     }
@@ -242,7 +248,7 @@ Item {
                 visible: !root.confirmationPending && root.jobs.length > 0
                 width: parent.width - 8 * root.uiScale
                 anchors.horizontalCenter: parent.horizontalCenter
-                height: Math.min(contentHeight + 8 * root.uiScale, 470 * root.uiScale)
+                height: Math.min(contentHeight + 8 * root.uiScale, 540 * root.uiScale)
                 spacing: 8 * root.uiScale
                 clip: true
                 topMargin: 4 * root.uiScale
@@ -252,8 +258,11 @@ Item {
                 preferredHighlightBegin: 4 * root.uiScale
                 preferredHighlightEnd: height - 4 * root.uiScale
                 onCurrentIndexChanged: {
-                    if (root.selectedIndex !== currentIndex)
+                    if (!root.reconcilingSnapshot && root.selectedIndex !== currentIndex) {
                         root.selectedIndex = currentIndex
+                        root.selectedJobId = currentIndex >= 0 && currentIndex < root.jobs.length
+                            ? String(root.jobs[currentIndex].job_id || "") : ""
+                    }
                 }
                 model: root.jobs
                 delegate: Item {

@@ -95,6 +95,13 @@ class JobManager:
     def active_download_count(self) -> int:
         return sum(job.is_active for job in self.jobs.values())
 
+    @property
+    def actionable_download_count(self) -> int:
+        """Jobs still requiring user attention or occupying the download queue."""
+        actionable = {JobState.QUEUED, JobState.STARTING, JobState.TRANSFERRING,
+                      JobState.FINALIZING, JobState.PAUSED}
+        return sum(job.state in actionable for job in self.jobs.values())
+
     def snapshot(self) -> tuple[DownloadJob, ...]:
         return tuple(self.jobs.values())
 

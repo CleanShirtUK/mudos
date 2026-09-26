@@ -7,7 +7,7 @@ import os
 from pathlib import Path
 from dataclasses import replace
 
-from ...emulation import PLATFORMS, ROM_ROOT, current_rom_root, ensure_storage
+from ...emulation import PLATFORMS, ROM_ROOT, canonical_platform_id, current_rom_root, ensure_storage
 from ...job_manager import JobExecutionError, JobReporter
 from ...jobs import DownloadJob, JobState
 from .client import RommApiError, RommClient, RommConfig, RommGame, RommFile
@@ -63,7 +63,7 @@ class RommExecutor:
 
     @staticmethod
     def _destination(game: RommGame, romm_file: RommFile) -> Path:
-        definition = PLATFORMS.get(game.platform_slug.casefold())
+        definition = PLATFORMS.get(canonical_platform_id(game.platform_slug))
         if definition is None:
             raise JobExecutionError(
                 "unsupported-platform", f"RomM platform is unsupported: {game.platform_slug}"

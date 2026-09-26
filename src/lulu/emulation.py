@@ -79,6 +79,24 @@ for _id, _definition in load_platforms().items():
         _definition.setup_files,
     )
 
+# Provider/platform spellings are normalized at the catalogue boundary. Keep
+# aliases here so every consumer (including RomM acquisition) resolves to the
+# same canonical runtime and storage identity.
+PLATFORM_ALIASES = {
+    "ngc": "gamecube", "gc": "gamecube", "nintendo-gamecube": "gamecube",
+    "ps1": "psx", "playstation": "psx", "playstation-1": "psx",
+    "sfc": "snes", "super-famicom": "snes",
+    "megadrive": "genesis", "mega-drive": "genesis",
+    "game-boy": "gb", "game-boy-color": "gbc", "game-boy-advance": "gba",
+    "ds": "nds", "nintendo-ds": "nds",
+}
+
+
+def canonical_platform_id(platform_id: str) -> str:
+    value = str(platform_id or "").strip().casefold().replace("_", "-")
+    canonical = PLATFORM_ALIASES.get(value, value)
+    return canonical if canonical in PLATFORMS else value
+
 
 def ensure_storage() -> None:
     """Create the documented roots without touching user firmware files."""

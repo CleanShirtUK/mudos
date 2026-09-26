@@ -63,6 +63,12 @@ class RommExecutorTests(unittest.TestCase):
         self.assertEqual(destination.name, "Apotris.gba")
         self.assertEqual(destination.parent.name, "gba")
 
+    def test_romm_ngc_alias_resolves_to_canonical_gamecube_runtime(self) -> None:
+        game = RommGame(145, "GameCube title", 21, "ngc", "Nintendo GameCube", "title.iso", ".iso",
+                        1, "", False, (RommFile(1450, "title.iso", 1),))
+        destination = RommExecutor._destination(game, game.files[0])
+        self.assertEqual(destination.parent.name, "gamecube")
+
     def test_content_set_keeps_one_parent_lifecycle_across_components(self) -> None:
         async def exercise() -> None:
             with tempfile.TemporaryDirectory() as directory:
