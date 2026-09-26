@@ -1936,6 +1936,8 @@ load();setInterval(load,10000);
                        else "Could not save these settings. Your previous settings were kept.")
             LOGGER.error("provider save failed provider=%s error_type=%s", provider_id, type(error).__name__)
             self._send(_page("Save failed", f"<p class=error>{html.escape(message)}</p>"), 400); return
+        if provider_id in INTEGRATION_METADATA:
+            save_validation(provider_id, False, "Connection details changed in Admin; retest before finishing setup.")
         self._redirect("/integrations?updated=1")
 
     def _service_rows(self) -> str:

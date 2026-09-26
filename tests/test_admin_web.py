@@ -22,6 +22,29 @@ class FakeSecrets:
 
 
 class AdminWebTests(unittest.TestCase):
+    def test_admin_integration_save_invalidates_setup_validation_only_after_success(self):
+        from types import SimpleNamespace
+        handler = object.__new__(Handler)
+        before = SimpleNamespace(values={}, secret_refs={}, secret=lambda key: None)
+        with patch.object(APP.config, "provider", return_value=before), \
+                patch.object(APP.config, "update_provider") as update, \
+                patch.object(APP.components, "all", return_value=[]), \
+                patch("lulu.admin_web.save_validation") as validate, \
+                patch.object(Handler, "_redirect") as redirect:
+            handler._save_provider("metadata.steamgriddb", {"enabled": ["true"]}, None)
+        update.assert_called_once()
+        validate.assert_called_once_with("metadata.steamgriddb", False,
+                                         "Connection details changed in Admin; retest before finishing setup.")
+        redirect.assert_called_once_with("/integrations?updated=1")
+
+        with patch.object(APP.config, "provider", return_value=before), \
+                patch.object(APP.config, "update_provider", side_effect=[OSError("failed"), None]), \
+                patch.object(APP.components, "all", return_value=[]), \
+                patch("lulu.admin_web.save_validation") as validate, \
+                patch.object(Handler, "_send"):
+            handler._save_provider("metadata.steamgriddb", {"enabled": ["true"]}, None)
+        validate.assert_not_called()
+
     def test_finish_request_rejects_unvalidated_setup_before_password_mutation(self):
         handler = object.__new__(Handler)
         handler.path = "/api/setup/initial-password"
