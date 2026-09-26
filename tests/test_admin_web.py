@@ -406,6 +406,31 @@ var fetch=async function(path,options){calls.push(path);let body=options&&option
         self.assertEqual(state["status"], "install_failed")
         self.assertIn("missing executable", state["message"])
 
+    def test_rejected_installer_start_survives_reload_until_accepted_retry(self):
+        from lulu import onboarding
+        from types import SimpleNamespace
+        with tempfile.TemporaryDirectory() as directory:
+            with patch.object(onboarding, "_STATE_PATH", Path(directory) / "onboarding.json"):
+                rejected = SimpleNamespace(returncode=1, stderr="systemd rejected start", stdout="")
+                with patch("lulu.admin_web.subprocess.run", return_value=rejected):
+                    with self.assertRaisesRegex(ValueError, "could not be started"):
+                        AdminApp.start_provider_install("steam")
+                self.assertIn("could not be started", onboarding.install_start_failure("steam"))
+                show = SimpleNamespace(stdout=("ActiveState=inactive\nResult=success\n"
+                                               "ExecMainStatus=0\nExecMainStartTimestamp=\n"))
+                with patch("lulu.admin_web.subprocess.run", return_value=show), \
+                        patch("lulu.onboarding._provider_installed", return_value=False):
+                    status = AdminApp.provider_install_status("steam")
+                self.assertEqual(status["status"], "install_failed")
+                self.assertIn("Retry installation", status["message"])
+                accepted = SimpleNamespace(returncode=0, stderr="", stdout="")
+                with patch("lulu.admin_web.subprocess.run", return_value=accepted):
+                    AdminApp.start_provider_install("steam")
+                self.assertEqual(onboarding.install_start_failure("steam"), "")
+                with patch("lulu.admin_web.subprocess.run", return_value=show), \
+                        patch("lulu.onboarding._provider_installed", return_value=False):
+                    self.assertEqual(AdminApp.provider_install_status("steam")["status"], "selected")
+
     def test_setup_selection_and_review_explain_failed_provider_install(self):
         import gi
         gi.require_version("JavaScriptCore", "4.1")

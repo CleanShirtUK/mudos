@@ -108,7 +108,8 @@ def reset_onboarding() -> dict[str, Any]:
         state.update({"status": "never", "oobe_dismissed": False,
                       "selected_providers": [], "selected_integrations": [],
                       "completed_at": None, "dismissed_at": None,
-                      "validation": {}, "updated_at": int(time.time())})
+                      "validation": {}, "install_start_failures": {},
+                      "updated_at": int(time.time())})
         _write(state)
         return onboarding_state()
 
@@ -158,6 +159,26 @@ def save_validation(integration: str, ok: bool, message: str) -> dict[str, Any]:
             state["status"] = "partial"
         _write(state)
         return onboarding_state()
+
+
+def install_start_failure(provider_id: str) -> str:
+    with _LOCK:
+        failures = _read().get("install_start_failures", {})
+        return str(failures.get(provider_id, "")) if isinstance(failures, dict) else ""
+
+
+def record_install_start_failure(provider_id: str, message: str) -> None:
+    """Keep a rejected installer request visible until an accepted retry."""
+    with _LOCK:
+        state = _read()
+        failures = state.get("install_start_failures", {})
+        failures = dict(failures) if isinstance(failures, dict) else {}
+        if message:
+            failures[provider_id] = message[:240]
+        else:
+            failures.pop(provider_id, None)
+        state["install_start_failures"] = failures
+        _write(state)
 
 
 @dataclass(frozen=True, slots=True)

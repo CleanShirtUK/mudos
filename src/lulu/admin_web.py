@@ -572,7 +572,11 @@ class AdminApp:
         if result.returncode:
             LOGGER.warning("provider install request failed provider=%s error=%s", provider_id,
                            result.stderr.strip().splitlines()[0] if result.stderr else "unknown")
+            from .onboarding import record_install_start_failure
+            record_install_start_failure(provider_id, "The provider installer could not be started. Retry installation.")
             raise ValueError("The provider installer could not be started")
+        from .onboarding import record_install_start_failure
+        record_install_start_failure(provider_id, "")
         return {"provider": provider_id, "status": "installing"}
 
     @staticmethod
@@ -602,11 +606,17 @@ class AdminApp:
                 status = "install_failed"
             else:
                 status = "selected"
+        from .onboarding import install_start_failure
+        start_failure = install_start_failure(provider_id) if status == "selected" else ""
+        if start_failure:
+            status = "install_failed"
         messages = {"installing": "Installation is running.",
                             "installed": "Installed.",
                             "install_failed": "Installation failed. See the service log for the actionable error.",
                             "selected": "Selected; installation has not started."}
-        if status == "install_failed":
+        if start_failure:
+            messages[status] = start_failure
+        elif status == "install_failed":
             try:
                 detail = subprocess.run(["journalctl", "-u", unit, "-n", "12", "-o", "cat", "--no-pager"],
                                         capture_output=True, text=True, timeout=3, check=False).stdout.strip()
