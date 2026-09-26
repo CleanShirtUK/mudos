@@ -431,6 +431,32 @@ var fetch=async function(path,options){calls.push(path);let body=options&&option
                         patch("lulu.onboarding._provider_installed", return_value=False):
                     self.assertEqual(AdminApp.provider_install_status("steam")["status"], "selected")
 
+    def test_installer_timeout_rechecks_unit_before_recording_failure(self):
+        from lulu import onboarding
+        with tempfile.TemporaryDirectory() as directory:
+            with patch.object(onboarding, "_STATE_PATH", Path(directory) / "onboarding.json"):
+                with patch.object(AdminApp, "provider_install_status", return_value={
+                        "provider": "steam", "status": "installing", "message": "Running"}):
+                    self.assertEqual(AdminApp.record_provider_install_timeout("steam")["status"], "installing")
+                self.assertEqual(onboarding.install_start_failure("steam"), "")
+                with patch.object(AdminApp, "provider_install_status", return_value={
+                        "provider": "steam", "status": "selected", "message": "Not started"}):
+                    result = AdminApp.record_provider_install_timeout("steam")
+                self.assertEqual(result["status"], "install_failed")
+                self.assertIn("within 16 seconds", onboarding.install_start_failure("steam"))
+        handler = object.__new__(Handler)
+        handler.path = "/api/setup/install-timeout"
+        with patch.object(APP, "password_configured", return_value=False), \
+                patch("lulu.admin_web.onboarding_state", return_value={"status": "never"}), \
+                patch.object(Handler, "_json_body", return_value={"provider": "steam"}), \
+                patch.object(APP, "record_provider_install_timeout", return_value={
+                    "provider": "steam", "status": "install_failed", "message": "Not started"}) as timeout, \
+                patch.object(Handler, "_json") as response:
+            handler.do_POST()
+        timeout.assert_called_once_with("steam")
+        response.assert_called_once_with({"provider": "steam", "status": "install_failed",
+                                          "message": "Not started"})
+
     def test_setup_selection_and_review_explain_failed_provider_install(self):
         import gi
         gi.require_version("JavaScriptCore", "4.1")
@@ -805,6 +831,7 @@ var fetch=async function(path,options){calls.push(path);let body=options&&option
  let value=path==='/api/setup/progress'?{state:fixture.onboarding}
  :path==='/api/setup/install/first'?(++firstPoll===1?{status:'selected'}:
     firstPoll===2?{status:'installing'}:{status:'installed'})
+ :path==='/api/setup/install-timeout'?{status:'install_failed',message:'Installer did not start within 16 seconds. Check its service status and retry.'}
  :path==='/api/setup/install/second'?(++secondPoll&&stuck?{status:'selected'}:
     {status:'install_failed',message:'Fixture failure'})
  :fixture;
@@ -845,6 +872,9 @@ var fetch=async function(path,options){calls.push(path);let body=options&&option
         history = timed_out.evaluate("screens.join(' ')", -1)
         self.assertIsNone(timed_out.get_exception())
         self.assertIn("Installer did not start within 16 seconds", history.to_string())
+        requested = timed_out.evaluate("String(calls.includes('/api/setup/install-timeout'))", -1)
+        self.assertIsNone(timed_out.get_exception())
+        self.assertEqual(requested.to_string(), "true")
 
     def test_provider_mutation_uses_secret_store_and_blank_preserves(self):
         with tempfile.TemporaryDirectory() as directory:
