@@ -108,6 +108,7 @@ Item {
                 model: root.rows
                 delegate: Item {
                     id: rowDelegate
+                    objectName: "systemSettingsRow_" + index
                     required property int index
                     required property var modelData
                     width: parent.width
@@ -264,6 +265,7 @@ Item {
             anchors.margins: 28 * root.uiScale
             spacing: 18 * root.uiScale
             Text {
+                objectName: "settingsSelectedTitle"
                 width: parent.width
                 text: root.rows.length && root.rows[root.selectedIndex]
                     ? String(root.rows[root.selectedIndex].label || "") : root.title

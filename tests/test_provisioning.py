@@ -122,6 +122,19 @@ class ProvisioningTests(unittest.TestCase):
         self.assertIn("pacman -S --needed --noconfirm steam steam-devices", installer)
         self.assertIn('exec "$root/scripts/provision-steamcmd.sh"', installer)
 
+    def test_settings_validation_runtime_switch_does_not_reprovision_inputplumber_or_host_policy(self) -> None:
+        script = (ROOT / "scripts/dev-runtime.sh").read_text()
+        workflow = script.split("settings_validation() {", 1)[1].split("\n}\n\ncase", 1)[0]
+        self.assertIn('if [ -e "$runtime" ] || [ -L "$runtime" ]', workflow)
+        self.assertIn("promotable=false", workflow)
+        self.assertIn('Environment=PYTHONPATH=$runtime/lib', workflow)
+        self.assertIn('Environment=LULU_INSTALL_ROOT=$runtime', workflow)
+        self.assertIn("systemctl restart lulu-session@2.service", workflow)
+        self.assertNotIn("provision-inputplumber", workflow)
+        self.assertNotIn("restart inputplumber.service", workflow)
+        self.assertNotIn("configure-dev-sunshine-firewall", workflow)
+        self.assertNotIn("provision-appliance-services", workflow)
+
     def test_logind_policy_reserves_console_session_vt(self) -> None:
         policy = (ROOT / "packaging/logind.conf.d/lulu.conf").read_text()
         self.assertIn("[Login]", policy)

@@ -156,14 +156,32 @@ class BluetoothTests(unittest.TestCase):
         from pathlib import Path
         root = Path(__file__).parents[1]
         qml = (root / "ui/ConsoleShell.qml").read_text()
+        page = (root / "ui/MudosSettingsPage.qml").read_text()
+        space = (root / "ui/SystemSpace.qml").read_text()
         native = (root / "native/lulu-shell.cpp").read_text()
+        self.assertIn('"Bluetooth"', qml[qml.index("property var systemCategories"):])
+        self.assertIn('category: root.systemCategories[root.systemCategoryIndex]', qml)
+        self.assertIn('settings: root.systemSettings', qml)
+        self.assertIn('model: root.rows', page)
+        self.assertIn('rowDelegate.modelData.writable !== false', page)
+        self.assertIn('onRowActivated: root.actionRequested(root.settings[index].key)', space)
+        self.assertIn('root.activateBluetoothSetting(key)', qml)
+        self.assertIn('objectName: "settingsSelectedTitle"', page)
         self.assertIn("var selectedKey = systemSettings[systemRowIndex]", qml)
         self.assertIn('data[index].key === selectedKey', qml)
         self.assertIn('InterfacesAdded', native)
         self.assertIn('InterfacesRemoved', native)
         self.assertIn('QStringLiteral("connected")', native)
-        self.assertIn('activateBluetoothSetting(systemSettings[systemRowIndex].key)', qml)
         self.assertIn('request("/keyboard/show"', qml)
+
+    def test_live_appliance_settings_runtime_must_not_silently_use_immutable_placeholder(self):
+        from pathlib import Path
+        root = Path(__file__).parents[1]
+        source = (root / "src/lulu/system_settings.py").read_text()
+        self.assertIn("async def list_settings_async", source)
+        self.assertIn('"bluetooth:discover"', source)
+        self.assertIn('"bluetooth:disable"', source)
+        self.assertIn('f"bluetooth:{action}:{device[\'path\']}"', source)
 
 
 if __name__ == "__main__":

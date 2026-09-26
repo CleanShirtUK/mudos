@@ -225,8 +225,63 @@ immutable() {
     echo "restored immutable runtime: $(readlink -f /opt/lulu/current)"
 }
 
+# A deliberately narrow alternative for exercising a committed Settings/UI
+# change on the appliance without reprovisioning providers, policy, networking,
+# OSK, or InputPlumber. It switches only the session and Consoled to a
+# non-promotable tree; the immutable selector is never modified.
+settings_validation() {
+    if [ -e "$runtime" ] || [ -L "$runtime" ]; then
+        echo "refusing to replace existing development runtime: $runtime" >&2
+        exit 1
+    fi
+    head=$(git -C "$repo_root" rev-parse HEAD)
+    branch=$(git -C "$repo_root" branch --show-current)
+    status=$(git -C "$repo_root" status --porcelain --untracked-files=all)
+    if [ -n "$status" ]; then
+        echo "Bluetooth Settings validation runtime requires clean committed HEAD" >&2
+        exit 1
+    fi
+    stamp=$(date -u +%Y%m%dT%H%M%SZ)
+    staging=/opt/lulu/.dev-settings-staging-$$
+    mkdir -p "$staging/bin"
+    for directory in src ui scripts config packaging native; do
+        cp -a "$repo_root/$directory" "$staging/$directory"
+    done
+    cp -a "$repo_root/src" "$staging/lib"
+    cp "$repo_root/packaging/lulu-vt" "$staging/bin/lulu-vt"
+    cp "$repo_root/deploy/payload/bin/verify-mudos.sh" "$staging/bin/verify-mudos.sh"
+    LULU_INSTALL_ROOT="$staging" "$staging/scripts/build-lulu-shell.sh" "$staging/bin/lulu-shell"
+    chmod +x "$staging/bin"/* "$staging/scripts"/*
+    cat > "$staging/NON_PROMOTABLE" <<EOF
+development-runtime=true
+promotable=false
+purpose=bluetooth-settings-hardware-validation
+source=$repo_root
+head=$head
+branch=$branch
+refreshed=$stamp
+EOF
+    mv "$staging" "$runtime"
+    mkdir -p "$(dirname "$session_dropin")" "$(dirname "$consoled_dropin")"
+    cat > "$session_dropin" <<EOF
+[Service]
+Environment=PYTHONPATH=$runtime/lib
+Environment=LULU_INSTALL_ROOT=$runtime
+EOF
+    cat > "$consoled_dropin" <<EOF
+[Service]
+Environment=PYTHONPATH=$runtime/lib
+Environment=LULU_INSTALL_ROOT=$runtime
+EOF
+    systemctl daemon-reload
+    systemctl restart lulu-session@2.service
+    logger -t lulu-runtime "event=settings-validation-refresh head=$head target=$runtime" 2>/dev/null || true
+    echo "refreshed isolated non-promotable Settings validation runtime: $runtime"
+}
+
 case "${1:-}" in
     refresh) refresh ;;
+    settings-validation) settings_validation ;;
     immutable|restore) immutable ;;
-    *) echo "usage: $0 refresh|immutable" >&2; exit 2 ;;
+    *) echo "usage: $0 refresh|settings-validation|immutable" >&2; exit 2 ;;
 esac
