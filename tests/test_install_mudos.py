@@ -76,6 +76,17 @@ def test_mutable_configuration_initialization_is_idempotent(tmp_path):
     assert destination.read_text() == "operator = true\n"
 
 
+def test_mutable_configuration_initializer_applies_owner_and_mode(tmp_path, monkeypatch):
+    source = tmp_path / "template"
+    destination = tmp_path / "mutable/config.toml"
+    source.write_text("default = true\n")
+    ownership = []
+    monkeypatch.setattr(installer.os, "chown", lambda path, uid, gid: ownership.append((Path(path), uid, gid)))
+    assert installer.copy_if_absent(source, destination, uid=958, gid=958, mode=0o640)
+    assert ownership == [(destination, 958, 958)]
+    assert destination.stat().st_mode & 0o777 == 0o640
+
+
 def test_exact_source_release_is_reused_on_reinstall(tmp_path):
     revision = "a" * 40
     release = tmp_path / "releases" / f"{revision[:7]}-candidate-20260926"

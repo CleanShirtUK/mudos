@@ -92,7 +92,7 @@ def copy_if_absent(source: Path, destination: Path, *, uid: int | None = None,
     destination.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(source, destination)
     if uid is not None and gid is not None:
-        destination.chown(uid, gid)
+        os.chown(destination, uid, gid)
     if mode is not None:
         destination.chmod(mode)
     return True
