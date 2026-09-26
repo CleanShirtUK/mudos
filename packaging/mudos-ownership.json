@@ -73,6 +73,7 @@
   "configured_storage_policy": "When storage-targets.json configures game_path or emulation_path, Mudos owns only the child <configured-path>/Mudos tree and its ROMs, BIOS, Executables, and .acquisition subtrees. Never purge the configured mount/root itself.",
   "shared_dependencies": {
     "package_manager": "pacman",
+    "alternatives": {"gamescope": ["gamescope-git"]},
     "packages": ["base-devel", "pkgconf", "qt6-base", "qt6-declarative", "qt6-webengine", "qt6-imageformats", "sdl3", "xcb-util", "xcb-util-keysyms", "xcb-util-wm", "python", "python-dbus-next", "python-pillow", "systemd", "seatd", "inputplumber", "gamescope", "steam", "steam-devices", "pipewire", "wireplumber", "avahi", "ufw", "git", "curl", "polkit", "acl", "ffmpeg", "fontconfig", "ttf-jetbrains-mono-nerd"]
   },
   "protected": ["/home/josh/src/lulu", "/opt/lulu/releases", "/opt/lulu/rollback"]

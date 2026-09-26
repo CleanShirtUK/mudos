@@ -87,6 +87,16 @@ def test_exact_source_release_is_reused_on_reinstall(tmp_path):
     assert installer.existing_release(release.parent, "b" * 40) is None
 
 
+def test_shared_package_selection_reuses_installed_compatible_variants():
+    installed = {"gamescope-git", "qt6-base"}
+    selected = installer.packages_to_install(
+        ["gamescope", "qt6-base", "inputplumber"],
+        {"gamescope": ["gamescope-git"]},
+        installed=lambda name: name in installed,
+    )
+    assert selected == ["inputplumber"]
+
+
 def test_host_mount_contract_matches_only_fstab_generated_exact_mount(monkeypatch):
     mount = manifest()["preserved_host_mounts"][0]
     outputs = [

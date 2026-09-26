@@ -17,6 +17,9 @@ system integration, and starts the appliance target. It refuses dirty source,
 unsupported operating systems, or an existing `lulu` account that conflicts
 with UID/GID 958 and `/home/lulu`. The default `lulu` group/account contract is
 created if absent; an existing home is preserved. No credentials are needed.
+The package manifest declares `gamescope-git` as an accepted alternative to
+`gamescope`, so the installer reuses that already-installed provider rather
+than asking pacman to remove or replace it.
 
 The installer leaves OOBE progress absent (which the application interprets as
 `never`/required). It does not fabricate provider readiness, catalogue rows,

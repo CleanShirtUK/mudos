@@ -110,6 +110,21 @@ def existing_release(release_root: Path, revision: str) -> Path | None:
     return None
 
 
+def packages_to_install(packages: list[str], alternatives: dict[str, list[str]],
+                        installed=None) -> list[str]:
+    """Avoid replacing an already installed compatible package variant."""
+    installed = installed or (lambda name: run(["pacman", "-Q", name], check=False,
+                                               capture=True).returncode == 0)
+    result = []
+    for package in packages:
+        if installed(package):
+            continue
+        if any(installed(alternative) for alternative in alternatives.get(package, [])):
+            continue
+        result.append(package)
+    return result
+
+
 def source_revision(repo: Path) -> tuple[str, str]:
     sha = run(["git", "-C", str(repo), "rev-parse", "HEAD"], capture=True).stdout.strip()
     branch = run(["git", "-C", str(repo), "branch", "--show-current"], capture=True).stdout.strip()
@@ -345,8 +360,10 @@ def do_install(repo: Path, manifest: dict, dry_run: bool) -> None:
         return
     if os.geteuid() != 0:
         raise InstallError("installation needs root; rerun as root or with sudo")
-    packages = manifest["shared_dependencies"]["packages"]
-    run(["pacman", "-S", "--needed", "--noconfirm", *packages])
+    dependency = manifest["shared_dependencies"]
+    packages = packages_to_install(dependency["packages"], dependency.get("alternatives", {}))
+    if packages:
+        run(["pacman", "-S", "--needed", "--noconfirm", *packages])
     ensure_account(manifest, apply=True)
     root = Path("/opt/lulu")
     root.mkdir(parents=True, exist_ok=True)
