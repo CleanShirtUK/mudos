@@ -258,12 +258,29 @@ class EmulatorRuntimeTests(unittest.TestCase):
             dolphin_content = dolphin.read_text()
             self.assertIn("SIDevice0 = 6", dolphin_content)
             self.assertIn("WiimoteSource0 = 1", dolphin_content)
+            self.assertIn("[Interface]", dolphin_content)
+            self.assertIn("ConfirmStop = false", dolphin_content)
 
             wiimote = Path(directory) / "dolphin-emu" / "Config" / "WiimoteNew.ini"
             wiimote_content = wiimote.read_text()
             self.assertIn("[Wiimote1]", wiimote_content)
             self.assertIn("Extension = Classic Controller", wiimote_content)
             self.assertIn("Classic/Buttons/A = `Button B`", wiimote_content)
+
+    def test_dolphin_stop_confirmation_update_preserves_other_preferences(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            config = root / "dolphin-emu" / "Config" / "Dolphin.ini"
+            config.parent.mkdir(parents=True)
+            config.write_text("[Interface]\nConfirmStop = true\nLanguageCode = en\n\n"
+                              "[Core]\nCustomPreference = keep\n")
+            ensure_provider_controller_config("dolphin", root)
+            changed = config.read_text()
+            ensure_provider_controller_config("dolphin", root)
+            self.assertEqual(changed, config.read_text())
+            self.assertIn("ConfirmStop = false", changed)
+            self.assertIn("LanguageCode = en", changed)
+            self.assertIn("CustomPreference = keep", changed)
 
     def test_retroarch_state_parser_survives_apostrophes_for_repeat_launches(self) -> None:
         state = {

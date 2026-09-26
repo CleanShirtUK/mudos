@@ -269,6 +269,9 @@ def ensure_provider_controller_config(
         # Emulate a Wii Remote with a Classic Controller extension; a real
         # Bluetooth Wii Remote is deliberately not required.
         sidevices["WiimoteSource0"] = "1"
+        dolphin_source = _update_section_values(
+            dolphin_source, "Interface", {"ConfirmStop": "false"},
+        )
         _write_if_changed(
             dolphin_path,
             _update_section_values(dolphin_source, "Core", sidevices),
