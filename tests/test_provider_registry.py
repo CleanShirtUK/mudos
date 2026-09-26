@@ -18,11 +18,26 @@ class ProviderLaunchContractTests(unittest.TestCase):
 
     def test_provider_context_filtering_and_standalone_actions(self) -> None:
         providers = load_providers()
+        game_actions = providers.guide_actions("steam", "game")
+        self.assertEqual([action.action_id for action in game_actions],
+                         ["steam-overlay", "steam-quit"])
+        self.assertEqual(game_actions[0].target, "key:Shift+Tab")
         self.assertEqual([a.action_id for a in providers.guide_actions("steam", "store")],
                          ["steam-quit"])
         self.assertEqual([a.action_id for a in providers.guide_actions("steam", "standalone")],
                          ["steam-quit"])
         self.assertEqual(providers.guide_actions("romm", "game"), ())
+
+    def test_guide_keys_are_allowlisted_and_steam_overlay_releases_modifier(self) -> None:
+        source = (Path(__file__).parents[1] / "native/mudos-guide.cpp").read_text()
+        key_handler = source.split("bool sendKey(", 1)[1].split("bool runCommand(", 1)[0]
+        self.assertIn('key == QStringLiteral("Shift+Tab")', key_handler)
+        self.assertIn('key != QStringLiteral("F12")', key_handler)
+        self.assertIn('steamOverlay ? XK_Tab : XK_F12', key_handler)
+        self.assertIn('xcb_key_symbols_get_keycode(keySymbols, XK_Shift_L)', key_handler)
+        self.assertIn('XCB_KEY_PRESS, shiftCodes[0]', key_handler)
+        self.assertIn('XCB_KEY_RELEASE, shiftCodes[0]', key_handler)
+        self.assertIn('targetXid_', key_handler)
 
     def test_dolphin_and_eden_can_reveal_ui_without_quitting_or_toggling_fullscreen(self) -> None:
         providers = load_providers()

@@ -16,6 +16,14 @@ window_class = "steam"
 command = "/usr/bin/steam"
 
 [[guide.actions]]
+id = "steam-overlay"
+label = "Open Steam overlay"
+role = "provider"
+target = "key:Shift+Tab"
+contexts = ["game"]
+order = 40
+
+[[guide.actions]]
 id = "steam-quit"
 label = "Quit Steam"
 role = "quit"

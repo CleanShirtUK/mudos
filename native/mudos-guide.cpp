@@ -276,30 +276,43 @@ private:
 
     bool sendKey(const QString &key)
     {
+        // Provider manifests may request only these exact, known Guide keys.
+        // Never turn an arbitrary target string into keyboard input.
+        const bool steamOverlay = key == QStringLiteral("Shift+Tab");
+        if (!steamOverlay && key != QStringLiteral("F12"))
+            return false;
         auto *x11 = qGuiApp->nativeInterface<QNativeInterface::QX11Application>();
-        if (!x11 || !x11->connection())
+        if (!targetXid_ || !x11 || !x11->connection())
             return false;
         auto *connection = x11->connection();
         auto *keySymbols = xcb_key_symbols_alloc(connection);
         if (!keySymbols)
             return false;
-        const auto keycodes = xcb_key_symbols_get_keycode(keySymbols,
-                                                          key == QStringLiteral("F12") ? XK_F12 : XK_F12);
-        if (!keycodes || keycodes[0] == XCB_NO_SYMBOL)
-        {
+        auto *keycodes = xcb_key_symbols_get_keycode(keySymbols, steamOverlay ? XK_Tab : XK_F12);
+        auto *shiftCodes = steamOverlay ? xcb_key_symbols_get_keycode(keySymbols, XK_Shift_L) : nullptr;
+        if (!keycodes || keycodes[0] == XCB_NO_SYMBOL
+            || (steamOverlay && (!shiftCodes || shiftCodes[0] == XCB_NO_SYMBOL))) {
             free(keycodes);
+            free(shiftCodes);
             xcb_key_symbols_free(keySymbols);
             return false;
         }
         const auto setup = xcb_get_setup(connection);
         const auto screen = xcb_setup_roots_iterator(setup).data;
         xcb_set_input_focus(connection, XCB_INPUT_FOCUS_NONE, targetXid_, XCB_CURRENT_TIME);
+        if (steamOverlay)
+            xcb_test_fake_input(connection, XCB_KEY_PRESS, shiftCodes[0], XCB_CURRENT_TIME,
+                                screen->root, 0, 0, 0);
         xcb_test_fake_input(connection, XCB_KEY_PRESS, keycodes[0], XCB_CURRENT_TIME,
                             screen->root, 0, 0, 0);
         xcb_test_fake_input(connection, XCB_KEY_RELEASE, keycodes[0], XCB_CURRENT_TIME,
                             screen->root, 0, 0, 0);
+        if (steamOverlay)
+            xcb_test_fake_input(connection, XCB_KEY_RELEASE, shiftCodes[0], XCB_CURRENT_TIME,
+                                screen->root, 0, 0, 0);
         xcb_flush(connection);
         free(keycodes);
+        free(shiftCodes);
         xcb_key_symbols_free(keySymbols);
         return true;
     }
