@@ -683,7 +683,7 @@ providerChoices=['steam'];step=0;render();
 var fixtureFail=true;
 var fixture={providers:[],integrations:[{id:'providers.romm',name:'RomM',help:'#',
  fields:[{name:'url',label:'URL',type:'url',required:true}],configured:false}],setup_files:[],
- onboarding:{selected_providers:[],selected_integrations:['providers.romm'],validation:{},
+     onboarding:{selected_providers:[],selected_integrations:['providers.romm'],skipped_integrations:[],validation:{},
  admin_password_configured:false,status:'partial'}};
 var content={innerHTML:'',querySelector:()=>null}, noticeElement={textContent:''};
 var document={querySelector:s=>s==='#content'?content:s==='#notice'?noticeElement:null,
@@ -691,13 +691,14 @@ var document={querySelector:s=>s==='#content'?content:s==='#notice'?noticeElemen
 var window={location:{assign:()=>{}}},CSS={escape:x=>x};
 var setTimeout=()=>0,clearInterval=()=>{},setInterval=()=>0;
  var fetch=async function(path,options){let body=options&&options.body?JSON.parse(options.body):{};
-  if(path==='/api/setup/progress')fixture.onboarding.selected_integrations=body.integrations||[];
+      if(path==='/api/setup/progress')fixture.onboarding.selected_integrations=body.integrations||[];
+      if(path==='/api/setup/skip-integration')fixture.onboarding.skipped_integrations=[body.integration];
   if(path==='/api/setup/credentials'){
    fixture.integrations[0].configured=true;
    fixture.onboarding.validation[body.integration]={ok:false,message:'Retest required'};
   }
   let value=path==='/api/setup/test'?{ok:!fixtureFail,message:fixtureFail?'Fixture failed':'Fixture ready'}
-  :path==='/api/setup/progress'?{state:{selected_integrations:fixture.onboarding.selected_integrations}}
+      :path==='/api/setup/progress'||path==='/api/setup/skip-integration'?{state:fixture.onboarding}
   :fixture;
   if(path==='/api/setup/test')fixture.onboarding.validation[body.integration]=value;
  return {ok:true,headers:{get:()=> 'application/json'},json:async()=>value};};

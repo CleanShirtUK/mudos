@@ -27,11 +27,12 @@ def _read() -> dict[str, Any]:
         if isinstance(value, dict):
             value.setdefault("oobe_dismissed", bool(value.get("dismissed_at"))
                              or value.get("status") == "dismissed")
+            value.setdefault("skipped_integrations", [])
             return value
     except (OSError, ValueError):
         pass
     return {"status": "never", "oobe_dismissed": False, "selected_providers": [],
-            "selected_integrations": [], "completed_at": None,
+            "selected_integrations": [], "skipped_integrations": [], "completed_at": None,
             "dismissed_at": None, "validation": {}}
 
 
@@ -74,7 +75,26 @@ def save_progress(*, providers: list[str] | None = None,
         if providers is not None:
             state["selected_providers"] = sorted(set(map(str, providers)))
         if integrations is not None:
-            state["selected_integrations"] = sorted(set(map(str, integrations)))
+            selected_integrations = set(map(str, integrations))
+            state["selected_integrations"] = sorted(selected_integrations)
+            state["skipped_integrations"] = sorted(
+                set(state.get("skipped_integrations", [])) - selected_integrations)
+        state["updated_at"] = int(time.time())
+        _write(state)
+        return onboarding_state()
+
+
+def skip_integration(integration: str) -> dict[str, Any]:
+    """Persist explicit Skip separately from configuration and validation."""
+    value = str(integration).strip()
+    if value not in INTEGRATION_METADATA:
+        raise ValueError("unsupported setup integration")
+    with _LOCK:
+        state = _read()
+        state["selected_integrations"] = [
+            item for item in state.get("selected_integrations", []) if item != value]
+        state["skipped_integrations"] = sorted(set(state.get("skipped_integrations", [])) | {value})
+        state.setdefault("validation", {}).pop(value, None)
         state["updated_at"] = int(time.time())
         _write(state)
         return onboarding_state()
@@ -107,6 +127,7 @@ def reset_onboarding() -> dict[str, Any]:
         state = _read()
         state.update({"status": "never", "oobe_dismissed": False,
                       "selected_providers": [], "selected_integrations": [],
+                      "skipped_integrations": [],
                       "completed_at": None, "dismissed_at": None,
                       "validation": {}, "install_start_failures": {},
                       "updated_at": int(time.time())})

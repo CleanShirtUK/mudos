@@ -34,6 +34,17 @@ class OnboardingStateTests(unittest.TestCase):
                     onboarding.finish_onboarding()  # Reconfiguration still checks validation.
                 self.assertFalse(onboarding.onboarding_state()["required"])
 
+    def test_explicit_skip_is_persistent_and_reselect_clears_it(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "onboarding.json"
+            with patch.object(onboarding, "_STATE_PATH", path):
+                onboarding.save_progress(integrations=["providers.romm"])
+                state = onboarding.skip_integration("providers.romm")
+                self.assertEqual(state["skipped_integrations"], ["providers.romm"])
+                self.assertEqual(state["selected_integrations"], [])
+                onboarding.save_progress(integrations=["providers.romm"])
+                self.assertEqual(onboarding.onboarding_state()["skipped_integrations"], [])
+
     def test_epic_provider_requires_a_runnable_legendary_not_just_a_wrapper_file(self) -> None:
         with patch("lulu.onboarding.shutil.which", return_value="/usr/local/bin/legendary"), \
                 patch("lulu.onboarding.subprocess.run", side_effect=FileNotFoundError):
