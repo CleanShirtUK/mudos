@@ -19,6 +19,7 @@ Item {
     property real expandedShellHeight: 0
     property real expandedShellBottom: 0
     property string footerText: ""
+    property string bluetoothInputValue: ""
     property bool rowsVisible: true
     readonly property real contentInset: 44 * root.uiScale
     readonly property real horizontalScaleInset: 72 * root.uiScale
@@ -34,6 +35,7 @@ Item {
         - root.horizontalScaleInset
     property real scrollY: 0
     signal rowActivated(int index)
+    signal textInputRequested()
 
     function ensureSelectedVisible() {
         var step = 58 * root.uiScale + 10 * root.uiScale
@@ -291,6 +293,19 @@ Item {
                 font.family: root.typography.interfaceFamily
                 font.pixelSize: root.typography.size("body", 18)
                 wrapMode: Text.Wrap
+            }
+            TextInput {
+                objectName: "bluetoothPairingInput"
+                visible: root.rows.length && root.rows[root.selectedIndex]
+                    && root.rows[root.selectedIndex].kind === "input"
+                width: parent.width
+                text: root.bluetoothInputValue
+                onTextChanged: root.bluetoothInputValue = text
+                onVisibleChanged: if (visible) { forceActiveFocus(); root.textInputRequested() }
+                color: root.luluPalette.primaryText
+                font.family: root.typography.interfaceFamily
+                font.pixelSize: root.typography.size("body", 20)
+                selectByMouse: false
             }
         }
     }

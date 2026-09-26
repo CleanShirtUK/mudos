@@ -14,6 +14,7 @@ Item {
     property var controllers: []
     onControllersChanged: syncControllers()
     property bool bluetoothAvailable: false
+    property string bluetoothState: "unavailable"
     property bool networkAvailable: false
     property string networkConnectionType: ""
     property string currentTime: Qt.formatTime(new Date(), "HH:mm")
@@ -218,11 +219,16 @@ Item {
             StatusGlyph {
                 id: bluetoothIcon
                 x: root.groupSpacing
-                glyph: String.fromCodePoint(0xF00AF) // nf-md-bluetooth
+                objectName: "bluetoothStatusIcon"
+                glyph: root.bluetoothState === "off" || root.bluetoothState === "unavailable"
+                    ? String.fromCodePoint(0xF00B0) : String.fromCodePoint(0xF00AF)
                 glyphSize: root.glyphSize
                 targetPaintedHeight: root.glyphSize * 0.72
                 fontFamily: root.typography ? root.typography.iconFamily : "JetBrains Mono"
-                glyphColor: root.statusColor
+                glyphColor: root.bluetoothState === "connected" ? root.luluPalette.headingAccent
+                    : root.bluetoothState === "off" ? root.luluPalette.warning
+                    : root.bluetoothState === "unavailable" ? root.luluPalette.secondaryText
+                    : root.statusColor
             }
         }
 

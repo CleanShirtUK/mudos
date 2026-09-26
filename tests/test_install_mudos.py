@@ -148,8 +148,16 @@ def test_shared_package_selection_reuses_installed_compatible_variants():
 def test_install_dependency_contract_includes_controller_osk_toolchain():
     packages = manifest()["shared_dependencies"]["packages"]
     assert {"go", "sdl3_ttf", "libx11", "curl", "patch"} <= set(packages)
+    assert {"bluez", "bluez-utils", "python-dbus-next"} <= set(packages)
     provisioner = (ROOT / "scripts/provision-gamepad-osk.sh").read_text()
     assert "sha256sum --check" in provisioner
+
+
+def test_bluetooth_is_enabled_and_checked_by_canonical_installer():
+    source = (ROOT / "scripts/install_mudos.py").read_text()
+    assert 'systemctl", "enable", "--now", "bluetooth.service' in source
+    assert '"bluez", "bluez-utils"' in source
+    assert '"BlueZ Bluetooth service is not enabled and active"' in source
 
 
 def test_host_mount_contract_matches_only_fstab_generated_exact_mount(monkeypatch):

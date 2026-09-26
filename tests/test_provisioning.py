@@ -84,11 +84,11 @@ class ProvisioningTests(unittest.TestCase):
             (ROOT / "src/lulu/gamescope.py").read_bytes(),
         )
 
-    def test_settings_model_is_shipped_from_authoritative_source(self) -> None:
-        self.assertEqual(
-            (PAYLOAD / "lib/lulu/system_settings.py").read_bytes(),
-            (ROOT / "src/lulu/system_settings.py").read_bytes(),
-        )
+    def test_settings_model_is_built_from_canonical_source_not_compatibility_payload(self) -> None:
+        release_builder = (ROOT / "scripts/release.py").read_text()
+        self.assertIn('copy_tree(source / "src", payload / "lib")', release_builder)
+        self.assertTrue((ROOT / "src/lulu/system_settings.py").is_file())
+        self.assertTrue((ROOT / "src/lulu/bluetooth.py").is_file())
 
     def test_runtime_bootstrap_scripts_are_present_and_executable(self) -> None:
         for name in ("steam-session-bootstrap.sh", "steam-bootstrap.sh"):

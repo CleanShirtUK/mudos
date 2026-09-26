@@ -1982,8 +1982,17 @@ class ConsoleInterface(ServiceInterface):
             raise DBusError("org.lulu.Console.Error.InvalidGame", str(error)) from error
 
     @method()
-    def ListSystemSettings(self, category: "s") -> "aa{sv}":
-        return [self._variants(item) for item in self.system_settings.list_settings(category)]
+    async def ListSystemSettings(self, category: "s") -> "aa{sv}":
+        rows = await self.system_settings.list_settings_async(category)
+        return [self._variants(item) for item in rows]
+
+    @method()
+    async def BluetoothAction(self, action: "s", device_path: "s") -> "s":
+        try:
+            result = await self.system_settings.bluetooth.mutate(action, device_path)
+            return json.dumps(result, sort_keys=True)
+        except Exception as error:
+            raise DBusError("org.lulu.Console.Error.Bluetooth", str(error)) from error
 
     @method()
     def ListSystemCategories(self) -> "as":

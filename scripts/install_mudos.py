@@ -456,6 +456,7 @@ def do_install(repo: Path, manifest: dict, dry_run: bool) -> None:
     packages = packages_to_install(dependency["packages"], dependency.get("alternatives", {}))
     if packages:
         run(["pacman", "-S", "--needed", "--noconfirm", *packages])
+    run(["systemctl", "enable", "--now", "bluetooth.service"])
     ensure_account(manifest, apply=True)
     root = Path("/opt/lulu")
     root.mkdir(parents=True, exist_ok=True)
@@ -543,6 +544,12 @@ def verify(repo: Path, manifest: dict) -> None:
         raise InstallError("selected immutable release does not match the clean source checkout")
     if shutil.which("dufs") is None:
         raise InstallError("core DUFS file manager package is not installed")
+    for package in ("bluez", "bluez-utils"):
+        if run(["pacman", "-Q", package], check=False, capture=True).returncode:
+            raise InstallError(f"required Bluetooth package is not installed: {package}")
+    if run(["systemctl", "is-enabled", "bluetooth.service"], check=False, capture=True).returncode \
+            or run(["systemctl", "is-active", "bluetooth.service"], check=False, capture=True).returncode:
+        raise InstallError("BlueZ Bluetooth service is not enabled and active")
     file_browser_config = Path("/etc/lulu/file-browser.env")
     if not file_browser_config.is_file():
         raise InstallError("core DUFS file manager configuration is missing")

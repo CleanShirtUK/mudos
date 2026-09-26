@@ -76,6 +76,22 @@ TestCase {
         verify(disconnectedWidth > 0)
     }
 
+    function test_bluetooth_indicator_distinguishes_unavailable_off_powered_and_connected() {
+        var icon = findChild(strip, "bluetoothStatusIcon")
+        verify(icon !== null)
+        strip.bluetoothState = "unavailable"
+        var offGlyph = icon.glyph
+        compare(icon.glyphColor, palette.secondaryText)
+        strip.bluetoothState = "off"
+        compare(icon.glyph, offGlyph)
+        compare(icon.glyphColor, palette.warning)
+        strip.bluetoothState = "powered"
+        verify(icon.glyph !== offGlyph)
+        compare(icon.glyphColor, strip.statusColor)
+        strip.bluetoothState = "connected"
+        compare(icon.glyphColor, palette.headingAccent)
+    }
+
     function test_controller_reconnect_before_exit_finishes_preserves_single_slot() {
         strip.controllers = [{index: 1, identity: "same-pad", batteryKind: "unknown"}]
         wait(260)

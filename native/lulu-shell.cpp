@@ -378,6 +378,7 @@ class SystemStatusBridge final : public QObject
     Q_PROPERTY(QString networkConnectionType READ networkConnectionType NOTIFY networkConnectionTypeChanged)
     Q_PROPERTY(QString bluetoothState READ bluetoothState NOTIFY bluetoothStateChanged)
     Q_PROPERTY(bool bluetoothPowered READ bluetoothPowered NOTIFY bluetoothStateChanged)
+    Q_PROPERTY(bool bluetoothConnected READ bluetoothConnected NOTIFY bluetoothStateChanged)
     Q_PROPERTY(uint activeDownloadCount READ activeDownloadCount NOTIFY activeDownloadCountChanged)
     Q_PROPERTY(QString acquisitionSnapshot READ acquisitionSnapshot NOTIFY acquisitionSnapshotChanged)
     Q_PROPERTY(bool acquisitionAvailable READ acquisitionAvailable NOTIFY acquisitionAvailabilityChanged)
@@ -434,7 +435,9 @@ public:
     bool networkOnline() const { return networkOnline_; }
     QString bluetoothState() const { return bluetoothState_; }
     QString networkConnectionType() const { return networkConnectionType_; }
-    bool bluetoothPowered() const { return bluetoothState_ == QStringLiteral("powered"); }
+    bool bluetoothPowered() const { return bluetoothState_ == QStringLiteral("powered")
+                                         || bluetoothState_ == QStringLiteral("connected"); }
+    bool bluetoothConnected() const { return bluetoothState_ == QStringLiteral("connected"); }
     uint activeDownloadCount() const { return activeDownloadCount_; }
     QString acquisitionSnapshot() const { return acquisitionSnapshot_; }
     bool acquisitionAvailable() const { return acquisitionAvailable_; }
@@ -463,19 +466,22 @@ private slots:
                                   const QVariantMap &,
                                   const QStringList &)
     {
-        if (interfaceName == QStringLiteral("org.bluez.Adapter1"))
+        if (interfaceName == QStringLiteral("org.bluez.Adapter1")
+                || interfaceName == QStringLiteral("org.bluez.Device1"))
             refreshBluetooth();
     }
 
     void onBluezInterfacesAdded(const QDBusObjectPath &, const QVariantMap &interfaces)
     {
-        if (interfaces.contains(QStringLiteral("org.bluez.Adapter1")))
+        if (interfaces.contains(QStringLiteral("org.bluez.Adapter1"))
+                || interfaces.contains(QStringLiteral("org.bluez.Device1")))
             refreshBluetooth();
     }
 
     void onBluezInterfacesRemoved(const QDBusObjectPath &, const QStringList &interfaces)
     {
-        if (interfaces.contains(QStringLiteral("org.bluez.Adapter1")))
+        if (interfaces.contains(QStringLiteral("org.bluez.Adapter1"))
+                || interfaces.contains(QStringLiteral("org.bluez.Device1")))
             refreshBluetooth();
     }
 
@@ -627,8 +633,8 @@ private:
                                    QDBusConnection::systemBus());
             const QDBusMessage reply = manager.call(QStringLiteral("GetManagedObjects"));
             QSet<QString> adapters;
+            QMap<QDBusObjectPath, QMap<QString, QVariantMap>> objects;
             if (reply.type() == QDBusMessage::ReplyMessage && !reply.arguments().isEmpty()) {
-                QMap<QDBusObjectPath, QMap<QString, QVariantMap>> objects;
                 QDBusArgument argument = reply.arguments().constFirst().value<QDBusArgument>();
                 argument >> objects;
                 for (auto it = objects.cbegin(); it != objects.cend(); ++it) {
@@ -638,6 +644,14 @@ private:
             }
             if (!adapters.isEmpty()) {
                 nextState = QStringLiteral("off");
+                bool connected = false;
+                for (auto it = objects.cbegin(); it != objects.cend(); ++it) {
+                    const auto device = it.value().value(QStringLiteral("org.bluez.Device1"));
+                    if (device.value(QStringLiteral("Connected")).toBool()) {
+                        connected = true;
+                        break;
+                    }
+                }
                 for (const QString &path : adapters) {
                     QDBusInterface adapter(QStringLiteral("org.bluez"), path,
                                            QStringLiteral("org.freedesktop.DBus.Properties"),
@@ -649,7 +663,7 @@ private:
                             && !poweredReply.arguments().isEmpty()
                             && poweredReply.arguments().constFirst().value<QDBusVariant>()
                                    .variant().toBool()) {
-                        nextState = QStringLiteral("powered");
+                        nextState = connected ? QStringLiteral("connected") : QStringLiteral("powered");
                         break;
                     }
                 }

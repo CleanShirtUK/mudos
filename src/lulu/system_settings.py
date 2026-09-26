@@ -8,7 +8,10 @@ import platform
 import shutil
 import socket
 import subprocess
+import asyncio
 from typing import Any
+
+from .bluetooth import BluezClient
 
 
 @dataclass(frozen=True, slots=True)
@@ -53,10 +56,62 @@ class SystemSettingsProvider:
 
     categories = CATEGORIES
 
+    def __init__(self, bluetooth: BluezClient | None = None) -> None:
+        self.bluetooth = bluetooth or BluezClient()
+
     def list_settings(self, category: str) -> list[dict[str, object]]:
         if category not in CATEGORIES:
             raise ValueError(f"unknown system settings category: {category}")
         return [setting.as_dict() for setting in getattr(self, f"_{category.lower()}_settings")()]
+
+    async def list_settings_async(self, category: str) -> list[dict[str, object]]:
+        if category != "Bluetooth":
+            return self.list_settings(category)
+        snap = await self.bluetooth.snapshot()
+        adapters = snap["adapters"]
+        rows: list[dict[str, object]] = []
+        powered = any(adapter["powered"] for adapter in adapters)
+        discovery = any(adapter["discovering"] for adapter in adapters)
+        rows.append(SystemSetting("bluetooth.state", "Bluetooth", "status",
+                                  "unavailable" if not snap["available"] else "on" if powered else "off",
+                                  snap["error"] or (adapters[0]["name"] + " · " + adapters[0]["address"]
+                                                     if adapters else "No adapter present")).as_dict())
+        if snap["available"] and powered:
+            rows.extend([
+                SystemSetting("bluetooth:stop-discovery" if discovery else "bluetooth:discover",
+                              "Stop discovery" if discovery else "Start discovery",
+                              "action", "Scanning" if discovery else "Ready", "", True).as_dict(),
+                SystemSetting("bluetooth:disable", "Turn Bluetooth off", "action", "", "", True).as_dict(),
+            ])
+        elif snap["available"]:
+            rows.append(SystemSetting("bluetooth:enable", "Turn Bluetooth on", "action", "", "", True).as_dict())
+        for prompt in snap.get("pairing_prompts", []):
+            if prompt.get("kind") == "display":
+                rows.append(SystemSetting("bluetooth:pairing-info", "Pairing · " + prompt["message"],
+                                          "status", "", "Follow the instruction on the other device.").as_dict())
+                continue
+            if prompt.get("needs_text"):
+                rows.append(SystemSetting("bluetooth:pairing-accept", "Enter PIN/passkey · " + prompt["message"],
+                                          "input", "", "Use the controller keyboard to enter the requested value.", True).as_dict())
+            else:
+                rows.append(SystemSetting("bluetooth:pairing-accept", "Confirm · " + prompt["message"],
+                                          "action", "", "A confirmation is required to continue pairing.", True).as_dict())
+            rows.append(SystemSetting("bluetooth:pairing-reject", "Reject pairing request", "action", "", "", True).as_dict())
+        for device in snap["devices"]:
+            kind = device["icon"] or (f"Class {device['class']:06X}" if device["class"] else "Bluetooth device")
+            strength = f" · RSSI {device['rssi']} dBm" if device["rssi"] is not None else ""
+            state = "Connected" if device["connected"] else "Paired" if device["paired"] else "Nearby"
+            detail = (f"{state} · {'Trusted' if device['trusted'] else 'Not trusted'} · {kind}{strength}; "
+                      "paired, trusted and connected are independent BlueZ states")
+            actions = (["disconnect"] if device["connected"] else
+                       ["connect", "forget"] if device["paired"] else ["pair"])
+            for action in actions:
+                label = {"pair": "Pair", "connect": "Connect", "disconnect": "Disconnect",
+                         "forget": "Forget"}[action]
+                rows.append(SystemSetting(
+                    f"bluetooth:{action}:{device['path']}", f"{label} · {device['name']}",
+                    "action", f"{state} · {kind}{strength}", detail, True).as_dict())
+        return rows
 
     def _display_settings(self) -> list[SystemSetting]:
         output = os.environ.get("LULU_OUTPUT_CONNECTOR", "auto")
@@ -92,9 +147,7 @@ class SystemSettingsProvider:
         ]
 
     def _bluetooth_settings(self) -> list[SystemSetting]:
-        powered = _command("bluetoothctl", "show")
-        state = "on" if "Powered: yes" in powered else "off" if powered else "unavailable"
-        return [_status("bluetooth.state", "Adapter", state, "Pair/connect mutation path is TO PROVE")]
+        return [_status("bluetooth.state", "Adapter", "use async BlueZ snapshot")]
 
     def _controllers_settings(self) -> list[SystemSetting]:
         return [_status("controllers.state", "Controller service", "managed by InputPlumber", "Detailed controller model is TO PROVE")]

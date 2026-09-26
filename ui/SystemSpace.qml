@@ -17,9 +17,12 @@ Item {
     property real expandedShellHeight: 0
     property real expandedShellBottom: 0
     signal actionRequested(string key)
+    signal textInputRequested()
+    property alias bluetoothInputValue: settingsPage.bluetoothInputValue
     property int visibleRows: 7
 
     MudosSettingsPage {
+        id: settingsPage
         anchors.fill: parent
         title: root.category.toUpperCase()
         rows: root.settings
@@ -36,5 +39,6 @@ Item {
         expandedShellHeight: root.expandedShellHeight
         expandedShellBottom: root.expandedShellBottom
         onRowActivated: root.actionRequested(root.settings[index].key)
+        onTextInputRequested: root.textInputRequested()
     }
 }

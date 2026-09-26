@@ -509,6 +509,9 @@ class ConsoleUiBridge:
         rows = await self.consoled.call_list_system_settings(category)
         return [{key: value.value for key, value in row.items()} for row in rows]
 
+    async def bluetooth_action(self, action: str, path: str) -> dict[str, object]:
+        return json.loads(await self.consoled.call_bluetooth_action(action, path))
+
     async def network_state(self) -> dict[str, object]:
         return json.loads(await self.consoled.call_get_network_state())
 
@@ -887,6 +890,16 @@ class ApiHandler(BaseHTTPRequestHandler):
                 payload = json.loads(self.rfile.read(length) or b"{}")
                 action = path.removeprefix("/network/")
                 self._respond(200, self.bridge.call(self.bridge.network_mutation(action, payload), timeout=20))
+            except Exception as error:
+                self._respond(409, {"error": str(error) or type(error).__name__})
+            return
+        if path == "/bluetooth/action":
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+                payload = json.loads(self.rfile.read(length) or b"{}")
+                result = self.bridge.call(self.bridge.bluetooth_action(
+                    str(payload.get("action", "")), str(payload.get("path", ""))), timeout=120)
+                self._respond(200, result)
             except Exception as error:
                 self._respond(409, {"error": str(error) or type(error).__name__})
             return

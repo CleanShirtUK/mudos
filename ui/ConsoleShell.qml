@@ -1205,11 +1205,32 @@ import QtQuick.Controls
             refreshMudosMenu()
             return
         }
+        var selectedKey = systemSettings[systemRowIndex] ? systemSettings[systemRowIndex].key : ""
         request("/settings?category=" + encodeURIComponent(systemCategories[systemCategoryIndex]),
                 "GET", "", function(data) {
                     systemSettings = data
-                    systemRowIndex = Math.min(systemRowIndex, Math.max(0, data.length - 1))
+                    var stableIndex = -1
+                    for (var index = 0; index < data.length; index++)
+                        if (data[index].key === selectedKey) { stableIndex = index; break }
+                    systemRowIndex = stableIndex >= 0 ? stableIndex
+                        : Math.min(systemRowIndex, Math.max(0, data.length - 1))
                 })
+    }
+
+    function activateBluetoothSetting(key) {
+        if (key.indexOf("bluetooth:") !== 0) return
+        var parts = key.split(":")
+        var action = parts[1]
+        var devicePath = parts.length > 2 ? parts.slice(2).join(":") : ""
+        if (action === "pairing-accept")
+            devicePath = systemSpace.bluetoothInputValue
+        root.message = action === "discover" ? "Starting Bluetooth discovery…"
+            : action === "pair" ? "Pairing Bluetooth device…" : "Updating Bluetooth…"
+        request("/bluetooth/action", "POST", JSON.stringify({action: action, path: devicePath}), function() {
+            root.message = "Bluetooth updated"
+            if (action === "pairing-accept") systemSpace.bluetoothInputValue = ""
+            root.refreshSystemSettings()
+        }, "Bluetooth action failed", undefined, function() { root.refreshSystemSettings() })
     }
 
     function refreshNetworkState() {
@@ -1243,6 +1264,14 @@ import QtQuick.Controls
         running: root.space === "system" && !root.systemLanding
             && root.systemCategories[root.systemCategoryIndex] === "Audio"
         onTriggered: root.refreshAudioState()
+    }
+
+    Timer {
+        interval: 1200
+        repeat: true
+        running: root.space === "system" && !root.systemLanding
+            && root.systemCategories[root.systemCategoryIndex] === "Bluetooth"
+        onTriggered: root.refreshSystemSettings()
     }
 
     Timer {
@@ -2371,6 +2400,11 @@ import QtQuick.Controls
             if (!systemLanding && systemCategories[systemCategoryIndex] === "Network"
                     && internetSettingsRef) {
                 internetSettingsRef.activate()
+                return
+            }
+            if (!systemLanding && systemCategories[systemCategoryIndex] === "Bluetooth"
+                    && systemSettings[systemRowIndex]) {
+                activateBluetoothSetting(systemSettings[systemRowIndex].key)
                 return
             }
             if (!systemLanding && systemCategories[systemCategoryIndex] === "Audio"
@@ -3604,6 +3638,7 @@ import QtQuick.Controls
         }
 
         SystemSpace {
+            id: systemSpace
             anchors.fill: parent
             visible: root.space === "system" && !root.systemLanding
                 && root.systemCategories[root.systemCategoryIndex] !== "Network"
@@ -3624,8 +3659,11 @@ import QtQuick.Controls
             onActionRequested: {
                 if (root.systemCategories[root.systemCategoryIndex] === "System")
                     root.activateMudosAction(key)
+                else if (root.systemCategories[root.systemCategoryIndex] === "Bluetooth")
+                    root.activateBluetoothSetting(key)
                 else if (key === "lulu.reset") root.resetMudos()
             }
+            onTextInputRequested: root.request("/keyboard/show", "POST", "", function() {})
         }
 
         InternetSettings {
@@ -3790,6 +3828,7 @@ import QtQuick.Controls
             activeDownloadCount: systemStatus ? systemStatus.activeDownloadCount : 0
             controllers: controllerBridge.controllers
             bluetoothAvailable: systemStatus ? systemStatus.bluetoothPowered : false
+            bluetoothState: systemStatus ? systemStatus.bluetoothState : "unavailable"
             networkAvailable: systemStatus ? systemStatus.networkConnected : false
             networkConnectionType: systemStatus ? systemStatus.networkConnectionType : ""
         }

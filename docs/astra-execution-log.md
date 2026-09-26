@@ -1,5 +1,33 @@
 # Astra execution log
 
+## Bluetooth Settings implementation and hardware probe — 2026-09-26
+
+- Replaced Bluetooth Settings' `bluetoothctl show` placeholder with a native
+  `dbus-next` system-bus BlueZ boundary. Consoled exposes normalized live
+  settings and mutations; the redesigned Settings list retains selection by
+  stable row key during asynchronous device discovery updates.
+- Implemented adapter power, discovery, pair/connect/disconnect/forget and a
+  Mudos BlueZ Agent1 pairing flow. Confirmation/authorization prompts wait for
+  explicit user approval; PIN/passkey requests use the Mudos keyboard surface;
+  rejection, cancellation, timeout, and BlueZ errors remain visible. Successful
+  pairing marks the device trusted without forcing reconnects.
+- The status strip now distinguishes unavailable, off, powered-idle and
+  connected BlueZ states from live ObjectManager state. Installer dependencies
+  include BlueZ and bluez-utils, enable `bluetooth.service`, and verify package
+  and service state. No broad privilege or device allowlist was added.
+- Real hardware probe on this development appliance: BlueZ active; one adapter
+  present, powered and unblocked. From the same BlueZ adapter boundary used by
+  Settings, discovery started and stopped, and power off/on completed with the
+  adapter restored on. A 12-second discovery saw five anonymous/randomized
+  addresses with no identifying names or device classes. Discovery was stopped.
+- **Physical acceptance remains blocked:** no identified, authorized pairing
+  target was available. Therefore pair/compare/PIN, trust persistence across
+  reboot, forget/re-pair, real connection lifecycle, and controller arrival in
+  InputPlumber have not been validated. The existing USB Xbox receiver is not
+  a Bluetooth peripheral. No target device was paired, and no controller
+  mappings were changed. Do not construct a candidate until this physical
+  validation is completed through the Settings UI.
+
 ## Continued correction pass from `c387802` (2026-09-26)
 
 - OOBE integration Skip was browser-only and therefore vanished on reload and could not be distinguished from ordinary deselection. Added durable `skipped_integrations` state, an explicit skip endpoint, UI hydration, and clearing on reselection. It remains distinct from saved configuration and connection validation. Regression: `PYTHONPATH=src python -m pytest -q tests/test_onboarding_recovery.py tests/test_admin_web.py` — **67 passed**; `git diff --check` clean. Further correction items remain in progress; no candidate build or destructive operation performed.
