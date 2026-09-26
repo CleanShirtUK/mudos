@@ -211,6 +211,18 @@
   removes it before runtime start. Installer/release focused regression tests
   after the correction: **78 passed, 17 subtests**. Rebuild, verify, repeat the
   ownership dry-run/purge, and reinstall before final-state acceptance.
+- The same fresh-install provenance review found that the already-running
+  shared InputPlumber daemon was not restarted after its configuration was
+  replaced by purge/reinstall, and no physical add event is guaranteed for
+  controllers that remain connected across that operation. The installer now
+  reloads udev rules, restarts InputPlumber to load the candidate profile, then
+  starts the generic hotplug reconciler before starting the session. This is
+  required for connected generic controllers and avoids model-specific rules.
+  An ordering regression asserts rules reload → InputPlumber restart → generic
+  reconciliation → Mudos target startup. Targeted installer/release/gamepad
+  tests: **62 passed**. The current candidate is therefore still provisional;
+  build and verify a third exact-HEAD candidate, repeat canonical purge/install,
+  then inspect both generated composites and absence of every dev drop-in.
 
 ## Bluetooth Settings implementation and hardware probe — 2026-09-26
 

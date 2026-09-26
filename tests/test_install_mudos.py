@@ -61,6 +61,15 @@ def test_development_validation_dropin_is_purge_owned_and_removed_before_product
     assert 'raw.endswith(("/dev-runtime.conf", "/dev-validation.conf"))' in installer_source
 
 
+def test_installer_reloads_inputplumber_then_reconciles_already_connected_gamepads():
+    source = (ROOT / "scripts/install_mudos.py").read_text()
+    reload_rules = source.index('run(["udevadm", "control", "--reload-rules"]')
+    restart_inputplumber = source.index('run(["systemctl", "restart", "inputplumber.service"])')
+    reconcile_devices = source.index('run(["systemctl", "start", "lulu-inputplumber-hotplug.service"])')
+    start_session = source.index('run(["systemctl", "start", "lulu.target"])', reconcile_devices)
+    assert reload_rules < restart_inputplumber < reconcile_devices < start_session
+
+
 def test_lulu_target_is_installable_and_installer_verifies_boot_enablement():
     target = (ROOT / "packaging/lulu.target").read_text()
     installer_source = (ROOT / "scripts/install_mudos.py").read_text()

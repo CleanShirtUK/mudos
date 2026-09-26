@@ -414,6 +414,12 @@ def install_integration(repo: Path, release: Path, manifest: dict,
     # environments refer solely to the immutable current selector.
     run(["systemctl", "daemon-reload"])
     run(["udevadm", "control", "--reload-rules"], check=False)
+    # Re-read the installed device profiles and deterministically reconcile
+    # already-connected gamepads. A purge/reinstall does not disconnect kernel
+    # input devices, so relying only on future udev add events leaves the new
+    # runtime without its generated composites.
+    run(["systemctl", "restart", "inputplumber.service"])
+    run(["systemctl", "start", "lulu-inputplumber-hotplug.service"])
     run(["systemd-tmpfiles", "--create", "/etc/tmpfiles.d/lulu.conf"])
     for mount in manifest.get("preserved_host_mounts", []):
         if host_mount_state(mount) is not None:
