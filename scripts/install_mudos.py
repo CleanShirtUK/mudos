@@ -473,6 +473,11 @@ def do_install(repo: Path, manifest: dict, dry_run: bool) -> None:
 def remove_owned(repo: Path, manifest: dict, *, purge: bool, dry_run: bool) -> None:
     if not dry_run and os.geteuid() != 0:
         raise InstallError("uninstall/purge needs root; rerun as root or with sudo")
+    # Resolve ownership against an actually mounted configured target. Without
+    # this guard, a missing removable disk could make purge delete a stale
+    # <mountpoint>/Mudos tree on the system disk instead.
+    if purge:
+        validate_configured_storage_targets(manifest)
     for item in plan(repo, manifest, "purge" if purge else "uninstall", purge=purge):
         print(item)
     stop_services(not dry_run, manifest, stop_host_mounts=purge)

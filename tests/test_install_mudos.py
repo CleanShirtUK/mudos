@@ -266,6 +266,15 @@ def test_installer_accepts_only_present_mount_for_configured_storage_target(tmp_
     installer.validate_configured_storage_targets(manifest(), home)
 
 
+def test_purge_checks_configured_mount_ownership_before_printing_or_removing(monkeypatch):
+    checked = []
+    monkeypatch.setattr(installer, "validate_configured_storage_targets",
+                        lambda data: checked.append(data))
+    monkeypatch.setattr(installer, "plan", lambda *_args, **_kwargs: [])
+    installer.remove_owned(ROOT, manifest(), purge=True, dry_run=True)
+    assert checked == [manifest()]
+
+
 def test_acquisition_initialization_creates_only_leaves_with_restricted_modes(tmp_path):
     parent = tmp_path / "mounted" / "Mudos" / ".acquisition"
     paths = [parent / "torrents", parent / "usenet"]
