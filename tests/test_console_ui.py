@@ -380,7 +380,7 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertIn('Qt.formatTime(new Date(), "HH:mm")', strip)
         self.assertIn('SystemStatusStrip {', shell)
         self.assertIn('MudosAssetCatalog.systemIcon(modelData)', system_home)
-        self.assertIn('MudosAssetCatalog.icon("collection")', library_home)
+        self.assertIn('MudosAssetCatalog.libraryDimensionIcon(modelData.mode)', library_home)
         self.assertIn('kind === "catalogue"', store_home)
         self.assertIn('root.selectedCategoryIndex === 3 ? "Navigation" : "Navigate"', shell)
         self.assertNotIn('"Navigate / Games"', shell)

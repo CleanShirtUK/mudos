@@ -73,4 +73,10 @@ Next action: inspect shared Library/Installable QML, navigation and catalogue mo
 
 ## Continuation discipline
 
+## Continuation checkpoint — 2026-09-26
+
+- VP-005 committed `e0b9978`. Canonical `scripts/dev-runtime.sh refresh` completed from clean committed HEAD; `/opt/lulu/dev-current/NON_PROMOTABLE` records `e0b9978a6e31c00d7ad1e6a3d84c6ac2f4c62bfd`, `dirty=false`, `promotable=false`. Actual `lulu-session@2`, `lulu-consoled`, `lulu-acquisition`, `lulu-admin`, and `mudos-recovery` services active; `/opt/lulu/current` still points at old selected `1b18377` immutable release. No physical controller/display acceptance claimed.
+- VP-003 IMPLEMENTED (physical visual acceptance pending): four Home Library dimension cards now have distinct Provider (existing plug), Game Mode (`f0c0`), Genre (`eeb6`), Platform (`f11b` gamepad) glyphs through shared semantic asset mapping. Flathub Store card now renders `f324` instead of generic fallback, without coupling the shared Store component to Flathub. Unknown/default modes keep collection fallback; other Store identities retain behavior. QML asset test verifies all exact glyphs and uniqueness.
+- VP-003 validation: targeted Python 73 passed, targeted QML 5 passed; full Python **746 passed +25 subtests**; CTest 1/1; full QML **99 passed, exactly 9 baseline failures**. `git diff --check` clean. Next: commit and canonical dev refresh, then resume other actionable backlog including VP-001/004/011, OOBE and Recovery safety batches. Physical visual acceptance pending.
+
 Update this log at each useful internally consistent step and commit each coherent batch. Keep implementation and physical acceptance distinct. Do not reboot, clear live credentials, destroy games/downloads, or alter immutable releases for validation. Continue to OOBE, provider/Questarr, settings, Recovery, visual and acceptance batches based on dependencies; no subagents requested. Source and Git history plus this log are the resumption authority.

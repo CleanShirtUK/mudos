@@ -1,5 +1,6 @@
 import QtQuick
 import QtTest
+import "../../ui/MudosAssetCatalog.js" as Assets
 
 TestCase {
     name: "AssetSystem"
@@ -29,5 +30,19 @@ TestCase {
         verify(glyph.controllerFont.status === FontLoader.Ready)
         compare(glyph.controllerFont.name, "Config")
         compare(glyph.glyphText, "\u0100")
+    }
+
+    function test_home_library_dimensions_and_flathub_have_distinct_icons() {
+        var modes = ["provider", "game_mode", "genre", "platform"]
+        var expected = [Assets.icon("plug"), "\uf0c0", "\ueeb6", "\uf11b"]
+        for (var i = 0; i < modes.length; ++i) {
+            compare(Assets.libraryDimensionIcon(modes[i]), expected[i])
+            verify(expected[i] !== Assets.icon("collection"))
+            for (var j = 0; j < i; ++j)
+                verify(expected[i] !== expected[j])
+        }
+        compare(Assets.storeIcon("flathub", "store"), "\uf324")
+        compare(Assets.storeIcon("steam", "store"), Assets.icon("steam"))
+        compare(Assets.storeIcon("custom", "store"), Assets.icon("fallback"))
     }
 }

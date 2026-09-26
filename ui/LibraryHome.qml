@@ -110,7 +110,7 @@ Item {
                 + ((index === libraryHome.selectedIndex ? 1 : 0)
                    - (libraryHome.selectionStart[index] || 0)) * libraryHome.selectionProgress
             displayTitle: modelData.label
-            symbolicArtwork: MudosAssetCatalog.icon("collection")
+            symbolicArtwork: MudosAssetCatalog.libraryDimensionIcon(modelData.mode)
             artworkRole: "icon"
             artworkSource: ""
             uiScale: libraryHome.uiScale

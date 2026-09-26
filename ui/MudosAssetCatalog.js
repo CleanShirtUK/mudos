@@ -15,6 +15,10 @@ var iconCodepoints = {
     volumeMute: "\uf026",
     controller: "\uf11b",
     collection: "\ueb9c",
+    gameMode: nerdGlyph(0xF0C0),
+    genre: nerdGlyph(0xEEB6),
+    platform: nerdGlyph(0xF11B),
+    flathub: nerdGlyph(0xF324),
     battery: "\uf240",
     download: "\uf019",
     storage: "\uf0a0",
@@ -101,11 +105,19 @@ function icon(name) {
     return iconCodepoints[String(name || "")] || ""
 }
 
+function libraryDimensionIcon(mode) {
+    var icons = {platform: "platform", provider: "plug",
+                 game_mode: "gameMode", genre: "genre"}
+    return icon(icons[String(mode || "")] || "collection")
+}
+
 function storeIcon(id, kind) {
     if (kind === "store" && String(id || "") === "steam")
         return icon("steam")
     if (kind === "store" && String(id || "") === "questarr")
         return icon("questarr")
+    if (kind === "store" && String(id || "") === "flathub")
+        return icon("flathub")
     if (kind === "add")
         return icon("addStore")
     if (kind === "catalogue")
