@@ -87,6 +87,38 @@ def test_exact_source_release_is_reused_on_reinstall(tmp_path):
     assert installer.existing_release(release.parent, "b" * 40) is None
 
 
+def test_host_mount_contract_matches_only_fstab_generated_exact_mount(monkeypatch):
+    mount = manifest()["preserved_host_mounts"][0]
+    outputs = [
+        "FragmentPath=/run/systemd/generator/mount.service\nSourcePath=/etc/fstab\n"
+        "Where=/home/lulu/.local/share/Steam/steamapps\nActiveState=active\n",
+        "# generated\n[Mount]\nWhat=/home/lulu/Games/Executables/steam/steamapps\n"
+        "Where=/home/lulu/.local/share/Steam/steamapps\n",
+    ]
+
+    def fake_run(args, **kwargs):
+        return subprocess.CompletedProcess(args, 0, outputs.pop(0), "")
+
+    monkeypatch.setattr(installer, "run", fake_run)
+    assert installer.host_mount_state(mount) == "active"
+
+
+def test_host_mount_contract_rejects_unrelated_or_conflicting_mount(monkeypatch):
+    mount = manifest()["preserved_host_mounts"][0]
+    outputs = [
+        "FragmentPath=/run/systemd/generator/unrelated.mount\nSourcePath=/etc/fstab\n"
+        "Where=/home/lulu/.local/share/Steam/steamapps\nActiveState=active\n",
+        "[Mount]\nWhat=/mnt/unrelated\nWhere=/home/lulu/.local/share/Steam/steamapps\n",
+    ]
+
+    def fake_run(args, **kwargs):
+        return subprocess.CompletedProcess(args, 0, outputs.pop(0), "")
+
+    monkeypatch.setattr(installer, "run", fake_run)
+    with pytest.raises(installer.InstallError, match="non-matching host mount"):
+        installer.host_mount_state(mount)
+
+
 def test_safe_remove_refuses_repository_and_immutable_releases(tmp_path):
     repo = tmp_path / "repo"
     repo.mkdir()

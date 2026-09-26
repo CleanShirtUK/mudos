@@ -44,6 +44,12 @@ not remove them. Files such as `/etc/nsswitch.conf`, arbitrary files in
 removed by purge. Recovery uses the selected immutable release and is
 independent of `/opt/lulu/dev-current`.
 
+The ownership contract also recognizes the exact appliance Steam-library bind
+mount when systemd generated it from `/etc/fstab`. Purge stops that mount before
+deleting its Mudos game tree, preserves the host's fstab entry, and installation
+recreates only its Mudos-owned source and mountpoint before restarting the
+generated mount. The installer never edits `/etc/fstab`.
+
 ## Verify, uninstall, purge
 
 ```sh

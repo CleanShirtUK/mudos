@@ -58,6 +58,8 @@
       {"path": "/home/lulu/Games/ROMs", "owner": "lulu", "mode": "0750"},
       {"path": "/home/lulu/Games/BIOS", "owner": "lulu", "mode": "0750"},
       {"path": "/home/lulu/Games/Executables", "owner": "lulu", "mode": "0750"},
+      {"path": "/home/lulu/Games/Executables/steam/steamapps", "owner": "lulu", "mode": "0750"},
+      {"path": "/home/lulu/.local/share/Steam/steamapps", "owner": "lulu", "mode": "0750"},
       {"path": "/home/lulu/.config/lulu", "owner": "lulu", "mode": "0750"},
       {"path": "/home/lulu/.local/share/lulu", "owner": "lulu", "mode": "0750"},
       {"path": "/home/lulu/.cache/lulu", "owner": "lulu", "mode": "0750"},
@@ -65,6 +67,9 @@
     ]
   },
   "developer_runtime": {"path": "/opt/lulu/dev-current", "staging_prefix": "/opt/lulu/.dev-staging-"},
+  "preserved_host_mounts": [
+    {"unit": "home-lulu-.local-share-Steam-steamapps.mount", "source": "/home/lulu/Games/Executables/steam/steamapps", "target": "/home/lulu/.local/share/Steam/steamapps", "fstab_owned": false}
+  ],
   "configured_storage_policy": "When storage-targets.json configures game_path or emulation_path, Mudos owns only the child <configured-path>/Mudos tree and its ROMs, BIOS, Executables, and .acquisition subtrees. Never purge the configured mount/root itself.",
   "shared_dependencies": {
     "package_manager": "pacman",

@@ -62,6 +62,28 @@ def run(args: list[str], *, check: bool = True, capture: bool = False) -> subpro
     return subprocess.run(args, check=check, text=True, capture_output=capture)
 
 
+def host_mount_state(mount: dict) -> str | None:
+    """Return active state only for the exact fstab-generated Steam bind mount."""
+    result = run(["systemctl", "show", mount["unit"],
+                  "--property=FragmentPath,SourcePath,Where,ActiveState"],
+                 check=False, capture=True)
+    if result.returncode != 0:
+        return None
+    fields = dict(line.split("=", 1) for line in result.stdout.splitlines() if "=" in line)
+    if not fields.get("FragmentPath"):
+        return None
+    unit_text = run(["systemctl", "cat", mount["unit"]], check=False, capture=True).stdout
+    unit_fields = dict(line.strip().split("=", 1) for line in unit_text.splitlines()
+                       if line.strip().startswith(("What=", "Where=")) and "=" in line)
+    if (not fields.get("FragmentPath", "").startswith("/run/systemd/generator/")
+            or fields.get("SourcePath") != "/etc/fstab"
+            or unit_fields.get("What") != mount["source"]
+            or fields.get("Where") != mount["target"]
+            or unit_fields.get("Where") != mount["target"]):
+        raise InstallError(f"refusing to alter non-matching host mount {mount['unit']}")
+    return fields.get("ActiveState", "inactive")
+
+
 def copy_if_absent(source: Path, destination: Path, *, uid: int | None = None,
                    gid: int | None = None, mode: int | None = None) -> bool:
     """Initialize mutable configuration once; never reset operator state."""
@@ -200,6 +222,8 @@ def plan(repo: Path, manifest: dict, action: str, *, purge: bool = False) -> lis
         staging = sorted(Path(manifest["developer_runtime"]["staging_prefix"]).parent.glob(
             Path(manifest["developer_runtime"]["staging_prefix"]).name + "*"))
         return ["stop and disable owned Mudos services", "remove manifest-owned system integration",
+                *[f"stop (preserve host fstab entry for) {mount['unit']}"
+                  for mount in manifest.get("preserved_host_mounts", [])],
                 *[f"remove system-owned path {p}" for p in integration_paths(manifest)],
                 "remove owned /opt/lulu/{bin,lib,ui,config,scripts} compatibility symlinks",
                 "remove /opt/lulu/current selector only", *[f"remove mutable owned path {p}" for p in mutable_paths(manifest)],
@@ -208,7 +232,7 @@ def plan(repo: Path, manifest: dict, action: str, *, purge: bool = False) -> lis
     raise InstallError(f"unsupported action: {action}")
 
 
-def stop_services(apply: bool) -> None:
+def stop_services(apply: bool, manifest: dict, *, stop_host_mounts: bool) -> None:
     units = ["lulu.target", "lulu-session@2.service", "lulu-admin.service", "lulu-consoled.service",
              "lulu-acquisition.service", "mudos-recovery.service", "mudos-recovery-ui.service",
              "lulu-transmission.service", "lulu-questarr.service", "lulu-questarr-reconcile.service",
@@ -222,6 +246,12 @@ def stop_services(apply: bool) -> None:
         run(["runuser", "-u", "lulu", "--", "env", "XDG_RUNTIME_DIR=/run/user/958",
              "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/958/bus", "systemctl", "--user",
              "disable", "--now", "lulu-sunshine-dev.service"], check=False)
+        for mount in (manifest.get("preserved_host_mounts", []) if stop_host_mounts else []):
+            if host_mount_state(mount) is not None:
+                run(["systemctl", "stop", mount["unit"]])
+    else:
+        for mount in (manifest.get("preserved_host_mounts", []) if stop_host_mounts else []):
+            print(f"would stop (preserve host fstab entry for) {mount['unit']}")
 
 
 def install_integration(repo: Path, release: Path, manifest: dict) -> None:
@@ -291,6 +321,9 @@ def install_integration(repo: Path, release: Path, manifest: dict) -> None:
     run(["systemctl", "daemon-reload"])
     run(["udevadm", "control", "--reload-rules"], check=False)
     run(["systemd-tmpfiles", "--create", "/etc/tmpfiles.d/lulu.conf"])
+    for mount in manifest.get("preserved_host_mounts", []):
+        if host_mount_state(mount) is not None:
+            run(["systemctl", "start", mount["unit"]])
     for unit in ("lulu.target", "lulu-admin.service", "mudos-recovery.service"):
         run(["systemctl", "enable", unit])
     run(["systemctl", "enable", "lulu-session@2.service"])
@@ -343,7 +376,7 @@ def remove_owned(repo: Path, manifest: dict, *, purge: bool, dry_run: bool) -> N
         raise InstallError("uninstall/purge needs root; rerun as root or with sudo")
     for item in plan(repo, manifest, "purge" if purge else "uninstall", purge=purge):
         print(item)
-    stop_services(not dry_run)
+    stop_services(not dry_run, manifest, stop_host_mounts=purge)
     if dry_run:
         return
     owned = manifest["system_integration"]
