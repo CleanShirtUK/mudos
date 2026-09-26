@@ -294,6 +294,7 @@ class SteamOobeTests(unittest.TestCase):
 
         source = (Path(__file__).parents[1] / "src/lulu/admin_web.py").read_text()
         self.assertIn("if(launch){{try{{await api('/api/setup/steam/dismiss',{{launch}})", source)
+        self.assertIn("rememberSteamLaunchToken", source)
 
     def test_already_signed_in_setup_never_launches_or_dismisses_steam(self):
         import gi
@@ -309,7 +310,9 @@ class SteamOobeTests(unittest.TestCase):
             handler._setup_page(False)
         script = re.search(r"<script>(.*?)</script>", send.call_args.args[0].decode(), re.S).group(1)
         fixture = """
-var calls=[],fixture={providers:[{id:'steam',name:'Steam',installed:true,installable:true,
+var calls=[],dismissFails=false,stored={},sessionStorage={getItem:key=>stored[key]||null,
+ setItem:(key,value)=>stored[key]=value,removeItem:key=>delete stored[key]};
+var fixture={providers:[{id:'steam',name:'Steam',installed:true,installable:true,
  dependencies:[],dependencies_any:[],authentication:{authenticated:true,persona:'Fixture'}}],
  integrations:[],setup_files:[],onboarding:{selected_providers:['steam'],selected_integrations:[],validation:{}}};
 var content={innerHTML:'',querySelector:()=>null},noticeElement={textContent:''};
@@ -317,10 +320,11 @@ var document={querySelector:s=>s==='#content'?content:s==='#notice'?noticeElemen
  querySelectorAll:()=>[]};
 var window={location:{assign:()=>{}}},CSS={escape:x=>x};
 var setTimeout=()=>0,clearInterval=()=>{},setInterval=()=>0;
-var fetch=async function(path,options){calls.push(path);let value=path==='/api/setup/steam/auth-status'
+var fetch=async function(path,options){calls.push(path);let bad=path==='/api/setup/steam/dismiss'&&dismissFails;
+ let value=bad?{error:'Unavailable'}:path==='/api/setup/steam/auth-status'
  ?{status:'authenticated',authentication:{authenticated:true,persona:'Fixture'}}
  :path==='/api/setup/progress'?{state:{selected_integrations:['providers.steam']}}:fixture;
- return {ok:true,headers:{get:()=> 'application/json'},json:async()=>value};};
+ return {ok:!bad,headers:{get:()=> 'application/json'},json:async()=>value};};
 """
         engine = JavaScriptCore.Context.new()
         engine.evaluate(fixture, -1)
@@ -336,12 +340,26 @@ var fetch=async function(path,options){calls.push(path);let value=path==='/api/s
 
         owned = JavaScriptCore.Context.new()
         owned.evaluate(fixture, -1)
+        owned.evaluate("stored['mudos-setup-steam-launch']='setup-owned-token'", -1)
         owned.evaluate(script, -1)
-        owned.evaluate("steamOobeLaunchToken='setup-owned-token';continueSteamSignin()", -1)
+        recovered = owned.evaluate("steamOobeLaunchToken", -1)
+        self.assertEqual(recovered.to_string(), "setup-owned-token")
+        owned.evaluate("continueSteamSignin()", -1)
         self.assertIsNone(owned.get_exception())
         request = owned.evaluate("JSON.stringify(calls)", -1)
         self.assertIsNone(owned.get_exception())
         self.assertIn("/api/setup/steam/dismiss", __import__("json").loads(request.to_string()))
+        removed = owned.evaluate("String(stored['mudos-setup-steam-launch'])", -1)
+        self.assertEqual(removed.to_string(), "undefined")
+
+        unavailable = JavaScriptCore.Context.new()
+        unavailable.evaluate(fixture, -1)
+        unavailable.evaluate("stored['mudos-setup-steam-launch']='setup-owned-token';dismissFails=true", -1)
+        unavailable.evaluate(script, -1)
+        unavailable.evaluate("continueSteamSignin()", -1)
+        self.assertIsNone(unavailable.get_exception())
+        retained = unavailable.evaluate("stored['mudos-setup-steam-launch']", -1)
+        self.assertEqual(retained.to_string(), "setup-owned-token")
 
     def test_delayed_steam_window_does_not_turn_launch_timeout_into_failure(self):
         from lulu.admin_web import AdminApp
