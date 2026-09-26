@@ -2332,7 +2332,7 @@ import QtQuick.Controls
                         root.message = "Steam sign-in surface opened"
                     }, "Plugin sign-in failed")
                 else if (selectedKey === "plugin.steamcmd.username")
-                    root.beginPluginCredential("steam", "username", "Steam username", "Username", "secret", true)
+                    root.beginPluginCredential("steam", "username", "Steam username", "Username", "secret", false)
                 else if (selectedKey === "plugin.steamcmd.password")
                     root.beginPluginCredential("steam", "password", "SteamCMD Password", "Password", "secret", true)
                 else if (selectedKey === "plugin.steamcmd.password.clear")

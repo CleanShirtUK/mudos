@@ -174,6 +174,19 @@ class AdminWebTests(unittest.TestCase):
         self.assertTrue(fields[1]["required"])
         self.assertIn("authenticated Steam client", INTEGRATION_METADATA["providers.steam"]["description"])
 
+    def test_steam_username_is_visible_in_setup_and_console_without_changing_secret_storage(self):
+        # Steam's username is still stored by the existing secret-backed API,
+        # but should not be rendered as a password in either input surface.
+        from lulu import admin_web
+        import inspect
+        setup = inspect.getsource(admin_web.Handler._setup_page)
+        console = (Path(__file__).parents[1] / "ui/ConsoleShell.qml").read_text()
+        self.assertIn("id==='providers.steam'&&f.name==='steam_username'?'text'", setup)
+        self.assertIn("f.type==='secret'?'password'", setup)
+        self.assertIn('beginPluginCredential("steam", "username", "Steam username", "Username", "secret", false)', console)
+        self.assertIn('beginPluginCredential("steam", "password", "SteamCMD Password", "Password", "secret", true)', console)
+        self.assertIn('else if (target.kind === "secret")', console)
+
     def test_provider_mutation_uses_secret_store_and_blank_preserves(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
