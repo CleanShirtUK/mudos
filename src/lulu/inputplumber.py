@@ -16,8 +16,11 @@ LOGGER = logging.getLogger("lulu.inputplumber")
 
 def normalized_controller_identity(persistent_id: str, sysfs_device_path: str,
                                    has_device_serial: bool) -> str:
-    """Keep stable unique IDs; disambiguate serial-less logical device paths."""
-    if has_device_serial:
+    """Keep stable unique IDs; disambiguate serial-less receiver slots."""
+    # Bluetooth input devices expose their stable peer address as UniqueId,
+    # but do not have a USB serial/interface path. Hashing the transient UHID
+    # sysfs path would change controller identity on every reconnect.
+    if has_device_serial or re.fullmatch(r"(?:[0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}", persistent_id):
         return persistent_id
     path = Path(sysfs_device_path)
     interface = next((parent for parent in (path, *path.parents)

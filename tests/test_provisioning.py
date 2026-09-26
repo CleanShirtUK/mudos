@@ -144,6 +144,10 @@ class ProvisioningTests(unittest.TestCase):
         self.assertIn("systemctl start lulu-inputplumber-hotplug.service", workflow)
         self.assertNotIn("restart inputplumber.service", workflow)
         self.assertNotIn("/etc/inputplumber/profiles", workflow)
+        self.assertIn("purpose=bluetooth-controller-path-validation", workflow)
+        self.assertIn("systemctl restart lulu-session@2.service", workflow)
+        self.assertIn("systemctl restart lulu-consoled.service", workflow)
+        self.assertIn("promotable=false", workflow)
 
     def test_logind_policy_reserves_console_session_vt(self) -> None:
         policy = (ROOT / "packaging/logind.conf.d/lulu.conf").read_text()

@@ -73,11 +73,28 @@
   validation workflow, and provisioning: **28 passed**. The first development
   runtime experiment loaded eight composites, including unrelated keyboard and
   audio events; this was stopped as a validation failure and the selector
-  schema defect was corrected in source. The corrected exact-Udev-selector
-  config has not yet been activated. Controller power-cycle, simultaneous
-  controller coexistence, live inventory/status changes, and navigation using
-  the Series controller remain pending. Do not proceed to release-manifest
-  investigation or candidate creation until those physical checks pass.
+  schema defect was corrected in source. After loading exact Udev selectors,
+  InputPlumber settled to exactly two composites for event8 (Xbox 360 receiver)
+  and event9 (Bluetooth Series); there were no EBUSY errors. Sessiond then
+  reported both as connected, assigned players 1 and 2, with `navigation_mode`
+  `all`; SDL found and opened two gamepads. A later event9 no-device disconnect
+  removed the Series composite and its reconnect restored it without pairing.
+  Thus BlueZ, kernel/udev, InputPlumber, Sessiond inventory, SDL discovery, and
+  default navigation eligibility now converge in the development runtime.
+- The runtime reconnect changed the Series physical identity suffix because
+  normalization hashed the transient UHID sysfs path despite BlueZ exposing a
+  stable peer address. Source now preserves a stable Bluetooth address and
+  keeps path disambiguation for serial-less receiver slots. A scoped dev-runtime
+  refresh will load this correction. Input signals appeared in Mudos QML logs,
+  but they cannot be attributed to the Series rather than the concurrently
+  connected receiver from current logging alone. A USB Series controller is
+  not present in the observed `/proc/bus/input/devices`; the receiver is the
+  available simultaneous second controller.
+- Remaining physical acceptance: verify Series-attributed navigation on the
+  screen, observe status-strip count/state during off/on, verify the stable
+  identity after reconnect with the latest Sessiond source, and confirm
+  receiver + Bluetooth Series coexistence/navigation without changing mappings.
+  No release-manifest investigation or candidate creation before those checks.
 
 ## Bluetooth Settings implementation and hardware probe — 2026-09-26
 

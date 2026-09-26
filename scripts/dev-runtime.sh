@@ -289,6 +289,47 @@ controller_validation() {
         echo "controller validation requires clean committed HEAD" >&2
         exit 1
     fi
+    if [ ! -f "$runtime/NON_PROMOTABLE" ] || ! grep -qx 'promotable=false' "$runtime/NON_PROMOTABLE"; then
+        echo "controller validation requires an existing non-promotable dev runtime" >&2
+        exit 1
+    fi
+    stamp=$(date -u +%Y%m%dT%H%M%SZ)
+    staging=/opt/lulu/.dev-controller-staging-$$
+    backup=/opt/lulu/.dev-controller-previous-$$
+    mkdir -p "$staging/bin"
+    for directory in src ui scripts config packaging native; do
+        cp -a "$repo_root/$directory" "$staging/$directory"
+    done
+    cp -a "$repo_root/src" "$staging/lib"
+    cp "$repo_root/packaging/lulu-vt" "$staging/bin/lulu-vt"
+    cp "$repo_root/deploy/payload/bin/verify-mudos.sh" "$staging/bin/verify-mudos.sh"
+    LULU_INSTALL_ROOT="$staging" "$staging/scripts/build-lulu-shell.sh" "$staging/bin/lulu-shell"
+    chmod +x "$staging/bin"/* "$staging/scripts"/*
+    cat > "$staging/NON_PROMOTABLE" <<EOF
+development-runtime=true
+promotable=false
+purpose=bluetooth-controller-path-validation
+source=$repo_root
+head=$head
+branch=$(git -C "$repo_root" branch --show-current)
+refreshed=$stamp
+EOF
+    mv "$runtime" "$backup"
+    if ! mv "$staging" "$runtime"; then
+        mv "$backup" "$runtime"
+        exit 1
+    fi
+    rm -rf "$backup"
+    cat > "$session_dropin" <<EOF
+[Service]
+Environment=PYTHONPATH=$runtime/lib
+Environment=LULU_INSTALL_ROOT=$runtime
+EOF
+    cat > "$consoled_dropin" <<EOF
+[Service]
+Environment=PYTHONPATH=$runtime/lib
+Environment=LULU_INSTALL_ROOT=$runtime
+EOF
     mkdir -p "$dropin_root/lulu-inputplumber-hotplug.service.d"
     cat > "$dropin_root/lulu-inputplumber-hotplug.service.d/dev-validation.conf" <<EOF
 [Service]
@@ -297,8 +338,10 @@ ExecStart=/usr/bin/python $repo_root/scripts/provision-inputplumber-gamepads.py 
 EOF
     systemctl daemon-reload
     logger -t lulu-runtime "event=controller-validation head=$head helper=$repo_root/scripts/provision-inputplumber-gamepads.py" 2>/dev/null || true
+    systemctl restart lulu-consoled.service
+    systemctl restart lulu-session@2.service
     systemctl start lulu-inputplumber-hotplug.service
-    echo "ran committed capability-based controller reconciler from $repo_root at $head"
+    echo "refreshed isolated controller-validation runtime and ran committed reconciler at $head"
 }
 
 case "${1:-}" in

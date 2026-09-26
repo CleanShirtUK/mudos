@@ -127,6 +127,14 @@ class StandardGamepadTests(unittest.TestCase):
             normalized_controller_identity("serial-bearing-id", first_path, True),
             "serial-bearing-id",
         )
+        # BlueZ supplies a persistent peer address even though its UHID sysfs
+        # path changes across reconnects; keep that identity stable.
+        self.assertEqual(
+            normalized_controller_identity(
+                "f4:6a:d7:d1:10:f2", "/devices/virtual/uhid/input/input51", False
+            ),
+            "f4:6a:d7:d1:10:f2",
+        )
 
     def _pad(self, ident: str, name: str, guid: str, index: int) -> Controller:
         return Controller(
