@@ -249,6 +249,100 @@ class SteamOobeTests(unittest.TestCase):
                          ("steam", "authorization_pending"))
         self.assertIn("BeginPluginAuthentication", run.call_args.args[0])
 
+    def test_setup_dismisses_only_its_owned_steam_signin_surface(self):
+        import asyncio
+        import json
+        from types import SimpleNamespace
+        from unittest.mock import AsyncMock, Mock
+
+        from lulu.admin_web import AdminApp
+        from lulu.consoled import ConsoleInterface
+
+        launch = 'setup-owned-token'
+        envelope = lambda value: json.dumps({"data": [json.dumps(value)]})
+        with patch("lulu.admin_web.subprocess.run", return_value=SimpleNamespace(
+                returncode=0, stdout=envelope({"launch": launch}), stderr="")), \
+                patch("lulu.provider_readiness.ProviderReadinessStore"):
+            started = AdminApp().begin_steam_oobe_auth()
+        self.assertEqual(started["launch"], launch)
+        with patch("lulu.admin_web.subprocess.run", return_value=SimpleNamespace(
+                stdout=envelope({"dismissed": True}))) as run:
+            self.assertTrue(AdminApp.dismiss_steam_oobe_auth(launch))
+        self.assertEqual(run.call_args.args[0][-3:], ["ss", "steam", launch])
+        self.assertFalse(AdminApp.dismiss_steam_oobe_auth(""))
+
+        process = Mock()
+        session = SimpleNamespace(call_get_state=AsyncMock(return_value=json.dumps({
+            "launch_token": launch, "session_kind": "provider_standalone",
+            "provider_id": "steam"})))
+        interface = SimpleNamespace(_local_token=launch, _local_process=process, sessiond=session)
+
+        async def dismiss(provider, token):
+            method = ConsoleInterface.DismissPluginAuthentication.__wrapped__
+            return json.loads(await method(interface, provider, token))
+
+        self.assertFalse(asyncio.run(dismiss('steam', 'unrelated-token'))['dismissed'])
+        self.assertFalse(asyncio.run(dismiss('epic', launch))['dismissed'])
+        process.terminate.assert_not_called()
+        self.assertTrue(asyncio.run(dismiss('steam', launch))['dismissed'])
+        process.terminate.assert_called_once_with()
+
+        session.call_get_state.return_value = json.dumps({
+            "launch_token": launch, "session_kind": "game", "provider_id": "steam"})
+        self.assertFalse(asyncio.run(dismiss('steam', launch))['dismissed'])
+        process.terminate.assert_called_once_with()
+
+        source = (Path(__file__).parents[1] / "src/lulu/admin_web.py").read_text()
+        self.assertIn("if(launch){{try{{await api('/api/setup/steam/dismiss',{{launch}})", source)
+
+    def test_already_signed_in_setup_never_launches_or_dismisses_steam(self):
+        import gi
+        import re
+        gi.require_version("JavaScriptCore", "4.1")
+        from gi.repository import JavaScriptCore
+        from lulu.admin_web import Handler
+
+        handler = object.__new__(Handler)
+        with patch.object(Handler, "_token", return_value=""), \
+                patch.object(Handler, "_send") as send, \
+                patch("lulu.admin_web.APP.session", return_value=""):
+            handler._setup_page(False)
+        script = re.search(r"<script>(.*?)</script>", send.call_args.args[0].decode(), re.S).group(1)
+        fixture = """
+var calls=[],fixture={providers:[{id:'steam',name:'Steam',installed:true,installable:true,
+ dependencies:[],dependencies_any:[],authentication:{authenticated:true,persona:'Fixture'}}],
+ integrations:[],setup_files:[],onboarding:{selected_providers:['steam'],selected_integrations:[],validation:{}}};
+var content={innerHTML:'',querySelector:()=>null},noticeElement={textContent:''};
+var document={querySelector:s=>s==='#content'?content:s==='#notice'?noticeElement:null,
+ querySelectorAll:()=>[]};
+var window={location:{assign:()=>{}}},CSS={escape:x=>x};
+var setTimeout=()=>0,clearInterval=()=>{},setInterval=()=>0;
+var fetch=async function(path,options){calls.push(path);let value=path==='/api/setup/steam/auth-status'
+ ?{status:'authenticated',authentication:{authenticated:true,persona:'Fixture'}}
+ :path==='/api/setup/progress'?{state:{selected_integrations:['providers.steam']}}:fixture;
+ return {ok:true,headers:{get:()=> 'application/json'},json:async()=>value};};
+"""
+        engine = JavaScriptCore.Context.new()
+        engine.evaluate(fixture, -1)
+        engine.evaluate(script, -1)
+        engine.evaluate("continueSteamSignin()", -1)
+        self.assertIsNone(engine.get_exception())
+        result = engine.evaluate("JSON.stringify({step, calls})", -1)
+        self.assertIsNone(engine.get_exception())
+        state = __import__("json").loads(result.to_string())
+        self.assertEqual(state["step"], 1)
+        self.assertNotIn("/api/setup/steam/authenticate", state["calls"])
+        self.assertNotIn("/api/setup/steam/dismiss", state["calls"])
+
+        owned = JavaScriptCore.Context.new()
+        owned.evaluate(fixture, -1)
+        owned.evaluate(script, -1)
+        owned.evaluate("steamOobeLaunchToken='setup-owned-token';continueSteamSignin()", -1)
+        self.assertIsNone(owned.get_exception())
+        request = owned.evaluate("JSON.stringify(calls)", -1)
+        self.assertIsNone(owned.get_exception())
+        self.assertIn("/api/setup/steam/dismiss", __import__("json").loads(request.to_string()))
+
     def test_delayed_steam_window_does_not_turn_launch_timeout_into_failure(self):
         from lulu.admin_web import AdminApp
         with patch("lulu.admin_web.subprocess.run", side_effect=__import__(

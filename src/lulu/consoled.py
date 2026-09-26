@@ -2064,6 +2064,22 @@ class ConsoleInterface(ServiceInterface):
         return json.dumps(result, separators=(",", ":"))
 
     @method()
+    async def DismissPluginAuthentication(self, plugin_id: "s", launch_token: "s") -> "s":
+        """Close only the Steam surface opened by this setup authentication request."""
+        if plugin_id != "steam" or not launch_token or self._local_token != launch_token \
+                or self._local_process is None or self.sessiond is None:
+            return json.dumps({"dismissed": False})
+        state = json.loads(await self.sessiond.call_get_state())
+        if (state.get("launch_token") != launch_token
+                or state.get("session_kind") != "provider_standalone"
+                or state.get("provider_id") != "steam"):
+            return json.dumps({"dismissed": False})
+        # The owned sentinel's reap path hides Steam's main window and
+        # restores shell input. Do not terminate the Steam client itself.
+        self._local_process.terminate()
+        return json.dumps({"dismissed": True})
+
+    @method()
     async def BeginCredentialRequest(self, title: "s", prompt: "s", input_type: "s",
                                      secret: "b", min_length: "u", max_length: "u",
                                      multiline: "b", presentation: "s") -> "s":

@@ -605,7 +605,7 @@ class AdminApp:
                    "sign in there, then return to setup.")
         try:
             result = subprocess.run(
-                ["busctl", "--user", "--timeout=30s", "call", "org.lulu.Consoled",
+                ["busctl", "--user", "--json=short", "--timeout=30s", "call", "org.lulu.Consoled",
                  "/org/lulu/Console", "org.lulu.Console", "BeginPluginAuthentication", "s", "steam"],
                 stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=35,
                 check=False, env=environment)
@@ -620,8 +620,31 @@ class AdminApp:
             return {"status": "authorization_pending", "message": message}
         readiness.set("steam", "authorization_pending",
                       message="Steam is open. Complete QR sign-in or Steam Guard approval on the console.")
-        return {"status": "authorization_pending",
+        try:
+            response = json.loads(result.stdout)
+            launch = json.loads(response["data"][0]).get("launch", "")
+        except (ValueError, TypeError, KeyError, IndexError):
+            launch = ""
+        return {"status": "authorization_pending", "launch": launch,
                 "message": "Steam is open. Complete QR sign-in or Steam Guard approval on the console."}
+
+    @staticmethod
+    def dismiss_steam_oobe_auth(launch_token: str) -> bool:
+        if not launch_token:
+            return False
+        account = pwd.getpwnam("lulu")
+        environment = dict(os.environ)
+        environment.update({"HOME": account.pw_dir,
+                            "XDG_RUNTIME_DIR": f"/run/user/{account.pw_uid}",
+                            "DBUS_SESSION_BUS_ADDRESS": f"unix:path=/run/user/{account.pw_uid}/bus"})
+        result = subprocess.run(
+            ["busctl", "--user", "--json=short", "call", "org.lulu.Consoled",
+             "/org/lulu/Console", "org.lulu.Console", "DismissPluginAuthentication",
+             "ss", "steam", launch_token],
+            stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=8,
+            check=True, env=environment)
+        response = json.loads(result.stdout)
+        return bool(json.loads(response["data"][0]).get("dismissed"))
 
     def steam_oobe_auth_status(self) -> dict[str, object]:
         from .provider_readiness import ProviderReadinessStore
@@ -1322,6 +1345,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     self._json({"state": state})
                 elif action == "steam/authenticate":
                     self._json(APP.begin_steam_oobe_auth())
+                elif action == "steam/dismiss":
+                    self._json({"dismissed": APP.dismiss_steam_oobe_auth(
+                        str(payload.get("launch", "")))})
                 elif action == "provider-authenticate":
                     provider_id = str(payload.get("provider", ""))
                     if provider_id not in {"epic", "gog"}:
@@ -1484,7 +1510,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
 <section id="content" aria-live="polite"><p>Loading your available Mudos components…</p></section>
 <p id="notice" role="status"></p>{local_return}</main>
 <script>
-const localSetup={str(local).lower()},setupCsrf={json.dumps(csrf)},managedAccount={json.dumps(managed_account)};let data=null,step=0,providerChoices=[],integrationChoices=[],credentialIndex=0,validationResults={{}},failedCredentialIds=new Set(),skippedCredentialIds=new Set(),testingCredentialIds=new Set(),providerInstallProgress=null,steamAuthBusy=false,steamSignin=false,steamAuthTimer=null,providerSignin='',providerTransaction=null;
+const localSetup={str(local).lower()},setupCsrf={json.dumps(csrf)},managedAccount={json.dumps(managed_account)};let data=null,step=0,providerChoices=[],integrationChoices=[],credentialIndex=0,validationResults={{}},failedCredentialIds=new Set(),skippedCredentialIds=new Set(),testingCredentialIds=new Set(),providerInstallProgress=null,steamAuthBusy=false,steamSignin=false,steamAuthTimer=null,steamOobeLaunchToken='',providerSignin='',providerTransaction=null;
 const statusNames={{not_selected:'Not selected',selected:'Selected',installing:'Installing',install_failed:'Installation failed',installed:'Installed',configuration_required:'Configuration required',authentication_required:'Authentication required',authenticating:'Authenticating',authorization_pending:'Waiting for Steam approval',auth_failed:'Authentication failed',authenticated:'Authenticated',reconciling:'Reconciling library',validating:'Validating',syncing:'Syncing catalogue',sync_failed:'Catalogue sync failed',ready:'Ready',not_configured:'Not configured'}};
 function stateName(value){{return statusNames[value]||String(value||'Unknown').replaceAll('_',' ')}}
 function esc(v){{return String(v||"").replace(/[&<>\"']/g,c=>({{'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'":'&#39;'}}[c]))}}
@@ -1495,8 +1521,8 @@ function stopSteamAuthPolling(){{if(steamAuthTimer){{clearInterval(steamAuthTime
 function render(){{if(providerInstallProgress){{renderInstallProgress();return}}if(steamSignin){{renderSteamSignin();return}}if(providerSignin){{renderProviderSignin();return}}stopSteamAuthPolling();renderSetupPage()}}
 function renderInstallProgress(){{let items=providerInstallProgress||[];let completed=items.filter(item=>!['Pending','Installing'].includes(item.status)).length;let active=items.find(item=>item.status==='Installing');let root=document.querySelector('#content');root.innerHTML='<h2>Installing providers and plugins</h2><p role="status">'+(active?'Installing '+esc(active.name)+'…':completed===items.length?'Installation complete':'Preparing installation…')+'</p><p>'+completed+' of '+items.length+' completed</p><progress value="'+completed+'" max="'+Math.max(1,items.length)+'"></progress><ul>'+items.map(item=>`<li><strong>${{esc(item.name)}} — ${{esc(item.status)}}</strong>${{item.message?`<br><small>${{esc(item.message)}}</small>`:''}}</li>`).join('')+'</ul>'}}
 async function checkSteamAuth(){{if(!steamSignin)return false;try{{let state=await api('/api/setup/steam/auth-status');let auth=state.authentication||{{}};let ready=!!auth.authenticated;let label=document.querySelector('#steam-auth-state');let next=document.querySelector('#steam-continue');if(label)label.textContent=ready?'✓ Signed in as '+(auth.persona||auth.account||'Steam account'):state.status==='authorization_pending'?'Waiting for Steam sign-in…':'Steam sign-in is incomplete. Open Steam to retry.';if(next)next.disabled=!ready;let provider=data.providers.find(p=>p.id==='steam');if(provider){{provider.status=ready?'authenticated':state.status;provider.authentication=auth}}return ready}}catch(e){{let label=document.querySelector('#steam-auth-state');if(label)label.textContent='Steam sign-in status is temporarily unavailable. Retry shortly.';return false}}}}
-async function beginSteamAuth(){{if(steamAuthBusy)return;steamAuthBusy=true;let button=document.querySelector('#steam-open');if(button)button.disabled=true;let label=document.querySelector('#steam-auth-state');if(label)label.textContent='Opening Steam sign-in…';try{{let result=await api('/api/setup/steam/authenticate',{{}});notice(result.message||'Steam was opened. Complete sign-in in Steam.');await checkSteamAuth()}}catch(e){{notice(e.message);if(label)label.textContent='Steam could not be opened. You can retry.'}}finally{{steamAuthBusy=false;if(button)button.disabled=false}}}}
-async function continueSteamSignin(){{if(!await checkSteamAuth()){{notice('Steam sign-in is not verified yet. Complete sign-in on Mudos, wait for your account name to appear here, then select Continue.');return}}stopSteamAuthPolling();integrationChoices=[...new Set([...integrationChoices,'providers.steam'])];await api('/api/setup/progress',{{providers:providerChoices,integrations:integrationChoices}});steamSignin=false;step=1;render()}}
+async function beginSteamAuth(){{if(steamAuthBusy)return;steamAuthBusy=true;let button=document.querySelector('#steam-open');if(button)button.disabled=true;let label=document.querySelector('#steam-auth-state');if(label)label.textContent='Opening Steam sign-in…';try{{let result=await api('/api/setup/steam/authenticate',{{}});steamOobeLaunchToken=result.launch||'';notice(result.message||'Steam was opened. Complete sign-in in Steam.');await checkSteamAuth()}}catch(e){{notice(e.message);if(label)label.textContent='Steam could not be opened. You can retry.'}}finally{{steamAuthBusy=false;if(button)button.disabled=false}}}}
+async function continueSteamSignin(){{if(!await checkSteamAuth()){{notice('Steam sign-in is not verified yet. Complete sign-in on Mudos, wait for your account name to appear here, then select Continue.');return}}stopSteamAuthPolling();integrationChoices=[...new Set([...integrationChoices,'providers.steam'])];await api('/api/setup/progress',{{providers:providerChoices,integrations:integrationChoices}});let launch=steamOobeLaunchToken;steamOobeLaunchToken='';if(launch){{try{{await api('/api/setup/steam/dismiss',{{launch}})}}catch(e){{notice('Steam sign-in succeeded, but the sign-in window could not be dismissed: '+e.message)}}}}steamSignin=false;step=1;render()}}
 function renderProviderSignin(){{let provider=data.providers.find(p=>p.id===providerSignin);let root=document.querySelector('#content');let transaction=providerTransaction;root.innerHTML=`<section class="card"><p class="eyebrow">ACCOUNT SIGN-IN</p><h2>Sign in to ${{esc(provider?.name||providerSignin)}}</h2><p>Open the provider sign-in page, complete sign-in, then paste its one-time authorization code here. Mudos does not store the code or your provider password.</p>${{transaction?.verification_url?`<p><a class="button" href="${{esc(transaction.verification_url)}}" target="_blank" rel="noopener noreferrer">Open ${{esc(provider?.name||providerSignin)}} sign-in</a></p>`:''}}<label>One-time authorization code<input id="provider-auth-code" type="text" autocomplete="one-time-code" value="" required></label><div class="actions"><button onclick="completeProviderSignin()" ${{transaction?'':'disabled'}}>Complete sign-in</button><button class="secondary" onclick="providerSignin='';providerTransaction=null;step=1;render()">Back to setup</button></div></section>`}}
 async function beginProviderSignin(id){{providerSignin=id;providerTransaction=null;render();try{{providerTransaction=await api('/api/setup/provider-authenticate',{{provider:id}});render()}}catch(e){{notice(e.message);providerSignin='';render()}}}}
 async function completeProviderSignin(){{let code=document.querySelector('#provider-auth-code')?.value||'';if(!code.trim()){{notice('Enter the one-time authorization code from the provider page.');return}}try{{await api('/api/setup/provider-auth-complete',{{provider:providerSignin,transaction_id:providerTransaction?.transaction_id,code}});data=await api('/api/setup/state');providerSignin='';providerTransaction=null;step=1;render();notice('Provider sign-in completed. Catalogue reconciliation will continue in the background.')}}catch(e){{notice(e.message)}}}}
