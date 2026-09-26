@@ -48,7 +48,8 @@ Item {
                 batteryKind: String(item.batteryKind || "unknown"),
                 batteryPercentage: item.batteryPercentage === undefined ? -1 : item.batteryPercentage,
                 battery: String(item.battery || "Unknown"),
-                present: true
+                present: true,
+                retireAt: 0
             }
             if (row < 0)
                 controllerPresentation.append(values)
@@ -61,9 +62,12 @@ Item {
             }
         }
         for (var index = 0; index < controllerPresentation.count; index++) {
-            if (!seen[controllerPresentation.get(index).key]) {
+            if (!seen[controllerPresentation.get(index).key]
+                    && controllerPresentation.get(index).present) {
                 controllerPresentation.setProperty(index, "present", false)
-                controllerRetire.restart()
+                controllerPresentation.setProperty(index, "retireAt", Date.now() + 260)
+                if (!controllerRetire.running)
+                    controllerRetire.start()
             }
         }
     }
@@ -73,11 +77,20 @@ Item {
     ListModel { id: controllerPresentation }
     Timer {
         id: controllerRetire
-        interval: 260
+        interval: 30
+        repeat: true
         onTriggered: {
+            var pending = false
+            var now = Date.now()
             for (var index = controllerPresentation.count - 1; index >= 0; index--)
-                if (!controllerPresentation.get(index).present)
-                    controllerPresentation.remove(index)
+                if (!controllerPresentation.get(index).present) {
+                    if (controllerPresentation.get(index).retireAt <= now)
+                        controllerPresentation.remove(index)
+                    else
+                        pending = true
+                }
+            if (!pending)
+                stop()
         }
     }
 

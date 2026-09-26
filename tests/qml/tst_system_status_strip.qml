@@ -95,4 +95,34 @@ TestCase {
         compare(strip.presentedControllerCount, 0)
         compare(strip.x + strip.width, width)
     }
+
+    function test_exit_deadlines_survive_frequent_snapshots_and_staggered_removals() {
+        strip.controllers = [
+            {index: 1, identity: "departing-pad", batteryKind: "unknown"},
+            {index: 2, identity: "remaining-pad", batteryKind: "percent",
+             batteryPercentage: 80, battery: "80%"}
+        ]
+        wait(260)
+        strip.controllers = [{index: 2, identity: "remaining-pad", batteryKind: "percent",
+                              batteryPercentage: 80, battery: "80%"}]
+        for (var level of [79, 78, 77, 76]) {
+            wait(90)
+            strip.controllers = [{index: 2, identity: "remaining-pad", batteryKind: "percent",
+                                  batteryPercentage: level, battery: level + "%"}]
+        }
+        compare(strip.presentedControllerCount, 1)
+        compare(strip.x + strip.width, width)
+
+        strip.controllers = [{index: 1, identity: "departing-pad", batteryKind: "unknown"},
+                             {index: 2, identity: "remaining-pad", batteryKind: "unknown"}]
+        wait(260)
+        strip.controllers = [{index: 2, identity: "remaining-pad", batteryKind: "unknown"}]
+        wait(160)
+        strip.controllers = []
+        wait(140)
+        compare(strip.presentedControllerCount, 1)
+        wait(160)
+        compare(strip.presentedControllerCount, 0)
+        compare(strip.x + strip.width, width)
+    }
 }
