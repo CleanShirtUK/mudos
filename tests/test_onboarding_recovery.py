@@ -29,6 +29,10 @@ class OnboardingStateTests(unittest.TestCase):
                 onboarding.save_progress(integrations=["metadata.igdb"])  # Skip RomM.
                 onboarding.finish_onboarding()
                 self.assertEqual(onboarding.onboarding_state()["status"], "completed")
+                onboarding.save_progress(integrations=["metadata.igdb", "providers.romm"])
+                with self.assertRaisesRegex(ValueError, "Test and Save"):
+                    onboarding.finish_onboarding()  # Reconfiguration still checks validation.
+                self.assertFalse(onboarding.onboarding_state()["required"])
 
     def test_epic_provider_requires_a_runnable_legendary_not_just_a_wrapper_file(self) -> None:
         with patch("lulu.onboarding.shutil.which", return_value="/usr/local/bin/legendary"), \

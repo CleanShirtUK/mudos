@@ -116,8 +116,7 @@ def reset_onboarding() -> dict[str, Any]:
 def finish_onboarding() -> dict[str, Any]:
     with _LOCK:
         state = _read()
-        if state.get("status") != "completed":
-            require_validated_integrations(state)
+        require_validated_integrations(state)
         state["status"] = "completed"
         state["oobe_dismissed"] = True
         state["completed_at"] = int(time.time())
