@@ -63,7 +63,8 @@ Append findings in order. Do not repair defects during the rehearsal.
 
 14. **OOBE-014 — Provider installation is confused with readiness**
     - Observed: Package/install state was shown without required authentication/readiness proof.
-    - Expected lifecycle: selected → installed → configured → authenticated if required → validated → initial reconciliation/sync completed → ready.
+   - Expected lifecycle: selected → installed → configured → authenticated if required → validated → initial reconciliation/sync completed → ready.
+   - Status follow-up: Setup no longer labels installed local providers/emulators (RetroArch, Dolphin, PCSX2, Eden, Lutris, Flatpak) Ready merely because their binaries exist. It reports Installed and distinguishes game/content launch validation as outstanding. Account-backed and RomM readiness remain separately owned; a full fresh-state lifecycle and physical launches still require acceptance.
 
 15. **OOBE-015 — Steam authentication is missing from onboarding**
     - Observed: Steam install/detection did not establish a usable authenticated account.

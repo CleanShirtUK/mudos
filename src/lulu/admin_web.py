@@ -416,8 +416,8 @@ class AdminApp:
                 row["status"] = "ready" if ok else "configuration_required"
                 row["status_message"] = message
             else:
-                row["status"] = "ready"
-                row["status_message"] = "Installed and available to contribute local content."
+                row["status"] = "installed"
+                row["status_message"] = "Installed; game and content launch readiness has not been validated."
             result.append(row)
         return result
 

@@ -22,6 +22,18 @@ class FakeSecrets:
 
 
 class AdminWebTests(unittest.TestCase):
+    def test_setup_local_providers_do_not_claim_ready_from_installation_alone(self):
+        app = AdminApp()
+        rows = [dict(id=provider, name=provider, installed=True)
+                for provider in ("retroarch", "dolphin", "pcsx2", "eden", "lutris", "flatpak")]
+        with patch("lulu.admin_web.provider_manifest", return_value=rows), \
+                patch("lulu.admin_web.onboarding_state", return_value={
+                    "selected_providers": [row["id"] for row in rows]}):
+            states = app.setup_provider_states()
+        self.assertEqual([state["status"] for state in states], ["installed"] * len(rows))
+        self.assertTrue(all("not been validated" in state["status_message"] for state in states))
+        self.assertTrue(all(state["installed"] for state in states))
+
     def test_questarr_account_probe_and_setup_do_not_conflate_health_with_readiness(self):
         app = AdminApp()
         with patch("lulu.admin_web.urllib.request.urlopen", return_value=io.BytesIO(b'{"hasUsers":false}')):
