@@ -279,9 +279,32 @@ EOF
     echo "refreshed isolated non-promotable Settings validation runtime: $runtime"
 }
 
+# Exercise the committed, capability-based gamepad reconciler without changing
+# the immutable release or the gamepad mapping profiles. InputPlumber itself
+# remains the runtime authority and performs auto-managed composite lifecycle.
+controller_validation() {
+    head=$(git -C "$repo_root" rev-parse HEAD)
+    status=$(git -C "$repo_root" status --porcelain --untracked-files=all)
+    if [ -n "$status" ]; then
+        echo "controller validation requires clean committed HEAD" >&2
+        exit 1
+    fi
+    mkdir -p "$dropin_root/lulu-inputplumber-hotplug.service.d"
+    cat > "$dropin_root/lulu-inputplumber-hotplug.service.d/dev-validation.conf" <<EOF
+[Service]
+ExecStart=
+ExecStart=/usr/bin/python $repo_root/scripts/provision-inputplumber-gamepads.py /etc/inputplumber/devices.d/lulu-composite.yaml --activate
+EOF
+    systemctl daemon-reload
+    logger -t lulu-runtime "event=controller-validation head=$head helper=$repo_root/scripts/provision-inputplumber-gamepads.py" 2>/dev/null || true
+    systemctl start lulu-inputplumber-hotplug.service
+    echo "ran committed capability-based controller reconciler from $repo_root at $head"
+}
+
 case "${1:-}" in
     refresh) refresh ;;
     settings-validation) settings_validation ;;
+    controller-validation) controller_validation ;;
     immutable|restore) immutable ;;
-    *) echo "usage: $0 refresh|settings-validation|immutable" >&2; exit 2 ;;
+    *) echo "usage: $0 refresh|settings-validation|controller-validation|immutable" >&2; exit 2 ;;
 esac

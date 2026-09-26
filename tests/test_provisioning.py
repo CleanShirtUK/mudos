@@ -124,7 +124,7 @@ class ProvisioningTests(unittest.TestCase):
 
     def test_settings_validation_runtime_switch_does_not_reprovision_inputplumber_or_host_policy(self) -> None:
         script = (ROOT / "scripts/dev-runtime.sh").read_text()
-        workflow = script.split("settings_validation() {", 1)[1].split("\n}\n\ncase", 1)[0]
+        workflow = script.split("settings_validation() {", 1)[1].split("\n}\n\n# Exercise", 1)[0]
         self.assertIn('if [ -e "$runtime" ] || [ -L "$runtime" ]', workflow)
         self.assertIn("promotable=false", workflow)
         self.assertIn('Environment=PYTHONPATH=$runtime/lib', workflow)
@@ -134,6 +134,16 @@ class ProvisioningTests(unittest.TestCase):
         self.assertNotIn("restart inputplumber.service", workflow)
         self.assertNotIn("configure-dev-sunshine-firewall", workflow)
         self.assertNotIn("provision-appliance-services", workflow)
+
+    def test_controller_validation_uses_committed_generic_reconciler_without_mapping_reprovision(self) -> None:
+        script = (ROOT / "scripts/dev-runtime.sh").read_text()
+        workflow = script.split("controller_validation() {", 1)[1].split("\n}\n\ncase", 1)[0]
+        self.assertIn('git -C "$repo_root" status --porcelain', workflow)
+        self.assertIn("$repo_root/scripts/provision-inputplumber-gamepads.py", workflow)
+        self.assertIn("dev-validation.conf", workflow)
+        self.assertIn("systemctl start lulu-inputplumber-hotplug.service", workflow)
+        self.assertNotIn("restart inputplumber.service", workflow)
+        self.assertNotIn("/etc/inputplumber/profiles", workflow)
 
     def test_logind_policy_reserves_console_session_vt(self) -> None:
         policy = (ROOT / "packaging/logind.conf.d/lulu.conf").read_text()

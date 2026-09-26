@@ -101,7 +101,7 @@ def render(event: str) -> str:
         "    unique: true\n"
         "    evdev:\n"
         "      handler: event*\n"
-        f"      dev_node: /dev/{event}\n"
+        f"      dev_node: /dev/input/{event}\n"
         "options:\n"
         "  auto_manage: true\n"
         "  persist: false\n"
@@ -140,82 +140,55 @@ def _write(path: Path, content: str) -> bool:
     return True
 
 
-def ensure_source_composite(source: str, probe, create, *, timeout: float = 12.0,
-                            retry_interval: float = 1.0, poll_interval: float = 0.25,
-                            clock=time.monotonic, sleep=time.sleep) -> bool:
-    """Wait for InputPlumber auto-management and retry transient add races."""
+def wait_for_source_composite(source: str, probe, *, timeout: float = 12.0,
+                              poll_interval: float = 0.25,
+                              clock=time.monotonic, sleep=time.sleep) -> bool:
+    """Wait for configured auto-management to publish a logical source.
+
+    Calling CreateCompositeDevice as well races InputPlumber's auto-manager
+    and attempts to open the same evdev node a second time, which can tear
+    down composites with EBUSY. InputPlumber alone owns composite lifecycle.
+    """
     deadline = clock() + timeout
-    last_create = float("-inf")
     while True:
         if source in probe():
             return True
-        now = clock()
-        if now >= deadline:
+        remaining = deadline - clock()
+        if remaining <= 0:
             return False
-        if now - last_create >= retry_interval:
-            create()
-            last_create = now
-        sleep(min(poll_interval, max(0.0, deadline - clock())))
+        sleep(min(poll_interval, remaining))
 
 
 def _activate(output: Path, profiles: list[Path]) -> None:
     """Reconcile this generator's composites with the current source set."""
-    expected = {
-        f"/dev/input/{event.group(1)}"
-        for profile in profiles
-        for event in [re.search(r"dev_node: /dev/(event\d+)", profile.read_text(encoding="utf-8"))]
-        if event
-    }
     time.sleep(0.25)  # Let udev and InputPlumber finish handling the device event.
 
-    def composite_snapshot() -> list[tuple[str, str, set[str]]]:
+    def composite_snapshot() -> list[set[str]]:
         tree = subprocess.run(
             ["busctl", "tree", "org.shadowblip.InputPlumber"],
             check=False, capture_output=True, text=True,
         ).stdout
-        result = []
+        result: list[set[str]] = []
         for composite in set(re.findall(r"(/org/shadowblip/InputPlumber/CompositeDevice\d+)", tree)):
             sources = subprocess.run(
                 ["busctl", "get-property", "org.shadowblip.InputPlumber", composite,
                  "org.shadowblip.Input.CompositeDevice", "SourceDevicePaths"],
                 check=False, capture_output=True, text=True,
             ).stdout
-            name = subprocess.run(
-                ["busctl", "get-property", "org.shadowblip.InputPlumber", composite,
-                 "org.shadowblip.Input.CompositeDevice", "Name"],
-                check=False, capture_output=True, text=True,
-            ).stdout
-            result.append((composite, name, set(re.findall(r'"(/dev/input/event\d+)"', sources))))
+            result.append(set(re.findall(r'"(/dev/input/event\d+)"', sources)))
         return result
 
-    initial = composite_snapshot()
-    for composite, name, sources in initial:
-        if sources and sources.isdisjoint(expected) and 's "Lulu Controller"' in name:
-            subprocess.run(
-                ["busctl", "call", "org.shadowblip.InputPlumber", composite,
-                 "org.shadowblip.Input.CompositeDevice", "Stop"],
-                check=False, capture_output=True, text=True,
-            )
-
     def active_sources() -> set[str]:
-        return set().union(*(sources for _, _, sources in composite_snapshot()))
+        return set().union(*composite_snapshot())
 
     for profile in profiles:
         content = profile.read_text(encoding="utf-8")
-        event = re.search(r"dev_node: /dev/(event\d+)", content)
+        event = re.search(r"dev_node: /dev/input/(event\d+)", content)
         if not event:
             continue
         source = f"/dev/input/{event.group(1)}"
 
-        def create() -> None:
-            subprocess.run(
-                ["busctl", "call", "org.shadowblip.InputPlumber",
-                 "/org/shadowblip/InputPlumber/Manager",
-                 "org.shadowblip.InputManager", "CreateCompositeDevice", "s", str(profile)],
-                check=False, capture_output=True, text=True,
-            )
-
-        if not ensure_source_composite(source, active_sources, create):
+        if not wait_for_source_composite(source, active_sources):
             print(f"InputPlumber did not activate logical gamepad source {source}", file=sys.stderr)
 
 

@@ -31,6 +31,50 @@
 - Validation after the change: full Python suite **868 passed + 25 subtests**;
   native CTest **1/1 passed**; shell syntax and `git diff --check` passed.
 
+## Bluetooth Xbox Series controller pipeline investigation — 2026-09-27
+
+- Target F4:6A:D7:D1:10:F2 (`Xbox Wireless Controller`, BlueZ modalias
+  `usb:v045Ep0B13d0511`) is paired, bonded, trusted, unblocked, and connected.
+  This confirms pairing is not the current blocker.
+- Linux created the HID-over-Bluetooth UHID input device
+  `/devices/virtual/misc/uhid/0005:045E:0B13.0001/input/input51`, exposing
+  `/dev/input/event9` and `/dev/input/js2`. The input-device capabilities report
+  joystick/gamepad buttons, absolute axes and force feedback. udev reports
+  `ID_INPUT_JOYSTICK=1`, `ID_BUS=bluetooth`, and marks it external; no device
+  model allowlist/filter blocks it.
+- InputPlumber's D-Bus source for event9 reports `DeviceClass="joystick"`,
+  axes and gamepad keys, so source discovery/capability classification works.
+  Its event node is hidden while claimed. The hotplug journal then reports
+  `Error adding device 'Xbox Wireless Controller (event9)': Device or resource
+  busy`, and the managed composite tears down. Current `/etc` generated
+  profiles also use `/dev/eventN` `dev_node` paths rather than the actual
+  `/dev/input/eventN` nodes.
+- Identified a current-source provisioning race: profiles enable InputPlumber
+  `auto_manage`, but `_activate` also calls `CreateCompositeDevice` in a retry
+  loop for the same event node and explicitly stops composites that are not in
+  its snapshot. InputPlumber already auto-creates those composites; duplicate
+  opens explain the observed EBUSY/teardown and interrupt hotplug ownership.
+  Corrected the source helper to render `/dev/input/eventN` and wait for
+  InputPlumber's auto-managed source without creating or stopping composites.
+  Added a narrow `dev-runtime.sh controller-validation` path to run this
+  committed generic capability-based reconciler without changing mapping
+  profiles or restarting InputPlumber itself.
+- Mudos shell SDL logs currently show one recognized gamepad, the Xbox 360
+  receiver; they do not show the Bluetooth Series controller. Sessiond's
+  controller snapshot is stale/provisional (`source:event8`, one connected
+  controller) while the Series source is absent from an active composite.
+  Navigation policy is `all` (no model exclusion); native SDL all-navigation
+  opens available gamepads, while status-strip inventory is projected from
+  Sessiond's controller snapshot. Thus the immediate break is InputPlumber
+  composite provisioning, with stale inventory as its downstream symptom.
+- Focused tests for generic gamepad profile generation, auto-managed lifecycle,
+  validation workflow, and provisioning: **28 passed**. The runtime correction
+  has not yet been activated or physically verified. Controller power-cycle,
+  simultaneous-controller coexistence, live inventory/status changes, and
+  navigation using the Series controller remain pending. Do not proceed to
+  release-manifest investigation or candidate creation until those physical
+  checks pass.
+
 ## Bluetooth Settings implementation and hardware probe — 2026-09-26
 
 - Replaced Bluetooth Settings' `bluetoothctl show` placeholder with a native

@@ -21,7 +21,7 @@ class StandardGamepadTests(unittest.TestCase):
         spec.loader.exec_module(module)
         content = module.render("event8")
         self.assertIn("handler: event*", content)
-        self.assertIn("dev_node: /dev/event8", content)
+        self.assertIn("dev_node: /dev/input/event8", content)
         self.assertNotIn("phys_path:", content)
         self.assertNotIn("vendor_id", content)
         self.assertNotIn("product_id", content)
@@ -36,7 +36,7 @@ class StandardGamepadTests(unittest.TestCase):
         assert spec.loader is not None
         spec.loader.exec_module(module)
         content = module.render("event13")
-        self.assertIn("dev_node: /dev/event13", content)
+        self.assertIn("dev_node: /dev/input/event13", content)
         self.assertNotIn("phys_path:", content)
         self.assertNotIn("vendor_id", content)
         self.assertNotIn("product_id", content)
@@ -71,7 +71,7 @@ class StandardGamepadTests(unittest.TestCase):
         self.assertNotEqual(module.logical_device_key(interface_a),
                             module.logical_device_key(interface_b))
 
-    def test_hotplug_composite_activation_retries_until_ip_publishes_source(self) -> None:
+    def test_hotplug_waits_for_auto_managed_source_without_duplicate_creation(self) -> None:
         spec = importlib.util.spec_from_file_location(
             "provision_inputplumber_gamepads_retry",
             Path(__file__).parents[1] / "scripts/provision-inputplumber-gamepads.py",
@@ -81,23 +81,31 @@ class StandardGamepadTests(unittest.TestCase):
         spec.loader.exec_module(module)
         clock = [0.0]
         active = set()
-        attempts = []
-
         def sleep(interval):
             clock[0] += interval
 
-        def create():
-            attempts.append("create")
-            if len(attempts) == 2:
-                active.add("/dev/input/event19")
+        attempts = [0]
 
-        connected = module.ensure_source_composite(
-            "/dev/input/event19", lambda: set(active), create,
-            timeout=2.0, retry_interval=0.5, poll_interval=0.1,
+        def probe():
+            attempts[0] += 1
+            if attempts[0] == 3:
+                active.add("/dev/input/event19")
+            return set(active)
+
+        connected = module.wait_for_source_composite(
+            "/dev/input/event19", probe,
+            timeout=2.0, poll_interval=0.1,
             clock=lambda: clock[0], sleep=sleep,
         )
         self.assertTrue(connected)
-        self.assertEqual(len(attempts), 2)
+        self.assertEqual(attempts[0], 3)
+
+    def test_hotplug_activation_does_not_duplicate_inputplumber_auto_manage(self) -> None:
+        source = (Path(__file__).parents[1] / "scripts/provision-inputplumber-gamepads.py").read_text()
+        activate = source.split("def _activate(", 1)[1].split("\n\ndef main(", 1)[0]
+        self.assertIn("wait_for_source_composite(source, active_sources)", activate)
+        self.assertNotIn("CreateCompositeDevice", activate)
+        self.assertIn("auto_manage: true", source)
 
     def test_serial_less_receiver_slots_get_stable_distinct_controller_identities(self):
         with tempfile.TemporaryDirectory() as temporary:
