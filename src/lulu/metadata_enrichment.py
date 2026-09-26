@@ -16,6 +16,7 @@ LOGGER = logging.getLogger("lulu.metadata-enrichment")
 IGDB_TTL = 30 * 24 * 60 * 60
 PROTONDB_TTL = 24 * 60 * 60
 PRESENTATION_MEDIA_GENERATION = 1
+PRESENTATION_MEDIA_RETRY_SECONDS = 24 * 60 * 60
 PLATFORM_IDS = {"nes": 18, "gb": 33, "gbc": 22, "gba": 24, "nds": 20,
                 "genesis": 29, "gamecube": 21, "ngc": 21, "wii": 5, "switch": 130,
                 "ps1": 7, "psx": 7, "ps2": 8, "ps3": 9, "snes": 19,
@@ -60,9 +61,40 @@ class MetadataEnrichmentService:
         record = self.store.enrichment_record("presentation-media", game_id)
         normalized = record.get("normalized", {}) if record else {}
         try:
-            return int(normalized.get("generation", 0)) < PRESENTATION_MEDIA_GENERATION
+            if int(normalized.get("generation", 0)) < PRESENTATION_MEDIA_GENERATION:
+                return True
         except (AttributeError, TypeError, ValueError):
             return True
+        game = self.store.get_game(game_id)
+        # A successful canonical match does not imply that its screenshot
+        # enrichment succeeded. Retry missing IGDB records at most daily;
+        # a genuine enriched record with no upstream screenshots stays quiet.
+        igdb_record = self.store.enrichment_record("igdb", game_id)
+        return bool(game and game.metadata_provider == "igdb" and game.metadata_game_id
+                    and (igdb_record is None or igdb_record.get("status") != "matched")
+                    and not self.store.enrichment_is_fresh(
+                        "presentation-media", game_id, PRESENTATION_MEDIA_RETRY_SECONDS))
+
+    def backfill_presentation_media(self, game_id: str) -> CatalogueDelta | None:
+        current = self.store.get_game(game_id)
+        if current is None:
+            return None
+        delta = None
+        if not (current.metadata_provider == "igdb" and current.metadata_game_id) \
+                and not current.match_locked:
+            try:
+                delta = self.store.apply_metadata_match(game_id, self.canonical_match(current))
+            except (OSError, ValueError, TimeoutError):
+                LOGGER.info("media identity backfill failed game_id=%s", game_id, exc_info=True)
+        current = self.store.get_game(game_id) or current
+        igdb_record = self.store.enrichment_record("igdb", game_id)
+        if igdb_record is None or igdb_record.get("status") != "matched":
+            try:
+                self.enrich_game(current, force_igdb=True)
+            except (OSError, ValueError, TimeoutError):
+                LOGGER.info("media metadata backfill failed game_id=%s", game_id, exc_info=True)
+        self.mark_presentation_media_backfill_attempted(game_id)
+        return delta
 
     def mark_presentation_media_backfill_attempted(self, game_id: str) -> None:
         self.store.apply_enrichment(

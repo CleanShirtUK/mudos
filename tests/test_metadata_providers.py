@@ -86,6 +86,51 @@ class MetadataProviderTests(unittest.TestCase):
             service.mark_presentation_media_backfill_attempted(game.game_id)
             self.assertFalse(service.presentation_media_backfill_needed(game.game_id))
 
+    def test_media_backfill_enriches_new_match_and_retries_missing_cache_daily(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = CatalogueStore(Path(directory) / "catalogue.sqlite3")
+            game = CatalogueGame("romm:55", "romm", "55", "Fixture", "nes",
+                                 "available", False, "", "", 0)
+            store._upsert(game)
+            store.connection.commit()
+            igdb = Mock(configured=True)
+            igdb.by_id.return_value = {"id": 55, "name": "Fixture", "screenshots": [
+                {"image_id": "still", "width": 1280, "height": 720}]}
+            service = MetadataEnrichmentService(store, igdb, Mock(enabled=False))
+            with patch.object(service, "canonical_match", return_value=MetadataMatch(
+                    "matched", "igdb", "55", "Fixture", "title-platform", 0.95)):
+                self.assertIsNotNone(service.backfill_presentation_media(game.game_id))
+            self.assertEqual(igdb.by_id.call_count, 1)
+            record = store.enrichment_record("igdb", game.game_id)
+            self.assertIn("still.jpg", record["normalized"]["preview_still_url"])
+            self.assertFalse(service.presentation_media_backfill_needed(game.game_id))
+
+            # Existing affected records have a canonical match and an old
+            # attempted marker, but no IGDB cache; retry without a version bump.
+            store.connection.execute("DELETE FROM metadata_enrichment WHERE provider='igdb' AND game_id=?",
+                                     (game.game_id,))
+            store.connection.commit()
+            self.assertFalse(service.presentation_media_backfill_needed(game.game_id))
+            store.connection.execute("UPDATE metadata_enrichment SET fetched_at=0 "
+                                     "WHERE provider='presentation-media' AND game_id=?", (game.game_id,))
+            store.connection.commit()
+            self.assertTrue(service.presentation_media_backfill_needed(game.game_id))
+            service.backfill_presentation_media(game.game_id)
+            self.assertEqual(igdb.by_id.call_count, 2)
+            self.assertFalse(service.presentation_media_backfill_needed(game.game_id))
+            store.connection.execute("DELETE FROM metadata_enrichment WHERE provider='igdb' AND game_id=?",
+                                     (game.game_id,))
+            store.connection.commit()
+            igdb.by_id.return_value = None
+            igdb.search_platform.return_value = []
+            service.backfill_presentation_media(game.game_id)
+            self.assertEqual(store.enrichment_record("igdb", game.game_id)["status"], "unmatched")
+            store.connection.execute("UPDATE metadata_enrichment SET fetched_at=0 "
+                                     "WHERE provider='presentation-media' AND game_id=?", (game.game_id,))
+            store.connection.commit()
+            self.assertTrue(service.presentation_media_backfill_needed(game.game_id))
+            store.connection.close()
+
     def test_igdb_media_roles_are_normalized_separately(self):
         normalized = normalize_igdb_game({
             "id": 55, "name": "Fixture", "cover": {"image_id": "cover-id", "width": 600, "height": 800},

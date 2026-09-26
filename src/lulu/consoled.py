@@ -684,27 +684,9 @@ class ConsoleCatalog:
                 if (not self.enrichment.presentation_media_backfill_needed(game.game_id)
                         or not igdb_configured):
                     continue
-                current = self.store.get_game(game.game_id) or game
-                identity_attempted = False
-                if not (current.metadata_provider == "igdb" and current.metadata_game_id) \
-                        and not current.match_locked:
-                    try:
-                        match = self.enrichment.canonical_match(current)
-                        delta = self.store.apply_metadata_match(current.game_id, match)
-                        identity_attempted = True
-                        if delta is not None:
-                            self.last_delta_batches.append((delta,))
-                    except (OSError, ValueError, TimeoutError):
-                        LOGGER.info("media identity backfill failed game_id=%s", current.game_id,
-                                    exc_info=True)
-                current = self.store.get_game(game.game_id) or current
-                if not identity_attempted:
-                    try:
-                        self.enrichment.enrich_game(current, force_igdb=True)
-                    except (OSError, ValueError, TimeoutError):
-                        LOGGER.info("media metadata backfill failed game_id=%s", current.game_id,
-                                    exc_info=True)
-                self.enrichment.mark_presentation_media_backfill_attempted(game.game_id)
+                delta = self.enrichment.backfill_presentation_media(game.game_id)
+                if delta is not None:
+                    self.last_delta_batches.append((delta,))
             # Metadata may have been enriched earlier in this pass. Resolve
             # assets from the current persisted records, not a stale snapshot.
             games = [game for game in self.store.list_catalogue_games()
