@@ -31,6 +31,31 @@ class FakeRomm:
 
 
 class RommExecutorTests(unittest.TestCase):
+    def test_saved_romm_configuration_is_observed_without_service_restart(self) -> None:
+        from lulu.plugins.romm.client import RommConfig
+
+        async def exercise() -> None:
+            with tempfile.TemporaryDirectory() as directory:
+                config = RommConfig("https://romm.example.invalid", "opaque-test-token")
+                fake = FakeRomm(b"saved-setup")
+                executor = RommExecutor(None, chunk_size=4)
+                manager = JobManager()
+                manager.register_executor("romm", executor)
+                with patch.dict("os.environ", {"LULU_ROM_ROOT": directory}), \
+                        patch("lulu.plugins.romm.executor.RommConfig.from_file", return_value=config), \
+                        patch("lulu.plugins.romm.client.RommClient.list_games",
+                              return_value=fake.list_games()), \
+                        patch("lulu.plugins.romm.client.RommClient.open_file_stream",
+                              side_effect=lambda romm_file, offset=0: fake.open_file_stream(romm_file)), \
+                        patch("lulu.plugins.romm.executor.ensure_storage"):
+                    job = manager.submit("romm", "romm:7", "Test Kart")
+                    await manager._tasks[job.job_id]
+                self.assertEqual(manager.jobs[job.job_id].state, JobState.COMPLETED,
+                                 manager.jobs[job.job_id].error)
+                self.assertEqual((Path(directory) / "nes/test.nes").read_bytes(), b"saved-setup")
+
+        asyncio.run(exercise())
+
     def test_gba_romm_platform_resolves_to_retroarch_content_root(self) -> None:
         game = RommGame(145, "Apotris", 7, "gba", "Game Boy Advance", "Apotris.gba", ".gba",
                         1, "", False, (RommFile(1450, "Apotris.gba", 1),))

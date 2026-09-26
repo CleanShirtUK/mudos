@@ -24,4 +24,10 @@ TestCase {
         verify(HomeDomains.recentVisible(0, true, 2, 3))
         verify(!HomeDomains.recentVisible(0, false, 3, 2))
     }
+
+    function test_empty_recent_startup_keeps_title_geometry_attached_to_domain() {
+        compare(HomeDomains.titleRailY(480, 2, 84), 312)
+        compare(HomeDomains.titleRailY(510, 2, 84), 342)
+        compare(HomeDomains.titleRailY(510, 3, 84), 258)
+    }
 }

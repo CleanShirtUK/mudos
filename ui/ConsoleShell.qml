@@ -249,7 +249,7 @@ import QtQuick.Controls
     property var systemHomeRailRef: null
     property int systemRowIndex: 0
     property bool systemLanding: true
-    property var systemCategories: ["Mudos Menu", "Plugins", "Display", "Audio", "Network", "Bluetooth", "Controllers", "Storage", "System", "Lulu"]
+    property var systemCategories: ["System", "Display", "Audio", "Network", "Bluetooth", "Controllers", "Storage"]
     property var systemSettings: []
     property string pendingMudosAction: ""
     property var standaloneProviderModes: ({})
@@ -282,11 +282,21 @@ import QtQuick.Controls
     property real homeCategoryProgress: 1
     property int homeCategoryHopDuration: 250
     readonly property real homeCategoryTravel: height + design(72)
-    property real titleRailY: selectedDomainY - selectedCategoryIndex * homeCategoryPitch
+    property real titleRailY: HomeDomains.titleRailY(
+        selectedDomainY, selectedCategoryIndex, homeCategoryPitch)
     property bool suppressTitleRailCompletion: false
-    readonly property real titleRailTargetY: selectedDomainY
-        - (homeCategoryTransitioning ? homeCategoryTarget : selectedCategoryIndex)
-            * homeCategoryPitch
+    readonly property real titleRailTargetY: HomeDomains.titleRailY(
+        selectedDomainY,
+        homeCategoryTransitioning ? homeCategoryTarget : selectedCategoryIndex,
+        homeCategoryPitch)
+    onSelectedDomainYChanged: {
+        if (!homeCategoryTransitioning)
+            titleRailY = titleRailTargetY
+    }
+    onHomeCategoryPitchChanged: {
+        if (!homeCategoryTransitioning)
+            titleRailY = titleRailTargetY
+    }
     readonly property real titleRailActiveGap: Math.max(0,
         homeBottomBandCenterY - selectedDomainY - homeCategoryPitch
             - activeHeadingHeight * 0.5)
@@ -340,7 +350,6 @@ import QtQuick.Controls
     property bool credentialKeyboardShown: false
     property bool credentialKeyboardShowAttempted: false
     property int lastBrowserTextEntryShortcut: 0
-    property string pluginDetailId: ""
     property string launchStatus: "idle"
     property string launchTitle: ""
     property string launchGameId: ""
@@ -1192,27 +1201,8 @@ import QtQuick.Controls
     }
 
     function refreshSystemSettings() {
-        if (systemCategories[systemCategoryIndex] === "Mudos Menu") {
+        if (systemCategories[systemCategoryIndex] === "System") {
             refreshMudosMenu()
-            return
-        }
-        if (systemCategories[systemCategoryIndex] === "Plugins") {
-            if (root.pluginDetailId !== "") {
-                request("/plugins/" + root.pluginDetailId, "GET", "", function(data) {
-                    systemSettings = data.options
-                    systemRowIndex = Math.min(systemRowIndex, Math.max(0, systemSettings.length - 1))
-                }, "Plugin unavailable")
-                return
-            }
-            request("/plugins", "GET", "", function(data) {
-                var rows = []
-                for (var i = 0; i < data.length; i++) {
-                    rows.push({key: "plugin.open:" + data[i].id, label: data[i].name,
-                               kind: "action", value: data[i].health, writable: true})
-                }
-                systemSettings = rows
-                systemRowIndex = Math.min(systemRowIndex, Math.max(0, rows.length - 1))
-            }, "Plugins unavailable")
             return
         }
         request("/settings?category=" + encodeURIComponent(systemCategories[systemCategoryIndex]),
@@ -2200,8 +2190,22 @@ import QtQuick.Controls
                 rows.push({key: "mudos.provider:" + providers[i].id,
                            label: providers[i].name + " Menu", kind: "action", value: "", writable: true})
             }
+            // Migrate the useful read-only facts from the retired System
+            // category into the surviving System destination. Operational
+            // controls remain owned by the Mudos menu rows above.
             root.systemSettings = rows
             root.systemRowIndex = Math.min(root.systemRowIndex, Math.max(0, rows.length - 1))
+            root.request("/settings?category=System", "GET", "", function(settings) {
+                for (var j = 0; j < settings.length; j++) {
+                    if (settings[j].key === "lulu.reset") continue
+                    rows.push({key: "mudos.setting:" + settings[j].key,
+                               label: settings[j].label, kind: "status",
+                               value: settings[j].value, description: settings[j].detail,
+                               writable: false})
+                }
+                root.systemSettings = rows
+                root.systemRowIndex = Math.min(root.systemRowIndex, Math.max(0, rows.length - 1))
+            }, "System information unavailable")
         }, "Mudos Menu unavailable")
     }
 
@@ -2348,31 +2352,10 @@ import QtQuick.Controls
             return
         }
         if (space === "system") {
-            if (!systemLanding && (systemCategories[systemCategoryIndex] === "Mudos Menu"
-                                   || systemCategories[systemCategoryIndex] === "Plugins")
+            if (!systemLanding && systemCategories[systemCategoryIndex] === "System"
                     && systemSettings[systemRowIndex]) {
                 var selectedKey = systemSettings[systemRowIndex].key
-                if (selectedKey.indexOf("plugin.open:") === 0) {
-                    root.pluginDetailId = selectedKey.substring(12)
-                    root.systemRowIndex = 0
-                    root.refreshSystemSettings()
-                } else if (selectedKey === "plugin.steam.open")
-                    root.request("/plugins/steam/signin", "POST", "", function(data) {
-                        root.message = "Steam sign-in surface opened"
-                    }, "Plugin sign-in failed")
-                else if (selectedKey === "plugin.steamcmd.username")
-                    root.beginPluginCredential("steam", "username", "Steam username", "Username", "secret", false)
-                else if (selectedKey === "plugin.steamcmd.password")
-                    root.beginPluginCredential("steam", "password", "SteamCMD Password", "Password", "secret", true)
-                else if (selectedKey === "plugin.steamcmd.password.clear")
-                    root.request("/plugins/steam/secret/password/clear", "POST", "", function() { root.refreshSystemSettings() }, "Secret clear failed")
-                else if (selectedKey === "plugin.romm.url")
-                    root.beginPluginCredential("romm", "url", "RomM URL", "Server URL", "setting", false)
-                else if (selectedKey === "plugin.romm.api_key")
-                    root.beginPluginCredential("romm", "api-key", "Pair RomM Device", "Code (XXXX-XXXX)", "romm-pair", false)
-                else if (selectedKey === "plugin.romm.api_key.clear")
-                    root.request("/plugins/romm/secret/api-key/clear", "POST", "", function() { root.refreshSystemSettings() }, "Secret clear failed")
-                else if (selectedKey.indexOf("mudos.") === 0)
+                if (selectedKey.indexOf("mudos.") === 0)
                     activateMudosAction(selectedKey)
                 return
             }
@@ -2505,7 +2488,7 @@ import QtQuick.Controls
         space = "system"
         console.log("SYSTEM_HOME_ACTIVATE", "category", systemCategories[systemCategoryIndex])
         refreshSystemSettings()
-        if (systemCategories[systemCategoryIndex] === "Mudos Menu")
+        if (systemCategories[systemCategoryIndex] === "System")
             refreshMudosMenu()
         if (systemCategories[systemCategoryIndex] === "Network")
             refreshNetworkState()
@@ -2602,13 +2585,6 @@ import QtQuick.Controls
                 gameOptionsIndex = 0
                 artworkError = ""
             }
-            return
-        }
-        if (space === "system" && !systemLanding && systemCategories[systemCategoryIndex] === "Plugins"
-                && pluginDetailId !== "") {
-            pluginDetailId = ""
-            systemRowIndex = 0
-            refreshSystemSettings()
             return
         }
         if (space === "system" && !systemLanding
@@ -3637,7 +3613,7 @@ import QtQuick.Controls
             expandedShellHeight: root.expandedShellHeight
             expandedShellBottom: root.expandedShellBottom
             onActionRequested: {
-                if (root.systemCategories[root.systemCategoryIndex] === "Mudos Menu")
+                if (root.systemCategories[root.systemCategoryIndex] === "System")
                     root.activateMudosAction(key)
                 else if (key === "lulu.reset") root.resetMudos()
             }

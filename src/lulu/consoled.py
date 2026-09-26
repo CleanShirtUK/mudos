@@ -1606,6 +1606,10 @@ class ConsoleInterface(ServiceInterface):
             environment["LIBRETRO_AUTOCONFIG_DIRECTORY"] = "/opt/lulu/config/retroarch/autoconfig"
         steam_delegated = provider.provider_id == "steam"
         if steam_delegated:
+            # A fresh appliance has no resident Steam client. The lifecycle
+            # sentinel owns the delegated surface, not Steam itself; start or
+            # reuse the client before dispatching the URI that opens its UI.
+            await provider.ensure_client()
             await asyncio.to_thread(self.catalogue.provider.open_main)
             # Steam is already resident and the URI helper exits immediately.
             # Keep a lifecycle-owned sentinel until the user leaves Steam.

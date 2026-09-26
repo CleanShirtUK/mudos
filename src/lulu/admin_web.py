@@ -132,7 +132,7 @@ def _setup_page_document(body: str) -> bytes:
     styles = '''
 *{box-sizing:border-box}body{margin:0;background:#10131a;color:#f3f4f6;font:16px/1.55 system-ui,sans-serif}
 .setup-wrap{max-width:1080px;margin:auto;padding:clamp(22px,5vw,64px)}h1{font-size:clamp(2rem,5vw,3.5rem);line-height:1.08;margin:.15em 0}h2{margin-top:0}.eyebrow{letter-spacing:.16em;color:#91b5ff;font-weight:700}
-.steps,.actions{display:flex;gap:12px;flex-wrap:wrap;margin:22px 0}.steps span,.card{background:#1a1f29;border:1px solid #343b49;border-radius:14px;padding:16px}.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr));gap:14px}.card{display:flex;flex-direction:column;gap:9px}.card span,.card small{color:#bac3d2}.card input[type=checkbox]{width:20px;height:20px;accent-color:#8ab4ff}button,.button{display:inline-block;border:0;border-radius:9px;background:#8ab4ff;color:#10131a;padding:12px 18px;font:inherit;font-weight:700;text-decoration:none;cursor:pointer}.secondary{background:#303846;color:#f3f4f6}label{display:grid;gap:6px}.setup-wrap [hidden]{display:none!important}input:not([type=checkbox]){width:100%;padding:12px;border:1px solid #515b6b;border-radius:8px;background:#0e1117;color:#fff;font:inherit}.credential{margin:16px 0}a{color:#a9c9ff}#notice{min-height:1.6em;color:#ffd17d}button:focus,a:focus,input:focus{outline:3px solid #a9c9ff;outline-offset:2px}@media(max-width:520px){.setup-wrap{padding:22px 16px}.steps span{flex:1 1 100%}}
+ .steps,.actions{display:flex;gap:12px;flex-wrap:wrap;margin:22px 0}.steps span,.card{background:#1a1f29;border:1px solid #343b49;border-radius:14px;padding:16px}.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr));gap:14px}.card{display:flex;flex-direction:column;gap:9px}.card span,.card small{color:#bac3d2}.card input[type=checkbox]{width:20px;height:20px;accent-color:#8ab4ff}button,.button{display:inline-block;border:0;border-radius:9px;background:#8ab4ff;color:#10131a;padding:12px 18px;font:inherit;font-weight:700;text-decoration:none;cursor:pointer}.secondary{background:#303846;color:#f3f4f6}label{display:grid;gap:6px}.setup-wrap [hidden]{display:none!important}input:not([type=checkbox]){width:100%;padding:12px;border:1px solid #515b6b;border-radius:8px;background:#0e1117;color:#fff;font:inherit}.credential{margin:16px 0}a{color:#a9c9ff}#notice{min-height:1.6em;color:#ffd17d}#busy{display:flex;align-items:center;gap:10px;color:#a9c9ff;min-height:1.8em}#busy[hidden]{display:none}.spinner{width:18px;height:18px;border:3px solid #52647e;border-top-color:#a9c9ff;border-radius:50%;animation:spin .8s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}button:disabled{opacity:.55;cursor:wait}button:focus,a:focus,input:focus{outline:3px solid #a9c9ff;outline-offset:2px}@media(max-width:520px){.setup-wrap{padding:22px 16px}.steps span{flex:1 1 100%}}
 '''
     return ("<!doctype html><html lang=en><head><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'>"
             "<meta name=color-scheme content='dark'><title>Mudos Setup</title><style>" + styles
@@ -327,14 +327,27 @@ class AdminApp:
                 steam_config = SteamEntitlementConfig.from_file()
                 metadata["configured"] = bool(steam_config and self.secrets.configured("steam", "web-api-key"))
                 metadata["enabled"] = metadata["configured"]
-                metadata["readiness"] = {"status": "ready" if steam_config and self.secrets.configured(
+                metadata["readiness"] = {"status": "configured" if steam_config and self.secrets.configured(
                     "steam", "web-api-key") else "configuration_required",
-                    "message": "Steam ownership configuration is ready." if steam_config and self.secrets.configured(
+                    "message": "Steam ownership configuration is saved." if steam_config and self.secrets.configured(
                         "steam", "web-api-key") else "A SteamID64 and Web API key are required to query owned titles."}
             else:
                 config = self.config.provider(provider_id)
                 metadata["configured"] = config.configured
                 metadata["enabled"] = config.enabled
+            from .provider_state import normalized_provider_state
+            readiness_status = str((metadata.get("readiness") or {}).get("status", "")) \
+                if isinstance(metadata.get("readiness"), dict) else ""
+            service_unit = {"questarr": "lulu-questarr.service"}.get(provider_id)
+            is_running = self.service_state(service_unit) == "active" if service_unit else None
+            metadata["state"] = normalized_provider_state(
+                status=readiness_status or ("configured" if metadata.get("configured") else "not_configured"),
+                installed=True, selected=True, configured=bool(metadata.get("configured")),
+                catalogue_reconciled=(readiness_status == "ready") if provider_id == "providers.romm" else None,
+                acquisition_configured=(bool(metadata.get("configured"))
+                    if provider_id == "providers.romm" else None),
+                running=is_running, healthy=(is_running if service_unit else None),
+                degraded=bool(service_unit and is_running is False))
             integrations.append(metadata)
         from .setup_files import file_setup_manifest
         return {"onboarding": onboarding_state(),
@@ -367,8 +380,15 @@ class AdminApp:
                 value = RommReadinessStore().snapshot(
                     selected=True, installed=True, config=RommConfig.from_file())
                 state = value.get("status", "configuration_required")
-                row["status"] = state
-                row["status_message"] = value.get("message", "Configure the RomM URL and Client API Token.")
+                acquisition_config = RommConfig.from_file()
+                acquisition_configured = bool(acquisition_config and acquisition_config.client_token)
+                row["status"] = ("catalogue_ready_acquisition_required"
+                                 if state == "ready" and not acquisition_configured else state)
+                row["status_message"] = ("RomM catalogue is reconciled, but Acquisitiond does not have usable RomM configuration."
+                                          if state == "ready" and not acquisition_configured else
+                                          value.get("message", "Configure the RomM URL and Client API Token."))
+                row["catalogue_reconciled"] = state == "ready"
+                row["acquisition_configured"] = acquisition_configured
             elif provider_id in {"steam", "epic", "gog"}:
                 value = readiness.get(provider_id)
                 if provider_id == "steam":
@@ -409,14 +429,25 @@ class AdminApp:
                                               "authenticated": bool(auth.get("authenticated")),
                                               "methods": auth.get("methods", [])}
             elif provider_id == "questarr":
-                _, message = self.test_provider("questarr")
+                running = self.service_state("lulu-questarr.service") == "active"
+                healthy, message = self.test_provider("questarr")
                 # Health, an account, and a backend do not prove Questarr's
                 # authenticated configuration or initial reconciliation.
-                row["status"] = "configuration_required"
-                row["status_message"] = message
+                row["configured"] = False
+                row["running"] = running
+                row["healthy"] = bool(healthy)
+                row["status"] = "running" if running else "degraded"
+                row["status_message"] = (
+                    (message + " Operator-owned Questarr account/configuration is still required.")
+                    if running and healthy else
+                    (message or "Questarr service is not running; inspect its service logs."))
             elif provider_id in {"torrent", "usenet"}:
                 target = "providers.torrent" if provider_id == "torrent" else "providers.usenet"
                 ok, message = self.test_provider(target)
+                row["connected"] = bool(ok)
+                row["running"] = self.service_state(
+                    "lulu-transmission.service" if provider_id == "torrent" else "nzbget.service") == "active"
+                row["healthy"] = bool(ok)
                 if not ok:
                     row["status"] = "configuration_required"
                     row["status_message"] = message
@@ -426,15 +457,35 @@ class AdminApp:
                                          and server.secret_available("username")
                                          and server.secret_available("password"))
                     row["status"] = "configured" if server_configured else "configuration_required"
+                    row["configured"] = server_configured
+                    row["acquisition_configured"] = server_configured
                     row["status_message"] = ("NZBGet RPC healthy; verify the news server and a real transfer before Ready."
                                              if server_configured else
                                              "NZBGet RPC healthy; configure a news server before downloads can be Ready.")
                 else:
                     row["status"] = "configured"
+                    row["configured"] = True
                     row["status_message"] = "Transmission RPC healthy; a real transfer has not been validated."
             else:
                 row["status"] = "installed"
                 row["status_message"] = "Installed; game and content launch readiness has not been validated."
+            from .provider_state import normalized_provider_state
+            current = str(row.get("status", "unknown"))
+            auth = row.get("authentication") if isinstance(row.get("authentication"), dict) else {}
+            row["state"] = normalized_provider_state(
+                status=current, installed=bool(row.get("installed")),
+                selected=bool(row.get("selected")),
+                configured=bool(row.get("configured")) if "configured" in row else None,
+                authenticated=bool(auth.get("authenticated")) if "authenticated" in auth else None,
+                catalogue_reconciled=bool(row["catalogue_reconciled"])
+                    if "catalogue_reconciled" in row else None,
+                acquisition_configured=bool(row["acquisition_configured"])
+                    if "acquisition_configured" in row else None,
+                connected=bool(row["connected"]) if "connected" in row else None,
+                running=bool(row["running"]) if "running" in row else None,
+                healthy=bool(row["healthy"]) if "healthy" in row else None,
+                failed=current in {"install_failed", "auth_failed", "sync_failed"},
+                degraded=current in {"degraded", "catalogue_ready_acquisition_required"})
             result.append(row)
         return result
 
@@ -548,13 +599,20 @@ class AdminApp:
         if provider_id == "providers.usenet.server":
             updated = self.config.provider(provider_id)
             from .nzbget_admin import apply_news_server
-            apply_news_server(str(updated.get("host", "")), int(updated.get("port", 563)),
-                              bool(updated.get("tls", True)), int(updated.get("connections", 8)),
-                              updated.secret("username") or "", updated.secret("password") or "",
-                              bool(updated.get("enabled", True)))
-            subprocess.run(["systemctl", "restart", "nzbget.service"],
-                           stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-                           stderr=subprocess.DEVNULL, check=True, timeout=10)
+            try:
+                apply_news_server(str(updated.get("host", "")), int(updated.get("port", 563)),
+                                  bool(updated.get("tls", True)), int(updated.get("connections", 8)),
+                                  updated.secret("username") or "", updated.secret("password") or "",
+                                  bool(updated.get("enabled", True)))
+                subprocess.run(["systemctl", "restart", "nzbget.service"],
+                               stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                               stderr=subprocess.DEVNULL, check=True, timeout=10)
+            except (OSError, subprocess.SubprocessError):
+                # The generic provider settings and encrypted references have
+                # already been saved. Report the daemon failure distinctly;
+                # callers must not interpret that as a working transfer route.
+                raise ValueError("Usenet settings were saved, but NZBGet could not apply them or restart. "
+                                 "Check the NZBGet service before retrying setup.") from None
         return {"configured": self.config.provider(provider_id).configured}
 
     @staticmethod
@@ -640,6 +698,9 @@ class AdminApp:
 
     def begin_steam_oobe_auth(self) -> dict[str, object]:
         from .provider_readiness import ProviderReadinessStore
+        current_auth = self.steam_auth_status()
+        if current_auth.get("authenticated"):
+            return {"status": "authenticated", "message": "Steam is already signed in."}
         readiness = ProviderReadinessStore()
         readiness.set("steam", "authenticating",
                       message="Starting the Steam client authentication flow.")
@@ -662,11 +723,9 @@ class AdminApp:
             readiness.set("steam", "authorization_pending", message=message)
             return {"status": "authorization_pending", "message": message}
         if result.returncode:
-            # The delegated launch request may be accepted before the GUI
-            # process becomes visible. Keep this stage retryable rather than
-            # displaying a false failure during Steam's startup interval.
-            readiness.set("steam", "authorization_pending", message=message)
-            return {"status": "authorization_pending", "message": message}
+            readiness.set("steam", "auth_failed",
+                          message="Consoled could not accept the Steam launch request.")
+            raise RuntimeError("Mudos could not launch Steam sign-in. Check the console session and retry.")
         readiness.set("steam", "authorization_pending",
                       message="Steam is open. Complete QR sign-in or Steam Guard approval on the console.")
         try:
@@ -1389,6 +1448,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     try:
                         saved = save_platform_files(
                             fields.get("platform", ""), fields.get("requirement", ""), uploads)
+                    except OSError:
+                        for upload in uploads:
+                            upload.path.unlink(missing_ok=True)
+                        LOGGER.exception("emulator setup file write failed platform=%s requirement=%s",
+                                         fields.get("platform", ""), fields.get("requirement", ""))
+                        raise ValueError("System files could not be written to the selected storage target. "
+                                         "Check that the target is mounted and writable.") from None
                     except Exception:
                         for upload in uploads:
                             upload.path.unlink(missing_ok=True)
@@ -1479,6 +1545,19 @@ class Handler(http.server.BaseHTTPRequestHandler):
                                    if ok else str(result.get("message", "RomM initial catalogue sync failed.")))
                         result.update({"ok": ok, "message": message})
                     save_validation(integration, ok, message)
+                    if ok and integration in {"metadata.igdb", "metadata.steamgriddb"}:
+                        # Provider catalogues may already be present from the
+                        # earlier account stage. Once metadata credentials are
+                        # validated, run the normal metadata/media stages now.
+                        stages = ("metadata", "metadata-enrichment", "artwork")
+                        refresh = urllib.request.Request(
+                            "http://127.0.0.1:38123/refresh?" + urllib.parse.urlencode(
+                                [("stage", stage) for stage in stages]), data=b"", method="POST")
+                        try:
+                            with urllib.request.urlopen(refresh, timeout=120):
+                                pass
+                        except (OSError, urllib.error.URLError, TimeoutError):
+                            LOGGER.info("metadata credentials validated; first enrichment refresh unavailable")
                     self._json(result, 200 if ok else 422)
                 elif action == "initial-password":
                     if bool(payload.get("finish", False)):
@@ -1603,19 +1682,20 @@ class Handler(http.server.BaseHTTPRequestHandler):
 <p>Choose the Mudos providers and plugins you want. You can configure connections next and return to setup later.</p></header>
         <nav class="steps"><span>1 · Install providers</span><span>2 · Store accounts</span><span>3 · Integrations and system files</span><span>4 · Review</span></nav>
 <section id="content" aria-live="polite"><p>Loading your available Mudos components…</p></section>
-<p id="notice" role="status"></p>{local_return}</main>
+<p id="busy" role="status" aria-live="polite" hidden><span class="spinner" aria-hidden="true"></span><span>Working…</span></p><p id="notice" role="status" aria-live="polite"></p>{local_return}</main>
 <script>
-const localSetup={str(local).lower()},setupCsrf={json.dumps(csrf)},managedAccount={json.dumps(managed_account)};let data=null,step=0,providerChoices=[],integrationChoices=[],credentialIndex=0,validationResults={{}},failedCredentialIds=new Set(),skippedCredentialIds=new Set(),testingCredentialIds=new Set(),providerInstallProgress=null,steamAuthBusy=false,steamSignin=false,steamAuthTimer=null,steamOobeLaunchToken=readSteamLaunchToken(),accountStep=false,accountIds=[],accountIndex=0,providerSignin='',providerTransaction=null;
+const localSetup={str(local).lower()},setupCsrf={json.dumps(csrf)},managedAccount={json.dumps(managed_account)};let data=null,step=0,providerChoices=[],integrationChoices=[],credentialIndex=0,validationResults={{}},failedCredentialIds=new Set(),skippedCredentialIds=new Set(),testingCredentialIds=new Set(),providerInstallProgress=null,steamAuthBusy=false,steamSignin=false,steamAuthTimer=null,steamOobeLaunchToken=readSteamLaunchToken(),accountStep=false,accountIds=[],accountIndex=0,providerSignin='',providerTransaction=null,setupBusy=0,lastRenderContext='';
 function readSteamLaunchToken(){{try{{return sessionStorage.getItem('mudos-setup-steam-launch')||''}}catch(e){{return ''}}}}
 function rememberSteamLaunchToken(token){{try{{if(token)sessionStorage.setItem('mudos-setup-steam-launch',token);else sessionStorage.removeItem('mudos-setup-steam-launch')}}catch(e){{}}}}
-const statusNames={{not_selected:'Not selected',selected:'Selected',installing:'Installing',install_failed:'Installation failed',installed:'Installed',configured:'Configured',configuration_required:'Configuration required',authentication_required:'Authentication required',authenticating:'Authenticating',authorization_pending:'Waiting for Steam approval',auth_failed:'Authentication failed',authenticated:'Authenticated',reconciling:'Reconciling library',validating:'Validating',syncing:'Syncing catalogue',sync_failed:'Catalogue sync failed',ready:'Ready',not_configured:'Not configured'}};
+const statusNames={{not_selected:'Not selected',selected:'Selected',installing:'Installing',install_failed:'Installation failed',installed:'Installed',configured:'Configured',connected:'Connected',configuration_required:'Configuration required',authentication_required:'Authentication required',authenticating:'Authenticating',authorization_pending:'Waiting for Steam approval',auth_failed:'Authentication failed',authenticated:'Authenticated',reconciling:'Reconciling library',validating:'Validating',syncing:'Syncing catalogue',sync_failed:'Catalogue sync failed',ready:'Ready',running:'Running — configuration required',degraded:'Degraded',catalogue_ready_acquisition_required:'Catalogue ready — acquisition not configured',not_configured:'Not configured'}};
 function stateName(value){{return statusNames[value]||String(value||'Unknown').replaceAll('_',' ')}}
 function esc(v){{return String(v||"").replace(/[&<>\"']/g,c=>({{'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'":'&#39;'}}[c]))}}
-async function api(path,body){{let payload=body?{{...body,csrf:setupCsrf}}:undefined;let r=await fetch(path,{{method:body?'POST':'GET',headers:body?{{'Content-Type':'application/json'}}:{{}},body:body?JSON.stringify(payload):undefined}});let type=r.headers.get('content-type')||'';if(!type.includes('application/json')){{if(r.redirected||r.status===401)throw Error('Your admin session expired. Sign in again, then continue setup.');throw Error('Setup returned an unexpected response. Reload the page and try again.')}}let v=await r.json();if(!r.ok)throw Error(v.error||v.message||'Request failed');return v}}
+function setBusy(delta){{let wasBusy=setupBusy>0;setupBusy=Math.max(0,setupBusy+delta);let isBusy=setupBusy>0;let busy=document.querySelector('#busy');if(busy)busy.hidden=!isBusy;if(!wasBusy&&isBusy)document.querySelectorAll('#content button,#content input').forEach(e=>{{e.dataset.setupWasDisabled=e.disabled?'1':'0';e.disabled=true}});else if(wasBusy&&!isBusy)document.querySelectorAll('#content button,#content input').forEach(e=>{{e.disabled=e.dataset.setupWasDisabled==='1';delete e.dataset.setupWasDisabled}})}}
+async function api(path,body){{setBusy(1);try{{let payload=body?{{...body,csrf:setupCsrf}}:undefined;let r=await fetch(path,{{method:body?'POST':'GET',headers:body?{{'Content-Type':'application/json'}}:{{}},body:body?JSON.stringify(payload):undefined}});let type=r.headers.get('content-type')||'';if(!type.includes('application/json')){{if(r.redirected||r.status===401)throw Error('Your admin session expired. Sign in again, then continue setup.');throw Error('Setup returned an unexpected response. Reload the page and try again.')}}let v=await r.json();if(!r.ok)throw Error(v.error||v.message||'Request failed');return v}}finally{{setBusy(-1)}}}}
 function notice(text){{document.querySelector('#notice').textContent=text}}
 function stopSteamAuthPolling(){{if(steamAuthTimer){{clearInterval(steamAuthTimer);steamAuthTimer=null}}}}
- function renderSteamSignin(){{stopSteamAuthPolling();let provider=data.providers.find(p=>p.id==='steam');let auth=provider?.authentication||{{}};let identity=auth.persona||auth.account||'';let ready=!!auth.authenticated;let root=document.querySelector('#content');root.innerHTML='<section class="card"><p class="eyebrow">STEAM ACCOUNT</p><h2>Sign in to Steam</h2><p>Steam is installed. Select Open Steam sign-in to show Steam on your Mudos screen, then sign in there. Afterward, setup verifies SteamCMD separately: enter your Steam password in the secure setup field, then approve the login on your Steam Guard device or choose Enter Code on the Mudos screen.</p><p id="steam-auth-state" role="status">'+(ready?'✓ Signed in as '+esc(identity||'Steam account'):'Waiting for Steam sign-in…')+'</p><div class="actions"><button id="steam-open" onclick="beginSteamAuth()">Open Steam sign-in</button><button id="steam-continue" '+(ready?'':'disabled')+' onclick="continueSteamSignin()">Continue</button><button class="secondary" onclick="steamSignin=false;step=0;render()">Back</button></div></section>';setTimeout(()=>document.querySelector(ready?'#steam-continue':'#steam-open')?.focus(),0);if(!ready)steamAuthTimer=setInterval(()=>void checkSteamAuth(),3000)}}
-function render(){{if(providerInstallProgress){{renderInstallProgress();return}}if(steamSignin){{renderSteamSignin();return}}if(providerSignin){{renderProviderSignin();return}}if(accountStep){{renderAccountStep();return}}stopSteamAuthPolling();renderSetupPage()}}
+ function renderSteamSignin(){{stopSteamAuthPolling();let provider=data.providers.find(p=>p.id==='steam');let auth=provider?.authentication||{{}};let identity=auth.persona||auth.account||'';let ready=!!auth.authenticated;let root=document.querySelector('#content');root.innerHTML='<section class="card"><p class="eyebrow">STEAM ACCOUNT</p><h2>Sign in to Steam</h2><p>Steam is installed. Select Open Steam sign-in to show Steam on your Mudos screen, then sign in there. Afterward, setup verifies SteamCMD separately: enter your Steam password in the secure setup field, then approve the login on your Steam Guard device or choose Enter Code on the Mudos screen.</p><p id="steam-auth-state" role="status">'+(ready?'✓ Signed in as '+esc(identity||'Steam account'):'Waiting for Steam sign-in…')+'</p><div class="actions"><button id="steam-open" '+(ready?'hidden':'')+' onclick="beginSteamAuth()">Open Steam sign-in</button><button id="steam-continue" '+(ready?'':'disabled')+' onclick="continueSteamSignin()">Continue</button><button class="secondary" onclick="steamSignin=false;step=0;render()">Back</button></div></section>';setTimeout(()=>document.querySelector(ready?'#steam-continue':'#steam-open')?.focus(),0);if(!ready)steamAuthTimer=setInterval(()=>void checkSteamAuth(),3000)}}
+function render(){{let context=[step,steamSignin,providerSignin,accountStep?accountIds[accountIndex]:'',integrationChoices[credentialIndex]||'',providerInstallProgress?'installing':''].join('|');if(context!==lastRenderContext){{notice('');lastRenderContext=context}}if(providerInstallProgress){{renderInstallProgress();return}}if(steamSignin){{renderSteamSignin();return}}if(providerSignin){{renderProviderSignin();return}}if(accountStep){{renderAccountStep();return}}stopSteamAuthPolling();renderSetupPage()}}
 function startAccountStep(){{accountIds=data.providers.filter(p=>providerChoices.includes(p.id)&&['epic','gog'].includes(p.id)&&p.installed).map(p=>p.id);accountIndex=0;accountStep=accountIds.length>0;step=1;render()}}
 function renderAccountStep(){{let id=accountIds[accountIndex],provider=data.providers.find(p=>p.id===id),ready=!!provider?.authentication?.authenticated;let root=document.querySelector('#content');root.innerHTML='<section class="card"><p class="eyebrow">STORE ACCOUNTS · '+(accountIndex+1)+' OF '+accountIds.length+'</p><h2>'+esc(provider?.name||id)+' sign-in</h2><p>Sign in to this store to make your owned games available. This is separate from optional API keys and system files on the next screen.</p><p role="status">'+(ready?'✓ Account signed in. Catalogue reconciliation can continue in the background.':esc(provider?.status_message||'Sign-in is required to load this store’s library.'))+'</p><div class="actions"><button onclick="beginProviderSignin(&quot;'+esc(id)+'&quot;)">'+(ready?'Reconnect':'Sign in')+'</button><button class="secondary" onclick="advanceAccountStep()">'+(ready?(accountIndex<accountIds.length-1?'Next store':'Continue to integrations'):'Skip for now')+'</button><button class="secondary" onclick="accountStep=false;step=0;render()">Back to providers</button></div></section>'}}
 function advanceAccountStep(){{accountIndex++;if(accountIndex>=accountIds.length){{accountStep=false;step=1}}render()}}
@@ -1624,19 +1704,19 @@ function renderInstallProgress(){{let items=providerInstallProgress||[];let comp
 async function checkSteamAuth(){{if(!steamSignin)return false;try{{let state=await api('/api/setup/steam/auth-status');let auth=state.authentication||{{}};let ready=!!auth.authenticated;let label=document.querySelector('#steam-auth-state');let next=document.querySelector('#steam-continue');if(label)label.textContent=ready?'✓ Signed in as '+(auth.persona||auth.account||'Steam account'):state.status==='authorization_pending'?'Waiting for Steam sign-in…':'Steam sign-in is incomplete. Open Steam to retry.';if(next)next.disabled=!ready;let provider=data.providers.find(p=>p.id==='steam');if(provider){{provider.status=ready?'authenticated':state.status;provider.authentication=auth}}return ready}}catch(e){{let label=document.querySelector('#steam-auth-state');if(label)label.textContent='Steam sign-in status is temporarily unavailable. Retry shortly.';return false}}}}
 async function beginSteamAuth(){{if(steamAuthBusy)return;steamAuthBusy=true;let button=document.querySelector('#steam-open');if(button)button.disabled=true;let label=document.querySelector('#steam-auth-state');if(label)label.textContent='Opening Steam sign-in…';try{{let result=await api('/api/setup/steam/authenticate',{{}});if(result.launch){{steamOobeLaunchToken=result.launch;rememberSteamLaunchToken(steamOobeLaunchToken)}}notice(result.message||'Steam was opened. Complete sign-in in Steam.');await checkSteamAuth()}}catch(e){{notice(e.message);if(label)label.textContent='Steam could not be opened. You can retry.'}}finally{{steamAuthBusy=false;if(button)button.disabled=false}}}}
 async function continueSteamSignin(){{if(!await checkSteamAuth()){{notice('Steam sign-in is not verified yet. Complete sign-in on Mudos, wait for your account name to appear here, then select Continue.');return}}stopSteamAuthPolling();integrationChoices=[...new Set([...integrationChoices,'providers.steam'])];await api('/api/setup/progress',{{providers:providerChoices,integrations:integrationChoices}});let launch=steamOobeLaunchToken;if(launch){{try{{await api('/api/setup/steam/dismiss',{{launch}});steamOobeLaunchToken='';rememberSteamLaunchToken('')}}catch(e){{notice('Steam sign-in succeeded, but the sign-in window could not be dismissed: '+e.message)}}}}steamSignin=false;startAccountStep()}}
-function renderProviderSignin(){{let provider=data.providers.find(p=>p.id===providerSignin);let root=document.querySelector('#content');let transaction=providerTransaction;root.innerHTML=`<section class="card"><p class="eyebrow">ACCOUNT SIGN-IN</p><h2>Sign in to ${{esc(provider?.name||providerSignin)}}</h2><p>Open the provider sign-in page, complete sign-in, then paste its one-time authorization code here. Mudos does not store the code or your provider password.</p>${{transaction?.verification_url?`<p><a class="button" href="${{esc(transaction.verification_url)}}" target="_blank" rel="noopener noreferrer">Open ${{esc(provider?.name||providerSignin)}} sign-in</a></p>`:''}}<label>One-time authorization code<input id="provider-auth-code" type="text" autocomplete="one-time-code" value="" required></label><div class="actions"><button onclick="completeProviderSignin()" ${{transaction?'':'disabled'}}>Complete sign-in</button><button class="secondary" onclick="providerSignin='';providerTransaction=null;step=1;render()">Back to setup</button></div></section>`}}
-async function beginProviderSignin(id){{providerSignin=id;providerTransaction=null;render();try{{providerTransaction=await api('/api/setup/provider-authenticate',{{provider:id}});render()}}catch(e){{notice(e.message);providerSignin='';render()}}}}
+function renderProviderSignin(){{let provider=data.providers.find(p=>p.id===providerSignin);let root=document.querySelector('#content');let transaction=providerTransaction;root.innerHTML=`<section class="card"><p class="eyebrow">ACCOUNT SIGN-IN</p><h2>Sign in to ${{esc(provider?.name||providerSignin)}}</h2><p>Open the provider sign-in page, complete sign-in, then paste its one-time authorization code here. Mudos does not store the code or your provider password.</p>${{transaction?.verification_url?`<p><a class="button" href="${{esc(transaction.verification_url)}}" target="_blank" rel="noopener noreferrer">Open ${{esc(provider?.name||providerSignin)}} sign-in</a></p>`:''}}<label>One-time authorization code<input id="provider-auth-code" type="text" autocomplete="one-time-code" value="" required></label><div class="actions"><button onclick="${{transaction?'completeProviderSignin()':'beginProviderSignin(providerSignin)'}}" ${{transaction?'':'disabled'}}>Complete sign-in</button>${{transaction?'':'<button onclick="beginProviderSignin(providerSignin)">Retry sign-in</button>'}}<button class="secondary" onclick="providerSignin='';providerTransaction=null;step=1;render()">Back to setup</button></div></section>`}}
+async function beginProviderSignin(id){{providerSignin=id;providerTransaction=null;render();try{{providerTransaction=await api('/api/setup/provider-authenticate',{{provider:id}});render()}}catch(e){{notice(e.message);providerTransaction=null;render()}}}}
 async function completeProviderSignin(){{let code=document.querySelector('#provider-auth-code')?.value||'';if(!code.trim()){{notice('Enter the one-time authorization code from the provider page.');return}}try{{await api('/api/setup/provider-auth-complete',{{provider:providerSignin,transaction_id:providerTransaction?.transaction_id,code}});data=await api('/api/setup/state');providerSignin='';providerTransaction=null;step=1;render();notice('Provider sign-in completed. Catalogue reconciliation will continue in the background.')}}catch(e){{notice(e.message)}}}}
 async function nextProviders(){{if(!await nextProvidersOriginal())return;if(providerChoices.includes('steam')){{let steam=data.providers.find(p=>p.id==='steam');if(!steam?.installed){{step=0;render();notice('Steam installation must succeed before sign-in. Review the installation status and retry.');return}}integrationChoices=[...new Set([...integrationChoices,'providers.steam'])];await api('/api/setup/progress',{{providers:providerChoices,integrations:integrationChoices}});steamSignin=true;render();await checkSteamAuth()}}else startAccountStep()}}
 function renderSetupPage(){{let root=document.querySelector('#content');if(!data)return;if(step===3)setTimeout(()=>{{let initial=!data.onboarding.admin_password_configured&&data.onboarding.status!=='completed';let current=document.querySelector('#admin-current');if(current)current.closest('label').hidden=initial;let intro=root.querySelector('p');if(intro)intro.textContent=initial?'Choose an initial password for the managed Mudos Linux account ('+managedAccount+'). You do not need its existing password. After setup, password changes require the current account password.':'Admin authentication uses the same password as the managed Mudos Linux account ('+managedAccount+'). Enter its current password and choose a replacement password of at least 8 characters.'}},0);
  if(step===0){{let cards=data.providers.map(p=>`<label class="card"><input type="checkbox" data-provider="${{esc(p.id)}}" ${{providerChoices.includes(p.id)?'checked':''}}><strong>${{esc(p.name)}}</strong><span>${{esc(p.summary)}}</span><small>Status: ${{esc(stateName(p.status))}}</small>${{p.status==='install_failed'&&p.status_message?`<small role="alert">${{esc(p.status_message)}}</small>`:''}}${{p.dependencies.length||p.dependencies_any.length?`<small>Dependencies: ${{esc([...p.dependencies,...p.dependencies_any.flat()].join(', '))}}</small>`:''}}</label>`).join('');root.innerHTML='<h2>Providers and Plugins</h2><div class="cards">'+cards+'</div><div class="actions"><button onclick="nextProviders()">Install selected and continue</button><button class="secondary" onclick="skipSetup()">Continue to Home</button></div>'}}
  else if(step===1){{root.innerHTML='<h2>Integrations and system files</h2><p>Choose optional connections and upload required system files. Store account sign-in is handled separately.</p><div class="cards">'+data.integrations.map(i=>`<label class="card"><input type="checkbox" data-integration="${{esc(i.id)}}" ${{integrationChoices.includes(i.id)?'checked':''}}><strong>${{esc(i.name)}}</strong><span>${{esc(i.description||'Optional connection used by Mudos.')}}</span><small>${{i.configured?'Configured':'Optional'}}</small></label>`).join('')+'</div><div id="setup-files-section">'+setupFilesMarkup()+'</div><div class="actions"><button onclick="nextCredentials()">Continue</button><button class="secondary" onclick="'+(accountIds.length?'backToAccountStep()':'step=0;render()')+'">Back</button></div>'}}
   else if(step===2){{credentialIndex=Math.min(credentialIndex,integrationChoices.length);let id=integrationChoices[credentialIndex];let failed=id&&failedCredentialIds.has(id);let ready=id&&validationResults[id]?.ok;root.innerHTML='<h2>Connection details</h2>'+(id?'<p>Integration '+(credentialIndex+1)+' of '+integrationChoices.length+'</p>'+credentialForm(id):'<p>'+(integrationChoices.length?'All selected connections are complete.':'No integrations selected. You can add them later.')+'</p>')+(failed?'':'<div class="actions">'+(ready&&credentialIndex<integrationChoices.length-1?'<button onclick="nextCredential()">Next integration</button>':ready||!id?'<button onclick="reviewSetup()">Review Setup</button>':'')+'<button class="secondary" onclick="step=1;render()">Back</button></div>')}}
-else {{root.innerHTML='<h2>Setup review</h2><p>Review every available item below. Scroll to see all providers, integrations, and their current status.</p><h3>Providers and Plugins</h3><ul>'+ (data.providers.map(p=>`<li><strong>${{esc(p.name)}} — ${{p.installed?'Installed':'Not installed'}} · ${{esc(stateName(p.status))}}</strong>${{p.status_message?`<br><small>${{esc(p.status_message)}}</small>`:''}}</li>`).join('')||'<li>No providers available</li>')+'</ul><h3>Integrations</h3><ul>'+ (data.integrations.map(i=>{{let skipped=skippedCredentialIds.has(i.id);let result=skipped?null:validationResults[i.id]||data.onboarding.validation?.[i.id];let status=skipped?'Skipped':result?(result.ok?'Ready':'Validation failed'):i.readiness?stateName(i.readiness.status):i.configured?'Configured; not validated':'Configuration required';let message=skipped?'':result?.message||i.readiness?.message||'';return `<li><strong>${{esc(i.name)}} — ${{i.configured?'Configured':'Not configured'}} · ${{esc(status)}}</strong>${{message?`<br><small>${{esc(message)}}</small>`:''}}</li>`}}).join('')||'<li>No integrations available</li>')+'</ul><p>Admin authentication uses the same password as the managed Mudos Linux account ('+esc(managedAccount)+'). Enter its current password and choose a new password of at least 8 characters. This change is explicit and will also change Linux account authentication.</p><label>Current Mudos account password<input id="admin-current" type="password" autocomplete="current-password"></label><label>New Mudos admin password<input id="admin-new" type="password" autocomplete="new-password" minlength="8"></label><label>Confirm new password<input id="admin-confirm" type="password" autocomplete="new-password" minlength="8"></label><p>After setup, open <a href="http://mudos.local/">mudos.local</a> for Mudos administration. Return to <a href="http://mudos.local/setup">mudos.local/setup</a> to change selections.</p><div class="actions"><button onclick="finishSetup()">Set Password &amp; Finish Setup</button>'+(localSetup?'<a class="button secondary" href="mudos://return">Return to Mudos</a>':'')+'<button class="secondary" onclick="step=2;render()">Back</button></div>'}}}}
+else {{root.innerHTML='<h2>Setup review</h2><p>Review every available item below. Scroll to see all providers, integrations, and their current status.</p><h3>Providers and Plugins</h3><ul>'+ (data.providers.map(p=>`<li><strong>${{esc(p.name)}} — ${{p.installed?'Installed':'Not installed'}} · ${{esc(stateName(p.status))}}</strong>${{p.status_message?`<br><small>${{esc(p.status_message)}}</small>`:''}}</li>`).join('')||'<li>No providers available</li>')+'</ul><h3>Integrations</h3><ul>'+ (data.integrations.map(i=>{{let skipped=skippedCredentialIds.has(i.id);let result=skipped?null:validationResults[i.id]||data.onboarding.validation?.[i.id];let status=skipped?'Skipped':result?(result.ok?(i.id==='providers.romm'?'Ready':'Connected'):'Validation failed'):i.readiness?stateName(i.readiness.status):i.configured?'Configured; not validated':'Configuration required';let message=skipped?'':result?.message||i.readiness?.message||'';return `<li><strong>${{esc(i.name)}} — ${{i.configured?'Configured':'Not configured'}} · ${{esc(status)}}</strong>${{message?`<br><small>${{esc(message)}}</small>`:''}}</li>`}}).join('')||'<li>No integrations available</li>')+'</ul><p>Admin authentication uses the same password as the managed Mudos Linux account ('+esc(managedAccount)+'). Enter its current password and choose a new password of at least 8 characters. This change is explicit and will also change Linux account authentication.</p><label>Current Mudos account password<input id="admin-current" type="password" autocomplete="current-password"></label><label>New Mudos admin password<input id="admin-new" type="password" autocomplete="new-password" minlength="8"></label><label>Confirm new password<input id="admin-confirm" type="password" autocomplete="new-password" minlength="8"></label><p>After setup, open <a href="http://mudos.local/">mudos.local</a> for Mudos administration. Return to <a href="http://mudos.local/setup">mudos.local/setup</a> to change selections.</p><div class="actions"><button onclick="finishSetup()">Set Password &amp; Finish Setup</button>'+(localSetup?'<a class="button secondary" href="mudos://return">Return to Mudos</a>':'')+'<button class="secondary" onclick="step=2;render()">Back</button></div>'}}}}
 function fieldDefault(id,f){{if(id==='providers.steam'&&f.name==='steam_username'){{let auth=data.providers.find(p=>p.id==='steam')?.authentication||{{}};return auth.account||auth.persona||''}}return f.default??''}}
 function credentialForm(id){{let i=data.integrations.find(x=>x.id===id);if(!i)return '';let failed=failedCredentialIds.has(id);return `<article class="card credential"><h3>${{esc(i.name)}}</h3><p><a href="${{esc(i.help)}}" target="_blank" rel="noreferrer">Where do I get this?</a></p>${{i.fields.map(f=>`<label>${{esc(f.label)}}<input autocomplete="off" type="${{id==='providers.steam'&&f.name==='steam_username'?'text':f.type==='secret'?'password':f.type==='url'?'url':f.type==='checkbox'?'checkbox':f.type==='number'?'number':'text'}}" data-integration="${{esc(id)}}" data-field="${{esc(f.name)}}" ${{f.type==='checkbox'&&f.default?'checked':''}} ${{f.required?'required':''}} value="${{f.type==='checkbox'?'on':esc(fieldDefault(id,f))}}" placeholder="${{f.type==='secret'?'Leave blank to keep saved value':''}}">${{id==='providers.romm'&&f.name==='url'?'<small class="field-error" role="alert"></small>':''}}</label>`).join('')}}${{failed?`<p role="alert">${{esc(validationResults[id]?.message||'Connection test failed.')}}</p>`:''}}<div class="actions"><button onclick="testAndSave('${{esc(id)}}')">${{failed?'Retry':'Test and Save'}}</button>${{failed?`<button class="secondary" onclick="skipIntegration('${{esc(id)}}')">Skip</button>`:''}}<small>${{i.configured?'Configured; secret values remain private':''}}</small></div></article>`}}
 function setupFilesMarkup(){{let rows=data.setup_files||[];if(!rows.length)return '';return '<h2>BIOS, keys and firmware</h2><p>Provide any required BIOS, keys, or firmware for selected systems now or later. Files are stored in the matching Mudos BIOS folder.</p>'+rows.map(function(system){{let requirements=system.requirements.map(function(req){{let status=req.ready?'Added':(req.required?'Required':'Optional');let present=req.present.length?'Current files: '+esc(req.present.join(', ')):'No files uploaded';return '<label><strong>'+esc(req.label)+' — '+status+'</strong><span>'+esc(req.description)+'</span><small>'+present+'</small><input type="file" data-platform="'+esc(system.platform)+'" data-requirement="'+esc(req.id)+'" accept="'+req.extensions.join(',')+'" '+(req.multiple?'multiple':'')+' onchange="uploadSetupFiles(this)"></label>'}}).join('');return '<article class="card credential"><h3>'+esc(system.platform_label)+'</h3>'+requirements+'</article>'}}).join('')}}
-async function uploadSetupFiles(input){{if(!input.files||!input.files.length)return;let body=new FormData();body.append('csrf',setupCsrf);body.append('platform',input.dataset.platform);body.append('requirement',input.dataset.requirement);for(let file of input.files)body.append('file',file,file.name);input.disabled=true;notice('Uploading system files…');try{{let response=await fetch('/api/setup/files',{{method:'POST',body:body}});let result=await response.json();if(!response.ok)throw Error(result.error||'Upload failed');data.setup_files=result.setup_files||[];document.querySelector('#setup-files-section').innerHTML=setupFilesMarkup();notice('System files uploaded.')}}catch(error){{notice(error.message);input.disabled=false}}}}
+async function uploadSetupFiles(input){{if(!input.files||!input.files.length)return;let body=new FormData();body.append('csrf',setupCsrf);body.append('platform',input.dataset.platform);body.append('requirement',input.dataset.requirement);for(let file of input.files)body.append('file',file,file.name);input.disabled=true;notice('Uploading system files…');setBusy(1);try{{let response=await fetch('/api/setup/files',{{method:'POST',body:body}});let result=await response.json();if(!response.ok)throw Error(result.error||'Upload failed');data.setup_files=result.setup_files||[];document.querySelector('#setup-files-section').innerHTML=setupFilesMarkup();notice('System files uploaded.')}}catch(error){{notice(error.message);input.disabled=false}}finally{{setBusy(-1)}}}}
 async function nextProvidersOriginal(){{providerChoices=[...document.querySelectorAll('[data-provider]:checked')].map(e=>e.dataset.provider);try{{let saved=await api('/api/setup/progress',{{providers:providerChoices}});providerChoices=saved.state.selected_providers||providerChoices;providerInstallProgress=providerChoices.map(id=>{{let p=data.providers.find(x=>x.id===id);return {{id,name:p?.name||id,status:p?.installed?'Installed':p?.installable?'Pending':'Unavailable',message:''}}}});if(providerInstallProgress.length)render();for(const item of providerInstallProgress){{if(item.status!=='Pending')continue;item.status='Installing';render();notice(`Installing ${{item.name}}…`);try{{await api('/api/setup/install',{{provider:item.id}});let result={{status:'installing',message:''}},notStartedPolls=0;while(['installing','selected'].includes(result.status)){{await new Promise(r=>setTimeout(r,1600));result=await api('/api/setup/install/'+encodeURIComponent(item.id));if(result.status==='selected'){{if(++notStartedPolls>=10){{result=await api('/api/setup/install-timeout',{{provider:item.id}});if(result.status==='installing')notStartedPolls=0;else break}}notice(`Waiting for ${{item.name}} installer to start…`)}}else if(result.status==='installing'){{notStartedPolls=0;notice(item.id==='retroarch'?'Installing official RetroArch cores…':`Installing ${{item.name}}…`)}}}}item.status=result.status==='installed'?'Installed':'Failed';item.message=result.status==='installed'?'':result.message||'Installer did not verify the installed provider.';notice(result.status==='installed'?`${{item.name}} installed; checking readiness…`:`${{item.name}} installation failed: ${{item.message}}`)}}catch(e){{item.status='Failed';item.message=e.message;notice(`${{item.name}} installation failed: ${{e.message}}`)}}render()}}await api('/api/setup/progress',{{integrations:integrationChoices}});data=await api('/api/setup/state');providerInstallProgress=null;step=1;render();return true}}catch(e){{providerInstallProgress=null;step=0;render();notice(e.message);return false}}}}
 async function nextCredentials(){{integrationChoices=[...document.querySelectorAll('[data-integration]:checked')].map(e=>e.dataset.integration);await api('/api/setup/progress',{{providers:providerChoices,integrations:integrationChoices}});credentialIndex=0;step=2;render()}}
 function nextCredential(){{let id=integrationChoices[credentialIndex];if(!id||!validationResults[id]?.ok||failedCredentialIds.has(id)){{notice('Test and Save or Skip this integration before continuing.');return}}credentialIndex++;render()}}

@@ -49,15 +49,29 @@ class EpicEntitlementSource(SnapshotEntitlementSource):
         return self.snapshot
 
     def installed(self) -> tuple[OwnedProviderGame, ...]:
+        discovered: dict[str, OwnedProviderGame] = {}
         try:
             value = self._json(["legendary", "list-installed", "--json", "--show-dirs"])
             records = value if isinstance(value, list) else []
-            return tuple(game for item in records
-                         if (game := normalize_game(item,
-                              provider_id_keys=("app_name", "appName", "id"),
-                              title_keys=("app_title", "appTitle", "title", "name"))) is not None)
+            discovered.update((game.provider_id, game) for item in records
+                              if (game := normalize_game(item,
+                                   provider_id_keys=("app_name", "appName", "id"),
+                                   title_keys=("app_title", "appTitle", "title", "name"))) is not None)
         except (OSError, subprocess.SubprocessError, TypeError, ValueError, json.JSONDecodeError):
-            return ()
+            pass
+        # A successful acquisition writes an identity marker only after its
+        # CLI returns success. Use that same durable authority if Legendary's
+        # optional list-installed JSON omits a just-installed item.
+        for marker in PATHS.epic_library_root.glob("*/.mudos-game.json"):
+            try:
+                value = json.loads(marker.read_text())
+                game = normalize_game(value, provider_id_keys=("provider_id", "id"),
+                                      title_keys=("title", "name"))
+                if game is not None:
+                    discovered[game.provider_id] = game
+            except (OSError, TypeError, ValueError, json.JSONDecodeError):
+                continue
+        return tuple(sorted(discovered.values(), key=lambda item: item.title.casefold()))
 
 
 class EpicAuthentication(CliProviderAuthentication):

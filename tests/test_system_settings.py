@@ -5,7 +5,7 @@ from lulu.system_settings import CATEGORIES, SystemSettingsProvider
 
 class SystemSettingsProviderTests(unittest.TestCase):
     def test_categories_are_stable_and_product_facing(self) -> None:
-        self.assertEqual(CATEGORIES, ("Display", "Audio", "Network", "Bluetooth", "Controllers", "Storage", "System", "Lulu"))
+        self.assertEqual(CATEGORIES, ("Display", "Audio", "Network", "Bluetooth", "Controllers", "Storage", "System"))
 
     def test_each_category_returns_normalized_rows(self) -> None:
         provider = SystemSettingsProvider()

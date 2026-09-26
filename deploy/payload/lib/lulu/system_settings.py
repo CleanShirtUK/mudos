@@ -31,7 +31,7 @@ class SystemSetting:
         }
 
 
-CATEGORIES = ("Display", "Audio", "Network", "Bluetooth", "Controllers", "Storage", "System", "Lulu")
+CATEGORIES = ("Display", "Audio", "Network", "Bluetooth", "Controllers", "Storage", "System")
 FILE_BROWSER_SERVICE = "lulu-file-browser.service"
 FILE_BROWSER_PORT = int(os.environ.get("LULU_FILE_BROWSER_PORT", "8080"))
 
@@ -116,12 +116,4 @@ class SystemSettingsProvider:
             _status("system.cpu", "CPU", platform.processor() or "unknown"),
             _status("system.memory", "Memory", "available", "Detailed memory model is TO PROVE"),
             _status("system.power", "Power controls", "available", "Controller confirmation required"),
-        ]
-
-    def _lulu_settings(self) -> list[SystemSetting]:
-        return [
-            _status("lulu.startup", "Startup category", "Recent", "Persistence integration is TO PROVE"),
-            _status("lulu.motion", "Reduced motion", "off", "Policy integration is TO PROVE"),
-            _status("lulu.hints", "Controller hints", "on"),
-            _status("lulu.debug", "Developer information", "available"),
         ]

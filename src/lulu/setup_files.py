@@ -236,7 +236,11 @@ def save_platform_files(platform: str, requirement_id: str,
 def _extract_firmware_zip(archive: Path, destination: Path) -> list[str]:
     extracted: list[str] = []
     total = 0
-    with zipfile.ZipFile(archive) as bundle:
+    try:
+        bundle = zipfile.ZipFile(archive)
+    except (OSError, zipfile.BadZipFile) as error:
+        raise ValueError("Firmware archive is invalid or unreadable") from error
+    with bundle:
         members = [item for item in bundle.infolist() if not item.is_dir()]
         if not members or len(members) > 10000:
             raise ValueError("Firmware ZIP is empty or contains too many files")

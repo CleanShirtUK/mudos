@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+roots=$(HOME=/home/lulu XDG_CONFIG_HOME=/home/lulu/.config \
+  PYTHONPATH=/opt/lulu/current/lib /usr/bin/python -c \
+  'import json; from lulu.paths import PATHS; print(json.dumps([str(PATHS.torrent_root), str(PATHS.usenet_root)]))')
+readarray -t host_roots < <(printf '%s' "$roots" | /usr/bin/python -c \
+  'import json,sys; print("\n".join(json.load(sys.stdin)))')
+[[ ${#host_roots[@]} -eq 2 && -d ${host_roots[0]} && -d ${host_roots[1]} ]] || {
+  echo "Questarr acquisition storage is unavailable; configure a valid Mudos storage target." >&2
+  exit 78
+}
+exec /usr/bin/podman run --name questarr --network host --user root \
+  --env PUID=958 --env PGID=958 --env PORT=5000 --env HOST=0.0.0.0 \
+  --env NODE_ENV=production --env SQLITE_DB_PATH=/app/data/sqlite.db \
+  --volume /var/lib/lulu-questarr/data:/app/data:Z \
+  --volume "${host_roots[0]}:/home/lulu/Games/.acquisition/torrents:ro" \
+  --volume "${host_roots[1]}:/home/lulu/Games/.acquisition/usenet:ro" \
+  ghcr.io/doezer/questarr@sha256:6faaf75f484a20805309315dd9eb9f1550b039a668efb89c13fc028c72b45485

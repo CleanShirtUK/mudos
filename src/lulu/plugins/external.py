@@ -180,7 +180,7 @@ class CliAcquisitionExecutor:
             await reporter.state(JobState.FINALIZING, stage="finalizing")
             marker_dir = self.install_root / job.content_identity.removeprefix(f"{self.provider}:")
             if job.operation.value in {"install", "update", "acquire"}:
-                marker_dir.mkdir(parents=True, exist_ok=True)
+                self._validate_installed_payload(marker_dir)
                 (marker_dir / ".mudos-game.json").write_text(json.dumps({
                     "provider_id": job.content_identity.removeprefix(f"{self.provider}:"),
                     "title": job.title, "install_dir": str(marker_dir),
@@ -205,6 +205,29 @@ class CliAcquisitionExecutor:
         if target == root or target.parent != root or not (target / ".mudos-game.json").is_file():
             raise JobExecutionError("unmanaged-install", "Provider installation is not Mudos-managed")
         return target
+
+    def _validate_installed_payload(self, directory: Path) -> None:
+        """Require the provider's destination to contain real payload before completion."""
+        root = self.install_root.resolve(strict=False)
+        if directory.is_symlink():
+            raise JobExecutionError("unsafe-install-path", "Provider install destination is a symlink")
+        target = directory.resolve(strict=False)
+        try:
+            target.relative_to(root)
+        except ValueError as error:
+            raise JobExecutionError("unsafe-install-path", "Provider install escaped its managed root") from error
+        if target == root or target.parent != root or not target.is_dir():
+            raise JobExecutionError("provider-install-incomplete",
+                                    "Provider reported success without creating its install directory", retryable=True)
+        try:
+            has_payload = any(item.is_file() and item.name != ".mudos-game.json"
+                              for item in target.rglob("*"))
+        except OSError as error:
+            raise JobExecutionError("provider-install-incomplete",
+                                    "Provider install directory could not be inspected", retryable=True) from error
+        if not has_payload:
+            raise JobExecutionError("provider-install-incomplete",
+                                    "Provider reported success without installing content", retryable=True)
 
     async def cancel(self, job: DownloadJob) -> None:
         process = self._processes.get(job.job_id)

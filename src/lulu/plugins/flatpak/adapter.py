@@ -9,6 +9,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import xml.etree.ElementTree as ET
 from typing import AsyncIterator, Callable
@@ -24,6 +25,26 @@ class FlatpakError(RuntimeError):
         super().__init__(message)
         self.code = code
         self.retryable = retryable
+
+
+def _flatpak_operation_failure(application_id: str, output: list[str]) -> FlatpakError:
+    """Translate known missing-runtime failures without hiding the requested ref."""
+    text = "\n".join(output)
+    runtime_ref = re.search(
+        r"(org\.freedesktop\.[A-Za-z0-9.]+/(?:x86_64|aarch64)/[A-Za-z0-9._-]+)", text)
+    lowered = text.casefold()
+    if runtime_ref and "runtime" in lowered and any(
+            phrase in lowered for phrase in ("not found", "not installed", "was not found")):
+        return FlatpakError(
+            "runtime-unavailable",
+            f"Cannot install {application_id}: required runtime {runtime_ref.group(1)} "
+            "is unavailable from the configured Flathub metadata. Flatpak normally installs "
+            "runtime dependencies automatically; refresh Flathub appstream metadata and verify "
+            "that this exact runtime branch is published before retrying.", retryable=True)
+    return FlatpakError(
+        "operation-failed",
+        f"Flatpak could not install {application_id}. Refresh Flathub metadata, then retry; "
+        "if it fails again, inspect the application and required runtime refs.", retryable=True)
 
 
 @dataclass(frozen=True, slots=True)
@@ -404,11 +425,15 @@ class FlatpakAdapter:
             self.command, "--user", *args, stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT, env={**os.environ, "LANG": "C"},
         )
+        diagnostic_lines: list[str] = []
         try:
             assert process.stdout is not None
             async for raw in process.stdout:
                 line = raw.decode(errors="replace").strip()
                 lowered = line.casefold()
+                if "runtime" in lowered or "not found" in lowered or "not installed" in lowered:
+                    diagnostic_lines.append(line[:500])
+                    diagnostic_lines = diagnostic_lines[-8:]
                 if "installing" in lowered or "deploying" in lowered:
                     await reporter.state(JobState.FINALIZING, stage="installing")
                 elif "download" in lowered or "runtime" in lowered:
@@ -420,7 +445,7 @@ class FlatpakAdapter:
                 await process.wait()
             raise JobCancelled
         if code != 0:
-            raise FlatpakError("operation-failed", "Flatpak operation failed", retryable=True)
+            raise _flatpak_operation_failure(app_id, diagnostic_lines)
         await reporter.state(JobState.FINALIZING, stage="reconciling")
         actual = {item.application_id: item for item in await self.installed(user=True)}
         if job.operation is not JobOperation.REMOVE and app_id not in actual:

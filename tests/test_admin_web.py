@@ -22,6 +22,18 @@ class FakeSecrets:
 
 
 class AdminWebTests(unittest.TestCase):
+    def test_deselected_provider_does_not_retain_stale_install_failure_status(self):
+        app = AdminApp()
+        source = [dict(id="steam", name="Steam", installed=False)]
+        with patch("lulu.admin_web.provider_manifest", return_value=source), \
+                patch("lulu.admin_web.onboarding_state", return_value={"selected_providers": []}), \
+                patch.object(app, "provider_install_status", return_value={
+                    "status": "install_failed", "message": "old failure"}):
+            row = app.setup_provider_states()[0]
+        self.assertEqual(row["status"], "not_selected")
+        self.assertFalse(row["selected"])
+        self.assertFalse(row["state"]["failed"])
+
     def test_admin_integration_save_invalidates_setup_validation_only_after_success(self):
         from types import SimpleNamespace
         handler = object.__new__(Handler)
@@ -218,9 +230,12 @@ class AdminWebTests(unittest.TestCase):
         with patch("lulu.admin_web.provider_manifest", return_value=[dict(
                 id="questarr", name="Questarr", installed=True)]), \
                 patch("lulu.admin_web.onboarding_state", return_value={"selected_providers": ["questarr"]}), \
+                patch.object(app, "service_state", return_value="active"), \
                 patch.object(app, "test_provider", return_value=(False, "Create the Questarr first-run account")):
             row = app.setup_provider_states()[0]
-        self.assertEqual(row["status"], "configuration_required")
+        self.assertEqual(row["status"], "running")
+        self.assertTrue(row["state"]["running"])
+        self.assertFalse(row["state"]["configured"])
         self.assertIn("first-run account", row["status_message"])
 
     def test_setup_epic_gog_status_exposes_verified_authentication(self):
@@ -624,18 +639,17 @@ providerChoices=['steam'];step=0;render();
         self.assertTrue(fields[1]["required"])
         self.assertIn("authenticated Steam client", INTEGRATION_METADATA["providers.steam"]["description"])
 
-    def test_steam_username_is_visible_in_setup_and_console_without_changing_secret_storage(self):
-        # Steam's username is still stored by the existing secret-backed API,
-        # but should not be rendered as a password in either input surface.
+    def test_steam_credentials_remain_in_setup_admin_not_console_plugin_views(self):
+        # Provider credentials belong to the authenticated setup/Admin surface;
+        # the retired console Plugins destination must not expose a dead form.
         from lulu import admin_web
         import inspect
         setup = inspect.getsource(admin_web.Handler._setup_page)
         console = (Path(__file__).parents[1] / "ui/ConsoleShell.qml").read_text()
         self.assertIn("id==='providers.steam'&&f.name==='steam_username'?'text'", setup)
         self.assertIn("f.type==='secret'?'password'", setup)
-        self.assertIn('beginPluginCredential("steam", "username", "Steam username", "Username", "secret", false)', console)
-        self.assertIn('beginPluginCredential("steam", "password", "SteamCMD Password", "Password", "secret", true)', console)
-        self.assertIn('else if (target.kind === "secret")', console)
+        self.assertIn("action == \"credentials\"", inspect.getsource(admin_web.Handler.do_POST))
+        self.assertNotIn('beginPluginCredential("steam"', console)
 
     def test_setup_review_lists_all_components_in_a_scrollable_document(self):
         handler = object.__new__(Handler)

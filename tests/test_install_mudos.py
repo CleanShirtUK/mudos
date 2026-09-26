@@ -213,6 +213,73 @@ def test_custom_storage_purge_is_scoped_to_mudos_subtree(tmp_path):
     assert configured not in paths
 
 
+def test_acquisition_directories_cover_default_and_configured_game_and_emulation(tmp_path):
+    home = tmp_path / "home" / "lulu"
+    custom_game = tmp_path / "mounted" / "games"
+    custom_emu = tmp_path / "mounted" / "roms"
+    config = home / ".config/lulu/storage-targets.json"
+    config.parent.mkdir(parents=True)
+    config.write_text(json.dumps({"game_path": str(custom_game),
+                                  "emulation_path": str(custom_emu)}))
+    paths = installer.acquisition_directories(manifest(), home)
+    assert home / "Games/.acquisition/torrents" in paths
+    assert custom_game / "Mudos/.acquisition/usenet" in paths
+    assert custom_emu / "Mudos/.acquisition/torrents" in paths
+    assert custom_game in paths or custom_game / "Mudos/.acquisition/torrents" in paths
+    writable = installer.provider_install_writable_paths(manifest(), home)
+    assert home / "Games/.acquisition" in writable
+    assert custom_game / "Mudos/.acquisition" in writable
+    assert custom_emu / "Mudos/.acquisition" in writable
+
+
+def test_acquisition_initialization_creates_only_leaves_with_restricted_modes(tmp_path):
+    parent = tmp_path / "mounted" / "Mudos" / ".acquisition"
+    paths = [parent / "torrents", parent / "usenet"]
+    installer.initialize_acquisition_directories(
+        paths, uid=__import__("os").getuid(), gid=__import__("os").getgid())
+    assert parent.is_dir()
+    assert all(path.is_dir() and path.stat().st_mode & 0o777 == 0o770 for path in paths)
+    assert not (tmp_path / "mounted").stat().st_mode & 0o002
+
+
+def test_acquisition_paths_are_narrowly_added_to_provider_installer_sandbox():
+    unit = (ROOT / "packaging/lulu-provider-install@.service").read_text()
+    assert "ReadWritePaths=/home/lulu/.config /home/lulu/.local/share/lulu /home/lulu/Games/.acquisition " in unit
+    assert "ReadWritePaths=/home/lulu " not in unit
+
+
+def test_file_browser_bind_sources_are_initialized_for_first_start():
+    data = manifest()
+    initial = {item["path"] for item in data["mutable"]["initial_directories"]}
+    unit = (ROOT / "packaging/lulu-file-browser.service").read_text()
+    for source in ("/home/lulu/Games", "/home/lulu/Recordings",
+                   "/home/lulu/Replays", "/home/lulu/Screenshots"):
+        assert f"BindPaths={source}:" in unit
+        assert source in initial
+
+
+def test_questarr_restart_is_rate_limited_and_has_bounded_retries():
+    unit = (ROOT / "packaging/lulu-questarr.service").read_text()
+    assert "StartLimitIntervalSec=300" in unit
+    assert "StartLimitBurst=3" in unit
+
+
+def test_questarr_uses_configured_storage_resolver_not_hardcoded_host_root():
+    unit = (ROOT / "packaging/lulu-questarr.service").read_text()
+    launcher = (ROOT / "scripts/mudos-questarr").read_text()
+    assert "mudos-questarr" in unit
+    assert "PATHS.torrent_root" in launcher and "PATHS.usenet_root" in launcher
+    assert "-d ${host_roots[0]}" in launcher
+
+
+def test_release_builder_installs_questarr_launcher_at_service_exec_path():
+    builder = (ROOT / "scripts/release.py").read_text()
+    unit = (ROOT / "packaging/lulu-questarr.service").read_text()
+    assert '"bin/mudos-questarr"' in builder
+    assert 'source / "scripts" / "mudos-questarr"' in builder
+    assert "ExecStart=/opt/lulu/current/bin/mudos-questarr" in unit
+
+
 def test_production_units_do_not_reference_dev_runtime():
     for name in ("lulu.target", "lulu-session@.service", "lulu-consoled.service",
                  "lulu-acquisition.service", "lulu-admin.service", "mudos-recovery.service",

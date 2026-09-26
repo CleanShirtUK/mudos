@@ -1,22 +1,18 @@
 [Unit]
 Description=Questarr game storefront
+StartLimitIntervalSec=300
+StartLimitBurst=3
 After=network-online.target lulu-transmission.service nzbget.service
 Wants=network-online.target
 
 [Service]
 Type=simple
 ExecStartPre=-/usr/bin/podman rm -f questarr
-ExecStart=/usr/bin/podman run --name questarr --network host --user root \
-    --env PUID=958 --env PGID=958 --env PORT=5000 --env HOST=0.0.0.0 \
-    --env NODE_ENV=production --env SQLITE_DB_PATH=/app/data/sqlite.db \
-    --volume /var/lib/lulu-questarr/data:/app/data:Z \
-    --volume /home/lulu/Games/.acquisition/torrents:/home/lulu/Games/.acquisition/torrents:ro \
-    --volume /home/lulu/Games/.acquisition/usenet:/home/lulu/Games/.acquisition/usenet:ro \
-    ghcr.io/doezer/questarr@sha256:6faaf75f484a20805309315dd9eb9f1550b039a668efb89c13fc028c72b45485
+ExecStart=/opt/lulu/current/bin/mudos-questarr
 ExecStop=/usr/bin/podman stop -t 20 questarr
 ExecStopPost=-/usr/bin/podman rm -f questarr
 Restart=on-failure
-RestartSec=5
+RestartSec=30
 TimeoutStartSec=180
 TimeoutStopSec=40
 NoNewPrivileges=true

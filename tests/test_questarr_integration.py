@@ -23,10 +23,12 @@ class QuestarrIntegrationTests(unittest.TestCase):
 
     def test_questarr_service_is_pinned_and_persistent(self) -> None:
         unit = (ROOT / "packaging/lulu-questarr.service").read_text()
-        self.assertIn("ghcr.io/doezer/questarr@sha256:", unit)
-        self.assertIn("/var/lib/lulu-questarr/data:/app/data", unit)
-        self.assertIn("/home/lulu/Games/.acquisition/torrents", unit)
-        self.assertIn("/home/lulu/Games/.acquisition/usenet", unit)
+        launcher = (ROOT / "scripts/mudos-questarr").read_text()
+        self.assertIn("ExecStart=/opt/lulu/current/bin/mudos-questarr", unit)
+        self.assertIn("ghcr.io/doezer/questarr@sha256:", launcher)
+        self.assertIn("/var/lib/lulu-questarr/data:/app/data", launcher)
+        self.assertIn("PATHS.torrent_root", launcher)
+        self.assertIn("PATHS.usenet_root", launcher)
 
     def test_admin_registry_exposes_questarr_health_and_ui(self) -> None:
         admin = (ROOT / "src/lulu/admin_web.py").read_text()

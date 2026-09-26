@@ -24,6 +24,7 @@ REQUIRED_FILES = (
     "bin/lulu-shell",
     "bin/mudos-guide",
     "bin/lulu-vt",
+    "bin/mudos-questarr",
     "bin/verify-mudos.sh",
     "lib/lulu/sessiond.py",
     "lib/lulu/consoled.py",
@@ -133,6 +134,7 @@ def build_payload(repo_root: Path, payload: Path) -> None:
         check=True,
     )
     shutil.copy2(source / "packaging" / "lulu-vt", payload / "bin" / "lulu-vt")
+    shutil.copy2(source / "scripts" / "mudos-questarr", payload / "bin" / "mudos-questarr")
     shutil.copy2(source / "packaging" / "mudos-provider-install", payload / "bin" / "mudos-provider-install")
     shutil.copy2(source / "deploy" / "payload" / "bin" / "verify-mudos.sh", payload / "bin" / "verify-mudos.sh")
     for path in payload.joinpath("bin").iterdir():

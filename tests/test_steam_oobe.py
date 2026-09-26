@@ -42,6 +42,15 @@ class FakeInstalledSteam:
 
 
 class SteamOobeTests(unittest.TestCase):
+    def test_authenticated_steam_does_not_launch_an_additional_auth_surface(self):
+        from lulu.admin_web import AdminApp
+        app = object.__new__(AdminApp)
+        with patch.object(app, "steam_auth_status", return_value={"authenticated": True}), \
+                patch("lulu.admin_web.subprocess.run") as run:
+            result = app.begin_steam_oobe_auth()
+        self.assertEqual(result["status"], "authenticated")
+        run.assert_not_called()
+
     def test_setup_has_a_distinct_signin_stage_between_install_and_integrations(self):
         source = Path(__file__).parents[1] / "src/lulu/admin_web.py"
         text = source.read_text()

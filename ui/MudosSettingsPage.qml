@@ -29,8 +29,9 @@ Item {
         58 * root.uiScale * (root.selectionScale - 1) / 2
         + root.selectedBorderWidth * root.selectionScale / 2
         + root.selectedGlassEdgeSafety
-    readonly property real nominalRowWidth: root.expandedShellWidth
-        - 2 * root.contentInset - root.horizontalScaleInset
+    readonly property real listWidth: (root.expandedShellWidth - 3 * root.contentInset) * 0.43
+    readonly property real nominalRowWidth: root.listWidth - root.contentInset
+        - root.horizontalScaleInset
     property real scrollY: 0
     signal rowActivated(int index)
 
@@ -85,7 +86,7 @@ Item {
         x: root.expandedShellX + root.contentInset
             - root.horizontalScaleInset
         y: root.expandedShellY + 110 * root.uiScale
-        width: root.nominalRowWidth + 2 * root.horizontalScaleInset
+        width: root.listWidth + 2 * root.horizontalScaleInset
         height: 7 * 58 * root.uiScale + 6 * 10 * root.uiScale
         visible: root.rowsVisible
         clip: true
@@ -239,6 +240,57 @@ Item {
                         onClicked: root.rowActivated(rowDelegate.index)
                     }
                 }
+            }
+        }
+    }
+
+    MudosCardSurface {
+        id: detailSurface
+        x: root.expandedShellX + root.contentInset + root.listWidth + root.contentInset
+        y: root.expandedShellY + 110 * root.uiScale
+        width: Math.max(1, root.expandedShellWidth - 3 * root.contentInset - root.listWidth)
+        height: root.expandedShellHeight - 150 * root.uiScale
+        selectionProgress: 0
+        uiScale: root.uiScale
+        luluPalette: root.luluPalette
+        canonicalTexture: root.canonicalTexture
+        canonicalCoordinateRoot: root.canonicalCoordinateRoot
+        canonicalSize: root.canonicalSize
+
+        Column {
+            anchors.fill: parent
+            anchors.margins: 28 * root.uiScale
+            spacing: 18 * root.uiScale
+            Text {
+                width: parent.width
+                text: root.rows.length && root.rows[root.selectedIndex]
+                    ? String(root.rows[root.selectedIndex].label || "") : root.title
+                color: root.luluPalette.primaryText
+                font.family: root.typography.majorHeadingFamily
+                font.weight: root.typography.majorHeadingWeight
+                font.pixelSize: root.typography.size("section", 26)
+                wrapMode: Text.Wrap
+            }
+            Text {
+                width: parent.width
+                text: root.rows.length && root.rows[root.selectedIndex]
+                    ? String(root.rows[root.selectedIndex].description
+                        || root.rows[root.selectedIndex].value || "")
+                    : "No settings are available in this category."
+                color: root.luluPalette.secondaryText
+                font.family: root.typography.interfaceFamily
+                font.pixelSize: root.typography.size("body", 18)
+                wrapMode: Text.Wrap
+            }
+            Text {
+                width: parent.width
+                visible: root.rows.length && root.rows[root.selectedIndex]
+                    && String(root.rows[root.selectedIndex].value || "") !== ""
+                text: visible ? String(root.rows[root.selectedIndex].value) : ""
+                color: root.luluPalette.headingAccent
+                font.family: root.typography.interfaceFamily
+                font.pixelSize: root.typography.size("body", 18)
+                wrapMode: Text.Wrap
             }
         }
     }

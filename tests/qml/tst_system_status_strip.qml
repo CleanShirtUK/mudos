@@ -56,6 +56,26 @@ TestCase {
         compare(strip.x + strip.width, width)
     }
 
+    function test_disconnected_network_has_explicit_warning_glyph_without_geometry_shift() {
+        var icon = findChild(strip, "networkIcon")
+        verify(icon !== null)
+        var disconnectedGlyph = icon.glyph
+        var disconnectedWidth = strip.width
+        verify(disconnectedGlyph !== String.fromCodePoint(0xf1eb))
+        compare(icon.glyphColor, palette.warning)
+        strip.networkAvailable = true
+        wait(220)
+        compare(icon.glyph, String.fromCodePoint(0xf1eb))
+        compare(icon.glyphColor, strip.statusColor)
+        compare(strip.x + strip.width, width)
+        strip.networkAvailable = false
+        wait(220)
+        compare(icon.glyph, disconnectedGlyph)
+        compare(icon.glyphColor, palette.warning)
+        compare(strip.x + strip.width, width)
+        verify(disconnectedWidth > 0)
+    }
+
     function test_controller_reconnect_before_exit_finishes_preserves_single_slot() {
         strip.controllers = [{index: 1, identity: "same-pad", batteryKind: "unknown"}]
         wait(260)

@@ -3,12 +3,24 @@ from pathlib import Path
 import unittest
 
 from lulu.catalogue import CatalogueStore
-from lulu.plugins.external import OwnedProviderGame, SnapshotEntitlementSource, normalize_game
+from lulu.plugins.external import (CliAcquisitionExecutor, OwnedProviderGame,
+                                   SnapshotEntitlementSource, normalize_game)
 from lulu.plugins.epic import EpicAuthentication
 from lulu.plugins.gog import GogAuthentication
 
 
 class ExternalProviderTests(unittest.TestCase):
+    def test_cli_install_is_not_complete_without_real_provider_payload(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            executor = CliAcquisitionExecutor("gog", "gogdl", root, lambda *_: [])
+            empty = root / "game"
+            empty.mkdir()
+            with self.assertRaisesRegex(Exception, "without installing content"):
+                executor._validate_installed_payload(empty)
+            (empty / "game.bin").write_bytes(b"provider payload")
+            executor._validate_installed_payload(empty)
+
     def test_normalized_identity_does_not_require_metadata(self) -> None:
         game = normalize_game({"app_name": "abc", "app_title": "Owned game"},
                               provider_id_keys=("app_name",), title_keys=("app_title",))

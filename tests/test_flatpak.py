@@ -2,6 +2,7 @@ import asyncio
 import unittest
 
 from lulu.plugins.flatpak import FlatpakAdapter, FlatpakApplication
+from lulu.plugins.flatpak.adapter import _flatpak_operation_failure
 
 
 class FakeFlatpak(FlatpakAdapter):
@@ -26,6 +27,15 @@ class FakeFlatpak(FlatpakAdapter):
 
 
 class FlatpakTests(unittest.TestCase):
+    def test_missing_runtime_error_names_application_and_exact_required_ref(self):
+        error = _flatpak_operation_failure("org.example.Game", [
+            "The application requires the runtime org.freedesktop.Platform/x86_64/26.08 which was not found"
+        ])
+        self.assertEqual(error.code, "runtime-unavailable")
+        self.assertIn("org.example.Game", str(error))
+        self.assertIn("org.freedesktop.Platform/x86_64/26.08", str(error))
+        self.assertIn("Flatpak normally installs runtime dependencies automatically", str(error))
+
     def test_native_api_is_preferred_when_gi_is_available(self):
         adapter = FlatpakAdapter()
         if adapter._gi is not None:

@@ -22,6 +22,12 @@ class RommExecutor:
 
     supports_pause = True
 
+    def _refresh_saved_client(self) -> None:
+        """Observe OOBE-saved configuration without restarting Acquisitiond."""
+        if self.client is None or isinstance(self.client, RommClient):
+            config = RommConfig.from_file()
+            self.client = RommClient(config) if config else None
+
     def _resolve(self, identity: str) -> tuple[RommGame, RommFile]:
         if self.client is None:
             raise JobExecutionError("romm-unavailable", "RomM acquisition is not configured", retryable=True)
@@ -73,6 +79,7 @@ class RommExecutor:
         return root / definition.platform_id / filename
 
     async def run(self, job: DownloadJob, reporter: JobReporter) -> None:
+        self._refresh_saved_client()
         if job.content_identity.startswith("romm-set:"):
             identities = [item for item in job.content_identity.removeprefix("romm-set:").split(",") if item]
             if not identities:
@@ -113,9 +120,7 @@ class RommExecutor:
         # Pairing replaces the encrypted token while acquisitiond remains
         # alive. Refresh production clients per job; injected test doubles are
         # intentionally left untouched.
-        if isinstance(self.client, RommClient):
-            config = RommConfig.from_file()
-            self.client = RommClient(config) if config else None
+        self._refresh_saved_client()
         if transition_states:
             await reporter.state(JobState.STARTING, stage="starting")
         game, romm_file = await asyncio.to_thread(self._resolve, job.content_identity)

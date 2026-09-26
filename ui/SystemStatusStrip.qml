@@ -231,6 +231,7 @@ Item {
             height: root.glyphSize
             StatusGlyph {
                 id: networkIcon
+                objectName: "networkIcon"
                 x: root.groupSpacing
                 glyph: !root.networkAvailable ? "\uf6a9"
                     : root.networkConnectionType === "ethernet"
@@ -238,7 +239,8 @@ Item {
                 glyphSize: root.glyphSize
                 targetPaintedHeight: root.glyphSize * 0.72
                 fontFamily: root.typography ? root.typography.iconFamily : "JetBrains Mono"
-                glyphColor: root.statusColor
+                glyphColor: root.networkAvailable ? root.statusColor
+                    : (root.luluPalette ? root.luluPalette.warning : "#ffd17d")
             }
         }
 

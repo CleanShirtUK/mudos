@@ -158,6 +158,46 @@ def mutable_paths(manifest: dict, lulu_home: Path = Path("/home/lulu")) -> list[
     return list(dict.fromkeys(paths))
 
 
+def storage_roots(manifest: dict, lulu_home: Path = Path("/home/lulu")) -> list[Path]:
+    """Return the active game-storage roots using the runtime path policy."""
+    state_path = lulu_home / ".config/lulu/storage-targets.json"
+    roots = {lulu_home / "Games"}
+    try:
+        state = json.loads(state_path.read_text())
+    except (OSError, ValueError):
+        state = {}
+    for key in ("game_path", "emulation_path"):
+        value = state.get(key)
+        if not value:
+            continue
+        base = Path(value)
+        if not base.is_absolute() or ".." in base.parts or len(base.parts) < 3:
+            raise InstallError(f"unsafe configured {key}; refusing to initialize storage")
+        roots.add(base / "Mudos")
+    return sorted(roots)
+
+
+def acquisition_directories(manifest: dict, lulu_home: Path = Path("/home/lulu")) -> list[Path]:
+    return [root / ".acquisition" / provider
+            for root in storage_roots(manifest, lulu_home)
+            for provider in ("torrents", "usenet")]
+
+
+def initialize_acquisition_directories(paths: list[Path], *, uid: int = 958,
+                                       gid: int = 958, mode: int = 0o770) -> None:
+    """Create the provider-owned leaves without changing their storage parents."""
+    for path in paths:
+        path.mkdir(parents=True, exist_ok=True)
+        os.chown(path, uid, gid)
+        path.chmod(mode)
+
+
+def provider_install_writable_paths(manifest: dict,
+                                    lulu_home: Path = Path("/home/lulu")) -> list[Path]:
+    """Systemd write exceptions are limited to acquisition parents in use."""
+    return sorted({path.parent for path in acquisition_directories(manifest, lulu_home)})
+
+
 def integration_paths(manifest: dict) -> list[Path]:
     owned = manifest["system_integration"]
     paths = [Path(p) for p in [*owned["systemd_files"], *owned["system_files"]]]
@@ -285,6 +325,13 @@ def install_integration(repo: Path, release: Path, manifest: dict) -> None:
         dest.parent.mkdir(parents=True, exist_ok=True)
         dest.write_text(text)
         dest.chmod(0o644)
+    # The provider installer may write only to each active Mudos acquisition
+    # subtree. Keep the target-specific exception explicit and ownership-scoped.
+    storage_dropin = Path("/etc/systemd/system/lulu-provider-install@.service.d/storage.conf")
+    storage_dropin.parent.mkdir(parents=True, exist_ok=True)
+    writable = [str(path) for path in provider_install_writable_paths(manifest)]
+    storage_dropin.write_text("[Service]\nReadWritePaths=" + " ".join(writable) + "\n")
+    storage_dropin.chmod(0o644)
     # Existing development refresh drop-ins override immutable service paths;
     # they are listed as Mudos-owned integration and must not survive install.
     for raw in manifest["system_integration"]["systemd_files"]:
@@ -327,6 +374,9 @@ def install_integration(repo: Path, release: Path, manifest: dict) -> None:
         path.mkdir(parents=True, exist_ok=True)
         os.chown(path, 958, 958)
         path.chmod(int(entry["mode"], 8))
+    # Downloader services mount these paths even before the optional provider
+    # is configured. Initialize only the Mudos-owned acquisition leaves.
+    initialize_acquisition_directories(acquisition_directories(manifest))
     template = release / "config/provider-services.toml.example"
     target = Path("/home/lulu/.config/lulu/provider-services.toml")
     if template.is_file():
@@ -437,6 +487,12 @@ def verify(repo: Path, manifest: dict) -> None:
         path = Path(raw)
         if path.is_file() and "/opt/lulu/dev-current" in path.read_text():
             raise InstallError(f"production service references development runtime: {path.name}")
+    for path in acquisition_directories(manifest):
+        if not path.is_dir():
+            raise InstallError(f"missing required acquisition directory: {path}")
+        stat = path.stat()
+        if (stat.st_uid, stat.st_gid, stat.st_mode & 0o777) != (958, 958, 0o770):
+            raise InstallError(f"incorrect owner/mode for acquisition directory: {path}")
     print(f"verified immutable production runtime {release}")
 
 

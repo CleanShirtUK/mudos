@@ -314,7 +314,14 @@ class PluginStoreCardBridge final : public QObject
     Q_OBJECT
     Q_PROPERTY(QVariantList cards READ cards NOTIFY cardsChanged)
 public:
-    explicit PluginStoreCardBridge(QObject *parent = nullptr) : QObject(parent) { reload(); }
+    explicit PluginStoreCardBridge(QObject *parent = nullptr) : QObject(parent)
+    {
+        reload();
+        auto *timer = new QTimer(this);
+        timer->setInterval(1500);
+        connect(timer, &QTimer::timeout, this, &PluginStoreCardBridge::reload);
+        timer->start();
+    }
 
     QVariantList cards() const { return cards_; }
 
@@ -326,6 +333,16 @@ private:
     {
         QVariantList next;
         const QString root = QString::fromUtf8(qgetenv("LULU_INSTALL_ROOT"));
+        const QString home = QDir::homePath();
+        QString configHome = QString::fromUtf8(qgetenv("XDG_CONFIG_HOME"));
+        if (configHome.isEmpty()) configHome = QDir(home).filePath(QStringLiteral(".config"));
+        QFile onboarding(QDir(configHome).filePath(QStringLiteral("lulu/onboarding.json")));
+        QSet<QString> selected;
+        if (onboarding.open(QIODevice::ReadOnly)) {
+            const auto state = QJsonDocument::fromJson(onboarding.readAll()).object();
+            for (const auto &item : state.value(QStringLiteral("selected_providers")).toArray())
+                selected.insert(item.toString());
+        }
         const QDir plugins(root.isEmpty() ? QDir::currentPath() + QStringLiteral("/config/plugins")
                                           : root + QStringLiteral("/config/plugins"));
         const QStringList pluginDirs = plugins.entryList(QDir::Dirs | QDir::NoDotAndDotDot, QDir::Name);
@@ -335,6 +352,8 @@ private:
             const QJsonDocument document = QJsonDocument::fromJson(file.readAll());
             if (!document.isObject()) continue;
             const QJsonObject object = document.object();
+            if (object.value(QStringLiteral("id")).toString() == QStringLiteral("steam")
+                && !selected.contains(QStringLiteral("steam"))) continue;
             if (object.value(QStringLiteral("id")).toString().isEmpty()
                 || object.value(QStringLiteral("label")).toString().isEmpty()
                 || object.value(QStringLiteral("url")).toString().isEmpty()) continue;
