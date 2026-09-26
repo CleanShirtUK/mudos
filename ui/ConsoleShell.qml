@@ -3157,6 +3157,7 @@ import QtQuick.Controls
             fullscreenWidth: root.expandedShellWidth
             fullscreenHeight: root.expandedShellHeight
              uiScale: root.uiScale
+             panelSurfaceColor: luluPalette.librarySurface
              verticalOffset: root.homeCategoryOffset(2)
              transparentOutsideMask: true
               surfaceVisible: root.space === "library" || root.space === "store"

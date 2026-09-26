@@ -238,6 +238,7 @@ Item {
 
             ListView {
                 id: jobsList
+                objectName: "downloadJobRows"
                 visible: !root.confirmationPending && root.jobs.length > 0
                 width: parent.width - 8 * root.uiScale
                 anchors.horizontalCenter: parent.horizontalCenter
@@ -255,18 +256,24 @@ Item {
                         root.selectedIndex = currentIndex
                 }
                 model: root.jobs
-                delegate: Rectangle {
-                    id: row
+                delegate: Item {
+                    id: rowFrame
                     required property int index
                     required property var modelData
-                    width: jobsList.width - 8 * root.uiScale
-                    x: 4 * root.uiScale
+                    width: jobsList.width
+                    height: row.height
+                    z: index === root.selectedIndex ? 1 : 0
+                    Rectangle {
+                    id: row
+                    objectName: "downloadJobRow"
+                    property var modelData: rowFrame.modelData
+                    x: 8 * root.uiScale
+                    width: rowFrame.width - 16 * root.uiScale
                     height: String(modelData.state) === "failed"
                         ? Math.max(88 * root.uiScale, failureText.y + failureText.implicitHeight + 14 * root.uiScale)
                         : 88 * root.uiScale
                     radius: 8 * root.uiScale
-                    z: index === root.selectedIndex ? 1 : 0
-                    property real selectionProgress: index === root.selectedIndex ? 1 : 0
+                    property real selectionProgress: rowFrame.index === root.selectedIndex ? 1 : 0
                     scale: 1 + 0.01 * selectionProgress
                     transformOrigin: Item.Center
                     readonly property color surfaceColor: root.mixColor(root.luluPalette.cardSurface,
@@ -285,7 +292,8 @@ Item {
                      Text { id: failureText; visible: String(modelData.state) === "failed"; x: 18 * root.uiScale; y: 57 * root.uiScale; text: root.failureReason(modelData); color: root.luluPalette.secondaryText; font.family: root.typography.interfaceFamily; font.pixelSize: root.typography.size("hint", 11); wrapMode: Text.Wrap; width: parent.width - 36 * root.uiScale }
                     Text { anchors.right: parent.right; anchors.rightMargin: 18 * root.uiScale; y: 10 * root.uiScale; text: modelData.progress !== null && modelData.progress !== undefined ? Math.round(Number(modelData.progress) * 100) + "%" : root.stateLabel(modelData); color: root.luluPalette.accent; font.family: root.typography.interfaceFamily; font.pixelSize: root.typography.size("hint", 13) }
                      Rectangle { visible: String(modelData.state) !== "failed"; x: 18 * root.uiScale; y: 61 * root.uiScale; width: parent.width - 36 * root.uiScale; height: 5 * root.uiScale; radius: height / 2; color: root.luluPalette.glassBorder; Rectangle { width: modelData.progress !== null && modelData.progress !== undefined ? parent.width * Math.max(0, Math.min(1, Number(modelData.progress))) : 0; height: parent.height; radius: parent.radius; color: root.luluPalette.accent } }
-                    Text { visible: String(modelData.state) !== "failed"; anchors.right: parent.right; anchors.rightMargin: 18 * root.uiScale; y: 70 * root.uiScale; text: modelData.downloaded_bytes !== null && modelData.total_bytes !== null ? root.formatBytes(modelData.downloaded_bytes) + " / " + root.formatBytes(modelData.total_bytes) : ""; color: root.luluPalette.secondaryText; font.family: root.typography.interfaceFamily; font.pixelSize: root.typography.size("hint", 11) }
+                     Text { visible: String(modelData.state) !== "failed"; anchors.right: parent.right; anchors.rightMargin: 18 * root.uiScale; y: 70 * root.uiScale; text: modelData.downloaded_bytes !== null && modelData.total_bytes !== null ? root.formatBytes(modelData.downloaded_bytes) + " / " + root.formatBytes(modelData.total_bytes) : ""; color: root.luluPalette.secondaryText; font.family: root.typography.interfaceFamily; font.pixelSize: root.typography.size("hint", 11) }
+                    }
                 }
             }
 

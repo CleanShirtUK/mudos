@@ -19,6 +19,8 @@ Item {
     property real verticalOffset: 0
     property bool surfaceVisible: false
     property bool transparentOutsideMask: true
+    property color panelSurfaceColor: "transparent"
+    property real panelSurfaceOpacity: 0.40
 
     readonly property real surfaceX: homeX + (fullscreenX - homeX) * progress
     readonly property real surfaceY: homeY + (fullscreenY - homeY) * progress
@@ -65,5 +67,14 @@ Item {
          transparentOutsideMask: root.transparentOutsideMask
          cornerRadius: 16 * root.uiScale + 12 * root.uiScale * root.progress
          bevelWidthPx: 3 * root.uiScale + 3 * root.uiScale * root.progress
+    }
+
+    // Match the list/detail surface tint only as this shared backing expands;
+    // the established uncoloured Home card remains unchanged at progress 0.
+    Rectangle {
+        anchors.fill: parent
+        radius: spatialSurface.cornerRadius
+        color: root.panelSurfaceColor
+        opacity: root.panelSurfaceOpacity * root.progress
     }
 }

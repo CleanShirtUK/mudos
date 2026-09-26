@@ -348,6 +348,8 @@ Item {
                            root.luluPalette.librarySurface.g,
                            root.luluPalette.librarySurface.b,
                            root.internalSurfaceOpacity)
+            border.color: root.luluPalette.libraryBorder
+            border.width: root.uiScale
             ListView {
                 id: gameRows
                 objectName: "libraryGameRows"
@@ -457,6 +459,8 @@ Item {
                            root.luluPalette.librarySurface.g,
                            root.luluPalette.librarySurface.b,
                            root.internalSurfaceOpacity)
+            border.color: root.luluPalette.libraryBorder
+            border.width: root.uiScale
             clip: true
 
             readonly property real inset: root.detailInset
