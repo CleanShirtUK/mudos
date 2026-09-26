@@ -37,12 +37,62 @@ TestCase {
         compare(strip.width, initial)
         compare(strip.x + strip.width, width)
         strip.controllers = [{index: 1, batteryKind: "percent", battery: 80,
-                              batteryPercentage: 80}]
-        wait(50)
+                              batteryPercentage: 80, identity: "fixture-pad"}]
+        wait(260)
+        compare(strip.presentedControllerCount, 1)
         verify(strip.width > initial)
         compare(strip.x + strip.width, width)
+        var expanded = strip.width
         strip.controllers = []
         wait(50)
+        verify(strip.width < expanded)
+        verify(strip.width > initial)
+        var leaving = findChild(strip, "controllerSlot")
+        verify(leaving !== null)
+        verify(leaving.opacity < 1)
+        wait(260)
+        compare(strip.presentedControllerCount, 0)
         compare(strip.width, initial)
+        compare(strip.x + strip.width, width)
+    }
+
+    function test_controller_reconnect_before_exit_finishes_preserves_single_slot() {
+        strip.controllers = [{index: 1, identity: "same-pad", batteryKind: "unknown"}]
+        wait(260)
+        compare(strip.presentedControllerCount, 1)
+        var connectedWidth = strip.width
+        strip.controllers = []
+        wait(70)
+        strip.controllers = [{index: 1, identity: "same-pad", batteryKind: "unknown"}]
+        wait(280)
+        compare(strip.presentedControllerCount, 1)
+        compare(strip.width, connectedWidth)
+        compare(strip.x + strip.width, width)
+        strip.controllers = []
+        wait(300)
+    }
+
+    function test_controller_update_and_staggered_disconnection() {
+        strip.controllers = [
+            {index: 1, identity: "pad-one", batteryKind: "unknown"},
+            {index: 2, identity: "pad-two", batteryKind: "unknown"}
+        ]
+        wait(260)
+        compare(strip.presentedControllerCount, 2)
+        var twoPads = strip.width
+        strip.controllers = [
+            {index: 1, identity: "pad-one", batteryKind: "percent",
+             batteryPercentage: 50, battery: "50%"},
+            {index: 2, identity: "pad-two", batteryKind: "unknown"}
+        ]
+        wait(260)
+        verify(strip.width > twoPads)
+        strip.controllers = [{index: 2, identity: "pad-two", batteryKind: "unknown"}]
+        wait(70)
+        compare(strip.presentedControllerCount, 2)
+        strip.controllers = []
+        wait(300)
+        compare(strip.presentedControllerCount, 0)
+        compare(strip.x + strip.width, width)
     }
 }
