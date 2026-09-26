@@ -14,6 +14,7 @@ import os
 import pwd
 from pathlib import Path
 import secrets
+import shutil
 import subprocess
 import tempfile
 import time
@@ -169,6 +170,8 @@ def _status_label(value: str) -> tuple[str, str]:
         return "Connected", "success"
     if normalized == "healthy":
         return "Healthy", "success"
+    if normalized == "available":
+        return "Available", "success"
     if normalized == "active":
         return "Running", "success"
     if normalized == "authenticated":
@@ -181,6 +184,8 @@ def _status_label(value: str) -> tuple[str, str]:
         return "Not configured", "muted"
     if normalized == "inactive":
         return "Stopped", "warning"
+    if normalized == "missing":
+        return "Not installed", "warning"
     if normalized == "unhealthy":
         return "Needs attention", "warning"
     return value.replace("_", " ").title(), "muted"
@@ -891,6 +896,23 @@ class AdminApp:
                 return "healthy" if response.status == 200 else f"HTTP {response.status}"
         except (OSError, urllib.error.URLError, TimeoutError):
             return "unhealthy"
+
+    @staticmethod
+    def plugin_service_status(service: object) -> str:
+        # The Flatpak contribution describes a local command provider, not a
+        # daemon. A running/stopped systemd badge would be misleading. Do not
+        # turn arbitrary plugin health IDs or URLs into commands/network calls.
+        if getattr(service, "service_id", "") != "flatpak" or getattr(service, "health", "") != "flatpak":
+            return "unknown"
+        executable = shutil.which("flatpak")
+        if not executable:
+            return "missing"
+        try:
+            result = subprocess.run([executable, "--version"], capture_output=True,
+                                    text=True, timeout=2, check=False)
+            return "available" if result.returncode == 0 else "unknown"
+        except (OSError, subprocess.TimeoutExpired):
+            return "unknown"
 
     def test_provider(self, provider_id: str) -> tuple[bool, str]:
         config = self.config.provider(provider_id)
@@ -1880,7 +1902,7 @@ load();setInterval(load,10000);
                         if service.url else "")
                 generic_rows.append(
                     f'<div class="service-row"><div><div class="card-head"><h3>{html.escape(service.name)}</h3>'
-                    f'{_badge("unknown")}</div><p>{html.escape(service.description)}</p></div>{link}</div>')
+                    f'{_badge(APP.plugin_service_status(service))}</div><p>{html.escape(service.description)}</p></div>{link}</div>')
         return rows + "".join(generic_rows)
 
     def _services(self) -> None:

@@ -112,6 +112,39 @@ var fetch=async function(path,options){calls.push(path);let body=options&&option
         self.assertEqual(_status_label("healthy"), ("Healthy", "success"))
         self.assertEqual(_status_label("active"), ("Running", "success"))
         self.assertEqual(_status_label("inactive"), ("Stopped", "warning"))
+        self.assertEqual(_status_label("available"), ("Available", "success"))
+        self.assertEqual(_status_label("missing"), ("Not installed", "warning"))
+
+    def test_flatpak_contribution_probes_only_its_allowlisted_local_command(self):
+        flatpak = ServiceContribution("flatpak", "Flatpak", "Local apps", health="flatpak")
+        untrusted = ServiceContribution("fixture", "External", "Unprobed", health="flatpak")
+        with patch("lulu.admin_web.shutil.which", return_value="/usr/bin/flatpak") as which, \
+                patch("lulu.admin_web.subprocess.run", return_value=type(
+                    "Result", (), {"returncode": 0})()) as run:
+            self.assertEqual(APP.plugin_service_status(flatpak), "available")
+            self.assertEqual(APP.plugin_service_status(untrusted), "unknown")
+        which.assert_called_once_with("flatpak")
+        run.assert_called_once()
+        self.assertEqual(run.call_args.args[0], ["/usr/bin/flatpak", "--version"])
+        with patch("lulu.admin_web.shutil.which", return_value=None):
+            self.assertEqual(APP.plugin_service_status(flatpak), "missing")
+        with patch("lulu.admin_web.shutil.which", return_value="/usr/bin/flatpak"), \
+                patch("lulu.admin_web.subprocess.run", return_value=type(
+                    "Result", (), {"returncode": 1})()):
+            self.assertEqual(APP.plugin_service_status(flatpak), "unknown")
+
+        handler = object.__new__(Handler)
+        handler.headers = {"Host": "mudos.local"}
+        component = ComponentDescriptor("flatpak", "Flatpak", "Test", "plugin", services=(flatpak,))
+        with patch.object(APP, "service_state", return_value="inactive"), \
+                patch.object(APP, "service_health", return_value="unhealthy"), \
+                patch("lulu.admin_web.shutil.which", return_value="/usr/bin/flatpak"), \
+                patch("lulu.admin_web.subprocess.run", return_value=type(
+                    "Result", (), {"returncode": 0})()), \
+                patch.object(APP.components, "all", return_value=(component,)):
+            page = handler._service_rows()
+        self.assertIn("Flatpak", page)
+        self.assertIn("Available", page.split("Flatpak", 1)[1])
 
     def test_plugin_service_without_a_live_status_is_not_reported_active(self):
         handler = object.__new__(Handler)
