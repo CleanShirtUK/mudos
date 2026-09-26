@@ -414,6 +414,60 @@ var fetch=async function(path,options){let body=options&&options.body?JSON.parse
         evaluate(multiple, "reviewSetup()")
         self.assertEqual(evaluate(multiple, "String(step)"), "3")
 
+    def test_setup_retry_preserves_unsaved_fields_after_invalid_url_and_save_failure(self):
+        import gi
+        gi.require_version("JavaScriptCore", "4.1")
+        from gi.repository import JavaScriptCore
+
+        handler = object.__new__(Handler)
+        with patch.object(Handler, "_token", return_value=""), \
+                patch.object(Handler, "_send") as send, \
+                patch("lulu.admin_web.APP.session", return_value=""):
+            handler._setup_page(False)
+        script = re.search(r"<script>(.*?)</script>", send.call_args.args[0].decode(), re.S).group(1)
+        fixture = """
+var calls=[],saveFails=true,fields=[];
+function newFields(){let error={textContent:''};fields=[
+ {dataset:{field:'url'},type:'url',value:'',setAttribute:()=>{},
+ closest:()=>({querySelector:()=>error})},
+ {dataset:{field:'api_key'},type:'password',value:'',setAttribute:()=>{}}];}
+var content={_html:'',get innerHTML(){return this._html},set innerHTML(value){this._html=value;newFields()},querySelector:()=>null};
+var noticeElement={textContent:''},fixture={providers:[],integrations:[{id:'providers.romm',
+ name:'RomM',help:'#',fields:[{name:'url',label:'URL',type:'url',required:true},
+ {name:'api_key',label:'Token',type:'secret',required:true}],configured:false}],setup_files:[],
+ onboarding:{selected_providers:[],selected_integrations:['providers.romm'],validation:{}}};
+var document={querySelector:s=>s==='#content'?content:s==='#notice'?noticeElement
+ :s==='[data-integration="providers.romm"][data-field="url"]'?fields[0]:null,
+ querySelectorAll:()=>fields};
+var window={location:{assign:()=>{}}},CSS={escape:x=>x};
+var setTimeout=()=>0,clearInterval=()=>{},setInterval=()=>0;
+var fetch=async function(path,options){calls.push(path);let failure=path==='/api/setup/credentials'&&saveFails;
+ let value=failure?{error:'Save refused'}:path==='/api/setup/test'?{ok:true,message:'Ready'}:fixture;
+ return {ok:!failure,headers:{get:()=> 'application/json'},json:async()=>value};};
+"""
+        engine = JavaScriptCore.Context.new()
+        engine.evaluate(fixture, -1)
+        engine.evaluate(script, -1)
+
+        def value(code):
+            result = engine.evaluate(code, -1)
+            self.assertIsNone(engine.get_exception(), code)
+            return result.to_string()
+
+        value("step=2;render();fields[0].value='romm.local';fields[1].value='unsaved-token';"
+              "testAndSave('providers.romm')")
+        self.assertIn("Retry", value("content.innerHTML"))
+        self.assertEqual(value("fields[0].value"), "romm.local")
+        self.assertEqual(value("fields[1].value"), "unsaved-token")
+        self.assertEqual(value("String(calls.includes('/api/setup/credentials'))"), "false")
+        value("fields[0].value='https://romm.local';testAndSave('providers.romm')")
+        self.assertEqual(value("fields[0].value"), "https://romm.local")
+        self.assertEqual(value("fields[1].value"), "unsaved-token")
+        self.assertIn("Save refused", value("content.innerHTML"))
+        value("saveFails=false;testAndSave('providers.romm')")
+        self.assertIn("Review Setup", value("content.innerHTML"))
+        self.assertEqual(value("fields[1].value"), "")
+
     def test_setup_shows_provider_install_progress_with_real_completed_counts(self):
         import gi
         gi.require_version("JavaScriptCore", "4.1")
