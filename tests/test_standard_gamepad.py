@@ -20,8 +20,8 @@ class StandardGamepadTests(unittest.TestCase):
         assert spec.loader is not None
         spec.loader.exec_module(module)
         content = module.render("event8")
-        self.assertIn("handler: event*", content)
-        self.assertIn("dev_node: /dev/input/event8", content)
+        self.assertIn("udev:\n      dev_node: /dev/input/event8", content)
+        self.assertNotIn("handler: event*", content)
         self.assertNotIn("phys_path:", content)
         self.assertNotIn("vendor_id", content)
         self.assertNotIn("product_id", content)
@@ -36,7 +36,7 @@ class StandardGamepadTests(unittest.TestCase):
         assert spec.loader is not None
         spec.loader.exec_module(module)
         content = module.render("event13")
-        self.assertIn("dev_node: /dev/input/event13", content)
+        self.assertIn("udev:\n      dev_node: /dev/input/event13", content)
         self.assertNotIn("phys_path:", content)
         self.assertNotIn("vendor_id", content)
         self.assertNotIn("product_id", content)

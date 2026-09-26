@@ -46,19 +46,21 @@
   axes and gamepad keys, so source discovery/capability classification works.
   Its event node is hidden while claimed. The hotplug journal then reports
   `Error adding device 'Xbox Wireless Controller (event9)': Device or resource
-  busy`, and the managed composite tears down. Current `/etc` generated
-  profiles also use `/dev/eventN` `dev_node` paths rather than the actual
-  `/dev/input/eventN` nodes.
+  busy`, and the managed composite tears down. The generated profile put
+  `dev_node` under `evdev` (which the installed schema does not support) and
+  used wildcard `handler: event*`; after loading it, InputPlumber created
+  composites for unrelated event0-5 nodes as well as the controllers.
 - Identified a current-source provisioning race: profiles enable InputPlumber
-  `auto_manage`, but `_activate` also calls `CreateCompositeDevice` in a retry
-  loop for the same event node and explicitly stops composites that are not in
-  its snapshot. InputPlumber already auto-creates those composites; duplicate
-  opens explain the observed EBUSY/teardown and interrupt hotplug ownership.
-  Corrected the source helper to render `/dev/input/eventN` and wait for
-  InputPlumber's auto-managed source without creating or stopping composites.
-  Added a narrow `dev-runtime.sh controller-validation` path to run this
-  committed generic capability-based reconciler without changing mapping
-  profiles or restarting InputPlumber itself.
+  `auto_manage`, but `_activate` also called `CreateCompositeDevice` in a retry
+  loop for the same event node and explicitly stopped composites outside its
+  snapshot. InputPlumber already auto-creates composites; duplicate opens
+  explain the observed EBUSY/teardown and interrupt hotplug ownership. Removed
+  helper-side create/stop operations. The first runtime experiment exposed a
+  second config defect: `dev_node` is a Udev selector, not an Evdev property,
+  so the wildcard matched unrelated event nodes. Updated the generated generic
+  profiles to use the exact capability-selected `/dev/input/eventN` in
+  `udev.dev_node`. Added a narrow `dev-runtime.sh controller-validation` path
+  to run the committed reconciler without changing mapping profiles.
 - Mudos shell SDL logs currently show one recognized gamepad, the Xbox 360
   receiver; they do not show the Bluetooth Series controller. Sessiond's
   controller snapshot is stale/provisional (`source:event8`, one connected
@@ -68,12 +70,14 @@
   Sessiond's controller snapshot. Thus the immediate break is InputPlumber
   composite provisioning, with stale inventory as its downstream symptom.
 - Focused tests for generic gamepad profile generation, auto-managed lifecycle,
-  validation workflow, and provisioning: **28 passed**. The runtime correction
-  has not yet been activated or physically verified. Controller power-cycle,
-  simultaneous-controller coexistence, live inventory/status changes, and
-  navigation using the Series controller remain pending. Do not proceed to
-  release-manifest investigation or candidate creation until those physical
-  checks pass.
+  validation workflow, and provisioning: **28 passed**. The first development
+  runtime experiment loaded eight composites, including unrelated keyboard and
+  audio events; this was stopped as a validation failure and the selector
+  schema defect was corrected in source. The corrected exact-Udev-selector
+  config has not yet been activated. Controller power-cycle, simultaneous
+  controller coexistence, live inventory/status changes, and navigation using
+  the Series controller remain pending. Do not proceed to release-manifest
+  investigation or candidate creation until those physical checks pass.
 
 ## Bluetooth Settings implementation and hardware probe — 2026-09-26
 
