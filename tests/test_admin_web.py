@@ -1,6 +1,8 @@
 import tempfile
 import unittest
 import re
+import io
+import urllib.error
 from pathlib import Path
 from unittest.mock import patch
 
@@ -20,6 +22,44 @@ class FakeSecrets:
 
 
 class AdminWebTests(unittest.TestCase):
+    def test_questarr_account_probe_and_setup_do_not_conflate_health_with_readiness(self):
+        app = AdminApp()
+        with patch("lulu.admin_web.urllib.request.urlopen", return_value=io.BytesIO(b'{"hasUsers":false}')):
+            self.assertEqual(app.questarr_account_status(), "missing")
+        with patch("lulu.admin_web.urllib.request.urlopen", return_value=io.BytesIO(b'{"hasUsers":true}')):
+            self.assertEqual(app.questarr_account_status(), "present")
+        with patch("lulu.admin_web.urllib.request.urlopen", return_value=io.BytesIO(b'{"hasUsers":"false"}')):
+            self.assertEqual(app.questarr_account_status(), "unknown")
+        with patch("lulu.admin_web.urllib.request.urlopen", side_effect=urllib.error.URLError("offline")):
+            self.assertEqual(app.questarr_account_status(), "unknown")
+        with patch.object(app, "service_state", return_value="active"), \
+                patch.object(app, "service_health", return_value="healthy"), \
+                patch.object(app, "questarr_account_status", return_value="missing"), \
+                patch.object(app, "test_provider", wraps=app.test_provider) as validate:
+            ok, reason = app.test_provider("questarr")
+            self.assertFalse(ok)
+            self.assertIn("first-run account", reason)
+            self.assertEqual(validate.call_count, 1)  # no backend probe before account setup
+        with patch.object(app, "service_state", return_value="active"), \
+                patch.object(app, "service_health", return_value="healthy"), \
+                patch.object(app, "questarr_account_status", return_value="present"):
+            # An account and a healthy backend are still not evidence of an
+            # authenticated Questarr setup or initial reconciliation.
+            original = app.test_provider
+            def backend(provider):
+                return (True, "Backend healthy") if provider.startswith("providers.") else original(provider)
+            with patch.object(app, "test_provider", side_effect=backend):
+                ok, reason = app.test_provider("questarr")
+            self.assertFalse(ok)
+            self.assertIn("verify authenticated Questarr setup", reason)
+        with patch("lulu.admin_web.provider_manifest", return_value=[dict(
+                id="questarr", name="Questarr", installed=True)]), \
+                patch("lulu.admin_web.onboarding_state", return_value={"selected_providers": ["questarr"]}), \
+                patch.object(app, "test_provider", return_value=(False, "Create the Questarr first-run account")):
+            row = app.setup_provider_states()[0]
+        self.assertEqual(row["status"], "configuration_required")
+        self.assertIn("first-run account", row["status_message"])
+
     def test_setup_epic_gog_status_exposes_verified_authentication(self):
         app = AdminApp()
         rows = [dict(id=id, name=name, installed=True) for id, name in

@@ -79,7 +79,8 @@ Append findings in order. Do not repair defects during the rehearsal.
 
 18. **OOBE-018 — Questarr is not operational after setup**
     - Observed: Questarr is present conceptually in setup but not operational after onboarding.
-    - Follow-up chain: selection → installation → service/container readiness → configuration → acquisition backend connectivity → catalogue/storefront behavior. Do not repair during RomM-only correction.
+   - Follow-up chain: selection → installation → service/container readiness → configuration → acquisition backend connectivity → catalogue/storefront behavior. Do not repair during RomM-only correction.
+   - Readiness follow-up: A running Questarr service plus a healthy local downloader no longer asserts Ready. The public read-only first-run status reports whether an upstream account exists; currently it reports no users on Lulu. Setup now asks for the upstream account rather than calling the integration Ready. Authenticated downloader/indexer configuration and initial reconciliation still require operator setup and separate verification; no credentials or Questarr data were changed.
 
 19. **OOBE-019 — Freshly configured RomM does not contribute Installable content**
     - Observed: RomM appeared configured in setup/review, but Home had no content in Installable.

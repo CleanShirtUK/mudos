@@ -307,8 +307,10 @@ class AdminApp:
             provider_id = config_ids[item["id"]]
             metadata = dict(item)
             if provider_id == "questarr":
-                metadata["configured"] = self.service_state("lulu-questarr.service") == "active"
-                metadata["enabled"] = metadata["configured"]
+                metadata["enabled"] = self.service_state("lulu-questarr.service") == "active"
+                # The public account probe cannot verify authenticated
+                # downloader/indexer configuration.
+                metadata["configured"] = False
             elif provider_id == "providers.romm":
                 from .plugins.romm import RommConfig
                 from .plugins.romm.readiness import RommReadinessStore
@@ -403,8 +405,10 @@ class AdminApp:
                                               "authenticated": bool(auth.get("authenticated")),
                                               "methods": auth.get("methods", [])}
             elif provider_id == "questarr":
-                ok, message = self.test_provider("questarr")
-                row["status"] = "ready" if ok else "configuration_required"
+                _, message = self.test_provider("questarr")
+                # Health, an account, and a backend do not prove Questarr's
+                # authenticated configuration or initial reconciliation.
+                row["status"] = "configuration_required"
                 row["status_message"] = message
             elif provider_id in {"torrent", "usenet"}:
                 target = "providers.torrent" if provider_id == "torrent" else "providers.usenet"
@@ -898,6 +902,19 @@ class AdminApp:
             return "unhealthy"
 
     @staticmethod
+    def questarr_account_status() -> str:
+        # Upstream's public first-run status is not evidence of an authenticated
+        # API session, downloader configuration, or a completed reconciliation.
+        try:
+            with urllib.request.urlopen("http://127.0.0.1:5000/api/auth/status", timeout=2) as response:
+                value = json.loads(response.read(4096))
+            if isinstance(value, dict) and type(value.get("hasUsers")) is bool:
+                return "present" if value["hasUsers"] else "missing"
+        except (OSError, urllib.error.URLError, TimeoutError, ValueError):
+            pass
+        return "unknown"
+
+    @staticmethod
     def plugin_service_status(service: object) -> str:
         # The Flatpak contribution describes a local command provider, not a
         # daemon. A running/stopped systemd badge would be misleading. Do not
@@ -956,10 +973,16 @@ class AdminApp:
             questarr_service = next((item for item in SERVICES if item[0] == "questarr"), None)
             if questarr_service is None or self.service_health(questarr_service) != "healthy":
                 return False, "Questarr API health check failed"
+            account = self.questarr_account_status()
+            if account == "missing":
+                return False, "Create the Questarr first-run account in its UI before configuring downloads"
+            if account == "unknown":
+                return False, "Questarr account setup status is unavailable"
             backends = [self.test_provider("providers.torrent"), self.test_provider("providers.usenet")]
             if not any(ok for ok, _ in backends):
                 return False, "Questarr is running but no Transmission or NZBGet backend is ready"
-            return True, "Questarr and at least one acquisition backend are healthy"
+            return False, ("Questarr account exists and an acquisition backend is healthy; "
+                           "verify authenticated Questarr setup and initial reconciliation in its UI")
         if provider_id == "metadata.igdb":
             try:
                 from .igdb import IGDBClient, IGDBError
