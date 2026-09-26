@@ -39,6 +39,16 @@ def test_transmission_admin_config_unit_and_polkit_rule_are_installed_and_purge_
     assert '"lulu-transmission-config.service")' in installer_source
 
 
+def test_lulu_target_is_installable_and_installer_verifies_boot_enablement():
+    target = (ROOT / "packaging/lulu.target").read_text()
+    installer_source = (ROOT / "scripts/install_mudos.py").read_text()
+    ownership = manifest()
+    assert "[Install]\nWantedBy=multi-user.target" in target
+    assert "/etc/systemd/system/multi-user.target.wants/lulu.target" in ownership["system_integration"]["systemd_files"]
+    assert 'run(["systemctl", "enable", unit])' in installer_source
+    assert "Lulu appliance target is not enabled for boot" in installer_source
+
+
 @pytest.mark.parametrize("bad", ["relative/path", "/../../etc", "/"])
 def test_manifest_rejects_unsafe_mutable_paths(tmp_path, bad):
     data = json.loads((ROOT / "packaging/mudos-ownership.json").read_text())

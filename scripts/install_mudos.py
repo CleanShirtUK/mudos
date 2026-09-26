@@ -540,6 +540,9 @@ def verify(repo: Path, manifest: dict) -> None:
         if not installed.is_file() or not packaged.is_file() \
                 or installed.read_bytes() != packaged.read_bytes():
             raise InstallError(f"production service does not match the selected release: {unit}")
+    target_link = Path("/etc/systemd/system/multi-user.target.wants/lulu.target")
+    if not target_link.is_symlink() or os.readlink(target_link) != "/etc/systemd/system/lulu.target":
+        raise InstallError("Lulu appliance target is not enabled for boot")
     for raw in manifest["system_integration"]["systemd_files"]:
         path = Path(raw)
         if path.is_file() and "/opt/lulu/dev-current" in path.read_text():
