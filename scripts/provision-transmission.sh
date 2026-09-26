@@ -1,5 +1,6 @@
 #!/bin/sh
 set -eu
+export PYTHONDONTWRITEBYTECODE=1
 
 # Provision the Mudos-owned Transmission daemon.  This script is intentionally
 # idempotent: it never replaces an existing daemon settings.json or provider

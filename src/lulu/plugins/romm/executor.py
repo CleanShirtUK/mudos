@@ -222,10 +222,11 @@ class RommExecutor:
         cues = list(dict.fromkeys(cues))
         if len(cues) > 1:
             title = "".join(character if character.isalnum() or character in " -_" else "_"
-                            for character in game.title).strip(" ._")
-            playlist = cues[0].parent / f"{title or 'PlayStation Set'}.m3u"
+                             for character in game.title).strip(" ._")
+            platform_root = Path(os.environ.get("LULU_ROM_ROOT", str(ROM_ROOT))).expanduser() / "psx"
+            playlist = platform_root / f"{title or 'PlayStation Set'} [{job.job_id[:8]}].m3u"
             playlist.write_text("\n".join(
-                path.relative_to(playlist.parent).as_posix() for path in cues) + "\n")
+                path.relative_to(platform_root).as_posix() for path in cues) + "\n")
         await reporter.progress(1.0, stage="finalizing")
         await reporter.state(JobState.FINALIZING, stage="finalizing")
 

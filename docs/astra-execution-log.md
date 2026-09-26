@@ -148,6 +148,19 @@
 - Continue the remaining non-physical lifecycle audits and the pre-candidate
   gate. Do not begin purge/reinstall until a new clean-HEAD candidate passes
   complete manifest/provenance verification.
+- A further source audit traced root-owned Python imports that can run outside
+  long-lived systemd services (notably dev-runtime refresh and Transmission
+  provisioning). Those shell entry points now also export
+  `PYTHONDONTWRITEBYTECODE=1`, closing the remaining obvious source-level
+  writers of caches under `/opt/lulu/current/lib`.
+- PS1 vertical audit found and fixed a real multi-disc ZIP failure: when CUEs
+  lived under separate extracted disc directories, playlist generation tried
+  to relativize every cue against the first cue's directory and failed the job.
+  The M3U is now emitted at the canonical PS1 platform root and references each
+  cue from that common root. A two-disc/two-track ZIP fixture exercises mixed
+  case CUE/BIN suffixes, spaces, apostrophes, nested extraction, payload
+  preservation, generated playlist, and launchable local Library projection.
+  `tests/test_romm_executor.py`: **12 passed** after the correction.
 
 ## Bluetooth Settings implementation and hardware probe — 2026-09-26
 

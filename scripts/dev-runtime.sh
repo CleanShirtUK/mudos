@@ -1,5 +1,6 @@
 #!/bin/sh
 set -eu
+export PYTHONDONTWRITEBYTECODE=1
 
 # Deliberately separate from scripts/release.py: this runtime is mutable,
 # dirty-source-capable, and never a release or rollback authority.

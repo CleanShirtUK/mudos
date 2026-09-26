@@ -23,6 +23,10 @@ class ProvisioningTests(unittest.TestCase):
             with self.subTest(unit=unit):
                 content = (ROOT / "packaging" / unit).read_text()
                 self.assertIn("Environment=PYTHONDONTWRITEBYTECODE=1", content)
+        for script in ("dev-runtime.sh", "provision-transmission.sh"):
+            with self.subTest(script=script):
+                content = (ROOT / "scripts" / script).read_text()
+                self.assertIn("PYTHONDONTWRITEBYTECODE=1", content)
 
     def test_shell_provisions_animated_webp_image_plugin(self) -> None:
         provisioning = (ROOT / "scripts" / "provision-appliance-services.sh").read_text()

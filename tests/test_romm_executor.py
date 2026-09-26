@@ -56,7 +56,8 @@ class RommExecutorTests(unittest.TestCase):
                         patch("lulu.plugins.romm.executor.ensure_storage"):
                     job = manager.submit("romm", "romm:7", "Fixture Disc")
                     await manager._tasks[job.job_id]
-                self.assertEqual(manager.jobs[job.job_id].state, JobState.COMPLETED)
+                self.assertEqual(manager.jobs[job.job_id].state, JobState.COMPLETED,
+                                 manager.jobs[job.job_id].error)
                 disc = root / "psx" / "romm-7"
                 self.assertEqual((disc / "track 1.bin").read_bytes(), b"one")
                 self.assertEqual((disc / "track 2.bin").read_bytes(), b"two")
@@ -103,6 +104,58 @@ class RommExecutorTests(unittest.TestCase):
                 installed = LocalContentProvider(runtime_paths={"psx": runtime}).list_installed(root)
                 self.assertEqual(len(installed), 1)
                 self.assertEqual(Path(installed[0].content_path), disc / "game.cue")
+                self.assertTrue(installed[0].launchable)
+
+        asyncio.run(exercise())
+
+    def test_ps1_zip_multi_disc_tracks_with_quoted_names_generates_launchable_playlist(self) -> None:
+        async def exercise() -> None:
+            with tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                archive_bytes = BytesIO()
+                with zipfile.ZipFile(archive_bytes, "w") as archive:
+                    archive.writestr("Disc One/O'Brien.cue",
+                                     'FILE "O’Brien track 1.BIN" BINARY\n'
+                                     'FILE "O’Brien track 2.bin" BINARY\n')
+                    archive.writestr("Disc One/O’Brien track 1.BIN", b"one-a")
+                    archive.writestr("Disc One/O’Brien track 2.bin", b"one-b")
+                    archive.writestr("Disc Two/Second Disc.CUE",
+                                     'FILE "Second Disc Track 1.bin" BINARY\n'
+                                     'FILE "Second Disc Track 2.BIN" BINARY\n')
+                    archive.writestr("Disc Two/Second Disc Track 1.bin", b"two-a")
+                    archive.writestr("Disc Two/Second Disc Track 2.BIN", b"two-b")
+                payload = archive_bytes.getvalue()
+
+                class Client(FakeRomm):
+                    def __init__(self):
+                        self.game = RommGame(18, "O'Brien Disc Set", 7, "psx", "PlayStation",
+                                             "Disc Set.zip", ".zip", len(payload), "", False,
+                                             (RommFile(1801, "Disc Set.zip", len(payload)),))
+
+                    def open_file_stream(self, _romm_file, offset=0):
+                        return BytesIO(payload[offset:])
+
+                executor = RommExecutor(Client(), chunk_size=32)
+                manager = JobManager()
+                manager.register_executor("romm", executor, limit=1)
+                with patch.dict("os.environ", {"LULU_ROM_ROOT": str(root)}), \
+                        patch("lulu.plugins.romm.executor.ensure_storage"):
+                    job = manager.submit("romm", "romm:18", "O'Brien Multi Disc")
+                    await manager._tasks[job.job_id]
+                self.assertEqual(manager.jobs[job.job_id].state, JobState.COMPLETED,
+                                 manager.jobs[job.job_id].error)
+                disc_root = root / "psx" / "romm-18"
+                self.assertEqual((disc_root / "Disc One" / "O’Brien track 1.BIN").read_bytes(), b"one-a")
+                self.assertEqual((disc_root / "Disc Two" / "Second Disc Track 2.BIN").read_bytes(), b"two-b")
+                playlist = root / "psx" / f"O_Brien Disc Set [{job.job_id[:8]}].m3u"
+                self.assertEqual(playlist.read_text().splitlines(), [
+                    "romm-18/Disc One/O'Brien.cue", "romm-18/Disc Two/Second Disc.CUE"])
+                runtime = root / "retroarch"
+                runtime.touch()
+                from lulu.local_content import LocalContentProvider
+                installed = LocalContentProvider(runtime_paths={"psx": runtime}).list_installed(root)
+                self.assertEqual(len(installed), 1)
+                self.assertEqual(Path(installed[0].content_path), playlist)
                 self.assertTrue(installed[0].launchable)
 
         asyncio.run(exercise())
