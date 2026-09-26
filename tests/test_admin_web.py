@@ -33,16 +33,30 @@ class AdminWebTests(unittest.TestCase):
         handler.headers = {"Host": "mudos.local"}
         component = ComponentDescriptor("fixture", "Fixture", "Test", "plugin",
             services=(ServiceContribution("fixture-service", "Fixture Service", "Example"),))
-        with patch.object(Handler, "_send") as send, \
-                patch.object(APP, "service_state", return_value="inactive"), \
+        with patch.object(APP, "service_state", return_value="inactive"), \
                 patch.object(APP, "service_health", return_value="unhealthy"), \
                 patch.object(APP.components, "all", return_value=(component,)):
-            handler._services()
-        page = send.call_args.args[0].decode()
+            page = handler._service_rows()
         self.assertIn("Fixture Service", page)
         self.assertIn("Unknown", page.split("Fixture Service", 1)[1])
         self.assertIn("Stopped", page)
         self.assertIn("Needs attention", page)
+
+    def test_integrations_and_services_share_one_page_and_legacy_route_redirects(self):
+        handler = object.__new__(Handler)
+        handler.path = "/integrations"
+        with patch.object(APP.config, "provider", return_value=type("Config", (), {"status": "configured"})()), \
+                patch.object(Handler, "_service_rows", return_value="SERVICE_ROWS"), \
+                patch.object(Handler, "_send") as send:
+            handler._providers()
+        page = send.call_args.args[0].decode()
+        self.assertIn('id="services"', page)
+        self.assertIn("SERVICE_ROWS", page)
+        self.assertIn('href="/integrations"', page)
+        self.assertNotIn('href="/services"', page)
+        with patch.object(Handler, "_redirect") as redirect:
+            handler._services()
+        redirect.assert_called_once_with("/integrations#services")
 
     def test_epic_setup_auth_returns_actionable_error_for_missing_legendary_runtime(self):
         app = AdminApp()
@@ -360,7 +374,7 @@ class AdminWebTests(unittest.TestCase):
         page = _page("Overview", '<h1>Overview</h1>', subtitle="A clear view", active="overview").decode()
         self.assertIn("Overview", page)
         self.assertIn("Integrations", page)
-        self.assertIn("Services", page)
+        self.assertNotIn('href="/services"', page)
         self.assertIn("System", page)
 
     def test_invalid_login_is_rendered_not_connection_close(self):

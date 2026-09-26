@@ -231,7 +231,6 @@ def _page(title: str, body: str, *, subtitle: str = "", active: str = "") -> byt
     nav = "".join(f'<a class="{"active" if active == key else ""}" href="{href}">{label}</a>'
                    for key, href, label in (("overview", "/", "Overview"),
                                              ("integrations", "/integrations", "Integrations"),
-                                             ("services", "/services", "Services"),
                                              ("system", "/system", "System")))
     return ("<!doctype html><html lang=en><head><meta charset=utf-8><meta name=viewport content='width=device-width, initial-scale=1'>"
             "<meta name=color-scheme content='dark'><title>" + html.escape(title) +
@@ -1561,11 +1560,11 @@ load();setInterval(load,10000);
     def _dashboard(self) -> None:
         host = _host(self)
         configured = sum(1 for provider_id, _ in PROVIDERS if APP.config.provider(provider_id).configured)
-        cards = "".join(f'<a class="card-link card" href="/services"><div class="card-head"><h3>{html.escape(name)}</h3>{_badge(APP.service_state(unit))}</div><p>{html.escape(_service_description(key))}</p></a>' for key,name,unit,*_ in SERVICES[:3])
+        cards = "".join(f'<a class="card-link card" href="/integrations#services"><div class="card-head"><h3>{html.escape(name)}</h3>{_badge(APP.service_state(unit))}</div><p>{html.escape(_service_description(key))}</p></a>' for key,name,unit,*_ in SERVICES[:3])
         body = (f'<div class="card"><div class="card-head"><div><h2>Appliance at {html.escape(host)}</h2><p>Ready for local administration.</p></div>{_badge("active")}</div>'
                 f'<p class="meta">Deployment: {html.escape(_deployment())} · {configured} integrations configured</p>'
-                f'<div class="actions"><a class="button" href="/integrations">Configure integrations</a><a class="button button-secondary" href="/services">View all services</a></div></div>'
-                '<div class="section-title"><h2>Service snapshot</h2><a href="/services">See all</a></div>'
+                f'<div class="actions"><a class="button" href="/integrations">Configure integrations</a><a class="button button-secondary" href="/integrations#services">View all services</a></div></div>'
+                '<div class="section-title"><h2>Service snapshot</h2><a href="/integrations#services">See all</a></div>'
                 f'<div class="grid">{cards}</div>')
         self._send(_page("Overview", body, subtitle="A clear view of your Mudos appliance.", active="overview"))
 
@@ -1576,8 +1575,10 @@ load();setInterval(load,10000);
             config = APP.config.provider(provider_id)
             cards.append(f'<a class="card-link card" href="/integration/{urllib.parse.quote(provider_id)}"><div class="card-head"><h2>{html.escape(title)}</h2>{_badge(config.status)}</div><p>{html.escape(description)}</p><span class="meta">Configure connection →</span></a>')
         notice = _notice("Changes saved", "The integration settings were updated.", "success") if urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query).get("updated") else ""
-        body = notice + '<div class="grid">' + "".join(cards) + '</div>'
-        self._send(_page("Integrations", body, subtitle="Connect the services Mudos uses. Each integration has one canonical settings page.", active="integrations"))
+        body = (notice + '<h2>Connections</h2><div class="grid">' + "".join(cards) + '</div>'
+                + '<section id="services"><div class="section-title"><h2>Services</h2></div>'
+                + '<div class="service-list">' + self._service_rows() + '</div></section>')
+        self._send(_page("Integrations and Services", body, subtitle="Configure integrations and check appliance services in one place.", active="integrations"))
 
     def _provider_form(self, provider_id: str) -> None:
         config = APP.config.provider(provider_id); csrf = APP.session(self._token()) or ""
@@ -1831,7 +1832,7 @@ load();setInterval(load,10000);
             self._send(_page("Save failed", f"<p class=error>{html.escape(message)}</p>"), 400); return
         self._redirect("/integrations?updated=1")
 
-    def _services(self) -> None:
+    def _service_rows(self) -> str:
         rows = "".join(f'<div class="service-row"><div><div class="card-head"><h3>{html.escape(name)}</h3>{_badge(APP.service_state(unit))}</div><p>{html.escape(_service_description(key))}</p>{_badge(APP.service_health(s))}</div><a class="button button-secondary" href="{html.escape(_service_url(self,s))}">Open</a></div>' for s in SERVICES for key,name,unit,*_ in [s])
         known = {service[0] for service in SERVICES}
         generic_rows = []
@@ -1846,8 +1847,11 @@ load();setInterval(load,10000);
                 generic_rows.append(
                     f'<div class="service-row"><div><div class="card-head"><h3>{html.escape(service.name)}</h3>'
                     f'{_badge("unknown")}</div><p>{html.escape(service.description)}</p></div>{link}</div>')
-        rows += "".join(generic_rows)
-        self._send(_page("Services", f'<div class="service-list">{rows}</div>', subtitle="Open the appliance services you use every day. Editing stays on Integrations.", active="services"))
+        return rows + "".join(generic_rows)
+
+    def _services(self) -> None:
+        """Retain old service bookmarks without maintaining a second view."""
+        self._redirect("/integrations#services")
 
     def _system(self) -> None:
         host = _host(self)
