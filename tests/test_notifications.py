@@ -5,7 +5,7 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from lulu.jobs import DownloadJob, JobOperation, JobState
+from lulu.jobs import DownloadJob, JobError, JobOperation, JobState
 from lulu.notifications import Notification, NotificationBroker, NotificationPresenter
 
 
@@ -17,6 +17,33 @@ def job(job_id: str = "job-1", *, state: JobState = JobState.QUEUED,
 
 
 class NotificationBrokerTests(unittest.IsolatedAsyncioTestCase):
+    async def test_failure_notifies_once_with_reason_and_retry_guidance(self) -> None:
+        broker = NotificationBroker()
+        initial = job(state=JobState.STARTING)
+        broker.seed([initial])
+        failed = replace(initial, state=JobState.FAILED,
+                         error=JobError("unsupported-platform", "No emulator maps this platform"))
+        broker.observe([failed])
+        broker.observe([failed])
+        self.assertEqual(len(broker.pending), 1)
+        event = broker.pending[0]
+        self.assertEqual(event.event_type, "acquisition_failed")
+        self.assertEqual(event.title, "Installation failed")
+        self.assertIn("No emulator maps this platform", event.body)
+        self.assertNotIn("to retry", event.body)
+        broker.seed([failed])
+        broker.observe([failed])
+        self.assertEqual(len(broker.pending), 1)
+
+    async def test_failed_removal_is_not_reported_as_a_download(self) -> None:
+        broker = NotificationBroker()
+        initial = replace(job(state=JobState.STARTING), operation=JobOperation.REMOVE)
+        broker.seed([initial])
+        broker.observe([replace(initial, state=JobState.FAILED,
+                                error=JobError("remove-failed", "Cannot remove files.", retryable=True))])
+        self.assertEqual(broker.pending[0].title, "Removal failed")
+        self.assertIn("Cannot remove files. Open Downloads to retry.", broker.pending[0].body)
+
     async def test_fifo_and_one_at_a_time_sink(self) -> None:
         received: list[str] = []
 

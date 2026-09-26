@@ -87,7 +87,7 @@ class AcquisitionPersistenceTests(unittest.TestCase):
                 store = AcquisitionStore(path)
                 failed = DownloadJob("failed", "fake", "Title", content_identity="fake:1",
                                      state=JobState.FAILED, stage="failed",
-                                     error=JobError("auth", "sensitive detail", retryable=False),
+                                     error=JobError("transient", "temporary failure", retryable=True),
                                      completed_at="2026-01-01T00:00:00.000Z")
                 store.save_all([failed])
                 executor = HoldingExecutor()

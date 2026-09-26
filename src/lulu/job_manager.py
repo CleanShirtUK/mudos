@@ -144,6 +144,8 @@ class JobManager:
         previous = self._require(job_id)
         if previous.state != JobState.FAILED:
             raise ValueError("job is not failed")
+        if not previous.retryable or (previous.error is not None and not previous.error.retryable):
+            raise ValueError("job failure requires corrective action before a new acquisition")
         return self.submit(
             previous.provider, previous.content_identity, previous.title,
             operation=previous.operation,

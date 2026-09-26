@@ -22,7 +22,7 @@ Item {
     signal retryRequested(string jobId)
     signal pauseRequested(string jobId)
     signal resumeRequested(string jobId)
-signal cancelRequested(string jobId)
+    signal cancelRequested(string jobId)
     signal clearRequested(string jobId)
 
     readonly property var visibleStates: ["queued", "starting", "transferring", "finalizing", "paused", "cancelling", "failed"]
@@ -49,7 +49,7 @@ signal cancelRequested(string jobId)
         var current = []
         for (var i = 0; i < incoming.length; i++) {
             if (!incoming[i].retired && visibleStates.indexOf(String(incoming[i].state || "")) >= 0)
-            current.push(incoming[i])
+                current.push(incoming[i])
         }
         current.sort(function(a, b) {
             return String(a.created_at || "").localeCompare(String(b.created_at || ""))
@@ -96,7 +96,7 @@ signal cancelRequested(string jobId)
         }
         var job = selectedJob()
         if (!job) return
-        if (String(job.state) === "failed")
+        if (String(job.state) === "failed" && canRetry(job))
             retryRequested(String(job.job_id))
         else if (String(job.state) === "paused" && job.pause_supported)
             resumeRequested(String(job.job_id))
@@ -158,15 +158,13 @@ signal cancelRequested(string jobId)
 
     function failureReason(job) {
         var code = job && job.error ? String(job.error.code || "") : ""
-        if (["authentication-required", "authentication-failed", "auth-backend-unavailable"].indexOf(code) >= 0)
-            return "Authentication failed"
-        if (["network-error", "romm-unavailable"].indexOf(code) >= 0)
-            return "Network error"
-        if (["timeout", "download-timeout"].indexOf(code) >= 0)
-            return "Download timed out"
-        if (code)
-            return "Provider error"
-        return "Failed"
+        var message = job && job.error ? String(job.error.message || "") : ""
+        return message ? message + (code ? " (" + code + ")" : "")
+            : (code || "Acquisition failed; no further details were supplied")
+    }
+
+    function canRetry(job) {
+        return job && job.retryable === true && (!job.error || job.error.retryable === true)
     }
 
     // Keep the normalized state vocabulary explicit at this presentation
@@ -184,12 +182,13 @@ signal cancelRequested(string jobId)
         if (String(job.state) === "paused" && job.pause_supported) return "A  RESUME"
         if (["starting", "transferring"].indexOf(String(job.state)) >= 0
                 && job.pause_supported) return "A  PAUSE"
-        if (String(job.state) === "failed") return "A  RETRY"
+        if (String(job.state) === "failed" && canRetry(job)) return "A  RETRY"
         return ""
     }
 
     function actionText(job) {
         if (!job) return ""
+        if (String(job.state) === "failed") return canRetry(job) ? "Retry" : ""
         return String(job.state) === "paused" ? "Resume" : "Pause"
     }
 
@@ -262,7 +261,9 @@ signal cancelRequested(string jobId)
                     required property var modelData
                     width: jobsList.width - 8 * root.uiScale
                     x: 4 * root.uiScale
-                    height: 88 * root.uiScale
+                    height: String(modelData.state) === "failed"
+                        ? Math.max(88 * root.uiScale, failureText.y + failureText.implicitHeight + 14 * root.uiScale)
+                        : 88 * root.uiScale
                     radius: 8 * root.uiScale
                     z: index === root.selectedIndex ? 1 : 0
                     property real selectionProgress: index === root.selectedIndex ? 1 : 0
@@ -281,10 +282,10 @@ signal cancelRequested(string jobId)
 
                     Text { x: 18 * root.uiScale; y: 10 * root.uiScale; width: parent.width * 0.58; text: modelData.title || "Untitled acquisition"; color: row.textColor; font.family: root.typography.interfaceFamily; font.pixelSize: root.typography.size("body", 18); font.bold: true; elide: Text.ElideRight }
                      Text { x: 18 * root.uiScale; y: 37 * root.uiScale; text: String(modelData.provider || "provider").toUpperCase() + "  ·  " + (String(modelData.state) === "failed" ? "Failed" : root.stateLabel(modelData)); color: root.luluPalette.secondaryText; font.family: root.typography.interfaceFamily; font.pixelSize: root.typography.size("hint", 12) }
-                     Text { visible: String(modelData.state) === "failed"; x: 18 * root.uiScale; y: 57 * root.uiScale; text: root.failureReason(modelData); color: root.luluPalette.secondaryText; font.family: root.typography.interfaceFamily; font.pixelSize: root.typography.size("hint", 11); elide: Text.ElideRight; width: parent.width - 36 * root.uiScale }
+                     Text { id: failureText; visible: String(modelData.state) === "failed"; x: 18 * root.uiScale; y: 57 * root.uiScale; text: root.failureReason(modelData); color: root.luluPalette.secondaryText; font.family: root.typography.interfaceFamily; font.pixelSize: root.typography.size("hint", 11); wrapMode: Text.Wrap; width: parent.width - 36 * root.uiScale }
                     Text { anchors.right: parent.right; anchors.rightMargin: 18 * root.uiScale; y: 10 * root.uiScale; text: modelData.progress !== null && modelData.progress !== undefined ? Math.round(Number(modelData.progress) * 100) + "%" : root.stateLabel(modelData); color: root.luluPalette.accent; font.family: root.typography.interfaceFamily; font.pixelSize: root.typography.size("hint", 13) }
                      Rectangle { visible: String(modelData.state) !== "failed"; x: 18 * root.uiScale; y: 61 * root.uiScale; width: parent.width - 36 * root.uiScale; height: 5 * root.uiScale; radius: height / 2; color: root.luluPalette.glassBorder; Rectangle { width: modelData.progress !== null && modelData.progress !== undefined ? parent.width * Math.max(0, Math.min(1, Number(modelData.progress))) : 0; height: parent.height; radius: parent.radius; color: root.luluPalette.accent } }
-                    Text { anchors.right: parent.right; anchors.rightMargin: 18 * root.uiScale; y: 70 * root.uiScale; text: modelData.downloaded_bytes !== null && modelData.total_bytes !== null ? root.formatBytes(modelData.downloaded_bytes) + " / " + root.formatBytes(modelData.total_bytes) : ""; color: root.luluPalette.secondaryText; font.family: root.typography.interfaceFamily; font.pixelSize: root.typography.size("hint", 11) }
+                    Text { visible: String(modelData.state) !== "failed"; anchors.right: parent.right; anchors.rightMargin: 18 * root.uiScale; y: 70 * root.uiScale; text: modelData.downloaded_bytes !== null && modelData.total_bytes !== null ? root.formatBytes(modelData.downloaded_bytes) + " / " + root.formatBytes(modelData.total_bytes) : ""; color: root.luluPalette.secondaryText; font.family: root.typography.interfaceFamily; font.pixelSize: root.typography.size("hint", 11) }
                 }
             }
 

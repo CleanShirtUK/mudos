@@ -1,4 +1,5 @@
 import asyncio
+from dataclasses import replace
 from pathlib import Path
 import tempfile
 import unittest
@@ -168,6 +169,20 @@ class JobDomainTests(unittest.TestCase):
             self.assertEqual(result.state, JobState.FAILED)
             self.assertEqual(result.error.code, "provider-failure")
         asyncio.run(exercise())
+
+    def test_non_retryable_failure_requires_correction(self) -> None:
+        manager = JobManager()
+        failed = DownloadJob("failed", "fake", "Title", state=JobState.FAILED,
+                             error=JobError("unsupported-platform", "No platform mapping"))
+        manager.jobs[failed.job_id] = failed
+        with self.assertRaisesRegex(ValueError, "corrective action"):
+            manager.retry(failed.job_id)
+        self.assertEqual(len(manager.jobs), 1)
+        manager.jobs[failed.job_id] = replace(failed, retryable=False,
+            error=JobError("temporary", "Temporary failure", retryable=True))
+        with self.assertRaisesRegex(ValueError, "corrective action"):
+            manager.retry(failed.job_id)
+        self.assertEqual(len(manager.jobs), 1)
 
     def test_retire_only_failed_jobs_is_idempotent_and_preserves_retry_lineage(self) -> None:
         async def exercise() -> None:

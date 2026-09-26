@@ -95,6 +95,20 @@ class NotificationBroker:
         events: list[Notification] = []
         source = job.provider
         title = job.title or job.content_identity or job.provider
+        if job.state is JobState.FAILED:
+            reason = (job.error.message or job.error.code) if job.error else "No failure details available"
+            guidance = ("Open Downloads to retry." if job.retryable
+                        and (job.error is None or job.error.retryable)
+                        else "Open Downloads for details; correct the cause before trying again.")
+            operation = {
+                JobOperation.ACQUIRE: "Download", JobOperation.INSTALL: "Installation",
+                JobOperation.UPDATE: "Update", JobOperation.REMOVE: "Removal",
+            }[job.operation]
+            events.append(Notification(
+                event_id=f"{job.job_id}:acquisition_failed", event_type="acquisition_failed",
+                title=f"{operation} failed", body=f"{title}: {reason.rstrip('.')}. {guidance}",
+                source=source, timestamp=_timestamp(), priority=1,
+            ))
         if job.state is JobState.TRANSFERRING and previous is not JobState.TRANSFERRING \
                 and job.operation is not JobOperation.REMOVE:
             events.append(Notification(
