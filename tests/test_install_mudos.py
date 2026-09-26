@@ -213,6 +213,12 @@ def test_production_units_do_not_reference_dev_runtime():
         assert "/opt/lulu/dev-current" not in (ROOT / "packaging" / name).read_text()
 
 
+def test_admin_sandbox_allows_absent_optional_provider_state():
+    unit = (ROOT / "packaging/lulu-admin.service").read_text()
+    assert "-/var/lib/nzbget" in unit
+    assert "-/var/lib/lulu-transmission" in unit
+
+
 def test_fresh_onboarding_default_is_incomplete_and_has_no_auth_seed():
     source = (ROOT / "src/lulu/onboarding.py").read_text()
     assert '"status": "never"' in source

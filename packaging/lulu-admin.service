@@ -26,7 +26,10 @@ ProtectHome=read-only
 # creating its temporary account-database files. This daemon runs as lulu;
 # privileged writes are available only through the polkit-allowlisted helper.
 ProtectSystem=off
-ReadWritePaths=/home/lulu/.config/lulu /home/lulu/.local/share/lulu /var/lib/nzbget /var/lib/lulu-transmission
+# Optional provider directories are absent on a fresh appliance until their
+# OOBE components are selected. Prefixes make absent paths non-fatal while
+# retaining the sandbox allowance when those providers are installed.
+ReadWritePaths=/home/lulu/.config/lulu /home/lulu/.local/share/lulu -/var/lib/nzbget -/var/lib/lulu-transmission
 
 [Install]
 WantedBy=multi-user.target
