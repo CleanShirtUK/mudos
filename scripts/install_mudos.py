@@ -383,6 +383,9 @@ def do_install(repo: Path, manifest: dict, dry_run: bool) -> None:
             alias.unlink()
         if not alias.is_symlink():
             alias.symlink_to(expected)
+    # The on-screen keyboard is required for controller-driven OOBE. Reuse
+    # the checksum-pinned canonical provisioner and keep its output mutable.
+    run(["bash", str(release / "scripts/provision-gamepad-osk.sh")])
     # Release creation must not depend on mutable paths; install only from current.
     install_integration(repo, release, manifest)
     print(f"installed immutable release {release} from {sha}")

@@ -108,6 +108,13 @@ def test_shared_package_selection_reuses_installed_compatible_variants():
     assert selected == ["inputplumber"]
 
 
+def test_install_dependency_contract_includes_controller_osk_toolchain():
+    packages = manifest()["shared_dependencies"]["packages"]
+    assert {"go", "sdl3_ttf", "libx11", "curl", "patch"} <= set(packages)
+    provisioner = (ROOT / "scripts/provision-gamepad-osk.sh").read_text()
+    assert "sha256sum --check" in provisioner
+
+
 def test_host_mount_contract_matches_only_fstab_generated_exact_mount(monkeypatch):
     mount = manifest()["preserved_host_mounts"][0]
     outputs = [
