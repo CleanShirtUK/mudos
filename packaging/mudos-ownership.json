@@ -21,6 +21,8 @@
       "/etc/systemd/system/lulu-consoled.service.d/dev-runtime.conf",
       "/etc/systemd/system/lulu-acquisition.service.d/dev-runtime.conf",
       "/etc/systemd/system/lulu-transmission.service", "/etc/systemd/system/lulu-transmission-config.service",
+      "/etc/systemd/system/lulu-file-browser.service",
+      "/etc/systemd/system/lulu-osk@.service",
       "/etc/systemd/system/lulu-questarr.service", "/etc/systemd/system/lulu-questarr-reconcile.service",
       "/etc/systemd/system/lulu-provider-install@.service.d/storage.conf",
       "/etc/systemd/system/multi-user.target.wants/lulu-transmission.service",

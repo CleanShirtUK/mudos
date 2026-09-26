@@ -161,6 +161,14 @@
   case CUE/BIN suffixes, spaces, apostrophes, nested extraction, payload
   preservation, generated playlist, and launchable local Library projection.
   `tests/test_romm_executor.py`: **12 passed** after the correction.
+- Installer ownership reconciliation found two service-unit omissions: the
+  canonical installer copies `lulu-file-browser.service` (core DUFS) and
+  `lulu-osk@.service`, but neither was represented in the exact systemd purge
+  ownership paths. Both are now explicitly owned. An AST-backed regression
+  compares every service copied by `install_integration()` with the ownership
+  contract; it exposed the OSK omission after the DUFS omission was corrected.
+  Installer tests: **41 passed**. This only repairs source/contract ownership;
+  no live unit was removed or restarted.
 
 ## Bluetooth Settings implementation and hardware probe — 2026-09-26
 

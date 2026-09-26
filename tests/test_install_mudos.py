@@ -1,4 +1,5 @@
 import importlib.util
+import ast
 import json
 from pathlib import Path
 import subprocess
@@ -37,6 +38,20 @@ def test_transmission_admin_config_unit_and_polkit_rule_are_installed_and_purge_
     installer_source = (ROOT / "scripts/install_mudos.py").read_text()
     assert '"lulu-transmission-config.service": "lulu-transmission-config.service"' in installer_source
     assert '"lulu-transmission-config.service")' in installer_source
+
+
+def test_every_installer_copied_unit_is_in_the_purge_ownership_contract():
+    tree = ast.parse((ROOT / "scripts/install_mudos.py").read_text())
+    copied_units = None
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Assign) and any(
+                isinstance(target, ast.Name) and target.id == "systemd" for target in node.targets):
+            copied_units = ast.literal_eval(node.value)
+            break
+    assert copied_units is not None
+    owned = set(manifest()["system_integration"]["systemd_files"])
+    missing = {f"/etc/systemd/system/{target}" for target in copied_units.values()} - owned
+    assert not missing, f"installer copies Mudos units not owned for purge: {sorted(missing)}"
 
 
 def test_lulu_target_is_installable_and_installer_verifies_boot_enablement():
