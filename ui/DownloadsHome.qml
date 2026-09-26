@@ -258,7 +258,10 @@ Item {
                 preferredHighlightBegin: 4 * root.uiScale
                 preferredHighlightEnd: height - 4 * root.uiScale
                 onCurrentIndexChanged: {
-                    if (!root.reconcilingSnapshot && root.selectedIndex !== currentIndex) {
+                    if (root.reconcilingSnapshot) {
+                        if (currentIndex !== root.selectedIndex)
+                            jobsList.currentIndex = root.selectedIndex
+                    } else if (root.selectedIndex !== currentIndex) {
                         root.selectedIndex = currentIndex
                         root.selectedJobId = currentIndex >= 0 && currentIndex < root.jobs.length
                             ? String(root.jobs[currentIndex].job_id || "") : ""

@@ -101,8 +101,10 @@ class JobDomainTests(unittest.TestCase):
             manager.register_executor("fake", executor)
             job = manager.submit("fake", "fake:1", "Title", cancellation_supported=True)
             self.assertEqual(manager.active_download_count, 0)
+            self.assertEqual(manager.actionable_download_count, 1)
             await asyncio.sleep(0)
             self.assertEqual(manager.active_download_count, 1)
+            self.assertEqual(manager.actionable_download_count, 1)
             self.assertIsNone(manager.jobs[job.job_id].progress)
             self.assertEqual(manager.jobs[job.job_id].downloaded_bytes, 5)
             task = manager._tasks[job.job_id]
@@ -112,6 +114,20 @@ class JobDomainTests(unittest.TestCase):
             self.assertEqual(manager.jobs[job.job_id].state, JobState.COMPLETED)
             self.assertEqual(manager.jobs[job.job_id].progress, 1.0)
         asyncio.run(exercise())
+
+    def test_actionable_count_includes_queued_and_paused_jobs(self) -> None:
+        queued = DownloadJob("queued", "fake", "Queued")
+        paused = DownloadJob("paused", "fake", "Paused").transition(
+            JobState.STARTING).transition(JobState.PAUSED)
+        completed = (DownloadJob("complete", "fake", "Complete")
+                     .transition(JobState.STARTING)
+                     .transition(JobState.TRANSFERRING)
+                     .transition(JobState.FINALIZING)
+                     .transition(JobState.COMPLETED))
+        manager = JobManager()
+        manager.jobs = {job.job_id: job for job in (queued, paused, completed)}
+        self.assertEqual(manager.actionable_download_count, 2)
+        self.assertEqual(manager.active_download_count, 0)
 
     def test_cancellation_is_visible_but_not_active(self) -> None:
         async def exercise() -> None:

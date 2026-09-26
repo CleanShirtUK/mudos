@@ -76,4 +76,27 @@ TestCase {
         row = selected
         contained()
     }
+
+    function test_selection_tracks_job_identity_across_snapshot_replacement() {
+        var rows = [
+            {job_id: "job-a", state: "transferring", title: "A", created_at: "1"},
+            {job_id: "job-b", state: "queued", title: "B", created_at: "2"},
+            {job_id: "job-c", state: "queued", title: "C", created_at: "3"}
+        ]
+        downloads.selectedIndex = 0
+        downloads.selectedJobId = ""
+        downloads.snapshot = JSON.stringify({jobs: rows})
+        downloads.moveSelection(1)
+        compare(downloads.selectedJobId, "job-b")
+
+        rows[0].progress = 0.5
+        rows[1].state = "starting"
+        downloads.snapshot = JSON.stringify({jobs: rows})
+        compare(downloads.selectedJobId, "job-b")
+        compare(downloads.selectedIndex, 1)
+
+        downloads.snapshot = JSON.stringify({jobs: [rows[0], rows[2]]})
+        compare(downloads.selectedIndex, 1)
+        compare(downloads.selectedJobId, "job-c")
+    }
 }
