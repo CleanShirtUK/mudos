@@ -223,6 +223,88 @@
   tests: **62 passed**. The current candidate is therefore still provisional;
   build and verify a third exact-HEAD candidate, repeat canonical purge/install,
   then inspect both generated composites and absence of every dev drop-in.
+- Final repeated rehearsal completed from the corrected candidate at
+  `7a8ce762a5a8ee12e5a922c4e4e2759f5d5fa0fd`. The canonical purge dry-run
+  included the stale `dev-validation.conf`; the purge stopped the exact
+  generated Steam bind mount while preserving its fstab row, preserved the
+  source checkout and immutable releases, removed Mudos-owned credentials,
+  mutable databases/history, and Mudos game/BIOS/acquisition state, and removed
+  `/opt/lulu/dev-current`. The canonical public `./install-mudos.sh` entrypoint
+  then built/reused the verified exact-SHA release, installed the checksum-
+  pinned Gamepad OSK and DUFS package, provisioned units, restarted
+  InputPlumber, ran the generic hotplug reconciler, and started the target.
+- The code candidate path used for the final repeated rehearsal:
+  `/opt/lulu/releases/7a8ce76-candidate-v1-stabilization-20260927`; revision
+  exactly matches clean HEAD `7a8ce762a5a8ee12e5a922c4e4e2759f5d5fa0fd`.
+  Canonical `release.py verify` and `./install-mudos.sh --verify` both pass.
+  Manifest SHA-256 is
+  `855efa2e3659f6ea08d82757fd876d798e8865959228e3acace860957eb328c0`; all
+  407 payload files are covered and match, plus the separately handled root
+  manifest. Native shell/Guide/notification binaries and Bluetooth Settings
+  assets are present; no symlinks, bytecode, native build intermediates, or
+  writable release files appeared after services started. `/opt/lulu/current`
+   and all compatibility aliases resolve to this candidate. This log-only
+   closure commit changes the exact source HEAD, so the canonical installer
+   will create and select a final immutable release from that clean committed
+   HEAD at `/opt/lulu/releases/v1-stabilization-final-20260927`; no purge is
+   needed for that documentation-only refresh, and no V1 promotion occurs.
+- Final production graph: target, graphical session/shell, Admin, Recovery,
+  Consoled, Acquisitiond, InputPlumber, Bluetooth, seatd, and file browser are
+  active; boot enablement is present for target/session/Admin/Recovery,
+  InputPlumber, Bluetooth, and seatd. Recovery guard is a static inactive
+  one-shot, as expected. DUFS 0.46.0 is active, private config is root:root
+  0600, its unauthenticated endpoint returns HTTP 401, and systemd confines it
+  to the four declared `/srv` bind roots with `ProtectHome=yes`,
+  `ProtectSystem=strict`, and `NoNewPrivileges=yes`. Python service process
+  environments point to `/opt/lulu/current` and set
+  `PYTHONDONTWRITEBYTECODE=1`. No production unit references dev-current or the
+  source checkout; the validation-only hotplug drop-in is absent. InputPlumber
+  restart/reconciliation succeeded. At final read-only inspection there were
+  no connected gamepad event nodes; BlueZ still retains the Series MAC as
+  paired/trusted and disconnected. No controller was paired, unpaired, or
+  power-cycled during the fresh-install rehearsal, so post-install physical
+  reconnect/navigation remains pending.
+- Fresh state: `settings.sqlite3` has 0 rows, catalogue DB has 0 games and 0
+  metadata-enrichment rows, acquisition DB has 0 jobs; onboarding state is
+  absent (first-run default), SecretStore is absent, and Steam/Epic/GOG/RomM/
+  Usenet/Torrent/Prowlarr are disabled and unconfigured. ROM, BIOS, Executables,
+  and acquisition payload roots contain no files; torrent and Usenet roots are
+  provisioned empty as `lulu:lulu` mode 0770. No provider was selected, no
+  credentials entered, and no game payload restored. Non-Mudos
+  `/home/lulu/old-reference-releases.20260913`, `/home/lulu/mudos-deploy`, the
+  canonical source checkout, the release archive, and the original fstab entry
+  remain present.
+- Final exact-HEAD gates: Python **877 passed, 38 subtests**; clean native build
+  succeeded, CTest **1/1 passed**; full QML **125 passed, the same 9 baseline
+  failures listed above**; Python compilation, shell syntax, systemd unit
+  validation, installer/ownership/release/provider/launch fixtures, and
+  `git diff --check` passed. The nine QML failures were confirmed by name and
+  are unrelated to this installer/controller batch; no new QML failures.
+- Round 2 disposition: **Bluetooth** fixed, automated tests and prior physical
+  Series + Xbox receiver coexistence/off-on/navigation acceptance passed;
+  fresh-production reconnect pending because no gamepad was connected during
+  install. **Release manifest/verifier** fixed and candidate verified.
+  **NZBGet** config materialization, permissions, restart/RPC readiness and
+  Acquisitiond refresh covered by fixtures; real server auth/transfer pending.
+  **Provider state** uses shared persisted authorities with Admin/OOBE tests;
+  real Epic/GOG/RomM accounts pending. **GOG/Epic acquisition** terminal
+  reconciliation, installed Library/launch projections, canonical target and
+  payload checks have fixtures; real installs/gameplay pending. **Emulator
+  common launch/Gamescope/session/restore**, Guide ownership, browser delegation,
+  Steam OOBE, Flatpak runtime resolution, Questarr degraded/reconcile,
+  artwork retry fairness, Library completion events, Downloads identity/geometry,
+  BIOS target/upload permissions, GameCube aliases, Bluetooth Settings,
+  navigation/status/startup geometry, DUFS provisioning, and install ownership
+  have automated coverage. Remaining physical gates are rendered browser/Guide
+  behavior, emulator gameplay and settings, real sign-ins/transfers, physical
+  Guide/controller behavior, physical BIOS/firmware uploads, and end-to-end
+  first-run visual OOBE. Exact historical Flatpak runtime is unavailable; no
+  replacement app/ref was invented. EMU face-mapping scope and boot Debug-entry
+  design remain explicit product/architecture decisions, not silently changed.
+- Stop condition reached: leave the appliance at genuine untouched first-run
+  OOBE. Do not select providers, enter credentials, download games, promote V1,
+  or mutate immutable releases. The user's Round 3 physical acceptance remains
+  required.
 
 ## Bluetooth Settings implementation and hardware probe — 2026-09-26
 
