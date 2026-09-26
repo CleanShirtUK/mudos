@@ -107,6 +107,48 @@
   the deferred release-manifest investigation only after the broader Round 2
   and pre-candidate gates; do not promote V1.
 
+## V1 stabilization continuation — 2026-09-27
+
+- Starting source HEAD was `70fa1ab50dd59dab4168235018db1e589e276c97`, clean
+  except for the controller acceptance log update. That record was committed as
+  `d95cf43`; no release/candidate work was started from dirty source.
+- VAL-004 manifest root cause: the immutable
+  `/opt/lulu/releases/2546b11-candidate-20260926-runtime-refresh` was created at
+  16:29 local time with 409 manifest entries. Its tree currently contains 412
+  regular files; the only uncovered files are three
+  `lib/lulu/__pycache__/*.pyc` files, born at 16:45 local time. This is
+  post-build mutation, not an omitted source payload, intentional verifier
+  exclusion, or weak checksum. The builder's compile check explicitly removes
+  bytecode before checksumming, and the verifier correctly rejects the later
+  additions. Systemd Python services and Python shell entry points now disable
+  bytecode writes; the release builder keeps generated Qt moc/build
+  intermediates outside the payload. Regression tests require every intended
+  file to be manifested, prove runtime `.pyc` additions fail verification,
+  and prove native intermediates do not ship. Required-file checks explicitly
+  include Bluetooth Settings/controller runtime and ownership integration.
+  The old release was not modified. The process that wrote the root-owned
+  bytecode is not identified from available journal evidence; the class and
+  timing of mutation are established, so runtime writes are now fail-closed
+  and disabled at production Python entry points.
+- The changed OSK unit is also mirrored in `deploy/payload` compatibility
+  material with its checksum updated; this is installation compatibility, not
+  release source. Full Python validation: **873 passed, 36 subtests**. Native
+  CTest: **1/1 passed**. Full QML: **125 passed, 9 failed**; these are exactly
+  the established nine baseline failures (six NavigationNativeMapping
+  undefined mapping points, two PresentationCoordinator verification failures,
+  and one RecentModelBoundary model comparison). Failures are in longstanding
+  native/QML boundary expectations, are not introduced by this packaging-only
+  batch, and no speculative broad UI changes were made. Test execution used
+  `PYTHONPATH=src`; a bare `pytest` invocation is invalid for this source layout.
+- The previous uncommitted VAL-004 correction batch is committed as
+  `241caaa`. No candidate was built, activated, installed, or promoted. The
+  existing production selector remains unchanged. The clean-tree installer
+  verifier was not run against a candidate; as expected, invoking it against
+  dirty source refuses before inspecting/altering the selected old release.
+- Continue the remaining non-physical lifecycle audits and the pre-candidate
+  gate. Do not begin purge/reinstall until a new clean-HEAD candidate passes
+  complete manifest/provenance verification.
+
 ## Bluetooth Settings implementation and hardware probe — 2026-09-26
 
 - Replaced Bluetooth Settings' `bluetoothctl show` placeholder with a native
