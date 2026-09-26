@@ -3313,9 +3313,11 @@ import QtQuick.Controls
 
                 Item {
                     id: storeReveal
-                    x: 0
+                    // Clip the Store rail at the screen edge, not at the
+                    // content inset; match the System and Library reveals.
+                    x: -root.homeContentRailX
                     y: root.homeCategoryOffset(1)
-                    width: parent.width
+                    width: root.width
                     height: root.homeCategoryRevealHeight(1)
                     clip: true
                     opacity: 1
@@ -3324,7 +3326,8 @@ import QtQuick.Controls
                             && (root.homeCategoryFrom === 1 || root.homeCategoryTarget === 1))
          StoreHome {
                          id: storeHomeLanding
-                         width: storeReveal.width
+                         x: root.homeContentRailX
+                         width: storeReveal.width - root.homeContentRailX
                         height: root.homeFocalCardHeight
                          cardWidth: root.homeNavigationCardWidth
                          cardHeight: root.homeNavigationCardHeight

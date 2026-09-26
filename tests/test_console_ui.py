@@ -11,6 +11,20 @@ SHELL_PROFILE = (ROOT / "config" / "inputplumber" / "profiles" / "shell.yaml").r
 
 
 class ConsoleUiTests(unittest.TestCase):
+    def test_store_reveal_clips_at_screen_edge_without_moving_rail(self) -> None:
+        viewport = QML.split("id: homeCardViewport", 1)[1].split("id: homeContent", 1)[0]
+        reveal = QML.split("id: storeReveal", 1)[1].split("id: systemReveal", 1)[0]
+        self.assertIn("x: 0", viewport)
+        self.assertIn("clip: true", viewport)
+        self.assertIn("x: -root.homeContentRailX", reveal)
+        self.assertIn("width: root.width", reveal)
+        self.assertIn("clip: true", reveal)
+        self.assertIn("id: storeHomeLanding\n                         x: root.homeContentRailX", reveal)
+        self.assertIn("width: storeReveal.width - root.homeContentRailX", reveal)
+        self.assertIn("readonly property real homeContentRailX: design(52)", QML)
+        self.assertIn("targetX: root.homeRailX(index - root.homeSelectedIndex)",
+                      (ROOT / "ui" / "StoreHome.qml").read_text())
+
     def test_external_installable_selection_refreshes_game_preview(self) -> None:
         library_space = (ROOT / "ui" / "LibrarySpace.qml").read_text()
         handler = library_space.split("onSelectedIndexChanged:", 1)[1].split(
