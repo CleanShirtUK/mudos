@@ -169,6 +169,35 @@
   contract; it exposed the OSK omission after the DUFS omission was corrected.
   Installer tests: **41 passed**. This only repairs source/contract ownership;
   no live unit was removed or restarted.
+- Stabilization validation at clean source `0d3f207a64cfbc6ce51666459efae393df9e1dff`:
+  Python **875 passed, 38 subtests**; clean native CMake build succeeded and
+  CTest **1/1 passed**; Python compilation, shell syntax, `systemd-analyze
+  verify`, and `git diff --check` passed. Focused installer/release/provider/
+  NZBGet/launch/disc fixture tranche: **199 passed, 17 subtests**. Full QML is
+  **125 passed / the same 9 baseline failures**, specifically
+  `NavigationNativeMapping::{test_adjacentSettledCardsAreUnique,
+  test_categoryAncestorMovementInvalidatesMapping,
+  test_categoryRetargetAndReversalRemainReactive,
+  test_delegateTranslationWithFixedLocalGeometry,test_retargetAndResize,
+  test_rowTranslationWithFixedCardGeometry}`, `PresentationCoordinator::{
+  test_recent_selection_velocity_is_per_card_and_rebases,
+  test_selection_opacity_ownership_transfers_at_retarget}`, and
+  `RecentModelBoundary::test_native_model_rows_create_visible_delegates`.
+  No QML behavior was modified by this batch. The older production selector
+  still resolves to `2546b11-candidate-20260926-runtime-refresh`; the shell,
+  Consoled, Acquisitiond and InputPlumber use the clearly separate dev runtime.
+  Admin/Recovery are still the old release. Core DUFS package exists, but its
+  generated config is absent on this older installation, so the wanted
+  `lulu-file-browser.service` is correctly condition-skipped. This is not
+  fresh-install evidence; candidate installation must verify DUFS activation.
+- Physical/fresh-state gates still outstanding (not waived): browser rendered
+  visibility and Guide behavior; emulator gameplay and Guide; real provider
+  sign-in/readiness and downloads; Usenet real connection/transfer; Questarr
+  account configuration; clean-install service/DB/OOBE provenance. Bluetooth
+  physical acceptance is complete for Series + Xbox receiver coexistence,
+  off/on reconnect without pairing, navigation and inventory; a separate USB
+  Series controller was not present and was not claimed tested. No credentials,
+  providers, games, or controller pairings were changed in this continuation.
 
 ## Bluetooth Settings implementation and hardware probe — 2026-09-26
 
