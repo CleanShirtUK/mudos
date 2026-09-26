@@ -1,3 +1,4 @@
+import json
 import subprocess
 import unittest
 from unittest.mock import patch
@@ -68,6 +69,47 @@ class RecoveryServiceTests(unittest.TestCase):
     def test_user_bus_string_decoder_handles_structured_owner_snapshot(self):
         raw = 's "{\\"activeDownloadCount\\":2,\\"jobs\\":[]}"'
         self.assertEqual(recovery._decode_bus_string(raw), '{"activeDownloadCount":2,"jobs":[]}')
+
+    def test_structured_bus_response_decodes_apostrophes_in_job_snapshot(self):
+        snapshot = json.dumps({"activeDownloadCount": 2, "jobs": [{"title": "Fixture's Game"}]})
+        envelope = json.dumps({"type": "s", "data": [snapshot]})
+        with patch.object(recovery, "_run", return_value=subprocess.CompletedProcess(
+                [], 0, stdout=envelope)) as run:
+            raw = recovery._user_method("org.lulu.Acquisitiond", "/org/lulu/Acquisition",
+                                        "org.lulu.Acquisition", "GetSnapshot")
+        self.assertIn("--json=short", run.call_args.args[0])
+        self.assertEqual(json.loads(recovery._decode_bus_string(raw)), json.loads(snapshot))
+        unit = recovery._component("acquisitiond", "healthy", "Mudos downloads is running.",
+                                   {"available": True}, actions=["restart_acquisitiond"])
+        with patch.object(recovery, "_bus_api", return_value=(True, "")), \
+                patch.object(recovery, "_user_method", return_value=raw):
+            component = recovery._api_component("acquisitiond", unit,
+                "org.lulu.Acquisitiond", "/org/lulu/Acquisition", "org.lulu.Acquisition")
+        self.assertEqual(component["state"], "healthy")
+        self.assertTrue(component["evidence"]["job_snapshot_available"])
+        self.assertEqual(component["evidence"]["active_download_count"], 2)
+        self.assertEqual(component["evidence"]["job_count"], 1)
+        self.assertNotIn("Fixture's Game", json.dumps(component))
+
+        with patch.object(recovery, "_bus_api", return_value=(True, "")), \
+                patch.object(recovery, "_user_method", return_value="not a snapshot"):
+            degraded = recovery._api_component("acquisitiond", unit,
+                "org.lulu.Acquisitiond", "/org/lulu/Acquisition", "org.lulu.Acquisition")
+        self.assertEqual(degraded["state"], "degraded")
+        self.assertFalse(degraded["evidence"]["job_snapshot_available"])
+
+    def test_structured_user_bus_response_preserves_session_controller_evidence(self):
+        state = json.dumps({"controller": {"controllers": {"fixture": {"connected": True}}}})
+        envelope = json.dumps({"type": "s", "data": [state]})
+        unit = recovery._component("sessiond", "healthy", "Session is running.",
+                                   {"available": True})
+        with patch.object(recovery, "_bus_api", return_value=(True, "")), \
+                patch.object(recovery, "_user_method", return_value=envelope):
+            component = recovery._api_component("sessiond", unit,
+                "org.lulu.ConsoleSessiond", "/org/lulu/ConsoleSession", "org.lulu.ConsoleSession")
+        self.assertEqual(component["state"], "healthy")
+        self.assertTrue(component["evidence"]["session_state_available"])
+        self.assertEqual(component["evidence"]["connected_controllers"], 1)
 
 
 if __name__ == "__main__":

@@ -183,18 +183,28 @@ def _bus_api(name: str, path: str, *, system: bool = False) -> tuple[bool, str]:
 
 
 def _user_method(name: str, path: str, interface: str, method: str) -> str | None:
-    result = _run(["busctl", "--user", "--no-pager", "call", name, path, interface, method], timeout=4)
+    # Plain busctl text uses C-style string escaping (including \\'), which
+    # cannot be decoded as JSON when a job title/path contains an apostrophe.
+    result = _run(["busctl", "--user", "--json=short", "--no-pager", "call",
+                   name, path, interface, method], timeout=4)
     if result is None or result.returncode:
         return None
     return result.stdout.strip()
 
 
 def _decode_bus_string(value: str | None) -> Any:
-    if not value or not value.startswith("s "):
+    if not value:
         return None
     try:
-        return json.loads(value[2:])
-    except (ValueError, json.JSONDecodeError):
+        if value.startswith("{"):
+            envelope = json.loads(value)
+            if not isinstance(envelope, dict):
+                return None
+            data = envelope.get("data")
+            return data[0] if envelope.get("type") == "s" and isinstance(data, list) \
+                and len(data) == 1 and isinstance(data[0], str) else None
+        return json.loads(value[2:]) if value.startswith("s ") else None
+    except (ValueError, TypeError):
         return None
 
 
@@ -237,11 +247,17 @@ def _api_component(component_id: str, unit_component: dict[str, Any], name: str,
                 data = json.loads(data)
             except (ValueError, json.JSONDecodeError):
                 data = None
-        if isinstance(data, dict):
-            evidence.update({"active_download_count": data.get("activeDownloadCount"),
-                             "job_count": len(data.get("jobs", []))})
+        count = data.get("activeDownloadCount") if isinstance(data, dict) else None
+        jobs = data.get("jobs") if isinstance(data, dict) else None
+        if isinstance(count, int) and count >= 0 and isinstance(jobs, list):
+            evidence.update({"active_download_count": count,
+                             "job_count": len(jobs), "job_snapshot_available": True})
         else:
             evidence["job_snapshot_available"] = False
+            return _component(component_id, "degraded",
+                              "Acquisitiond responds, but job details are unavailable.",
+                              evidence, actions=unit_component["safe_actions"],
+                              last_error="Acquisition job snapshot could not be decoded")
     return _component(component_id, state, unit_component["summary"], evidence,
                       actions=unit_component["safe_actions"])
 
