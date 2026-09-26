@@ -14,6 +14,22 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class OnboardingStateTests(unittest.TestCase):
+    def test_finish_requires_success_for_each_selected_integration_or_explicit_skip(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "onboarding.json"
+            with patch.object(onboarding, "_STATE_PATH", path):
+                onboarding.save_progress(integrations=["metadata.igdb", "providers.romm"])
+                with self.assertRaisesRegex(ValueError, "Test and Save"):
+                    onboarding.finish_onboarding()
+                onboarding.save_validation("metadata.igdb", True, "Connected")
+                onboarding.save_validation("providers.romm", False, "Not authenticated")
+                with self.assertRaisesRegex(ValueError, "Test and Save"):
+                    onboarding.finish_onboarding()
+                self.assertEqual(onboarding.onboarding_state()["status"], "partial")
+                onboarding.save_progress(integrations=["metadata.igdb"])  # Skip RomM.
+                onboarding.finish_onboarding()
+                self.assertEqual(onboarding.onboarding_state()["status"], "completed")
+
     def test_epic_provider_requires_a_runnable_legendary_not_just_a_wrapper_file(self) -> None:
         with patch("lulu.onboarding.shutil.which", return_value="/usr/local/bin/legendary"), \
                 patch("lulu.onboarding.subprocess.run", side_effect=FileNotFoundError):

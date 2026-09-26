@@ -22,6 +22,22 @@ class FakeSecrets:
 
 
 class AdminWebTests(unittest.TestCase):
+    def test_finish_request_rejects_unvalidated_setup_before_password_mutation(self):
+        handler = object.__new__(Handler)
+        handler.path = "/api/setup/initial-password"
+        with patch.object(APP, "password_configured", return_value=False), \
+                patch("lulu.admin_web.onboarding_state", return_value={"status": "partial"}), \
+                patch.object(Handler, "_json_body", return_value={
+                    "new_password": "fixture-password", "confirm_password": "fixture-password", "finish": True}), \
+                patch("lulu.onboarding.require_validated_integrations",
+                      side_effect=ValueError("Test and Save before finishing")) as validate, \
+                patch.object(APP, "set_initial_admin_password") as password, \
+                patch.object(Handler, "_json") as response:
+            handler.do_POST()
+        validate.assert_called_once_with()
+        password.assert_not_called()
+        response.assert_called_once_with({"error": "Test and Save before finishing"}, 400)
+
     def test_onboarding_handoff_qr_and_normal_web_home_have_distinct_routes(self):
         handler = object.__new__(Handler)
         handler.path = "/setup/qr.png"

@@ -116,11 +116,24 @@ def reset_onboarding() -> dict[str, Any]:
 def finish_onboarding() -> dict[str, Any]:
     with _LOCK:
         state = _read()
+        if state.get("status") != "completed":
+            require_validated_integrations(state)
         state["status"] = "completed"
         state["oobe_dismissed"] = True
         state["completed_at"] = int(time.time())
         _write(state)
         return onboarding_state()
+
+
+def require_validated_integrations(state: dict[str, Any] | None = None) -> None:
+    """Never complete selected credential setup on a stale/failed test."""
+    state = state if state is not None else onboarding_state()
+    validation = state.get("validation")
+    validation = validation if isinstance(validation, dict) else {}
+    for integration in state.get("selected_integrations", []):
+        result = validation.get(integration)
+        if not isinstance(result, dict) or result.get("ok") is not True:
+            raise ValueError("Test and Save each selected integration, or Skip it before finishing setup")
 
 
 def save_admin_password_configured() -> dict[str, Any]:

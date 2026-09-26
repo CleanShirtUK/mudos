@@ -1457,6 +1457,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     save_validation(integration, ok, message)
                     self._json(result, 200 if ok else 422)
                 elif action == "initial-password":
+                    if bool(payload.get("finish", False)):
+                        from .onboarding import require_validated_integrations
+                        require_validated_integrations()
                     password = str(payload.get("new_password", ""))
                     confirmation = str(payload.get("confirm_password", ""))
                     if not APP.set_initial_admin_password(password, confirmation):
@@ -1472,6 +1475,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
                             or not APP.password_configured()):
                         self._json({"error": "Normal password changes are available after setup is complete."}, 409)
                         return
+                    if bool(payload.get("finish", False)):
+                        from .onboarding import require_validated_integrations
+                        require_validated_integrations()
                     current = str(payload.get("current_password", ""))
                     password = str(payload.get("new_password", ""))
                     if password != str(payload.get("confirm_password", "")):
