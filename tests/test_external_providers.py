@@ -8,12 +8,20 @@ import unittest
 from lulu.catalogue import CatalogueStore
 from lulu.plugins.external import (CliAcquisitionExecutor, OwnedProviderGame,
                                    SnapshotEntitlementSource, normalize_game)
-from lulu.plugins.epic import EpicAuthentication
+from lulu.plugins.epic import EpicAcquisitionExecutor, EpicAuthentication
 from lulu.plugins.gog import GogAuthentication
 from lulu.jobs import DownloadJob, JobOperation
 
 
 class ExternalProviderTests(unittest.TestCase):
+    def test_epic_installer_targets_the_canonical_app_id_directory(self) -> None:
+        executor = EpicAcquisitionExecutor()
+        command = executor.command_builder("epic:Fortnite", Path("/games/Executables/epic"))
+        self.assertIn("--base-path", command)
+        self.assertEqual(command[command.index("--base-path") + 1], "/games/Executables/epic")
+        self.assertIn("--game-folder", command)
+        self.assertEqual(command[command.index("--game-folder") + 1], "Fortnite")
+
     def test_epic_and_gog_completed_jobs_project_through_installed_manifest(self) -> None:
         class Output:
             async def __aiter__(self):

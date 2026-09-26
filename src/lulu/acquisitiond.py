@@ -67,7 +67,6 @@ class AcquisitionInterface(ServiceInterface):
         self._reconciliations: set[str] = {
             job.job_id for job in manager.snapshot()
             if job.state.value == "completed"
-            and job.operation in {JobOperation.INSTALL, JobOperation.REMOVE}
         }
         self.notifications.seed(manager.snapshot())
         manager._on_change = self._publish
@@ -89,8 +88,7 @@ class AcquisitionInterface(ServiceInterface):
         # Schedule the provider/catalogue refresh only after the executor has
         # returned, while retaining the authoritative completed job state.
         for job in snapshot:
-            if (job.state.value == "completed" and job.job_id not in self._reconciliations
-                    and job.operation in {JobOperation.INSTALL, JobOperation.REMOVE}):
+            if job.state.value == "completed" and job.job_id not in self._reconciliations:
                 self._reconciliations.add(job.job_id)
                 asyncio.create_task(self._reconcile_completed_job(job.job_id))
 

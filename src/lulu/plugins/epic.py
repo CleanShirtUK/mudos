@@ -102,7 +102,9 @@ class EpicAcquisitionExecutor(CliAcquisitionExecutor):
         config_dir = PATHS.provider_config_root("epic") / "legendary"
         super().__init__("epic", "legendary", root,
                          lambda identity, destination: ["legendary", "-y", "install", identity.removeprefix("epic:"),
-                                                        "--base-path", str(destination), "--skip-sdl", "--skip-dlcs"],
+                                                        "--base-path", str(destination),
+                                                        "--game-folder", identity.removeprefix("epic:"),
+                                                        "--skip-sdl", "--skip-dlcs"],
                          lambda identity, destination: ["legendary", "-y", "uninstall", identity.removeprefix("epic:")])
         self.environment = {**os.environ, "LEGENDARY_CONFIG_PATH": str(config_dir)}
 
