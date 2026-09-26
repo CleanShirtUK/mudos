@@ -22,6 +22,30 @@ class FakeSecrets:
 
 
 class AdminWebTests(unittest.TestCase):
+    def test_saving_setup_credentials_invalidates_prior_success_until_retested(self):
+        handler = object.__new__(Handler)
+        handler.path = "/api/setup/credentials"
+        with patch.object(APP, "password_configured", return_value=False), \
+                patch("lulu.admin_web.onboarding_state", return_value={"status": "never"}), \
+                patch.object(Handler, "_json_body", return_value={"integration": "metadata.igdb"}), \
+                patch.object(APP, "save_setup_credentials", return_value={"configured": True}) as save, \
+                patch("lulu.admin_web.save_validation") as validate, \
+                patch.object(Handler, "_json") as response:
+            handler.do_POST()
+        save.assert_called_once_with("metadata.igdb", {"integration": "metadata.igdb"})
+        validate.assert_called_once_with("metadata.igdb", False,
+                                         "Connection details saved; test this integration before continuing.")
+        response.assert_called_once_with({"configured": True})
+        with patch.object(APP, "password_configured", return_value=False), \
+                patch("lulu.admin_web.onboarding_state", return_value={"status": "never"}), \
+                patch.object(Handler, "_json_body", return_value={"integration": "metadata.igdb"}), \
+                patch.object(APP, "save_setup_credentials", side_effect=ValueError("save failed")), \
+                patch("lulu.admin_web.save_validation") as validate, \
+                patch.object(Handler, "_json") as response:
+            handler.do_POST()
+        validate.assert_not_called()
+        response.assert_called_once_with({"error": "save failed"}, 400)
+
     def test_setup_local_providers_do_not_claim_ready_from_installation_alone(self):
         app = AdminApp()
         rows = [dict(id=provider, name=provider, installed=True)
@@ -508,12 +532,16 @@ var document={querySelector:s=>s==='#content'?content:s==='#notice'?noticeElemen
  querySelectorAll:()=>[{dataset:{field:'url'},type:'url',value:'https://fixture.local'}]};
 var window={location:{assign:()=>{}}},CSS={escape:x=>x};
 var setTimeout=()=>0,clearInterval=()=>{},setInterval=()=>0;
-var fetch=async function(path,options){let body=options&&options.body?JSON.parse(options.body):{};
- if(path==='/api/setup/progress')fixture.onboarding.selected_integrations=body.integrations||[];
- if(path==='/api/setup/credentials')fixture.integrations[0].configured=true;
- let value=path==='/api/setup/test'?{ok:!fixtureFail,message:fixtureFail?'Fixture failed':'Fixture ready'}
- :path==='/api/setup/progress'?{state:{selected_integrations:fixture.onboarding.selected_integrations}}
- :fixture;
+ var fetch=async function(path,options){let body=options&&options.body?JSON.parse(options.body):{};
+  if(path==='/api/setup/progress')fixture.onboarding.selected_integrations=body.integrations||[];
+  if(path==='/api/setup/credentials'){
+   fixture.integrations[0].configured=true;
+   fixture.onboarding.validation[body.integration]={ok:false,message:'Retest required'};
+  }
+  let value=path==='/api/setup/test'?{ok:!fixtureFail,message:fixtureFail?'Fixture failed':'Fixture ready'}
+  :path==='/api/setup/progress'?{state:{selected_integrations:fixture.onboarding.selected_integrations}}
+  :fixture;
+  if(path==='/api/setup/test')fixture.onboarding.validation[body.integration]=value;
  return {ok:true,headers:{get:()=> 'application/json'},json:async()=>value};};
 """
 
@@ -550,6 +578,12 @@ var fetch=async function(path,options){let body=options&&options.body?JSON.parse
         self.assertIn("Review Setup", evaluate(retried, "content.innerHTML"))
         evaluate(retried, "reviewSetup()")
         self.assertEqual(evaluate(retried, "String(step)"), "3")
+
+        evaluate(retried, "step=2;fixture.onboarding.validation['providers.romm']="
+                 "{ok:false,message:'Saved in another tab; retest required'};reviewSetup()")
+        self.assertEqual(evaluate(retried, "String(step)"), "2")
+        self.assertIn("Retry", evaluate(retried, "content.innerHTML"))
+        self.assertIn("Saved in another tab", evaluate(retried, "content.innerHTML"))
 
         multiple = context()
         evaluate(multiple, "fixture.integrations.push({id:'providers.second',name:'Second',help:'#',"
