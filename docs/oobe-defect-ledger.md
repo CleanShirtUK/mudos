@@ -18,7 +18,8 @@ Append findings in order. Do not repair defects during the rehearsal.
 4. **OOBE-004 — Wi-Fi onboarding can escape into empty Mudos**
    - Observed: Back/escape from mandatory first-run Wi-Fi setup can enter an empty Mudos shell/Home before connectivity is available.
    - Expected: While connectivity is a mandatory setup prerequisite, Back must not leave onboarding for an unusable shell.
-   - Scope: OOBE flow/input routing; defer to correction pass.
+   - Correction: Back now routes through the onboarding owner even if connectivity changes. It first closes Wi-Fi credentials, then returns from Wi-Fi settings to the onboarding actions; Back on the onboarding surface itself cannot enter the ordinary shell. Only the existing explicit Continue to Home dismissal or completed setup releases that ownership. Offline users can still deliberately continue offline.
+   - Status: Source/QML policy and shell wiring tests pass; physical Wi-Fi/controller and browser acceptance remain pending.
 
 5. **OOBE-005 — Wi-Fi OOBE presentation looks like Settings**
    - Observed: OOBE reuses the functional Settings Wi-Fi page.

@@ -288,6 +288,19 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertIn('operationRequested("forget", row.ssid, "")', qml)
         self.assertIn('passwordInput.forceActiveFocus()', qml)
 
+    def test_setup_back_stays_in_onboarding_until_explicit_dismissal(self) -> None:
+        shell = (ROOT / "ui" / "ConsoleShell.qml").read_text()
+        back = shell.split('function back() {', 1)[1].split('NumberAnimation {', 1)[0]
+        self.assertIn('OnboardingBack.action(onboardingOpen, onboardingNetworkSettings,', back)
+        self.assertIn('if (onboardingBack !== "shell")', back)
+        self.assertIn('onboardingNetworkSettings = false', back)
+        self.assertIn('space = "home"', back)
+        self.assertIn('internetSettingsRef.credentialView = false', back)
+        self.assertLess(back.index('if (onboardingBack !== "shell")'),
+                        back.index('if (space === "system")'))
+        self.assertNotIn('onboardingOpen && (!systemStatus || !systemStatus.networkOnline)', back)
+        self.assertIn('request("/onboarding/dismiss", "POST"', shell)
+
     def test_audio_settings_uses_session_audio_boundary_and_controller_model(self) -> None:
         qml = (ROOT / "ui" / "AudioSettings.qml").read_text()
         shell = (ROOT / "ui" / "ConsoleShell.qml").read_text()

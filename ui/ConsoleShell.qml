@@ -1,4 +1,5 @@
 import QtQuick
+import "OnboardingBack.js" as OnboardingBack
 import "InstallableProjection.js" as InstallableProjection
 import "HomeDomains.js" as HomeDomains
 import QtQuick.Window
@@ -2556,13 +2557,21 @@ import QtQuick.Controls
                          }, "Credential cancellation failed")
             return
         }
-        if (onboardingOpen && (!systemStatus || !systemStatus.networkOnline)) {
-            if (onboardingNetworkSettings && internetSettingsRef
-                    && internetSettingsRef.credentialView) {
+        var onboardingBack = OnboardingBack.action(onboardingOpen, onboardingNetworkSettings,
+                                                   !!(internetSettingsRef && internetSettingsRef.credentialView))
+        if (onboardingBack !== "shell") {
+            if (onboardingBack === "close-credential") {
                 internetSettingsRef.credentialView = false
                 request("/keyboard/hide", "POST", "", function(data) {})
+            } else if (onboardingBack === "show-onboarding") {
+                onboardingNetworkSettings = false
+                space = "home"
+                systemLanding = true
+                inputSurface.forceActiveFocus()
             }
-            message = "Connect to Wi-Fi to continue onboarding."
+            message = systemStatus && systemStatus.networkOnline
+                ? "Choose Set Up Locally or Continue to Home."
+                : "Connect to Wi-Fi or explicitly continue offline from onboarding."
             return
         }
         if (launchOverlayEffectiveVisible) {
