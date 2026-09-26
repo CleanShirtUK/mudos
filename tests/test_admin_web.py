@@ -22,6 +22,25 @@ class FakeSecrets:
 
 
 class AdminWebTests(unittest.TestCase):
+    def test_onboarding_handoff_qr_and_normal_web_home_have_distinct_routes(self):
+        handler = object.__new__(Handler)
+        handler.path = "/setup/qr.png"
+        handler.wfile = io.BytesIO()
+        with patch("lulu.admin_web.subprocess.run", return_value=type(
+                "Result", (), {"stdout": b"fixture-png"})()) as qr, \
+                patch.object(Handler, "send_response"), patch.object(Handler, "send_header"), \
+                patch.object(Handler, "end_headers"):
+            handler.do_GET()
+        self.assertEqual(qr.call_args.args[0][-1], "http://mudos.local/setup")
+        self.assertEqual(handler.wfile.getvalue(), b"fixture-png")
+        handler.path = "/"
+        with patch.object(Handler, "_require", return_value="csrf"), \
+                patch.object(Handler, "_dashboard") as dashboard, \
+                patch.object(Handler, "_setup_page") as setup:
+            handler.do_GET()
+        dashboard.assert_called_once_with()
+        setup.assert_not_called()
+
     def test_persisted_store_ready_requires_current_account_authentication(self):
         app = AdminApp()
         rows = [dict(id=id, name=name, installed=True) for id, name in

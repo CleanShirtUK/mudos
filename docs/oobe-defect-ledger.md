@@ -5,10 +5,12 @@ Append findings in order. Do not repair defects during the rehearsal.
 1. **OOBE-001 — Handoff URL omits setup path**
    - Observed: Online onboarding advertises `http://mudos.local`; expected setup handoff is `http://mudos.local/setup`.
    - Disposition: Work around by manually opening `/setup`; retest after correction.
+   - Engineering check: Onboarding text and QR generation both target `http://mudos.local/setup`; generated-route test passes. Physical QR/display acceptance pending.
 
 2. **OOBE-002 — Local onboarding actions use small standard buttons**
    - Observed: `Set Up Locally` and `Continue to Home` are not presented as Mudos controller-focusable controls.
    - Disposition: Work around with keyboard/mouse; do not fix mid-rehearsal.
+   - Engineering check: Onboarding now presents scaled large action buttons with selection highlight and shell-routed D-pad/A activation. On connectivity/adapter changes it resets selection to the first setup action rather than silently retaining Continue to Home. Real QML component tests cover rendered size, highlight and signal routing; physical controller/visual acceptance pending.
 
 3. **OOBE-003 — Wi-Fi screen controller navigation not physically verified**
    - Source review: `ui/InternetSettings.qml` exposes row activation and the console shell routes confirm to it. That is insufficient to verify the physical controller, OSK focus/return, connect, and Back behavior.
@@ -43,6 +45,7 @@ Append findings in order. Do not repair defects during the rehearsal.
 9. **OOBE-009 — Setup should end at normal Mudos web home**
    - Observed/desired architecture: Setup currently terminates in a setup-specific completion experience.
    - Expected: Normal `mudos.local` becomes the Mudos admin/home portal and users land there after setup.
+   - Engineering check: Finish Setup navigates to `/`, which routes to the normal authenticated dashboard rather than the setup page; generated-route test passes. Browser acceptance pending.
 
 10. **OOBE-010 — Mudos admin needs one authoritative password**
     - Future architecture: Avoid separate web-admin and Linux credentials; authenticate the web admin against the authoritative Mudos Linux account via PAM/system auth or equivalent.
@@ -51,7 +54,8 @@ Append findings in order. Do not repair defects during the rehearsal.
 11. **OOBE-011 — Setup completion transition should enter normal startup/Home**
     - Observed: A “Setup complete” message is presented as the final console experience.
     - Expected: Finish Setup fades current surface to black, reuses the existing startup intro, then enters Home. Do not duplicate the intro for OOBE.
-    - Scope: Later transition/polish pass.
+   - Scope: Later transition/polish pass.
+   - Engineering check: Shell completion marks the startup intro pending and calls the existing presentation coordinator's intro before Home; source contract checked. Physical fade/VT acceptance is still pending.
 
 12. **OOBE-012 — NZBGet was not configured by onboarding**
     - Observed: Setup did not collect/configure required NZBGet connection/authentication information.

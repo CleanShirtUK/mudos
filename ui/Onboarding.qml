@@ -11,6 +11,8 @@ Item {
     property var luluPalette
     property int selectedAction: 0
     readonly property int actionCount: online ? 2 : (networkAdapterAvailable ? 3 : 2)
+    onOnlineChanged: selectedAction = 0
+    onNetworkAdapterAvailableChanged: selectedAction = 0
     signal openNetworkSettings()
     signal continueToHome()
     signal setUpLocally()
@@ -94,6 +96,7 @@ Item {
                     model: root.actionCount
                     delegate: Button {
                         required property int index
+                        objectName: "onboardingOnlineAction" + index
                         text: root.actionLabel(index)
                         highlighted: index === root.selectedAction
                         implicitWidth: 310 * root.uiScale
@@ -130,6 +133,7 @@ Item {
                 model: root.actionCount
                 delegate: Button {
                     required property int index
+                    objectName: "onboardingOfflineAction" + index
                     text: root.actionLabel(index)
                     highlighted: index === root.selectedAction
                     implicitWidth: 360 * root.uiScale

@@ -301,6 +301,15 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertNotIn('onboardingOpen && (!systemStatus || !systemStatus.networkOnline)', back)
         self.assertIn('request("/onboarding/dismiss", "POST"', shell)
 
+    def test_onboarding_handoff_and_completion_reuse_startup_intro(self) -> None:
+        onboarding = (ROOT / "ui" / "Onboarding.qml").read_text()
+        shell = (ROOT / "ui" / "ConsoleShell.qml").read_text()
+        self.assertIn('http://mudos.local/setup', onboarding)
+        self.assertIn('onboardingCompletionPending = true', shell)
+        self.assertIn('startupLifecycle = "READY_FOR_INTRO"', shell)
+        self.assertIn('presentationCoordinator.beginStartup()', shell)
+        self.assertIn('onContinueToHome: root.onboardingContinueHome()', shell)
+
     def test_audio_settings_uses_session_audio_boundary_and_controller_model(self) -> None:
         qml = (ROOT / "ui" / "AudioSettings.qml").read_text()
         shell = (ROOT / "ui" / "ConsoleShell.qml").read_text()
