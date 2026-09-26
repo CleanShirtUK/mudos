@@ -50,6 +50,12 @@ class ReleaseToolTests(unittest.TestCase):
         (root / "bin" / "tool").write_text("tool\n")
         release.write_manifest(root)
         release.verify_manifest(root)
+        manifest_paths = {
+            line.split("  ", 1)[1]
+            for line in (root / release.MANIFEST_NAME).read_text().splitlines()
+        }
+        self.assertEqual(manifest_paths, {"payload.txt", "bin/tool"})
+        self.assertNotIn(release.MANIFEST_NAME, manifest_paths)
         (root / "payload.txt").write_text("tampered\n")
         with self.assertRaises(release.ReleaseError):
             release.verify_manifest(root)
@@ -75,6 +81,52 @@ class ReleaseToolTests(unittest.TestCase):
             with self.assertRaisesRegex(release.ReleaseError, "no checksum manifest"):
                 release.verify_manifest(root)
 
+    def test_post_build_python_bytecode_is_not_an_implicit_manifest_exclusion(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "lib" / "lulu").mkdir(parents=True)
+            (root / "lib" / "lulu" / "module.py").write_text("VALUE = 1\n")
+            release.write_manifest(root)
+            release.verify_manifest(root)
+            cache = root / "lib" / "lulu" / "__pycache__"
+            cache.mkdir()
+            (cache / "module.cpython-314.pyc").write_bytes(b"runtime-generated")
+            with self.assertRaisesRegex(release.ReleaseError, "complete release"):
+                release.verify_manifest(root)
+
+    def test_payload_build_keeps_native_intermediates_out_of_runtime_tree(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory) / "source-repo"
+            repo.mkdir()
+            subprocess.run(["git", "init", "-q", "-b", "main"], cwd=repo, check=True)
+            for name in ("src/lulu", "ui", "scripts", "config", "packaging",
+                         "deploy/payload/bin"):
+                (repo / name).mkdir(parents=True, exist_ok=True)
+            build_script = repo / "scripts/build-lulu-shell.sh"
+            build_script.write_text(
+                "#!/bin/sh\nset -eu\nout=$1\ndir=$(dirname \"$out\")\n"
+                "touch \"$out\" \"$dir/mudos-guide\" \"$dir/mudos-notification\" \"$dir/generated.moc\"\n"
+            )
+            for path in (
+                "packaging/lulu-vt", "packaging/mudos-provider-install",
+                "scripts/mudos-questarr", "scripts/release.py",
+                "deploy/payload/bin/verify-mudos.sh", "src/lulu/__init__.py",
+                "ui/placeholder.qml", "config/placeholder.toml",
+            ):
+                (repo / path).write_text("fixture\n")
+            subprocess.run(["git", "add", "."], cwd=repo, check=True)
+            subprocess.run([
+                "git", "-c", "user.name=Test", "-c", "user.email=test@example.invalid",
+                "commit", "-qm", "fixture",
+            ], cwd=repo, check=True)
+            payload = Path(directory) / "candidate"
+            release.build_payload(repo, payload)
+            self.assertTrue((payload / "bin/lulu-shell").is_file())
+            self.assertTrue((payload / "bin/mudos-guide").is_file())
+            self.assertTrue((payload / "bin/mudos-notification").is_file())
+            self.assertFalse((payload / ".native-build").exists())
+            self.assertFalse(any(path.suffix == ".moc" for path in payload.rglob("*")))
+
     def test_build_records_provenance_and_refuses_overwrite(self):
         root = self.git_repo()
         output = Path(tempfile.mkdtemp())
@@ -89,6 +141,16 @@ class ReleaseToolTests(unittest.TestCase):
         try:
             built = release.build_release(info)
             release.verify_manifest(built)
+            manifested = {
+                line.split("  ", 1)[1]
+                for line in (built / release.MANIFEST_NAME).read_text().splitlines()
+            }
+            expected = {
+                str(path.relative_to(built))
+                for path in release.iter_files(built)
+                if path.name != release.MANIFEST_NAME
+            }
+            self.assertEqual(manifested, expected)
             metadata = (built / "RELEASE").read_text()
             self.assertIn(f"revision={revision}\n", metadata)
             self.assertIn("branch=main\n", metadata)

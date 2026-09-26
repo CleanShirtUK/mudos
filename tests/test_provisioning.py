@@ -11,6 +11,19 @@ PAYLOAD = ROOT / "deploy/payload"
 
 
 class ProvisioningTests(unittest.TestCase):
+    def test_python_services_do_not_write_bytecode_into_immutable_release_roots(self) -> None:
+        units = (
+            "lulu-session@.service", "lulu-consoled.service", "lulu-acquisition.service",
+            "lulu-admin.service", "lulu-inputplumber-hotplug.service",
+            "lulu-questarr-reconcile.service", "lulu-osk@.service",
+            "lulu-provider-install@.service", "mudos-recovery-guard.service",
+            "mudos-recovery.service", "mudos-recovery-ui.service",
+        )
+        for unit in units:
+            with self.subTest(unit=unit):
+                content = (ROOT / "packaging" / unit).read_text()
+                self.assertIn("Environment=PYTHONDONTWRITEBYTECODE=1", content)
+
     def test_shell_provisions_animated_webp_image_plugin(self) -> None:
         provisioning = (ROOT / "scripts" / "provision-appliance-services.sh").read_text()
         self.assertIn("qt6-webengine qt6-imageformats ffmpeg python-pillow", provisioning)

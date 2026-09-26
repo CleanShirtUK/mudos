@@ -5,6 +5,7 @@ Wants=network-online.target
 
 [Service]
 Type=oneshot
+Environment=PYTHONDONTWRITEBYTECODE=1
 ExecStart=/opt/lulu/current/bin/mudos-provider-install %i
 TimeoutStartSec=20min
 StandardOutput=journal

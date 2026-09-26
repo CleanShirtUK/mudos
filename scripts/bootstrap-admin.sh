@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+export PYTHONDONTWRITEBYTECODE=1
 if [[ $(id -u) -ne 0 ]]; then exec sudo -n "$0" "$@"; fi
 runtime=${LULU_INSTALL_ROOT:-}
 if [[ -z "$runtime" ]]; then

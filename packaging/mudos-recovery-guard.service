@@ -6,6 +6,7 @@ Type=oneshot
 User=lulu
 Group=lulu
 Environment=PYTHONPATH=/opt/lulu/current/lib
+Environment=PYTHONDONTWRITEBYTECODE=1
 Environment=HOME=/home/lulu
 Environment=XDG_CONFIG_HOME=/home/lulu/.config
 ExecStart=/opt/lulu/current/scripts/mudos-recovery-guard.py

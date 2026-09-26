@@ -5,4 +5,5 @@ Wants=inputplumber.service
 
 [Service]
 Type=oneshot
+Environment=PYTHONDONTWRITEBYTECODE=1
 ExecStart=/opt/lulu/current/scripts/provision-inputplumber-gamepads.py /etc/inputplumber/devices.d/lulu-composite.yaml --activate

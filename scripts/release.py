@@ -28,12 +28,21 @@ REQUIRED_FILES = (
     "bin/verify-mudos.sh",
     "lib/lulu/sessiond.py",
     "lib/lulu/consoled.py",
+    "lib/lulu/bluetooth.py",
     "ui/ConsoleShell.qml",
+    "ui/MudosSettingsPage.qml",
+    "ui/SystemStatusStrip.qml",
     "scripts/console-ui.sh",
     "scripts/console-ui-bridge.py",
     "scripts/reconcile-questarr.py",
+    "scripts/provision-inputplumber-gamepads.py",
     "config/inputplumber/devices/lulu-composite.yaml",
+    "packaging/lulu-session@.service",
+    "packaging/lulu-inputplumber-hotplug.service",
+    "packaging/mudos-ownership.json",
 )
+MANIFEST_NAME = "manifest.sha256"
+MANIFEST_SELF_EXCLUSION = "The checksum manifest is the only excluded regular file because it cannot hash itself."
 FORBIDDEN_SYMBOLS = (b"MudosWifi", b"MudosBluetooth", b"WifiBackend", b"BluetoothBackend")
 CANONICAL_HOSTNAME = "lulu"
 CANONICAL_SOURCE = Path("/home/josh/src/lulu")
@@ -128,12 +137,18 @@ def build_payload(repo_root: Path, payload: Path) -> None:
     for directory in PAYLOAD_DIRS:
         copy_tree(source / directory, payload / directory)
     (payload / "scripts" / "release.py").unlink(missing_ok=True)
+    build_dir = payload / ".native-build"
+    build_dir.mkdir()
     subprocess.run(
-        ["sh", str(source / "scripts" / "build-lulu-shell.sh"), str(payload / "bin" / "lulu-shell")],
+        ["sh", str(source / "scripts" / "build-lulu-shell.sh"), str(build_dir / "lulu-shell")],
         cwd=source,
         env={**os.environ, "LULU_INSTALL_ROOT": str(source)},
         check=True,
     )
+    # Keep generated moc sources and intermediates outside the runtime payload.
+    for binary in ("lulu-shell", "mudos-guide", "mudos-notification"):
+        shutil.move(str(build_dir / binary), payload / "bin" / binary)
+    shutil.rmtree(build_dir)
     shutil.copy2(source / "packaging" / "lulu-vt", payload / "bin" / "lulu-vt")
     shutil.copy2(source / "scripts" / "mudos-questarr", payload / "bin" / "mudos-questarr")
     shutil.copy2(source / "packaging" / "mudos-provider-install", payload / "bin" / "mudos-provider-install")
@@ -177,14 +192,19 @@ def iter_files(root: Path) -> Iterable[Path]:
 
 
 def write_manifest(release: Path) -> None:
-    manifest = release / "manifest.sha256"
+    """Hash every payload regular file except the manifest itself.
+
+    ``MANIFEST_SELF_EXCLUSION`` documents the single unavoidable exclusion;
+    verification does not ignore caches, build outputs, or runtime additions.
+    """
+    manifest = release / MANIFEST_NAME
     entries = [f"{hashlib.sha256(path.read_bytes()).hexdigest()}  {path.relative_to(release)}" for path in iter_files(release) if path != manifest]
     manifest.write_text("\n".join(entries) + "\n")
 
 
 def verify_manifest(release: Path) -> None:
     release = release.resolve()
-    manifest = release / "manifest.sha256"
+    manifest = release / MANIFEST_NAME
     if manifest.is_symlink() or not manifest.is_file():
         raise ReleaseError(f"release has no checksum manifest: {release}")
     expected = set()
@@ -205,6 +225,8 @@ def verify_manifest(release: Path) -> None:
         expected.add(relative)
     if any(path.is_symlink() for path in release.rglob("*")):
         raise ReleaseError("release contains a symlink")
+    # The manifest is the sole regular-file exclusion; all other files,
+    # including bytecode caches created after release construction, fail closed.
     actual = {str(path.relative_to(release)) for path in iter_files(release) if path != manifest}
     if expected != actual:
         raise ReleaseError("checksum manifest does not cover the complete release")

@@ -21,6 +21,7 @@ TTYVHangup=yes
 TTYVTDisallocate=yes
 WorkingDirectory=/home/lulu
 Environment=PYTHONPATH=/opt/lulu/current/lib
+Environment=PYTHONDONTWRITEBYTECODE=1
 Environment=LULU_INSTALL_ROOT=/opt/lulu/current
 Environment=LULU_SHELL_EXECUTABLE=/opt/lulu/current/bin/lulu-shell
 Environment=HOME=/home/lulu

@@ -9,6 +9,7 @@ Type=oneshot
 User=lulu
 Environment=HOME=/home/lulu
 Environment=PYTHONPATH=/opt/lulu/current/lib
+Environment=PYTHONDONTWRITEBYTECODE=1
 ExecStart=/opt/lulu/current/scripts/reconcile-questarr.py
 
 [Install]

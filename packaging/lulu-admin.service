@@ -7,6 +7,7 @@ Type=simple
 User=lulu
 Group=lulu
 Environment=PYTHONPATH=/opt/lulu/current/lib
+Environment=PYTHONDONTWRITEBYTECODE=1
 Environment=LULU_INSTALL_ROOT=/opt/lulu/current
 Environment=HOME=/home/lulu
 Environment=XDG_CONFIG_HOME=/home/lulu/.config
