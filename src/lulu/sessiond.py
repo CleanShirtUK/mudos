@@ -49,6 +49,7 @@ class ConsoleSessionInterface(ServiceInterface):
         self._native_controller = os.environ.get("LULU_NATIVE_CONTROLLER", "0") == "1"
         self._applied_input_modes: dict[str, InputMode] = {}
         self._local_identity: LaunchIdentity | None = None
+        self._local_provider_id = ""
         self._controller_monitor_task: asyncio.Task[None] | None = None
         self._inputplumber_bus: MessageBus | None = None
         self._inputplumber_proxy: object | None = None
@@ -360,6 +361,7 @@ class ConsoleSessionInterface(ServiceInterface):
             self.model.primary_started(token, input_mode=InputMode.GAME)
         except (OSError, ValueError, TimeoutError) as error:
             self._local_identity = None
+            self._local_provider_id = ""
             if token is not None and self.model.state.lifecycle is not Lifecycle.SHELL:
                 self.model.fail(token, f"local launch failed: {error}")
                 self.model.return_complete(token)
@@ -379,10 +381,20 @@ class ConsoleSessionInterface(ServiceInterface):
             self.model.state.controller_mode = controller_mode
             self.model.launch_starting(token)
             self._local_identity = LaunchIdentity(token, pid, pgid, executable, tuple(argv))
-            self._apply_input_mode(InputMode.GAME)
-            self.model.primary_started(token, input_mode=InputMode.GAME)
+            self._local_provider_id = provider_id
+            if provider_id == "steam" and self.supervisor._presentation is not None:
+                # The OOBE Steam route uses a lifecycle sentinel rather than
+                # owning the Steam client process. Select the actual client
+                # window explicitly; selecting the sentinel PID leaves the
+                # shell as Gamescope's visible base layer.
+                from .plugins.steam.provider import SteamProvider
+                self.supervisor._presentation.select_pids(SteamProvider().desktop_pids, 15.0)
+            input_mode = InputMode.COMPAT if provider_id == "steam" else InputMode.GAME
+            self._apply_input_mode(input_mode)
+            self.model.primary_started(token, input_mode=input_mode)
         except (OSError, ValueError, TimeoutError) as error:
             self._local_identity = None
+            self._local_provider_id = ""
             if token is not None and self.model.state.lifecycle is not Lifecycle.SHELL:
                 self.model.fail(token, f"provider launch failed: {error}")
                 self.model.return_complete(token)
@@ -395,6 +407,7 @@ class ConsoleSessionInterface(ServiceInterface):
         if self._local_identity is None or self._local_identity.token != token:
             return
         identity = self._local_identity
+        restore_steam_shell = getattr(self, "_local_provider_id", "") == "steam"
         if self.model.state.lifecycle is Lifecycle.GAME:
             self.model.primary_exited(token, success=exit_code == 0)
             self.model.record_result(ProcessResult(
@@ -411,7 +424,14 @@ class ConsoleSessionInterface(ServiceInterface):
             self._apply_input_mode(InputMode.SHELL)
             self.model.set_input_mode(InputMode.SHELL)
             self.model.return_complete(token)
+            if (restore_steam_shell and self.supervisor._presentation is not None
+                    and self.supervisor._shell_process is not None):
+                try:
+                    self.supervisor._presentation.select_shell(self.supervisor._shell_process.pid)
+                except (OSError, RuntimeError, TimeoutError, subprocess.SubprocessError):
+                    LOGGER.exception("Steam OOBE dismissal could not restore the Mudos shell surface")
         self._local_identity = None
+        self._local_provider_id = ""
         self.StateChanged(self._state_json())
 
     @method()

@@ -327,6 +327,34 @@ class BoundaryTests(unittest.TestCase):
         self.assertIsNone(interface._local_identity)
         self.assertEqual(interface.model.state.input_mode, InputMode.SHELL)
 
+    def test_steam_provider_surface_selects_client_window_and_restores_shell(self) -> None:
+        class Presentation:
+            def __init__(self):
+                self.selected = []
+
+            def select_pids(self, pids, timeout):
+                self.selected.append((pids(), timeout))
+                return 456
+
+            def select_shell(self, pid):
+                self.selected.append(("shell", pid))
+
+        interface = input_mode_interface(RecordingInputPlumber({}))
+        presentation = Presentation()
+        interface.supervisor = type("Supervisor", (), {
+            "state_details": lambda self: {}, "_presentation": presentation,
+            "_shell_process": type("Shell", (), {"pid": 99})(),
+        })()
+        with patch("lulu.plugins.steam.provider.SteamProvider.desktop_pids", return_value=[456]):
+            interface.BeginProviderSession("steam", "compat", 123, 123,
+                                           "/usr/bin/sleep", ["sleep"])
+        self.assertEqual(presentation.selected, [([456], 15.0)])
+        self.assertEqual(interface.model.state.input_mode, InputMode.COMPAT)
+        self.assertEqual(interface.model.state.lifecycle, Lifecycle.GAME)
+        self.assertEqual(interface._local_provider_id, "steam")
+        interface.EndLocalSession(interface._local_identity.token, 0)
+        self.assertEqual(presentation.selected[-1], ("shell", 99))
+
     def test_failed_local_session_does_not_leave_state_owned(self) -> None:
         class FailingInputPlumber(RecordingInputPlumber):
             def load_mode(self, mode, object_path=None, *, execute=True):
