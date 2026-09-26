@@ -82,7 +82,10 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertNotIn("QT_DISABLE_HW_TEXTURES_CONVERSION", bridge)
 
     def test_qml_preserves_card_to_space_shell_interaction(self) -> None:
-        self.assertIn('property var domains: ["System", "Store", "Library", "Recent"]', QML)
+        self.assertIn('readonly property var domains: HomeDomains.categories(recentDomainAvailable)', QML)
+        self.assertIn('onItemCountChanged: root.syncRecentDomain()', QML)
+        self.assertIn('onStartupLibraryReadyChanged: if (startupLibraryReady) syncRecentDomain()', QML)
+        self.assertIn('statusStripTop: selectedDomainY - 3 * homeCategoryPitch', QML)
         self.assertIn("property int selectedCategoryIndex: 3", QML)
         self.assertIn('property string space: "home"', QML)
         self.assertIn('presentationTarget = "library"', QML)

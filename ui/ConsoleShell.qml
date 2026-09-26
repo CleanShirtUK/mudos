@@ -1,5 +1,6 @@
 import QtQuick
 import "InstallableProjection.js" as InstallableProjection
+import "HomeDomains.js" as HomeDomains
 import QtQuick.Window
 import QtQuick.Controls
 
@@ -12,9 +13,36 @@ import QtQuick.Controls
 
     onVisibleChanged: { }
 
-    property var domains: ["System", "Store", "Library", "Recent"]
+    readonly property bool recentDomainAvailable: HomeDomains.recentVisible(
+        recentHome ? recentHome.itemCount : 0,
+        homeCategoryTransitioning, homeCategoryFrom, homeCategoryTarget)
+    readonly property var domains: HomeDomains.categories(recentDomainAvailable)
     property int selectedCategoryIndex: 3
     property int desiredCategoryIndex: 3
+    function syncRecentDomain() {
+        if (recentHome && recentHome.itemCount > 0) {
+            // The initial Home selection remains Recent when the catalogue
+            // arrives before the intro. Later arrivals do not steal focus.
+            if (startupLifecycle !== "HOME" && !homeCategoryTransitioning) {
+                selectedCategoryIndex = 3
+                desiredCategoryIndex = 3
+                homeCategoryFrom = 3
+                homeCategoryTarget = 3
+                titleRailY = selectedDomainY - 3 * homeCategoryPitch
+            }
+            return
+        }
+        desiredCategoryIndex = HomeDomains.clampSelection(desiredCategoryIndex, 0)
+        if (homeCategoryTransitioning)
+            return // Let the current hop settle, then continue to Library.
+        if (selectedCategoryIndex === 3) {
+            selectedCategoryIndex = 2
+            homeCategoryFrom = 2
+            homeCategoryTarget = 2
+            homeCategoryProgress = 1
+            titleRailY = selectedDomainY - 2 * homeCategoryPitch
+        }
+    }
     property bool onboardingOpen: false
     property bool onboardingNetworkSettings: false
     property bool onboardingCompletionPending: false
@@ -146,8 +174,7 @@ import QtQuick.Controls
     // values match the settled Recent composition's System-title reference,
     // without following the animated title rail or its presentation offset.
     readonly property real statusStripRightMargin: homeCategoryRailX
-    readonly property real statusStripTop: selectedDomainY
-        - (domains.length - 1) * homeCategoryPitch
+    readonly property real statusStripTop: selectedDomainY - 3 * homeCategoryPitch
     readonly property real expandedContentSideMargin: design(120)
     // Frame the actual six-card visual envelope, using the same inter-card
     // gap as the backing clearance on both sides.
@@ -353,6 +380,7 @@ import QtQuick.Controls
     property string launchLifecycle: "shell"
     property string startupLifecycle: "BOOTSTRAPPING"
     property bool startupLibraryReady: false
+    onStartupLibraryReadyChanged: if (startupLibraryReady) syncRecentDomain()
     property bool startupReadinessRequestInFlight: false
     property bool returnPreparationStarted: false
     property bool returnPresentationPending: false
@@ -3204,6 +3232,7 @@ import QtQuick.Controls
                         width: recentReveal.width
                         height: root.homeFocalCardHeight
                         recentModel: root.catalogueRecentModel
+                        onItemCountChanged: root.syncRecentDomain()
                         presentationCoordinator: presentationCoordinator
                         selectedIndex: root.recentIndex
                         playActivationSerial: root.playActivationSerial
