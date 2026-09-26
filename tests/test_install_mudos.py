@@ -54,6 +54,13 @@ def test_every_installer_copied_unit_is_in_the_purge_ownership_contract():
     assert not missing, f"installer copies Mudos units not owned for purge: {sorted(missing)}"
 
 
+def test_development_validation_dropin_is_purge_owned_and_removed_before_production():
+    path = "/etc/systemd/system/lulu-inputplumber-hotplug.service.d/dev-validation.conf"
+    assert path in manifest()["system_integration"]["systemd_files"]
+    installer_source = (ROOT / "scripts/install_mudos.py").read_text()
+    assert 'raw.endswith(("/dev-runtime.conf", "/dev-validation.conf"))' in installer_source
+
+
 def test_lulu_target_is_installable_and_installer_verifies_boot_enablement():
     target = (ROOT / "packaging/lulu.target").read_text()
     installer_source = (ROOT / "scripts/install_mudos.py").read_text()

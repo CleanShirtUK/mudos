@@ -183,13 +183,12 @@
   test_recent_selection_velocity_is_per_card_and_rebases,
   test_selection_opacity_ownership_transfers_at_retarget}`, and
   `RecentModelBoundary::test_native_model_rows_create_visible_delegates`.
-  No QML behavior was modified by this batch. The older production selector
-  still resolves to `2546b11-candidate-20260926-runtime-refresh`; the shell,
-  Consoled, Acquisitiond and InputPlumber use the clearly separate dev runtime.
-  Admin/Recovery are still the old release. Core DUFS package exists, but its
-  generated config is absent on this older installation, so the wanted
-  `lulu-file-browser.service` is correctly condition-skipped. This is not
-  fresh-install evidence; candidate installation must verify DUFS activation.
+  No QML behavior was modified by this batch. The candidate was built and
+  verified, then installed through the canonical entrypoint after purge. First
+  fresh-runtime inspection found the DUFS service healthy but also identified
+  a surviving development-only InputPlumber hotplug drop-in; this install is
+  not accepted as final until the ownership correction is rebuilt and a second
+  purge/reinstall proves clean provenance.
 - Physical/fresh-state gates still outstanding (not waived): browser rendered
   visibility and Guide behavior; emulator gameplay and Guide; real provider
   sign-in/readiness and downloads; Usenet real connection/transfer; Questarr
@@ -198,6 +197,20 @@
   off/on reconnect without pairing, navigation and inventory; a separate USB
   Series controller was not present and was not claimed tested. No credentials,
   providers, games, or controller pairings were changed in this continuation.
+- Candidate `2595f66-candidate-v1-stabilization-20260927` passed the canonical
+  verifier and was installed through the public root entrypoint after the
+  ownership dry-run. Runtime verification found the core file browser active
+  with the pinned DUFS package, private root-owned mode-0600 config, and only
+  the intended `/srv` bind roots. It also exposed a stale
+  `/etc/systemd/system/lulu-inputplumber-hotplug.service.d/dev-validation.conf`
+  pointing back to the canonical source tree. This validation override was not
+  represented in the purge ownership contract, so the first install is not
+  accepted as clean production provenance and must be repeated from a corrected
+  exact-HEAD candidate. No OOBE actions occurred; no pairing/provider/game data
+  was added. The drop-in is now listed as Mudos-owned and canonical integration
+  removes it before runtime start. Installer/release focused regression tests
+  after the correction: **78 passed, 17 subtests**. Rebuild, verify, repeat the
+  ownership dry-run/purge, and reinstall before final-state acceptance.
 
 ## Bluetooth Settings implementation and hardware probe — 2026-09-26
 

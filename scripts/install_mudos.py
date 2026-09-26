@@ -364,7 +364,7 @@ def install_integration(repo: Path, release: Path, manifest: dict,
     # Existing development refresh drop-ins override immutable service paths;
     # they are listed as Mudos-owned integration and must not survive install.
     for raw in manifest["system_integration"]["systemd_files"]:
-        if raw.endswith("/dev-runtime.conf"):
+        if raw.endswith(("/dev-runtime.conf", "/dev-validation.conf")):
             Path(raw).unlink(missing_ok=True)
     # Admin provisioner is authoritative for recovery token creation, admin/helper
     # files, policy rules, Avahi, and service activation. Runtime points at current.
