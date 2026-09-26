@@ -3,6 +3,7 @@
 ## Continued correction pass from `c387802` (2026-09-26)
 
 - OOBE integration Skip was browser-only and therefore vanished on reload and could not be distinguished from ordinary deselection. Added durable `skipped_integrations` state, an explicit skip endpoint, UI hydration, and clearing on reselection. It remains distinct from saved configuration and connection validation. Regression: `PYTHONPATH=src python -m pytest -q tests/test_onboarding_recovery.py tests/test_admin_web.py` — **67 passed**; `git diff --check` clean. Further correction items remain in progress; no candidate build or destructive operation performed.
+- BIOS/key setup presentation had a second readiness interpretation from the emulator catalogue: the catalogue searches required files recursively, while setup reported only immediate directory entries and could show a required file as missing after a valid nested upload. Setup manifest now reports relative nested paths and computes required-name readiness consistently by basename. Regression and OOBE tests: **72 passed**.
 
 ## Starting authority and safety (2026-09-26)
 

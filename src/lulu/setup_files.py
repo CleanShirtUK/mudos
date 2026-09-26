@@ -171,15 +171,17 @@ def file_setup_manifest(selected_providers: set[str] | None = None) -> list[dict
         requirements = []
         for requirement in definition.setup_files:
             target = PATHS.bios_root / requirement.destination
-            present = sorted(path.name for path in target.iterdir() if path.is_file()) if target.is_dir() else []
+            present = sorted(path.relative_to(target).as_posix()
+                             for path in target.rglob("*") if path.is_file()) if target.is_dir() else []
+            present_names = {Path(name).name.casefold() for name in present}
             requirements.append({
                 "id": requirement.requirement_id, "label": requirement.label,
                 "description": requirement.description, "extensions": list(requirement.extensions),
                 "multiple": requirement.multiple, "archive": requirement.archive,
                 "required": requirement.required, "required_names": list(requirement.required_names),
                 "present": present,
-                "ready": (bool(present) and all(name.casefold() in {item.casefold() for item in present}
-                                                 for name in requirement.required_names)),
+                "ready": (bool(present) and all(name.casefold() in present_names
+                                                  for name in requirement.required_names)),
             })
         result.append({"platform": platform, "platform_label": definition.name,
                        "provider": provider, "requirements": requirements})
