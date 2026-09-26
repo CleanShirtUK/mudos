@@ -1,5 +1,36 @@
 # Astra execution log
 
+## Bluetooth Settings presentation reproduction — 2026-09-27
+
+- Reproduced the empty Settings presentation on the appliance before changing
+  runtime selection. The live `/settings?category=Bluetooth` endpoint returned
+  only a read-only Adapter row with the obsolete “Pair/connect mutation path is
+  TO PROVE” detail. Consoled and the visible shell were both loading the older
+  immutable `2546b11-candidate-20260926-runtime-refresh` payload, not committed
+  HEAD `40a6d79`; the source BlueZ/settings implementation was therefore not
+  present in the active process. Bluetooth category registration and the shared
+  Settings list/page binding exist in source.
+- Added a narrowly scoped `scripts/dev-runtime.sh settings-validation` path and
+  committed it as `8026e02`. It requires clean committed source, builds a
+  separate `/opt/lulu/dev-current` marked `promotable=false`, and switches only
+  session/Consoled runtime environment. It does not alter `/opt/lulu/current`,
+  construct a release, or reprovision InputPlumber. Activated the development
+  runtime on `lulu`; confirmed the live Settings data endpoint now exposes the
+  powered adapter state, Start discovery, and Turn Bluetooth off actions. The
+  shell process loads `/opt/lulu/dev-current/ui/ConsoleShell.qml`; Consoled uses
+  `/opt/lulu/dev-current/lib`.
+- This endpoint/provenance check reproduces and diagnoses the software-version
+  mismatch; it is **not** acceptance through the on-screen Mudos UI. No Settings
+  UI actions were activated and no controller was paired or otherwise changed
+  in this pass. Physical controller navigation, scan selection stability,
+  pair/agent confirmation or PIN entry, connect/disconnect, forget/re-pair,
+  power-cycle persistence, InputPlumber arrival, adapter off/on, and all four
+  status-strip transitions remain unverified. Do not treat Bluetooth as
+  complete, proceed to release-manifest work, create a candidate, or reinstall
+  until that real UI/controller acceptance has been carried out and recorded.
+- Validation after the change: full Python suite **868 passed + 25 subtests**;
+  native CTest **1/1 passed**; shell syntax and `git diff --check` passed.
+
 ## Bluetooth Settings implementation and hardware probe — 2026-09-26
 
 - Replaced Bluetooth Settings' `bluetoothctl show` placeholder with a native
