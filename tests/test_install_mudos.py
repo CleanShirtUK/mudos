@@ -27,6 +27,18 @@ def test_ownership_manifest_separates_release_state_and_shared_packages():
                    if isinstance(path, str))
 
 
+def test_transmission_admin_config_unit_and_polkit_rule_are_installed_and_purge_owned():
+    data = manifest()
+    assert "/etc/systemd/system/lulu-transmission-config.service" in data["system_integration"]["systemd_files"]
+    assert "/etc/polkit-1/rules.d/54-lulu-transmission.rules" in data["system_integration"]["system_files"]
+    assert "/etc/polkit-1/rules.d/55-lulu-transmission-config.rules" in data["system_integration"]["system_files"]
+    assert "/etc/polkit-1/rules.d/51-lulu-nzbget.rules" in data["system_integration"]["system_files"]
+    assert "/etc/polkit-1/rules.d/52-lulu-acquisition.rules" in data["system_integration"]["system_files"]
+    installer_source = (ROOT / "scripts/install_mudos.py").read_text()
+    assert '"lulu-transmission-config.service": "lulu-transmission-config.service"' in installer_source
+    assert '"lulu-transmission-config.service")' in installer_source
+
+
 @pytest.mark.parametrize("bad", ["relative/path", "/../../etc", "/"])
 def test_manifest_rejects_unsafe_mutable_paths(tmp_path, bad):
     data = json.loads((ROOT / "packaging/mudos-ownership.json").read_text())
@@ -232,6 +244,28 @@ def test_acquisition_directories_cover_default_and_configured_game_and_emulation
     assert custom_emu / "Mudos/.acquisition" in writable
 
 
+def test_installer_refuses_to_initialize_an_unmounted_configured_storage_target(tmp_path):
+    home = tmp_path / "home" / "lulu"
+    config = home / ".config/lulu/storage-targets.json"
+    config.parent.mkdir(parents=True)
+    target = tmp_path / "mnt" / "games"
+    target.mkdir(parents=True)
+    config.write_text(json.dumps({"game_path": str(target)}))
+    with pytest.raises(installer.InstallError, match="connect and mount"):
+        installer.validate_configured_storage_targets(manifest(), home)
+
+
+def test_installer_accepts_only_present_mount_for_configured_storage_target(tmp_path, monkeypatch):
+    home = tmp_path / "home" / "lulu"
+    config = home / ".config/lulu/storage-targets.json"
+    config.parent.mkdir(parents=True)
+    target = tmp_path / "mnt" / "games"
+    target.mkdir(parents=True)
+    config.write_text(json.dumps({"game_path": str(target)}))
+    monkeypatch.setattr(installer.os.path, "ismount", lambda path: Path(path) == target)
+    installer.validate_configured_storage_targets(manifest(), home)
+
+
 def test_acquisition_initialization_creates_only_leaves_with_restricted_modes(tmp_path):
     parent = tmp_path / "mounted" / "Mudos" / ".acquisition"
     paths = [parent / "torrents", parent / "usenet"]
@@ -244,8 +278,17 @@ def test_acquisition_initialization_creates_only_leaves_with_restricted_modes(tm
 
 def test_acquisition_paths_are_narrowly_added_to_provider_installer_sandbox():
     unit = (ROOT / "packaging/lulu-provider-install@.service").read_text()
-    assert "ReadWritePaths=/home/lulu/.config /home/lulu/.local/share/lulu /home/lulu/Games/.acquisition " in unit
+    assert "ReadWritePaths=/home/lulu/.config /home/lulu/.local/share/lulu -/home/lulu/.local/share/flatpak /home/lulu/Games/.acquisition " in unit
     assert "ReadWritePaths=/home/lulu " not in unit
+
+
+def test_flatpak_provider_install_runs_idempotent_user_remote_provisioner():
+    installer = (ROOT / "packaging/mudos-provider-install").read_text()
+    service = (ROOT / "packaging/lulu-provider-install@.service").read_text()
+    provisioner = (ROOT / "scripts/provision-flatpak.sh").read_text()
+    assert 'flatpak) exec "$root/scripts/provision-flatpak.sh" ;;' in installer
+    assert "flatpak --user remote-add --if-not-exists flathub" in provisioner
+    assert "-/home/lulu/.local/share/flatpak" in service
 
 
 def test_file_browser_bind_sources_are_initialized_for_first_start():

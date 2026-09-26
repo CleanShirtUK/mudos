@@ -292,6 +292,8 @@ class AdminApp:
                       "questarr": "questarr"}
         state = onboarding_state()
         selected = set(state.get("selected_providers", []))
+        selected_integrations = set(state.get("selected_integrations", []))
+        skipped_integrations = set(state.get("skipped_integrations", []))
         visible_integrations = {"metadata.igdb", "metadata.steamgriddb"}
         if "romm" in selected:
             visible_integrations.add("providers.romm")
@@ -317,9 +319,8 @@ class AdminApp:
                 romm = RommConfig.from_file()
                 metadata["configured"] = bool(romm and self.secrets.configured("romm", "api-key"))
                 metadata["enabled"] = bool(romm)
-                onboarding = onboarding_state()
                 metadata["readiness"] = RommReadinessStore().snapshot(
-                    selected=("providers.romm" in onboarding.get("selected_integrations", [])),
+                    selected=("romm" in selected),
                     installed=True, config=romm,
                 )
             elif provider_id == "providers.steam":
@@ -340,13 +341,22 @@ class AdminApp:
                 if isinstance(metadata.get("readiness"), dict) else ""
             service_unit = {"questarr": "lulu-questarr.service"}.get(provider_id)
             is_running = self.service_state(service_unit) == "active" if service_unit else None
+            integration_selected = item["id"] in selected_integrations
+            provider_selected = {
+                "providers.romm": "romm", "providers.steam": "steam",
+                "providers.prowlarr": "questarr", "providers.usenet.server": "usenet",
+            }.get(item["id"])
+            metadata["selected"] = (provider_selected in selected if provider_selected
+                                    else integration_selected)
+            metadata["skipped"] = item["id"] in skipped_integrations
             metadata["state"] = normalized_provider_state(
                 status=readiness_status or ("configured" if metadata.get("configured") else "not_configured"),
-                installed=True, selected=True, configured=bool(metadata.get("configured")),
+                installed=True, selected=bool(metadata["selected"]), configured=bool(metadata.get("configured")),
                 catalogue_reconciled=(readiness_status == "ready") if provider_id == "providers.romm" else None,
                 acquisition_configured=(bool(metadata.get("configured"))
                     if provider_id == "providers.romm" else None),
                 running=is_running, healthy=(is_running if service_unit else None),
+                skipped=bool(metadata["skipped"]),
                 degraded=bool(service_unit and is_running is False))
             integrations.append(metadata)
         from .setup_files import file_setup_manifest
@@ -357,7 +367,10 @@ class AdminApp:
 
     def setup_provider_states(self) -> list[dict[str, object]]:
         from .provider_readiness import ProviderReadinessStore
-        selected = set(onboarding_state().get("selected_providers", []))
+        setup_state = onboarding_state()
+        selected = set(setup_state.get("selected_providers", []))
+        validations = setup_state.get("validation", {})
+        validations = validations if isinstance(validations, dict) else {}
         readiness = ProviderReadinessStore()
         result = []
         installable_ids = {"steam", "epic", "gog", "lutris", "flatpak", "retroarch",
@@ -436,7 +449,7 @@ class AdminApp:
                 row["configured"] = False
                 row["running"] = running
                 row["healthy"] = bool(healthy)
-                row["status"] = "running" if running else "degraded"
+                row["status"] = "running" if running and healthy else "degraded"
                 row["status_message"] = (
                     (message + " Operator-owned Questarr account/configuration is still required.")
                     if running and healthy else
@@ -453,15 +466,43 @@ class AdminApp:
                     row["status_message"] = message
                 elif provider_id == "usenet":
                     server = self.config.provider("providers.usenet.server")
-                    server_configured = (server.enabled and bool(str(server.get("host", "")).strip())
-                                         and server.secret_available("username")
-                                         and server.secret_available("password"))
+                    acquisition = self.config.provider("providers.usenet")
+                    server_credentials_configured = (
+                        server.enabled and bool(str(server.get("host", "")).strip())
+                        and server.secret_available("username") and server.secret_available("password"))
+                    server_configured = server_credentials_configured and acquisition.enabled
+                    server_validation = validations.get("providers.usenet.server")
+                    server_authenticated = (bool(server_validation.get("ok"))
+                                            if isinstance(server_validation, dict) else None)
+                    row["authentication"] = {
+                        "status": ("authenticated" if server_authenticated is True else
+                                   "auth_failed" if server_authenticated is False else
+                                   "authentication_required"),
+                        "authenticated": server_authenticated,
+                    }
+                    row["news_server"] = {
+                        "configured": bool(server_credentials_configured),
+                        "executor_enabled": bool(acquisition.enabled),
+                        "authenticated": server_authenticated,
+                        "checked_at": server_validation.get("checked_at")
+                            if isinstance(server_validation, dict) else None,
+                        "message": server_validation.get("message", "")
+                            if isinstance(server_validation, dict) else
+                            "Usenet server credentials have not been tested.",
+                    }
                     row["status"] = "configured" if server_configured else "configuration_required"
                     row["configured"] = server_configured
                     row["acquisition_configured"] = server_configured
-                    row["status_message"] = ("NZBGet RPC healthy; verify the news server and a real transfer before Ready."
-                                             if server_configured else
-                                             "NZBGet RPC healthy; configure a news server before downloads can be Ready.")
+                    row["status_message"] = (
+                        "NZBGet RPC healthy; NNTP credentials were accepted, but a real transfer is not validated."
+                        if server_configured and server_authenticated is True else
+                        "NZBGet RPC healthy; NNTP connection test failed. Correct the server settings and retry."
+                        if server_configured and server_authenticated is False else
+                        "NZBGet RPC healthy; test the saved Usenet server credentials before downloads can be Ready."
+                        if server_configured else
+                        "Usenet server credentials are saved, but Acquisitiond has no registered Usenet executor."
+                        if server_credentials_configured else
+                        "NZBGet RPC healthy; configure and test a news server before downloads can be Ready.")
                 else:
                     row["status"] = "configured"
                     row["configured"] = True
@@ -595,6 +636,9 @@ class AdminApp:
                      "providers.romm": "Client API Token", "providers.prowlarr": "API key",
                      "providers.usenet.server": "Usenet server credentials"}[provider_id]
             raise ValueError(f"Enter the {label}")
+        usenet_acquisition_was_enabled = (
+            self.config.provider("providers.usenet").enabled
+            if provider_id == "providers.usenet.server" else False)
         self.config.update_provider(provider_id, values, secrets_in, secret_references=references)
         if provider_id == "providers.usenet.server":
             updated = self.config.provider(provider_id)
@@ -607,6 +651,20 @@ class AdminApp:
                 subprocess.run(["systemctl", "restart", "nzbget.service"],
                                stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
                                stderr=subprocess.DEVNULL, check=True, timeout=10)
+                # Acquisitiond registers this executor from the generic
+                # providers.usenet configuration at service startup. NNTP-only
+                # settings must not leave a healthy NZBGet daemon with no job
+                # executor available to Mudos.
+                self.config.update_provider("providers.usenet", {"enabled": True})
+                try:
+                    subprocess.run(["systemctl", "restart", "lulu-acquisition.service"],
+                                   stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                                   stderr=subprocess.DEVNULL, check=True, timeout=10)
+                except (OSError, subprocess.SubprocessError):
+                    self.config.update_provider("providers.usenet",
+                                                {"enabled": usenet_acquisition_was_enabled})
+                    raise ValueError("Usenet settings were applied to NZBGet, but Acquisitiond could not "
+                                     "reload its provider executor. Check lulu-acquisition.service.") from None
             except (OSError, subprocess.SubprocessError):
                 # The generic provider settings and encrypted references have
                 # already been saved. Report the daemon failure distinctly;
@@ -1923,6 +1981,17 @@ load();setInterval(load,10000);
                          if key != "secrets" and isinstance(value, (str, int, float, bool))}
         before_secrets = {key: before.secret(key) for key in before.secret_refs
                           if before.secret(key) is not None}
+        before_usenet_parent = (APP.config.provider("providers.usenet")
+                                if provider_id == "providers.usenet.server" else None)
+        before_usenet_parent_values = ({key: value for key, value in before_usenet_parent.values.items()
+                                        if key != "secrets" and isinstance(value, (str, int, float, bool))}
+                                       if before_usenet_parent else {})
+        if before_usenet_parent is not None:
+            before_usenet_parent_values["enabled"] = before_usenet_parent.enabled
+        before_usenet_parent_secrets = ({key: before_usenet_parent.secret(key)
+                                         for key in before_usenet_parent.secret_refs
+                                         if before_usenet_parent.secret(key) is not None}
+                                        if before_usenet_parent else {})
         values = {key: value[0] for key, value in form.items() if not key.startswith(("csrf", "secret_", "clear_"))}
         component = next((item for item in APP.components.all() if provider_id in item.provider_ids), None)
         if component:
@@ -2020,6 +2089,7 @@ load();setInterval(load,10000);
                 subprocess.run(["systemctl", "restart", "nzbget.service"],
                                stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
                                stderr=subprocess.DEVNULL, check=True, timeout=10)
+                APP.config.update_provider("providers.usenet", {"enabled": True})
             if provider_id == "metadata.igdb":
                 subprocess.Popen(["busctl", "call", "org.lulu.Consoled", "/org/lulu/Console",
                                   "org.lulu.Console", "RefreshStages", "as", "3",
@@ -2036,6 +2106,9 @@ load();setInterval(load,10000);
             # value paired with an old NZBGet runtime.
             try:
                 APP.config.update_provider(provider_id, before_values, before_secrets)
+                if before_usenet_parent is not None:
+                    APP.config.update_provider("providers.usenet", before_usenet_parent_values,
+                                               before_usenet_parent_secrets)
             except (OSError, ValueError):
                 pass
             message = ("Could not update Transmission credentials; previous credentials were preserved."

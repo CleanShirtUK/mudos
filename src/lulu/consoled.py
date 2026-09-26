@@ -81,6 +81,26 @@ def _load_plugin_registry() -> PluginRegistry:
     return registry
 
 
+def _validated_metadata_refresh_stages() -> set[str]:
+    """Retry first-run enrichment only for integrations explicitly validated."""
+    from .onboarding import onboarding_state
+    setup = onboarding_state()
+    selected = set(setup.get("selected_integrations", []))
+    skipped = set(setup.get("skipped_integrations", []))
+    validation = setup.get("validation", {})
+    validation = validation if isinstance(validation, dict) else {}
+    stages: set[str] = set()
+    if ("metadata.igdb" in selected and "metadata.igdb" not in skipped
+            and isinstance(validation.get("metadata.igdb"), dict)
+            and validation["metadata.igdb"].get("ok") is True):
+        stages.update({"metadata", "metadata-enrichment", "artwork"})
+    if ("metadata.steamgriddb" in selected and "metadata.steamgriddb" not in skipped
+            and isinstance(validation.get("metadata.steamgriddb"), dict)
+            and validation["metadata.steamgriddb"].get("ok") is True):
+        stages.add("artwork")
+    return stages
+
+
 class ConsoleCatalog:
     """Consoled-owned normalized catalogue."""
 
@@ -2524,6 +2544,12 @@ async def serve() -> None:
                 stages = (startup_stages if not startup_attempted else
                           {"steam", "gog", "epic", "local", "romm", "components", "romm-artwork",
                            "protondb", "artwork"})
+                if startup_attempted:
+                    # OOBE can validate metadata while the initial catalogue
+                    # refresh is already in flight. Retry those explicitly
+                    # validated stages on later reconciliation cycles if the
+                    # immediate Admin-to-Consoled request was unavailable.
+                    stages.update(_validated_metadata_refresh_stages())
                 await interface.refresh_catalogue(stages)
             except Exception:
                 LOGGER.exception("background catalogue synchronization failed")

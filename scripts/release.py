@@ -31,6 +31,7 @@ REQUIRED_FILES = (
     "ui/ConsoleShell.qml",
     "scripts/console-ui.sh",
     "scripts/console-ui-bridge.py",
+    "scripts/reconcile-questarr.py",
     "config/inputplumber/devices/lulu-composite.yaml",
 )
 FORBIDDEN_SYMBOLS = (b"MudosWifi", b"MudosBluetooth", b"WifiBackend", b"BluetoothBackend")

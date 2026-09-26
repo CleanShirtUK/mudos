@@ -42,6 +42,55 @@ class FakeInstalledSteam:
 
 
 class SteamOobeTests(unittest.TestCase):
+    def test_oobe_consoled_steam_handoff_starts_client_and_registers_session_surface(self):
+        import asyncio
+        from types import SimpleNamespace
+        from unittest.mock import AsyncMock, Mock
+        from lulu.consoled import ConsoleInterface
+
+        class Process:
+            pid = 5678
+            returncode = None
+            async def wait(self): return 0
+
+        async def exercise():
+            interface = object.__new__(ConsoleInterface)
+            launch = SimpleNamespace(command=["steam"], controller_mode="gamepad")
+            provider = SimpleNamespace(provider_id="steam", standalone_launch=launch,
+                                      ensure_client=AsyncMock())
+            interface._providers = SimpleNamespace(get=lambda _provider: provider)
+            interface.catalogue = SimpleNamespace(provider=SimpleNamespace(
+                open_main=Mock(), hide_main=Mock()))
+            interface.sessiond = SimpleNamespace(
+                call_begin_provider_session=AsyncMock(return_value="setup-token"))
+            interface._local_process = None
+            interface._local_token = None
+            process = Process()
+            tasks = []
+            async def fake_to_thread(fn, *args):
+                return fn(*args)
+            with patch("lulu.consoled.shutil.which", return_value="/usr/bin/steam"), \
+                    patch("lulu.consoled.os.path.isfile", return_value=True), \
+                    patch("lulu.consoled.os.path.realpath", return_value="/usr/bin/sleep"), \
+                    patch("lulu.consoled.os.getpgid", return_value=5678), \
+                    patch("lulu.consoled.asyncio.to_thread", side_effect=fake_to_thread), \
+                    patch("lulu.consoled.asyncio.create_subprocess_exec", return_value=process), \
+                    patch("lulu.consoled.asyncio.create_task", side_effect=lambda coro: tasks.append(coro)):
+                token = await ConsoleInterface._launch_provider_standalone(
+                    interface, "steam", 15000)
+            self.assertEqual(token, "setup-token")
+            provider.ensure_client.assert_awaited_once_with()
+            interface.catalogue.provider.open_main.assert_called_once_with()
+            args = interface.sessiond.call_begin_provider_session.await_args.args
+            self.assertEqual(args[:2], ("steam", "gamepad"))
+            self.assertEqual(args[2], process.pid)
+            self.assertEqual(interface._local_token, "setup-token")
+            self.assertEqual(len(tasks), 3)  # input-mode settle, reap, Steam window observer
+            for task in tasks:
+                task.close()
+
+        asyncio.run(exercise())
+
     def test_authenticated_steam_does_not_launch_an_additional_auth_surface(self):
         from lulu.admin_web import AdminApp
         app = object.__new__(AdminApp)

@@ -36,6 +36,22 @@ class FlatpakTests(unittest.TestCase):
         self.assertIn("org.freedesktop.Platform/x86_64/26.08", str(error))
         self.assertIn("Flatpak normally installs runtime dependencies automatically", str(error))
 
+    def test_flatpak_no_such_ref_diagnostic_is_classified_as_missing_dependency(self):
+        error = _flatpak_operation_failure("org.example.Game", [
+            "error: No such ref 'runtime/org.freedesktop.Platform/x86_64/99.99-fixture' in remote flathub"
+        ])
+        self.assertEqual(error.code, "runtime-unavailable")
+        self.assertIn("org.freedesktop.Platform/x86_64/99.99-fixture", str(error))
+
+    def test_flatpak_install_keeps_default_dependency_resolution_enabled(self):
+        from pathlib import Path
+        source = Path(__file__).parents[1] / "src/lulu/plugins/flatpak/adapter.py"
+        text = source.read_text()
+        self.assertIn('("install", "--noninteractive", "--or-update", "flathub", app_id)', text)
+        self.assertIn('transaction.add_install("flathub", f"app/{app_id}/x86_64/stable")', text)
+        self.assertNotIn("--no-deps", text)
+        self.assertIn("translated = _flatpak_operation_failure(app_id, [str(error)])", text)
+
     def test_native_api_is_preferred_when_gi_is_available(self):
         adapter = FlatpakAdapter()
         if adapter._gi is not None:

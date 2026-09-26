@@ -16,7 +16,7 @@ case "$provider" in
     epic) exec "$root/scripts/provision-legendary.sh" ;;
     gog) exec "$root/scripts/provision-gogdl.sh" ;;
     lutris) packages=(lutris) ;;
-    flatpak) packages=(flatpak) ;;
+    flatpak) exec "$root/scripts/provision-flatpak.sh" ;;
     retroarch) packages=(retroarch); install_group=libretro ;;
     dolphin) packages=(dolphin-emu) ;;
     pcsx2|eden)

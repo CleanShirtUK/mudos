@@ -11,4 +11,4 @@ StandardOutput=journal
 StandardError=journal
 NoNewPrivileges=true
 ProtectHome=read-only
-ReadWritePaths=/home/lulu/.config /home/lulu/.local/share/lulu /home/lulu/Games/.acquisition /var/cache/pacman/pkg /var/lib/lulu /usr/local/bin
+ReadWritePaths=/home/lulu/.config /home/lulu/.local/share/lulu -/home/lulu/.local/share/flatpak /home/lulu/Games/.acquisition /var/cache/pacman/pkg /var/lib/lulu /usr/local/bin

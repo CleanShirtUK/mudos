@@ -31,10 +31,11 @@ def _flatpak_operation_failure(application_id: str, output: list[str]) -> Flatpa
     """Translate known missing-runtime failures without hiding the requested ref."""
     text = "\n".join(output)
     runtime_ref = re.search(
-        r"(org\.freedesktop\.[A-Za-z0-9.]+/(?:x86_64|aarch64)/[A-Za-z0-9._-]+)", text)
+        r"(?:runtime/)?(org\.freedesktop\.[A-Za-z0-9.]+/(?:x86_64|aarch64)/[A-Za-z0-9._-]+)", text)
     lowered = text.casefold()
-    if runtime_ref and "runtime" in lowered and any(
-            phrase in lowered for phrase in ("not found", "not installed", "was not found")):
+    missing_dependency = ("not found", "not installed", "was not found", "no such ref",
+                          "could not find", "couldn't find", "not available")
+    if runtime_ref and "runtime" in lowered and any(phrase in lowered for phrase in missing_dependency):
         return FlatpakError(
             "runtime-unavailable",
             f"Cannot install {application_id}: required runtime {runtime_ref.group(1)} "
@@ -506,7 +507,8 @@ class FlatpakAdapter:
             except Exception as error:
                 if cancellable.is_cancelled():
                     raise JobCancelled from error
-                raise FlatpakError("operation-failed", str(error), retryable=True) from error
+                translated = _flatpak_operation_failure(app_id, [str(error)])
+                raise FlatpakError(translated.code, str(translated), retryable=True) from error
 
         task = asyncio.create_task(asyncio.to_thread(worker))
         try:

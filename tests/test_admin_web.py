@@ -189,13 +189,86 @@ class AdminWebTests(unittest.TestCase):
             states = app.setup_provider_states()
         self.assertEqual([row["status"] for row in states], ["configured", "configured"])
         self.assertIn("real transfer", states[0]["status_message"])
-        self.assertIn("real transfer", states[1]["status_message"])
+        self.assertIsNone(states[1]["news_server"]["authenticated"])
+        self.assertIn("test the saved Usenet", states[1]["status_message"])
+        self.assertFalse(states[1]["state"]["ready"])
+        with patch("lulu.admin_web.provider_manifest", return_value=rows), \
+                patch("lulu.admin_web.onboarding_state", return_value={
+                    "selected_providers": ["usenet"], "validation": {
+                        "providers.usenet.server": {"ok": True, "message": "NNTP accepted", "checked_at": 123}}}), \
+                patch.object(app, "test_provider", return_value=(True, "RPC healthy")), \
+                patch.object(app.config, "provider", return_value=NewsServer("news.example", True)):
+            usenet = app.setup_provider_states()[1]
+        self.assertTrue(usenet["news_server"]["authenticated"])
+        self.assertTrue(usenet["state"]["authenticated"])
+        self.assertIn("real transfer", usenet["status_message"])
+        self.assertFalse(usenet["state"]["ready"])
+        class DisabledAcquisition:
+            enabled = False
+        with patch("lulu.admin_web.provider_manifest", return_value=rows), \
+                patch("lulu.admin_web.onboarding_state", return_value={
+                    "selected_providers": ["usenet"], "validation": {
+                        "providers.usenet.server": {"ok": True, "message": "NNTP accepted", "checked_at": 123}}}), \
+                patch.object(app, "test_provider", return_value=(True, "RPC healthy")), \
+                patch.object(app.config, "provider", side_effect=lambda provider: (
+                    NewsServer("news.example", True) if provider == "providers.usenet.server"
+                    else DisabledAcquisition())):
+            usenet = app.setup_provider_states()[1]
+        self.assertTrue(usenet["news_server"]["configured"])
+        self.assertFalse(usenet["news_server"]["executor_enabled"])
+        self.assertEqual(usenet["status"], "configuration_required")
+        self.assertIn("no registered Usenet executor", usenet["status_message"])
         with patch("lulu.admin_web.provider_manifest", return_value=rows), \
                 patch("lulu.admin_web.onboarding_state", return_value={
                     "selected_providers": ["torrent", "usenet"]}), \
                 patch.object(app, "test_provider", return_value=(False, "RPC unavailable")):
             states = app.setup_provider_states()
         self.assertEqual([row["status"] for row in states], ["configuration_required"] * 2)
+
+    def test_oobe_usenet_save_enables_acquisition_executor_and_reloads_service(self):
+        class Secrets(FakeSecrets):
+            pass
+        app = AdminApp()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            app.config = ProviderConfigurationService(
+                system_path=root / "system.toml", user_path=root / "user.toml",
+                secrets=Secrets())
+            with patch("lulu.nzbget_admin.apply_news_server") as apply, \
+                    patch("lulu.admin_web.subprocess.run") as run:
+                result = app.save_setup_credentials("providers.usenet.server", {
+                    "host": "news.example", "port": 563, "tls": "true", "connections": 8,
+                    "username": "reader", "password": "fixture-secret",
+                })
+            config_text = (root / "user.toml").read_text()
+        self.assertTrue(result["configured"])
+        self.assertIn("[providers.usenet]\nenabled = true", config_text)
+        self.assertIn("[providers.usenet.server]", config_text)
+        self.assertEqual([call.args[0][-1] for call in run.call_args_list],
+                         ["nzbget.service", "lulu-acquisition.service"])
+        apply.assert_called_once()
+
+    def test_usenet_plugin_registers_only_after_oobe_enables_parent_provider(self):
+        import shutil
+        from types import SimpleNamespace
+        from lulu.plugins import PluginRegistry
+        source = Path(__file__).parents[1] / "config/plugins/usenet"
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            plugin_root = root / "plugins"
+            shutil.copytree(source, plugin_root / "usenet",
+                            ignore=shutil.ignore_patterns("__pycache__"))
+            user = root / ".config/lulu/provider-services.toml"
+            user.parent.mkdir(parents=True)
+            with patch("lulu.provider_config.PATHS", SimpleNamespace(config_root=root / ".config/lulu")):
+                registry = PluginRegistry(plugin_root)
+                registry.discover()
+                self.assertEqual(registry.with_capability("acquisition"), ())
+                user.write_text("[providers.usenet]\nenabled = true\n")
+                registry.discover()
+            registered = registry.with_capability("acquisition")
+        self.assertEqual(len(registered), 1)
+        self.assertEqual(registered[0]["provider"], "usenet")
 
     def test_questarr_account_probe_and_setup_do_not_conflate_health_with_readiness(self):
         app = AdminApp()
@@ -233,10 +306,33 @@ class AdminWebTests(unittest.TestCase):
                 patch.object(app, "service_state", return_value="active"), \
                 patch.object(app, "test_provider", return_value=(False, "Create the Questarr first-run account")):
             row = app.setup_provider_states()[0]
-        self.assertEqual(row["status"], "running")
+        self.assertEqual(row["status"], "degraded")
         self.assertTrue(row["state"]["running"])
+        self.assertFalse(row["state"]["healthy"])
         self.assertFalse(row["state"]["configured"])
         self.assertIn("first-run account", row["status_message"])
+
+    def test_setup_integration_state_uses_provider_selection_and_persisted_skip(self):
+        app = AdminApp()
+        integration = {"id": "providers.romm", "name": "RomM", "fields": [], "help": "#"}
+        with patch("lulu.admin_web.onboarding_state", return_value={
+                "selected_providers": ["romm"], "selected_integrations": [],
+                "skipped_integrations": ["providers.romm"]}), \
+                patch("lulu.admin_web.integration_manifest", return_value=[integration]), \
+                patch("lulu.admin_web.provider_manifest", return_value=[]), \
+                patch.object(app, "setup_provider_states", return_value=[]), \
+                patch("lulu.plugins.romm.RommConfig.from_file", return_value=None), \
+                patch("lulu.plugins.romm.readiness.RommReadinessStore") as readiness, \
+                patch("lulu.setup_files.file_setup_manifest", return_value=[]):
+            readiness.return_value.snapshot.return_value = {
+                "status": "missing_configuration", "message": "Token required"}
+            result = app.setup_snapshot()
+        row = result["integrations"][0]
+        self.assertTrue(row["selected"])
+        self.assertTrue(row["skipped"])
+        self.assertTrue(row["state"]["selected"])
+        self.assertTrue(row["state"]["skipped"])
+        self.assertFalse(row["state"]["ready"])
 
     def test_setup_epic_gog_status_exposes_verified_authentication(self):
         app = AdminApp()

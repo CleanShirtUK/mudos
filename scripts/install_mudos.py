@@ -177,6 +177,32 @@ def storage_roots(manifest: dict, lulu_home: Path = Path("/home/lulu")) -> list[
     return sorted(roots)
 
 
+def validate_configured_storage_targets(manifest: dict,
+                                       lulu_home: Path = Path("/home/lulu")) -> None:
+    """Never initialize configured game trees on an absent mountpoint."""
+    state_path = lulu_home / ".config/lulu/storage-targets.json"
+    try:
+        state = json.loads(state_path.read_text())
+    except (OSError, ValueError):
+        return
+    if not isinstance(state, dict):
+        raise InstallError("configured storage target state is not an object")
+    protected = [Path(item).resolve(strict=False) for item in manifest["protected"]]
+    for key in ("game_path", "emulation_path"):
+        raw = state.get(key)
+        if not raw:
+            continue
+        target = Path(str(raw))
+        if not target.is_absolute() or ".." in target.parts or len(target.parts) < 3:
+            raise InstallError(f"unsafe configured {key}; refusing to initialize storage")
+        resolved = target.resolve(strict=False)
+        if any(resolved == item or resolved in item.parents or item in resolved.parents
+               for item in protected):
+            raise InstallError(f"configured {key} overlaps protected storage")
+        if target.is_symlink() or not target.is_dir() or not os.path.ismount(target):
+            raise InstallError(f"configured {key} is unavailable; connect and mount the selected storage")
+
+
 def acquisition_directories(manifest: dict, lulu_home: Path = Path("/home/lulu")) -> list[Path]:
     return [root / ".acquisition" / provider
             for root in storage_roots(manifest, lulu_home)
@@ -317,7 +343,9 @@ def install_integration(repo: Path, release: Path, manifest: dict) -> None:
         "lulu-consoled.service": "lulu-consoled.service", "lulu-acquisition.service": "lulu-acquisition.service",
         "mudos-recovery.service": "mudos-recovery.service", "mudos-recovery-guard.service": "mudos-recovery-guard.service",
         "mudos-recovery-ui.service": "mudos-recovery-ui.service", "lulu-inputplumber-hotplug.service": "lulu-inputplumber-hotplug.service",
-        "lulu-osk@.service": "lulu-osk@.service", "lulu-file-browser.service": "lulu-file-browser.service"
+        "lulu-osk@.service": "lulu-osk@.service", "lulu-file-browser.service": "lulu-file-browser.service",
+        "lulu-transmission-config.service": "lulu-transmission-config.service",
+        "lulu-questarr-reconcile.service": "lulu-questarr-reconcile.service",
     }
     for source, target in systemd.items():
         text = (packaging / source).read_text()
@@ -410,6 +438,7 @@ def do_install(repo: Path, manifest: dict, dry_run: bool) -> None:
         return
     if os.geteuid() != 0:
         raise InstallError("installation needs root; rerun as root or with sudo")
+    validate_configured_storage_targets(manifest)
     dependency = manifest["shared_dependencies"]
     packages = packages_to_install(dependency["packages"], dependency.get("alternatives", {}))
     if packages:
@@ -470,10 +499,14 @@ def remove_owned(repo: Path, manifest: dict, *, purge: bool, dry_run: bool) -> N
 
 
 def verify(repo: Path, manifest: dict) -> None:
+    source_sha, _branch = source_revision(repo)
     selector = Path(manifest["immutable"]["selector"])
     if not selector.is_symlink():
         raise InstallError("/opt/lulu/current is not an immutable release selector")
     release = selector.resolve(strict=True)
+    release_root = Path(manifest["immutable"]["release_root"]).resolve(strict=False)
+    if release.parent != release_root:
+        raise InstallError("selected runtime is not a direct immutable release")
     for raw in manifest["immutable"]["application_roots"]:
         alias = Path(raw)
         if not alias.is_symlink() or os.readlink(alias) != f"current/{alias.name}":
@@ -483,6 +516,25 @@ def verify(repo: Path, manifest: dict) -> None:
     metadata = provenance.read_text()
     if "status=clean" not in metadata or "immutable=true" not in metadata:
         raise InstallError("selected release lacks clean immutable provenance")
+    release_revision = next((line.partition("=")[2] for line in metadata.splitlines()
+                             if line.startswith("revision=")), "")
+    if release_revision != source_sha:
+        raise InstallError("selected immutable release does not match the clean source checkout")
+    # These units are required on every supported installation and are copied
+    # from the selected release without host-specific transformations.
+    required_units = ("lulu.target", "lulu-session@.service", "lulu-consoled.service",
+                      "lulu-acquisition.service", "lulu-admin.service",
+                      "lulu-provider-install@.service", "mudos-recovery.service",
+                      "mudos-recovery-guard.service", "mudos-recovery-ui.service",
+                      "lulu-inputplumber-hotplug.service", "lulu-osk@.service",
+                      "lulu-questarr-reconcile.service",
+                      "lulu-file-browser.service", "lulu-transmission-config.service")
+    for unit in required_units:
+        installed = Path("/etc/systemd/system") / unit
+        packaged = release / "packaging" / unit
+        if not installed.is_file() or not packaged.is_file() \
+                or installed.read_bytes() != packaged.read_bytes():
+            raise InstallError(f"production service does not match the selected release: {unit}")
     for raw in manifest["system_integration"]["systemd_files"]:
         path = Path(raw)
         if path.is_file() and "/opt/lulu/dev-current" in path.read_text():
@@ -493,6 +545,16 @@ def verify(repo: Path, manifest: dict) -> None:
         stat = path.stat()
         if (stat.st_uid, stat.st_gid, stat.st_mode & 0o777) != (958, 958, 0o770):
             raise InstallError(f"incorrect owner/mode for acquisition directory: {path}")
+    validate_configured_storage_targets(manifest)
+    writable = " ".join(str(path) for path in provider_install_writable_paths(manifest))
+    dropin = Path("/etc/systemd/system/lulu-provider-install@.service.d/storage.conf")
+    expected_dropin = "[Service]\nReadWritePaths=" + writable + "\n"
+    if not dropin.is_file() or dropin.read_text() != expected_dropin:
+        raise InstallError("provider installer storage write paths do not match configured acquisition roots")
+    for mount in manifest.get("preserved_host_mounts", []):
+        state = host_mount_state(mount)
+        if state is not None and state != "active":
+            raise InstallError(f"preserved Steam bind mount is not active: {mount['unit']}")
     print(f"verified immutable production runtime {release}")
 
 

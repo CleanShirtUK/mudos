@@ -1,4 +1,7 @@
 import tempfile
+import asyncio
+from types import SimpleNamespace
+from unittest.mock import patch
 from pathlib import Path
 import unittest
 
@@ -7,9 +10,64 @@ from lulu.plugins.external import (CliAcquisitionExecutor, OwnedProviderGame,
                                    SnapshotEntitlementSource, normalize_game)
 from lulu.plugins.epic import EpicAuthentication
 from lulu.plugins.gog import GogAuthentication
+from lulu.jobs import DownloadJob, JobOperation
 
 
 class ExternalProviderTests(unittest.TestCase):
+    def test_epic_and_gog_completed_jobs_project_through_installed_manifest(self) -> None:
+        class Output:
+            async def __aiter__(self):
+                yield b"installed successfully\n"
+
+        class Process:
+            stdout = Output()
+            returncode = 0
+            async def wait(self): return 0
+
+        class Reporter:
+            async def state(self, *_args, **_kwargs): pass
+            async def progress(self, *_args, **_kwargs): pass
+            async def metadata(self, *_args, **_kwargs): pass
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for provider, source_module, source_type in (
+                    ("epic", "lulu.plugins.epic", "EpicEntitlementSource"),
+                    ("gog", "lulu.plugins.gog", "GogEntitlementSource")):
+                library = root / provider
+                identity = f"{provider}-fixture"
+                destination = library / identity
+                destination.mkdir(parents=True)
+                (destination / "game.bin").write_bytes(b"provider payload")
+                executor = CliAcquisitionExecutor(
+                    provider, "/usr/bin/true", library, lambda *_args: ["fixture"])
+                job = DownloadJob(
+                    job_id=f"job-{provider}", provider=provider, title=f"{provider.title()} Fixture",
+                    content_identity=f"{provider}:{identity}", operation=JobOperation.INSTALL)
+                with patch("lulu.plugins.external.asyncio.create_subprocess_exec",
+                           return_value=Process()), patch(
+                           f"{source_module}.PATHS", SimpleNamespace(
+                               provider_root=lambda _id: root / f"{provider}-state",
+                               provider_config_root=lambda _id: root / f"{provider}-config",
+                               epic_library_root=library, gog_library_root=library)):
+                    asyncio.run(executor.run(job, Reporter()))
+                    source_class = getattr(__import__(source_module, fromlist=[source_type]), source_type)
+                    source = source_class()
+                    # The entitlement source can be stale or unavailable; the
+                    # successful Mudos-owned marker must still project install.
+                    source.update((OwnedProviderGame(identity, job.title),), ())
+                    installed = source.installed()
+                    self.assertEqual(len(installed), 1)
+                    self.assertEqual(installed[0].provider_id, identity)
+                    self.assertEqual(Path(installed[0].install_dir), destination)
+                    store = CatalogueStore(root / f"{provider}-catalogue.sqlite3")
+                    store.reconcile_owned_provider(provider, source.snapshot, installed)
+                    projected = store.get_game(f"{provider}:{identity}")
+                    self.assertIsNotNone(projected)
+                    self.assertEqual(projected.install_state, "installed")
+                    self.assertTrue(projected.launchable)
+                    self.assertEqual(projected.install_dir, str(destination))
+
     def test_cli_install_is_not_complete_without_real_provider_payload(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

@@ -3,9 +3,10 @@ import asyncio
 import threading
 import unittest
 from types import SimpleNamespace
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
-from lulu.consoled import ConsoleCatalog, ConsoleInterface
+from lulu.consoled import (ConsoleCatalog, ConsoleInterface,
+                           _validated_metadata_refresh_stages)
 
 ROOT = Path(__file__).parents[1]
 
@@ -42,6 +43,18 @@ class ConsoledStartupTests(unittest.TestCase):
         self.assertIn('"romm", "components", "romm-artwork",', source)
         self.assertIn('"protondb", "artwork"', source)
         self.assertIn("GetStartupReadiness", source)
+
+    def test_background_metadata_retry_requires_successful_non_skipped_oobe_validation(self) -> None:
+        setup = {"selected_integrations": ["metadata.igdb", "metadata.steamgriddb"],
+                 "skipped_integrations": ["metadata.steamgriddb"],
+                 "validation": {"metadata.igdb": {"ok": True},
+                               "metadata.steamgriddb": {"ok": True}}}
+        with patch("lulu.onboarding.onboarding_state", return_value=setup):
+            self.assertEqual(_validated_metadata_refresh_stages(), {
+                "metadata", "metadata-enrichment", "artwork"})
+        setup["validation"]["metadata.igdb"] = {"ok": False}
+        with patch("lulu.onboarding.onboarding_state", return_value=setup):
+            self.assertEqual(_validated_metadata_refresh_stages(), set())
 
     def test_refresh_callers_share_one_in_flight_reconciliation(self) -> None:
         class Catalogue:
