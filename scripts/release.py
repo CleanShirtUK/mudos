@@ -182,7 +182,7 @@ def write_manifest(release: Path) -> None:
 def verify_manifest(release: Path) -> None:
     release = release.resolve()
     manifest = release / "manifest.sha256"
-    if not manifest.is_file():
+    if manifest.is_symlink() or not manifest.is_file():
         raise ReleaseError(f"release has no checksum manifest: {release}")
     expected = set()
     for line in manifest.read_text().splitlines():
@@ -200,7 +200,9 @@ def verify_manifest(release: Path) -> None:
         if not candidate.is_file() or hashlib.sha256(candidate.read_bytes()).hexdigest() != digest:
             raise ReleaseError(f"checksum mismatch: {relative}")
         expected.add(relative)
-    actual = {str(path.relative_to(release)) for path in iter_files(release) if path.name != "manifest.sha256"}
+    if any(path.is_symlink() for path in release.rglob("*")):
+        raise ReleaseError("release contains a symlink")
+    actual = {str(path.relative_to(release)) for path in iter_files(release) if path != manifest}
     if expected != actual:
         raise ReleaseError("checksum manifest does not cover the complete release")
 

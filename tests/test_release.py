@@ -54,6 +54,27 @@ class ReleaseToolTests(unittest.TestCase):
         with self.assertRaises(release.ReleaseError):
             release.verify_manifest(root)
 
+    def test_manifest_rejects_uncovered_nested_manifest_and_symlinks(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "payload.txt").write_text("payload\n")
+            release.write_manifest(root)
+            release.verify_manifest(root)
+            nested = root / "extra"
+            nested.mkdir()
+            (nested / "manifest.sha256").write_text("uncovered\n")
+            with self.assertRaisesRegex(release.ReleaseError, "complete release"):
+                release.verify_manifest(root)
+            (nested / "manifest.sha256").unlink()
+            (nested / "unlisted-dir").symlink_to(root, target_is_directory=True)
+            with self.assertRaisesRegex(release.ReleaseError, "symlink"):
+                release.verify_manifest(root)
+            (nested / "unlisted-dir").unlink()
+            (root / "manifest.sha256").unlink()
+            (root / "manifest.sha256").symlink_to(root / "payload.txt")
+            with self.assertRaisesRegex(release.ReleaseError, "no checksum manifest"):
+                release.verify_manifest(root)
+
     def test_build_records_provenance_and_refuses_overwrite(self):
         root = self.git_repo()
         output = Path(tempfile.mkdtemp())
