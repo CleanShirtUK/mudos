@@ -246,8 +246,11 @@
    and all compatibility aliases resolve to this candidate. This log-only
    closure commit changes the exact source HEAD, so the canonical installer
    will create and select a final immutable release from that clean committed
-   HEAD at `/opt/lulu/releases/v1-stabilization-final-20260927`; no purge is
-   needed for that documentation-only refresh, and no V1 promotion occurs.
+   HEAD via the installer's canonical `<short-sha>-candidate-<UTC timestamp>`
+   naming contract; the exact selected name and full SHA are recorded in
+   `RELEASE`. The separately built stable-named copy is immutable and verified
+   but is not required for selection. No purge is needed for this
+   documentation-only refresh, and no V1 promotion occurs.
 - Final production graph: target, graphical session/shell, Admin, Recovery,
   Consoled, Acquisitiond, InputPlumber, Bluetooth, seatd, and file browser are
   active; boot enablement is present for target/session/Admin/Recovery,
