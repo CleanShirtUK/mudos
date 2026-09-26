@@ -371,33 +371,37 @@ class AdminApp:
                 row["status_message"] = value.get("message", "Configure the RomM URL and Client API Token.")
             elif provider_id in {"steam", "epic", "gog"}:
                 value = readiness.get(provider_id)
-                if value.get("status") == "ready":
-                    row["status"] = "ready"
-                    row["status_message"] = value.get("message", "Account validated and catalogue reconciled.")
-                elif provider_id == "steam":
+                if provider_id == "steam":
                     auth = self.steam_auth_status()
                     current = str(value.get("status", ""))
-                    if current in {"auth_failed", "authorization_pending", "authenticated",
-                                   "configuration_required", "reconciling", "sync_failed"}:
+                    if not auth.get("authenticated"):
+                        row["status"] = (current if current in {"auth_failed", "authorization_pending"}
+                                         else "authentication_required")
+                        row["status_message"] = (str(value.get("message", ""))
+                                                 if current in {"auth_failed", "authorization_pending"} else
+                                                 "Authenticate in the Steam client using its QR or Steam Guard flow.")
+                    elif not auth.get("entitlement_configured"):
+                        row["status"] = "configuration_required"
+                        row["status_message"] = ("Steam GUI account authenticated; configure the Steam ownership "
+                                                 "API to reconcile titles.")
+                    elif current == "ready":
+                        row["status"] = "ready"
+                        row["status_message"] = value.get("message", "Account validated and catalogue reconciled.")
+                    elif current in {"auth_failed", "authorization_pending", "authenticated",
+                                     "configuration_required", "reconciling", "sync_failed"}:
                         row["status"] = current
                         row["status_message"] = str(value.get("message", ""))
-                    elif auth.get("authenticated"):
-                        row["status"] = ("configuration_required" if not auth.get("entitlement_configured")
-                                          else "authenticated")
-                        row["status_message"] = (
-                            "Steam GUI account authenticated; configure the Steam ownership API to reconcile titles."
-                            if row["status"] == "configuration_required"
-                            else "Steam account authenticated; owned-library reconciliation is pending.")
                     else:
-                        row["status"] = "authentication_required"
-                        row["status_message"] = (str(value.get("message")) if current == "authenticating"
-                                                  else "Authenticate in the Steam client using its QR or Steam Guard flow.")
+                        row["status"] = "authenticated"
+                        row["status_message"] = "Steam account authenticated; owned-library reconciliation is pending."
                     row["authentication"] = auth
                 else:
                     auth = self.auth_status(provider_id)
                     if not auth.get("authenticated", False):
                         row["status"] = "authentication_required"
-                        row["status_message"] = f"Sign in to {row['name']} to continue."
+                        row["status_message"] = ("Account authentication status is unavailable; retry shortly."
+                                                 if auth.get("status") in {"error", "unavailable"} else
+                                                 f"Sign in to {row['name']} to continue.")
                     else:
                         row["status"] = value.get("status", "syncing")
                         row["status_message"] = value.get("message", "Account catalogue reconciliation is pending.")

@@ -68,6 +68,7 @@ Append findings in order. Do not repair defects during the rehearsal.
    - Expected lifecycle: selected → installed → configured → authenticated if required → validated → initial reconciliation/sync completed → ready.
    - Status follow-up: Setup no longer labels installed local providers/emulators (RetroArch, Dolphin, PCSX2, Eden, Lutris, Flatpak) Ready merely because their binaries exist. It reports Installed and distinguishes game/content launch validation as outstanding. Account-backed and RomM readiness remain separately owned; a full fresh-state lifecycle and physical launches still require acceptance.
    - Validation follow-up: After setup saves integration credentials, any previous persisted success for that integration becomes retest-required until the Test and Save validation completes. Review re-reads the persisted state, so a concurrent tab cannot use an old in-memory success. Other Admin configuration paths still need separate invalidation coverage.
+   - Account follow-up: A previously persisted Ready for Steam/Epic/GOG no longer overrides the current provider authentication result; Steam additionally requires current ownership API configuration. No live account session was changed for this correction.
 
 15. **OOBE-015 — Steam authentication is missing from onboarding**
     - Observed: Steam install/detection did not establish a usable authenticated account.

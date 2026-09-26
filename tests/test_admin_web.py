@@ -22,6 +22,41 @@ class FakeSecrets:
 
 
 class AdminWebTests(unittest.TestCase):
+    def test_persisted_store_ready_requires_current_account_authentication(self):
+        app = AdminApp()
+        rows = [dict(id=id, name=name, installed=True) for id, name in
+                (("steam", "Steam"), ("epic", "Epic Games"), ("gog", "GOG"))]
+        with patch("lulu.admin_web.provider_manifest", return_value=rows), \
+                patch("lulu.admin_web.onboarding_state", return_value={
+                    "selected_providers": [row["id"] for row in rows]}), \
+                patch("lulu.provider_readiness.ProviderReadinessStore") as store, \
+                patch.object(app, "steam_auth_status", return_value={"authenticated": False}), \
+                patch.object(app, "auth_status", side_effect=lambda id: {
+                    "authenticated": False, "status": "unavailable" if id == "gog" else "authentication_required"}):
+            store.return_value.get.return_value = {"status": "ready", "message": "Stale reconciliation"}
+            states = app.setup_provider_states()
+        self.assertEqual([state["status"] for state in states], ["authentication_required"] * 3)
+        self.assertNotIn("Stale reconciliation", [state["status_message"] for state in states])
+        self.assertIn("unavailable", states[2]["status_message"])
+
+        with patch("lulu.admin_web.provider_manifest", return_value=rows[:1]), \
+                patch("lulu.admin_web.onboarding_state", return_value={"selected_providers": ["steam"]}), \
+                patch("lulu.provider_readiness.ProviderReadinessStore") as store, \
+                patch.object(app, "steam_auth_status", return_value={
+                    "authenticated": True, "entitlement_configured": False}):
+            store.return_value.get.return_value = {"status": "ready", "message": "Stale reconciliation"}
+            steam = app.setup_provider_states()[0]
+        self.assertEqual(steam["status"], "configuration_required")
+        with patch("lulu.admin_web.provider_manifest", return_value=rows[:1]), \
+                patch("lulu.admin_web.onboarding_state", return_value={"selected_providers": ["steam"]}), \
+                patch("lulu.provider_readiness.ProviderReadinessStore") as store, \
+                patch.object(app, "steam_auth_status", return_value={
+                    "authenticated": True, "entitlement_configured": True}):
+            store.return_value.get.return_value = {"status": "ready", "message": "Reconciled"}
+            steam = app.setup_provider_states()[0]
+        self.assertEqual(steam["status"], "ready")
+        self.assertEqual(steam["status_message"], "Reconciled")
+
     def test_saving_setup_credentials_invalidates_prior_success_until_retested(self):
         handler = object.__new__(Handler)
         handler.path = "/api/setup/credentials"
