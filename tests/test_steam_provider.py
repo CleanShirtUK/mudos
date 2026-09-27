@@ -292,15 +292,32 @@ class SteamProviderTests(unittest.TestCase):
     def test_fresh_steam_launcher_exit_is_distinguished_from_window_failure(self) -> None:
         async def exercise() -> None:
             provider = SteamProvider(poll_interval=0)
-            process = type("Process", (), {"pid": 1564, "returncode": 7})()
+            process = type("Process", (), {
+                "pid": 1564, "returncode": 7, "stdout": None, "stderr": None})()
             with patch.object(provider, "_steam_client_pids", return_value=[]), \
                     patch("lulu.plugins.steam.provider.asyncio.create_subprocess_exec",
                           new_callable=AsyncMock, return_value=process) as spawn, \
-                    patch("lulu.plugins.steam.provider.os.getpgid", return_value=1564):
+                    patch("lulu.plugins.steam.provider.os.getpgid", return_value=1564), \
+                    patch.object(provider, "_process_group_members", return_value=set()), \
+                    patch.object(provider, "_process_tree", return_value={1564}):
                 with self.assertRaisesRegex(RuntimeError, "status 7"):
                     await provider.ensure_client()
             spawn.assert_awaited_once()
             self.assertIn(1564, provider._owned_client_pids)
+
+        asyncio.run(exercise())
+
+    def test_nonzero_steam_launcher_handoff_waits_for_surviving_client_process(self) -> None:
+        async def exercise() -> None:
+            provider = SteamProvider(poll_interval=0)
+            launcher = SimpleNamespace(pid=7100, returncode=1)
+            with patch.object(provider, "_steam_client_pids", side_effect=[[], [7101]]) as clients, \
+                    patch.object(provider, "_process_group_members", return_value=set()), \
+                    patch.object(provider, "_process_tree", return_value={7100, 7101}), \
+                    patch("lulu.plugins.steam.provider.Path.exists", return_value=True):
+                result = await provider._wait_for_steam_client(timeout=1, launcher=launcher)
+            self.assertEqual(result, [7101])
+            self.assertEqual(clients.call_count, 2)
 
         asyncio.run(exercise())
 

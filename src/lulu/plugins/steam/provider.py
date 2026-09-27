@@ -353,26 +353,54 @@ class SteamProvider:
             return
         environment = os.environ.copy()
         environment.setdefault("DISPLAY", ":0")
+        steam_argv = [self.executable, "-silent"]
+        evidence = {"uid": os.geteuid(), "home": environment.get("HOME", ""),
+                    "xdg_config_home": environment.get("XDG_CONFIG_HOME", ""),
+                    "xdg_data_home": environment.get("XDG_DATA_HOME", ""),
+                    "xdg_runtime_dir": environment.get("XDG_RUNTIME_DIR", ""),
+                    "display": environment.get("DISPLAY", ""),
+                    "wayland_display": environment.get("WAYLAND_DISPLAY", ""),
+                    "dbus_session_bus": environment.get("DBUS_SESSION_BUS_ADDRESS", "")}
+        self._logger.info("steam_client stage=launch-request executable=%s resolved=%s argv=%s environment=%s",
+                          self.executable, os.path.realpath(self.executable), steam_argv, evidence)
+        stdout_tail = bytearray()
+        stderr_tail = bytearray()
         launcher = await asyncio.create_subprocess_exec(
-            self.executable, "-silent",
+            *steam_argv,
             stdin=asyncio.subprocess.DEVNULL,
-            stdout=asyncio.subprocess.DEVNULL,
-            stderr=asyncio.subprocess.DEVNULL,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
             start_new_session=True,
             env=environment,
         )
         self._owned_client_pids.add(launcher.pid)
         self._owned_client_pgid = os.getpgid(launcher.pid)
-        self._logger.info("steam_client stage=spawned launcher_pid=%s launcher_pgid=%s",
-                          launcher.pid, self._owned_client_pgid)
+        output_tasks = [
+            asyncio.create_task(self._capture_launch_output(launcher.stdout, stdout_tail)),
+            asyncio.create_task(self._capture_launch_output(launcher.stderr, stderr_tail)),
+        ]
+        self._logger.info("steam_client stage=spawned launcher_pid=%s launcher_pgid=%s executable=%s argv=%s",
+                          launcher.pid, self._owned_client_pgid,
+                          os.path.realpath(self.executable), steam_argv)
         try:
-            ready = await self._wait_for_steam_client(launcher=launcher)
+            ready = await self._wait_for_steam_client(
+                launcher=launcher, output_tails=(stdout_tail, stderr_tail))
         except asyncio.CancelledError:
             await self.stop_owned_client()
             raise
         self._owned_client_pids.update(set(ready) - existing)
         self._logger.info("steam_client stage=ready launcher_pid=%s pids=%s process_tree=%s",
                           launcher.pid, ready, self.process_snapshot(ready))
+
+    @staticmethod
+    async def _capture_launch_output(stream: asyncio.StreamReader | None,
+                                     tail: bytearray, limit: int = 16_384) -> None:
+        if stream is None:
+            return
+        while chunk := await stream.read(4096):
+            tail.extend(chunk)
+            if len(tail) > limit:
+                del tail[:-limit]
 
     def _process_tree(self, roots: set[int]) -> set[int]:
         owned = set(roots)
@@ -586,15 +614,42 @@ class SteamProvider:
         }
 
     async def _wait_for_steam_client(self, timeout: float = 15.0,
-                                     launcher: asyncio.subprocess.Process | None = None) -> list[int]:
+                                     launcher: asyncio.subprocess.Process | None = None,
+                                     output_tails: tuple[bytearray, bytearray] | None = None) -> list[int]:
         deadline = asyncio.get_running_loop().time() + timeout
+        if output_tails is None:
+            output_tails = (bytearray(), bytearray())
+        # Let the pipe-drain tasks consume output already buffered at spawn;
+        # this yields to the event loop without adding a readiness delay.
+        await asyncio.sleep(0)
         pids = self._steam_client_pids()
         launcher_exit_logged = False
+        observed_descendants: set[int] = set()
         while not pids:
+            if launcher is not None:
+                roots = {launcher.pid}
+                if self._owned_client_pgid is not None:
+                    roots.update(self._process_group_members(self._owned_client_pgid))
+                observed_descendants.update(self._process_tree(roots) - {launcher.pid})
             if launcher is not None and launcher.returncode not in (None, 0):
-                self._logger.error("steam_client stage=launcher-exited-before-ready pid=%s returncode=%s",
-                                   launcher.pid, launcher.returncode)
-                raise RuntimeError(f"Steam launcher exited before client readiness (status {launcher.returncode})")
+                live_descendants = sorted(pid for pid in observed_descendants
+                                          if Path(f"/proc/{pid}").exists())
+                if live_descendants:
+                    if not launcher_exit_logged:
+                        self._logger.warning("steam_client stage=launcher-exited-child-survived pid=%s returncode=%s descendants=%s; continuing readiness observation",
+                                             launcher.pid, launcher.returncode, live_descendants)
+                        launcher_exit_logged = True
+                else:
+                    stdout = bytes(output_tails[0]).decode("utf-8", errors="replace")[-4096:]
+                    stderr = bytes(output_tails[1]).decode("utf-8", errors="replace")[-4096:]
+                    self._logger.error("steam_client stage=launcher-exited-before-ready pid=%s returncode=%s process_tree=%s process_group=%s stdout_tail=%r stderr_tail=%r",
+                                       launcher.pid, launcher.returncode,
+                                       sorted(observed_descendants),
+                                       sorted(self._process_group_members(self._owned_client_pgid))
+                                       if self._owned_client_pgid is not None else [],
+                                       stdout, stderr)
+                    raise RuntimeError(
+                        f"Steam launcher exited before client readiness (status {launcher.returncode})")
             if launcher is not None and launcher.returncode == 0 and not launcher_exit_logged:
                 self._logger.info("steam_client stage=launcher-exited-successfully waiting-for-daemon pid=%s",
                                   launcher.pid)
@@ -605,8 +660,8 @@ class SteamProvider:
                 if exited and asyncio.get_running_loop().time() < deadline:
                     self._logger.info("steam_client stage=launcher-exited-before-client pids=%s", exited)
             if asyncio.get_running_loop().time() >= deadline:
-                self._logger.error("steam_client stage=readiness-timeout timeout_s=%.3f owned_pids=%s",
-                                   timeout, sorted(self._owned_client_pids))
+                self._logger.error("steam_client stage=readiness-timeout timeout_s=%.3f owned_pids=%s observed_descendants=%s",
+                                   timeout, sorted(self._owned_client_pids), sorted(observed_descendants))
                 raise TimeoutError("Steam client did not become ready")
             await asyncio.sleep(self.poll_interval)
             pids = self._steam_client_pids()

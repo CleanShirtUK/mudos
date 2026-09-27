@@ -8,6 +8,7 @@ import os
 from pathlib import Path, PurePosixPath
 import platform
 import shutil
+import stat
 import subprocess
 import sys
 from datetime import datetime, timezone
@@ -309,6 +310,7 @@ def plan(repo: Path, manifest: dict, action: str, *, purge: bool = False) -> lis
         sha, _ = source_revision(repo)
         return [f"build and verify immutable release from {sha}",
                 "atomically switch /opt/lulu/current while preserving all mutable state",
+                "repair ownership/mode of the exact Steam bootstrap directory only; preserve its contents",
                 "refresh Mudos-owned systemd unit definitions only",
                 "restart active Mudos runtime services from the selected release",
                 "verify service provenance; retain old release for rollback"]
@@ -487,6 +489,32 @@ def _main_pid(unit: str) -> int:
         raise InstallError(f"could not read Mudos service PID for {unit}") from error
 
 
+def repair_steam_bootstrap_directory(
+        path: Path = Path("/home/lulu/.local/share/Steam"), *, uid: int = 958,
+        gid: int = 958, mode: int = 0o750) -> bool:
+    """Repair only the Steam data-root directory metadata, never its contents.
+
+    The canonical install used to create ``Steam/steamapps`` as root, which
+    implicitly created a root-owned ``Steam`` parent and prevented Steam from
+    extracting its first-run bootstrap. On update, repair only that exact
+    mutable directory; reject symlinks, non-directories, and unexpected owners.
+    """
+    try:
+        info = path.lstat()
+    except FileNotFoundError:
+        # Steam itself can create this path as lulu on first launch. An update
+        # must not initialize an absent mutable tree.
+        return False
+    if stat.S_ISLNK(info.st_mode) or not stat.S_ISDIR(info.st_mode):
+        raise InstallError(f"refusing to repair unsafe Steam bootstrap path: {path}")
+    if info.st_uid not in {0, uid}:
+        raise InstallError(f"refusing to take ownership of unexpected Steam bootstrap directory: {path}")
+    if (info.st_uid, info.st_gid, stat.S_IMODE(info.st_mode)) != (uid, gid, mode):
+        os.chown(path, uid, gid, follow_symlinks=False)
+        os.chmod(path, mode, follow_symlinks=False)
+    return True
+
+
 def _restart_update_services(active_units: list[str]) -> None:
     # Sessiond's PartOf edges restart Consoled and Acquisitiond with the shell.
     order = ("lulu-session@2.service", "lulu-admin.service", "mudos-recovery.service",
@@ -521,7 +549,8 @@ def _verify_update_services(active_units: list[str], previous_pids: dict[str, in
 
 
 def do_update(repo: Path, manifest: dict, dry_run: bool,
-              systemd_root: Path = Path("/etc/systemd/system")) -> None:
+              systemd_root: Path = Path("/etc/systemd/system"),
+              steam_data_root: Path = Path("/home/lulu/.local/share/Steam")) -> None:
     sha, _branch = source_revision(repo)
     if dry_run:
         for item in plan(repo, manifest, "update"):
@@ -588,6 +617,7 @@ def do_update(repo: Path, manifest: dict, dry_run: bool,
             if not alias.is_symlink():
                 alias.symlink_to(f"current/{alias.name}")
                 created_aliases.append(alias)
+        repair_steam_bootstrap_directory(steam_data_root)
         _restart_update_services(active_units)
         _verify_update_services(active_units, previous_pids)
         after_state = _session_state()

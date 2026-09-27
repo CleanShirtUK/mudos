@@ -2,6 +2,9 @@ import importlib.util
 import json
 from pathlib import Path
 import subprocess
+import stat
+from types import SimpleNamespace
+from unittest.mock import patch
 
 import pytest
 
@@ -25,6 +28,42 @@ def test_ownership_manifest_separates_release_state_and_shared_packages():
     assert "packages" in data["shared_dependencies"]
     assert not any("/opt/lulu/dev-current" in path for path in data["immutable"].values()
                    if isinstance(path, str))
+
+
+def test_steam_bootstrap_data_root_precedes_owned_steamapps_child():
+    entries = manifest()["mutable"]["initial_directories"]
+    paths = [entry["path"] for entry in entries]
+    root = "/home/lulu/.local/share/Steam"
+    child = root + "/steamapps"
+    assert paths.index(root) < paths.index(child)
+    assert next(item for item in entries if item["path"] == root) == {
+        "path": root, "owner": "lulu", "mode": "0750"}
+
+
+def test_update_repairs_only_steam_bootstrap_directory_metadata(tmp_path, monkeypatch):
+    root = tmp_path / "Steam"
+    root.mkdir()
+    child = root / "steamapps"
+    child.mkdir()
+    preserved = child / "libraryfolders.vdf"
+    preserved.write_text("keep Steam library metadata")
+    original_lstat = Path.lstat
+    fake_root_stat = SimpleNamespace(
+        st_mode=stat.S_IFDIR | 0o755, st_uid=0, st_gid=0)
+
+    def lstat(path):
+        if path == root:
+            return fake_root_stat
+        return original_lstat(path)
+
+    chown_calls = []
+    monkeypatch.setattr(Path, "lstat", lstat)
+    monkeypatch.setattr(installer.os, "chown",
+                        lambda *args, **kwargs: chown_calls.append((args, kwargs)))
+    assert installer.repair_steam_bootstrap_directory(root)
+    assert chown_calls == [((root, 958, 958), {"follow_symlinks": False})]
+    assert stat.S_IMODE(root.stat().st_mode) == 0o750
+    assert preserved.read_text() == "keep Steam library metadata"
 
 
 def test_transmission_admin_config_unit_and_polkit_rule_are_installed_and_purge_owned():
@@ -131,11 +170,14 @@ def test_update_selects_verified_release_without_touching_mutable_state(tmp_path
 
     monkeypatch.setattr(installer, "run", fake_run)
     systemd_root = tmp_path / "etc/systemd/system"
-    installer.do_update(ROOT, data, False, systemd_root=systemd_root)
+    steam_data_root = tmp_path / "Steam"
+    installer.do_update(ROOT, data, False, systemd_root=systemd_root,
+                        steam_data_root=steam_data_root)
 
     assert selector.resolve() == candidate
     assert previous.is_dir()  # retained immutable rollback release
     assert mutable_state.read_bytes() == before_state
+    assert not steam_data_root.exists()  # update does not initialize absent Steam state
     assert restarted == ["lulu-session@2.service", "lulu-consoled.service",
                          "lulu-acquisition.service", "lulu-admin.service",
                          "mudos-recovery.service"]

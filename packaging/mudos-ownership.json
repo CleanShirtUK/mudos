@@ -73,6 +73,7 @@
       {"path": "/home/lulu/Recordings", "owner": "lulu", "mode": "0750"},
       {"path": "/home/lulu/Replays", "owner": "lulu", "mode": "0750"},
       {"path": "/home/lulu/Screenshots", "owner": "lulu", "mode": "0750"},
+      {"path": "/home/lulu/.local/share/Steam", "owner": "lulu", "mode": "0750"},
       {"path": "/home/lulu/.local/share/Steam/steamapps", "owner": "lulu", "mode": "0750"},
       {"path": "/home/lulu/.config/lulu", "owner": "lulu", "mode": "0750"},
       {"path": "/home/lulu/.local/share/lulu", "owner": "lulu", "mode": "0750"},
