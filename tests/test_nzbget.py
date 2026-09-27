@@ -37,6 +37,13 @@ class NzbGetClientTests(unittest.TestCase):
             self.assertEqual(values["Server1.Active"], "yes")
             self.assertEqual(path.stat().st_mode & 0o777, 0o660)
 
+    def test_news_server_materialization_fails_cleanly_when_managed_config_is_absent(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "missing" / "nzbget.conf"
+            with self.assertRaises(FileNotFoundError):
+                apply_news_server("reader.example", 563, True, 8, "user", "secret", path=path)
+            self.assertFalse(path.parent.exists())
+
     def test_packaged_paths_are_materialized(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "nzbget.conf"

@@ -231,12 +231,16 @@ class AdminWebTests(unittest.TestCase):
         app = AdminApp()
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
+            managed_config = root / "nzbget.conf"
+            managed_config.write_text("ControlPort=6789\n")
             app.config = ProviderConfigurationService(
                 system_path=root / "system.toml", user_path=root / "user.toml",
                 secrets=Secrets())
             with patch.object(app, "wait_for_nzbget_rpc", return_value=(True, "NZBGet RPC healthy")), \
+                    patch("lulu.nzbget_admin.CONFIG_PATH", managed_config), \
                     patch("lulu.nzbget_admin.apply_news_server") as apply, \
-                    patch("lulu.admin_web.subprocess.run") as run:
+                    patch("lulu.admin_web.subprocess.run",
+                          return_value=type("Result", (), {"returncode": 0, "stdout": "", "stderr": ""})()) as run:
                 result = app.save_setup_credentials("providers.usenet.server", {
                     "host": "news.example", "port": 563, "tls": "true", "connections": 8,
                     "username": "reader", "password": "fixture-secret",
@@ -248,6 +252,45 @@ class AdminWebTests(unittest.TestCase):
         self.assertEqual([call.args[0][-1] for call in run.call_args_list],
                          ["nzbget.service", "lulu-acquisition.service"])
         apply.assert_called_once()
+
+    def test_oobe_usenet_save_logs_missing_config_stage_without_secret_values(self):
+        app = AdminApp()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            secrets = FakeSecrets()
+            secrets.put("usenet", "server-username", "reader")
+            secrets.put("usenet", "server-password", "top-secret-fixture")
+            (root / "system.toml").write_text(
+                '[providers.usenet.server.secrets]\n'
+                'username = "usenet/server-username"\n'
+                'password = "usenet/server-password"\n')
+            app.config = ProviderConfigurationService(
+                system_path=root / "system.toml", user_path=root / "user.toml", secrets=secrets)
+            payload = {"host": "news.example", "port": 563, "tls": "true", "connections": 8,
+                       "username": "", "password": ""}
+            with patch("lulu.nzbget_admin.apply_news_server",
+                       side_effect=FileNotFoundError(2, "No such file or directory", "/var/lib/nzbget/nzbget.conf")), \
+                    patch("lulu.admin_web.subprocess.run") as run, \
+                    self.assertLogs("lulu.admin", level="INFO") as captured:
+                with self.assertRaisesRegex(ValueError, "could not apply them or restart"):
+                    app.save_setup_credentials("providers.usenet.server", payload)
+        output = "\n".join(captured.output)
+        self.assertIn("stage=config-materialization-start", output)
+        self.assertIn("stage=failed", output)
+        self.assertIn("FileNotFoundError", output)
+        self.assertNotIn("top-secret-fixture", output)
+        run.assert_not_called()
+
+    def test_usenet_installer_failure_is_not_hidden_by_an_installed_package(self):
+        show = type("Result", (), {
+            "stdout": "ActiveState=failed\nResult=exit-code\nExecMainStatus=1\nExecMainStartTimestamp=now\n",
+        })()
+        journal = type("Result", (), {"stdout": "nzbget_provision stage=provider-config status=failed"})()
+        with patch("lulu.admin_web.subprocess.run", side_effect=[show, journal]), \
+                patch("lulu.onboarding._provider_installed", return_value=True):
+            state = AdminApp.provider_install_status("usenet")
+        self.assertEqual(state["status"], "install_failed")
+        self.assertIn("stage=provider-config", state["message"])
 
     def test_usenet_plugin_registers_only_after_oobe_enables_parent_provider(self):
         import shutil

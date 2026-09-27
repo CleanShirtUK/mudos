@@ -37,6 +37,7 @@ REQUIRED_FILES = (
     "scripts/reconcile-questarr.py",
     "scripts/provision-inputplumber-gamepads.py",
     "scripts/steam-auth-surface.py",
+    "scripts/usenet-readiness.py",
     "config/inputplumber/devices/lulu-composite.yaml",
     "packaging/lulu-session@.service",
     "packaging/lulu-inputplumber-hotplug.service",

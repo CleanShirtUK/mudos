@@ -102,3 +102,12 @@ def apply_news_server(host: str, port: int, tls: bool, connections: int,
         temporary = Path(stream.name); stream.write("\n".join(output) + "\n")
     os.chmod(temporary, 0o660)
     os.replace(temporary, path)
+    materialized: dict[str, str] = {}
+    for line in path.read_text().splitlines():
+        key, separator, value = line.partition("=")
+        if separator:
+            materialized[key] = value
+    if any(materialized.get(key) != value for key, value in values.items()):
+        raise RuntimeError("NZBGet Server1 configuration verification failed")
+    if path.stat().st_mode & 0o777 != 0o660:
+        raise RuntimeError("NZBGet configuration permissions are not 0660")

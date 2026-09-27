@@ -19,6 +19,17 @@ from lulu.jobs import JobState
 
 
 class ExternalProviderTests(unittest.TestCase):
+    def test_acquisitiond_reports_secret_free_loaded_usenet_executor_status(self) -> None:
+        interface = object.__new__(AcquisitionInterface)
+        interface._usenet_startup_config = {
+            "enabled": True, "configured": True, "rpc_secret_available": True,
+        }
+        interface.manager = SimpleNamespace(executors={"usenet": object()})
+        self.assertEqual(json.loads(AcquisitionInterface.GetUsenetReadiness.__wrapped__(interface)), {
+            "provider": "usenet", "enabled": True, "configured": True,
+            "rpc_secret_available": True, "executor_registered": True,
+        })
+
     def test_epic_installer_targets_the_canonical_app_id_directory(self) -> None:
         executor = EpicAcquisitionExecutor()
         command = executor.command_builder("epic:Fortnite", Path("/games/Executables/epic"))

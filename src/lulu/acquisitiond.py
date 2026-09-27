@@ -60,6 +60,18 @@ class AcquisitionInterface(ServiceInterface):
         self.catalogue = catalogue
         self.plugins = plugins
         self.bus = bus
+        from .provider_config import ProviderConfigurationService
+        usenet = ProviderConfigurationService.from_environment().provider("providers.usenet")
+        self._usenet_startup_config = {
+            "enabled": usenet.enabled,
+            "configured": usenet.configured,
+            "rpc_secret_available": usenet.secret_available("rpc_password"),
+        }
+        LOGGER.info("acquisitiond_provider provider=usenet stage=configuration-loaded enabled=%s configured=%s rpc_secret_available=%s executor_registered=%s",
+                    self._usenet_startup_config["enabled"],
+                    self._usenet_startup_config["configured"],
+                    self._usenet_startup_config["rpc_secret_available"],
+                    "usenet" in manager.executors)
         self.notifications = notifications or NotificationBroker(NotificationPresenter())
         # Historical terminal jobs are already reflected in the catalogue;
         # only completions observed after this interface starts need a
@@ -118,6 +130,15 @@ class AcquisitionInterface(ServiceInterface):
     @method()
     def GetActiveDownloadCount(self) -> "u":
         return self.manager.active_download_count
+
+    @method()
+    def GetUsenetReadiness(self) -> "s":
+        """Expose secret-free evidence that Acquisitiond loaded Usenet config."""
+        return json.dumps({
+            "provider": "usenet",
+            **self._usenet_startup_config,
+            "executor_registered": "usenet" in self.manager.executors,
+        }, sort_keys=True)
 
     @method()
     def SubmitJob(self, provider: "s", content_identity: "s", title: "s") -> "s":

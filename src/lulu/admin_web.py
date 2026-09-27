@@ -15,6 +15,7 @@ import pwd
 from pathlib import Path
 import secrets
 import shutil
+import stat
 import subprocess
 import tempfile
 import time
@@ -642,38 +643,75 @@ class AdminApp:
         self.config.update_provider(provider_id, values, secrets_in, secret_references=references)
         if provider_id == "providers.usenet.server":
             updated = self.config.provider(provider_id)
-            from .nzbget_admin import apply_news_server
+            from .nzbget_admin import CONFIG_PATH, apply_news_server
+            LOGGER.info(
+                "usenet_apply stage=settings-saved provider=usenet enabled=%s host_present=%s port=%s tls=%s connections=%s username_reference_available=%s password_reference_available=%s",
+                updated.enabled, bool(str(updated.get("host", "")).strip()),
+                updated.get("port", 563), bool(updated.get("tls", True)),
+                updated.get("connections", 8), updated.secret_available("username"),
+                updated.secret_available("password"))
             try:
+                LOGGER.info("usenet_apply stage=config-materialization-start path=%s",
+                            CONFIG_PATH)
                 apply_news_server(str(updated.get("host", "")), int(updated.get("port", 563)),
                                   bool(updated.get("tls", True)), int(updated.get("connections", 8)),
                                   updated.secret("username") or "", updated.secret("password") or "",
                                   bool(updated.get("enabled", True)))
-                subprocess.run(["systemctl", "restart", "nzbget.service"],
-                               stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-                               stderr=subprocess.DEVNULL, check=True, timeout=10)
+                config_stat = CONFIG_PATH.stat()
+                LOGGER.info("usenet_apply stage=config-materialization-complete provider=usenet server1_fields=active,host,port,encryption,username,password,connections config_uid=%s config_gid=%s config_mode=%s",
+                            config_stat.st_uid, config_stat.st_gid,
+                            oct(stat.S_IMODE(config_stat.st_mode)))
+                LOGGER.info("usenet_apply stage=service-restart-requested unit=nzbget.service")
+                restart = subprocess.run(["systemctl", "restart", "nzbget.service"],
+                                         stdin=subprocess.DEVNULL, capture_output=True,
+                                         text=True, check=False, timeout=10)
+                if restart.returncode:
+                    detail = (restart.stderr or restart.stdout or "no systemctl diagnostic").strip()[-1000:]
+                    LOGGER.error("usenet_apply stage=service-restart-failed unit=nzbget.service returncode=%s diagnostic=%s",
+                                 restart.returncode, detail)
+                    raise subprocess.CalledProcessError(restart.returncode, restart.args,
+                                                        output=restart.stdout, stderr=restart.stderr)
+                LOGGER.info("usenet_apply stage=service-restart-complete unit=nzbget.service")
                 ready, readiness_message = self.wait_for_nzbget_rpc()
                 if not ready:
                     raise RuntimeError(readiness_message)
+                LOGGER.info("usenet_apply stage=rpc-authenticated provider=usenet")
                 # Acquisitiond registers this executor from the generic
                 # providers.usenet configuration at service startup. NNTP-only
                 # settings must not leave a healthy NZBGet daemon with no job
                 # executor available to Mudos.
                 self.config.update_provider("providers.usenet", {"enabled": True})
+                LOGGER.info("usenet_apply stage=executor-config-saved provider=usenet enabled=true")
                 try:
-                    subprocess.run(["systemctl", "restart", "lulu-acquisition.service"],
-                                   stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-                                   stderr=subprocess.DEVNULL, check=True, timeout=10)
+                    LOGGER.info("usenet_apply stage=acquisition-restart-requested unit=lulu-acquisition.service")
+                    restart_acquisition = subprocess.run(
+                        ["systemctl", "restart", "lulu-acquisition.service"],
+                        stdin=subprocess.DEVNULL, capture_output=True, text=True,
+                        check=False, timeout=10)
+                    if restart_acquisition.returncode:
+                        detail = (restart_acquisition.stderr or restart_acquisition.stdout
+                                  or "no systemctl diagnostic").strip()[-1000:]
+                        LOGGER.error("usenet_apply stage=acquisition-restart-failed unit=lulu-acquisition.service returncode=%s diagnostic=%s",
+                                     restart_acquisition.returncode, detail)
+                        raise subprocess.CalledProcessError(restart_acquisition.returncode,
+                                                            restart_acquisition.args,
+                                                            output=restart_acquisition.stdout,
+                                                            stderr=restart_acquisition.stderr)
+                    LOGGER.info("usenet_apply stage=acquisition-restart-complete unit=lulu-acquisition.service")
                 except (OSError, subprocess.SubprocessError):
                     self.config.update_provider("providers.usenet",
                                                 {"enabled": usenet_acquisition_was_enabled})
                     raise ValueError("Usenet settings were applied to NZBGet, but Acquisitiond could not "
                                      "reload its provider executor. Check lulu-acquisition.service.") from None
-            except (OSError, subprocess.SubprocessError, RuntimeError):
+            except (OSError, subprocess.SubprocessError, RuntimeError) as error:
                 # The generic provider settings and encrypted references have
                 # already been saved. Report the daemon failure distinctly;
                 # callers must not interpret that as a working transfer route.
+                LOGGER.exception("usenet_apply stage=failed provider=usenet error_type=%s",
+                                 type(error).__name__)
                 raise ValueError("Usenet settings were saved, but NZBGet could not apply them or restart. "
                                  "Check the NZBGet service before retrying setup.") from None
+            LOGGER.info("usenet_apply stage=complete provider=usenet")
         return {"configured": self.config.provider(provider_id).configured}
 
     @staticmethod
@@ -708,8 +746,14 @@ class AdminApp:
                                  "--property=ActiveState,SubState,Result,ExecMainStatus,ExecMainStartTimestamp"],
                                 capture_output=True, text=True, timeout=3, check=False)
         values = dict(line.split("=", 1) for line in result.stdout.splitlines() if "=" in line)
+        failed = (values.get("ActiveState") == "failed"
+                  or bool(values.get("ExecMainStartTimestamp"))
+                  and (values.get("Result") != "success"
+                       or values.get("ExecMainStatus") not in {"", "0"}))
         if values.get("ActiveState") in {"activating", "active"}:
             status = "installing"
+        elif failed:
+            status = "install_failed"
         else:
             from .onboarding import PROVIDER_INFO, _provider_installed
             actual_id = {"transmission": "torrent", "nzbget": "usenet"}.get(provider_id, provider_id)
@@ -717,12 +761,6 @@ class AdminApp:
             installed = bool(info and _provider_installed(actual_id, info))
             if installed:
                 status = "installed"
-            elif (values.get("ActiveState") == "failed"
-                  or values.get("ExecMainStartTimestamp") and values.get("Result") != "success"):
-                status = "install_failed"
-            elif (values.get("ExecMainStartTimestamp")
-                  and values.get("ExecMainStatus") not in {"", "0"}):
-                status = "install_failed"
             else:
                 status = "selected"
         from .onboarding import install_start_failure
@@ -1318,16 +1356,24 @@ class AdminApp:
                 return True, "Provider is available"
         return False, "No normalized health check is available for this provider"
 
-    def wait_for_nzbget_rpc(self, *, attempts: int = 20, interval: float = 0.25) -> tuple[bool, str]:
+    def wait_for_nzbget_rpc(self, *, attempts: int = 120, interval: float = 0.5) -> tuple[bool, str]:
         """Wait for a restarted NZBGet daemon to expose authenticated JSON-RPC."""
         import time
+        started = time.monotonic()
         result = (False, "NZBGet RPC did not become ready")
         for attempt in range(max(1, attempts)):
             result = self.test_provider("providers.usenet")
             if result[0]:
+                LOGGER.info("usenet_apply stage=rpc-ready attempt=%s elapsed_s=%.3f",
+                            attempt + 1, time.monotonic() - started)
                 return result
+            if attempt == 0 or (attempt + 1) % 10 == 0:
+                LOGGER.info("usenet_apply stage=rpc-wait attempt=%s elapsed_s=%.3f result=%s",
+                            attempt + 1, time.monotonic() - started, result[1])
             if attempt + 1 < attempts:
                 time.sleep(max(0.0, interval))
+        LOGGER.error("usenet_apply stage=rpc-timeout attempts=%s elapsed_s=%.3f result=%s",
+                     max(1, attempts), time.monotonic() - started, result[1])
         return result
 
     def reconcile_romm_catalogue(self) -> dict[str, object]:

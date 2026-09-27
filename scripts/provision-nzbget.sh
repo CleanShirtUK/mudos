@@ -8,6 +8,13 @@ usenet="$games/.acquisition/usenet"
 config=/var/lib/nzbget/nzbget.conf
 secret_helper=${LULU_SECRET_HELPER_ROOT:-$repo_root}
 if [[ -d "$secret_helper/lib" ]]; then secret_pythonpath="$secret_helper/lib"; else secret_pythonpath="$secret_helper/src"; fi
+stage=initializing
+trap 'status=$?; printf "nzbget_provision stage=%s status=failed exit_code=%s line=%s\\n" "$stage" "$status" "$LINENO" >&2' ERR
+
+stage() {
+    stage=$1
+    printf 'nzbget_provision stage=%s status=started\n' "$stage"
+}
 
 if [[ $(id -u) -ne 0 ]]; then
     exec sudo -n "$0" "$@"
@@ -21,6 +28,7 @@ if ! command -v nzbget >/dev/null 2>&1 || ! systemctl cat nzbget.service >/dev/n
     exit 0
 fi
 
+stage account-and-directories
 getent passwd nzbget >/dev/null || useradd --system --home-dir /var/lib/nzbget \
     --create-home --shell /usr/bin/nologin nzbget
 install -d -o nzbget -g nzbget -m 0750 /var/lib/nzbget
@@ -34,6 +42,7 @@ done
 
 secret_dir=/home/lulu/.local/share/lulu/secrets/usenet
 secret_path="$secret_dir/rpc-password.cred"
+stage rpc-credential
 if [[ ! -f "$secret_path" ]]; then
     password=$(python -c 'import secrets; print(secrets.token_urlsafe(32))')
     temporary=$(mktemp)
@@ -59,6 +68,7 @@ rpc_username=$(sudo -u lulu env HOME=/home/lulu USER=lulu LOGNAME=lulu \
     'from lulu.provider_config import ProviderConfigurationService; print(ProviderConfigurationService.from_environment().provider("providers.usenet").get("username", "mudos"))')
 [[ -n "$rpc_username" && "$rpc_username" != *$'\n'* ]]
 
+stage provider-config
 install -d -m 0755 /etc/lulu
 provider_config=/etc/lulu/provider-services.toml
 if [[ ! -f "$provider_config" ]]; then
@@ -122,6 +132,7 @@ password = "usenet/server-password"
 EOF
 fi
 
+stage nzbget-config
 cat >"$config" <<EOF
 MainDir=$usenet
 DestDir=$usenet/complete
@@ -167,7 +178,10 @@ if server.get("host"):
 PY
 chown nzbget:lulu "$config"
 chmod 0660 "$config"
+stage service-enable-and-restart
 systemctl daemon-reload
 systemctl enable --now nzbget.service
 systemctl restart nzbget.service
 echo "provisioned NZBGet $(pacman -Q nzbget | awk '{print $2}') with LAN-authenticated RPC"
+printf 'nzbget_provision stage=complete status=success\n'
+trap - ERR
