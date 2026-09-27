@@ -1,8 +1,10 @@
 import asyncio
 import unittest
+from unittest.mock import patch
 
 from lulu.plugins.flatpak import FlatpakAdapter, FlatpakApplication
 from lulu.plugins.flatpak.adapter import _flatpak_operation_failure
+from lulu.jobs import DownloadJob, JobOperation
 
 
 class FakeFlatpak(FlatpakAdapter):
@@ -31,17 +33,18 @@ class FlatpakTests(unittest.TestCase):
         error = _flatpak_operation_failure("org.example.Game", [
             "The application requires the runtime org.freedesktop.Platform/x86_64/26.08 which was not found"
         ])
-        self.assertEqual(error.code, "runtime-unavailable")
+        self.assertEqual(error.code, "runtime-resolution-failed")
         self.assertIn("org.example.Game", str(error))
         self.assertIn("org.freedesktop.Platform/x86_64/26.08", str(error))
-        self.assertIn("Flatpak normally installs runtime dependencies automatically", str(error))
+        self.assertIn("The provider reported", str(error))
 
     def test_flatpak_no_such_ref_diagnostic_is_classified_as_missing_dependency(self):
         error = _flatpak_operation_failure("org.example.Game", [
             "error: No such ref 'runtime/org.freedesktop.Platform/x86_64/99.99-fixture' in remote flathub"
         ])
-        self.assertEqual(error.code, "runtime-unavailable")
+        self.assertEqual(error.code, "runtime-resolution-failed")
         self.assertIn("org.freedesktop.Platform/x86_64/99.99-fixture", str(error))
+        self.assertIn("No such ref", str(error))
 
     def test_flatpak_install_keeps_default_dependency_resolution_enabled(self):
         from pathlib import Path
@@ -49,8 +52,66 @@ class FlatpakTests(unittest.TestCase):
         text = source.read_text()
         self.assertIn('("install", "--noninteractive", "--or-update", "flathub", app_id)', text)
         self.assertIn('transaction.add_install("flathub", f"app/{app_id}/x86_64/stable")', text)
+        self.assertIn('flatpakref_install = (job.operation is JobOperation.INSTALL and job.provider_job_id', text)
+        self.assertIn('self._gi is not None and not flatpakref_install', text)
+        self.assertIn('args = ("install", "--noninteractive", job.provider_job_id)', text)
         self.assertNotIn("--no-deps", text)
-        self.assertIn("translated = _flatpak_operation_failure(app_id, [str(error)])", text)
+        self.assertIn("diagnostic_lines.append(line[:1000])", text)
+
+    def test_other_flatpak_errors_retain_provider_diagnostic(self):
+        error = _flatpak_operation_failure("org.example.Game", ["warning: repo metadata", "error: transaction failed"])
+        self.assertEqual(error.code, "operation-failed")
+        self.assertIn("warning: repo metadata", str(error))
+        self.assertIn("error: transaction failed", str(error))
+
+    def test_flatpakref_install_uses_cli_dependency_resolution_and_surfaces_stderr(self):
+        class Output:
+            def __init__(self, lines):
+                self.lines = lines
+
+            def __aiter__(self):
+                self.iterator = iter(self.lines)
+                return self
+
+            async def __anext__(self):
+                try:
+                    return next(self.iterator)
+                except StopIteration:
+                    raise StopAsyncIteration
+
+        class Process:
+            returncode = 1
+            stdout = Output([b"error: runtime org.freedesktop.Platform/x86_64/26.08 was not found (8)\n"])
+
+            async def wait(self):
+                return self.returncode
+
+        class Reporter:
+            async def state(self, *_args, **_kwargs):
+                return None
+
+        adapter = FlatpakAdapter(command="/usr/bin/flatpak")
+        job = DownloadJob(
+            job_id="fixture", provider="flatpak", title="SuperTux",
+            content_identity="flatpak:org.supertuxproject.SuperTux",
+            operation=JobOperation.INSTALL,
+            provider_job_id="/tmp/supertux.flatpakref",
+        )
+
+        async def invoke():
+            async def create_process(*args, **kwargs):
+                self.assertEqual(args, ("/usr/bin/flatpak", "--user", "install", "--noninteractive",
+                                        "/tmp/supertux.flatpakref"))
+                self.assertEqual(kwargs["stderr"], asyncio.subprocess.STDOUT)
+                return Process()
+
+            with patch("lulu.plugins.flatpak.adapter.asyncio.create_subprocess_exec", create_process):
+                with self.assertRaises(Exception) as raised:
+                    await adapter.operation(job, Reporter())
+            self.assertIn("was not found (8)", str(raised.exception))
+            self.assertIn("org.freedesktop.Platform/x86_64/26.08", str(raised.exception))
+
+        asyncio.run(invoke())
 
     def test_native_api_is_preferred_when_gi_is_available(self):
         adapter = FlatpakAdapter()

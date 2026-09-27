@@ -28,7 +28,7 @@ class FlatpakError(RuntimeError):
 
 
 def _flatpak_operation_failure(application_id: str, output: list[str]) -> FlatpakError:
-    """Translate known missing-runtime failures without hiding the requested ref."""
+    """Translate provider failures without implying that a ref is unpublished."""
     text = "\n".join(output)
     runtime_ref = re.search(
         r"(?:runtime/)?(org\.freedesktop\.[A-Za-z0-9.]+/(?:x86_64|aarch64)/[A-Za-z0-9._-]+)", text)
@@ -36,16 +36,15 @@ def _flatpak_operation_failure(application_id: str, output: list[str]) -> Flatpa
     missing_dependency = ("not found", "not installed", "was not found", "no such ref",
                           "could not find", "couldn't find", "not available")
     if runtime_ref and "runtime" in lowered and any(phrase in lowered for phrase in missing_dependency):
+        detail = "\n".join(output)[-6000:]
         return FlatpakError(
-            "runtime-unavailable",
-            f"Cannot install {application_id}: required runtime {runtime_ref.group(1)} "
-            "is unavailable from the configured Flathub metadata. Flatpak normally installs "
-            "runtime dependencies automatically; refresh Flathub appstream metadata and verify "
-            "that this exact runtime branch is published before retrying.", retryable=True)
+            "runtime-resolution-failed",
+            f"Flatpak could not resolve required runtime {runtime_ref.group(1)} for "
+            f"{application_id}. The provider reported:\n{detail}", retryable=True)
+    detail = text[-6000:] or "Flatpak returned no diagnostic output."
     return FlatpakError(
         "operation-failed",
-        f"Flatpak could not install {application_id}. Refresh Flathub metadata, then retry; "
-        "if it fails again, inspect the application and required runtime refs.", retryable=True)
+        f"Flatpak could not install {application_id}. Provider diagnostic:\n{detail}", retryable=True)
 
 
 @dataclass(frozen=True, slots=True)
@@ -410,7 +409,12 @@ class FlatpakAdapter:
                 "path": str(path)}
 
     async def operation(self, job: DownloadJob, reporter: JobReporter) -> None:
-        if self._gi is not None:
+        flatpakref_install = (job.operation is JobOperation.INSTALL and job.provider_job_id
+                              and Path(job.provider_job_id).suffix == ".flatpakref")
+        # Use Flatpak's supported flatpakref CLI path for browser handoffs. This
+        # preserves the ref's remote configuration and lets Flatpak resolve
+        # declared runtime dependencies in its normal installation transaction.
+        if self._gi is not None and not flatpakref_install:
             await self._native_operation(job, reporter)
             return
         app_id = job.content_identity.removeprefix("flatpak:")
@@ -431,10 +435,10 @@ class FlatpakAdapter:
             assert process.stdout is not None
             async for raw in process.stdout:
                 line = raw.decode(errors="replace").strip()
+                if line:
+                    diagnostic_lines.append(line[:1000])
+                    diagnostic_lines = diagnostic_lines[-40:]
                 lowered = line.casefold()
-                if "runtime" in lowered or "not found" in lowered or "not installed" in lowered:
-                    diagnostic_lines.append(line[:500])
-                    diagnostic_lines = diagnostic_lines[-8:]
                 if "installing" in lowered or "deploying" in lowered:
                     await reporter.state(JobState.FINALIZING, stage="installing")
                 elif "download" in lowered or "runtime" in lowered:
