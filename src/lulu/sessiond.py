@@ -10,6 +10,7 @@ import json
 from pathlib import Path
 import signal as os_signal
 import socket
+import time
 
 from dbus_next import BusType, DBusError, MessageType
 from dbus_next.aio import MessageBus
@@ -376,7 +377,7 @@ class ConsoleSessionInterface(ServiceInterface):
         return token
 
     @method()
-    def BeginProviderSession(self, provider_id: "s", controller_mode: "s", pid: "u", pgid: "u", executable: "s", argv: "as") -> "s":
+    def BeginProviderSession(self, provider_id: "s", controller_mode: "s", pid: "u", pgid: "u", executable: "s", argv: "as", steam_pgid: "u") -> "s":
         if controller_mode not in {"game", "compat"}:
             raise self._error(ValueError("invalid provider controller mode"))
         if self._local_identity is not None:
@@ -396,14 +397,22 @@ class ConsoleSessionInterface(ServiceInterface):
                 # owning the Steam client process. Select the actual client
                 # window explicitly; selecting the sentinel PID leaves the
                 # shell as Gamescope's visible base layer.
-                from .plugins.steam.provider import SteamProvider
+                from .plugins.steam.provider import (SteamProvider,
+                    STEAM_WINDOW_SELECTION_TIMEOUT)
                 steam = SteamProvider()
+                def process_alive() -> bool:
+                    current_pids = steam.desktop_pids()
+                    return bool(current_pids or steam.process_group_members(steam_pgid))
+
                 candidates = steam.desktop_pids()
-                LOGGER.info("steam_auth_stage stage=window-selection-request token=%s steam_pids=%s",
-                            token, candidates)
-                selected = self.supervisor._presentation.select_pids(steam.desktop_pids, 15.0)
-                LOGGER.info("steam_auth_stage stage=window-selection-complete token=%s selected_window=%s",
-                            token, selected)
+                selection_started = time.monotonic()
+                LOGGER.info("steam_auth_stage stage=waiting-for-steam-window token=%s steam_pids=%s steam_pgid=%s timeout_s=%.1f",
+                            token, candidates, steam_pgid, STEAM_WINDOW_SELECTION_TIMEOUT)
+                selected = self.supervisor._presentation.select_pids(
+                    steam.desktop_pids, STEAM_WINDOW_SELECTION_TIMEOUT, process_alive)
+                LOGGER.info("steam_auth_stage stage=gamescope-surface-selected token=%s selection_elapsed_s=%.3f selected_window=%s steam_pids=%s",
+                            token, time.monotonic() - selection_started, selected,
+                            steam.desktop_pids())
             input_mode = InputMode.COMPAT if provider_id == "steam" else InputMode.GAME
             self._apply_input_mode(input_mode)
             self.model.primary_started(token, input_mode=input_mode)

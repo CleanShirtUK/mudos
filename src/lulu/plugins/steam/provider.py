@@ -13,6 +13,12 @@ from ...launch_identity import LaunchIdentity
 from ...paths import PATHS
 
 
+STEAM_SURFACE_STARTUP_TIMEOUT = 240.0
+# ensure_client() has a bounded 15-second process-discovery phase. Keep window
+# selection within the shared 240-second launch-to-visible-surface budget.
+STEAM_WINDOW_SELECTION_TIMEOUT = 225.0
+
+
 @dataclass(frozen=True, slots=True)
 class SteamLaunchRequest:
     app_id: str
@@ -160,6 +166,19 @@ class SteamProvider:
     def desktop_pids(self) -> list[int]:
         """Return standard desktop Steam client processes for presentation selection."""
         return self._steam_client_pids()
+
+    def process_group_members(self, pgid: int) -> set[int]:
+        """Return live members of an observed Steam startup process group."""
+        return self._process_group_members(pgid) if pgid > 0 else set()
+
+    def startup_process_alive(self) -> bool:
+        """Observe the client or a process from the client launch group."""
+        if self._steam_client_pids():
+            return True
+        if any(Path(f"/proc/{pid}").exists() for pid in self._owned_client_pids):
+            return True
+        return bool(self._owned_client_pgid
+                    and self._process_group_members(self._owned_client_pgid))
 
     def process_snapshot(self, pids: list[int] | None = None) -> list[dict[str, object]]:
         """Return non-sensitive PID ancestry evidence for Steam diagnostics."""

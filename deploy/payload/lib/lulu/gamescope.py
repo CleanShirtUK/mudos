@@ -196,8 +196,11 @@ class GamescopePresentation:
         )
         return window
 
-    def window_for_pids(self, pids: list[int] | Callable[[], list[int]], timeout: float = 10.0) -> int:
+    def window_for_pids(self, pids: list[int] | Callable[[], list[int]], timeout: float = 10.0,
+                        process_alive: Callable[[], bool] | None = None) -> int:
         deadline = time.monotonic() + timeout
+        started = time.monotonic()
+        next_progress = started
         wanted: set[int] = set()
         windows: list[tuple[int, int, int]] = []
         while True:
@@ -205,20 +208,31 @@ class GamescopePresentation:
             windows = self._focusable_windows()
             for window, app_id, window_pid in windows:
                 if window_pid in wanted or any(self._is_descendant(window_pid, pid) for pid in wanted):
-                    self._logger.info("gamescope_surface_selection stage=eligible-window-found wanted_pids=%s candidates=%s selected=%s",
-                                      sorted(wanted), windows, (window, app_id, window_pid))
+                    self._logger.info("gamescope_surface_selection stage=eligible-window-found elapsed_s=%.3f wanted_pids=%s candidates=%s selected=%s",
+                                      time.monotonic() - started, sorted(wanted), windows,
+                                      (window, app_id, window_pid))
                     return window
-            if time.monotonic() >= deadline:
-                self._logger.error("gamescope_surface_selection stage=eligible-window-timeout wanted_pids=%s candidates=%s",
-                                   sorted(wanted), windows)
+            now = time.monotonic()
+            if process_alive is not None and not process_alive():
+                self._logger.error("gamescope_surface_selection stage=process-tree-exited elapsed_s=%.3f wanted_pids=%s candidates=%s",
+                                   now - started, sorted(wanted), windows)
+                raise RuntimeError("Steam process tree exited before a Gamescope window appeared")
+            if now >= deadline:
+                self._logger.error("gamescope_surface_selection stage=eligible-window-timeout elapsed_s=%.3f wanted_pids=%s candidates=%s",
+                                   now - started, sorted(wanted), windows)
                 raise TimeoutError(f"Gamescope window for process set {sorted(wanted)} was not found")
+            if now >= next_progress:
+                self._logger.info("gamescope_surface_selection stage=waiting-for-window elapsed_s=%.3f remaining_s=%.1f steam_pids=%s candidates=%s",
+                                  now - started, deadline - now, sorted(wanted), windows)
+                next_progress = now + 5.0
             time.sleep(self.poll_interval)
 
     def window_is_focusable(self, window: int) -> bool:
         return any(candidate == window for candidate, _app_id, _pid in self._focusable_windows())
 
-    def select_pids(self, pids: list[int] | Callable[[], list[int]], timeout: float = 10.0) -> int:
-        window = self.window_for_pids(pids, timeout)
+    def select_pids(self, pids: list[int] | Callable[[], list[int]], timeout: float = 10.0,
+                    process_alive: Callable[[], bool] | None = None) -> int:
+        window = self.window_for_pids(pids, timeout, process_alive)
         requested_pids = pids() if callable(pids) else pids
         self._logger.info("gamescope_surface_selection stage=select-request pids=%s window=%s",
                           requested_pids, window)

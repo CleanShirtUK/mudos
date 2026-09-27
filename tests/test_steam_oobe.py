@@ -59,8 +59,8 @@ class SteamOobeTests(unittest.TestCase):
             provider = SimpleNamespace(provider_id="steam", standalone_launch=launch)
             steam_runtime = SimpleNamespace(
                 ensure_client=AsyncMock(), _steam_client_pids=Mock(return_value=[1234]),
-                process_snapshot=Mock(return_value=[{"pid": 1234}]), open_main=Mock(),
-                hide_main=Mock(), main_window_visible=Mock(return_value=True),
+                process_snapshot=Mock(return_value=[{"pid": 1234, "pgid": 1234}]), open_main=Mock(),
+                hide_main=Mock(), main_window_visibility=Mock(return_value=True),
                 desktop_pids=Mock(return_value=[1234]), main_window_focused=Mock(return_value=True))
             interface._providers = SimpleNamespace(get=lambda _provider: provider)
             interface.catalogue = SimpleNamespace(provider=steam_runtime)
@@ -88,7 +88,7 @@ class SteamOobeTests(unittest.TestCase):
             self.assertEqual(args[:2], ("steam", "gamepad"))
             self.assertEqual(args[2], process.pid)
             self.assertEqual(interface._local_token, "setup-token")
-            self.assertEqual(len(tasks), 3)  # input-mode settle, reap, Steam window observer
+            self.assertEqual(len(tasks), 3)  # input-mode settle, reap, Steam surface observer
             for task in tasks:
                 task.close()
 

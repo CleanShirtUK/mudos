@@ -41,7 +41,7 @@ from .storage_manager import StorageManagerAdapter
 from .plugins.romm.client import RommApiError, RommClient, RommConfig, RommGame
 from .plugins.romm.readiness import RommReadinessStore
 from .provider_readiness import ProviderReadinessStore
-from .plugins.steam.provider import SteamProvider
+from .plugins.steam.provider import (SteamProvider, STEAM_SURFACE_STARTUP_TIMEOUT)
 from .plugins.steam.entitlements import SteamEntitlementSource
 from .system_settings import CATEGORIES as SYSTEM_CATEGORIES, SystemSettingsProvider
 from .paths import PATHS
@@ -1632,6 +1632,9 @@ class ConsoleInterface(ServiceInterface):
             command[1:1] = ["--appendconfig", child_config_path]
             environment["LIBRETRO_AUTOCONFIG_DIRECTORY"] = "/opt/lulu/config/retroarch/autoconfig"
         steam_delegated = provider.provider_id == "steam"
+        steam_start_time: float | None = None
+        steam_process_pgid = 0
+        steam_runtime: SteamProvider | None = None
         if steam_delegated:
             # A fresh appliance has no resident Steam client. The lifecycle
             # sentinel owns the delegated surface, not Steam itself; start or
@@ -1639,20 +1642,28 @@ class ConsoleInterface(ServiceInterface):
             steam_client = self.catalogue.provider
             if steam_client is None or not hasattr(steam_client, "ensure_client"):
                 raise ValueError("Steam client runtime adapter is unavailable")
+            steam_runtime = steam_client
+            steam_start_time = asyncio.get_running_loop().time()
             before_pids = steam_client._steam_client_pids()
-            LOGGER.info("steam_auth_stage stage=client-start-request provider=steam request_id=%s existing_pids=%s",
-                        request_id, before_pids)
+            LOGGER.info("steam_auth_stage stage=client-start-request provider=steam request_id=%s monotonic_s=%.6f existing_pids=%s",
+                        request_id, steam_start_time, before_pids)
             await steam_client.ensure_client()
             after_pids = steam_client._steam_client_pids()
-            LOGGER.info("steam_auth_stage stage=client-ready provider=steam request_id=%s disposition=%s pids=%s",
-                        request_id, "reused" if before_pids else "spawned", after_pids)
-            LOGGER.info("steam_auth_stage stage=process-tree provider=steam tree=%s",
-                        steam_client.process_snapshot())
+            LOGGER.info("steam_auth_stage stage=client-ready provider=steam request_id=%s elapsed_s=%.3f disposition=%s pids=%s",
+                        request_id, asyncio.get_running_loop().time() - steam_start_time,
+                        "reused" if before_pids else "spawned", after_pids)
+            process_tree = steam_client.process_snapshot(after_pids)
+            steam_process_pgid = (getattr(steam_client, "_owned_client_pgid", None)
+                                  or next((int(row["pgid"]) for row in process_tree), 0))
+            LOGGER.info("steam_auth_stage stage=process-tree provider=steam request_id=%s process_group=%s tree=%s",
+                        request_id, steam_process_pgid, process_tree)
             if not after_pids:
                 raise RuntimeError("Steam client process did not become observable")
             LOGGER.info("steam_auth_stage stage=main-surface-request provider=steam request_id=%s",
                         request_id)
             await asyncio.to_thread(steam_client.open_main)
+            LOGGER.info("steam_auth_stage stage=main-surface-requested provider=steam request_id=%s elapsed_s=%.3f",
+                        request_id, asyncio.get_running_loop().time() - steam_start_time)
             # Steam is already resident and the URI helper exits immediately.
             # Keep a lifecycle-owned sentinel until the user leaves Steam.
             process = await asyncio.create_subprocess_exec(
@@ -1671,7 +1682,8 @@ class ConsoleInterface(ServiceInterface):
         try:
             token = await self.sessiond.call_begin_provider_session(
                 provider.provider_id, launch.controller_mode, process.pid,
-                os.getpgid(process.pid), os.path.realpath(f"/proc/{process.pid}/exe"), command)
+                os.getpgid(process.pid), os.path.realpath(f"/proc/{process.pid}/exe"), command,
+                steam_process_pgid)
         except Exception:
             try:
                 os.killpg(os.getpgid(process.pid), signal.SIGTERM)
@@ -1727,51 +1739,93 @@ class ConsoleInterface(ServiceInterface):
                 self._local_token = None
                 if steam_delegated:
                     LOGGER.info("steam_auth_stage stage=lifecycle-token-retired token=%s", token)
-        if steam_delegated:
-            async def watch_steam_window() -> None:
-                # Steam's URI helper and update/web bootstrap can take several
-                # seconds before the final main window is mapped. Do not
-                # interpret that startup gap as a user closing Steam.
-                deadline = asyncio.get_running_loop().time() + 60.0
-                visibility_warning_logged = False
-                while process.returncode is None and asyncio.get_running_loop().time() < deadline:
-                    visibility = await asyncio.to_thread(self.catalogue.provider.main_window_visibility)
-                    if visibility is True:
-                        LOGGER.info("steam_auth_stage stage=window-ready token=%s pids=%s",
-                                    token, self.catalogue.provider.desktop_pids())
-                        break
-                    if visibility is None and not visibility_warning_logged:
-                        LOGGER.warning("steam_auth_stage stage=window-visibility-unobservable token=%s; preserving surface",
-                                       token)
-                        visibility_warning_logged = True
-                    await asyncio.sleep(0.1)
-                else:
-                    if process.returncode is None:
-                        LOGGER.error("steam_auth_stage stage=window-readiness-timeout token=%s pids=%s",
-                                     token, self.catalogue.provider.desktop_pids())
-                while process.returncode is None:
-                    state = json.loads(await self.sessiond.call_get_state())
-                    if state.get("lifecycle") == "game":
-                        focused = await asyncio.to_thread(self.catalogue.provider.main_window_focused)
-                        desired = "compat" if focused else "gamepad"
-                        if state.get("input_mode") != desired:
-                            await self.sessiond.call_set_input_mode(desired)
-                            LOGGER.info("focused provider controller mode applied provider=steam mode=%s", desired)
-                    visibility = await asyncio.to_thread(self.catalogue.provider.main_window_visibility)
-                    if visibility is False:
-                        LOGGER.info("steam_auth_stage stage=owned-surface-dismissed token=%s reason=window-not-visible",
-                                    token)
-                        process.terminate()
-                        return
-                    if visibility is None and not visibility_warning_logged:
-                        LOGGER.warning("steam_auth_stage stage=window-visibility-unobservable token=%s; preserving surface",
-                                       token)
-                        visibility_warning_logged = True
-                    elif visibility is True:
-                        visibility_warning_logged = False
-                    await asyncio.sleep(0.1)
-            asyncio.create_task(watch_steam_window())
-        asyncio.create_task(reap())
+        reap_task = asyncio.create_task(reap())
+        if steam_delegated and steam_runtime is not None and steam_start_time is not None:
+            loop = asyncio.get_running_loop()
+            ready: asyncio.Future[None] = loop.create_future()
+            visibility_warning_logged = False
+            surface_was_visible = False
+
+            async def observe_steam_surface() -> None:
+                nonlocal visibility_warning_logged, surface_was_visible
+                next_progress = loop.time()
+                try:
+                    while process.returncode is None:
+                        visibility = await asyncio.to_thread(steam_runtime.main_window_visibility)
+                        now = loop.time()
+                        elapsed = now - steam_start_time
+                        if visibility is True:
+                            if not surface_was_visible:
+                                surface_was_visible = True
+                                LOGGER.info("steam_auth_stage stage=visible-surface-ready request_id=%s token=%s elapsed_s=%.3f steam_pids=%s",
+                                            request_id, token, elapsed,
+                                            steam_runtime.desktop_pids())
+                            if not ready.done():
+                                ready.set_result(None)
+                        elif not surface_was_visible:
+                            if not steam_runtime.startup_process_alive():
+                                raise RuntimeError("Steam process tree exited before its client surface became visible")
+                            if now >= steam_start_time + STEAM_SURFACE_STARTUP_TIMEOUT:
+                                raise TimeoutError(
+                                    "Steam process remained active but no visible client surface appeared "
+                                    f"within {STEAM_SURFACE_STARTUP_TIMEOUT:.0f} seconds")
+                            if visibility is None and not visibility_warning_logged:
+                                LOGGER.warning("steam_auth_stage stage=window-visibility-unobservable request_id=%s token=%s; preserving owned surface",
+                                               request_id, token)
+                                visibility_warning_logged = True
+                            if now >= next_progress:
+                                LOGGER.info("steam_auth_stage stage=waiting-for-visible-surface request_id=%s token=%s elapsed_s=%.3f remaining_s=%.1f visibility=%s steam_pids=%s",
+                                            request_id, token, elapsed,
+                                            steam_start_time + STEAM_SURFACE_STARTUP_TIMEOUT - now,
+                                            visibility, steam_runtime.desktop_pids())
+                                next_progress = now + 5.0
+                        elif visibility is False:
+                            LOGGER.info("steam_auth_stage stage=owned-surface-dismissed request_id=%s token=%s reason=window-not-visible",
+                                        request_id, token)
+                            process.terminate()
+                            return
+                        elif visibility is None and not visibility_warning_logged:
+                            LOGGER.warning("steam_auth_stage stage=window-visibility-unobservable request_id=%s token=%s; preserving owned surface",
+                                           request_id, token)
+                            visibility_warning_logged = True
+
+                        if surface_was_visible:
+                            state = json.loads(await self.sessiond.call_get_state())
+                            if state.get("lifecycle") == "game":
+                                focused = await asyncio.to_thread(steam_runtime.main_window_focused)
+                                desired = "compat" if focused else "gamepad"
+                                if state.get("input_mode") != desired:
+                                    await self.sessiond.call_set_input_mode(desired)
+                                    LOGGER.info("focused provider controller mode applied provider=steam mode=%s",
+                                                desired)
+                        await asyncio.sleep(0.1)
+                    if not ready.done():
+                        raise RuntimeError("owned Steam presentation sentinel exited before readiness")
+                except Exception as error:
+                    if not ready.done():
+                        ready.set_exception(error)
+
+            # Probe once before scheduling the monitor. This avoids creating a
+            # background readiness dependency when Steam is already visible.
+            initial_visibility = await asyncio.to_thread(steam_runtime.main_window_visibility)
+            if initial_visibility is True:
+                surface_was_visible = True
+                ready.set_result(None)
+                LOGGER.info("steam_auth_stage stage=visible-surface-ready request_id=%s token=%s elapsed_s=%.3f steam_pids=%s",
+                            request_id, token, loop.time() - steam_start_time,
+                            steam_runtime.desktop_pids())
+            observer_task = asyncio.create_task(observe_steam_surface())
+            try:
+                await ready
+            except Exception:
+                LOGGER.exception("steam_auth_stage stage=surface-readiness-failed request_id=%s token=%s",
+                                 request_id, token)
+                if process.returncode is None:
+                    process.terminate()  # only the lifecycle sentinel owned by this request
+                await process.wait()
+                await reap_task
+                await observer_task
+                raise
         LOGGER.info("standalone provider started provider=%s command=%r token=%s", provider.provider_id, command, token)
         return token
 

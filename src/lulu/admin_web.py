@@ -779,10 +779,10 @@ class AdminApp:
                    "sign in there, then return to setup.")
         try:
             result = subprocess.run(
-                ["busctl", "--user", "--json=short", "--timeout=70s", "call", "org.lulu.Consoled",
+                ["busctl", "--user", "--json=short", "--timeout=250s", "call", "org.lulu.Consoled",
                  "/org/lulu/Console", "org.lulu.Console", "BeginPluginAuthenticationTraced",
                  "ss", "steam", request_id],
-                stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=75,
+                stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=260,
                 check=False, env=environment)
         except subprocess.TimeoutExpired:
             LOGGER.error("steam_auth_stage stage=consoled-request-timeout request_id=%s", request_id)

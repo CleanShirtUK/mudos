@@ -21,9 +21,9 @@ import sys
 
 def _busctl(*arguments: str) -> dict[str, object]:
     completed = subprocess.run(
-        ["busctl", "--user", "--json=short", "call", "org.lulu.Consoled",
+        ["busctl", "--user", "--json=short", "--timeout=250s", "call", "org.lulu.Consoled",
          "/org/lulu/Console", "org.lulu.Console", *arguments],
-        stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=90,
+        stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=260,
         check=False,
     )
     if completed.returncode:

@@ -16,7 +16,7 @@ from lulu.controllerd import BatteryKind, BatteryState, Controller, ControllerRe
 from lulu.controllerd import default_inputplumber_client
 from lulu.inputplumber import InputPlumberClient
 from lulu.contracts import InputMode, Lifecycle, Overlay, Role, ServiceName
-from lulu.gamescope import GamescopeInvocation, discover_presentation_output
+from lulu.gamescope import GamescopeInvocation, GamescopePresentation, discover_presentation_output
 from lulu.sessiond import ConsoleSessionInterface
 
 
@@ -66,6 +66,37 @@ def input_mode_interface(
 
 
 class BoundaryTests(unittest.TestCase):
+    def test_gamescope_waits_for_late_steam_window_and_refreshes_pids(self) -> None:
+        presentation = GamescopePresentation(poll_interval=0.001)
+        pid_sets = [[], [1234]]
+        polls = 0
+
+        def current_pids():
+            return pid_sets[0]
+
+        def windows():
+            nonlocal polls
+            polls += 1
+            if polls == 3:
+                pid_sets[0] = pid_sets[1]
+                return []
+            if polls == 4:
+                return [(456, 0, 1234)]
+            return []
+
+        presentation._focusable_windows = windows
+        selected = presentation.window_for_pids(current_pids, timeout=1,
+                                                  process_alive=lambda: True)
+        self.assertEqual(selected, 456)
+        self.assertGreaterEqual(polls, 3)
+
+    def test_gamescope_window_wait_fails_when_owned_tree_exits(self) -> None:
+        presentation = GamescopePresentation(poll_interval=0)
+        presentation._focusable_windows = lambda: []
+        with self.assertRaisesRegex(RuntimeError, "process tree exited"):
+            presentation.window_for_pids(lambda: [1234], timeout=10,
+                                          process_alive=lambda: False)
+
     def test_capable_source_is_inventory_fallback_when_composite_order_is_empty(self) -> None:
         from unittest.mock import patch
 
@@ -332,7 +363,7 @@ class BoundaryTests(unittest.TestCase):
             def __init__(self):
                 self.selected = []
 
-            def select_pids(self, pids, timeout):
+            def select_pids(self, pids, timeout, process_alive=None):
                 self.selected.append((pids(), timeout))
                 return 456
 
@@ -347,8 +378,8 @@ class BoundaryTests(unittest.TestCase):
         })()
         with patch("lulu.plugins.steam.provider.SteamProvider.desktop_pids", return_value=[456]):
             interface.BeginProviderSession("steam", "compat", 123, 123,
-                                           "/usr/bin/sleep", ["sleep"])
-        self.assertEqual(presentation.selected, [([456], 15.0)])
+                                           "/usr/bin/sleep", ["sleep"], 123)
+        self.assertEqual(presentation.selected, [([456], 225.0)])
         self.assertEqual(interface.model.state.input_mode, InputMode.COMPAT)
         self.assertEqual(interface.model.state.lifecycle, Lifecycle.GAME)
         self.assertEqual(interface._local_provider_id, "steam")
