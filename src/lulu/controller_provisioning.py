@@ -278,8 +278,14 @@ def ensure_provider_controller_config(
                 "StartFullscreen": "true",
                 "StartBigPictureMode": "false",
                 "OpenPauseMenu": "Keyboard/F12",
+                # Mudos owns BIOS and controller setup; never enter the
+                # interactive first-run wizard on a managed game launch.
+                "SetupWizardIncomplete": "false",
             },
         )
+        # Use PCSX2's automatic renderer selection as seen in its 2.8.2
+        # native config; fullscreen is handled by the Mudos game surface.
+        source = _update_section_values(source, "EmuCore/GS", {"Renderer": "-1"})
         for player in range(1, min(player_count, 2) + 1):
             source = _replace_section(
                 source,

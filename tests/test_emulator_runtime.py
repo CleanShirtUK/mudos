@@ -2,6 +2,8 @@ import tempfile
 import unittest
 import os
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
 
 from lulu.emulator_runtime import EmulatorRuntimeAdapter
 from lulu.controller_provisioning import ensure_provider_controller_config, ensure_retroarch_autoconfig
@@ -234,6 +236,15 @@ class EmulatorRuntimeTests(unittest.TestCase):
             intent.arguments,
             ("-batch", "-fullscreen", "--", "/fixture/game.cue"),
         )
+        provider = (Path(__file__).parents[1] / "config/providers/pcsx2/provider.toml").read_text()
+        self.assertEqual(provider.count('command = "/usr/local/bin/pcsx2-qt"'), 2)
+
+    def test_pcsx2_default_runtime_uses_release_owned_flatpak_wrapper(self) -> None:
+        from lulu.emulation import PLATFORMS
+
+        expected = PATHS.install_root / "packaging" / "pcsx2-qt-flatpak"
+        self.assertEqual(PLATFORMS["ps2"].executable, expected)
+        self.assertTrue(expected.is_file())
 
     def test_pcsx2_controller_profile_is_native_and_idempotent(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -255,8 +266,50 @@ class EmulatorRuntimeTests(unittest.TestCase):
             self.assertIn("ConfirmShutdown = false", first)
             self.assertIn("StartFullscreen = true", first)
             self.assertIn("StartBigPictureMode = false", first)
+            self.assertIn("SetupWizardIncomplete = false", first)
+            self.assertIn("OpenPauseMenu = Keyboard/F12", first)
+            self.assertIn("[EmuCore/GS]\nRenderer = -1", first)
             self.assertIn("[Pad2]", first)
             self.assertIn("Cross = SDL-1/FaceEast", first)
+
+    def test_pcsx2_default_storage_bios_path_is_provisioned_into_native_config(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            bios_root = root / "Games" / "BIOS"
+            with patch(
+                "lulu.controller_provisioning.PATHS",
+                SimpleNamespace(bios_root=bios_root),
+            ):
+                config = ensure_provider_controller_config("pcsx2", root)
+            self.assertEqual(config, root / "PCSX2" / "inis" / "PCSX2.ini")
+            content = config.read_text()
+        self.assertIn(f"Bios = {bios_root / 'ps2'}", content)
+        self.assertIn("SetupWizardIncomplete = false", content)
+
+    def test_pcsx2_alternate_storage_target_is_provisioned_without_bios_copy(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            alternate_bios_root = root / "mounted" / "library with spaces" / "Mudos" / "BIOS"
+            alternate_bios_dir = alternate_bios_root / "ps2"
+            alternate_bios_dir.mkdir(parents=True)
+            bios_file = alternate_bios_dir / "bios.bin"
+            bios_file.write_bytes(b"fixture")
+            with patch(
+                "lulu.controller_provisioning.PATHS",
+                SimpleNamespace(bios_root=alternate_bios_root),
+            ):
+                config = ensure_provider_controller_config("pcsx2", root)
+            content = config.read_text()
+            self.assertIn(f"Bios = {alternate_bios_dir}", content)
+            self.assertTrue(bios_file.is_file())
+            self.assertEqual(bios_file.read_bytes(), b"fixture")
+
+    def test_pcsx2_flatpak_wrapper_exposes_dynamic_mudos_config_and_bios(self) -> None:
+        wrapper = (Path(__file__).parents[1] / "packaging/pcsx2-qt-flatpak").read_text()
+        self.assertIn('"--filesystem=$config_home:rw"', wrapper)
+        self.assertIn('"--env=XDG_CONFIG_HOME=$config_home"', wrapper)
+        self.assertIn('"--filesystem=$bios_dir:ro"', wrapper)
+        self.assertIn('"$@"', wrapper)
 
     def test_dolphin_controller_profile_uses_inputplumber_virtual_name(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

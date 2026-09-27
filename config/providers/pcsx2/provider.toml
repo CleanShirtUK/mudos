@@ -10,10 +10,10 @@ supported = ["ps2"]
 strategy = "direct"
 directory = "config"
 [launch.standalone]
-command = "/usr/bin/pcsx2-qt"
+command = "/usr/local/bin/pcsx2-qt"
 controller_mode = "compat"
 [launch.game]
-command = "/usr/bin/pcsx2-qt"
+command = "/usr/local/bin/pcsx2-qt"
 
 [[guide.actions]]
 id = "pcsx2-menu"

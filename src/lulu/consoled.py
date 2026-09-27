@@ -2608,6 +2608,14 @@ class ConsoleInterface(ServiceInterface):
                 child_environment["XDG_CONFIG_HOME"] = str(
                     PATHS.provider_config_root(intent.provider)
                 )
+            if intent.provider == "pcsx2":
+                # Flatpak normally replaces XDG_CONFIG_HOME with its private
+                # per-app tree. The managed wrapper exposes this exact Mudos
+                # config path and BIOS authority to the sandbox.
+                child_environment["MUDOS_PCSX2_CONFIG_HOME"] = str(
+                    PATHS.provider_config_root("pcsx2")
+                )
+                child_environment["MUDOS_PCSX2_BIOS_DIR"] = str(PATHS.bios_root / "ps2")
             if intent.provider == "retroarch":
                 child_environment["LIBRETRO_AUTOCONFIG_DIRECTORY"] = str(autoconfig_directory)
                 child_environment["MUDOS_PROVIDER_MENU_COMMAND"] = shlex.join(

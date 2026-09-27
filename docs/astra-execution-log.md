@@ -1,5 +1,51 @@
 # Astra execution log
 
+## Controller superpass — pending physical validation (2026-09-28)
+
+- Source work is complete at checkpoints `2d06f16` (normalized controller
+  inventory) and `3c8b8eb` (Dolphin passthrough lifecycle). It is **not accepted**
+  until the following physical gate is completed. No final acceptance release is
+  authorized before that gate.
+- Hardware inventory gate: connect 2× Xbox 360 wireless controllers through
+  their receiver plus 1× Xbox Series USB simultaneously; verify exactly three
+  normalized Mudos controllers, each represented once.
+- Remaining physical checks: reconnect/power-cycle; Xbox Series Bluetooth;
+  Nintendo layout on/off; RetroArch; Dolphin standard controller; third-party
+  Wiimote passthrough; adapter restoration; Guide open/dismiss/quit.
+- The receiver controllers are currently unavailable pending replacement AA
+  batteries. This is a physical-validation blocker, not a newly established
+  controller defect. Do not reopen the committed inventory architecture
+  without new physical evidence.
+- Controller-source test validation is not physical acceptance. The next
+  unrelated single-defect pass is PCSX2 provisioning; it must not change this
+  pending gate or promote V1.
+
+## PCSX2 provisioning investigation — 2026-09-28
+
+- The appliance's provider runtime is PCSX2 Flatpak `net.pcsx2.PCSX2`, version
+  `v2.8.2`, system installation commit
+  `f8162e3d6b0ce75f54d0e10605d368b3678fda969bb1e806277500156c85fa10`. Mudos'
+  `/usr/local/bin/pcsx2-qt` is a wrapper that invokes that Flatpak; there is no
+  native `/usr/bin/pcsx2-qt` binary. The live Mudos storage target is the
+  default `/home/lulu/Games`; a provisioned PS2 BIOS exists at
+  `/home/lulu/Games/BIOS/ps2/ps2-0220a-20050620.bin`, and the installed test
+  title is `SSX Tricky (USA).iso`.
+- Mudos generated its provider config at
+  `/home/lulu/.config/lulu/providers/pcsx2/config/PCSX2/inis/PCSX2.ini` with
+  the BIOS directory and SDL controller mappings. But the Flatpak app was
+  actually using `/home/lulu/.var/app/net.pcsx2.PCSX2/config/PCSX2/inis/PCSX2.ini`,
+  whose observed `Bios = bios` and `SetupWizardIncomplete = true` explain the
+  first-run flow and missing BIOS. The Flatpak app has only a fixed
+  `/home/lulu/Games:ro` grant, so alternate configured storage also needs an
+  invocation-scoped read-only grant.
+- Source correction: managed launch now provisions wizard-complete state and
+  PCSX2's observed automatic GS renderer (`Renderer = -1`), passes the Mudos
+  provider config and current PS2 BIOS directory to the wrapper, and the wrapper
+  mounts those exact paths into Flatpak (config read-write, BIOS read-only).
+  Ordinary standalone launches retain Flatpak's default private config. BIOS
+  files are not copied. This is source validation only; normal gameplay and
+  physical PS2 launch acceptance remain pending.
+
 ## Bluetooth Settings presentation reproduction — 2026-09-27
 
 - Reproduced the empty Settings presentation on the appliance before changing
