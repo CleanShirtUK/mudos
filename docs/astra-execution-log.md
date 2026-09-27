@@ -1,5 +1,45 @@
 # Astra execution log
 
+## Downloads selection/focus stability — source correction pending physical acceptance
+
+- Production path traced: `JobManager` publishes every progress/state mutation to
+  Acquisitiond; `Acquisitiond.GetSnapshot/StateChanged` serializes the whole
+  ordered job set; the native shell bridge replaces its snapshot property;
+  `ConsoleShell` passes that snapshot into the always-instantiated
+  `DownloadsHome`; QML filters retired/non-visible states, orders by
+  `created_at` with `job_id` as a deterministic tie-break, then renders a
+  `ListView`. Controller Up/Down calls `moveDownloads` and then
+  `DownloadsHome.moveSelection`.
+- The prior QML tracked `selectedJobId`, but still replaced the entire JS-array
+  ListView model for every snapshot and attempted to repair transient
+  `currentIndex` changes in a feedback handler. This left the visual index and
+  selected identity exposed to delegate/model reset timing during frequent
+  progress and state signals. It also omitted the transient `pausing` and
+  `resuming` states from the visible projection, making a selected row briefly
+  disappear during pause/resume.
+- Correction: keep a keyed `ListModel` alive and reconcile rows by `job_id` via
+  in-place role updates and explicit moves/inserts/removals. `selectedJobId`
+  remains authoritative; `selectedIndex` is recomputed from that identity after
+  sorting. Only disappearance selects a deterministic row at the old index
+  (the next neighbor, or previous last); only an actual selected-row shift
+  schedules a `ListView.Contain` correction. Progress-only snapshots do not
+  reposition the viewport. Pause/resume transient states remain visible. The
+  existing six-row layout and controller hints remain intact, and Downloads
+  does not request active focus during model updates.
+- Deterministic QML coverage uses the actual `DownloadsHome` model and its
+  controller-navigation method with simultaneous rows, repeated progress,
+  byte/speed/ETA churn, finalizing/pausing/paused/resuming transitions, an
+  earlier inserted job, unrelated completion, and selected-job retirement.
+  Assertions follow selected job IDs and the rendered ListView row, including
+  deterministic cancellation fallback. QML full-suite result after this change:
+  **126 passed, the established same 9 unrelated failures**. Python focused
+  coverage also verifies the shell's Up/Down routing and absence of a focus
+  stealing handler. This does not replace physical acceptance: leave the
+  cursor on one job while other real jobs update, verify Up/Down advances one
+  row, insertion/completion/pause/resume/cancel behavior, and ensure scrolling
+  follows the selected row without needless recentering. Do not create
+  destructive provider traffic for this gate.
+
 ## Eden managed provisioning investigation — 2026-09-27
 
 - Live appliance runtime: Mudos resolves `/usr/local/bin/eden` to a wrapper that

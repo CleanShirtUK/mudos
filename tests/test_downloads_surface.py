@@ -43,8 +43,17 @@ class DownloadsSurfaceTests(unittest.TestCase):
         self.assertIn('String(job.state) === "failed"', self.qml)
         self.assertIn('retryRequested(String(job.job_id))', self.qml)
         self.assertIn('return "A  RETRY"', self.qml)
-        self.assertIn('text: root.failureReason(modelData)', self.qml)
+        self.assertIn('text: root.failureReason(row.modelData)', self.qml)
         self.assertIn('String(root.selectedJob().state) === "failed"', self.qml)
+
+    def test_snapshot_churn_keeps_a_stable_list_model_and_identity_authority(self) -> None:
+        self.assertIn("model: jobsModel", self.qml)
+        self.assertIn("jobsModel.set(targetIndex, modelJob)", self.qml)
+        self.assertIn("jobsModel.move(existingIndex, targetIndex, 1)", self.qml)
+        self.assertNotIn("onCurrentIndexChanged", self.qml)
+        self.assertNotIn("forceActiveFocus", self.qml)
+        self.assertIn('else if (root.space === "downloads") root.moveDownloads(1)', self.shell)
+        self.assertIn('else if (root.space === "downloads") root.moveDownloads(-1)', self.shell)
 
     def test_failed_rows_can_be_cleared_without_active_job_clear_path(self) -> None:
         for token in ('clearRequested', 'String(job.state) === "failed"',

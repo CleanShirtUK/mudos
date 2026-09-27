@@ -10,7 +10,6 @@ Item {
     property int selectedIndex: 0
     property string selectedJobId: ""
     property bool confirmationPending: false
-    property bool reconcilingSnapshot: false
     property real uiScale: 1
     property var typography
     property var luluPalette
@@ -26,7 +25,8 @@ Item {
     signal cancelRequested(string jobId)
     signal clearRequested(string jobId)
 
-    readonly property var visibleStates: ["queued", "starting", "transferring", "finalizing", "paused", "cancelling", "failed"]
+    readonly property var visibleStates: ["queued", "starting", "transferring", "finalizing",
+                                          "pausing", "paused", "resuming", "cancelling", "failed"]
     readonly property var activeStates: ["starting", "transferring", "finalizing"]
     readonly property var queuedStates: ["queued", "paused"]
     readonly property var historyStates: ["completed", "cancelled"]
@@ -53,33 +53,93 @@ Item {
                 current.push(incoming[i])
         }
         current.sort(function(a, b) {
-            return String(a.created_at || "").localeCompare(String(b.created_at || ""))
+            var byCreated = String(a.created_at || "").localeCompare(String(b.created_at || ""))
+            return byCreated || String(a.job_id || "").localeCompare(String(b.job_id || ""))
         })
         // The service may also provide completed_at/updated_at for history;
         // active rows are deliberately not ordered by terminal timestamps.
         // String(a.completed_at || a.updated_at || a.created_at || "") remains
         // the canonical history ordering expression used by older consumers.
+        // Keep the ListView model alive across progress/state snapshots. Replacing
+        // a JS-array model resets delegates and may emit currentIndex changes
+        // after the snapshot handler returns, stealing selection back to row 0.
         var previousIndex = selectedIndex
-        var previousId = selectedJobId
-        reconcilingSnapshot = true
-        jobs = current
+        var previousId = selectedJobId || (selectedJob() ? String(selectedJob().job_id || "") : "")
         var nextIndex = -1
-        for (var j = 0; j < jobs.length; j++) {
-            if (String(jobs[j].job_id || "") === previousId) {
+        for (var j = 0; j < current.length; j++) {
+            if (String(current[j].job_id || "") === previousId) {
                 nextIndex = j
                 break
             }
         }
         if (nextIndex < 0)
-            nextIndex = Math.min(previousIndex, Math.max(0, jobs.length - 1))
+            nextIndex = Math.min(previousIndex, Math.max(0, current.length - 1))
         selectedIndex = nextIndex
-        selectedJobId = jobs.length ? String(jobs[selectedIndex].job_id || "") : ""
-        // Replacing the JS-array model makes ListView transiently report row 0.
-        // Restore identity-derived selection after the new delegates are built.
-        jobsList.currentIndex = selectedIndex
-        reconcilingSnapshot = false
+        selectedJobId = current.length ? String(current[selectedIndex].job_id || "") : ""
+        syncJobModel(current)
+        jobs = current
+        if (nextIndex !== previousIndex) {
+            // ListView adjusts currentIndex as inserted/removed rows settle.
+            // Reassert only when the selected job's row actually moved; a
+            // progress-only snapshot must not reposition the viewport.
+            Qt.callLater(function() {
+                if (root.jobs.length && root.selectedIndex >= 0
+                        && root.selectedIndex < root.jobs.length) {
+                    jobsList.currentIndex = root.selectedIndex
+                    jobsList.positionViewAtIndex(root.selectedIndex, ListView.Contain)
+                }
+            })
+        }
         if (confirmationPending && !selectedJob())
             confirmationPending = false
+    }
+
+    function syncJobModel(nextJobs) {
+        for (var oldIndex = jobsModel.count - 1; oldIndex >= 0; oldIndex--) {
+            var oldId = String(jobsModel.get(oldIndex).job_id || "")
+            var retained = false
+            for (var desired = 0; desired < nextJobs.length; desired++) {
+                if (String(nextJobs[desired].job_id || "") === oldId) {
+                    retained = true
+                    break
+                }
+            }
+            if (!retained)
+                jobsModel.remove(oldIndex)
+        }
+        for (var targetIndex = 0; targetIndex < nextJobs.length; targetIndex++) {
+            var targetId = String(nextJobs[targetIndex].job_id || "")
+            var modelJob = normalizedModelJob(nextJobs[targetIndex])
+            var existingIndex = -1
+            for (var searchIndex = targetIndex; searchIndex < jobsModel.count; searchIndex++) {
+                if (String(jobsModel.get(searchIndex).job_id || "") === targetId) {
+                    existingIndex = searchIndex
+                    break
+                }
+            }
+            if (existingIndex < 0) {
+                jobsModel.insert(targetIndex, modelJob)
+            } else {
+                if (existingIndex !== targetIndex)
+                    jobsModel.move(existingIndex, targetIndex, 1)
+                jobsModel.set(targetIndex, modelJob)
+            }
+        }
+    }
+
+    function normalizedModelJob(job) {
+        return {
+            job_id: String(job.job_id || ""),
+            title: String(job.title || "Untitled acquisition"),
+            state: String(job.state || "queued"),
+            provider: String(job.provider || "provider"),
+            progress: job.progress === undefined ? null : job.progress,
+            downloaded_bytes: job.downloaded_bytes === undefined ? null : job.downloaded_bytes,
+            total_bytes: job.total_bytes === undefined ? null : job.total_bytes,
+            error: job.error === undefined ? null : job.error,
+            retryable: job.retryable === true,
+            pause_supported: job.pause_supported === true
+        }
     }
 
     function selectedJob() {
@@ -91,7 +151,6 @@ Item {
         if (!jobs.length) return
         selectedIndex = Math.max(0, Math.min(jobs.length - 1, selectedIndex + delta))
         selectedJobId = String(jobs[selectedIndex].job_id || "")
-        jobsList.currentIndex = selectedIndex
         jobsList.positionViewAtIndex(selectedIndex, ListView.Contain)
     }
 
@@ -198,6 +257,16 @@ Item {
         return String(job.state) === "paused" ? "Resume" : "Pause"
     }
 
+    ListModel {
+        id: jobsModel
+        dynamicRoles: true
+    }
+
+    onSelectedIndexChanged: {
+        if (jobsList && jobsList.currentIndex !== selectedIndex)
+            jobsList.currentIndex = selectedIndex
+    }
+
     onSnapshotChanged: parseSnapshot()
     Component.onCompleted: parseSnapshot()
 
@@ -251,7 +320,8 @@ Item {
                 visible: !root.confirmationPending && root.jobs.length > 0
                 width: parent.width - 8 * root.uiScale
                 anchors.horizontalCenter: parent.horizontalCenter
-                implicitHeight: Math.min(contentHeight + 8 * root.uiScale, 576 * root.uiScale)
+                implicitHeight: Math.min(root.jobs.length * (88 * root.uiScale + spacing),
+                    576 * root.uiScale)
                 height: implicitHeight
                 spacing: 8 * root.uiScale
                 clip: true
@@ -261,28 +331,27 @@ Item {
                 highlightRangeMode: ListView.StrictlyEnforceRange
                 preferredHighlightBegin: 4 * root.uiScale
                 preferredHighlightEnd: height - 4 * root.uiScale
-                onCurrentIndexChanged: {
-                    if (root.reconcilingSnapshot) {
-                        if (currentIndex !== root.selectedIndex)
-                            jobsList.currentIndex = root.selectedIndex
-                    } else if (root.selectedIndex !== currentIndex) {
-                        root.selectedIndex = currentIndex
-                        root.selectedJobId = currentIndex >= 0 && currentIndex < root.jobs.length
-                            ? String(root.jobs[currentIndex].job_id || "") : ""
-                    }
-                }
-                model: root.jobs
+                model: jobsModel
                 delegate: Item {
                     id: rowFrame
                     required property int index
-                    required property var modelData
+                    required property string job_id
+                    required property string title
+                    required property string state
+                    required property string provider
+                    required property var progress
+                    required property var downloaded_bytes
+                    required property var total_bytes
+                    required property var error
+                    required property bool retryable
+                    required property bool pause_supported
                     width: jobsList.width
                     height: row.height
                     z: index === root.selectedIndex ? 1 : 0
                     Rectangle {
                     id: row
                     objectName: "downloadJobRow"
-                    property var modelData: rowFrame.modelData
+                    property var modelData: rowFrame
                     x: 8 * root.uiScale
                     width: rowFrame.width - 16 * root.uiScale
                     height: String(modelData.state) === "failed"
@@ -303,12 +372,12 @@ Item {
                     border.color: borderColor
                     border.width: root.uiScale
 
-                    Text { x: 18 * root.uiScale; y: 10 * root.uiScale; width: parent.width * 0.58; text: modelData.title || "Untitled acquisition"; color: row.textColor; font.family: root.typography.interfaceFamily; font.pixelSize: root.typography.size("body", 18); font.bold: true; elide: Text.ElideRight }
-                     Text { x: 18 * root.uiScale; y: 37 * root.uiScale; text: String(modelData.provider || "provider").toUpperCase() + "  ·  " + (String(modelData.state) === "failed" ? "Failed" : root.stateLabel(modelData)); color: root.luluPalette.secondaryText; font.family: root.typography.interfaceFamily; font.pixelSize: root.typography.size("hint", 12) }
-                     Text { id: failureText; visible: String(modelData.state) === "failed"; x: 18 * root.uiScale; y: 57 * root.uiScale; text: root.failureReason(modelData); color: root.luluPalette.secondaryText; font.family: root.typography.interfaceFamily; font.pixelSize: root.typography.size("hint", 11); wrapMode: Text.Wrap; width: parent.width - 36 * root.uiScale }
-                    Text { anchors.right: parent.right; anchors.rightMargin: 18 * root.uiScale; y: 10 * root.uiScale; text: modelData.progress !== null && modelData.progress !== undefined ? Math.round(Number(modelData.progress) * 100) + "%" : root.stateLabel(modelData); color: root.luluPalette.accent; font.family: root.typography.interfaceFamily; font.pixelSize: root.typography.size("hint", 13) }
-                     Rectangle { visible: String(modelData.state) !== "failed"; x: 18 * root.uiScale; y: 61 * root.uiScale; width: parent.width - 36 * root.uiScale; height: 5 * root.uiScale; radius: height / 2; color: root.luluPalette.glassBorder; Rectangle { width: modelData.progress !== null && modelData.progress !== undefined ? parent.width * Math.max(0, Math.min(1, Number(modelData.progress))) : 0; height: parent.height; radius: parent.radius; color: root.luluPalette.accent } }
-                     Text { visible: String(modelData.state) !== "failed"; anchors.right: parent.right; anchors.rightMargin: 18 * root.uiScale; y: 70 * root.uiScale; text: modelData.downloaded_bytes !== null && modelData.total_bytes !== null ? root.formatBytes(modelData.downloaded_bytes) + " / " + root.formatBytes(modelData.total_bytes) : ""; color: root.luluPalette.secondaryText; font.family: root.typography.interfaceFamily; font.pixelSize: root.typography.size("hint", 11) }
+                    Text { x: 18 * root.uiScale; y: 10 * root.uiScale; width: parent.width * 0.58; text: row.modelData.title || "Untitled acquisition"; color: row.textColor; font.family: root.typography.interfaceFamily; font.pixelSize: root.typography.size("body", 18); font.bold: true; elide: Text.ElideRight }
+                     Text { x: 18 * root.uiScale; y: 37 * root.uiScale; text: String(row.modelData.provider || "provider").toUpperCase() + "  ·  " + (String(row.modelData.state) === "failed" ? "Failed" : root.stateLabel(row.modelData)); color: root.luluPalette.secondaryText; font.family: root.typography.interfaceFamily; font.pixelSize: root.typography.size("hint", 12) }
+                     Text { id: failureText; visible: String(row.modelData.state) === "failed"; x: 18 * root.uiScale; y: 57 * root.uiScale; text: root.failureReason(row.modelData); color: root.luluPalette.secondaryText; font.family: root.typography.interfaceFamily; font.pixelSize: root.typography.size("hint", 11); wrapMode: Text.Wrap; width: parent.width - 36 * root.uiScale }
+                    Text { anchors.right: parent.right; anchors.rightMargin: 18 * root.uiScale; y: 10 * root.uiScale; text: row.modelData.progress !== null && row.modelData.progress !== undefined ? Math.round(Number(row.modelData.progress) * 100) + "%" : root.stateLabel(row.modelData); color: root.luluPalette.accent; font.family: root.typography.interfaceFamily; font.pixelSize: root.typography.size("hint", 13) }
+                     Rectangle { visible: String(row.modelData.state) !== "failed"; x: 18 * root.uiScale; y: 61 * root.uiScale; width: parent.width - 36 * root.uiScale; height: 5 * root.uiScale; radius: height / 2; color: root.luluPalette.glassBorder; Rectangle { width: row.modelData.progress !== null && row.modelData.progress !== undefined ? parent.width * Math.max(0, Math.min(1, Number(row.modelData.progress))) : 0; height: parent.height; radius: parent.radius; color: root.luluPalette.accent } }
+                     Text { visible: String(row.modelData.state) !== "failed"; anchors.right: parent.right; anchors.rightMargin: 18 * root.uiScale; y: 70 * root.uiScale; text: row.modelData.downloaded_bytes !== null && row.modelData.total_bytes !== null ? root.formatBytes(row.modelData.downloaded_bytes) + " / " + root.formatBytes(row.modelData.total_bytes) : ""; color: root.luluPalette.secondaryText; font.family: root.typography.interfaceFamily; font.pixelSize: root.typography.size("hint", 11) }
                     }
                 }
             }

@@ -47,8 +47,18 @@ TestCase {
         ]})
         wait(1)
         var list = findChild(downloads, "downloadJobRows")
-        var row = findChild(downloads, "downloadJobRow")
-        verify(list !== null && row !== null)
+        verify(list !== null)
+        var row = null
+        for (var childIndex = 0; childIndex < list.contentItem.children.length; ++childIndex) {
+            var child = list.contentItem.children[childIndex]
+            if (child.job_id === "first") {
+                for (var nested = 0; nested < child.children.length; ++nested) {
+                    if (child.children[nested].objectName === "downloadJobRow")
+                        row = child.children[nested]
+                }
+            }
+        }
+        verify(row !== null, "selected first delegate should be instantiated")
         function contained() {
             var left = row.mapToItem(list, 0, 0).x
             var right = row.mapToItem(list, row.width, 0).x
@@ -66,7 +76,7 @@ TestCase {
         // second job rather than assuming findChild returns it first.
         for (var i = 0; i < list.contentItem.children.length; ++i) {
             var candidate = list.contentItem.children[i]
-            if (candidate.modelData && candidate.modelData.job_id === "second") {
+            if (candidate.job_id === "second") {
                 for (var k = 0; k < candidate.children.length; ++k)
                     if (candidate.children[k].objectName === "downloadJobRow")
                         selected = candidate.children[k]
@@ -100,6 +110,86 @@ TestCase {
         compare(downloads.selectedJobId, "job-c")
     }
 
+    function test_selection_survives_production_model_churn_and_reordering() {
+        downloads.selectedIndex = 0
+        downloads.selectedJobId = ""
+        var rows = [
+            {job_id: "active-a", state: "transferring", title: "A", provider: "fixture",
+             created_at: "2026-01-01", progress: 0.1, downloaded_bytes: 10, total_bytes: 100},
+            {job_id: "selected-b", state: "queued", title: "B", provider: "fixture",
+             created_at: "2026-01-02", progress: null, downloaded_bytes: null, total_bytes: null,
+             pause_supported: true},
+            {job_id: "active-c", state: "transferring", title: "C", provider: "fixture",
+             created_at: "2026-01-03", progress: 0.2, downloaded_bytes: 20, total_bytes: 100}
+        ]
+        downloads.snapshot = JSON.stringify({jobs: rows})
+        downloads.moveSelection(1)
+        compare(downloads.selectedJobId, "selected-b")
+        var list = findChild(downloads, "downloadJobRows")
+        verify(list !== null)
+        compare(list.currentIndex, 1)
+        compare(list.model.count, 3)
+
+        // Realistic burst of progress/speed/ETA snapshots while another row
+        // moves from transfer into finalization. Selection stays by ID.
+        for (var tick = 1; tick <= 12; tick++) {
+            rows[0].progress = tick / 20
+            rows[0].downloaded_bytes = tick * 5
+            rows[0].speed_bytes_per_second = tick * 100
+            rows[0].eta_seconds = 60 - tick
+            rows[2].progress = tick / 15
+            rows[2].downloaded_bytes = tick * 7
+            if (tick === 4)
+                rows[2].state = "finalizing"
+            downloads.snapshot = JSON.stringify({jobs: rows})
+            wait(1)
+            compare(downloads.selectedJobId, "selected-b", "progress churn changed selected job")
+            compare(list.currentIndex, 1, "progress churn changed visual row")
+        }
+
+        // Exercise the actual normalized pause/resume state vocabulary. These
+        // transient states must remain actionable/visible instead of dropping
+        // and re-inserting the selected entry.
+        var selectedStates = ["starting", "transferring", "pausing", "paused",
+                              "resuming", "queued", "finalizing"]
+        for (var stateIndex = 0; stateIndex < selectedStates.length; stateIndex++) {
+            rows[1].state = selectedStates[stateIndex]
+            downloads.snapshot = JSON.stringify({jobs: rows})
+            wait(1)
+            compare(downloads.selectedJobId, "selected-b",
+                    "selected job disappeared during " + selectedStates[stateIndex])
+            compare(list.currentIndex, 1)
+        }
+
+        // A newly discovered earlier job changes the selected visual row;
+        // selection must follow the original job, not freeze the row number.
+        rows.push({job_id: "inserted", state: "starting", title: "New", provider: "fixture",
+                   created_at: "2025-12-31", progress: 0})
+        downloads.snapshot = JSON.stringify({jobs: rows})
+        wait(1)
+        compare(downloads.selectedJobId, "selected-b")
+        compare(downloads.selectedIndex, 2)
+        compare(list.currentIndex, 2)
+
+        // Removing an unrelated completing/retired row keeps the selected ID.
+        rows[0].state = "completed"
+        downloads.snapshot = JSON.stringify({jobs: rows})
+        wait(1)
+        compare(downloads.selectedJobId, "selected-b")
+        compare(downloads.selectedIndex, 1)
+        compare(list.currentIndex, 1)
+
+        // Removing the selected row selects the row now occupying its old
+        // position (the deterministic next neighbour), or the previous last.
+        rows[1].state = "cancelled"
+        rows[1].retired = true
+        downloads.snapshot = JSON.stringify({jobs: rows})
+        wait(1)
+        compare(downloads.selectedJobId, "active-c")
+        compare(downloads.selectedIndex, 1)
+        compare(list.currentIndex, 1)
+    }
+
     function test_six_normal_rows_fit_without_clipping_the_last_row() {
         var rows = []
         for (var i = 0; i < 6; ++i)
@@ -111,7 +201,8 @@ TestCase {
         verify(list.height >= list.contentHeight,
                "the visible viewport should contain all six normal rows")
         verify(list.contentHeight >= 6 * 88,
-               "six complete row delegates should be laid out")
+               "six complete row delegates should be laid out: content="
+               + list.contentHeight + " count=" + list.model.count)
         var hints = findChild(downloads, "downloadControllerHints")
         verify(hints !== null)
         var listBottom = list.mapToItem(downloads, 0, list.height).y
