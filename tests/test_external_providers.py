@@ -9,13 +9,14 @@ import unittest
 from lulu.catalogue import CatalogueStore
 from lulu.plugins.external import (CliAcquisitionExecutor, OwnedProviderGame,
                                    SnapshotEntitlementSource, normalize_game)
-from lulu.plugins.epic import EpicAcquisitionExecutor, EpicAuthentication
+from lulu.plugins.epic import EpicAcquisitionExecutor, EpicAuthentication, EpicEntitlementSource
 from lulu.plugins.gog import GogAuthentication
 from lulu.jobs import DownloadJob, JobOperation
 from lulu.consoled import ConsoleCatalog, ConsoleInterface
 from lulu.acquisitiond import AcquisitionInterface
 from lulu.job_manager import JobManager
 from lulu.jobs import JobState
+from lulu.job_manager import JobExecutionError
 
 
 class ExternalProviderTests(unittest.TestCase):
@@ -63,6 +64,140 @@ class ExternalProviderTests(unittest.TestCase):
         self.assertEqual(command[command.index("--base-path") + 1], "/games/Executables/epic")
         self.assertIn("--game-folder", command)
         self.assertEqual(command[command.index("--game-folder") + 1], "Fortnite")
+
+    def test_epic_third_party_managed_entitlement_is_rejected_before_legendary_install(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            config = root / "provider-config" / "legendary"
+            metadata = config / "metadata" / "Pigeon.json"
+            metadata.parent.mkdir(parents=True)
+            metadata.write_text(json.dumps({"metadata": {"customAttributes": {
+                "ThirdPartyManagedProvider": {"type": "STRING", "value": "UbisoftConnect"},
+            }}}))
+            with patch("lulu.plugins.epic.PATHS", SimpleNamespace(
+                    epic_library_root=root / "epic",
+                    provider_config_root=lambda _provider: root / "provider-config")):
+                executor = EpicAcquisitionExecutor()
+                with self.assertRaises(JobExecutionError) as raised:
+                    executor.command_builder("epic:Pigeon", root / "epic")
+                self.assertEqual(raised.exception.code, "epic-third-party-managed")
+                self.assertIn("UbisoftConnect", str(raised.exception))
+                self.assertEqual(raised.exception.details["required_provider"], "UbisoftConnect")
+                self.assertEqual(executor._command_for_install("epic:Pigeon", root / "epic"), [
+                    "legendary", "-y", "install", "Pigeon", "--base-path", str(root / "epic"),
+                    "--game-folder", "Pigeon", "--skip-sdl", "--skip-dlcs",
+                ])
+
+    def test_epic_third_party_failure_reaches_acquisition_job_with_structured_details(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            metadata = root / "provider-config" / "legendary" / "metadata" / "Pigeon.json"
+            metadata.parent.mkdir(parents=True)
+            metadata.write_text(json.dumps({"metadata": {"customAttributes": {
+                "ThirdPartyManagedProvider": {"type": "STRING", "value": "UbisoftConnect"},
+            }}}))
+            with patch("lulu.plugins.epic.PATHS", SimpleNamespace(
+                    epic_library_root=root / "epic",
+                    provider_config_root=lambda _provider: root / "provider-config")):
+                async def exercise():
+                    manager = JobManager()
+                    manager.register_executor("epic", EpicAcquisitionExecutor())
+                    job = manager.submit("epic", "epic:Pigeon", "Trackmania Starter Access")
+                    await asyncio.sleep(0.05)
+                    failed = manager.jobs[job.job_id]
+                    self.assertEqual(failed.state, JobState.FAILED)
+                    self.assertEqual(failed.error.code, "epic-third-party-managed")
+                    self.assertEqual(failed.error.details["required_provider"], "UbisoftConnect")
+
+                asyncio.run(exercise())
+
+    def test_epic_third_party_entitlement_is_not_projected_as_installable(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            provider_root = root / "provider"
+            config_dir = root / "config" / "legendary"
+            metadata = config_dir / "metadata" / "Pigeon.json"
+            metadata.parent.mkdir(parents=True)
+            metadata.write_text(json.dumps({"metadata": {"customAttributes": {
+                "ThirdPartyManagedProvider": {"type": "STRING", "value": "UbisoftConnect"},
+            }}}))
+            with patch("lulu.plugins.epic.PATHS", SimpleNamespace(
+                    provider_root=lambda _provider: provider_root,
+                    provider_config_root=lambda _provider: root / "config",
+                    epic_library_root=root / "epic")):
+                source = EpicEntitlementSource()
+                source._json = lambda command: ([{"app_name": "Pigeon", "app_title": "Trackmania"}]
+                                                if command[1] == "list" else [])
+                owned = source.refresh()
+                self.assertEqual(owned[0].availability_state, "unavailable")
+                store = CatalogueStore(root / "catalogue.sqlite3")
+                store.reconcile_owned_provider("epic", source.snapshot, source.installed())
+                row = store.get_game("epic:Pigeon")
+                self.assertEqual(row.availability_state, "unavailable")
+                self.assertEqual(store.list_available_games("epic"), [])
+                store.connection.close()
+
+    def test_epic_installed_discovery_is_confined_to_canonical_provider_root(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            epic_root = root / "Games" / "Executables" / "epic"
+            inside = epic_root / "EpicApp"
+            outside = root / "other-store" / "OtherApp"
+            inside.mkdir(parents=True)
+            outside.mkdir(parents=True)
+            (inside / "game.bin").write_bytes(b"payload")
+            (outside / "game.bin").write_bytes(b"payload")
+            with patch("lulu.plugins.epic.PATHS", SimpleNamespace(
+                    provider_root=lambda _provider: root / "provider",
+                    provider_config_root=lambda _provider: root / "config",
+                    epic_library_root=epic_root)):
+                source = EpicEntitlementSource()
+                source._json = lambda _command: [
+                    {"app_name": "EpicApp", "app_title": "Epic App", "install_path": str(inside)},
+                    {"app_name": "OtherApp", "app_title": "Other Store App", "install_path": str(outside)},
+                    {"app_name": "WrongFolder", "app_title": "Wrong Folder", "install_path": str(inside)},
+                ]
+                found = source.installed()
+                self.assertEqual([game.provider_id for game in found], ["EpicApp"])
+                self.assertEqual(found[0].install_dir, str(inside))
+
+    def test_epic_zero_exit_without_payload_keeps_bounded_legendary_error(self) -> None:
+        class Output:
+            async def __aiter__(self):
+                yield b"[cli] ERROR: selected game is managed by another store\n"
+
+        class Process:
+            stdout = Output()
+            returncode = 0
+            async def wait(self): return 0
+
+        class Reporter:
+            async def state(self, *_args, **_kwargs): pass
+            async def progress(self, *_args, **_kwargs): pass
+            async def metadata(self, *_args, **_kwargs): pass
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            with patch("lulu.plugins.epic.PATHS", SimpleNamespace(
+                    epic_library_root=root / "epic",
+                    provider_config_root=lambda _provider: root / "provider-config")), \
+                    patch("lulu.plugins.external.asyncio.create_subprocess_exec",
+                          return_value=Process()):
+                executor = EpicAcquisitionExecutor()
+                job = DownloadJob("job-epic", "epic", "Fixture", "epic:FixtureApp")
+                with self.assertRaises(JobExecutionError) as raised:
+                    asyncio.run(executor.run(job, Reporter()))
+                self.assertEqual(raised.exception.code, "provider-install-incomplete")
+                self.assertEqual(raised.exception.details["return_code"], 0)
+                self.assertIn("managed by another store", raised.exception.details["provider_message"])
+                self.assertIn("Legendary reported", str(raised.exception))
+
+    def test_epic_cli_diagnostics_redact_secrets_and_bound_provider_message(self) -> None:
+        executor = EpicAcquisitionExecutor()
+        line = "ERROR password=hunter2 " + ("x" * 1000)
+        diagnostic = executor._diagnostic_line(line)
+        self.assertNotIn("hunter2", diagnostic)
+        self.assertLessEqual(len(diagnostic), 400)
 
     def test_epic_and_gog_completed_jobs_project_through_installed_manifest(self) -> None:
         class Output:

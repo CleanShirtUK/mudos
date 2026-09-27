@@ -258,7 +258,8 @@ class CatalogueGame:
             last_played=int(getattr(installed or game, "last_played", 0) or 0),
             platform_label=provider.title(), source_title=str(getattr(game, "title", title)),
             normalized_search_title=clean_local_title(str(getattr(game, "title", title))),
-            availability_state="installed" if installed is not None else "available",
+            availability_state=("installed" if installed is not None else
+                                str(getattr(game, "availability_state", "available"))),
             catalogue_source=provider,
         )
 

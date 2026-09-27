@@ -30,6 +30,7 @@ class OwnedProviderGame:
     platform: str = "PC"
     artwork_url: str = ""
     last_played: int = 0
+    availability_state: str = "available"
 
 
 def _record(value: object) -> dict[str, object]:
@@ -50,7 +51,8 @@ def normalize_game(value: object, *, provider_id_keys: tuple[str, ...],
     return OwnedProviderGame(identity, title, install_dir, executable,
                              str(item.get("platform") or "PC"),
                              str(item.get("artwork_url") or item.get("cover") or ""),
-                             int(item.get("last_played") or 0))
+                             int(item.get("last_played") or 0),
+                             str(item.get("availability_state") or "available"))
 
 
 class SnapshotEntitlementSource:
@@ -91,7 +93,8 @@ class SnapshotEntitlementSource:
         return OwnedProviderGame(str(item.get("provider_id", "")), str(item.get("title", "")),
                                  str(item.get("install_dir", "")), str(item.get("executable", "")),
                                  str(item.get("platform", "PC")), str(item.get("artwork_url", "")),
-                                 int(item.get("last_played", 0) or 0))
+                                 int(item.get("last_played", 0) or 0),
+                                 str(item.get("availability_state", "available")))
 
     def _save(self) -> None:
         try:
@@ -135,6 +138,17 @@ class CliAcquisitionExecutor:
                                      f"{self.provider} backend is not provisioned", retryable=True)
         return resolved
 
+    def _diagnostic_line(self, line: str) -> str:
+        return line[-500:]
+
+    def _process_failure(self, returncode: int, provider_message: str) -> JobExecutionError:
+        return JobExecutionError(f"{self.provider}-failed", f"{self.provider} exited with status {returncode}",
+                                 retryable=True, details={"return_code": returncode})
+
+    def _validation_failure(self, error: JobExecutionError, returncode: int,
+                            provider_message: str) -> JobExecutionError:
+        return error
+
     async def run(self, job: DownloadJob, reporter: JobReporter) -> None:
         executable = self._require()
         if job.operation.value == "remove" and self.uninstall_builder is not None:
@@ -163,24 +177,31 @@ class CliAcquisitionExecutor:
         self._processes[job.job_id] = process
         await reporter.state(JobState.STARTING, stage="starting")
         progress = re.compile(r"(?:progress|complete|completed)\D+([0-9]{1,3})(?:\.|%| percent)", re.I)
+        provider_message = ""
         try:
             assert process.stdout is not None
             async for raw in process.stdout:
                 line = raw.decode(errors="replace").strip()
                 match = progress.search(line)
+                diagnostic = self._diagnostic_line(line) if line else ""
+                if diagnostic:
+                    provider_message = diagnostic
                 if match:
                     await reporter.progress(min(1.0, int(match.group(1)) / 100.0), stage="transferring")
                     await reporter.state(JobState.TRANSFERRING, stage="transferring")
                 elif line:
-                    await reporter.metadata(provider_state=line[-500:])
+                    await reporter.metadata(provider_state=diagnostic)
             code = await process.wait()
             if code != 0:
-                raise JobExecutionError(f"{self.provider}-failed", f"{self.provider} exited with status {code}", retryable=True)
+                raise self._process_failure(code, provider_message)
             await reporter.progress(1.0, stage="finalizing")
             await reporter.state(JobState.FINALIZING, stage="finalizing")
             marker_dir = self.install_root / job.content_identity.removeprefix(f"{self.provider}:")
             if job.operation.value in {"install", "update", "acquire"}:
-                self._validate_installed_payload(marker_dir)
+                try:
+                    self._validate_installed_payload(marker_dir)
+                except JobExecutionError as error:
+                    raise self._validation_failure(error, code, provider_message) from error
                 (marker_dir / ".mudos-game.json").write_text(json.dumps({
                     "provider_id": job.content_identity.removeprefix(f"{self.provider}:"),
                     "title": job.title, "install_dir": str(marker_dir),

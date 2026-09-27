@@ -6,9 +6,12 @@ import json
 import logging
 import os
 from pathlib import Path
+import re
 import subprocess
+from dataclasses import replace
 
 from ..paths import PATHS
+from ..job_manager import JobExecutionError
 from ..windows_runtime import WindowsRuntime
 from .external import (CliAcquisitionExecutor, CliProviderAuthentication,
                        OwnedProviderGame, SnapshotEntitlementSource,
@@ -16,6 +19,21 @@ from .external import (CliAcquisitionExecutor, CliProviderAuthentication,
 
 
 LOGGER = logging.getLogger("lulu.epic")
+
+
+def _third_party_managed_store(config_dir: Path, app_id: str) -> str:
+    if not re.fullmatch(r"[A-Za-z0-9._-]+", app_id):
+        return ""
+    metadata_path = config_dir / "metadata" / f"{app_id}.json"
+    try:
+        metadata = json.loads(metadata_path.read_text()).get("metadata", {})
+    except (OSError, TypeError, ValueError, json.JSONDecodeError):
+        return ""
+    attributes = metadata.get("customAttributes", {}) if isinstance(metadata, dict) else {}
+    value = attributes.get("ThirdPartyManagedProvider", "") if isinstance(attributes, dict) else ""
+    if isinstance(value, dict):
+        value = value.get("value", "")
+    return str(value).strip()
 
 
 class EpicEntitlementSource(SnapshotEntitlementSource):
@@ -38,10 +56,13 @@ class EpicEntitlementSource(SnapshotEntitlementSource):
         try:
             value = self._json(["legendary", "list", "--json"])
             records = value if isinstance(value, list) else []
-            owned = [game for item in records
-                      if (game := normalize_game(item,
-                           provider_id_keys=("app_name", "appName", "id"),
-                           title_keys=("app_title", "appTitle", "title", "name"))) is not None]
+            owned = []
+            for item in records:
+                game = normalize_game(item, provider_id_keys=("app_name", "appName", "id"),
+                                      title_keys=("app_title", "appTitle", "title", "name"))
+                if game is not None:
+                    store = _third_party_managed_store(self.config_dir, game.provider_id)
+                    owned.append(replace(game, availability_state="unavailable" if store else "available"))
             self.update(owned, self.installed())
         except (OSError, subprocess.SubprocessError, TypeError, ValueError, json.JSONDecodeError) as error:
             self.last_error = str(error)
@@ -50,13 +71,17 @@ class EpicEntitlementSource(SnapshotEntitlementSource):
 
     def installed(self) -> tuple[OwnedProviderGame, ...]:
         discovered: dict[str, OwnedProviderGame] = {}
+        root = PATHS.epic_library_root.resolve(strict=False)
         try:
             value = self._json(["legendary", "list-installed", "--json", "--show-dirs"])
             records = value if isinstance(value, list) else []
-            discovered.update((game.provider_id, game) for item in records
-                              if (game := normalize_game(item,
-                                   provider_id_keys=("app_name", "appName", "id"),
-                                   title_keys=("app_title", "appTitle", "title", "name"))) is not None)
+            for item in records:
+                game = normalize_game(item, provider_id_keys=("app_name", "appName", "id"),
+                                      title_keys=("app_title", "appTitle", "title", "name"))
+                if (game is None or
+                        not self._is_canonical_directory(game.install_dir, root, game.provider_id)):
+                    continue
+                discovered[game.provider_id] = game
         except (OSError, subprocess.SubprocessError, TypeError, ValueError, json.JSONDecodeError):
             pass
         # A successful acquisition writes an identity marker only after its
@@ -67,11 +92,30 @@ class EpicEntitlementSource(SnapshotEntitlementSource):
                 value = json.loads(marker.read_text())
                 game = normalize_game(value, provider_id_keys=("provider_id", "id"),
                                       title_keys=("title", "name"))
-                if game is not None:
+                if (game is not None and not marker.parent.is_symlink()
+                        and self._is_canonical_directory(str(marker.parent), root, game.provider_id)
+                        and Path(game.install_dir).resolve(strict=False) == marker.parent.resolve(strict=False)
+                        and any(item.is_file() and item.name != ".mudos-game.json"
+                                for item in marker.parent.rglob("*"))):
                     discovered[game.provider_id] = game
             except (OSError, TypeError, ValueError, json.JSONDecodeError):
                 continue
         return tuple(sorted(discovered.values(), key=lambda item: item.title.casefold()))
+
+    @staticmethod
+    def _is_canonical_directory(raw_path: str, root: Path, app_id: str) -> bool:
+        if not raw_path:
+            return False
+        original = Path(raw_path)
+        if original.is_symlink():
+            return False
+        target = original.resolve(strict=False)
+        try:
+            target.relative_to(root)
+        except ValueError:
+            return False
+        return (target != root and target.parent == root and target.name == app_id
+                and target.is_dir())
 
 
 class EpicAuthentication(CliProviderAuthentication):
@@ -100,13 +144,63 @@ class EpicAcquisitionExecutor(CliAcquisitionExecutor):
     def __init__(self) -> None:
         root = PATHS.epic_library_root
         config_dir = PATHS.provider_config_root("epic") / "legendary"
-        super().__init__("epic", "legendary", root,
-                         lambda identity, destination: ["legendary", "-y", "install", identity.removeprefix("epic:"),
-                                                        "--base-path", str(destination),
-                                                        "--game-folder", identity.removeprefix("epic:"),
-                                                        "--skip-sdl", "--skip-dlcs"],
+        self.config_dir = config_dir
+        super().__init__("epic", "legendary", root, self._install_command,
                          lambda identity, destination: ["legendary", "-y", "uninstall", identity.removeprefix("epic:")])
         self.environment = {**os.environ, "LEGENDARY_CONFIG_PATH": str(config_dir)}
+
+    @staticmethod
+    def _app_id(identity: str) -> str:
+        app_id = identity.removeprefix("epic:")
+        if not re.fullmatch(r"[A-Za-z0-9._-]+", app_id):
+            raise JobExecutionError("epic-invalid-identity", "Epic app identity is invalid", retryable=False)
+        return app_id
+
+    def _third_party_store(self, app_id: str) -> str:
+        return _third_party_managed_store(self.config_dir, app_id)
+
+    def _install_command(self, identity: str, destination: Path) -> list[str]:
+        app_id = self._app_id(identity)
+        third_party = self._third_party_store(app_id)
+        if third_party:
+            raise JobExecutionError(
+                "epic-third-party-managed",
+                f"This Epic entitlement must be installed through {third_party}; Legendary cannot install it directly",
+                retryable=False,
+                details={"app_id": app_id, "required_provider": third_party},
+            )
+        return self._command_for_install(identity, destination)
+
+    def _command_for_install(self, identity: str, destination: Path) -> list[str]:
+        app_id = self._app_id(identity)
+        return ["legendary", "-y", "install", app_id,
+                "--base-path", str(destination), "--game-folder", app_id,
+                "--skip-sdl", "--skip-dlcs"]
+
+    def _diagnostic_line(self, line: str) -> str:
+        value = re.sub(r"(?i)\b(access[_ -]?token|refresh[_ -]?token|auth[_ -]?(?:password|token)|password|secret)\b(\s*[=:]\s*)\S+",
+                       r"\1\2<redacted>", line)
+        value = re.sub(r"(?i)\bBearer\s+\S+", "Bearer <redacted>", value)
+        return value[-400:]
+
+    def _process_failure(self, returncode: int, provider_message: str) -> JobExecutionError:
+        details: dict[str, object] = {"return_code": returncode}
+        message = f"Legendary exited with status {returncode}"
+        if provider_message:
+            details["provider_message"] = provider_message
+            message += f": {provider_message}"
+        return JobExecutionError("epic-failed", message, retryable=True, details=details)
+
+    def _validation_failure(self, error: JobExecutionError, returncode: int,
+                            provider_message: str) -> JobExecutionError:
+        details = dict(error.details or {})
+        details["return_code"] = returncode
+        if provider_message:
+            details["provider_message"] = provider_message
+        message = str(error)
+        if provider_message:
+            message += f" (Legendary reported: {provider_message})"
+        return JobExecutionError(error.code, message, retryable=error.retryable, details=details)
 
 
 class EpicLauncher:
