@@ -113,6 +113,9 @@ class SteamProvider:
 
     def hide_main(self) -> str:
         """Return focus from Steam while leaving the client available."""
+        if not self._steam_client_pids():
+            self._logger.info("steam_client stage=hide-skipped reason=client-not-running")
+            return "steam://close"
         return self._dispatch_uri("steam://close")
 
     def main_window_visible(self) -> bool:

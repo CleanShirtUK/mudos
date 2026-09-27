@@ -17,6 +17,7 @@ from lulu.controllerd import default_inputplumber_client
 from lulu.inputplumber import InputPlumberClient
 from lulu.contracts import InputMode, Lifecycle, Overlay, Role, ServiceName
 from lulu.gamescope import GamescopeInvocation, GamescopePresentation, discover_presentation_output
+from lulu.launch_identity import LaunchIdentity
 from lulu.sessiond import ConsoleSessionInterface
 
 
@@ -357,6 +358,27 @@ class BoundaryTests(unittest.TestCase):
         self.assertEqual(interface.model.state.lifecycle, Lifecycle.SHELL)
         self.assertIsNone(interface._local_identity)
         self.assertEqual(interface.model.state.input_mode, InputMode.SHELL)
+
+    def test_local_session_restores_shell_even_if_controller_profile_restore_fails(self) -> None:
+        interface = input_mode_interface(RecordingInputPlumber({}))
+        presentation = type("Presentation", (), {
+            "select_shell": lambda self, pid: setattr(self, "selected_shell", pid),
+        })()
+        interface.supervisor = type("Supervisor", (), {
+            "state_details": lambda self: {}, "_presentation": presentation,
+            "_shell_process": type("Shell", (), {"pid": 99})(),
+        })()
+        token = interface.model.request_launch("local:test:game")
+        interface.model.launch_starting(token)
+        interface._local_identity = LaunchIdentity(token, 123, 123, "/usr/bin/sleep", ("sleep",))
+        interface._local_provider_id = "steam"
+        interface.model.primary_started(token)
+        with patch.object(interface, "_apply_input_mode", side_effect=RuntimeError("controller disconnected")):
+            interface.EndLocalSession(token, -15)
+        self.assertEqual(interface.model.state.lifecycle, Lifecycle.SHELL)
+        self.assertEqual(interface.model.state.input_mode, InputMode.SHELL)
+        self.assertIsNone(interface._local_identity)
+        self.assertEqual(presentation.selected_shell, 99)
 
     def test_steam_provider_surface_selects_client_window_and_restores_shell(self) -> None:
         class Presentation:

@@ -73,6 +73,13 @@ class DelayedPresentation:
 
 
 class SteamProviderTests(unittest.TestCase):
+    def test_hide_main_does_not_cold_start_an_exited_steam_client(self) -> None:
+        provider = SteamProvider()
+        with patch.object(provider, "_steam_client_pids", return_value=[]), \
+                patch.object(provider, "_dispatch_uri") as dispatch:
+            self.assertEqual(provider.hide_main(), "steam://close")
+        dispatch.assert_not_called()
+
     def test_catalogue_scans_gui_and_canonical_mudos_steam_libraries(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             home = Path(directory)

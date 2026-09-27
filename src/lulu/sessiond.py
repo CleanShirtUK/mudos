@@ -448,7 +448,14 @@ class ConsoleSessionInterface(ServiceInterface):
                 outcome="success" if exit_code == 0 else "failed",
                 error=None if exit_code == 0 else f"process exited with status {exit_code}",
             ))
-            self._apply_input_mode(InputMode.SHELL)
+            try:
+                self._apply_input_mode(InputMode.SHELL)
+            except (OSError, RuntimeError, subprocess.SubprocessError) as error:
+                # Input devices can disappear while an external client owns
+                # presentation. A failed profile restore must not strand the
+                # lifecycle token or prevent the Mudos shell from returning.
+                LOGGER.warning("session return input-mode restore failed token=%s: %s",
+                               token, error)
             self.model.set_input_mode(InputMode.SHELL)
             self.model.return_complete(token)
             presentation = getattr(self.supervisor, "_presentation", None)
