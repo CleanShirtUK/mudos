@@ -1,5 +1,42 @@
 # Astra execution log
 
+## Eden managed provisioning investigation — 2026-09-27
+
+- Live appliance runtime: Mudos resolves `/usr/local/bin/eden` to a wrapper that
+  invokes the system Flatpak `dev.eden_emu.eden`, version `0.2.1`, stable
+  (`org.kde.Platform` 6.11). Eden's consumed Qt config and user data are
+  `/home/lulu/.var/app/dev.eden_emu.eden/config/eden/qt-config.ini` and
+  `/home/lulu/.var/app/dev.eden_emu.eden/data/eden`; its keys and NAND paths
+  are the `keys` and `nand` children of that data root. The managed controller
+  profile had instead been written to `/home/lulu/.config/eden/qt-config.ini`.
+  The Flatpak's private `keys` directory was empty. Canonical Mudos keys and
+  extracted firmware existed under `/home/lulu/Games/BIOS/switch/{keys,firmware}`;
+  the installed title was `Super Mario 3D All-Stars[010049900F546000][US][v0].nsp`.
+- The earlier Eden log at
+  `/home/lulu/.var/app/dev.eden_emu.eden/data/eden/log/eden_log.txt` was empty;
+  Consoled had redirected stderr to `/dev/null`. Therefore the historical
+  emulator error cannot be recovered or stated exactly. No title was launched
+  during this investigation. This diagnosis is confirmed as a consumed-state
+  mismatch, but is not evidence of successful gameplay.
+- Eden's expected key locations are fixed beneath its user-data `keys` tree,
+  and installed firmware is represented in NAND's
+  `system/Contents/registered` tree. Managed launches now use the active
+  Flatpak config root, set `firstStart=false` while preserving unrelated Qt
+  settings, and project Mudos-owned key/firmware files to those locations with
+  symlinks. A manifest permits repointing only the links Mudos owns when the
+  configured storage target changes; existing unowned Eden files are not
+  replaced. The release-owned wrapper grants the canonical key, firmware, and
+  Switch game roots read-only per invocation. No key or firmware file is
+  copied into emulator-private storage.
+- Eden launch stderr is retained under
+  `/home/lulu/.config/lulu/providers/eden/logs/` (or the active Mudos config
+  root), and Consoled records executable, arguments, active config and managed
+  roots plus the exit status. This preserves exact future runtime failures.
+  Source/test validation and deployment do not constitute acceptance: physical
+  launch, gameplay, Mudos game-surface selection, and exit-to-shell remain
+  pending. Stop for physical Eden launch acceptance; do not reopen PCSX2 or the
+  controller gate.
+
 ## Controller superpass — pending physical validation (2026-09-28)
 
 - Source work is complete at checkpoints `2d06f16` (normalized controller

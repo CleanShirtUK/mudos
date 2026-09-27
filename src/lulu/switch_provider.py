@@ -1,6 +1,7 @@
 """Eden Nintendo Switch provider and deterministic controller configuration."""
 
 from pathlib import Path
+import json
 import os
 
 from .paths import PATHS
@@ -18,6 +19,15 @@ _BUTTONS = {
 }
 _AXES = {"zl": 4, "zr": 5}
 _DPAD = {"dup": "up", "ddown": "down", "dleft": "left", "dright": "right"}
+EDEN_FLATPAK_ID = "dev.eden_emu.eden"
+
+
+def eden_flatpak_config_root(home: Path | None = None) -> Path:
+    return (home or PATHS.home) / ".var" / "app" / EDEN_FLATPAK_ID / "config" / "eden"
+
+
+def eden_flatpak_data_root(home: Path | None = None) -> Path:
+    return (home or PATHS.home) / ".var" / "app" / EDEN_FLATPAK_ID / "data" / "eden"
 
 
 def _config_root() -> Path:
@@ -35,10 +45,12 @@ class SwitchProvider:
         executable: str | Path | None = None,
         config_root: Path | None = None,
         active_config_root: Path | None = None,
+        data_root: Path | None = None,
     ) -> None:
         self.executable = str(executable or os.environ.get("LULU_EDEN", "/usr/bin/eden"))
         self.config_root = config_root or _config_root()
         self.active_config_root = active_config_root or self.config_root
+        self.data_root = data_root
 
     @property
     def config_path(self) -> Path:
@@ -102,7 +114,81 @@ class SwitchProvider:
         if not self.config_path.exists() or self.config_path.read_text(encoding="utf-8") != content:
             self.config_path.write_text(content, encoding="utf-8")
         self._update_active_config(content)
+        if self.data_root is not None:
+            self.ensure_managed_system_files()
         return self.active_config_path
+
+    def ensure_managed_system_files(self) -> tuple[Path, ...]:
+        """Project canonical Mudos keys/firmware into Eden's required user-data layout.
+
+        Eden resolves these locations below its user-data root and has no
+        portable path setting for the keys directory. Symlinks preserve the
+        canonical Mudos files without duplicating sensitive/system material.
+        """
+        keys_directory = PATHS.bios_root / "switch" / "keys"
+        firmware_directory = PATHS.bios_root / "switch" / "firmware"
+        prod_key = keys_directory / "prod.keys"
+        if not prod_key.is_file():
+            raise FileNotFoundError(f"Mudos-managed Eden key is missing: {prod_key}")
+
+        configured_nand = self._qt_value("Data%20Storage", "nand_directory")
+        nand_directory = Path(configured_nand).expanduser() if configured_nand else self.data_root / "nand"
+        targets: list[tuple[str, Path, Path]] = []
+        for source in sorted(keys_directory.glob("*.keys")):
+            targets.append((f"keys/{source.name}", self.data_root / "keys" / source.name, source))
+        if firmware_directory.is_dir():
+            registered = nand_directory / "system" / "Contents" / "registered"
+            for source in sorted(firmware_directory.iterdir()):
+                if source.is_file():
+                    targets.append((f"firmware/{source.name}", registered / source.name, source))
+
+        manifest_path = self.config_root / ".mudos-eden-file-projection.json"
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except FileNotFoundError:
+            manifest = {}
+        if not isinstance(manifest, dict):
+            raise RuntimeError(f"Eden managed-file projection manifest is invalid: {manifest_path}")
+
+        projected: dict[str, str] = {}
+        for relative, destination, source in targets:
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            source = source.resolve()
+            prior_source = manifest.get(relative)
+            if destination.is_symlink():
+                current_target = destination.resolve()
+                if current_target != source:
+                    if prior_source != str(current_target):
+                        raise FileExistsError(
+                            f"refusing to replace unowned Eden path {destination} -> {current_target}"
+                        )
+                    destination.unlink()
+                    destination.symlink_to(source)
+            elif destination.exists():
+                raise FileExistsError(f"refusing to replace existing Eden file: {destination}")
+            else:
+                destination.symlink_to(source)
+            projected[relative] = str(source)
+
+        manifest_path.parent.mkdir(parents=True, exist_ok=True)
+        temporary = manifest_path.with_name(f".{manifest_path.name}.{os.getpid()}.tmp")
+        temporary.write_text(json.dumps(projected, sort_keys=True) + "\n", encoding="utf-8")
+        temporary.replace(manifest_path)
+        return tuple(destination for _, destination, _ in targets)
+
+    def _qt_value(self, section: str, key: str) -> str | None:
+        if not self.active_config_path.is_file():
+            return None
+        current_section = None
+        for line in self.active_config_path.read_text(encoding="utf-8").splitlines():
+            stripped = line.strip()
+            if stripped.startswith("[") and stripped.endswith("]"):
+                current_section = stripped[1:-1]
+            elif current_section == section and "=" in line:
+                name, value = line.split("=", 1)
+                if name.strip() == key:
+                    return value.strip().strip('"')
+        return None
 
     def _update_active_config(self, profile: str) -> None:
         path = self.active_config_path
@@ -118,6 +204,27 @@ class SwitchProvider:
         # leaves old keyboard/player slots active after a controller count or
         # identity change, allowing Eden to fall back to keyboard input.
         lines[start:end] = profile.splitlines()
+        next_section = next((index for index in range(start + 1, len(lines))
+                             if lines[index].startswith("[")), len(lines))
+        if next_section < len(lines) and next_section > 0 and lines[next_section - 1] != "":
+            lines.insert(next_section, "")
+        if "[UI]" in lines:
+            ui_start = lines.index("[UI]")
+            ui_end = next(
+                (index for index in range(ui_start + 1, len(lines)) if lines[index].startswith("[")),
+                len(lines),
+            )
+            for key, value in {"firstStart": "false"}.items():
+                match = next((index for index in range(ui_start + 1, ui_end)
+                              if lines[index].split("=", 1)[0].strip() == key
+                              if "=" in lines[index]), None)
+                if match is None:
+                    lines.insert(ui_end, f"{key}={value}")
+                    ui_end += 1
+                else:
+                    lines[match] = f"{key}={value}"
+        else:
+            lines.extend(["", "[UI]", "firstStart=false"])
         path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
     def launch_arguments(

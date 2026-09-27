@@ -2616,6 +2616,16 @@ class ConsoleInterface(ServiceInterface):
                     PATHS.provider_config_root("pcsx2")
                 )
                 child_environment["MUDOS_PCSX2_BIOS_DIR"] = str(PATHS.bios_root / "ps2")
+            eden_stderr_log: Path | None = None
+            if intent.provider == "eden":
+                child_environment["MUDOS_EDEN_KEYS_DIR"] = str(PATHS.bios_root / "switch" / "keys")
+                child_environment["MUDOS_EDEN_FIRMWARE_DIR"] = str(
+                    PATHS.bios_root / "switch" / "firmware"
+                )
+                child_environment["MUDOS_EDEN_GAME_DIR"] = str(PATHS.rom_root / "switch")
+                eden_log_root = PATHS.provider_root("eden") / "logs"
+                eden_log_root.mkdir(parents=True, exist_ok=True)
+                eden_stderr_log = eden_log_root / f"eden-{time.time_ns()}.stderr.log"
             if intent.provider == "retroarch":
                 child_environment["LIBRETRO_AUTOCONFIG_DIRECTORY"] = str(autoconfig_directory)
                 child_environment["MUDOS_PROVIDER_MENU_COMMAND"] = shlex.join(
@@ -2625,15 +2635,33 @@ class ConsoleInterface(ServiceInterface):
             try:
                 if dolphin_passthrough is not None:
                     await dolphin_passthrough.acquire_async()
-                process = await asyncio.create_subprocess_exec(
-                    *command,
-                    stdin=asyncio.subprocess.DEVNULL,
-                    stdout=asyncio.subprocess.DEVNULL,
-                    stderr=asyncio.subprocess.DEVNULL,
-                    env=child_environment,
-                    cwd="/home/lulu" if intent.provider == "eden" else None,
-                    start_new_session=True,
-                )
+                stderr_target = eden_stderr_log.open("wb") if eden_stderr_log is not None else asyncio.subprocess.DEVNULL
+                try:
+                    process = await asyncio.create_subprocess_exec(
+                        *command,
+                        stdin=asyncio.subprocess.DEVNULL,
+                        stdout=asyncio.subprocess.DEVNULL,
+                        stderr=stderr_target,
+                        env=child_environment,
+                        cwd="/home/lulu" if intent.provider == "eden" else None,
+                        start_new_session=True,
+                    )
+                finally:
+                    if eden_stderr_log is not None and not stderr_target.closed:
+                        stderr_target.close()
+                if eden_stderr_log is not None:
+                    LOGGER.info(
+                        "[Eden] launch identity game_id=%s executable=%s arguments=%r "
+                        "config=%s keys=%s firmware=%s game=%s stderr=%s",
+                        game_id,
+                        intent.executable,
+                        intent.arguments,
+                        child_environment.get("XDG_CONFIG_HOME"),
+                        child_environment["MUDOS_EDEN_KEYS_DIR"],
+                        child_environment["MUDOS_EDEN_FIRMWARE_DIR"],
+                        child_environment["MUDOS_EDEN_GAME_DIR"],
+                        eden_stderr_log,
+                    )
                 if dolphin_passthrough is not None:
                     await dolphin_passthrough.attach_async(process.pid)
                 if is_pcsx2:
@@ -2683,6 +2711,11 @@ class ConsoleInterface(ServiceInterface):
                 self._local_process = None
                 self._local_token = None
                 LOGGER.info("local runtime exit game_id=%s pid=%s exit_code=%s", game_id, process.pid, exit_code)
+                if intent.provider == "eden":
+                    LOGGER.info(
+                        "[Eden] process exit game_id=%s pid=%s exit_code=%s stderr=%s",
+                        game_id, process.pid, exit_code, eden_stderr_log,
+                    )
                 if is_pcsx2:
                     LOGGER.info("[PCSX2] process exit pid=%s exit_code=%s", process.pid, exit_code)
                     LOGGER.info("[PCSX2] lifecycle return game_id=%s", game_id)

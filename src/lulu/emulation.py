@@ -52,7 +52,9 @@ _RUNTIME = {
     # updates the Flatpak config/BIOS handoff without rewriting /usr/local.
     "pcsx2": ("LULU_PCSX2", str(PATHS.install_root / "packaging" / "pcsx2-qt-flatpak")),
     "dolphin": ("LULU_DOLPHIN", "/usr/bin/dolphin-emu"),
-    "eden": ("LULU_EDEN", "/usr/local/bin/eden"),
+    # Release-owned wrapper supplies the configured Mudos system-file mounts
+    # to Eden's Flatpak sandbox without changing the installed Flatpak state.
+    "eden": ("LULU_EDEN", str(PATHS.install_root / "packaging" / "eden-flatpak")),
 }
 _CORES = {
     "nes": ("LULU_NES_CORE", "/usr/lib/libretro/nestopia_libretro.so"),
