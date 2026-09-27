@@ -7,6 +7,7 @@ import base64
 from dataclasses import dataclass
 import json
 import logging
+import os
 from pathlib import Path
 import urllib.error
 import urllib.request
@@ -340,9 +341,45 @@ class UsenetProvider:
         return await self.client.append(source.read_bytes(), source.name, category=self.category,
                                         dupe_key=self._dupe_key(job))
 
+    def _completion(self, download: NzbDownload | NzbHistory) -> str:
+        """Normalize NZBGet's terminal directory without appending the job twice."""
+        raw = download.final_directory or download.destination
+        root = Path(os.path.normpath(str(self.paths.usenet_complete_root)))
+        path = Path(raw) if raw else root
+        if not path.is_absolute():
+            path = root / path
+        path = Path(os.path.normpath(str(path)))
+
+        # FinalDir is NZBGet's explicit post-processing result location. DestDir
+        # is also commonly already the per-job directory (as in history RPC).
+        if download.final_directory:
+            return str(path)
+        if path == root:
+            path /= download.name
+        elif not path.exists() and download.name not in path.parts:
+            path /= download.name
+        return str(path)
+
     @staticmethod
-    def _completion(download: NzbDownload | NzbHistory) -> str:
-        return str(Path(download.final_directory or download.destination) / download.name)
+    def _require_completion(path: str, provider_job_id: str) -> str:
+        if not Path(path).exists():
+            raise JobExecutionError(
+                "usenet-output-missing", "NZBGet reported success but its output directory is missing",
+                retryable=True, details={"provider_job_id": provider_job_id, "completion_path": path})
+        return path
+
+    async def reconcile_completion_path(self, job: DownloadJob) -> str | None:
+        """Re-read an owned successful history item to repair stale path metadata."""
+        if job.provider != self.provider_id or job.state != JobState.COMPLETED \
+                or job.backend != "nzbget" or not job.provider_job_id:
+            return None
+        dupe_key = job.ownership_label or self._dupe_key(job)
+        _, history = await self.client.find(dupe_key)
+        if history is None or history.status.upper() not in {"SUCCESS/ALL", "SUCCESS/UNPACK"} \
+                or str(history.nzbid) != str(job.provider_job_id):
+            return None
+        completion = self._completion(history)
+        return completion if Path(completion).exists() else None
 
     async def run(self, job: DownloadJob, reporter: JobReporter) -> None:
         self.paths.usenet_incomplete_root.mkdir(parents=True, exist_ok=True)
@@ -390,8 +427,9 @@ class UsenetProvider:
         if history is None and group is not None and group.status != "PP_FINISHED":
             raise JobExecutionError("nzbget-missing", "owned NZB disappeared before post-processing completed", retryable=True)
         if history is None and group is not None:
+            completion = self._require_completion(self._completion(group), str(group.nzbid))
             await reporter.metadata(provider_job_id=str(group.nzbid), backend="nzbget",
-                                    provider_state=group.status, completion_path=self._completion(group),
+                                    provider_state=group.status, completion_path=completion,
                                     ownership_label=self._dupe_key(job))
             await reporter.progress(1.0, downloaded_bytes=group.total_bytes, total_bytes=group.total_bytes,
                                     stage="completed")
@@ -416,7 +454,9 @@ class UsenetProvider:
                                               "dupe_key": history.dupe_key})
             raise JobCancelled()
         await reporter.metadata(provider_job_id=str(history.nzbid), backend="nzbget",
-                                provider_state=status, completion_path=self._completion(history),
+                                provider_state=status,
+                                completion_path=self._require_completion(
+                                    self._completion(history), str(history.nzbid)),
                                 ownership_label=self._dupe_key(job))
         await reporter.progress(1.0, downloaded_bytes=job.total_bytes, total_bytes=job.total_bytes, stage="completed")
 

@@ -51,6 +51,25 @@ def _completed_job_refresh_stages(provider: str) -> list[str]:
     return stages
 
 
+async def _reconcile_completed_usenet_paths(manager: JobManager) -> None:
+    """Repair completed Mudos path metadata from NZBGet's owned history rows."""
+    executor = manager.executors.get("usenet")
+    reconcile = getattr(executor, "reconcile_completion_path", None)
+    if reconcile is None:
+        return
+    for job in manager.snapshot():
+        if job.provider != "usenet" or job.state.value != "completed" or job.backend != "nzbget":
+            continue
+        try:
+            completion = await reconcile(job)
+            if completion and completion != job.completion_path:
+                manager.update_metadata(job.job_id, completion_path=completion)
+                LOGGER.info("acquisitiond_provider provider=usenet stage=completion-path-reconciled job=%s",
+                            job.job_id)
+        except Exception:
+            LOGGER.exception("completed Usenet path reconciliation failed job=%s", job.job_id)
+
+
 class AcquisitionInterface(ServiceInterface):
     def __init__(self, manager: JobManager, catalogue: CatalogueStore, plugins: PluginRegistry,
                  notifications: NotificationBroker | None = None,
@@ -436,6 +455,7 @@ async def serve(bus_type: BusType = BusType.SESSION) -> None:
     bus.export(OBJECT_PATH, interface)
     await bus.request_name(BUS_NAME)
     interface.StateChanged(interface._snapshot())
+    asyncio.create_task(_reconcile_completed_usenet_paths(manager))
     await asyncio.Event().wait()
 
 

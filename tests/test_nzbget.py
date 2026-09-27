@@ -202,10 +202,6 @@ class UsenetProviderTests(unittest.TestCase):
         )
 
     def test_successful_history_is_completion_after_post_processing(self) -> None:
-        class FakeClient:
-            async def find(self, key):
-                return None, NzbHistory(3, "game", "mudos", key, "SUCCESS/ALL", "/complete", "/complete/game")
-
         class Reporter:
             def __init__(self): self.values = {}
             async def metadata(self, **values): self.values.update(values)
@@ -215,12 +211,83 @@ class UsenetProviderTests(unittest.TestCase):
             with tempfile.TemporaryDirectory() as directory:
                 base = Path(directory)
                 paths = MudosPaths(base / "Games", base / "config", base / "data", base / "cache", base / "run")
+                actual = paths.usenet_complete_root / "game"
+                actual.mkdir(parents=True)
+                (actual / "payload.iso").write_bytes(b"complete")
+
+                class FakeClient:
+                    async def find(self, key):
+                        return None, NzbHistory(3, "game", "mudos", key, "SUCCESS/ALL",
+                                                str(actual), "")
+
                 reporter = Reporter()
                 await UsenetProvider(FakeClient(), paths).run(
                     DownloadJob("job-1", "usenet", "Game"), reporter)  # type: ignore[arg-type]
                 self.assertEqual(reporter.values["stage"], "completed")
-                self.assertEqual(reporter.values["completion_path"], "/complete/game/game")
+                self.assertEqual(reporter.values["completion_path"], str(actual))
+                self.assertTrue(Path(reporter.values["completion_path"]).exists())
 
+        asyncio.run(exercise())
+
+    def test_completion_path_preserves_absolute_job_directory_without_duplication(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            paths = MudosPaths(base / "Games", base / "config", base / "data", base / "cache", base / "run")
+            actual = paths.usenet_complete_root / "game"
+            actual.mkdir(parents=True)
+            history = NzbHistory(3, "game", "mudos", "mudos:job", "SUCCESS/ALL",
+                                 str(actual), "")
+            completion = UsenetProvider(object(), paths)._completion(history)  # type: ignore[arg-type]
+            self.assertEqual(completion, str(actual))
+            self.assertNotEqual(completion, str(actual / "game"))
+
+    def test_relative_completion_destination_is_normalized_once(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            paths = MudosPaths(base / "Games", base / "config", base / "data", base / "cache", base / "run")
+            actual = paths.usenet_complete_root / "game"
+            actual.mkdir(parents=True)
+            history = NzbHistory(3, "game", "mudos", "mudos:job", "SUCCESS/ALL", "game", "")
+            completion = UsenetProvider(object(), paths)._completion(history)  # type: ignore[arg-type]
+            self.assertEqual(completion, str(actual))
+            self.assertTrue(Path(completion).exists())
+
+    def test_completed_path_reconciliation_repairs_existing_persisted_job(self) -> None:
+        from lulu.acquisition_store import AcquisitionStore
+        from lulu.acquisitiond import _reconcile_completed_usenet_paths
+
+        async def exercise():
+            with tempfile.TemporaryDirectory() as directory:
+                base = Path(directory)
+                paths = MudosPaths(base / "Games", base / "config", base / "data", base / "cache", base / "run")
+                actual = paths.usenet_complete_root / "acceptance"
+                actual.mkdir(parents=True)
+                (actual / "payload.iso").write_bytes(b"payload")
+                key = "mudos:job-existing"
+
+                class FakeClient:
+                    async def find(self, requested_key):
+                        self_key = requested_key
+                        assert self_key == key
+                        return None, NzbHistory(12, "acceptance", "mudos", key, "SUCCESS/UNPACK",
+                                                str(actual), "")
+
+                store = AcquisitionStore(base / "jobs.sqlite")
+                stale = DownloadJob("job-existing", "usenet", "acceptance",
+                                     state=JobState.COMPLETED, backend="nzbget",
+                                     provider_job_id="12", ownership_label=key,
+                                     completion_path=str(actual / "acceptance"))
+                store.save_all([stale])
+                manager = JobManager(store=store)
+                manager.register_executor("usenet", UsenetProvider(FakeClient(), paths))  # type: ignore[arg-type]
+                await _reconcile_completed_usenet_paths(manager)
+                updated = manager.jobs[stale.job_id]
+                self.assertEqual(updated.completion_path, str(actual))
+                self.assertTrue(Path(updated.completion_path).exists())
+                self.assertEqual(store.load()[0].completion_path, str(actual))
+                store.close()
+
+        from lulu.job_manager import JobManager
         asyncio.run(exercise())
 
     def test_failed_and_manually_deleted_history_are_distinct(self) -> None:
