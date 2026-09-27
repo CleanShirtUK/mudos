@@ -91,6 +91,14 @@ class JobManager:
             self._publish()
         self._pump(provider)
 
+    def replace_executor(self, provider: str, executor: JobExecutor, *, limit: int = 1) -> None:
+        """Atomically replace a provider adapter and resume its queued work."""
+        if limit < 1:
+            raise ValueError("provider concurrency limit must be positive")
+        self.executors[provider] = executor
+        self.provider_limits[provider] = limit
+        self._pump(provider)
+
     @property
     def active_download_count(self) -> int:
         return sum(job.is_active for job in self.jobs.values())

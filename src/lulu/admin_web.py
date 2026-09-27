@@ -681,26 +681,24 @@ class AdminApp:
                 # settings must not leave a healthy NZBGet daemon with no job
                 # executor available to Mudos.
                 self.config.update_provider("providers.usenet", {"enabled": True})
-                LOGGER.info("usenet_apply stage=executor-config-saved provider=usenet enabled=true")
+                executor_config = self.config.provider("providers.usenet")
+                LOGGER.info("usenet_apply stage=configuration-persisted provider=usenet enabled=%s configured=%s rpc_secret_reference_available=%s",
+                            executor_config.enabled, executor_config.configured,
+                            executor_config.secret_available("rpc_password"))
                 try:
-                    LOGGER.info("usenet_apply stage=acquisition-restart-requested unit=lulu-acquisition.service")
-                    restart_acquisition = subprocess.run(
-                        ["systemctl", "restart", "lulu-acquisition.service"],
-                        stdin=subprocess.DEVNULL, capture_output=True, text=True,
-                        check=False, timeout=10)
-                    if restart_acquisition.returncode:
-                        detail = (restart_acquisition.stderr or restart_acquisition.stdout
-                                  or "no systemctl diagnostic").strip()[-1000:]
-                        LOGGER.error("usenet_apply stage=acquisition-restart-failed unit=lulu-acquisition.service returncode=%s diagnostic=%s",
-                                     restart_acquisition.returncode, detail)
-                        raise subprocess.CalledProcessError(restart_acquisition.returncode,
-                                                            restart_acquisition.args,
-                                                            output=restart_acquisition.stdout,
-                                                            stderr=restart_acquisition.stderr)
-                    LOGGER.info("usenet_apply stage=acquisition-restart-complete unit=lulu-acquisition.service")
+                    reload_state = self.reload_usenet_acquisition()
+                    if not all(reload_state.get(key) for key in (
+                            "enabled", "configured", "rpc_secret_available", "executor_registered")):
+                        raise RuntimeError("Acquisitiond returned incomplete Usenet readiness")
                 except (OSError, subprocess.SubprocessError):
                     self.config.update_provider("providers.usenet",
                                                 {"enabled": usenet_acquisition_was_enabled})
+                    raise ValueError("Usenet settings were applied to NZBGet, but Acquisitiond could not "
+                                     "reload its provider executor. Check lulu-acquisition.service.") from None
+                except RuntimeError as error:
+                    self.config.update_provider("providers.usenet",
+                                                {"enabled": usenet_acquisition_was_enabled})
+                    LOGGER.error("usenet_apply stage=acquisition-reload-failed diagnostic=%s", str(error)[-1000:])
                     raise ValueError("Usenet settings were applied to NZBGet, but Acquisitiond could not "
                                      "reload its provider executor. Check lulu-acquisition.service.") from None
             except (OSError, subprocess.SubprocessError, RuntimeError) as error:
@@ -1356,7 +1354,38 @@ class AdminApp:
                 return True, "Provider is available"
         return False, "No normalized health check is available for this provider"
 
-    def wait_for_nzbget_rpc(self, *, attempts: int = 120, interval: float = 0.5) -> tuple[bool, str]:
+    def reload_usenet_acquisition(self) -> dict[str, object]:
+        """Request a live Usenet adapter reload through Acquisitiond's D-Bus API."""
+        account = pwd.getpwnam("lulu")
+        environment = dict(os.environ)
+        environment.update({"HOME": account.pw_dir,
+                            "XDG_CONFIG_HOME": str(Path(account.pw_dir) / ".config"),
+                            "XDG_DATA_HOME": str(Path(account.pw_dir) / ".local/share"),
+                            "XDG_RUNTIME_DIR": f"/run/user/{account.pw_uid}",
+                            "DBUS_SESSION_BUS_ADDRESS": f"unix:path=/run/user/{account.pw_uid}/bus"})
+        LOGGER.info("usenet_apply stage=acquisition-reload-requested api=ReloadUsenetConfiguration")
+        result = subprocess.run(
+            ["busctl", "--user", "--json=short", "--timeout=18s", "call",
+             "org.lulu.Acquisitiond", "/org/lulu/Acquisition", "org.lulu.Acquisition",
+             "ReloadUsenetConfiguration"],
+            stdin=subprocess.DEVNULL, capture_output=True, text=True,
+            timeout=20, check=False, env=environment)
+        if result.returncode:
+            diagnostic = (result.stderr or result.stdout or "D-Bus reload failed").strip()[-1000:]
+            LOGGER.error("usenet_apply stage=acquisition-reload-failed returncode=%s diagnostic=%s",
+                         result.returncode, diagnostic)
+            raise RuntimeError(diagnostic)
+        try:
+            response = json.loads(result.stdout)
+            state = json.loads(response["data"][0])
+        except (KeyError, IndexError, TypeError, json.JSONDecodeError) as error:
+            raise RuntimeError("Acquisitiond returned an invalid Usenet reload response") from error
+        LOGGER.info("usenet_apply stage=acquisition-reload-complete enabled=%s configured=%s rpc_secret_available=%s executor_registered=%s",
+                    state.get("enabled"), state.get("configured"),
+                    state.get("rpc_secret_available"), state.get("executor_registered"))
+        return state
+
+    def wait_for_nzbget_rpc(self, *, attempts: int = 12, interval: float = 0.5) -> tuple[bool, str]:
         """Wait for a restarted NZBGet daemon to expose authenticated JSON-RPC."""
         import time
         started = time.monotonic()
@@ -1367,7 +1396,7 @@ class AdminApp:
                 LOGGER.info("usenet_apply stage=rpc-ready attempt=%s elapsed_s=%.3f",
                             attempt + 1, time.monotonic() - started)
                 return result
-            if attempt == 0 or (attempt + 1) % 10 == 0:
+            if attempt == 0 or (attempt + 1) % 2 == 0:
                 LOGGER.info("usenet_apply stage=rpc-wait attempt=%s elapsed_s=%.3f result=%s",
                             attempt + 1, time.monotonic() - started, result[1])
             if attempt + 1 < attempts:

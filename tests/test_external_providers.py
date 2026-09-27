@@ -2,7 +2,7 @@ import tempfile
 import asyncio
 import json
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 from pathlib import Path
 import unittest
 
@@ -19,6 +19,32 @@ from lulu.jobs import JobState
 
 
 class ExternalProviderTests(unittest.TestCase):
+    def test_acquisitiond_reload_loads_rpc_secret_authenticates_and_registers_executor(self) -> None:
+        executor = object()
+        client = SimpleNamespace(health=AsyncMock(return_value={"version": "26.2"}))
+        configuration = SimpleNamespace(
+            enabled=True, configured=True,
+            secret_available=lambda _name: True,
+        )
+        interface = object.__new__(AcquisitionInterface)
+        interface._usenet_startup_config = {
+            "enabled": False, "configured": False,
+            "rpc_secret_available": False, "configuration_loaded": True,
+            "reload_requested": False,
+        }
+        interface.manager = SimpleNamespace(
+            executors={}, replace_executor=lambda name, value, limit: interface.manager.executors.update({name: value}))
+
+        from lulu.provider_config import ProviderConfigurationService
+        with patch.object(ProviderConfigurationService, "from_environment",
+                          return_value=SimpleNamespace(provider=lambda _name: configuration)), \
+                patch("lulu.plugins.usenet.build_executor", return_value=(client, executor)):
+            result = asyncio.run(AcquisitionInterface.ReloadUsenetConfiguration.__wrapped__(interface))
+
+        self.assertEqual(json.loads(result)["executor_registered"], True)
+        self.assertIs(interface.manager.executors["usenet"], executor)
+        client.health.assert_awaited_once()
+
     def test_acquisitiond_reports_secret_free_loaded_usenet_executor_status(self) -> None:
         interface = object.__new__(AcquisitionInterface)
         interface._usenet_startup_config = {

@@ -66,6 +66,8 @@ class AcquisitionInterface(ServiceInterface):
             "enabled": usenet.enabled,
             "configured": usenet.configured,
             "rpc_secret_available": usenet.secret_available("rpc_password"),
+            "configuration_loaded": True,
+            "reload_requested": False,
         }
         LOGGER.info("acquisitiond_provider provider=usenet stage=configuration-loaded enabled=%s configured=%s rpc_secret_available=%s executor_registered=%s",
                     self._usenet_startup_config["enabled"],
@@ -139,6 +141,45 @@ class AcquisitionInterface(ServiceInterface):
             **self._usenet_startup_config,
             "executor_registered": "usenet" in self.manager.executors,
         }, sort_keys=True)
+
+    @method()
+    async def ReloadUsenetConfiguration(self) -> "s":
+        """Reload saved NZBGet credentials and register its executor in place."""
+        from .provider_config import ProviderConfigurationService
+        from .plugins.usenet import build_executor
+
+        self._usenet_startup_config["reload_requested"] = True
+        LOGGER.info("acquisitiond_provider provider=usenet stage=configuration-reload-requested")
+        try:
+            configuration = ProviderConfigurationService.from_environment().provider("providers.usenet")
+            state = {
+                "enabled": configuration.enabled,
+                "configured": configuration.configured,
+                "rpc_secret_available": configuration.secret_available("rpc_password"),
+                "configuration_loaded": True,
+                "reload_requested": True,
+            }
+            self._usenet_startup_config.update(state)
+            LOGGER.info("acquisitiond_provider provider=usenet stage=configuration-loaded enabled=%s configured=%s",
+                        state["enabled"], state["configured"])
+            LOGGER.info("acquisitiond_provider provider=usenet stage=rpc-secret-resolved available=%s",
+                        state["rpc_secret_available"])
+            if not state["enabled"] or not state["configured"] or not state["rpc_secret_available"]:
+                self._usenet_startup_config["executor_registered"] = (
+                    "usenet" in self.manager.executors)
+                raise RuntimeError("saved Usenet provider configuration is incomplete")
+
+            client, executor = build_executor(configuration)
+            await asyncio.wait_for(client.health(), timeout=12.0)
+            LOGGER.info("acquisitiond_provider provider=usenet stage=rpc-authenticated")
+            self.manager.replace_executor("usenet", executor, limit=1)
+            self._usenet_startup_config["executor_registered"] = True
+            LOGGER.info("acquisitiond_provider provider=usenet stage=executor-registered")
+            return json.dumps({"provider": "usenet", **self._usenet_startup_config}, sort_keys=True)
+        except Exception as error:
+            LOGGER.exception("acquisitiond_provider provider=usenet stage=reload-failed error_type=%s",
+                             type(error).__name__)
+            raise DBusError("org.lulu.Acquisition.Error.ProviderReload", str(error)) from error
 
     @method()
     def SubmitJob(self, provider: "s", content_identity: "s", title: "s") -> "s":

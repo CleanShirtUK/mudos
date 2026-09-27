@@ -1,5 +1,6 @@
 import tempfile
 import unittest
+import json
 import re
 import io
 import urllib.error
@@ -239,8 +240,13 @@ class AdminWebTests(unittest.TestCase):
             with patch.object(app, "wait_for_nzbget_rpc", return_value=(True, "NZBGet RPC healthy")), \
                     patch("lulu.nzbget_admin.CONFIG_PATH", managed_config), \
                     patch("lulu.nzbget_admin.apply_news_server") as apply, \
-                    patch("lulu.admin_web.subprocess.run",
-                          return_value=type("Result", (), {"returncode": 0, "stdout": "", "stderr": ""})()) as run:
+                    patch("lulu.admin_web.subprocess.run", side_effect=[
+                        type("Result", (), {"returncode": 0, "stdout": "", "stderr": ""})(),
+                        type("Result", (), {"returncode": 0, "stdout": json.dumps({
+                            "data": [json.dumps({"enabled": True, "configured": True,
+                                                 "rpc_secret_available": True,
+                                                 "executor_registered": True})]}),
+                              "stderr": ""})()]) as run:
                 result = app.save_setup_credentials("providers.usenet.server", {
                     "host": "news.example", "port": 563, "tls": "true", "connections": 8,
                     "username": "reader", "password": "fixture-secret",
@@ -250,7 +256,7 @@ class AdminWebTests(unittest.TestCase):
         self.assertIn("[providers.usenet]\nenabled = true", config_text)
         self.assertIn("[providers.usenet.server]", config_text)
         self.assertEqual([call.args[0][-1] for call in run.call_args_list],
-                         ["nzbget.service", "lulu-acquisition.service"])
+                         ["nzbget.service", "ReloadUsenetConfiguration"])
         apply.assert_called_once()
 
     def test_oobe_usenet_save_logs_missing_config_stage_without_secret_values(self):
@@ -304,7 +310,11 @@ class AdminWebTests(unittest.TestCase):
                             ignore=shutil.ignore_patterns("__pycache__"))
             user = root / ".config/lulu/provider-services.toml"
             user.parent.mkdir(parents=True)
-            with patch("lulu.provider_config.PATHS", SimpleNamespace(config_root=root / ".config/lulu")):
+            isolated_config = lambda: ProviderConfigurationService(
+                system_path=root / "system.toml", user_path=user, secrets=FakeSecrets())
+            with patch("lulu.provider_config.PATHS", SimpleNamespace(config_root=root / ".config/lulu")), \
+                    patch("lulu.provider_config.ProviderConfigurationService.from_environment",
+                          side_effect=isolated_config):
                 registry = PluginRegistry(plugin_root)
                 registry.discover()
                 self.assertEqual(registry.with_capability("acquisition"), ())
