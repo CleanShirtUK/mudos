@@ -26,7 +26,6 @@ import sys
 import time
 from typing import Any
 
-from lulu.admin_web import AdminApp
 from lulu.nzbget_admin import CONFIG_PATH
 
 
@@ -298,6 +297,9 @@ def main(argv: list[str] | None = None) -> int:
     # harness output focused without changing service logging or Steam state.
     logging.getLogger("lulu.steam-entitlements").disabled = True
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s %(message)s")
+    # admin_web creates its module-level APP during import; defer that import so
+    # the harness-only warning filter is active before plugin discovery.
+    from lulu.admin_web import AdminApp
     app = AdminApp()
     try:
         if args.action == "inspect":
