@@ -948,23 +948,44 @@ private:
             .toObject().value(QStringLiteral("navigation_mode"))
             .toString(QStringLiteral("all"));
         navigationAll_ = navigationMode == QStringLiteral("all");
+        nintendoLayout_ = document.object().value(QStringLiteral("controller"))
+            .toObject().value(QStringLiteral("nintendo_layout")).toBool(true);
+        insert(QStringLiteral("nintendoLayout"), nintendoLayout_);
         QVariantList controllers;
+        QVector<int> liveSdlIndices;
+        navigationSdlIndex_ = -1;
         for (auto iterator = controllerRoot.constBegin(); iterator != controllerRoot.constEnd(); ++iterator) {
             const QJsonObject value = iterator.value().toObject();
             if (!value.value(QStringLiteral("connected")).toBool())
                 continue;
             const int player = value.value(QStringLiteral("player")).toInt(0);
-            if (player <= 0)
-                continue;
             const QJsonObject battery = value.value(QStringLiteral("battery")).toObject();
             const QString batteryKind = battery.value(QStringLiteral("kind"))
                 .toString(QStringLiteral("unknown"));
             const QJsonValue percentage = battery.value(QStringLiteral("percentage"));
             QVariantMap controller;
-            controller.insert(QStringLiteral("index"), player);
+            controller.insert(QStringLiteral("index"), player > 0 ? player : 0);
             controller.insert(QStringLiteral("connected"), true);
-            controller.insert(QStringLiteral("identity"),
+            controller.insert(QStringLiteral("identity"), iterator.key());
+            controller.insert(QStringLiteral("physicalIdentity"),
                               value.value(QStringLiteral("physical_identity")).toString());
+            controller.insert(QStringLiteral("connectionIdentity"),
+                              value.value(QStringLiteral("connection_identity")).toString());
+            const QJsonValue sdlIndex = value.value(QStringLiteral("sdl_index"));
+            if (sdlIndex.isDouble() && sdlIndex.toInt() >= 0) {
+                controller.insert(QStringLiteral("sdl_index"), sdlIndex.toInt());
+                liveSdlIndices.append(sdlIndex.toInt());
+                int count = 0;
+                SDL_JoystickID *ids = SDL_GetGamepads(&count);
+                const int index = sdlIndex.toInt();
+                if (ids && index < count) {
+                    const char *name = SDL_GetGamepadNameForID(ids[index]);
+                    controller.insert(QStringLiteral("sdl_name"), QString::fromUtf8(name ? name : ""));
+                }
+                SDL_free(ids);
+                if (iterator.key() == navigationId)
+                    navigationSdlIndex_ = sdlIndex.toInt();
+            }
             controller.insert(QStringLiteral("batteryKind"), batteryKind);
             controller.insert(QStringLiteral("batteryPercentage"),
                               percentage.isDouble() ? percentage.toInt() : -1);
@@ -973,9 +994,13 @@ private:
                                   ? QString::number(percentage.toInt()) + QStringLiteral("%")
                                   : QStringLiteral("Unknown"));
             controllers.append(controller);
-            if (iterator.key() == navigationId)
+            if (iterator.key() == navigationId && player > 0)
                 navigationPlayer_ = player;
         }
+        std::sort(liveSdlIndices.begin(), liveSdlIndices.end());
+        liveSdlIndices.erase(std::unique(liveSdlIndices.begin(), liveSdlIndices.end()),
+                             liveSdlIndices.end());
+        navigationSdlIndices_ = liveSdlIndices;
         std::sort(controllers.begin(), controllers.end(), [](const QVariant &left, const QVariant &right) {
             return left.toMap().value(QStringLiteral("index")).toInt()
                 < right.toMap().value(QStringLiteral("index")).toInt();
@@ -1274,14 +1299,17 @@ private:
     void scanGamepads()
     {
         closeGamepads();
+        insert("controllerConnected", false);
+        insert("controllerIndex", -1);
+        insert("controllerIdentity", QString());
         int count = 0;
         SDL_JoystickID *ids = SDL_GetGamepads(&count);
         qInfo() << "SDL gamepad scan count=" << count;
         if (ids && count > 0) {
-            const int requested = std::max(0, std::min(navigationPlayer_ - 1, count - 1));
-            gamepadSlot_ = requested;
             if (navigationAll_) {
-                for (int index = 0; index < count; ++index) {
+                for (const int index : navigationSdlIndices_) {
+                    if (index < 0 || index >= count)
+                        continue;
                     if (auto *gamepad = SDL_OpenGamepad(ids[index])) {
                         allGamepads_.insert(ids[index], gamepad);
                         if (!gamepad_)
@@ -1291,7 +1319,10 @@ private:
                     }
                 }
             } else {
-                gamepad_ = SDL_OpenGamepad(ids[requested]);
+                if (navigationSdlIndex_ >= 0 && navigationSdlIndex_ < count) {
+                    gamepadSlot_ = navigationSdlIndex_;
+                    gamepad_ = SDL_OpenGamepad(ids[navigationSdlIndex_]);
+                }
             }
             if (gamepad_) {
                 qInfo() << "SDL gamepad opened" << SDL_GetGamepadName(gamepad_);
@@ -1306,17 +1337,42 @@ private:
     void selectNavigationGamepad()
     {
         if (navigationAll_) {
-            if (allGamepads_.isEmpty())
+            int count = 0;
+            SDL_JoystickID *ids = SDL_GetGamepads(&count);
+            QSet<SDL_JoystickID> expected;
+            for (const int index : navigationSdlIndices_) {
+                if (ids && index >= 0 && index < count)
+                    expected.insert(ids[index]);
+            }
+            SDL_free(ids);
+            bool sameDevices = allGamepads_.size() == expected.size();
+            if (sameDevices) {
+                for (auto iterator = allGamepads_.cbegin(); iterator != allGamepads_.cend(); ++iterator) {
+                    if (!expected.contains(iterator.key())) {
+                        sameDevices = false;
+                        break;
+                    }
+                }
+            }
+            if (!sameDevices)
                 scanGamepads();
             return;
         }
-        if (!gamepad_)
+        const int requested = navigationSdlIndex_;
+        if (requested < 0) {
+            if (gamepad_) {
+                SDL_CloseGamepad(gamepad_);
+                gamepad_ = nullptr;
+            }
+            insert("controllerConnected", false);
             return;
-        const int requested = std::max(0, navigationPlayer_ - 1);
-        if (requested == gamepadSlot_)
+        }
+        if (gamepad_ && requested == gamepadSlot_)
             return;
-        SDL_CloseGamepad(gamepad_);
-        gamepad_ = nullptr;
+        if (gamepad_) {
+            SDL_CloseGamepad(gamepad_);
+            gamepad_ = nullptr;
+        }
         scanGamepads();
     }
 
@@ -1328,60 +1384,44 @@ private:
         SDL_Event event;
         while (SDL_PollEvent(&event)) {
             if (event.type == SDL_EVENT_GAMEPAD_ADDED && navigationAll_) {
-                if (auto *gamepad = SDL_OpenGamepad(event.gdevice.which)) {
-                    allGamepads_.insert(event.gdevice.which, gamepad);
-                    if (!gamepad_)
-                        gamepad_ = gamepad;
-                    insert("controllerConnected", true);
-                }
-            } else if (event.type == SDL_EVENT_GAMEPAD_ADDED && !gamepad_) {
-                gamepad_ = SDL_OpenGamepad(event.gdevice.which);
-                if (gamepad_) {
-                    insert("controllerConnected", true);
-                    insert("controllerIndex", 1);
-                    insert("controllerIdentity", QString::fromUtf8(SDL_GetGamepadName(gamepad_)));
-                }
+                scanGamepads();
+            } else if (event.type == SDL_EVENT_GAMEPAD_ADDED && !navigationAll_) {
+                scanGamepads();
             } else if (event.type == SDL_EVENT_GAMEPAD_REMOVED && navigationAll_) {
-                auto iterator = allGamepads_.find(event.gdevice.which);
-                if (iterator != allGamepads_.end()) {
-                    if (iterator.value() == gamepad_)
-                        gamepad_ = nullptr;
-                    SDL_CloseGamepad(iterator.value());
-                    allGamepads_.erase(iterator);
-                }
-                if (!gamepad_ && !allGamepads_.isEmpty())
-                    gamepad_ = allGamepads_.constBegin().value();
-                if (allGamepads_.isEmpty()) {
-                    insert("controllerConnected", false);
-                    insert("controllerIndex", -1);
-                    insert("controllerIdentity", QString());
-                }
-            } else if (event.type == SDL_EVENT_GAMEPAD_REMOVED && gamepad_
-                       && event.gdevice.which == SDL_GetGamepadID(gamepad_)) {
-                SDL_CloseGamepad(gamepad_);
-                gamepad_ = nullptr;
-                insert("controllerConnected", false);
-                insert("controllerIndex", -1);
-                insert("controllerIdentity", QString());
-                // The remaining SDL device does not emit an add event when
-                // the selected device disappears; reopen the current
-                // navigation slot immediately for failover.
+                scanGamepads();
+            } else if (event.type == SDL_EVENT_GAMEPAD_REMOVED && !navigationAll_) {
                 scanGamepads();
             } else if (event.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN) {
                 if (!navigationAll_ && (!gamepad_
                     || event.gbutton.which != SDL_GetGamepadID(gamepad_)))
+                    continue;
+                if (navigationAll_ && !allGamepads_.contains(event.gbutton.which))
                     continue;
                 if (rearmRequired_)
                     continue;
                 const bool allowed = dispatchAllowed();
                 if (!allowed)
                     continue;
-                static const std::pair<SDL_GamepadButton, const char *> routes[] = {
+                if (event.gbutton.button == SDL_GAMEPAD_BUTTON_GUIDE) {
+                    if (guideProcess_)
+                        sendGuideKeyboardAction("ui_guide");
+                    else
+                        startGuide();
+                    continue;
+                }
+                const SDL_GamepadButton confirmButton = nintendoLayout_
+                    ? SDL_GAMEPAD_BUTTON_EAST : SDL_GAMEPAD_BUTTON_SOUTH;
+                const SDL_GamepadButton backButton = nintendoLayout_
+                    ? SDL_GAMEPAD_BUTTON_SOUTH : SDL_GAMEPAD_BUTTON_EAST;
+                const SDL_GamepadButton optionsButton = nintendoLayout_
+                    ? SDL_GAMEPAD_BUTTON_NORTH : SDL_GAMEPAD_BUTTON_WEST;
+                const SDL_GamepadButton downloadsButton = nintendoLayout_
+                    ? SDL_GAMEPAD_BUTTON_WEST : SDL_GAMEPAD_BUTTON_NORTH;
+                const std::pair<SDL_GamepadButton, const char *> routes[] = {
                     {SDL_GAMEPAD_BUTTON_DPAD_UP, "up"}, {SDL_GAMEPAD_BUTTON_DPAD_DOWN, "down"},
                     {SDL_GAMEPAD_BUTTON_DPAD_LEFT, "left"}, {SDL_GAMEPAD_BUTTON_DPAD_RIGHT, "right"},
-                    {SDL_GAMEPAD_BUTTON_SOUTH, "confirm"}, {SDL_GAMEPAD_BUTTON_EAST, "back"},
-                    {SDL_GAMEPAD_BUTTON_WEST, "options"},
-                    {SDL_GAMEPAD_BUTTON_NORTH, "downloads"},
+                    {confirmButton, "confirm"}, {backButton, "back"},
+                    {optionsButton, "options"}, {downloadsButton, "downloads"},
                     {SDL_GAMEPAD_BUTTON_LEFT_SHOULDER, "leftShoulder"},
                     {SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER, "rightShoulder"},
                 };
@@ -1402,6 +1442,15 @@ private:
         insert("actionSerial", value("actionSerial").toInt() + 1);
         if (guideProcess_) {
             const QString event = QString::fromLatin1(action);
+            const QString guideAction = event == QStringLiteral("up") ? QStringLiteral("ui_up")
+                : event == QStringLiteral("down") ? QStringLiteral("ui_down")
+                : event == QStringLiteral("left") ? QStringLiteral("ui_left")
+                : event == QStringLiteral("right") ? QStringLiteral("ui_right")
+                : event == QStringLiteral("confirm") || event == QStringLiteral("options")
+                    ? QStringLiteral("ui_accept")
+                : event == QStringLiteral("back") ? QStringLiteral("ui_back") : QString();
+            if (!guideAction.isEmpty())
+                sendGuideKeyboardAction(guideAction);
             const QString semantic = (event == QStringLiteral("up")
                 || event == QStringLiteral("down") || event == QStringLiteral("left")
                 || event == QStringLiteral("right") || event.endsWith(QStringLiteral("Shoulder")))
@@ -1649,6 +1698,9 @@ private:
     int gamepadSlot_ = 0;
     int navigationPlayer_ = 1;
     bool navigationAll_ = true;
+    bool nintendoLayout_ = true;
+    int navigationSdlIndex_ = -1;
+    QVector<int> navigationSdlIndices_;
 
     void closeGamepads()
     {

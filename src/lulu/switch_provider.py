@@ -4,12 +4,11 @@ from pathlib import Path
 import os
 
 from .paths import PATHS
-from .controller_policy import NINTENDO_FACE_BUTTONS
+from .controller_policy import face_button_indices, nintendo_layout_enabled
 
 # SDL's standard gamepad order. Eden's SDL backend consumes these values in
 # the serialized input parameter packages.
 _BUTTONS = {
-    **NINTENDO_FACE_BUTTONS,
     "l": 9,
     "r": 10,
     "minus": 4,
@@ -54,6 +53,7 @@ class SwitchProvider:
         player_count: int | None = None,
         device_indices: dict[int, int] | None = None,
         controller_identities: dict[int, object] | None = None,
+        nintendo_layout: bool | None = None,
     ) -> Path:
         if player_count is None:
             player_count = max(device_indices, default=4) if device_indices else 4
@@ -62,6 +62,11 @@ class SwitchProvider:
         device_indices = device_indices or {
             player: player - 1 for player in range(1, player_count + 1)
         }
+        if nintendo_layout is None:
+            nintendo_layout = nintendo_layout_enabled()
+        buttons = {**face_button_indices(nintendo_layout), **{
+            name: button for name, button in _BUTTONS.items() if name not in {"a", "b", "x", "y"}
+        }}
         sections = ["[Controls]"]
         for player in range(1, player_count + 1):
             config_player = player - 1
@@ -79,7 +84,7 @@ class SwitchProvider:
             sections.append(f"player_{config_player}_type=0")
             sections.append(f"player_{config_player}_connected\\default=false")
             sections.append(f"player_{config_player}_connected=true")
-            for name, button in _BUTTONS.items():
+            for name, button in buttons.items():
                 key = name
                 sections.append(f'player_{config_player}_button_{key}="{prefix},button:{button}"')
             for name, axis in _AXES.items():
@@ -121,8 +126,10 @@ class SwitchProvider:
         player_count: int | None = None,
         device_indices: dict[int, int] | None = None,
         controller_identities: dict[int, object] | None = None,
+        nintendo_layout: bool | None = None,
     ) -> tuple[str, ...]:
-        config = self.ensure_controller_config(player_count, device_indices, controller_identities)
+        config = self.ensure_controller_config(player_count, device_indices, controller_identities,
+                                              nintendo_layout)
         return (
             "--appimage-extract-and-run",
             "--config", str(config), "-f", "--fullscreen", "--game", content_path,

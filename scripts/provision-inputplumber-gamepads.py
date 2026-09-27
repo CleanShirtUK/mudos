@@ -56,7 +56,7 @@ def logical_device_key(sysfs_path: str) -> str:
     path = Path(sysfs_path)
     if "virtual" in path.parts:
         return str(path)
-    return re.sub(r"/input/input\d+$", "", str(path))
+    return re.sub(r"/input/input\d+(?:/event\d+)?$", "", str(path))
 
 
 def gamepad_devices() -> list[str]:
@@ -88,9 +88,10 @@ def gamepad_devices() -> list[str]:
     return sorted(devices.values())
 
 
-def render(event: str) -> str:
+def render() -> str:
+    """Render one stable profile for tagged gamepads, including future hotplug."""
     return (
-        "# Generated from Linux input capabilities and logical sysfs device.\n"
+        "# Generated from current gamepad capabilities plus a persistent udev hotplug tag.\n"
         "version: 1\n"
         "kind: CompositeDevice\n"
         "name: Lulu Controller\n"
@@ -100,7 +101,9 @@ def render(event: str) -> str:
         "  - group: gamepad\n"
         "    unique: true\n"
         "    udev:\n"
-        f"      dev_node: /dev/input/{event}\n"
+        "      properties:\n"
+        "        - name: MUDOS_STANDARD_GAMEPAD\n"
+        "          value: \"1\"\n"
         "options:\n"
         "  auto_manage: true\n"
         "  persist: false\n"
@@ -112,22 +115,9 @@ def render(event: str) -> str:
 
 
 def render_empty() -> str:
-    return (
-        "# No physical standard gamepad is currently present.\n"
-        "version: 1\n"
-        "kind: CompositeDevice\n"
-        "name: Lulu Controller\n"
-        "maximum_sources: 1\n"
-        "matches: []\n"
-        "source_devices: []\n"
-        "options:\n"
-        "  auto_manage: true\n"
-        "  persist: false\n"
-        "target_devices:\n"
-        "  - gamepad\n"
-        "  - keyboard\n"
-        "  - mouse\n"
-    )
+    # The udev-tag source is intentionally retained while no pad is present so
+    # a later hotplug is managed without replacing/restarting InputPlumber.
+    return render()
 
 
 def _write(path: Path, content: str) -> bool:
@@ -158,7 +148,7 @@ def wait_for_source_composite(source: str, probe, *, timeout: float = 12.0,
         sleep(min(poll_interval, remaining))
 
 
-def _activate(output: Path, profiles: list[Path]) -> None:
+def _activate(output: Path, events: list[str]) -> None:
     """Reconcile this generator's composites with the current source set."""
     time.sleep(0.25)  # Let udev and InputPlumber finish handling the device event.
 
@@ -180,12 +170,8 @@ def _activate(output: Path, profiles: list[Path]) -> None:
     def active_sources() -> set[str]:
         return set().union(*composite_snapshot())
 
-    for profile in profiles:
-        content = profile.read_text(encoding="utf-8")
-        event = re.search(r"dev_node: /dev/input/(event\d+)", content)
-        if not event:
-            continue
-        source = f"/dev/input/{event.group(1)}"
+    for event in events:
+        source = f"/dev/input/{event}"
 
         if not wait_for_source_composite(source, active_sources):
             print(f"InputPlumber did not activate logical gamepad source {source}", file=sys.stderr)
@@ -198,24 +184,12 @@ def main() -> int:
     output = Path(sys.argv[1])
     output.parent.mkdir(parents=True, exist_ok=True)
     devices = gamepad_devices()
-    profiles: list[Path] = []
-    for index, event in enumerate(devices):
-        # Keep the established filename for the first device. Additional
-        # devices get independent files so each profile creates one composite.
-        profile = output if index == 0 else output.parent / f"lulu-gamepad-{event}.yaml"
-        _write(profile, render(event))
-        profiles.append(profile)
     for stale in output.parent.glob("lulu-gamepad-event*.yaml"):
-        if stale not in profiles:
-            stale.unlink()
-    # Keep the historical path as the first generated profile for diagnostics
-    # and compatibility with existing tooling. It is never a static wildcard.
-    if profiles:
-        _write(output, profiles[0].read_text(encoding="utf-8"))
-    else:
-        _write(output, render_empty())
+        stale.unlink()
+    # Keep the established path as the one manager-known auto-managed profile.
+    _write(output, render())
     if len(sys.argv) == 3 and sys.argv[2] == "--activate":
-        _activate(output, profiles)
+        _activate(output, devices)
     return 0
 
 

@@ -6,6 +6,7 @@ import logging
 from pathlib import Path
 import re
 import subprocess
+import ctypes
 
 from .contracts import InputMode
 
@@ -14,14 +15,105 @@ DEFAULT_PROFILE_PATH = "/usr/share/inputplumber/profiles/default.yaml"
 LOGGER = logging.getLogger("lulu.inputplumber")
 
 
+def sdl_gamepad_inventory() -> list[dict[str, object]]:
+    """Return current SDL gamepad connection identities, when SDL is available."""
+    try:
+        library = ctypes.CDLL("libSDL3.so")
+        library.SDL_Init.argtypes = [ctypes.c_uint32]
+        library.SDL_Init.restype = ctypes.c_bool
+        library.SDL_GetGamepads.argtypes = [ctypes.POINTER(ctypes.c_int)]
+        library.SDL_GetGamepads.restype = ctypes.POINTER(ctypes.c_uint32)
+        library.SDL_GetGamepadNameForID.argtypes = [ctypes.c_uint32]
+        library.SDL_GetGamepadNameForID.restype = ctypes.c_char_p
+        library.SDL_GetGamepadPathForID.argtypes = [ctypes.c_uint32]
+        library.SDL_GetGamepadPathForID.restype = ctypes.c_char_p
+
+        class SDLGuid(ctypes.Structure):
+            _fields_ = [("data", ctypes.c_ubyte * 16)]
+
+        library.SDL_GetGamepadGUIDForID.argtypes = [ctypes.c_uint32]
+        library.SDL_GetGamepadGUIDForID.restype = SDLGuid
+        library.SDL_GUIDToString.argtypes = [SDLGuid, ctypes.c_char_p, ctypes.c_int]
+        library.SDL_free.argtypes = [ctypes.c_void_p]
+        library.SDL_free.restype = None
+        library.SDL_QuitSubSystem.argtypes = [ctypes.c_uint32]
+        if not library.SDL_Init(0x2000):
+            return []
+        count = ctypes.c_int()
+        ids = library.SDL_GetGamepads(ctypes.byref(count))
+        if not ids:
+            library.SDL_QuitSubSystem(0x2000)
+            return []
+        result: list[dict[str, object]] = []
+        try:
+            for index in range(count.value):
+                instance_id = ids[index]
+                guid_buffer = ctypes.create_string_buffer(33)
+                library.SDL_GUIDToString(library.SDL_GetGamepadGUIDForID(instance_id), guid_buffer, 33)
+                name = library.SDL_GetGamepadNameForID(instance_id) or b""
+                path = library.SDL_GetGamepadPathForID(instance_id) or b""
+                path_text = path.decode("utf-8", errors="replace")
+                udev_properties: set[str] = set()
+                if path_text:
+                    properties = subprocess.run(
+                        ["udevadm", "info", "--query=property", "--name", path_text],
+                        check=False, capture_output=True, text=True,
+                    )
+                    udev_properties = set(properties.stdout.splitlines())
+                result.append({
+                    "sdl_index": index,
+                    "sdl_instance_id": int(instance_id),
+                    "sdl_guid": guid_buffer.value.decode("ascii"),
+                    "sdl_name": name.decode("utf-8", errors="replace"),
+                    "sdl_path": path_text,
+                    "inputplumber_target": "ID_INPUT_WIDTH_MM=65535" in udev_properties,
+                })
+        finally:
+            if ids:
+                library.SDL_free(ids)
+            library.SDL_QuitSubSystem(0x2000)
+        return result
+    except (OSError, AttributeError, RuntimeError, ValueError):
+        LOGGER.warning("SDL gamepad inventory unavailable", exc_info=True)
+        return []
+
+
+def associate_sdl_targets(
+    runtime_targets: list[tuple[str, str]],
+    sdl_devices: list[dict[str, object]],
+) -> dict[str, int]:
+    """Align ordered InputPlumber composites only with their virtual SDL pads.
+
+    SDL can enumerate an un-intercepted physical controller between two
+    InputPlumber outputs. Target suffixes and raw SDL indices are different
+    namespaces; filter by the udev virtual-target marker, then align the live
+    ordered sets. If either side is incomplete, refuse a guessed association.
+    """
+    virtual_devices = sorted(
+        (device for device in sdl_devices if device.get("inputplumber_target") is True),
+        key=lambda device: int(device.get("sdl_index", -1)),
+    )
+    if len(virtual_devices) != len(runtime_targets):
+        return {}
+    return {
+        runtime_id: int(device["sdl_index"])
+        for (runtime_id, _target_path), device in zip(runtime_targets, virtual_devices)
+        if isinstance(device.get("sdl_index"), int)
+    }
+
+
 def normalized_controller_identity(persistent_id: str, sysfs_device_path: str,
-                                   has_device_serial: bool) -> str:
+                                   has_device_serial: bool,
+                                   device_unique: str | None = None) -> str:
     """Keep stable unique IDs; disambiguate serial-less receiver slots."""
     # Bluetooth input devices expose their stable peer address as UniqueId,
     # but do not have a USB serial/interface path. Hashing the transient UHID
     # sysfs path would change controller identity on every reconnect.
     if has_device_serial or re.fullmatch(r"(?:[0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}", persistent_id):
         return persistent_id
+    unique = (device_unique or "").strip()
+    if unique:
+        return f"{persistent_id}@{hashlib.sha256(unique.encode()).hexdigest()[:16]}"
     path = Path(sysfs_device_path)
     interface = next((parent for parent in (path, *path.parents)
                       if (parent / "bInterfaceNumber").is_file()), None)
@@ -209,7 +301,14 @@ class InputPlumberClient:
                         serial_path = interface.parent / "serial" if interface else None
                         has_serial = bool(serial_path and serial_path.is_file()
                                           and serial_path.read_text(errors="replace").strip())
-                        identity = normalized_controller_identity(persistent_id, sysfs_path, has_serial)
+                        unique_path = Path(sysfs_path) / "uniq"
+                        if not unique_path.is_file():
+                            unique_path = device_path / "uniq"
+                        device_unique = (unique_path.read_text(errors="replace").strip()
+                                         if unique_path.is_file() else "")
+                        identity = normalized_controller_identity(
+                            persistent_id, sysfs_path, has_serial, device_unique,
+                        )
                     except OSError:
                         pass
                 normalized[runtime_path] = (identity, source_paths)
@@ -289,19 +388,19 @@ class InputPlumberClient:
                 ordered.append(path)
         return tuple(ordered)
 
-    def runtime_gamepad_slots(self, *, execute: bool = True) -> list[tuple[str, str, int]]:
+    def runtime_gamepad_slots(
+        self,
+        sdl_devices: list[dict[str, object]] | None = None,
+        *,
+        execute: bool = True,
+    ) -> list[tuple[str, str, int]]:
         """Return ordered runtime handles and their current gamepad target indices."""
         if not execute:
             return []
-        slots: list[tuple[str, str, int]] = []
         runtime_paths = self.gamepad_order()
         if not runtime_paths:
-            statuses = self.runtime_composite_statuses()
-            return [
-                (runtime_path, persistent_id, index)
-                for index, (runtime_path, (persistent_id, source_paths)) in enumerate(statuses.items())
-                if source_paths
-            ]
+            return []
+        runtime_targets: list[tuple[str, str, str]] = []
         for runtime_path in runtime_paths:
             persistent_id, source_paths = self.composite_status(runtime_path)
             if not source_paths:
@@ -319,12 +418,19 @@ class InputPlumberClient:
                 capture_output=True,
                 text=True,
             ).stdout
-            gamepad_indices = [
-                int(index)
-                for index in re.findall(
-                    r"/org/shadowblip/InputPlumber/devices/target/gamepad(\d+)", targets
-                )
-            ]
-            if gamepad_indices:
-                slots.append((runtime_path, persistent_id, gamepad_indices[0]))
-        return slots
+            gamepad_targets = re.findall(
+                r'"(/org/shadowblip/InputPlumber/devices/target/gamepad\d+)"', targets
+            )
+            if len(gamepad_targets) != 1:
+                continue
+            runtime_targets.append((runtime_path, persistent_id, gamepad_targets[0]))
+        inventory = sdl_devices if sdl_devices is not None else sdl_gamepad_inventory()
+        indices = associate_sdl_targets(
+            [(runtime_id, target_path) for runtime_id, _persistent_id, target_path in runtime_targets],
+            inventory,
+        )
+        return [
+            (runtime_id, persistent_id, indices[runtime_id])
+            for runtime_id, persistent_id, _target_path in runtime_targets
+            if runtime_id in indices
+        ]

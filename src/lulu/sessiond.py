@@ -18,6 +18,7 @@ from dbus_next.service import ServiceInterface, method, signal
 
 from .console_sessiond import SessionStateModel
 from .controllerd import ControllerRegistry, default_inputplumber_client
+from .inputplumber import sdl_gamepad_inventory
 from .gamescope import GamescopeInvocation, GamescopePresentation, discover_presentation_output
 from .contracts import InputMode, Lifecycle, Presentation
 from .launch_identity import LaunchIdentity
@@ -26,6 +27,7 @@ from .process_supervisor import ProcessResult
 from .paths import PATHS
 from .service_readiness import wait_for_lulu_services
 from .recovery import clear_failures, record_failure, recovery_required
+from .settings import SettingsStore
 
 
 BUS_NAME = "org.lulu.ConsoleSessiond"
@@ -46,6 +48,7 @@ class ConsoleSessionInterface(ServiceInterface):
             Path(__file__).resolve().parents[2] / "config" / "inputplumber"
         )
         self.controller_registry = ControllerRegistry(Path.home() / ".config/lulu/controller-policy.json")
+        self.settings = SettingsStore(PATHS.config_root / "settings.sqlite3")
         self._inputplumber = inputplumber
         self._native_controller = os.environ.get("LULU_NATIVE_CONTROLLER", "0") == "1"
         self._applied_input_modes: dict[str, InputMode] = {}
@@ -70,6 +73,9 @@ class ConsoleSessionInterface(ServiceInterface):
 
     def _state_json(self) -> str:
         state = asdict(self.model.state)
+        settings = getattr(self, "settings", None)
+        nintendo_layout = (settings.get("controllers.nintendo_button_layout")
+                           if settings is not None else True)
         state.update(
             {
                 "lifecycle": self.model.state.lifecycle.value,
@@ -80,14 +86,20 @@ class ConsoleSessionInterface(ServiceInterface):
                 "controller": {
                     "navigation_controller_id": self.controller_registry.navigation_controller_id,
                     "navigation_mode": self.controller_registry.navigation_mode,
+                    "nintendo_layout": nintendo_layout,
+                    "dolphin_wii_remote_mode": settings.get("dolphin.wii_remote_mode")
+                    if settings is not None else "standard",
                     "controllers": {
                         controller_id: {
                             "connected": controller.connected,
                             "player": controller.player,
                             "physical_identity": controller.physical_identity,
+                            "connection_identity": controller.connection_identity,
                             "sdl_index": controller.sdl_index,
+                            "sdl_instance_id": controller.sdl_instance_id,
                             "sdl_guid": controller.sdl_guid,
                             "sdl_name": controller.sdl_name,
+                            "sdl_path": controller.sdl_path,
                             "button_count": controller.button_count,
                             "axis_count": controller.axis_count,
                             "connection_type": controller.connection_type,
@@ -115,8 +127,8 @@ class ConsoleSessionInterface(ServiceInterface):
         self.StateChanged(self._state_json())
 
     async def start_controller_monitor(self) -> None:
-        composites = await asyncio.to_thread(self._inputplumber.runtime_composite_statuses)
-        self.controller_registry.observe_runtime_composites(composites)
+        composites, target_indices, sdl_devices = await asyncio.to_thread(self._controller_inventory_snapshot)
+        self.controller_registry.observe_runtime_composites(composites, target_indices, sdl_devices)
         for object_path, composite in composites.items():
             _, source_paths = composite
             if source_paths:
@@ -144,6 +156,25 @@ class ConsoleSessionInterface(ServiceInterface):
         self._controller_monitor_task = asyncio.create_task(self._monitor_controller_events())
         if self._presentation_watchdog_enabled:
             self._presentation_watchdog_task = asyncio.create_task(self._monitor_presentation())
+
+    def _controller_inventory_snapshot(
+        self,
+    ) -> tuple[dict[str, tuple[str, tuple[str, ...]]], dict[str, int], dict[int, dict[str, object]]]:
+        composites = self._inputplumber.runtime_composite_statuses()
+        sdl_inventory = sdl_gamepad_inventory()
+        try:
+            slots = self._inputplumber.runtime_gamepad_slots(sdl_inventory)
+            target_indices = {runtime_id: index for runtime_id, _, index in slots}
+        except (AttributeError, OSError, RuntimeError, ValueError, subprocess.SubprocessError):
+            target_indices = {}
+        # If InputPlumber cannot expose a target association, retain the
+        # connected inventory but leave SDL routing unassigned. Guessing by
+        # list order is unsafe for identical devices and hotplug renumbering.
+        sdl_devices = {
+            int(device["sdl_index"]): device for device in sdl_inventory
+            if isinstance(device.get("sdl_index"), int)
+        }
+        return composites, target_indices, sdl_devices
 
     async def _initialize_composite(
         self, object_path: str, composite: tuple[str, tuple[str, ...]] | None = None
@@ -224,7 +255,7 @@ class ConsoleSessionInterface(ServiceInterface):
             except asyncio.TimeoutError:
                 pass
             try:
-                composites = await asyncio.to_thread(self._inputplumber.runtime_composite_statuses)
+                composites, target_indices, sdl_devices = await asyncio.to_thread(self._controller_inventory_snapshot)
             except (OSError, RuntimeError, ValueError, subprocess.SubprocessError):
                 continue
             self._initialized_composites = {
@@ -233,10 +264,12 @@ class ConsoleSessionInterface(ServiceInterface):
                 if path in composites and composites[path] == signature
             }
             before = self.controller_registry.navigation_controller_id, tuple(
-                (key, value.connected, value.player)
+                (key, value.connected, value.player, value.physical_identity,
+                 value.connection_identity, value.sdl_index, value.sdl_guid,
+                 value.sdl_name, value.sdl_path, value.sdl_instance_id)
                 for key, value in self.controller_registry.controllers.items()
             )
-            self.controller_registry.observe_runtime_composites(composites)
+            self.controller_registry.observe_runtime_composites(composites, target_indices, sdl_devices)
             for object_path, composite in composites.items():
                 if composite[1]:
                     try:
@@ -246,7 +279,9 @@ class ConsoleSessionInterface(ServiceInterface):
                             "controller initialization pending path=%s error=%s", object_path, error
                         )
             after = self.controller_registry.navigation_controller_id, tuple(
-                (key, value.connected, value.player)
+                (key, value.connected, value.player, value.physical_identity,
+                 value.connection_identity, value.sdl_index, value.sdl_guid,
+                 value.sdl_name, value.sdl_path, value.sdl_instance_id)
                 for key, value in self.controller_registry.controllers.items()
             )
             if before != after:
@@ -345,6 +380,22 @@ class ConsoleSessionInterface(ServiceInterface):
     @method()
     def SetNavigationController(self, controller_id: "s") -> "s":
         self.controller_registry.set_navigation_controller(controller_id or None)
+        state = self._state_json()
+        self.StateChanged(state)
+        return state
+
+    @method()
+    def SetNintendoLayoutEnabled(self, enabled: "b") -> "s":
+        self.settings.set("controllers.nintendo_button_layout", enabled)
+        state = self._state_json()
+        self.StateChanged(state)
+        return state
+
+    @method()
+    def SetDolphinWiiRemoteMode(self, mode: "s") -> "s":
+        if mode not in {"standard", "passthrough"}:
+            raise self._error(ValueError("Dolphin Wii Remote mode must be standard or passthrough"))
+        self.settings.set("dolphin.wii_remote_mode", mode)
         state = self._state_json()
         self.StateChanged(state)
         return state

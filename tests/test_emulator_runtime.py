@@ -4,7 +4,7 @@ import os
 from pathlib import Path
 
 from lulu.emulator_runtime import EmulatorRuntimeAdapter
-from lulu.controller_provisioning import ensure_provider_controller_config
+from lulu.controller_provisioning import ensure_provider_controller_config, ensure_retroarch_autoconfig
 from lulu.consoled import (
     _mudos_provider_device_indices,
     _parse_busctl_json_string,
@@ -245,7 +245,8 @@ class EmulatorRuntimeTests(unittest.TestCase):
             self.assertEqual(path.read_text(), first)
             self.assertIn("[Pad1]", first)
             self.assertIn(f"Bios = {PATHS.bios_root / 'ps2'}", first)
-            self.assertIn("Cross = SDL-0/FaceSouth", first)
+            self.assertIn("Cross = SDL-0/FaceEast", first)
+            self.assertIn("Circle = SDL-0/FaceSouth", first)
             pad1 = first.split("[Pad2]", 1)[0]
             self.assertNotIn("SDL-1/", pad1)
             self.assertIn("Up = SDL-0/DPadDown", first)
@@ -255,7 +256,7 @@ class EmulatorRuntimeTests(unittest.TestCase):
             self.assertIn("StartFullscreen = true", first)
             self.assertIn("StartBigPictureMode = false", first)
             self.assertIn("[Pad2]", first)
-            self.assertIn("Cross = SDL-1/FaceSouth", first)
+            self.assertIn("Cross = SDL-1/FaceEast", first)
 
     def test_dolphin_controller_profile_uses_inputplumber_virtual_name(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -320,11 +321,100 @@ class EmulatorRuntimeTests(unittest.TestCase):
             ).read_text()
 
         self.assertIn("[Pad2]", pcsx2)
-        self.assertIn("Cross = SDL-2/FaceSouth", pcsx2)
+        self.assertIn("Cross = SDL-2/FaceEast", pcsx2)
         self.assertIn("[GCPad2]", dolphin)
         self.assertIn("Device = SDL/2/SDL Gamepad", dolphin)
         self.assertIn("[GCPad3]", dolphin)
         self.assertIn("Device = SDL/1/SDL Gamepad", dolphin)
+
+    def test_standard_face_layout_projects_without_swap_when_disabled(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            pcsx2 = ensure_provider_controller_config(
+                "pcsx2", root, 1, {1: 0}, nintendo_layout=False,
+            ).read_text()
+            dolphin = ensure_provider_controller_config(
+                "dolphin", root, 1, {1: 0}, nintendo_layout=False,
+            ).read_text()
+        self.assertIn("Cross = SDL-0/FaceSouth", pcsx2)
+        self.assertIn("Circle = SDL-0/FaceEast", pcsx2)
+        self.assertIn("Buttons/A = `Button A`", dolphin)
+        self.assertIn("Buttons/B = `Button B`", dolphin)
+
+    def test_dolphin_real_remote_mode_is_limited_to_wiimote_source(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            standard = ensure_provider_controller_config(
+                "dolphin", root, 1, {1: 0}, real_wiimote_passthrough=False,
+            )
+            dolphin_ini = standard.parent / "Dolphin.ini"
+            self.assertIn("WiimoteSource0 = 1", dolphin_ini.read_text())
+            passthrough = ensure_provider_controller_config(
+                "dolphin", root, 1, {1: 0}, real_wiimote_passthrough=True,
+            )
+            self.assertIn("WiimoteSource0 = 2", dolphin_ini.read_text())
+            self.assertIn("Buttons/A = `Button B`", passthrough.with_name("GCPadNew.ini").read_text())
+
+    def test_runtime_dolphin_profiles_target_the_active_xdg_native_config_tree(self) -> None:
+        from lulu.paths import PATHS
+        from lulu.dolphin_passthrough import dolphin_config_path
+
+        root = PATHS.provider_config_root("dolphin")
+        self.assertEqual(
+            dolphin_config_path(), root / "dolphin-emu" / "Config" / "Dolphin.ini",
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            provider_root = Path(directory)
+            generated = ensure_provider_controller_config(
+                "dolphin", provider_root, 1, {1: 0},
+                provider_root / "dolphin-emu",
+            )
+            self.assertEqual(
+                generated, provider_root / "dolphin-emu" / "Config" / "GCPadNew.ini",
+            )
+
+    def test_retroarch_generated_autoconfig_uses_shared_nintendo_policy(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            enabled = ensure_retroarch_autoconfig(root, nintendo_layout=True)
+            enabled_content = next(enabled.glob("*.cfg")).read_text()
+            ensure_retroarch_autoconfig(root, nintendo_layout=False)
+            disabled_content = next(enabled.glob("*.cfg")).read_text()
+        self.assertIn('input_device = "Microsoft X-Box 360 pad"', enabled_content)
+        self.assertIn('input_a_btn = "1"', enabled_content)
+        self.assertIn('input_b_btn = "0"', enabled_content)
+        self.assertIn('input_x_btn = "3"', enabled_content)
+        self.assertIn('input_y_btn = "2"', enabled_content)
+        self.assertIn('input_l2_axis = "+2"', enabled_content)
+        self.assertIn('input_a_btn = "0"', disabled_content)
+        self.assertIn('input_b_btn = "1"', disabled_content)
+        self.assertIn('input_x_btn = "2"', disabled_content)
+        self.assertIn('input_y_btn = "3"', disabled_content)
+
+    def test_retroarch_profile_is_generic_to_normalized_pads_and_players(self) -> None:
+        fixtures = (
+            {"name": "Xbox-style Generic Pad", "guid": "fixture-xbox", "index": 0},
+            {"name": "Second Identical Pad", "guid": "fixture-xbox", "index": 1},
+            {"name": "Generic Non-Xbox SDL Pad", "guid": "fixture-generic", "index": 2},
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            autoconfig = ensure_retroarch_autoconfig(root, nintendo_layout=True)
+            profile = next(autoconfig.glob("*.cfg")).read_text()
+            child_path = Path(_retroarch_child_config(
+                {player + 1: fixture["index"] for player, fixture in enumerate(fixtures)},
+                autoconfig,
+            ))
+            try:
+                child = child_path.read_text()
+            finally:
+                child_path.unlink(missing_ok=True)
+        self.assertNotIn("input_device_guid", profile)
+        self.assertIn('input_device = "Microsoft X-Box 360 pad"', profile)
+        self.assertIn(f'joypad_autoconfig_dir = "{autoconfig}"', child)
+        self.assertIn('input_player1_joypad_index = "0"', child)
+        self.assertIn('input_player2_joypad_index = "1"', child)
+        self.assertIn('input_player3_joypad_index = "2"', child)
 
 
 if __name__ == "__main__":

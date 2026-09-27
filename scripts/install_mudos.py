@@ -384,6 +384,8 @@ def install_integration(repo: Path, release: Path, manifest: dict,
         "packaging/tmpfiles.d/lulu.conf": "/etc/tmpfiles.d/lulu.conf",
         "packaging/udev/80-lulu-osk.rules": "/etc/udev/rules.d/80-lulu-osk.rules",
         "packaging/udev/81-lulu-gamepad-hotplug.rules": "/etc/udev/rules.d/81-lulu-gamepad-hotplug.rules",
+        "packaging/udev/82-lulu-dolphin-bluetooth.rules": "/etc/udev/rules.d/82-lulu-dolphin-bluetooth.rules",
+        "packaging/udev/83-lulu-standard-gamepad.rules": "/etc/udev/rules.d/83-lulu-standard-gamepad.rules",
         "config/inputplumber/devices/lulu-composite.yaml": "/etc/inputplumber/devices.d/lulu-composite.yaml",
         "packaging/inputplumber-restart.conf": "/etc/systemd/system/inputplumber.service.d/lulu.conf",
     }
@@ -422,6 +424,19 @@ def install_integration(repo: Path, release: Path, manifest: dict,
     # environments refer solely to the immutable current selector.
     run(["systemctl", "daemon-reload"])
     run(["udevadm", "control", "--reload-rules"], check=False)
+    # Apply the persistent gamepad marker to already-connected devices before
+    # InputPlumber enumerates them; the same udev rule handles future hotplug.
+    run([
+        "udevadm", "trigger", "--action=add", "--subsystem-match=input",
+        "--sysname-match=event*",
+    ], check=False)
+    run(["udevadm", "settle"], check=False)
+    # Normalize the manager's one stable source profile from current device
+    # capabilities. The profile does not contain transient event-node numbers.
+    run([
+        "python", str(Path("/opt/lulu/current/scripts/provision-inputplumber-gamepads.py")),
+        "/etc/inputplumber/devices.d/lulu-composite.yaml",
+    ], check=True)
     # Re-read the installed device profiles and deterministically reconcile
     # already-connected gamepads. A purge/reinstall does not disconnect kernel
     # input devices, so relying only on future udev add events leaves the new

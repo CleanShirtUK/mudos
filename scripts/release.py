@@ -36,6 +36,7 @@ REQUIRED_FILES = (
     "scripts/console-ui-bridge.py",
     "scripts/reconcile-questarr.py",
     "scripts/provision-inputplumber-gamepads.py",
+    "scripts/dolphin-bluetooth-lease.py",
     "scripts/steam-auth-surface.py",
     "scripts/usenet-readiness.py",
     "config/inputplumber/devices/lulu-composite.yaml",

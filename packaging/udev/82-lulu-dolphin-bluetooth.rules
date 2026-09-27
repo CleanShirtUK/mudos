@@ -1,0 +1,2 @@
+# Allow the active lulu seat to pass the dedicated Dolphin USB Bluetooth adapter.
+SUBSYSTEM=="usb", ATTR{idVendor}=="0bda", ATTR{idProduct}=="8771", TAG+="uaccess"

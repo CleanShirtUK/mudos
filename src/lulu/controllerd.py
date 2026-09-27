@@ -50,9 +50,12 @@ class Controller:
     battery: BatteryState = field(default_factory=BatteryState)
     # Runtime SDL identity is passed to providers; it is not a provider
     # default and must not be confused with physical assignment identity.
+    connection_identity: str | None = None
     sdl_index: int | None = None
+    sdl_instance_id: int | None = None
     sdl_guid: str | None = None
     sdl_name: str | None = None
+    sdl_path: str | None = None
     button_count: int | None = None
     axis_count: int | None = None
     connection_type: str | None = None
@@ -205,9 +208,19 @@ class ControllerRegistry:
             self.navigation_controller_id = persistent_id
 
     def observe_runtime_composites(
-        self, composites: dict[str, tuple[str, tuple[str, ...]]]
+        self,
+        composites: dict[str, tuple[str, tuple[str, ...]]],
+        target_indices: dict[str, int] | None = None,
+        sdl_devices: dict[int, dict[str, object]] | None = None,
     ) -> None:
-        """Assign ordered runtime composites to stable logical player slots."""
+        """Reconcile normalized live pads and their current target association.
+
+        InputPlumber's object path is a connection handle, never a physical
+        identity. Event-node paths are retained only as connection evidence;
+        physical assignment policy uses the normalized persistent identity.
+        """
+        target_indices = target_indices or {}
+        sdl_devices = sdl_devices or {}
         connected_ids = [
             runtime_id for runtime_id, (_, sources) in composites.items() if sources
         ]
@@ -233,11 +246,37 @@ class ControllerRegistry:
                 controller = Controller(
                     runtime_id,
                     physical_identity=persistent_id or None,
+                    connection_identity="|".join(source_paths),
+                    sdl_index=target_indices.get(runtime_id),
                     player=player,
                 )
                 self.connect(controller)
             else:
                 controller.connected = True
+                if persistent_id:
+                    previous_identity = controller.physical_identity
+                    controller.physical_identity = persistent_id
+                    if previous_identity != persistent_id:
+                        assignments = self._policy.get("players", {})
+                        preferred = assignments.get(persistent_id) if isinstance(assignments, dict) else None
+                        occupied = {
+                            item.player for key, item in self.controllers.items()
+                            if key != runtime_id and item.connected and item.player is not None
+                        }
+                        if isinstance(preferred, int) and preferred in range(1, 5) and preferred not in occupied:
+                            controller.player = preferred
+                        elif controller.player in occupied:
+                            controller.player = next(
+                                (player for player in range(1, 5) if player not in occupied), None
+                            )
+            controller.connection_identity = "|".join(source_paths)
+            controller.sdl_index = target_indices.get(runtime_id)
+            sdl_device = sdl_devices.get(controller.sdl_index, {})
+            controller.sdl_instance_id = sdl_device.get("sdl_instance_id") if isinstance(
+                sdl_device.get("sdl_instance_id"), int) else None
+            controller.sdl_guid = str(sdl_device.get("sdl_guid") or "") or None
+            controller.sdl_name = str(sdl_device.get("sdl_name") or "") or None
+            controller.sdl_path = str(sdl_device.get("sdl_path") or "") or None
 
         # Runtime handles can be recreated while a hotplug reconciliation is
         # in flight. Fill any slots that were temporarily unavailable during

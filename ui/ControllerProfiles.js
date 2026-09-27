@@ -12,6 +12,16 @@ var profiles = {
         previousCollection: "leftBumper", nextCollection: "rightBumper",
         x: "x", y: "y", leftStickClick: "leftStickClick",
         rightStickClick: "rightStickClick", options: "x"
+    },
+    nintendo: {
+        confirm: "b", back: "a", menu: "menu", guide: "guide", view: "view",
+        leftBumper: "leftBumper", rightBumper: "rightBumper",
+        leftTrigger: "leftTrigger", rightTrigger: "rightTrigger", leftStick: "leftStick",
+        rightStick: "rightStick", navigation: "dpad",
+        up: "dpadUp", down: "dpadDown", left: "dpadLeft", right: "dpadRight",
+        previousCollection: "leftBumper", nextCollection: "rightBumper",
+        x: "y", y: "x", leftStickClick: "leftStickClick",
+        rightStickClick: "rightStickClick", options: "y", downloads: "x"
     }
 }
 

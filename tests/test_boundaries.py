@@ -3,6 +3,7 @@ import asyncio
 import subprocess
 from pathlib import Path
 import tempfile
+import threading
 from unittest.mock import AsyncMock, patch
 from dbus_next import MessageType
 
@@ -121,7 +122,9 @@ class BoundaryTests(unittest.TestCase):
                     )
                 },
             )
-            self.assertEqual(client.runtime_gamepad_slots()[0][-1], 0)
+            # A source-only provisional record has no InputPlumber target slot;
+            # SDL identity must not be guessed from the source/order position.
+            self.assertEqual(client.runtime_gamepad_slots(), [])
 
     def test_console_catalog_metadata_search_exposes_duplicate_candidates(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -707,25 +710,40 @@ class BoundaryTests(unittest.TestCase):
 
         class FlakyInputPlumber(RecordingInputPlumber):
             attempts = 0
+            first_failure = threading.Event()
 
             def runtime_composite_statuses(self):
                 self.attempts += 1
                 if self.attempts == 1:
+                    self.first_failure.set()
                     raise subprocess.CalledProcessError(1, "busctl")
                 return {path: ("045e_0291", ("/dev/input/event20",))}
 
-        interface = input_mode_interface(FlakyInputPlumber({}))
+        client = FlakyInputPlumber({})
+        interface = input_mode_interface(client)
         interface._inputplumber_event = asyncio.Event()
         interface._initialized_composites = {}
         interface._inputplumber_event.set()
 
         async def exercise() -> None:
-            task = asyncio.create_task(interface._monitor_controller_events())
-            await asyncio.sleep(0.05)
-            interface._inputplumber_event.set()
-            await asyncio.sleep(0.1)
-            task.cancel()
-            await asyncio.gather(task, return_exceptions=True)
+            state_changed = asyncio.Event()
+
+            async def notify_state_changed() -> None:
+                state_changed.set()
+
+            interface._state_changed = notify_state_changed
+            with patch("lulu.sessiond.sdl_gamepad_inventory", return_value=[]):
+                task = asyncio.create_task(interface._monitor_controller_events())
+                try:
+                    # Wait until the first failed query is observed, then
+                    # deliver a second event explicitly instead of relying on
+                    # monitor startup or polling/sleep timing.
+                    self.assertTrue(await asyncio.to_thread(client.first_failure.wait, 2))
+                    interface._inputplumber_event.set()
+                    await asyncio.wait_for(state_changed.wait(), timeout=2)
+                finally:
+                    task.cancel()
+                    await asyncio.gather(task, return_exceptions=True)
 
         asyncio.run(exercise())
         self.assertIn(path, interface._initialized_composites)

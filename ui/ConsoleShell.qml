@@ -263,7 +263,7 @@ import QtQuick.Controls
     property var storageSettingsRef: null
     property var displayState: ({available: false, displays: [], requested: {}, known_good: {}, selected: null, error: ""})
     property var displaySettingsRef: null
-    property var controllerState: ({controllers: {}, navigation_controller_id: ""})
+    property var controllerState: ({controllers: {}, navigation_controller_id: "", nintendo_layout: true})
     property var controllerSettingsRef: null
     property string libraryFocus: "games"
     property string libraryTransitionState: "RESTING"

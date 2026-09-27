@@ -1,6 +1,6 @@
-# Lulu's recreated target topology.
-# Mode profiles intentionally omit target_devices: changing mode must not
-# recreate or replace the virtual devices.
+# One source per physical or otherwise eligible standard gamepad. The explicit
+# event selectors cover devices present when InputPlumber starts; the udev tag
+# selector covers later hotplug without matching InputPlumber's own outputs.
 version: 1
 kind: CompositeDevice
 name: Lulu Controller
@@ -9,8 +9,10 @@ matches: []
 source_devices:
   - group: gamepad
     unique: true
-    evdev:
-      handler: event*
+    udev:
+      properties:
+        - name: MUDOS_STANDARD_GAMEPAD
+          value: "1"
 options:
   auto_manage: true
   persist: false

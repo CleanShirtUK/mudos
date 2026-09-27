@@ -1,0 +1,3 @@
+# Mark eligible gamepad event nodes before InputPlumber handles udev hotplug.
+# Its virtual output nodes advertise the sentinel width and must not recurse.
+SUBSYSTEM=="input", KERNEL=="event[0-9]*", ENV{ID_INPUT_JOYSTICK}=="1", ENV{ID_INPUT_WIDTH_MM}!="65535", ENV{MUDOS_STANDARD_GAMEPAD}="1"

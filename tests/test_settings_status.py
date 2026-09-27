@@ -36,8 +36,11 @@ class SettingsStatusTests(unittest.TestCase):
             settings = SettingsStore(path)
             self.assertEqual(settings.get("display.output"), "auto")
             self.assertTrue(settings.get("launch_overlay_enabled"))
+            self.assertTrue(settings.get("controllers.nintendo_button_layout"))
             settings.set("display.output", "auto")
             self.assertEqual(SettingsStore(path).get("display.output"), "auto")
+            settings.set("controllers.nintendo_button_layout", False)
+            self.assertFalse(SettingsStore(path).get("controllers.nintendo_button_layout"))
 
         with self.assertRaises(TypeError):
             settings.set("network.enabled", "yes")

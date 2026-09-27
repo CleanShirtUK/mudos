@@ -45,7 +45,7 @@ Item {
             }
             var values = {
                 key: key,
-                player: item.index === undefined ? "?" : String(item.index),
+                player: item.index === undefined || Number(item.index) <= 0 ? "?" : String(item.index),
                 batteryKind: String(item.batteryKind || "unknown"),
                 batteryPercentage: item.batteryPercentage === undefined ? -1 : item.batteryPercentage,
                 battery: String(item.battery || "Unknown"),

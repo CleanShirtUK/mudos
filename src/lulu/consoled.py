@@ -26,7 +26,9 @@ from .catalogue import CatalogueDelta, CatalogueGame, CatalogueStore, canonical_
 from .artwork import LocalArtworkCache, SteamGridDBArtwork, local_artwork_path, materialize_artwork
 from .media_assets import LocalMediaAssets
 from .contracts import ServiceDescriptor, ServiceName
-from .controller_provisioning import ensure_provider_controller_config
+from .controller_provisioning import ensure_provider_controller_config, ensure_retroarch_autoconfig
+from .controller_policy import nintendo_layout_enabled
+from .dolphin_passthrough import DolphinBluetoothLease
 from .emulator_runtime import EmulatorRuntimeAdapter
 from .emulation import PLATFORMS, current_rom_root, ensure_storage
 from .inputplumber import InputPlumberClient
@@ -49,7 +51,8 @@ from .platforms import load_platforms
 from .providers import GuideAction, NativeConfigAdapter, load_base_guide, load_mudos_guide, load_providers
 from .plugins import ComponentRegistry, PluginRegistry
 from .credential import (CredentialBroker, CredentialInput, CredentialPresentation,
-                          CredentialStatus, SecretStore)
+                           CredentialStatus, SecretStore)
+from .settings import SettingsStore
 from .web_credentials import WebCredentialStore
 
 
@@ -1370,20 +1373,25 @@ def _mudos_provider_controller_identities() -> dict[int, dict[str, object]]:
         if library.SDL_Init(0x2000):
             count = ctypes.c_int()
             ids = library.SDL_GetGamepads(ctypes.byref(count))
-            for index in range(count.value):
+            for player in sorted(result):
+                controller = result[player]
+                index = controller.get("sdl_index")
+                if not isinstance(index, int):
+                    continue
+                if index < 0 or index >= count.value:
+                    continue
                 instance = ids[index]
                 guid = ctypes.create_string_buffer(33)
                 library.SDL_GUIDToString(library.SDL_GetGamepadGUIDForID(instance), guid, 33)
-                # Match the normalized assignment to the current SDL list.
-                # The live index is the only provider-facing device identity.
-                for player, controller in result.items():
-                    if controller.get("sdl_index") in (None, index):
-                        result[player] = {
-                            **controller,
-                            "sdl_index": index,
-                            "sdl_guid": guid.value.decode("ascii"),
-                            "sdl_name": (library.SDL_GetGamepadNameForID(instance) or b"").decode(),
-                        }
+                # InputPlumber's target index is the live SDL slot association.
+                # Never infer a controller from list order: identical pads
+                # otherwise silently inherit one another's assignments.
+                result[player] = {
+                    **controller,
+                    "sdl_index": index,
+                    "sdl_guid": guid.value.decode("ascii"),
+                    "sdl_name": (library.SDL_GetGamepadNameForID(instance) or b"").decode(),
+                }
             library.SDL_Quit()
     except (OSError, AttributeError, RuntimeError):
         LOGGER.warning("SDL inventory unavailable; provider launch will report missing live identity")
@@ -1399,11 +1407,11 @@ def _parse_busctl_json_string(output: str) -> dict[str, object]:
     return decoded
 
 
-def _retroarch_child_config(device_indices: dict[int, int]) -> str:
+def _retroarch_child_config(device_indices: dict[int, int], autoconfig_directory: Path | None = None) -> str:
     directory = Path(os.environ.get("XDG_RUNTIME_DIR", "/tmp"))
     with tempfile.NamedTemporaryFile(
         mode="w",
-        encoding="ascii",
+        encoding="utf-8",
         prefix="lulu-retroarch-",
         suffix=".cfg",
         dir=directory,
@@ -1414,7 +1422,10 @@ def _retroarch_child_config(device_indices: dict[int, int]) -> str:
                 f'input_player{player}_joypad_index = "{device_indices[player]}"\n'
                 for player in range(1, 5)
                 if player in device_indices
-            ) + 'network_cmd_enable = "true"\n'
+            ) + (f'joypad_autoconfig_dir = "{autoconfig_directory}"\n'
+                 if autoconfig_directory else "")
+            + 'input_autodetect_enable = "true"\n'
+            'network_cmd_enable = "true"\n'
             'network_cmd_port = "55355"\n'
             'quit_on_close_content = "true"\n'
             'config_save_on_exit = "false"\n'
@@ -1628,9 +1639,15 @@ class ConsoleInterface(ServiceInterface):
             environment.pop("WAYLAND_DISPLAY", None)
         if provider.provider_id == "retroarch":
             device_indices = await asyncio.to_thread(_mudos_provider_device_indices)
-            child_config_path = await asyncio.to_thread(_retroarch_child_config, device_indices)
+            autoconfig_directory = await asyncio.to_thread(
+                ensure_retroarch_autoconfig, PATHS.provider_config_root("retroarch"),
+                nintendo_layout=nintendo_layout_enabled(),
+            )
+            child_config_path = await asyncio.to_thread(
+                _retroarch_child_config, device_indices, autoconfig_directory,
+            )
             command[1:1] = ["--appendconfig", child_config_path]
-            environment["LIBRETRO_AUTOCONFIG_DIRECTORY"] = "/opt/lulu/config/retroarch/autoconfig"
+            environment["LIBRETRO_AUTOCONFIG_DIRECTORY"] = str(autoconfig_directory)
         steam_delegated = provider.provider_id == "steam"
         steam_start_time: float | None = None
         steam_process_pgid = 0
@@ -2508,15 +2525,18 @@ class ConsoleInterface(ServiceInterface):
         # them by source instead of provider ID so every managed emulator
         # reaches the local runtime adapter.
         if game.catalogue_source == "local" and self.local_runtime is not None:
+            dolphin_passthrough: DolphinBluetoothLease | None = None
             device_indices = None
             if game.platform == "switch":
                 device_indices = await asyncio.to_thread(_mudos_provider_device_indices)
             controller_identities = None
             if game.platform in {"switch", "ps2", "wii", "nes", "genesis"}:
                 controller_identities = await asyncio.to_thread(_mudos_provider_controller_identities)
+            nintendo_layout = nintendo_layout_enabled()
             intent = self.local_runtime.launch_intent(
                 game, device_indices=device_indices,
                 controller_identities=controller_identities,
+                nintendo_layout=nintendo_layout,
             )
             command = [intent.executable, *intent.arguments]
             is_pcsx2 = intent.provider == "pcsx2"
@@ -2526,6 +2546,14 @@ class ConsoleInterface(ServiceInterface):
             child_config_path: str | None = None
             if intent.provider in {"pcsx2", "dolphin"}:
                 controller_provider = intent.provider
+                if controller_provider == "dolphin" and game.platform == "wii":
+                    settings = SettingsStore(PATHS.config_root / "settings.sqlite3")
+                    try:
+                        real_wiimote_mode = settings.get("dolphin.wii_remote_mode") == "passthrough"
+                    finally:
+                        settings.connection.close()
+                    if real_wiimote_mode:
+                        dolphin_passthrough = DolphinBluetoothLease.create()
                 device_indices = await asyncio.to_thread(_mudos_provider_device_indices)
                 controller_config_path = await asyncio.to_thread(
                     ensure_provider_controller_config,
@@ -2533,9 +2561,11 @@ class ConsoleInterface(ServiceInterface):
                     PATHS.provider_config_root(controller_provider),
                     max(device_indices),
                     device_indices,
-                    PATHS.provider_config_root(controller_provider)
+                    PATHS.provider_config_root(controller_provider) / "dolphin-emu"
                     if controller_provider == "dolphin" else None,
                     controller_identities,
+                    nintendo_layout,
+                    dolphin_passthrough is not None,
                 )
                 LOGGER.info(
                     "local runtime controller profile provider=%s path=%s",
@@ -2544,7 +2574,13 @@ class ConsoleInterface(ServiceInterface):
                 )
             if intent.provider == "retroarch":
                 device_indices = await asyncio.to_thread(_mudos_provider_device_indices)
-                child_config_path = await asyncio.to_thread(_retroarch_child_config, device_indices)
+                autoconfig_directory = await asyncio.to_thread(
+                    ensure_retroarch_autoconfig, PATHS.provider_config_root("retroarch"),
+                    nintendo_layout=nintendo_layout,
+                )
+                child_config_path = await asyncio.to_thread(
+                    _retroarch_child_config, device_indices, autoconfig_directory,
+                )
                 command[1:1] = [
                     "--appendconfig",
                     child_config_path,
@@ -2554,6 +2590,7 @@ class ConsoleInterface(ServiceInterface):
                     game_id,
                     device_indices,
                 )
+            process: asyncio.subprocess.Process | None = None
             LOGGER.info(
                 "local runtime dispatch game_id=%s runtime=%s core=%s rom=%s command=%r",
                 game_id,
@@ -2572,25 +2609,27 @@ class ConsoleInterface(ServiceInterface):
                     PATHS.provider_config_root(intent.provider)
                 )
             if intent.provider == "retroarch":
-                child_environment["LIBRETRO_AUTOCONFIG_DIRECTORY"] = (
-                    "/opt/lulu/config/retroarch/autoconfig"
-                )
+                child_environment["LIBRETRO_AUTOCONFIG_DIRECTORY"] = str(autoconfig_directory)
                 child_environment["MUDOS_PROVIDER_MENU_COMMAND"] = shlex.join(
                     self.local_runtime.open_provider_menu(intent.platform)
                 )
                 child_environment["MUDOS_PROVIDER_MENU_LABEL"] = "Provider"
-            process = await asyncio.create_subprocess_exec(
-                *command,
-                stdin=asyncio.subprocess.DEVNULL,
-                stdout=asyncio.subprocess.DEVNULL,
-                stderr=asyncio.subprocess.DEVNULL,
-                env=child_environment,
-                cwd="/home/lulu" if intent.provider == "eden" else None,
-                start_new_session=True,
-            )
-            if is_pcsx2:
-                LOGGER.info("[PCSX2] process PID=%s", process.pid)
             try:
+                if dolphin_passthrough is not None:
+                    await dolphin_passthrough.acquire_async()
+                process = await asyncio.create_subprocess_exec(
+                    *command,
+                    stdin=asyncio.subprocess.DEVNULL,
+                    stdout=asyncio.subprocess.DEVNULL,
+                    stderr=asyncio.subprocess.DEVNULL,
+                    env=child_environment,
+                    cwd="/home/lulu" if intent.provider == "eden" else None,
+                    start_new_session=True,
+                )
+                if dolphin_passthrough is not None:
+                    await dolphin_passthrough.attach_async(process.pid)
+                if is_pcsx2:
+                    LOGGER.info("[PCSX2] process PID=%s", process.pid)
                 if self.sessiond is not None:
                     self._local_token = await self.sessiond.call_begin_local_session(
                         game_id,
@@ -2601,11 +2640,17 @@ class ConsoleInterface(ServiceInterface):
                     )
                 self._local_process = process
             except Exception:
-                try:
-                    os.killpg(os.getpgid(process.pid), signal.SIGTERM)
-                except (ProcessLookupError, OSError):
-                    pass
-                await process.wait()
+                if process is not None:
+                    try:
+                        os.killpg(os.getpgid(process.pid), signal.SIGTERM)
+                    except (ProcessLookupError, OSError):
+                        pass
+                    await process.wait()
+                if dolphin_passthrough is not None:
+                    try:
+                        await dolphin_passthrough.release_async()
+                    except Exception:
+                        LOGGER.exception("Dolphin Bluetooth adapter restoration failed during launch rollback")
                 raise
 
             async def reap() -> None:
@@ -2615,11 +2660,18 @@ class ConsoleInterface(ServiceInterface):
                         os.unlink(child_config_path)
                     except FileNotFoundError:
                         pass
-                if self.sessiond is not None and self._local_token is not None:
-                    try:
-                        await self.sessiond.call_end_local_session(self._local_token, exit_code)
-                    except Exception as error:
-                        LOGGER.error("local session end failed game_id=%s token=%s error=%s", game_id, self._local_token, error)
+                try:
+                    if self.sessiond is not None and self._local_token is not None:
+                        try:
+                            await self.sessiond.call_end_local_session(self._local_token, exit_code)
+                        except Exception as error:
+                            LOGGER.error("local session end failed game_id=%s token=%s error=%s", game_id, self._local_token, error)
+                finally:
+                    if dolphin_passthrough is not None:
+                        try:
+                            await dolphin_passthrough.release_async()
+                        except Exception:
+                            LOGGER.exception("Dolphin Bluetooth adapter restoration failed after Wii session")
                 self._local_process = None
                 self._local_token = None
                 LOGGER.info("local runtime exit game_id=%s pid=%s exit_code=%s", game_id, process.pid, exit_code)
@@ -2663,6 +2715,19 @@ ROMM_SYNC_INTERVAL = 15 * 60
 
 
 async def serve() -> None:
+    async def recover_dolphin_bluetooth_lease() -> None:
+        # Consoled may restart while an independently-grouped Dolphin process
+        # still owns the adapter. Keep serving, then restore host ownership as
+        # soon as the recorded Dolphin PID exits.
+        while True:
+            try:
+                await DolphinBluetoothLease.recover_stale_async()
+                return
+            except (OSError, subprocess.SubprocessError, RuntimeError) as error:
+                LOGGER.warning("Dolphin Bluetooth lease recovery pending: %s", error)
+                await asyncio.sleep(3)
+
+    asyncio.create_task(recover_dolphin_bluetooth_lease())
     catalogue = ConsoleCatalog()
     runtime = EmulatorRuntimeAdapter(
         {platform: definition.executable for platform, definition in PLATFORMS.items()},

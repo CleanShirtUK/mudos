@@ -33,6 +33,8 @@
       "/etc/pam.d/lulu-session", "/etc/lulu/presentation.conf", "/etc/lulu/mudos-recovery-token",
       "/etc/lulu/provider-services.toml", "/etc/lulu/file-browser.env",
       "/etc/udev/rules.d/80-lulu-osk.rules", "/etc/udev/rules.d/81-lulu-gamepad-hotplug.rules",
+      "/etc/udev/rules.d/82-lulu-dolphin-bluetooth.rules",
+      "/etc/udev/rules.d/83-lulu-standard-gamepad.rules",
       "/etc/inputplumber/devices.d/lulu-composite.yaml",
       "/etc/polkit-1/rules.d/49-lulu-network.rules", "/etc/polkit-1/rules.d/50-lulu-storage.rules",
       "/etc/polkit-1/rules.d/51-lulu-nzbget.rules",
@@ -42,7 +44,8 @@
       "/etc/polkit-1/rules.d/55-lulu-transmission-config.rules",
       "/etc/polkit-1/rules.d/56-lulu-session-restart.rules", "/etc/polkit-1/rules.d/57-lulu-provider-install.rules",
       "/etc/polkit-1/rules.d/58-lulu-recovery-power.rules", "/etc/polkit-1/rules.d/59-lulu-initial-password.rules",
-      "/etc/polkit-1/rules.d/60-lulu-recovery.rules", "/usr/libexec/mudos-set-initial-password",
+      "/etc/polkit-1/rules.d/60-lulu-recovery.rules", "/etc/polkit-1/rules.d/61-lulu-dolphin-bluetooth.rules",
+      "/usr/libexec/mudos-set-initial-password",
       "/etc/avahi/services/mudos-http.service", "/etc/tmpfiles.d/lulu.conf",
       "/etc/systemd/system/inputplumber.service.d/lulu.conf"
     ],

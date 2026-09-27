@@ -56,6 +56,7 @@ class EmulatorRuntimeAdapter:
         game: LocalContentGame,
         device_indices: dict[int, int] | None = None,
         controller_identities: dict[int, object] | None = None,
+        nintendo_layout: bool | None = None,
     ) -> EmulatorLaunchIntent:
         if not game.launchable:
             raise ValueError(f"content is not launchable: {game.reason}")
@@ -69,6 +70,7 @@ class EmulatorRuntimeAdapter:
                 getattr(game, "content_path", getattr(game, "install_dir", "")),
                 device_indices=device_indices,
                 controller_identities=controller_identities,
+                nintendo_layout=nintendo_layout,
             )
         else:
             arguments = launch_arguments(provider, game, executable, self.core_paths.get(game.platform),

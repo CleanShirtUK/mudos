@@ -21,6 +21,8 @@ SETTING_SPECS = (
     SettingSpec("display.mode", "Display", str, "auto"),
     SettingSpec("audio.output", "Audio", str, "auto"),
     SettingSpec("controllers.navigation_owner", "Controllers", str, "auto"),
+    SettingSpec("controllers.nintendo_button_layout", "Controllers", bool, True),
+    SettingSpec("dolphin.wii_remote_mode", "Controllers", str, "standard"),
     SettingSpec("storage.library_root", "Storage", str, "managed"),
     SettingSpec("network.enabled", "Network", bool, True),
     SettingSpec("applications.auto_update", "Applications", bool, False),

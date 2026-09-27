@@ -3,6 +3,8 @@ import QtQuick
 Row {
     property string action: "confirm"
     property string label: ""
+    property string controllerProfile: (typeof controllerBridge !== "undefined"
+        && controllerBridge.nintendoLayout) ? "nintendo" : "xbox"
     property real uiScale: 1
     property var typography
     property var luluPalette
@@ -12,6 +14,7 @@ Row {
 
     ControllerGlyph {
         action: parent.action
+        controllerProfile: parent.controllerProfile
         glyphSize: 20 * parent.uiScale
         luluPalette: parent.luluPalette
         typography: parent.typography
