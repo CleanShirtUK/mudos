@@ -47,7 +47,27 @@ class ControlledExecutorWithPause(ControlledExecutor):
     supports_pause = True
 
 
+class TerminalCancellationExecutor:
+    async def run(self, job: DownloadJob, reporter: JobReporter) -> None:
+        raise JobCancelled
+
+    async def cancel(self, job: DownloadJob) -> None:
+        return None
+
+
 class JobDomainTests(unittest.TestCase):
+    def test_provider_terminal_cancellation_does_not_leave_starting_job(self) -> None:
+        async def exercise() -> None:
+            manager = JobManager()
+            manager.register_executor("fake", TerminalCancellationExecutor())
+            job = manager.submit("fake", "fixture", "Fixture")
+            await asyncio.sleep(0)
+            result = manager.jobs[job.job_id]
+            self.assertEqual(result.state, JobState.CANCELLED)
+            self.assertIsNotNone(result.completed_at)
+
+        asyncio.run(exercise())
+
     def test_provider_pause_capability_is_persisted_on_recovery(self) -> None:
         async def exercise() -> None:
             from lulu.acquisition_store import AcquisitionStore

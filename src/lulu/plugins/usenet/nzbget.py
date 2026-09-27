@@ -12,7 +12,7 @@ import urllib.error
 import urllib.request
 from typing import Any, Mapping
 
-from ...jobs import DownloadJob, ExternalAcquisition, JobState
+from ...jobs import DownloadJob, ExternalAcquisition, JobError, JobState
 from ...job_manager import JobCancelled, JobExecutionError, JobReporter
 from ...paths import MudosPaths, PATHS
 from ...questarr_metadata import QuestarrMetadataClient
@@ -85,6 +85,11 @@ class NzbHistory:
     final_directory: str
     error: str | None = None
     source_name: str = ""
+    par_status: str = ""
+    unpack_status: str = ""
+    failed_articles: int = 0
+    total_articles: int = 0
+    extra_par_blocks: int = 0
 
 
 def _external_state(status: str, *, history: bool = False) -> tuple[JobState, str]:
@@ -214,7 +219,24 @@ class NzbGetClient:
         return NzbHistory(_int(item.get("NZBID")), str(item.get("Name", item.get("NZBName", ""))),
                           str(item.get("Category", "")), str(item.get("DupeKey", "")),
                           str(item.get("Status", "")), str(item.get("DestDir", "")),
-                          str(item.get("FinalDir", "")), str(item.get("NZBFilename", "")))
+                          str(item.get("FinalDir", "")), None, str(item.get("NZBFilename", "")),
+                          str(item.get("ParStatus", "")), str(item.get("UnpackStatus", "")),
+                          _int(item.get("FailedArticles")), _int(item.get("TotalArticles")),
+                          _int(item.get("ExtraParBlocks")))
+
+
+def _history_failure_message(item: NzbHistory) -> str:
+    """Produce a user-facing reason from NZBGet's authoritative terminal fields."""
+    if item.par_status.upper() == "FAILURE":
+        reason = f"NZBGet PAR verification/repair failed ({item.status})"
+        if item.total_articles:
+            reason += f"; {item.failed_articles} of {item.total_articles} articles failed"
+        if item.extra_par_blocks == 0:
+            reason += "; no additional recovery blocks were available"
+        return reason
+    if item.unpack_status.upper() == "FAILURE":
+        return f"NZBGet unpack failed ({item.status})"
+    return f"NZBGet reported {item.status}"
 
 
 class UsenetProvider:
@@ -294,7 +316,9 @@ class UsenetProvider:
                 key, item.name, origin, provenance, str(item.nzbid), state,
                 1.0 if state == JobState.COMPLETED else None, None, None, stage, None,
                 item.status, item.final_directory or item.destination, "nzbget",
-                metadata.as_dict() if metadata else {}))
+                metadata.as_dict() if metadata else {},
+                JobError("usenet-provider-failure", _history_failure_message(item), retryable=True)
+                if state == JobState.FAILED else None))
         return tuple(records)
 
     def _record(self, job: DownloadJob, nzbid: int, destination: str) -> None:
@@ -336,7 +360,7 @@ class UsenetProvider:
         if group is not None:
             await reporter.metadata(provider_job_id=str(group.nzbid), backend="nzbget",
                                     destination=group.destination, ownership_label=self._dupe_key(job),
-                                    provider_state=group.status, post_stage=group.post_info)
+                                    provider_state=group.status)
             if group.status == "PAUSED":
                 await reporter.state(JobState.PAUSED, stage="paused")
                 return
@@ -354,8 +378,7 @@ class UsenetProvider:
                     return
                 await reporter.progress(group.progress, downloaded_bytes=group.downloaded_bytes,
                                         total_bytes=group.total_bytes, stage=group.status.lower())
-                await reporter.metadata(provider_state=group.status, download_rate=group.rate,
-                                        post_stage=group.post_info)
+                await reporter.metadata(provider_state=group.status, download_rate=group.rate)
                 await asyncio.sleep(1)
                 group, history = await self.client.find(self._dupe_key(job))
                 if group is None:
@@ -369,18 +392,32 @@ class UsenetProvider:
         if history is None and group is not None:
             await reporter.metadata(provider_job_id=str(group.nzbid), backend="nzbget",
                                     provider_state=group.status, completion_path=self._completion(group),
-                                    ownership_label=self._dupe_key(job), post_stage="completed")
+                                    ownership_label=self._dupe_key(job))
             await reporter.progress(1.0, downloaded_bytes=group.total_bytes, total_bytes=group.total_bytes,
                                     stage="completed")
             return
         status = history.status.upper()
+        await reporter.metadata(provider_job_id=str(history.nzbid), backend="nzbget",
+                                destination=history.destination, provider_state=status,
+                                ownership_label=self._dupe_key(job))
         if status.startswith("FAILURE") or status.startswith("WARNING"):
-            raise JobExecutionError("usenet-post-processing", status, retryable=True, details={"provider_status": status})
+            reason = _history_failure_message(history)
+            raise JobExecutionError("usenet-post-processing", reason, retryable=True,
+                                    details={"provider_status": status,
+                                             "failed_articles": history.failed_articles,
+                                             "total_articles": history.total_articles,
+                                             "par_status": history.par_status,
+                                             "unpack_status": history.unpack_status})
         if status.startswith("DELETED"):
+            if status.startswith("DELETED/COPY"):
+                raise JobExecutionError(
+                    "usenet-duplicate", "NZBGet refused this Mudos submission as a duplicate",
+                    retryable=False, details={"provider_status": status, "nzbid": history.nzbid,
+                                              "dupe_key": history.dupe_key})
             raise JobCancelled()
         await reporter.metadata(provider_job_id=str(history.nzbid), backend="nzbget",
                                 provider_state=status, completion_path=self._completion(history),
-                                ownership_label=self._dupe_key(job), post_stage="completed")
+                                ownership_label=self._dupe_key(job))
         await reporter.progress(1.0, downloaded_bytes=job.total_bytes, total_bytes=job.total_bytes, stage="completed")
 
     async def pause(self, provider_job_id: str) -> None:

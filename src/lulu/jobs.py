@@ -23,6 +23,7 @@ class ExternalAcquisition:
     destination: str | None = None
     backend: str = "nzbget"
     metadata: dict[str, object] = field(default_factory=dict)
+    error: "JobError | None" = None
 
 
 def utc_now() -> str:
@@ -116,17 +117,17 @@ class DownloadJob:
         allowed = {
             JobState.QUEUED: {JobState.STARTING, JobState.TRANSFERRING, JobState.CANCELLED},
             JobState.STARTING: {JobState.TRANSFERRING, JobState.PAUSING, JobState.PAUSED, JobState.FINALIZING,
-                                JobState.CANCELLING, JobState.FAILED},
+                                JobState.CANCELLING, JobState.CANCELLED, JobState.FAILED},
             JobState.TRANSFERRING: {JobState.PAUSING, JobState.PAUSED, JobState.FINALIZING,
-                                   JobState.AWAITING_INTERACTION, JobState.CANCELLING, JobState.FAILED},
-            JobState.AWAITING_INTERACTION: {JobState.TRANSFERRING, JobState.CANCELLING, JobState.FAILED},
-            JobState.FINALIZING: {JobState.COMPLETED, JobState.CANCELLING,
+                                    JobState.AWAITING_INTERACTION, JobState.CANCELLING, JobState.CANCELLED, JobState.FAILED},
+            JobState.AWAITING_INTERACTION: {JobState.TRANSFERRING, JobState.CANCELLING, JobState.CANCELLED, JobState.FAILED},
+            JobState.FINALIZING: {JobState.COMPLETED, JobState.CANCELLING, JobState.CANCELLED,
                                   JobState.FAILED},
-            JobState.PAUSED: {JobState.RESUMING, JobState.QUEUED, JobState.TRANSFERRING, JobState.CANCELLING,
+            JobState.PAUSED: {JobState.RESUMING, JobState.QUEUED, JobState.TRANSFERRING, JobState.CANCELLING, JobState.CANCELLED,
                               JobState.FAILED},
-            JobState.PAUSING: {JobState.PAUSED, JobState.CANCELLING, JobState.FAILED},
+            JobState.PAUSING: {JobState.PAUSED, JobState.CANCELLING, JobState.CANCELLED, JobState.FAILED},
             JobState.RESUMING: {JobState.STARTING, JobState.QUEUED, JobState.TRANSFERRING,
-                                JobState.PAUSED, JobState.CANCELLING, JobState.FAILED},
+                                JobState.PAUSED, JobState.CANCELLING, JobState.CANCELLED, JobState.FAILED},
             JobState.CANCELLING: {JobState.CANCELLED, JobState.FAILED},
             JobState.FAILED: {JobState.QUEUED, JobState.CANCELLED},
             JobState.COMPLETED: set(),

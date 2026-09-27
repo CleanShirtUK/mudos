@@ -332,6 +332,7 @@ class JobManager:
                         destination=record.destination, download_rate=record.rate,
                         provider_state=record.provider_state,
                         artifact_files=(record.metadata,) if record.metadata else (),
+                        error=record.error,
                         ownership_label=record.provenance, origin=record.origin,
                         created_at=utc_now(), updated_at=utc_now(),
                     )
@@ -343,7 +344,7 @@ class JobManager:
                         destination=record.destination, download_rate=record.rate,
                         provider_state=record.provider_state, updated_at=utc_now(),
                         artifact_files=(record.metadata,) if record.metadata else existing.artifact_files,
-                        error=None if record.state != JobState.FAILED else existing.error)
+                        error=record.error if record.state == JobState.FAILED else None)
             for job_id, job in tuple(self.jobs.items()):
                 if job.provider == provider and job.origin != "mudos" \
                         and job.content_identity not in seen \
@@ -377,7 +378,7 @@ class JobManager:
                                      total_bytes=current.total_bytes, stage="completed")
                 self.transition(job_id, JobState.COMPLETED, stage="completed")
         except JobCancelled:
-            if self.jobs[job_id].state == JobState.CANCELLING:
+            if self.jobs[job_id].state not in {JobState.CANCELLED, JobState.COMPLETED, JobState.FAILED}:
                 self.transition(job_id, JobState.CANCELLED, stage="cancelled")
         except JobExecutionError as error:
             if self.jobs[job_id].state == JobState.CANCELLING:

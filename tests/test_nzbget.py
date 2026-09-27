@@ -6,9 +6,9 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from lulu.jobs import DownloadJob
+from lulu.jobs import DownloadJob, JobState
 from lulu.paths import MudosPaths
-from lulu.plugins.usenet.nzbget import NzbGetClient, NzbGetConfig, NzbHistory, UsenetProvider
+from lulu.plugins.usenet.nzbget import NzbGetClient, NzbGetConfig, NzbHistory, UsenetProvider, _history_failure_message
 from lulu.plugins.usenet.nzbget import NzbDownload
 from lulu.nzbget_admin import apply_control_credentials, apply_news_server, apply_packaged_paths
 from lulu.job_manager import JobCancelled, JobExecutionError
@@ -123,6 +123,25 @@ class UsenetProviderTests(unittest.TestCase):
                 self.assertTrue(list(paths.usenet_ownership_root.glob("external/*.json")))
         asyncio.run(exercise())
 
+    def test_external_failed_history_preserves_provider_error(self) -> None:
+        class FakeClient:
+            async def groups(self): return ()
+            async def history(self):
+                return (NzbHistory(11, "external-fixture", "", "", "FAILURE/PAR",
+                                   "/incomplete", "", source_name="fixture.nzb",
+                                   par_status="FAILURE", failed_articles=1, total_articles=10),)
+
+        async def exercise():
+            with tempfile.TemporaryDirectory() as directory:
+                base = Path(directory)
+                paths = MudosPaths(base / "Games", base / "config", base / "data", base / "cache", base / "run")
+                record, = await UsenetProvider(FakeClient(), paths).discover_external()
+                self.assertEqual(record.state.value, "failed")
+                self.assertEqual(record.error.code, "usenet-provider-failure")
+                self.assertIn("1 of 10 articles failed", record.error.message)
+
+        asyncio.run(exercise())
+
     def test_external_identity_ignores_mutable_queue_metadata(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             base = Path(directory)
@@ -168,6 +187,20 @@ class UsenetProviderTests(unittest.TestCase):
         history = NzbHistory(3, "game", "mudos", "mudos:job", "FAILURE/UNPACK", "/complete", "")
         self.assertTrue(history.status.startswith("FAILURE"))
 
+    def test_history_maps_nzb_filename_separately_and_keeps_failure_reason(self) -> None:
+        history = NzbGetClient._history({
+            "NZBID": 9, "Name": "fixture", "Status": "FAILURE/PAR",
+            "NZBFilename": "/staging/fixture.nzb", "ParStatus": "FAILURE",
+            "FailedArticles": 88, "TotalArticles": 536, "ExtraParBlocks": 0,
+        })
+        self.assertIsNone(history.error)
+        self.assertEqual(history.source_name, "/staging/fixture.nzb")
+        self.assertEqual(
+            _history_failure_message(history),
+            "NZBGet PAR verification/repair failed (FAILURE/PAR); 88 of 536 articles failed; "
+            "no additional recovery blocks were available",
+        )
+
     def test_successful_history_is_completion_after_post_processing(self) -> None:
         class FakeClient:
             async def find(self, key):
@@ -209,6 +242,59 @@ class UsenetProviderTests(unittest.TestCase):
                     await UsenetProvider(FakeClient("FAILURE/PAR"), paths).run(job, Reporter())  # type: ignore[arg-type]
                 with self.assertRaises(JobCancelled):
                     await UsenetProvider(FakeClient("DELETED/MANUAL"), paths).run(job, Reporter())  # type: ignore[arg-type]
+                with self.assertRaises(JobExecutionError) as duplicate:
+                    await UsenetProvider(FakeClient("DELETED/COPY"), paths).run(job, Reporter())  # type: ignore[arg-type]
+                self.assertEqual(duplicate.exception.code, "usenet-duplicate")
+                self.assertIn("duplicate", str(duplicate.exception))
+
+        asyncio.run(exercise())
+
+    def test_owned_job_failure_details_include_missing_article_cause(self) -> None:
+        class FakeClient:
+            async def find(self, key):
+                return None, NzbHistory(7, "fixture", "mudos", key, "FAILURE/PAR",
+                                        "/incomplete", "", source_name="fixture.nzb",
+                                        par_status="FAILURE", failed_articles=2,
+                                        total_articles=21, extra_par_blocks=0)
+
+        class Reporter:
+            async def metadata(self, **values): pass
+            async def progress(self, *args, **values): pass
+
+        async def exercise():
+            with tempfile.TemporaryDirectory() as directory:
+                base = Path(directory)
+                paths = MudosPaths(base / "Games", base / "config", base / "data", base / "cache", base / "run")
+                with self.assertRaises(JobExecutionError) as error:
+                    await UsenetProvider(FakeClient(), paths).run(
+                        DownloadJob("job-7", "usenet", "fixture"), Reporter())  # type: ignore[arg-type]
+                self.assertIn("2 of 21 articles failed", str(error.exception))
+                self.assertEqual(error.exception.details["provider_status"], "FAILURE/PAR")
+
+        asyncio.run(exercise())
+
+    def test_owned_deleted_copy_reconciles_to_failed_not_stuck_starting(self) -> None:
+        from lulu.job_manager import JobManager
+
+        class FakeClient:
+            async def find(self, key):
+                return None, NzbHistory(8, "fixture", "mudos", key, "DELETED/COPY",
+                                        "/incomplete", "", source_name="fixture.nzb")
+
+        async def exercise():
+            with tempfile.TemporaryDirectory() as directory:
+                base = Path(directory)
+                paths = MudosPaths(base / "Games", base / "config", base / "data", base / "cache", base / "run")
+                manager = JobManager()
+                manager.register_executor("usenet", UsenetProvider(FakeClient(), paths))  # type: ignore[arg-type]
+                submitted = manager.submit("usenet", "fixture.nzb", "fixture")
+                await asyncio.sleep(0.05)
+                result = manager.jobs[submitted.job_id]
+                self.assertEqual(result.state, JobState.FAILED)
+                self.assertEqual(result.error.code, "usenet-duplicate")
+                self.assertEqual(result.provider_job_id, "8")
+                self.assertEqual(result.ownership_label, "mudos:" + submitted.job_id)
+                self.assertEqual(result.provider_state, "DELETED/COPY")
 
         asyncio.run(exercise())
 
