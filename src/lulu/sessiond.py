@@ -365,7 +365,7 @@ class ConsoleSessionInterface(ServiceInterface):
                 presentation.select_pids([pid], 15.0)
             self._apply_input_mode(InputMode.GAME)
             self.model.primary_started(token, input_mode=InputMode.GAME)
-        except (OSError, ValueError, TimeoutError) as error:
+        except (OSError, ValueError, TimeoutError, RuntimeError, subprocess.SubprocessError) as error:
             self._local_identity = None
             self._local_provider_id = ""
             if token is not None and self.model.state.lifecycle is not Lifecycle.SHELL:
@@ -388,17 +388,29 @@ class ConsoleSessionInterface(ServiceInterface):
             self.model.launch_starting(token)
             self._local_identity = LaunchIdentity(token, pid, pgid, executable, tuple(argv))
             self._local_provider_id = provider_id
+            if provider_id == "steam":
+                LOGGER.info("steam_auth_stage stage=session-token-created token=%s sentinel_pid=%s pgid=%s",
+                            token, pid, pgid)
             if provider_id == "steam" and self.supervisor._presentation is not None:
                 # The OOBE Steam route uses a lifecycle sentinel rather than
                 # owning the Steam client process. Select the actual client
                 # window explicitly; selecting the sentinel PID leaves the
                 # shell as Gamescope's visible base layer.
                 from .plugins.steam.provider import SteamProvider
-                self.supervisor._presentation.select_pids(SteamProvider().desktop_pids, 15.0)
+                steam = SteamProvider()
+                candidates = steam.desktop_pids()
+                LOGGER.info("steam_auth_stage stage=window-selection-request token=%s steam_pids=%s",
+                            token, candidates)
+                selected = self.supervisor._presentation.select_pids(steam.desktop_pids, 15.0)
+                LOGGER.info("steam_auth_stage stage=window-selection-complete token=%s selected_window=%s",
+                            token, selected)
             input_mode = InputMode.COMPAT if provider_id == "steam" else InputMode.GAME
             self._apply_input_mode(input_mode)
             self.model.primary_started(token, input_mode=input_mode)
-        except (OSError, ValueError, TimeoutError) as error:
+        except (OSError, ValueError, TimeoutError, RuntimeError, subprocess.SubprocessError) as error:
+            if provider_id == "steam":
+                LOGGER.exception("steam_auth_stage stage=session-start-failed provider=steam token=%s",
+                                 token)
             self._local_identity = None
             self._local_provider_id = ""
             if token is not None and self.model.state.lifecycle is not Lifecycle.SHELL:
@@ -413,6 +425,7 @@ class ConsoleSessionInterface(ServiceInterface):
         if self._local_identity is None or self._local_identity.token != token:
             return
         identity = self._local_identity
+        provider_id = getattr(self, "_local_provider_id", "")
         if self.model.state.lifecycle is Lifecycle.GAME:
             self.model.primary_exited(token, success=exit_code == 0)
             self.model.record_result(ProcessResult(
@@ -434,10 +447,15 @@ class ConsoleSessionInterface(ServiceInterface):
             if presentation is not None and shell_process is not None:
                 try:
                     presentation.select_shell(shell_process.pid)
+                    if provider_id == "steam":
+                        LOGGER.info("steam_auth_stage stage=shell-restored token=%s shell_pid=%s",
+                                    token, shell_process.pid)
                 except (OSError, RuntimeError, TimeoutError, subprocess.SubprocessError):
                     LOGGER.exception("local session return could not restore the Mudos shell surface")
         self._local_identity = None
         self._local_provider_id = ""
+        if provider_id == "steam":
+            LOGGER.info("steam_auth_stage stage=session-token-retired token=%s", token)
         self.StateChanged(self._state_json())
 
     @method()

@@ -51,6 +51,7 @@ class SteamProvider:
         self._logger = logging.getLogger("lulu.steam-provider")
         self._owned_client_pids: set[int] = set()
         self._owned_client_pgid: int | None = None
+        self._visibility_error_logged = False
 
     def open_game_details(self, app_id: str) -> str:
         """Navigate the Steam client without taking lifecycle ownership."""
@@ -110,6 +111,10 @@ class SteamProvider:
 
     def main_window_visible(self) -> bool:
         """Report whether Steam's surfaced main window is still visible."""
+        return self.main_window_visibility() is True
+
+    def main_window_visibility(self) -> bool | None:
+        """True/false from Xwayland, or None when visibility cannot be observed."""
         try:
             result = subprocess.run(
                 ["xdotool", "search", "--onlyvisible", "--class", "steam", "getwindowname", "%@"],
@@ -117,7 +122,17 @@ class SteamProvider:
                 env={**os.environ, "DISPLAY": os.environ.get("DISPLAY", ":0")},
             )
         except (OSError, subprocess.SubprocessError):
-            return True
+            if not self._visibility_error_logged:
+                self._logger.exception("steam_window_observation stage=visibility-unavailable")
+                self._visibility_error_logged = True
+            return None
+        if result.returncode not in {0, 1}:
+            if not self._visibility_error_logged:
+                self._logger.error("steam_window_observation stage=visibility-command-failed returncode=%s stderr=%s",
+                                   result.returncode, result.stderr[-500:])
+                self._visibility_error_logged = True
+            return None
+        self._visibility_error_logged = False
         return any(line.strip().casefold() == "steam" for line in result.stdout.splitlines())
 
     def main_window_focused(self) -> bool:
@@ -145,6 +160,23 @@ class SteamProvider:
     def desktop_pids(self) -> list[int]:
         """Return standard desktop Steam client processes for presentation selection."""
         return self._steam_client_pids()
+
+    def process_snapshot(self, pids: list[int] | None = None) -> list[dict[str, object]]:
+        """Return non-sensitive PID ancestry evidence for Steam diagnostics."""
+        roots = set(self._steam_client_pids() if pids is None else pids)
+        rows: list[dict[str, object]] = []
+        for pid in sorted(self._process_tree(roots)):
+            try:
+                status = Path(f"/proc/{pid}/status").read_text()
+                parent = re.search(r"^PPid:\s+(\d+)$", status, re.MULTILINE)
+                comm = Path(f"/proc/{pid}/comm").read_text().strip()
+                executable = os.readlink(f"/proc/{pid}/exe")
+                pgid = os.getpgid(pid)
+            except (OSError, ProcessLookupError):
+                continue
+            rows.append({"pid": pid, "ppid": int(parent.group(1)) if parent else 0,
+                         "pgid": pgid, "comm": comm, "executable": executable})
+        return rows
 
     def list_installed(self, roots: tuple[Path, ...] | None = None) -> list[InstalledSteamGame]:
         roots = roots or self._library_roots()
@@ -317,6 +349,7 @@ class SteamProvider:
     async def ensure_client(self, existing: set[int] | None = None) -> None:
         existing = set(self._steam_client_pids()) if existing is None else existing
         if existing:
+            self._logger.info("steam_client stage=reused pids=%s", sorted(existing))
             return
         environment = os.environ.copy()
         environment.setdefault("DISPLAY", ":0")
@@ -330,12 +363,16 @@ class SteamProvider:
         )
         self._owned_client_pids.add(launcher.pid)
         self._owned_client_pgid = os.getpgid(launcher.pid)
+        self._logger.info("steam_client stage=spawned launcher_pid=%s launcher_pgid=%s",
+                          launcher.pid, self._owned_client_pgid)
         try:
-            ready = await self._wait_for_steam_client()
+            ready = await self._wait_for_steam_client(launcher=launcher)
         except asyncio.CancelledError:
             await self.stop_owned_client()
             raise
         self._owned_client_pids.update(set(ready) - existing)
+        self._logger.info("steam_client stage=ready launcher_pid=%s pids=%s process_tree=%s",
+                          launcher.pid, ready, self.process_snapshot(ready))
 
     def _process_tree(self, roots: set[int]) -> set[int]:
         owned = set(roots)
@@ -548,11 +585,28 @@ class SteamProvider:
             "SteamGameId": environment.get("SteamGameId"),
         }
 
-    async def _wait_for_steam_client(self, timeout: float = 15.0) -> list[int]:
+    async def _wait_for_steam_client(self, timeout: float = 15.0,
+                                     launcher: asyncio.subprocess.Process | None = None) -> list[int]:
         deadline = asyncio.get_running_loop().time() + timeout
         pids = self._steam_client_pids()
+        launcher_exit_logged = False
         while not pids:
+            if launcher is not None and launcher.returncode not in (None, 0):
+                self._logger.error("steam_client stage=launcher-exited-before-ready pid=%s returncode=%s",
+                                   launcher.pid, launcher.returncode)
+                raise RuntimeError(f"Steam launcher exited before client readiness (status {launcher.returncode})")
+            if launcher is not None and launcher.returncode == 0 and not launcher_exit_logged:
+                self._logger.info("steam_client stage=launcher-exited-successfully waiting-for-daemon pid=%s",
+                                  launcher.pid)
+                launcher_exit_logged = True
+            if self._owned_client_pgid is not None:
+                owned_launchers = set(self._owned_client_pids)
+                exited = [pid for pid in owned_launchers if not Path(f"/proc/{pid}").exists()]
+                if exited and asyncio.get_running_loop().time() < deadline:
+                    self._logger.info("steam_client stage=launcher-exited-before-client pids=%s", exited)
             if asyncio.get_running_loop().time() >= deadline:
+                self._logger.error("steam_client stage=readiness-timeout timeout_s=%.3f owned_pids=%s",
+                                   timeout, sorted(self._owned_client_pids))
                 raise TimeoutError("Steam client did not become ready")
             await asyncio.sleep(self.poll_interval)
             pids = self._steam_client_pids()

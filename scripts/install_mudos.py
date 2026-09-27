@@ -17,6 +17,19 @@ class InstallError(RuntimeError):
     pass
 
 
+SYSTEMD_UNITS = {
+    "lulu.target": "lulu.target", "lulu-session@.service": "lulu-session@.service",
+    "lulu-consoled.service": "lulu-consoled.service", "lulu-acquisition.service": "lulu-acquisition.service",
+    "lulu-admin.service": "lulu-admin.service",
+    "lulu-provider-install@.service": "lulu-provider-install@.service",
+    "mudos-recovery.service": "mudos-recovery.service", "mudos-recovery-guard.service": "mudos-recovery-guard.service",
+    "mudos-recovery-ui.service": "mudos-recovery-ui.service", "lulu-inputplumber-hotplug.service": "lulu-inputplumber-hotplug.service",
+    "lulu-osk@.service": "lulu-osk@.service", "lulu-file-browser.service": "lulu-file-browser.service",
+    "lulu-transmission-config.service": "lulu-transmission-config.service",
+    "lulu-questarr-reconcile.service": "lulu-questarr-reconcile.service",
+}
+
+
 def load_manifest(path: Path) -> dict:
     data = json.loads(path.read_text())
     if data.get("schema") != 1:
@@ -292,6 +305,13 @@ def plan(repo: Path, manifest: dict, action: str, *, purge: bool = False) -> lis
                 "install only missing shared pacman dependencies",
                 "install manifest-owned system integration", "initialize writable directories without overwriting state",
                 "enable/start Mudos core and Recovery services; leave OOBE incomplete"]
+    if action == "update":
+        sha, _ = source_revision(repo)
+        return [f"build and verify immutable release from {sha}",
+                "atomically switch /opt/lulu/current while preserving all mutable state",
+                "refresh Mudos-owned systemd unit definitions only",
+                "restart active Mudos runtime services from the selected release",
+                "verify service provenance; retain old release for rollback"]
     if action == "uninstall":
         return ["stop and disable owned Mudos services", "remove manifest-owned system integration",
                 *[f"remove system-owned path {p}" for p in integration_paths(manifest)],
@@ -336,24 +356,10 @@ def stop_services(apply: bool, manifest: dict, *, stop_host_mounts: bool) -> Non
 
 
 def install_integration(repo: Path, release: Path, manifest: dict,
-                       *, session_was_active: bool = False) -> None:
+                        *, session_was_active: bool = False) -> None:
     root = Path("/")
     packaging = release / "packaging"
-    systemd = {
-        "lulu.target": "lulu.target", "lulu-session@.service": "lulu-session@.service",
-        "lulu-consoled.service": "lulu-consoled.service", "lulu-acquisition.service": "lulu-acquisition.service",
-        "mudos-recovery.service": "mudos-recovery.service", "mudos-recovery-guard.service": "mudos-recovery-guard.service",
-        "mudos-recovery-ui.service": "mudos-recovery-ui.service", "lulu-inputplumber-hotplug.service": "lulu-inputplumber-hotplug.service",
-        "lulu-osk@.service": "lulu-osk@.service", "lulu-file-browser.service": "lulu-file-browser.service",
-        "lulu-transmission-config.service": "lulu-transmission-config.service",
-        "lulu-questarr-reconcile.service": "lulu-questarr-reconcile.service",
-    }
-    for source, target in systemd.items():
-        text = (packaging / source).read_text()
-        dest = root / "etc/systemd/system" / target
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        dest.write_text(text)
-        dest.chmod(0o644)
+    _install_systemd_units(packaging)
     # The provider installer may write only to each active Mudos acquisition
     # subtree. Keep the target-specific exception explicit and ownership-scoped.
     storage_dropin = Path("/etc/systemd/system/lulu-provider-install@.service.d/storage.conf")
@@ -443,6 +449,167 @@ def start_runtime(*, session_was_active: bool) -> None:
         # sessiond, Consoled and Acquisitiond processes all reload the selected
         # immutable release; a fresh install still starts the target once.
         run(["systemctl", "restart", "lulu-session@2.service"])
+
+
+def _install_systemd_units(packaging: Path,
+                           systemd_root: Path = Path("/etc/systemd/system")) -> None:
+    for source, target in SYSTEMD_UNITS.items():
+        text = (packaging / source).read_text()
+        dest = systemd_root / target
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_text(text)
+        dest.chmod(0o644)
+
+
+def _session_state() -> dict[str, object]:
+    result = run([
+        "runuser", "-u", "lulu", "--", "env", "XDG_RUNTIME_DIR=/run/user/958",
+        "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/958/bus", "busctl", "--user",
+        "--json=short", "call", "org.lulu.ConsoleSessiond", "/org/lulu/ConsoleSession",
+        "org.lulu.ConsoleSession", "GetState",
+    ], capture=True)
+    envelope = json.loads(result.stdout)
+    state = json.loads(envelope["data"][0])
+    if not isinstance(state, dict):
+        raise InstallError("Sessiond returned invalid lifecycle state")
+    return state
+
+
+def _active(unit: str) -> bool:
+    return run(["systemctl", "is-active", unit], check=False, capture=True).returncode == 0
+
+
+def _main_pid(unit: str) -> int:
+    result = run(["systemctl", "show", "--property=MainPID", "--value", unit], capture=True)
+    try:
+        return int(result.stdout.strip())
+    except ValueError as error:
+        raise InstallError(f"could not read Mudos service PID for {unit}") from error
+
+
+def _restart_update_services(active_units: list[str]) -> None:
+    # Sessiond's PartOf edges restart Consoled and Acquisitiond with the shell.
+    order = ("lulu-session@2.service", "lulu-admin.service", "mudos-recovery.service",
+             "lulu-file-browser.service")
+    for unit in order:
+        if unit in active_units:
+            run(["systemctl", "restart", unit])
+
+
+def _verify_update_services(active_units: list[str], previous_pids: dict[str, int]) -> None:
+    expected_pythonpath = {"/opt/lulu/lib", "/opt/lulu/current/lib"}
+    for unit in active_units:
+        if not _active(unit):
+            raise InstallError(f"Mudos service did not return active after update: {unit}")
+        if unit not in {"lulu-session@2.service", "lulu-admin.service", "mudos-recovery.service",
+                        "lulu-consoled.service", "lulu-acquisition.service"}:
+            continue
+        try:
+            pid = _main_pid(unit)
+            environment = Path(f"/proc/{pid}/environ").read_bytes().split(b"\0")
+        except (OSError, ValueError) as error:
+            raise InstallError(f"could not inspect updated Mudos process for {unit}") from error
+        if pid <= 1 or pid == previous_pids.get(unit):
+            raise InstallError(f"Mudos service was not replaced by the update: {unit}")
+        values = {entry.decode(errors="replace") for entry in environment}
+        pythonpath = next((item.partition("=")[2] for item in values
+                           if item.startswith("PYTHONPATH=")), "")
+        install_root = next((item.partition("=")[2] for item in values
+                             if item.startswith("LULU_INSTALL_ROOT=")), "")
+        if pythonpath not in expected_pythonpath or install_root != "/opt/lulu/current":
+            raise InstallError(f"Mudos service is not using the selected runtime: {unit}")
+
+
+def do_update(repo: Path, manifest: dict, dry_run: bool,
+              systemd_root: Path = Path("/etc/systemd/system")) -> None:
+    sha, _branch = source_revision(repo)
+    if dry_run:
+        for item in plan(repo, manifest, "update"):
+            print("would " + item)
+        return
+    if os.geteuid() != 0:
+        raise InstallError("update needs root; rerun as root or with sudo")
+    selector = Path(manifest["immutable"]["selector"])
+    release_root = Path(manifest["immutable"]["release_root"])
+    if not selector.is_symlink():
+        raise InstallError("--update requires an existing immutable Mudos installation")
+    previous = selector.resolve(strict=True)
+    if previous.parent != release_root.resolve():
+        raise InstallError("current selector is not a direct child of the immutable release root")
+    run([sys.executable, str(repo / "scripts/release.py"), "verify", "--release-dir", str(previous)])
+    previous_metadata = dict(line.split("=", 1) for line in (previous / "RELEASE").read_text().splitlines()
+                             if "=" in line)
+    if previous_metadata.get("status") != "clean" or previous_metadata.get("immutable") != "true":
+        raise InstallError("current selector does not point to a clean immutable rollback release")
+    before_state = _session_state()
+    if before_state.get("lifecycle") != "shell":
+        raise InstallError("--update is allowed only while the Mudos shell owns the session")
+    active_units = [unit for unit in ("lulu-session@2.service", "lulu-consoled.service",
+                                      "lulu-acquisition.service", "lulu-admin.service",
+                                      "mudos-recovery.service", "lulu-file-browser.service")
+                    if _active(unit)]
+    if "lulu-session@2.service" not in active_units:
+        raise InstallError("--update requires the normal Mudos graphical session to be active")
+    previous_pids = {unit: _main_pid(unit) for unit in active_units}
+    release = existing_release(release_root, sha)
+    if release is None:
+        release = release_root / f"{sha[:7]}-candidate-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}"
+        run([sys.executable, str(repo / "scripts/release.py"), "build", "--repo-root", str(repo),
+             "--release-dir", str(release)])
+    run([sys.executable, str(repo / "scripts/release.py"), "verify", "--release-dir", str(release)])
+    release = release.resolve(strict=True)
+    metadata = dict(line.split("=", 1) for line in (release / "RELEASE").read_text().splitlines()
+                    if "=" in line)
+    if metadata.get("revision") != sha or metadata.get("status") != "clean" \
+            or metadata.get("immutable") != "true":
+        raise InstallError("update release provenance does not match the clean source revision")
+
+    for raw in manifest["immutable"]["application_roots"]:
+        alias = Path(raw)
+        if alias.exists() and not alias.is_symlink():
+            raise InstallError(f"refusing to replace non-symlink compatibility path: {alias}")
+        if alias.is_symlink() and os.readlink(alias) != f"current/{alias.name}":
+            raise InstallError(f"compatibility selector is not managed by Mudos: {alias}")
+
+    packaging = release / "packaging"
+    old_units: dict[Path, tuple[bytes, int] | None] = {}
+    for target in SYSTEMD_UNITS.values():
+        path = systemd_root / target
+        old_units[path] = (path.read_bytes(), path.stat().st_mode & 0o777) if path.is_file() else None
+    created_aliases: list[Path] = []
+    selected_new_release = False
+    try:
+        _install_systemd_units(packaging, systemd_root)
+        run(["systemctl", "daemon-reload"])
+        run([sys.executable, str(repo / "scripts/release.py"), "activate", "--release-dir", str(release)])
+        selected_new_release = True
+        for raw in manifest["immutable"]["application_roots"]:
+            alias = Path(raw)
+            if not alias.is_symlink():
+                alias.symlink_to(f"current/{alias.name}")
+                created_aliases.append(alias)
+        _restart_update_services(active_units)
+        _verify_update_services(active_units, previous_pids)
+        after_state = _session_state()
+        if after_state.get("lifecycle") != "shell":
+            raise InstallError("updated Sessiond did not restore the normal Mudos shell")
+    except Exception as error:
+        print(f"update validation failed; restoring previous release {previous}: {error}", file=sys.stderr)
+        if selected_new_release:
+            run([sys.executable, str(repo / "scripts/release.py"), "activate", "--release-dir", str(previous)])
+        for path, old in old_units.items():
+            if old is None:
+                path.unlink(missing_ok=True)
+            else:
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(old[0])
+                path.chmod(old[1])
+        for alias in created_aliases:
+            alias.unlink(missing_ok=True)
+        run(["systemctl", "daemon-reload"], check=False)
+        _restart_update_services(active_units)
+        raise
+    print(f"updated immutable release {release} from {sha}; previous release retained at {previous}")
 
 
 def do_install(repo: Path, manifest: dict, dry_run: bool) -> None:
@@ -607,9 +774,12 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--repo-root", type=Path, default=Path(__file__).resolve().parents[1])
     parser.add_argument("--dry-run", action="store_true")
-    parser.add_argument("--verify", action="store_true")
-    parser.add_argument("--uninstall", action="store_true")
-    parser.add_argument("--purge-user-data", action="store_true")
+    modes = parser.add_mutually_exclusive_group()
+    modes.add_argument("--verify", action="store_true")
+    modes.add_argument("--uninstall", action="store_true")
+    modes.add_argument("--purge-user-data", action="store_true")
+    modes.add_argument("--update", action="store_true",
+                       help="deploy a verified immutable release without resetting user state")
     args = parser.parse_args()
     try:
         repo = args.repo_root.resolve()
@@ -624,6 +794,8 @@ def main() -> int:
             verify(repo, manifest)
         elif args.uninstall or args.purge_user_data:
             remove_owned(repo, manifest, purge=args.purge_user_data, dry_run=args.dry_run)
+        elif args.update:
+            do_update(repo, manifest, args.dry_run)
         else:
             do_install(repo, manifest, args.dry_run)
     except (InstallError, OSError, subprocess.CalledProcessError, json.JSONDecodeError) as exc:

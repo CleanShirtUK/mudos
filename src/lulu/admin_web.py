@@ -759,8 +759,11 @@ class AdminApp:
 
     def begin_steam_oobe_auth(self) -> dict[str, object]:
         from .provider_readiness import ProviderReadinessStore
+        request_id = secrets.token_hex(6)
+        LOGGER.info("steam_auth_stage stage=admin-request-accepted request_id=%s", request_id)
         current_auth = self.steam_auth_status()
         if current_auth.get("authenticated"):
+            LOGGER.info("steam_auth_stage stage=already-authenticated request_id=%s", request_id)
             return {"status": "authenticated", "message": "Steam is already signed in."}
         readiness = ProviderReadinessStore()
         readiness.set("steam", "authenticating",
@@ -776,14 +779,20 @@ class AdminApp:
                    "sign in there, then return to setup.")
         try:
             result = subprocess.run(
-                ["busctl", "--user", "--json=short", "--timeout=30s", "call", "org.lulu.Consoled",
-                 "/org/lulu/Console", "org.lulu.Console", "BeginPluginAuthentication", "s", "steam"],
-                stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=35,
+                ["busctl", "--user", "--json=short", "--timeout=70s", "call", "org.lulu.Consoled",
+                 "/org/lulu/Console", "org.lulu.Console", "BeginPluginAuthenticationTraced",
+                 "ss", "steam", request_id],
+                stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=75,
                 check=False, env=environment)
         except subprocess.TimeoutExpired:
-            readiness.set("steam", "authorization_pending", message=message)
-            return {"status": "authorization_pending", "message": message}
+            LOGGER.error("steam_auth_stage stage=consoled-request-timeout request_id=%s", request_id)
+            readiness.set("steam", "auth_failed",
+                          message="Steam launch request timed out before a surface token was returned.")
+            return {"status": "request_timeout", "message":
+                    "Steam did not finish starting its sign-in surface. Check Consoled, Sessiond, and Gamescope logs."}
         if result.returncode:
+            LOGGER.error("steam_auth_stage stage=consoled-request-failed request_id=%s returncode=%s stderr=%s",
+                         request_id, result.returncode, (result.stderr or result.stdout or "")[-1000:])
             readiness.set("steam", "auth_failed",
                           message="Consoled could not accept the Steam launch request.")
             raise RuntimeError("Mudos could not launch Steam sign-in. Check the console session and retry.")
@@ -794,6 +803,8 @@ class AdminApp:
             launch = json.loads(response["data"][0]).get("launch", "")
         except (ValueError, TypeError, KeyError, IndexError):
             launch = ""
+        LOGGER.info("steam_auth_stage stage=consoled-request-complete request_id=%s token=%s",
+                    request_id, launch or "none")
         return {"status": "authorization_pending", "launch": launch,
                 "message": "Steam is open. Complete QR sign-in or Steam Guard approval on the console."}
 

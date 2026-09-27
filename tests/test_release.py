@@ -15,6 +15,9 @@ SPEC.loader.exec_module(release)
 
 
 class ReleaseToolTests(unittest.TestCase):
+    def test_steam_normal_runtime_acceptance_harness_is_required_in_release(self):
+        self.assertIn("scripts/steam-auth-surface.py", release.REQUIRED_FILES)
+
     def git_repo(self):
         root = Path(tempfile.mkdtemp())
         subprocess.run(["git", "init", "-q", "-b", "main"], cwd=root, check=True)

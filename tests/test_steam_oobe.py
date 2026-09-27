@@ -56,11 +56,14 @@ class SteamOobeTests(unittest.TestCase):
         async def exercise():
             interface = object.__new__(ConsoleInterface)
             launch = SimpleNamespace(command=["steam"], controller_mode="gamepad")
-            provider = SimpleNamespace(provider_id="steam", standalone_launch=launch,
-                                      ensure_client=AsyncMock())
+            provider = SimpleNamespace(provider_id="steam", standalone_launch=launch)
+            steam_runtime = SimpleNamespace(
+                ensure_client=AsyncMock(), _steam_client_pids=Mock(return_value=[1234]),
+                process_snapshot=Mock(return_value=[{"pid": 1234}]), open_main=Mock(),
+                hide_main=Mock(), main_window_visible=Mock(return_value=True),
+                desktop_pids=Mock(return_value=[1234]), main_window_focused=Mock(return_value=True))
             interface._providers = SimpleNamespace(get=lambda _provider: provider)
-            interface.catalogue = SimpleNamespace(provider=SimpleNamespace(
-                open_main=Mock(), hide_main=Mock()))
+            interface.catalogue = SimpleNamespace(provider=steam_runtime)
             interface.sessiond = SimpleNamespace(
                 call_begin_provider_session=AsyncMock(return_value="setup-token"))
             interface._local_process = None
@@ -79,8 +82,8 @@ class SteamOobeTests(unittest.TestCase):
                 token = await ConsoleInterface._launch_provider_standalone(
                     interface, "steam", 15000)
             self.assertEqual(token, "setup-token")
-            provider.ensure_client.assert_awaited_once_with()
-            interface.catalogue.provider.open_main.assert_called_once_with()
+            steam_runtime.ensure_client.assert_awaited_once_with()
+            steam_runtime.open_main.assert_called_once_with()
             args = interface.sessiond.call_begin_provider_session.await_args.args
             self.assertEqual(args[:2], ("steam", "gamepad"))
             self.assertEqual(args[2], process.pid)
@@ -90,6 +93,24 @@ class SteamOobeTests(unittest.TestCase):
                 task.close()
 
         asyncio.run(exercise())
+
+    def test_consoled_auth_returns_without_opening_surface_when_already_authenticated(self):
+        import asyncio
+        import json
+        from unittest.mock import AsyncMock
+        from lulu.consoled import ConsoleInterface
+
+        authentication = type("Auth", (), {
+            "status": lambda self: {"authenticated": True, "account": "fixture"},
+            "begin": lambda self: {"provider_id": "steam"},
+        })()
+        interface = object.__new__(ConsoleInterface)
+        interface._plugins = type("Plugins", (), {
+            "for_plugin": lambda self, _plugin, _capability: [authentication]})()
+        interface._launch_provider_standalone = AsyncMock()
+        response = json.loads(asyncio.run(interface._begin_plugin_authentication("steam", "fixture")))
+        self.assertEqual(response["status"], "authenticated")
+        interface._launch_provider_standalone.assert_not_awaited()
 
     def test_authenticated_steam_does_not_launch_an_additional_auth_surface(self):
         from lulu.admin_web import AdminApp
@@ -288,7 +309,7 @@ class SteamOobeTests(unittest.TestCase):
         from pathlib import Path
         source = Path(__file__).parents[1] / "src/lulu/admin_web.py"
         text = source.read_text()
-        self.assertIn('"BeginPluginAuthentication", "s", "steam"', text)
+        self.assertIn('"BeginPluginAuthenticationTraced"', text)
         self.assertIn('"authorization_pending"', text)
         self.assertIn("Open Steam sign-in", text)
         begin = text[text.index("def begin_steam_oobe_auth"):text.index("def steam_oobe_auth_status")]
@@ -305,7 +326,7 @@ class SteamOobeTests(unittest.TestCase):
         self.assertIn("QR sign-in or Steam Guard", result["message"])
         self.assertEqual(store.return_value.set.call_args.args[:2],
                          ("steam", "authorization_pending"))
-        self.assertIn("BeginPluginAuthentication", run.call_args.args[0])
+        self.assertIn("BeginPluginAuthenticationTraced", run.call_args.args[0])
 
     def test_setup_dismisses_only_its_owned_steam_signin_surface(self):
         import asyncio
@@ -419,16 +440,16 @@ var fetch=async function(path,options){calls.push(path);let bad=path==='/api/set
         retained = unavailable.evaluate("stored['mudos-setup-steam-launch']", -1)
         self.assertEqual(retained.to_string(), "setup-owned-token")
 
-    def test_delayed_steam_window_does_not_turn_launch_timeout_into_failure(self):
+    def test_steam_launch_timeout_is_reported_as_failure_not_false_pending_state(self):
         from lulu.admin_web import AdminApp
         with patch("lulu.admin_web.subprocess.run", side_effect=__import__(
                 "subprocess").TimeoutExpired("busctl", 35)), \
                 patch("lulu.provider_readiness.ProviderReadinessStore") as store:
             result = AdminApp().begin_steam_oobe_auth()
-        self.assertEqual(result["status"], "authorization_pending")
-        self.assertIn("Mudos screen", result["message"])
+        self.assertEqual(result["status"], "request_timeout")
+        self.assertIn("did not finish starting", result["message"])
         self.assertEqual(store.return_value.set.call_args.args[:2],
-                         ("steam", "authorization_pending"))
+                         ("steam", "auth_failed"))
 
 
 if __name__ == "__main__":

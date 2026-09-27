@@ -289,6 +289,21 @@ class SteamProviderTests(unittest.TestCase):
 
         asyncio.run(exercise())
 
+    def test_fresh_steam_launcher_exit_is_distinguished_from_window_failure(self) -> None:
+        async def exercise() -> None:
+            provider = SteamProvider(poll_interval=0)
+            process = type("Process", (), {"pid": 1564, "returncode": 7})()
+            with patch.object(provider, "_steam_client_pids", return_value=[]), \
+                    patch("lulu.plugins.steam.provider.asyncio.create_subprocess_exec",
+                          new_callable=AsyncMock, return_value=process) as spawn, \
+                    patch("lulu.plugins.steam.provider.os.getpgid", return_value=1564):
+                with self.assertRaisesRegex(RuntimeError, "status 7"):
+                    await provider.ensure_client()
+            spawn.assert_awaited_once()
+            self.assertIn(1564, provider._owned_client_pids)
+
+        asyncio.run(exercise())
+
     def test_open_game_details_detaches_uri_without_waiting(self) -> None:
         provider = SteamProvider(executable="steam")
         with patch("lulu.steam_provider.subprocess.Popen") as popen:

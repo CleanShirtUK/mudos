@@ -1,5 +1,4 @@
 import importlib.util
-import ast
 import json
 from pathlib import Path
 import subprocess
@@ -41,17 +40,107 @@ def test_transmission_admin_config_unit_and_polkit_rule_are_installed_and_purge_
 
 
 def test_every_installer_copied_unit_is_in_the_purge_ownership_contract():
-    tree = ast.parse((ROOT / "scripts/install_mudos.py").read_text())
-    copied_units = None
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Assign) and any(
-                isinstance(target, ast.Name) and target.id == "systemd" for target in node.targets):
-            copied_units = ast.literal_eval(node.value)
-            break
-    assert copied_units is not None
+    copied_units = installer.SYSTEMD_UNITS
     owned = set(manifest()["system_integration"]["systemd_files"])
     missing = {f"/etc/systemd/system/{target}" for target in copied_units.values()} - owned
     assert not missing, f"installer copies Mudos units not owned for purge: {sorted(missing)}"
+
+
+def test_non_destructive_update_plan_has_no_purge_or_mutable_state_actions(monkeypatch):
+    monkeypatch.setattr(installer, "source_revision", lambda _repo: ("a" * 40, "test"))
+    actions = installer.plan(ROOT, manifest(), "update")
+    text = " ".join(actions).casefold()
+    assert "atomically switch /opt/lulu/current" in text
+    assert "preserving all mutable state" in text
+    assert "purge" not in text
+    assert "remove" not in text
+
+
+def test_update_refreshes_only_active_mudos_runtime_units(monkeypatch):
+    calls = []
+    monkeypatch.setattr(installer, "run", lambda args, **_kwargs: calls.append(args))
+    installer._restart_update_services([
+        "lulu-session@2.service", "lulu-consoled.service", "lulu-acquisition.service",
+        "lulu-admin.service", "inputplumber.service", "bluetooth.service"])
+    assert calls == [["systemctl", "restart", "lulu-session@2.service"],
+                     ["systemctl", "restart", "lulu-admin.service"]]
+
+
+def test_systemd_release_copy_uses_only_declared_mudos_units(tmp_path):
+    packaging = tmp_path / "packaging"
+    target = tmp_path / "systemd"
+    packaging.mkdir()
+    for source in installer.SYSTEMD_UNITS:
+        (packaging / source).write_text(f"# {source}\n")
+    installer._install_systemd_units(packaging, target)
+    assert {path.name for path in target.iterdir()} == set(installer.SYSTEMD_UNITS.values())
+
+
+def test_update_selects_verified_release_without_touching_mutable_state(tmp_path, monkeypatch):
+    data = json.loads((ROOT / "packaging/mudos-ownership.json").read_text())
+    release_root = tmp_path / "releases"
+    release_root.mkdir()
+    previous = release_root / "old-immutable"
+    previous.mkdir()
+    (previous / "RELEASE").write_text("revision=" + "b" * 40 + "\nstatus=clean\nimmutable=true\n")
+    selector = tmp_path / "current"
+    selector.symlink_to(previous)
+    alias_root = tmp_path / "aliases"
+    alias_root.mkdir()
+    aliases = [alias_root / name for name in ("bin", "lib", "ui", "config", "scripts")]
+    for alias in aliases:
+        alias.symlink_to("current/" + alias.name)
+    data["immutable"]["release_root"] = str(release_root)
+    data["immutable"]["selector"] = str(selector)
+    data["immutable"]["application_roots"] = [str(path) for path in aliases]
+
+    revision = "a" * 40
+    candidate = release_root / f"{revision[:7]}-candidate-fixture"
+    (candidate / "packaging").mkdir(parents=True)
+    (candidate / "RELEASE").write_text(f"revision={revision}\nstatus=clean\nimmutable=true\n")
+    for source in installer.SYSTEMD_UNITS:
+        (candidate / "packaging" / source).write_text(f"# updated {source}\n")
+    mutable_state = tmp_path / "user-state" / "provider-secret"
+    mutable_state.parent.mkdir()
+    mutable_state.write_text("keep-this-byte-for-byte")
+    before_state = mutable_state.read_bytes()
+
+    monkeypatch.setattr(installer, "source_revision", lambda _repo: (revision, "test"))
+    monkeypatch.setattr(installer.os, "geteuid", lambda: 0)
+    monkeypatch.setattr(installer, "_session_state", lambda: {"lifecycle": "shell"})
+    monkeypatch.setattr(installer, "_active", lambda unit: unit != "lulu-file-browser.service")
+    monkeypatch.setattr(installer, "mutable_paths",
+                        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("mutable paths read")))
+    monkeypatch.setattr(installer, "install_integration",
+                        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("install path reused")))
+    restarted = []
+    monkeypatch.setattr(installer, "_restart_update_services", lambda units: restarted.extend(units))
+    monkeypatch.setattr(installer, "_main_pid", lambda unit: 1000 + len(unit))
+    monkeypatch.setattr(installer, "_verify_update_services", lambda _units, _pids: None)
+    commands = []
+
+    def fake_run(args, **_kwargs):
+        commands.append(args)
+        if len(args) > 2 and args[1].endswith("release.py") and args[2] == "activate":
+            selected = Path(args[args.index("--release-dir") + 1])
+            next_link = selector.with_name(".current.next")
+            next_link.unlink(missing_ok=True)
+            next_link.symlink_to(selected)
+            next_link.replace(selector)
+        return subprocess.CompletedProcess(args, 0, "", "")
+
+    monkeypatch.setattr(installer, "run", fake_run)
+    systemd_root = tmp_path / "etc/systemd/system"
+    installer.do_update(ROOT, data, False, systemd_root=systemd_root)
+
+    assert selector.resolve() == candidate
+    assert previous.is_dir()  # retained immutable rollback release
+    assert mutable_state.read_bytes() == before_state
+    assert restarted == ["lulu-session@2.service", "lulu-consoled.service",
+                         "lulu-acquisition.service", "lulu-admin.service",
+                         "mudos-recovery.service"]
+    assert not any("pacman" in " ".join(command) or "purge" in " ".join(command)
+                   for command in commands)
 
 
 def test_development_validation_dropin_is_purge_owned_and_removed_before_production():

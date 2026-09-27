@@ -1606,7 +1606,8 @@ class ConsoleInterface(ServiceInterface):
     async def LaunchProviderStandalone(self, provider_id: "s", timeout_ms: "u") -> "s":
         return await self._launch_provider_standalone(provider_id, timeout_ms)
 
-    async def _launch_provider_standalone(self, provider_id: str, timeout_ms: int) -> str:
+    async def _launch_provider_standalone(self, provider_id: str, timeout_ms: int,
+                                          request_id: str = "") -> str:
         provider = self._providers.get(provider_id)
         launch = provider.standalone_launch
         if launch is None or not launch.command:
@@ -1635,8 +1636,23 @@ class ConsoleInterface(ServiceInterface):
             # A fresh appliance has no resident Steam client. The lifecycle
             # sentinel owns the delegated surface, not Steam itself; start or
             # reuse the client before dispatching the URI that opens its UI.
-            await provider.ensure_client()
-            await asyncio.to_thread(self.catalogue.provider.open_main)
+            steam_client = self.catalogue.provider
+            if steam_client is None or not hasattr(steam_client, "ensure_client"):
+                raise ValueError("Steam client runtime adapter is unavailable")
+            before_pids = steam_client._steam_client_pids()
+            LOGGER.info("steam_auth_stage stage=client-start-request provider=steam request_id=%s existing_pids=%s",
+                        request_id, before_pids)
+            await steam_client.ensure_client()
+            after_pids = steam_client._steam_client_pids()
+            LOGGER.info("steam_auth_stage stage=client-ready provider=steam request_id=%s disposition=%s pids=%s",
+                        request_id, "reused" if before_pids else "spawned", after_pids)
+            LOGGER.info("steam_auth_stage stage=process-tree provider=steam tree=%s",
+                        steam_client.process_snapshot())
+            if not after_pids:
+                raise RuntimeError("Steam client process did not become observable")
+            LOGGER.info("steam_auth_stage stage=main-surface-request provider=steam request_id=%s",
+                        request_id)
+            await asyncio.to_thread(steam_client.open_main)
             # Steam is already resident and the URI helper exits immediately.
             # Keep a lifecycle-owned sentinel until the user leaves Steam.
             process = await asyncio.create_subprocess_exec(
@@ -1644,6 +1660,8 @@ class ConsoleInterface(ServiceInterface):
                 stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL,
                 start_new_session=True,
             )
+            LOGGER.info("steam_auth_stage stage=lifecycle-sentinel-spawned provider=steam request_id=%s pid=%s pgid=%s",
+                        request_id, process.pid, os.getpgid(process.pid))
         else:
             process = await asyncio.create_subprocess_exec(
                 *command, stdin=asyncio.subprocess.DEVNULL,
@@ -1663,6 +1681,9 @@ class ConsoleInterface(ServiceInterface):
             raise
         self._local_process = process
         self._local_token = token
+        if steam_delegated:
+            LOGGER.info("steam_auth_stage stage=lifecycle-token-created provider=steam request_id=%s token=%s sentinel_pid=%s",
+                        request_id, token, process.pid)
 
         async def apply_provider_controller_mode() -> None:
             # Apply ownership only after the provider has had time to present.
@@ -1690,7 +1711,12 @@ class ConsoleInterface(ServiceInterface):
                 except FileNotFoundError:
                     pass
             if steam_delegated:
-                await asyncio.to_thread(self.catalogue.provider.hide_main)
+                try:
+                    await asyncio.to_thread(self.catalogue.provider.hide_main)
+                    LOGGER.info("steam_auth_stage stage=surface-hidden token=%s sentinel_pid=%s exit_code=%s",
+                                token, process.pid, exit_code)
+                except Exception:
+                    LOGGER.exception("steam_auth_stage stage=surface-hide-failed token=%s", token)
             try:
                 await self.sessiond.call_end_local_session(token, exit_code)
             except Exception:
@@ -1699,15 +1725,30 @@ class ConsoleInterface(ServiceInterface):
             if self._local_token == token:
                 self._local_process = None
                 self._local_token = None
+                if steam_delegated:
+                    LOGGER.info("steam_auth_stage stage=lifecycle-token-retired token=%s", token)
         if steam_delegated:
             async def watch_steam_window() -> None:
                 # Steam's URI helper and update/web bootstrap can take several
                 # seconds before the final main window is mapped. Do not
                 # interpret that startup gap as a user closing Steam.
-                for _ in range(20):
-                    if await asyncio.to_thread(self.catalogue.provider.main_window_visible):
+                deadline = asyncio.get_running_loop().time() + 60.0
+                visibility_warning_logged = False
+                while process.returncode is None and asyncio.get_running_loop().time() < deadline:
+                    visibility = await asyncio.to_thread(self.catalogue.provider.main_window_visibility)
+                    if visibility is True:
+                        LOGGER.info("steam_auth_stage stage=window-ready token=%s pids=%s",
+                                    token, self.catalogue.provider.desktop_pids())
                         break
-                    await asyncio.sleep(1)
+                    if visibility is None and not visibility_warning_logged:
+                        LOGGER.warning("steam_auth_stage stage=window-visibility-unobservable token=%s; preserving surface",
+                                       token)
+                        visibility_warning_logged = True
+                    await asyncio.sleep(0.1)
+                else:
+                    if process.returncode is None:
+                        LOGGER.error("steam_auth_stage stage=window-readiness-timeout token=%s pids=%s",
+                                     token, self.catalogue.provider.desktop_pids())
                 while process.returncode is None:
                     state = json.loads(await self.sessiond.call_get_state())
                     if state.get("lifecycle") == "game":
@@ -1716,11 +1757,19 @@ class ConsoleInterface(ServiceInterface):
                         if state.get("input_mode") != desired:
                             await self.sessiond.call_set_input_mode(desired)
                             LOGGER.info("focused provider controller mode applied provider=steam mode=%s", desired)
-                    visible = await asyncio.to_thread(self.catalogue.provider.main_window_visible)
-                    if not visible:
+                    visibility = await asyncio.to_thread(self.catalogue.provider.main_window_visibility)
+                    if visibility is False:
+                        LOGGER.info("steam_auth_stage stage=owned-surface-dismissed token=%s reason=window-not-visible",
+                                    token)
                         process.terminate()
                         return
-                    await asyncio.sleep(1)
+                    if visibility is None and not visibility_warning_logged:
+                        LOGGER.warning("steam_auth_stage stage=window-visibility-unobservable token=%s; preserving surface",
+                                       token)
+                        visibility_warning_logged = True
+                    elif visibility is True:
+                        visibility_warning_logged = False
+                    await asyncio.sleep(0.1)
             asyncio.create_task(watch_steam_window())
         asyncio.create_task(reap())
         LOGGER.info("standalone provider started provider=%s command=%r token=%s", provider.provider_id, command, token)
@@ -2091,14 +2140,50 @@ class ConsoleInterface(ServiceInterface):
 
     @method()
     async def BeginPluginAuthentication(self, plugin_id: "s") -> "s":
+        return await self._begin_plugin_authentication(plugin_id, "direct")
+
+    @method()
+    async def BeginPluginAuthenticationTraced(self, plugin_id: "s", request_id: "s") -> "s":
+        """Same OOBE operation with a caller correlation ID for diagnostics."""
+        safe_id = request_id if (len(request_id) <= 64 and all(
+            character.isalnum() or character in "-_" for character in request_id)) else "invalid"
+        return await self._begin_plugin_authentication(plugin_id, safe_id or "direct")
+
+    async def _begin_plugin_authentication(self, plugin_id: str, request_id: str) -> str:
+        try:
+            return await self._begin_plugin_authentication_impl(plugin_id, request_id)
+        except DBusError:
+            raise
+        except Exception as error:
+            LOGGER.exception("steam_auth_stage stage=request-failed provider=%s request_id=%s",
+                             plugin_id, request_id)
+            raise DBusError("org.lulu.Console.Error.AuthenticationUnavailable", str(error)) from error
+
+    async def _begin_plugin_authentication_impl(self, plugin_id: str, request_id: str) -> str:
+        LOGGER.info("steam_auth_stage stage=request-accepted provider=%s request_id=%s",
+                    plugin_id, request_id)
         auth = self._plugins.for_plugin(plugin_id, "authentication")
         if not auth:
             raise DBusError("org.lulu.Console.Error.PluginUnavailable", "plugin authentication unavailable")
+        if plugin_id == "steam":
+            status = auth[0].status()
+            if status.get("authenticated"):
+                LOGGER.info("steam_auth_stage stage=already-authenticated provider=steam request_id=%s",
+                            request_id)
+                return json.dumps({"status": "authenticated", "authentication": status},
+                                  separators=(",", ":"))
         result = auth[0].begin()
         provider_id = str(result.get("provider_id", "")) if isinstance(result, dict) else ""
         if provider_id:
-            return json.dumps({"status": "surface_requested",
-                               "launch": await self._launch_provider_standalone(provider_id, 15000)},
+            try:
+                launch = await self._launch_provider_standalone(provider_id, 15000, request_id)
+            except Exception:
+                LOGGER.exception("steam_auth_stage stage=surface-request-failed provider=%s request_id=%s",
+                                 provider_id, request_id)
+                raise
+            LOGGER.info("steam_auth_stage stage=request-complete provider=%s request_id=%s token=%s",
+                        provider_id, request_id, launch)
+            return json.dumps({"status": "surface_requested", "launch": launch},
                               separators=(",", ":"))
         return json.dumps(result, separators=(",", ":"))
 

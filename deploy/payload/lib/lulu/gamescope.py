@@ -145,6 +145,18 @@ class GamescopePresentation:
         values = [int(value, 0) for value in re.findall(r"0x[0-9a-fA-F]+|\d+", output.split("=", 1)[-1])]
         return [tuple(values[index : index + 3]) for index in range(0, len(values) - 2, 3)]
 
+    def focusable_windows(self) -> list[tuple[int, int, int]]:
+        """Expose the current Xwayland/Gamescope candidate set for diagnostics."""
+        return self._focusable_windows()
+
+    def selected_base_window(self) -> int | None:
+        try:
+            output = self._xprop("GAMESCOPECTRL_BASELAYER_WINDOW")
+        except (OSError, subprocess.CalledProcessError):
+            return None
+        values = re.findall(r"0x[0-9a-fA-F]+|(?<![A-Za-z])\d+", output.split("=", 1)[-1])
+        return int(values[0], 0) if values else None
+
     def window_for_pid(self, pid: int, timeout: float = 2.0) -> int:
         deadline = time.monotonic() + timeout
         while True:
@@ -186,12 +198,19 @@ class GamescopePresentation:
 
     def window_for_pids(self, pids: list[int] | Callable[[], list[int]], timeout: float = 10.0) -> int:
         deadline = time.monotonic() + timeout
+        wanted: set[int] = set()
+        windows: list[tuple[int, int, int]] = []
         while True:
             wanted = set(pids() if callable(pids) else pids)
-            for window, _app_id, window_pid in self._focusable_windows():
+            windows = self._focusable_windows()
+            for window, app_id, window_pid in windows:
                 if window_pid in wanted or any(self._is_descendant(window_pid, pid) for pid in wanted):
+                    self._logger.info("gamescope_surface_selection stage=eligible-window-found wanted_pids=%s candidates=%s selected=%s",
+                                      sorted(wanted), windows, (window, app_id, window_pid))
                     return window
             if time.monotonic() >= deadline:
+                self._logger.error("gamescope_surface_selection stage=eligible-window-timeout wanted_pids=%s candidates=%s",
+                                   sorted(wanted), windows)
                 raise TimeoutError(f"Gamescope window for process set {sorted(wanted)} was not found")
             time.sleep(self.poll_interval)
 
@@ -200,11 +219,16 @@ class GamescopePresentation:
 
     def select_pids(self, pids: list[int] | Callable[[], list[int]], timeout: float = 10.0) -> int:
         window = self.window_for_pids(pids, timeout)
-        self._logger.info("select process set=%s window=%s", pids() if callable(pids) else pids, window)
+        requested_pids = pids() if callable(pids) else pids
+        self._logger.info("gamescope_surface_selection stage=select-request pids=%s window=%s",
+                          requested_pids, window)
         self._xprop(
             "-f", "GAMESCOPECTRL_BASELAYER_WINDOW", "32c", "-set",
             "GAMESCOPECTRL_BASELAYER_WINDOW", str(window),
         )
+        selected = self.selected_base_window()
+        self._logger.info("gamescope_surface_selection stage=select-result requested_window=%s selected_window=%s accepted=%s",
+                          window, selected, selected == window)
         return window
 
     def ensure_shell(self, pid: int) -> int:
