@@ -2,7 +2,14 @@ import os
 import shutil
 import subprocess
 import unittest
+import asyncio
+import json
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
+
+from lulu.consoled import ConsoleInterface
+from lulu.providers.model import GuideAction
 
 
 ROOT = Path(__file__).parents[1]
@@ -11,6 +18,29 @@ SHELL_PROFILE = (ROOT / "config" / "inputplumber" / "profiles" / "shell.yaml").r
 
 
 class ConsoleUiTests(unittest.TestCase):
+    def test_dolphin_guide_quit_routes_through_sessiond_identity(self) -> None:
+        interface = ConsoleInterface.__new__(ConsoleInterface)
+        interface._base_guide = ()
+        interface._mudos_guide = ()
+        interface._providers = SimpleNamespace(
+            get=lambda provider: SimpleNamespace(provider_id=provider),
+            guide_actions=lambda provider, context: (
+                GuideAction("dolphin-quit", "Quit Dolphin", "quit",
+                            "process-group-terminate", ("game", "standalone"), False, 90),
+            ),
+        )
+        interface.sessiond = SimpleNamespace(
+            call_get_state=AsyncMock(return_value=json.dumps({
+                "lifecycle": "game", "provider_id": "dolphin", "session_kind": "game",
+            })),
+            call_quit_active_session=AsyncMock(),
+        )
+        result = asyncio.run(ConsoleInterface.ExecuteGuideAction.__wrapped__(
+            interface, "dolphin-quit",
+        ))
+        self.assertEqual(result, "executed")
+        interface.sessiond.call_quit_active_session.assert_awaited_once_with()
+
     def test_store_reveal_clips_at_screen_edge_without_moving_rail(self) -> None:
         viewport = QML.split("id: homeCardViewport", 1)[1].split("id: homeContent", 1)[0]
         reveal = QML.split("id: storeReveal", 1)[1].split("id: systemReveal", 1)[0]

@@ -305,13 +305,17 @@ def ensure_provider_controller_config(
         _write_if_changed(path, source)
         wiimote_path = dolphin_root / "WiimoteNew.ini"
         wiimote_source = wiimote_path.read_text(encoding="utf-8") if wiimote_path.exists() else ""
-        wiimote_source = _replace_section(
-            wiimote_source, "Wiimote1", _dolphin_classic_values(
-                *_identity((controller_identities or {}).get(1), device_indices.get(1, 0)),
-                nintendo_layout,
-            ),
-        )
-        _write_if_changed(wiimote_path, wiimote_source)
+        if not real_wiimote_passthrough:
+            # This emulated Classic Controller profile is for normalized
+            # gamepads only. Native Bluetooth passthrough remotes bypass SDL
+            # and must never inherit the global Nintendo face-button mapping.
+            wiimote_source = _replace_section(
+                wiimote_source, "Wiimote1", _dolphin_classic_values(
+                    *_identity((controller_identities or {}).get(1), device_indices.get(1, 0)),
+                    nintendo_layout,
+                ),
+            )
+            _write_if_changed(wiimote_path, wiimote_source)
         dolphin_path = dolphin_root / "Dolphin.ini"
         dolphin_source = dolphin_path.read_text(encoding="utf-8") if dolphin_path.exists() else ""
         sidevices = {f"SIDevice{port}": "6" if port < player_count else "0" for port in range(4)}

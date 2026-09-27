@@ -55,6 +55,20 @@ class GuideKeyboardRecoveryTests(unittest.TestCase):
         self.assertIn('"ui_back"', self.shell)
         self.assertIn("handleCommand", self.guide)
 
+    def test_b_dismisses_only_the_guide_surface_and_quit_never_uses_window_owner_pid(self) -> None:
+        back = self.guide.split('else if (action == QStringLiteral("ui_back"))', 1)[1].split(
+            'else if (action == QStringLiteral("ui_guide"))', 1
+        )[0]
+        self.assertIn("QCoreApplication::quit();", back)
+        self.assertNotIn("executeAction", back)
+        self.assertIn('target == "process-group-terminate"', self.guide)
+        self.assertIn("Never signal the PID or", self.guide)
+        self.assertIn("call_quit_active_session", (ROOT / "src/lulu/consoled.py").read_text())
+        compat = (ROOT / "config/inputplumber/profiles/compat.yaml").read_text()
+        b_mapping = compat.split("- name: B escape", 1)[1].split("- name: Menu enter", 1)[0]
+        self.assertIn("button: East", b_mapping)
+        self.assertIn("dbus: ui_back", b_mapping)
+
     def test_controller_guide_boundary_remains_present(self) -> None:
         self.assertIn('event == QStringLiteral("ui_guide")', self.shell)
         self.assertIn('guideProcess_->write("ui_guide edge=down\\n")', self.shell)

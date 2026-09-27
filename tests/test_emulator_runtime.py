@@ -355,6 +355,39 @@ class EmulatorRuntimeTests(unittest.TestCase):
             self.assertIn("WiimoteSource0 = 2", dolphin_ini.read_text())
             self.assertIn("Buttons/A = `Button B`", passthrough.with_name("GCPadNew.ini").read_text())
 
+    def test_passthrough_keeps_native_wiimote_mapping_out_of_global_nintendo_projection(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            dolphin_root = root / "dolphin-emu" / "Config"
+            dolphin_root.mkdir(parents=True)
+            native_remote = dolphin_root / "WiimoteNew.ini"
+            original = "[Wiimote1]\nDevice = Bluetooth passthrough\nButtons/A = `A`\n"
+            native_remote.write_text(original)
+            generated = ensure_provider_controller_config(
+                "dolphin", root, 2, {1: 0, 2: 2},
+                nintendo_layout=True, real_wiimote_passthrough=True,
+            )
+            gc_pads = generated.read_text()
+            native_remote_content = native_remote.read_text()
+        self.assertEqual(native_remote_content, original)
+        self.assertIn("Buttons/A = `Button B`", gc_pads)
+        self.assertIn("[GCPad2]", gc_pads)
+        self.assertIn("Device = SDL/2/SDL Gamepad", gc_pads)
+
+    def test_dolphin_profiles_disambiguate_two_identical_gamepads_by_live_index(self) -> None:
+        pads = {
+            1: {"sdl_index": 0, "sdl_name": "Xbox 360 Wireless Controller"},
+            2: {"sdl_index": 2, "sdl_name": "Xbox 360 Wireless Controller"},
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            generated = ensure_provider_controller_config(
+                "dolphin", Path(directory), 2, {1: 0, 2: 2},
+                controller_identities=pads, nintendo_layout=True,
+            )
+            content = generated.read_text()
+        self.assertIn("[GCPad1]\nDevice = SDL/0/Xbox 360 Wireless Controller", content)
+        self.assertIn("[GCPad2]\nDevice = SDL/2/Xbox 360 Wireless Controller", content)
+
     def test_runtime_dolphin_profiles_target_the_active_xdg_native_config_tree(self) -> None:
         from lulu.paths import PATHS
         from lulu.dolphin_passthrough import dolphin_config_path
@@ -390,6 +423,21 @@ class EmulatorRuntimeTests(unittest.TestCase):
         self.assertIn('input_b_btn = "1"', disabled_content)
         self.assertIn('input_x_btn = "2"', disabled_content)
         self.assertIn('input_y_btn = "3"', disabled_content)
+
+    def test_retroarch_two_identical_pads_use_distinct_indices_and_shared_layout(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            autoconfig = ensure_retroarch_autoconfig(root, nintendo_layout=True)
+            child_path = Path(_retroarch_child_config({1: 0, 2: 2}, autoconfig))
+            try:
+                child = child_path.read_text()
+                profile = next(autoconfig.glob("*.cfg")).read_text()
+            finally:
+                child_path.unlink(missing_ok=True)
+        self.assertIn('input_player1_joypad_index = "0"', child)
+        self.assertIn('input_player2_joypad_index = "2"', child)
+        self.assertIn('input_a_btn = "1"', profile)
+        self.assertIn('input_b_btn = "0"', profile)
 
     def test_retroarch_profile_is_generic_to_normalized_pads_and_players(self) -> None:
         fixtures = (
