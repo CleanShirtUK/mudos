@@ -1,5 +1,6 @@
 import unittest
 import asyncio
+import time
 from unittest.mock import AsyncMock, patch
 
 from lulu.console_sessiond import SessionStateModel
@@ -179,7 +180,7 @@ class SessionModelTests(unittest.TestCase):
     def test_presentation_timeout_releases_owned_identity(self) -> None:
         async def exercise() -> None:
             class MissingSurface:
-                def select_pids(self, _pids, _timeout):
+                def select_pids(self, _pids, _timeout, _process_alive=None):
                     raise TimeoutError("surface absent")
 
             session = SessionStateModel()
@@ -190,6 +191,65 @@ class SessionModelTests(unittest.TestCase):
                     presentation_controller=MissingSurface(),
                 )
             self.assertIsNone(supervisor.active_identity)
+            self.assertEqual(session.state.lifecycle, Lifecycle.SHELL)
+
+        asyncio.run(exercise())
+
+    def test_launch_process_exit_aborts_surface_wait_and_records_terminal_result(self) -> None:
+        async def exercise() -> None:
+            class MissingSurface:
+                def select_pids(self, pids, _timeout, process_alive=None):
+                    self.pids = pids()
+                    self.process_alive = process_alive
+                    if process_alive is not None and not process_alive():
+                        raise RuntimeError("owned game process tree exited before a Gamescope window appeared")
+                    raise AssertionError("short-lived command should be detected as exited")
+
+            session = SessionStateModel()
+            presentation = MissingSurface()
+            supervisor = ProcessSupervisor(session)
+            with self.assertRaisesRegex(ValueError, "process tree exited"):
+                await supervisor.launch(["/bin/sh", "-c", "exit 23"], 1000,
+                                        presentation_controller=presentation)
+            self.assertFalse(presentation.process_alive())
+            self.assertEqual(session.state.lifecycle, Lifecycle.SHELL)
+            self.assertIsNone(supervisor.active_identity)
+            self.assertEqual(session.last_result.outcome, "presentation-failed")
+            self.assertEqual(session.last_result.exit_code, 23)
+
+        asyncio.run(exercise())
+
+    def test_gamescope_target_tracks_child_after_launcher_handoff(self) -> None:
+        async def exercise() -> None:
+            class ChildSurface:
+                def __init__(self) -> None:
+                    self.selected_pids = []
+                    self.process_alive = None
+
+                def select_pids(self, pids, _timeout, process_alive=None):
+                    self.process_alive = process_alive
+                    deadline = time.monotonic() + 2
+                    while time.monotonic() < deadline:
+                        self.selected_pids = pids()
+                        if any(pid != supervisor._process.pid for pid in self.selected_pids):
+                            return 0x123
+                        if process_alive is not None and not process_alive():
+                            raise RuntimeError("owned game process tree exited before a Gamescope window appeared")
+                        time.sleep(0.01)
+                    raise TimeoutError("launcher child was not retained in the owned process group")
+
+            session = SessionStateModel()
+            presentation = ChildSurface()
+            supervisor = ProcessSupervisor(session)
+            token = await supervisor.launch(
+                ["/bin/bash", "-c", "sleep 1.5 & exit 0"], 1000,
+                presentation_controller=presentation,
+            )
+            self.assertTrue(any(pid != supervisor.active_identity.pid
+                                for pid in presentation.selected_pids))
+            self.assertTrue(presentation.process_alive())
+            self.assertEqual(session.state.launch_token, token)
+            await supervisor._watch_task
             self.assertEqual(session.state.lifecycle, Lifecycle.SHELL)
 
         asyncio.run(exercise())

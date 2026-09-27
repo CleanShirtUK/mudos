@@ -216,13 +216,13 @@ class GamescopePresentation:
             if process_alive is not None and not process_alive():
                 self._logger.error("gamescope_surface_selection stage=process-tree-exited elapsed_s=%.3f wanted_pids=%s candidates=%s",
                                    now - started, sorted(wanted), windows)
-                raise RuntimeError("Steam process tree exited before a Gamescope window appeared")
+                raise RuntimeError("owned game process tree exited before a Gamescope window appeared")
             if now >= deadline:
                 self._logger.error("gamescope_surface_selection stage=eligible-window-timeout elapsed_s=%.3f wanted_pids=%s candidates=%s",
                                    now - started, sorted(wanted), windows)
                 raise TimeoutError(f"Gamescope window for process set {sorted(wanted)} was not found")
             if now >= next_progress:
-                self._logger.info("gamescope_surface_selection stage=waiting-for-window elapsed_s=%.3f remaining_s=%.1f steam_pids=%s candidates=%s",
+                self._logger.info("gamescope_surface_selection stage=waiting-for-window elapsed_s=%.3f remaining_s=%.1f game_pids=%s candidates=%s",
                                   now - started, deadline - now, sorted(wanted), windows)
                 next_progress = now + 5.0
             time.sleep(self.poll_interval)

@@ -179,9 +179,15 @@ class ProcessSupervisor:
                 await self._notify()
                 if presentation_controller is not None:
                     if hasattr(presentation_controller, "select_pids"):
+                        def launch_process_group() -> list[int]:
+                            members = self._process_group_members(identity.pgid)
+                            members.discard(os.getpid())
+                            return sorted(members)
+
                         await asyncio.to_thread(
-                            presentation_controller.select_pids, [process.pid],
-                            max(self._presentation_watchdog, startup_timeout_ms / 1000)
+                            presentation_controller.select_pids, launch_process_group,
+                            max(self._presentation_watchdog, startup_timeout_ms / 1000),
+                            lambda: bool(launch_process_group()),
                         )
                     else:
                         await asyncio.to_thread(
@@ -202,13 +208,23 @@ class ProcessSupervisor:
                     await self._notify()
                 self._active_launch_task = None
                 raise
-            except (OSError, asyncio.TimeoutError, TimeoutError) as error:
+            except (OSError, RuntimeError, asyncio.TimeoutError, TimeoutError) as error:
                 reason = f"launch failed: {error}"
+                result_pid: int | None = None
+                result_pgid: int | None = None
+                result_executable = command[0]
+                result_exit_code: int | None = None
                 if "process" in locals():
+                    result_pid = process.pid
                     try:
-                        await self._terminate_group(os.getpgid(process.pid))
+                        result_pgid = identity.pgid
+                        result_executable = identity.executable
+                        await self._terminate_group(result_pgid)
                     except ProcessLookupError:
                         pass
+                    result_exit_code = await process.wait()
+                    await self._finish_output(self._process_output_tasks, "game", process.pid,
+                                              result_exit_code)
                 self.active_identity = None
                 self._process = None
                 self._process_output_tasks = []
@@ -216,13 +232,14 @@ class ProcessSupervisor:
                 self.model.record_result(
                     ProcessResult(
                         token=token,
-                        pid=None,
-                        pgid=None,
-                        executable=command[0],
+                        pid=result_pid,
+                        pgid=result_pgid,
+                        executable=result_executable,
                         argv=tuple(command),
-                        exit_code=None,
-                        signal=None,
-                        outcome="timeout" if isinstance(error, asyncio.TimeoutError) else "start-failed",
+                        exit_code=result_exit_code if result_exit_code is not None and result_exit_code >= 0 else None,
+                        signal=-result_exit_code if result_exit_code is not None and result_exit_code < 0 else None,
+                        outcome=("timeout" if isinstance(error, asyncio.TimeoutError) else
+                                 "presentation-failed" if isinstance(error, RuntimeError) else "start-failed"),
                         error=reason,
                     )
                 )
