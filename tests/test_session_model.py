@@ -118,6 +118,33 @@ class SessionModelTests(unittest.TestCase):
 
         asyncio.run(exercise())
 
+    def test_fresh_session_after_compatibility_shutdown_starts_clean_shell(self) -> None:
+        """A reboot constructs fresh authority; game/delegated state is never resumed."""
+        previous_boot = SessionStateModel()
+        token = previous_boot.request_launch("dolphin:game")
+        previous_boot.launch_starting(token)
+        previous_boot.primary_started(token, presentation=Presentation.FOREIGN_UI,
+                                      input_mode=InputMode.COMPAT)
+        previous_boot.state.delegated_surface = "compatibility"
+        previous_boot.state.controller_mode = "compatibility"
+
+        # SessionStateModel intentionally has no persistence layer. A new
+        # Sessiond after reboot must not rehydrate the previous lifecycle/token.
+        rebooted = SessionStateModel()
+        self.assertEqual(rebooted.state.lifecycle, Lifecycle.SHELL)
+        self.assertEqual(rebooted.state.session_kind, "shell")
+        self.assertEqual(rebooted.state.presentation, Presentation.SHELL)
+        self.assertEqual(rebooted.state.input_mode, InputMode.SHELL)
+        self.assertIsNone(rebooted.state.primary_id)
+        self.assertIsNone(rebooted.state.launch_token)
+        self.assertIsNone(rebooted.state.delegated_surface)
+        self.assertIsNone(rebooted.state.requested_surface)
+        self.assertIsNone(rebooted.state.controller_mode)
+
+        supervisor = ProcessSupervisor(rebooted)
+        self.assertIsNone(supervisor.active_identity)
+        self.assertIsNone(supervisor._shell_identity)
+
     def test_application_exit_restores_shell_input_mode(self) -> None:
         async def exercise() -> None:
             session = SessionStateModel()
