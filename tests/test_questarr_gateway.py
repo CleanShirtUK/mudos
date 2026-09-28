@@ -71,8 +71,17 @@ class QuestarrGatewayTests(unittest.TestCase):
         self.loop.close()
         self.temporary.cleanup()
 
-    def submit(self, title="Safe fixture", content=b"<?xml version='1.0'?><nzb></nzb>"):
-        return self.rpc.append(title, base64.b64encode(content).decode(), "questarr")
+    @staticmethod
+    def valid_nzb():
+        return b'''<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE nzb PUBLIC "-//newzBin//DTD NZB 1.1//EN"
+  "http://www.newzbin.com/DTD/nzb/nzb-1.1.dtd">
+<nzb xmlns="http://www.newzbin.com/DTD/2003/nzb"><file /></nzb>'''
+
+    def submit(self, title="Safe fixture", content=None, category="questarr"):
+        content = self.valid_nzb() if content is None else content
+        return self.rpc.append(title, base64.b64encode(content).decode(), category,
+                               0, False, False, "", 0, "SCORE", [])
 
     def test_version_connectivity_and_submission_are_acquisitiond_owned(self):
         self.assertIn("mudos-gateway", self.rpc.version())
@@ -84,6 +93,10 @@ class QuestarrGatewayTests(unittest.TestCase):
         self.assertEqual(job.origin_metadata["transport"], "usenet")
         self.assertEqual(job.origin_metadata["external_client_id"], client_id)
         self.assertTrue(Path(job.content_identity.removeprefix("file://")).is_file())
+        self.assertEqual(job.origin_metadata["rpc"]["method"], "append")
+        self.assertEqual(job.origin_metadata["rpc"]["parameter_count"], 10)
+        self.assertEqual(job.origin_metadata["rpc"]["content_form"], "base64-xml")
+        self.assertEqual(job.origin_metadata["rpc"]["document_root"], "nzb")
         self.assertEqual(self.rpc.listgroups()[0]["NZBID"], client_id)
         self.assertIn(self.gateway._state(job), {"QUEUED", "DOWNLOADING"})
 
@@ -142,12 +155,55 @@ class QuestarrGatewayTests(unittest.TestCase):
         asyncio.run_coroutine_threadsafe(fail(), self.loop).result(timeout=2)
         self.assertEqual(self.rpc.history()[0]["Status"], "FAILURE")
 
-    def test_invalid_nzb_and_unsupported_rpc_are_rejected(self):
-        with self.assertRaises(Exception):
+    def test_malformed_base64_and_decoded_non_nzb_are_rejected(self):
+        with self.assertRaises(Fault) as bad_base64:
+            self.rpc.append("Fixture", "not base64!", "questarr", 0, False, False, "", 0, "SCORE", [])
+        self.assertIn("valid base64", bad_base64.exception.faultString)
+        with self.assertRaises(Fault) as wrong_root:
+            self.submit(content=b"<?xml version='1.0'?><html />")
+        self.assertIn("root must be nzb", wrong_root.exception.faultString)
+        with self.assertRaises(Fault):
             self.submit(content=b"not an nzb")
         with self.assertRaises(Fault):
             self.rpc.arbitraryMethod()
         self.assertEqual(self.gateway._jobs(), ())
+
+    def test_questarr_exact_append_shape_accepts_standard_external_doctype(self):
+        params = ("Example fixture.nzb", base64.b64encode(self.valid_nzb()).decode(),
+                  "questarr", 0, False, False, "", 0, "SCORE", [])
+        client_id = self.rpc.append(*params)
+        self.assertGreater(client_id, 0)
+        job = self.gateway._jobs()[0]
+        self.assertEqual(job.origin_metadata["rpc"]["category"], "questarr")
+        self.assertEqual(job.origin_metadata["rpc"]["duplicate_mode"], "SCORE")
+        self.assertEqual(self.rpc.listgroups()[0]["Category"], "questarr")
+
+    def test_url_content_is_preserved_for_the_existing_usenet_provider(self):
+        source = "https://downloads.example.test/releases/safe.nzb?download=1"
+        client_id = self.rpc.append("safe.nzb", source, "questarr", 0, False, False,
+                                    "", 0, "SCORE", [])
+        job = self.gateway._jobs()[0]
+        self.assertGreater(client_id, 0)
+        self.assertEqual(job.content_identity, source)
+        self.assertFalse(Path(self.gateway.nzb_root, "unused.nzb").exists())
+        self.assertEqual(job.origin_metadata["rpc"]["content_form"], "url")
+        self.assertEqual(job.origin_metadata["rpc"]["url_host"], "downloads.example.test")
+        self.assertTrue(job.origin_metadata["rpc"]["url_query_present"])
+
+    def test_malformed_or_unsupported_url_is_rejected_without_submitting_a_job(self):
+        for content in ("ftp://downloads.example.test/a.nzb", "https://user:pass@example.test/a.nzb",
+                        "https://example.test:bad/a.nzb", "https:///missing-host.nzb"):
+            with self.subTest(content=content), self.assertRaises(Fault):
+                self.rpc.append("bad.nzb", content, "questarr", 0, False, False, "", 0, "SCORE", [])
+        self.assertEqual(self.gateway._jobs(), ())
+
+    def test_unsupported_parameter_shape_and_legacy_method_are_not_overimplemented(self):
+        with self.assertRaises(Fault) as wrong_arity:
+            self.rpc.append("fixture.nzb", base64.b64encode(self.valid_nzb()).decode(), "questarr")
+        self.assertIn("ten-parameter", wrong_arity.exception.faultString)
+        with self.assertRaises(Fault) as legacy:
+            self.rpc.appendurl("fixture.nzb", "https://downloads.example.test/a.nzb")
+        self.assertEqual(legacy.exception.faultCode, 404)
 
     def test_missing_compatible_executor_is_not_reported_as_accepted(self):
         async def without_executor():
@@ -159,7 +215,7 @@ class QuestarrGatewayTests(unittest.TestCase):
         try:
             with self.assertRaises(Fault) as caught:
                 gateway.call("append", ("Safe fixture", base64.b64encode(
-                    b"<?xml version='1.0'?><nzb></nzb>").decode(), "questarr"))
+                    self.valid_nzb()).decode(), "questarr", 0, False, False, "", 0, "SCORE", []))
             self.assertIn("no executor registered for provider: usenet", str(caught.exception))
             self.assertEqual(manager.snapshot(), ())
         finally:

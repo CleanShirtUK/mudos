@@ -13,6 +13,8 @@ from pathlib import Path
 import sqlite3
 import threading
 from typing import Any
+from urllib.parse import urlsplit
+import xml.etree.ElementTree as ElementTree
 from xmlrpc.client import Fault, dumps, loads
 
 from .jobs import DownloadJob, JobState
@@ -23,6 +25,7 @@ LOGGER = logging.getLogger("lulu.questarr-gateway")
 GATEWAY_HOST = "127.0.0.1"
 GATEWAY_PORT = 5001
 NZBGET_VERSION = "24.0-mudos-gateway"
+MAX_NZB_BYTES = 24 * 1024 * 1024
 
 
 class QuestarrGateway:
@@ -47,8 +50,12 @@ class QuestarrGateway:
             content_identity TEXT NOT NULL UNIQUE,
             title TEXT NOT NULL,
             job_id TEXT NOT NULL DEFAULT '',
+            category TEXT NOT NULL DEFAULT 'questarr',
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
         )""")
+        columns = {str(row[1]) for row in self._db.execute("PRAGMA table_info(nzb_requests)")}
+        if "category" not in columns:
+            self._db.execute("ALTER TABLE nzb_requests ADD COLUMN category TEXT NOT NULL DEFAULT 'questarr'")
         self._db.commit()
 
     def close(self) -> None:
@@ -67,12 +74,56 @@ class QuestarrGateway:
             return self.manager.snapshot()
         return self._on_loop(snapshot())
 
-    def _submit(self, content: bytes, title: str) -> int:
+    @staticmethod
+    def _validated_url(source: str) -> str:
+        if len(source) > 8192 or any(ord(char) < 32 or ord(char) == 127 for char in source):
+            raise Fault(400, "NZB source URL is invalid")
+        try:
+            parsed = urlsplit(source)
+            _port = parsed.port
+        except ValueError as error:
+            raise Fault(400, "NZB source URL is invalid") from error
+        if (parsed.scheme.lower() not in {"http", "https"} or not parsed.hostname
+                or parsed.username is not None or parsed.password is not None
+                or parsed.fragment):
+            raise Fault(400, "NZB source URL is unsupported")
+        return source
+
+    @staticmethod
+    def _validate_document(content: bytes) -> str:
+        if not content or len(content) > MAX_NZB_BYTES:
+            raise Fault(400, "NZB content size is invalid")
+        try:
+            document = content.decode("utf-8-sig")
+        except UnicodeDecodeError as error:
+            raise Fault(400, "NZB content must be UTF-8 XML") from error
+        # Standard NZB files use an external DOCTYPE. ElementTree does not
+        # retrieve that external DTD; reject entity declarations so parsing
+        # cannot expand attacker-controlled internal entities.
+        if "<!ENTITY" in document.upper():
+            raise Fault(400, "NZB entity declarations are unsupported")
+        try:
+            root = ElementTree.fromstring(document)
+        except ElementTree.ParseError as error:
+            raise Fault(400, "decoded NZB content is malformed XML") from error
+        root_name = str(root.tag).rsplit("}", 1)[-1].casefold()
+        if root_name != "nzb":
+            raise Fault(400, "decoded XML root must be nzb")
+        return root_name
+
+    def _submit(self, source: bytes | str, title: str, category: str,
+                rpc_metadata: dict[str, object]) -> int:
         import hashlib
-        digest = hashlib.sha256(content).hexdigest()
+        if isinstance(source, str):
+            source = self._validated_url(source)
+            digest = hashlib.sha256(source.encode("utf-8")).hexdigest()
+            content_identity = source
+            path = None
+        else:
+            digest = hashlib.sha256(source).hexdigest()
+            content_identity = f"file://{self.nzb_root / (digest + '.nzb')}"
+            path = self.nzb_root / f"{digest}.nzb"
         fingerprint = digest
-        content_identity = f"file://{self.nzb_root / (digest + '.nzb')}"
-        path = self.nzb_root / f"{digest}.nzb"
         with self._lock:
             row = self._db.execute(
                 "SELECT client_id, job_id FROM nzb_requests WHERE fingerprint=?", (fingerprint,)
@@ -96,21 +147,26 @@ class QuestarrGateway:
                     return client_id
             else:
                 self._db.execute(
-                    "INSERT INTO nzb_requests(fingerprint,content_identity,title) VALUES(?,?,?)",
-                    (fingerprint, content_identity, title[:500] or path.name),
+                    "INSERT INTO nzb_requests(fingerprint,content_identity,title,category) VALUES(?,?,?,?)",
+                    (fingerprint, content_identity, title[:500] or "download.nzb", category[:128] or "questarr"),
                 )
                 self._db.commit()
                 client_id = int(self._db.execute(
                     "SELECT client_id FROM nzb_requests WHERE fingerprint=?", (fingerprint,)
                 ).fetchone()[0])
 
-            path.parent.mkdir(parents=True, exist_ok=True)
-            if not path.exists():
-                temporary = path.with_suffix(".tmp")
-                temporary.write_bytes(content)
-                temporary.chmod(0o600)
-                temporary.replace(path)
-            normalized_title = title.strip()[:500] or path.name
+            if isinstance(source, bytes):
+                assert path is not None
+                path.parent.mkdir(parents=True, exist_ok=True)
+                if not path.exists():
+                    temporary = path.with_suffix(".tmp")
+                    temporary.write_bytes(source)
+                    temporary.chmod(0o600)
+                    temporary.replace(path)
+                default_title = path.name
+            else:
+                default_title = "download.nzb"
+            normalized_title = title.strip()[:500] or default_title
 
             async def submit_job() -> DownloadJob:
                 executor = self.manager.executors.get("usenet")
@@ -120,7 +176,8 @@ class QuestarrGateway:
                     pause_supported=bool(getattr(executor, "supports_pause", False)),
                     origin="questarr",
                     origin_metadata={"transport": "usenet", "request_fingerprint": fingerprint,
-                                     "external_client_id": client_id, "source": "Questarr"},
+                                     "external_client_id": client_id, "source": "Questarr",
+                                     "rpc": rpc_metadata},
                 )
 
             job = self._on_loop(submit_job())
@@ -159,12 +216,13 @@ class QuestarrGateway:
             return "DELETED"
         return "FAILURE"
 
-    def _status_row(self, client_id: int, job: DownloadJob, title: str) -> dict[str, Any]:
+    def _status_row(self, client_id: int, job: DownloadJob, title: str,
+                    category: str = "questarr") -> dict[str, Any]:
         total = job.total_bytes or 0
         downloaded = job.downloaded_bytes or 0
         remaining = max(0, total - downloaded)
         state = self._state(job)
-        common = {"NZBID": client_id, "Category": "questarr"}
+        common = {"NZBID": client_id, "Category": category}
         if state in {"SUCCESS/ALL", "FAILURE", "DELETED"}:
             return {**common, "Name": title, "Status": state,
                     "FileSizeMB": total / 1048576, "DownloadTimeSec": 0,
@@ -185,39 +243,71 @@ class QuestarrGateway:
             free = shutil.disk_usage(self.nzb_root).free
             return {"FreeDiskSpaceMB": free / 1048576}
         if method == "append":
-            if len(params) < 2 or not isinstance(params[0], str) or not isinstance(params[1], str):
-                raise Fault(400, "append expects name and NZB base64 content")
+            if len(params) != 10:
+                raise Fault(400, "append expects Questarr's ten-parameter NZBGet request")
+            if not isinstance(params[0], str) or not isinstance(params[1], str):
+                raise Fault(400, "append expects a filename and content string")
+            if not isinstance(params[2], str) or not isinstance(params[3], (int, float)) \
+                    or not isinstance(params[4], bool) or not isinstance(params[5], bool) \
+                    or not isinstance(params[6], str) or not isinstance(params[7], (int, float)) \
+                    or not isinstance(params[8], str) or not isinstance(params[9], (list, tuple)):
+                raise Fault(400, "append parameters do not match the supported Questarr NZBGet shape")
+            name, submitted_content = params[0], params[1]
+            category = params[2]
+            rpc_metadata = {
+                "method": "append", "parameter_count": len(params),
+                "category": category[:128], "priority": params[3],
+                "add_to_top": params[4], "add_paused": params[5],
+                "duplicate_key_present": bool(params[6]), "duplicate_score": params[7],
+                "duplicate_mode": params[8][:32], "postprocess_parameter_count": len(params[9]),
+            }
+            url_candidate = submitted_content.lstrip()
+            if url_candidate.lower().startswith(("http://", "https://")):
+                source: bytes | str = self._validated_url(url_candidate)
+                parsed = urlsplit(source)
+                rpc_metadata.update({"content_form": "url", "content_length": len(submitted_content),
+                                     "url_scheme": parsed.scheme, "url_host": parsed.hostname or "",
+                                     "url_path": parsed.path[:512],
+                                     "url_query": "<redacted>" if parsed.query else "",
+                                     "url_query_present": bool(parsed.query)})
+            else:
+                if len(submitted_content) > ((MAX_NZB_BYTES + 2) // 3) * 4:
+                    raise Fault(413, "encoded NZB content exceeds the supported size")
+                try:
+                    decoded = base64.b64decode(submitted_content, validate=True)
+                except (ValueError, TypeError) as error:
+                    raise Fault(400, "append content is neither a supported URL nor valid base64") from error
+                root_name = self._validate_document(decoded)
+                source = decoded
+                rpc_metadata.update({"content_form": "base64-xml", "encoded_length": len(submitted_content),
+                                     "decoded_length": len(decoded), "document_root": root_name})
+            LOGGER.info("Questarr NZBGet RPC shape filename_length=%d %s",
+                        len(name), json.dumps(rpc_metadata, sort_keys=True, separators=(",", ":")))
             try:
-                content = base64.b64decode(params[1], validate=True)
-            except (ValueError, TypeError) as error:
-                raise Fault(400, "invalid NZB content") from error
-            if not content or b"<!DOCTYPE" in content.upper() or b"<NZB" not in content[:4096].upper():
-                raise Fault(400, "submitted content is not a valid NZB document")
-            try:
-                return self._submit(content, params[0])
+                return self._submit(source, name, category, rpc_metadata)
             except Exception as error:
                 LOGGER.warning("Questarr NZB submission rejected error_type=%s", type(error).__name__)
                 raise Fault(503, str(error)[:300]) from error
         if method == "listgroups":
             with self._lock:
                 rows = self._db.execute(
-                    "SELECT client_id,title,job_id FROM nzb_requests ORDER BY client_id"
+                    "SELECT client_id,title,job_id,category FROM nzb_requests ORDER BY client_id"
                 ).fetchall()
             result = []
             jobs = {job.job_id: job for job in self._jobs()}
-            for client_id, title, job_id in rows:
+            for client_id, title, job_id, category in rows:
                 job = jobs.get(str(job_id))
                 if job and job.state not in {JobState.COMPLETED, JobState.FAILED, JobState.CANCELLED}:
-                    result.append(self._status_row(int(client_id), job, str(title)))
+                    result.append(self._status_row(int(client_id), job, str(title), str(category)))
             return result
         if method == "history":
             with self._lock:
                 rows = self._db.execute(
-                    "SELECT client_id,title,job_id FROM nzb_requests ORDER BY client_id"
+                    "SELECT client_id,title,job_id,category FROM nzb_requests ORDER BY client_id"
                 ).fetchall()
             jobs = {job.job_id: job for job in self._jobs()}
-            return [self._status_row(int(client_id), jobs[str(job_id)], str(title))
-                    for client_id, title, job_id in rows if str(job_id) in jobs
+            return [self._status_row(int(client_id), jobs[str(job_id)], str(title), str(category))
+                    for client_id, title, job_id, category in rows if str(job_id) in jobs
                     and jobs[str(job_id)].state in {JobState.COMPLETED, JobState.FAILED, JobState.CANCELLED}]
         if method == "editqueue":
             if len(params) < 4 or not isinstance(params[3], (list, tuple)):
