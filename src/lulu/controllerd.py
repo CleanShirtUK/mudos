@@ -119,6 +119,11 @@ class ControllerRegistry:
         if self.navigation_mode == "all":
             self.navigation_controller_id = None
             return
+        if self.navigation_mode == "specific":
+            # A specific selection is an ownership constraint, not a hint.
+            # Do not silently hand navigation to a different controller.
+            self.navigation_controller_id = None
+            return
         connected = [
             (controller.player if controller.player is not None else 999, controller_id)
             for controller_id, controller in self.controllers.items()
@@ -300,13 +305,23 @@ class ControllerRegistry:
             self.navigation_controller_id = None
             self._runtime_seen = True
             return
-        preferred_player = self._policy.get("navigation_player") if not self._runtime_seen else None
-        preferred_runtime = next(
-            (runtime_id for runtime_id in connected_ids
-             if isinstance(preferred_player, int)
-             and self.controllers.get(runtime_id) is not None
-             and self.controllers[runtime_id].player == preferred_player), None)
-        if preferred_runtime is not None:
+        if self.navigation_mode == "specific":
+            preferred_identity = self._policy.get("navigation_identity")
+            preferred_player = self._policy.get("navigation_player")
+            preferred_runtime = next(
+                (runtime_id for runtime_id in connected_ids
+                 if self.controllers.get(runtime_id) is not None
+                 and isinstance(preferred_player, int)
+                 and self.controllers[runtime_id].player == preferred_player),
+                None,
+            )
+            if preferred_runtime is None and isinstance(preferred_identity, str):
+                preferred_runtime = next(
+                    (runtime_id for runtime_id in connected_ids
+                     if self.controllers.get(runtime_id) is not None
+                     and self.controllers[runtime_id].physical_identity == preferred_identity),
+                    None,
+                )
             self.navigation_controller_id = preferred_runtime
         elif self.navigation_controller_id not in connected_ids:
             self._select_navigation_fallback()

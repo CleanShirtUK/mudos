@@ -224,6 +224,36 @@ class BoundaryTests(unittest.TestCase):
         self.assertIsNone(registry.navigation_controller_id)
         self.assertTrue(registry.controllers["CompositeDevice1"].connected)
 
+    def test_navigation_defaults_to_all_and_only_changes_on_explicit_selection(self) -> None:
+        registry = ControllerRegistry()
+        self.assertEqual(registry.navigation_mode, "all")
+        self.assertIsNone(registry.navigation_controller_id)
+        registry.observe_runtime_composites({
+            "CompositeDevice0": ("pad-a", ("/dev/input/event1",)),
+        })
+        self.assertEqual(registry.navigation_mode, "all")
+        self.assertIsNone(registry.navigation_controller_id)
+
+    def test_unavailable_specific_navigation_selection_stays_null_until_reconnected(self) -> None:
+        registry = ControllerRegistry()
+        registry.observe_runtime_composites({
+            "CompositeDevice0": ("pad-a", ("/dev/input/event1",)),
+            "CompositeDevice1": ("pad-b", ("/dev/input/event2",)),
+        })
+        registry.set_navigation_controller("CompositeDevice0")
+
+        registry.observe_runtime_composites({
+            "CompositeDevice1": ("pad-b", ("/dev/input/event2",)),
+        })
+        self.assertEqual(registry.navigation_mode, "specific")
+        self.assertIsNone(registry.navigation_controller_id)
+
+        registry.observe_runtime_composites({
+            "CompositeDevice0": ("pad-a", ("/dev/input/event3",)),
+            "CompositeDevice1": ("pad-b", ("/dev/input/event2",)),
+        })
+        self.assertEqual(registry.navigation_controller_id, "CompositeDevice0")
+
     def test_specific_navigation_still_restricts_to_selected_controller(self) -> None:
         registry = ControllerRegistry()
         registry.observe_runtime_composites({
@@ -300,7 +330,9 @@ class BoundaryTests(unittest.TestCase):
     def test_disconnect_releases_navigation_ownership_only(self) -> None:
         registry = ControllerRegistry()
         registry.connect(Controller("pad-a"))
+        registry.connect(Controller("pad-b"))
         registry.assign_player("pad-a", 1)
+        registry.assign_player("pad-b", 2)
         registry.set_navigation_controller("pad-a")
         registry.disconnect("pad-a")
         self.assertIsNone(registry.navigation_controller_id)
