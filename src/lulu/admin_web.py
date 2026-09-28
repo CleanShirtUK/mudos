@@ -2002,7 +2002,9 @@ load();setInterval(load,10000);
 
     def _dashboard(self) -> None:
         host = _host(self)
-        configured = sum(1 for provider_id, _ in PROVIDERS if APP.config.provider(provider_id).configured)
+        provider_states = {str(row["id"]): row for row in APP.provider_rows()}
+        configured = sum(1 for provider_id, _ in PROVIDERS
+                         if provider_states.get(provider_id, {}).get("configured") is True)
         cards = "".join(f'<a class="card-link card" href="/integrations#services"><div class="card-head"><h3>{html.escape(name)}</h3>{_badge(APP.service_state(unit))}</div><p>{html.escape(_service_description(key))}</p></a>' for key,name,unit,*_ in SERVICES[:3])
         body = (f'<div class="card"><div class="card-head"><div><h2>Appliance at {html.escape(host)}</h2><p>Ready for local administration.</p></div>{_badge("active")}</div>'
                 f'<p class="meta">Deployment: {html.escape(_deployment())} · {configured} integrations configured</p>'
@@ -2013,10 +2015,18 @@ load();setInterval(load,10000);
 
     def _providers(self) -> None:
         cards = []
+        states = {str(row["id"]): row for row in APP.provider_rows()}
         for provider_id, name in PROVIDERS:
             title, description, _ = PROVIDER_META.get(provider_id, (name, "", ""))
-            config = APP.config.provider(provider_id)
-            cards.append(f'<a class="card-link card" href="/integration/{urllib.parse.quote(provider_id)}"><div class="card-head"><h2>{html.escape(title)}</h2>{_badge(config.status)}</div><p>{html.escape(description)}</p><span class="meta">Configure connection →</span></a>')
+            state = states.get(provider_id, {})
+            status = str(state.get("status", "unknown"))
+            details = []
+            if state.get("authenticated") is True:
+                details.append("Authenticated")
+            if state.get("running") is not None:
+                details.append("Service running" if state.get("running") else "Service stopped")
+            detail_html = f'<p class="meta">{html.escape(" · ".join(details))}</p>' if details else ""
+            cards.append(f'<a class="card-link card" href="/integration/{urllib.parse.quote(provider_id)}"><div class="card-head"><h2>{html.escape(title)}</h2>{_badge(status)}</div><p>{html.escape(description)}</p>{detail_html}<span class="meta">Configure connection →</span></a>')
         notice = _notice("Changes saved", "The integration settings were updated.", "success") if urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query).get("updated") else ""
         body = (notice + '<h2>Connections</h2><div class="grid">' + "".join(cards) + '</div>'
                 + '<section id="services"><div class="section-title"><h2>Services</h2></div>'
@@ -2024,6 +2034,7 @@ load();setInterval(load,10000);
         self._send(_page("Integrations and Services", body, subtitle="Configure integrations and check appliance services in one place.", active="integrations"))
 
     def _provider_form(self, provider_id: str) -> None:
+        APP.config = ProviderConfigurationService.from_environment(secrets=APP.secrets)
         config = APP.config.provider(provider_id); csrf = APP.session(self._token()) or ""
         title, description, explanation = PROVIDER_META.get(provider_id, (provider_id, "", ""))
         if provider_id in {component.component_id for component in APP.components.all()}:
