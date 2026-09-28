@@ -47,10 +47,10 @@ class QuestarrAuthProxyTests(unittest.TestCase):
         with patch.object(proxy, "SecretStore", return_value=secrets), \
                 patch.object(proxy, "authenticate_managed_account", return_value=True) as pam, \
                 patch.object(proxy, "_json_request", return_value=(200, b'{"token":"opaque"}')) as upstream:
-            status, response = proxy._login_system_user("lulu", "pam-password-not-saved")
+            status, response = proxy._login_system_user("josh", "pam-password-not-saved")
         self.assertEqual(status, 200)
         self.assertEqual(json.loads(response)["token"], "opaque")
-        pam.assert_called_once_with("pam-password-not-saved", account="lulu")
+        pam.assert_called_once_with("pam-password-not-saved", account="josh")
         self.assertTrue(upstream.call_args.args[1]["username"] == "lulu")
         self.assertTrue(upstream.call_args.args[1]["password"] == "internal-random-secret")
         self.assertFalse(any(value == "pam-password-not-saved"
@@ -64,6 +64,13 @@ class QuestarrAuthProxyTests(unittest.TestCase):
         self.assertEqual(status, 401)
         pam.assert_not_called()
         upstream.assert_not_called()
+
+    def test_runtime_service_account_is_not_the_questarr_pam_principal(self):
+        self.assertEqual(proxy.QUESTARR_PAM_ACCOUNT, "josh")
+        with patch.object(proxy, "authenticate_managed_account") as pam:
+            status, _ = proxy._login_system_user("lulu", "not-used")
+        self.assertEqual(status, 401)
+        pam.assert_not_called()
 
     def test_login_rate_limit_is_enforced_at_the_pam_boundary(self):
         address = "test-rate-limit-address"

@@ -45,6 +45,9 @@ class QuestarrIntegrationTests(unittest.TestCase):
         self.assertIn("origin=\"questarr\"", gateway)
         self.assertIn('serve_gateway(questarr_gateway)', acquisitiond)
         self.assertIn("User=lulu", unit)
+        self.assertIn("LULU_QUESTARR_PAM_ACCOUNT=josh", unit)
+        self.assertIn("NoNewPrivileges=false", unit)
+        self.assertIn("CAP_DAC_OVERRIDE", unit)
 
     def test_admin_registry_exposes_questarr_health_and_ui(self) -> None:
         admin = (ROOT / "src/lulu/admin_web.py").read_text()

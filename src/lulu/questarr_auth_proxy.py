@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import secrets as random_secrets
 import threading
 import time
@@ -21,6 +22,7 @@ PUBLIC_HOST = "0.0.0.0"
 PUBLIC_PORT = 5000
 UPSTREAM = "http://127.0.0.1:5002"
 INTERNAL_NAMESPACE = "web/questarr"
+QUESTARR_PAM_ACCOUNT = os.environ.get("LULU_QUESTARR_PAM_ACCOUNT", "josh")
 _LOGIN_LOCK = threading.Lock()
 _LOGIN_ATTEMPTS: dict[str, deque[float]] = defaultdict(deque)
 _LOGIN_CHECKS = 0
@@ -110,9 +112,9 @@ def provision_internal_identity() -> bool:
 
 
 def _login_system_user(username: str, password: str) -> tuple[int, bytes]:
-    if username != MANAGED_ADMIN_ACCOUNT or not password:
+    if username != QUESTARR_PAM_ACCOUNT or not password:
         return 401, b'{"error":"Invalid appliance credentials"}'
-    if not authenticate_managed_account(password, account=MANAGED_ADMIN_ACCOUNT):
+    if not authenticate_managed_account(password, account=QUESTARR_PAM_ACCOUNT):
         return 401, b'{"error":"Invalid appliance credentials"}'
     secret_store = SecretStore()
     internal_user = secret_store.get(INTERNAL_NAMESPACE, "username")

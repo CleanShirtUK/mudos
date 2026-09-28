@@ -1193,6 +1193,7 @@ class AdminApp:
         import pwd
         import xmlrpc.client
         from .questarr_reconciler import QUESTARR_URL, QuestarrApi, QuestarrApiError
+        from .questarr_auth_proxy import QUESTARR_PAM_ACCOUNT
 
         service_running = self.service_state("lulu-questarr.service") == "active"
         proxy_running = self.service_state("lulu-questarr-auth-proxy.service") == "active"
@@ -1201,7 +1202,7 @@ class AdminApp:
         web_reachable = bool(service_running and proxy_running and health_row
                              and self.service_health(health_row) == "healthy")
         try:
-            pwd.getpwnam("lulu")
+            pwd.getpwnam(QUESTARR_PAM_ACCOUNT)
             pam_available = Path("/etc/pam.d/login").is_file()
         except KeyError:
             pam_available = False
