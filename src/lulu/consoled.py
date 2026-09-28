@@ -192,7 +192,13 @@ class ConsoleCatalog:
                 LOGGER.info("catalogue stage skipped name=romm reason=not-validated status=%s",
                             romm_state.get("status", "unknown"))
                 selected.discard("romm")
-        if "components" in selected and not selected_providers:
+        flatpak_inventory_available = any(
+            getattr(source, "provider_id", "") == "flatpak"
+            and hasattr(source, "reconcile")
+            and getattr(source, "available", True)
+            for source in self._plugins.with_capability("catalogue")
+        )
+        if "components" in selected and not selected_providers and not flatpak_inventory_available:
             LOGGER.info("catalogue stage skipped name=components reason=no-selected-providers")
             selected.discard("components")
         self.last_delta_batches = []
@@ -341,7 +347,7 @@ class ConsoleCatalog:
                 if not hasattr(source, "reconcile") or not getattr(source, "provider_id", ""):
                     continue
                 component_provider = str(source.provider_id)
-                if component_provider not in selected_providers:
+                if component_provider != "flatpak" and component_provider not in selected_providers:
                     LOGGER.info("catalogue stage skipped name=component provider=%s reason=not-selected",
                                 component_provider)
                     continue

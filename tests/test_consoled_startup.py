@@ -1,5 +1,6 @@
 from pathlib import Path
 import asyncio
+import tempfile
 import threading
 import unittest
 from types import SimpleNamespace
@@ -7,6 +8,7 @@ from unittest.mock import Mock, patch
 
 from lulu.consoled import (ConsoleCatalog, ConsoleInterface,
                            _validated_metadata_refresh_stages)
+from lulu.catalogue import CatalogueStore
 from lulu.plugins.flatpak import FlatpakApplication
 
 ROOT = Path(__file__).parents[1]
@@ -56,6 +58,37 @@ class ConsoledStartupTests(unittest.TestCase):
         setup["validation"]["metadata.igdb"] = {"ok": False}
         with patch("lulu.onboarding.onboarding_state", return_value=setup):
             self.assertEqual(_validated_metadata_refresh_stages(), set())
+
+    def test_installed_flatpak_games_reconcile_without_optional_provider_selection(self) -> None:
+        class Adapter:
+            provider_id = "flatpak"
+            available = True
+
+            async def reconcile(self):
+                return (FlatpakApplication(
+                    "org.supertuxproject.SuperTux", "SuperTux",
+                    branch="stable", arch="x86_64", installed=True,
+                    categories=("Game", "ActionGame"), component_type="desktop-application",
+                ),)
+
+        class Registry:
+            def with_capability(self, _capability):
+                return [Adapter()]
+
+        with tempfile.TemporaryDirectory() as directory:
+            catalog = ConsoleCatalog.__new__(ConsoleCatalog)
+            catalog._plugins = Registry()
+            catalog.store = CatalogueStore(Path(directory) / "catalogue.sqlite3")
+            catalog.last_delta_batches = []
+            catalog.external_entitlements = ()
+            catalog.steam_entitlements = None
+            catalog.romm = None
+            catalog._romm_injected = True
+            with patch("lulu.onboarding.onboarding_state", return_value={"selected_providers": []}):
+                catalog.refresh({"components"})
+            projected = catalog.store.list_games()
+            self.assertEqual([(game.provider_id, game.component_classification) for game in projected],
+                             [("org.supertuxproject.SuperTux", "game")])
 
     def test_refresh_callers_share_one_in_flight_reconciliation(self) -> None:
         class Catalogue:
