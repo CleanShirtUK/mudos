@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import secrets as random_secrets
+import socket
 import threading
 import time
 from collections import defaultdict, deque
@@ -15,7 +16,7 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 from .credential import SecretStore
-from .managed_account import MANAGED_ADMIN_ACCOUNT, authenticate_managed_account
+from .managed_account import MANAGED_ADMIN_ACCOUNT
 
 LOGGER = logging.getLogger("lulu.questarr-auth-proxy")
 PUBLIC_HOST = "0.0.0.0"
@@ -31,6 +32,7 @@ _SESSION_LOCK = threading.Lock()
 _PAM_SESSIONS: dict[str, float] = {}
 _PAM_SESSION_TTL = 8 * 60 * 60
 _PUBLIC_API_PATHS = {"/api/auth/status", "/api/health", "/api/config"}
+PAM_AUTH_SOCKET = "/run/lulu-questarr-pam/auth.sock"
 
 
 def _allow_login_attempt(address: str, *, now: float | None = None) -> bool:
@@ -76,6 +78,24 @@ def _internal_password() -> str | None:
     return password
 
 
+def _pam_helper_authenticate(username: str, password: str) -> dict[str, object]:
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as connection:
+        connection.settimeout(8)
+        connection.connect(PAM_AUTH_SOCKET)
+        connection.sendall(json.dumps({"username": username, "password": password},
+                                      separators=(",", ":")).encode() + b"\n")
+        response = bytearray()
+        while len(response) <= 2048 and not response.endswith(b"\n"):
+            chunk = connection.recv(512)
+            if not chunk:
+                break
+            response.extend(chunk)
+    value = json.loads(response)
+    if not isinstance(value, dict):
+        raise ValueError("invalid PAM helper response")
+    return value
+
+
 def provision_internal_identity() -> bool:
     """Create Questarr's required private record without asking for a password."""
     secret_store = SecretStore()
@@ -114,8 +134,15 @@ def provision_internal_identity() -> bool:
 def _login_system_user(username: str, password: str) -> tuple[int, bytes]:
     if username != QUESTARR_PAM_ACCOUNT or not password:
         return 401, b'{"error":"Invalid appliance credentials"}'
-    if not authenticate_managed_account(password, account=QUESTARR_PAM_ACCOUNT):
-        return 401, b'{"error":"Invalid appliance credentials"}'
+    try:
+        result = _pam_helper_authenticate(username, password)
+        if result.get("category") in {"pam-policy-or-service-error", "unknown-user"}:
+            LOGGER.warning("appliance PAM login rejected category=%s", result["category"])
+        if not result.get("authenticated"):
+            return 401, b'{"error":"Invalid appliance credentials"}'
+    except (OSError, ValueError, TypeError, AttributeError) as error:
+        LOGGER.error("appliance PAM helper unavailable error_type=%s", type(error).__name__)
+        return 503, b'{"error":"Appliance authentication is unavailable"}'
     secret_store = SecretStore()
     internal_user = secret_store.get(INTERNAL_NAMESPACE, "username")
     internal_password = _internal_password()

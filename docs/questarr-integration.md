@@ -60,8 +60,11 @@ Questarr runs as a pinned rootful Podman service with persistent data at
 The LAN-facing Mudos auth proxy listens on port 5000, the existing LAN-only
 UFW rule. It forwards normal Questarr requests and handles login specially:
 
-1. Require the appliance username and validate the supplied password using the
-   system PAM `login` service.
+1. Require appliance user `josh`. The unprivileged proxy passes credentials to
+   a restricted root-owned Unix-socket helper. The helper accepts only the
+   `lulu` service UID, only the configured appliance username, and invokes the
+   same system PAM `login` service used by Mudos managed-account auth. It has no
+   network listener and returns only a categorized authentication result.
 2. Exchange that successful PAM authentication for a Questarr JWT using a
    randomly generated Questarr-internal credential stored only in Mudos
    SecretStore (`web/questarr`).
@@ -72,7 +75,9 @@ UFW rule. It forwards normal Questarr requests and handles login specially:
    Protected API and Socket.IO polling requests require that PAM-established
    session; a Questarr bearer token by itself is not sufficient at the LAN
    boundary. Proxy restart invalidates these sessions and requires a fresh
-   PAM login.
+   PAM login. The helper's writable surface is limited to its socket directory
+   and PAM's `/run/faillock` runtime tally directory so system lockout policy
+   remains effective inside systemd's filesystem sandbox.
 
 Both the delegated Mudos browser and LAN browsers reach the same port-5000
 proxy and authenticate against the system account. Questarr is not configured

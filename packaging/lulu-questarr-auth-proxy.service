@@ -1,8 +1,8 @@
 [Unit]
 Description=Questarr appliance-authenticated LAN gateway
-After=network-online.target lulu-questarr.service lulu-acquisition.service
+After=network-online.target lulu-questarr.service lulu-acquisition.service lulu-questarr-pam-auth.service
 Wants=network-online.target lulu-acquisition.service
-Requires=lulu-questarr.service
+Requires=lulu-questarr.service lulu-questarr-pam-auth.service
 
 [Service]
 Type=simple
@@ -21,8 +21,7 @@ Environment=LULU_QUESTARR_PAM_ACCOUNT=josh
 ExecStart=/usr/bin/python -m lulu.questarr_auth_proxy
 Restart=on-failure
 RestartSec=5s
-NoNewPrivileges=false
-CapabilityBoundingSet=CAP_NET_BIND_SERVICE CAP_SETUID CAP_SETGID CAP_DAC_OVERRIDE CAP_FOWNER CAP_AUDIT_WRITE
+NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ReadWritePaths=/home/lulu/.local/share/lulu /home/lulu/.config/lulu

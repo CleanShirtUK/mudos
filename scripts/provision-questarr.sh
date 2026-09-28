@@ -14,11 +14,13 @@ podman pull ghcr.io/doezer/questarr@sha256:6faaf75f484a20805309315dd9eb9f1550b03
 
 install -m 0644 "$repo_root/packaging/lulu-questarr.service" /etc/systemd/system/lulu-questarr.service
 install -m 0644 "$repo_root/packaging/lulu-questarr-auth-proxy.service" /etc/systemd/system/lulu-questarr-auth-proxy.service
+install -m 0644 "$repo_root/packaging/lulu-questarr-pam-auth.service" /etc/systemd/system/lulu-questarr-pam-auth.service
 chmod 0755 "$repo_root/scripts/configure-questarr-firewall.sh"
 "$repo_root/scripts/configure-questarr-firewall.sh"
 systemctl daemon-reload
 systemctl enable lulu-questarr.service
 systemctl restart lulu-questarr.service
+systemctl enable --now lulu-questarr-pam-auth.service
 systemctl enable --now lulu-questarr-auth-proxy.service
 
 echo "provisioned Questarr data=$data_root endpoint=http://mudos.local:5000/"

@@ -58,7 +58,7 @@ def _pam_library():
 
 
 def _run_pam(account: str, service: str, responder: Callable[[str, int], str],
-             operation: str) -> bool:
+             operation: str, diagnostic: dict[str, int | str] | None = None) -> bool:
     if not ACCOUNT_PATTERN.fullmatch(account):
         raise ValueError("invalid managed Mudos account")
     pam = _pam_library()
@@ -102,15 +102,22 @@ def _run_pam(account: str, service: str, responder: Callable[[str, int], str],
                            ctypes.byref(handle))
     try:
         if status != 0:
+            if diagnostic is not None:
+                diagnostic.update(phase="start", status=status)
             return False
         if operation == "authenticate":
             status = pam.pam_authenticate(handle, 0)
+            phase = "authenticate"
             if status == 0:
                 status = pam.pam_acct_mgmt(handle, 0)
+                phase = "account"
         elif operation == "change":
             status = pam.pam_chauthtok(handle, 0)
+            phase = "password"
         else:
             raise ValueError("unsupported PAM operation")
+        if diagnostic is not None:
+            diagnostic.update(phase=phase, status=status)
         return status == 0
     finally:
         if handle:
@@ -121,6 +128,31 @@ def authenticate_managed_account(password: str, account: str = MANAGED_ADMIN_ACC
     if not password or "\0" in password:
         return False
     return _run_pam(account, "login", lambda _prompt, _index: password, "authenticate")
+
+
+def authenticate_managed_account_diagnostic(password: str, account: str) -> tuple[bool, str, int | None]:
+    """Authenticate using PAM and return a password-free diagnostic category."""
+    if not password or "\0" in password:
+        return False, "invalid-credential-input", None
+    result: dict[str, int | str] = {}
+    try:
+        accepted = _run_pam(account, "login", lambda _prompt, _index: password,
+                            "authenticate", result)
+    except (OSError, RuntimeError, ValueError):
+        return False, "pam-policy-or-service-error", None
+    status = int(result.get("status", -1))
+    phase = str(result.get("phase", "unknown"))
+    if accepted:
+        return True, "accepted", status
+    if status == 10:
+        category = "unknown-user"
+    elif phase == "account" or status in {3, 4, 6, 9, 12, 13, 14, 22, 28}:
+        category = "pam-policy-or-service-error"
+    elif status == 7:
+        category = "bad-password-or-auth-rejected"
+    else:
+        category = "pam-policy-or-service-error"
+    return False, category, status
 
 
 def change_managed_account_password(current_password: str, new_password: str,

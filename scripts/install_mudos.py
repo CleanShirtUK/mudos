@@ -30,6 +30,7 @@ SYSTEMD_UNITS = {
     "lulu-questarr-reconcile.service": "lulu-questarr-reconcile.service",
     "lulu-questarr.service": "lulu-questarr.service",
     "lulu-questarr-auth-proxy.service": "lulu-questarr-auth-proxy.service",
+    "lulu-questarr-pam-auth.service": "lulu-questarr-pam-auth.service",
 }
 
 
@@ -340,7 +341,8 @@ def plan(repo: Path, manifest: dict, action: str, *, purge: bool = False) -> lis
 def stop_services(apply: bool, manifest: dict, *, stop_host_mounts: bool) -> None:
     units = ["lulu.target", "lulu-session@2.service", "lulu-admin.service", "lulu-consoled.service",
              "lulu-acquisition.service", "mudos-recovery.service", "mudos-recovery-ui.service",
-             "lulu-transmission.service", "lulu-questarr.service", "lulu-questarr-auth-proxy.service",
+             "lulu-transmission.service", "lulu-questarr.service",
+             "lulu-questarr-auth-proxy.service", "lulu-questarr-pam-auth.service",
              "lulu-questarr-reconcile.service",
              "nzbget.service", "lulu-file-browser.service"]
     for unit in units:
@@ -537,7 +539,7 @@ def _restart_update_services(active_units: list[str]) -> None:
     # Sessiond's PartOf edges restart Consoled and Acquisitiond with the shell.
     order = ("lulu-session@2.service", "lulu-admin.service", "mudos-recovery.service",
              "lulu-file-browser.service", "lulu-questarr.service",
-             "lulu-questarr-auth-proxy.service")
+             "lulu-questarr-pam-auth.service", "lulu-questarr-auth-proxy.service")
     for unit in order:
         if unit in active_units:
             run(["systemctl", "restart", unit])
@@ -550,7 +552,7 @@ def _verify_update_services(active_units: list[str], previous_pids: dict[str, in
             raise InstallError(f"Mudos service did not return active after update: {unit}")
         if unit not in {"lulu-session@2.service", "lulu-admin.service", "mudos-recovery.service",
                         "lulu-consoled.service", "lulu-acquisition.service",
-                        "lulu-questarr-auth-proxy.service"}:
+                        "lulu-questarr-auth-proxy.service", "lulu-questarr-pam-auth.service"}:
             continue
         try:
             pid = _main_pid(unit)
@@ -596,7 +598,8 @@ def do_update(repo: Path, manifest: dict, dry_run: bool,
     active_units = [unit for unit in ("lulu-session@2.service", "lulu-consoled.service",
                                        "lulu-acquisition.service", "lulu-admin.service",
                                        "mudos-recovery.service", "lulu-file-browser.service",
-                                       "lulu-questarr.service", "lulu-questarr-auth-proxy.service")
+                                       "lulu-questarr.service", "lulu-questarr-auth-proxy.service",
+                                       "lulu-questarr-pam-auth.service")
                     if _active(unit)]
     if "lulu-session@2.service" not in active_units:
         raise InstallError("--update requires the normal Mudos graphical session to be active")
@@ -604,6 +607,10 @@ def do_update(repo: Path, manifest: dict, dry_run: bool,
     questarr_proxy_needs_start = (
         "lulu-questarr.service" in active_units
         and "lulu-questarr-auth-proxy.service" not in active_units
+    )
+    questarr_pam_auth_needs_start = (
+        "lulu-questarr.service" in active_units
+        and "lulu-questarr-pam-auth.service" not in active_units
     )
     release = existing_release(release_root, sha)
     if release is None:
@@ -643,6 +650,9 @@ def do_update(repo: Path, manifest: dict, dry_run: bool,
                 alias.symlink_to(f"current/{alias.name}")
                 created_aliases.append(alias)
         repair_steam_bootstrap_directory(steam_data_root)
+        if questarr_pam_auth_needs_start:
+            run(["systemctl", "enable", "--now", "lulu-questarr-pam-auth.service"])
+            active_units.append("lulu-questarr-pam-auth.service")
         _restart_update_services(active_units)
         if questarr_proxy_needs_start:
             # Questarr's private upstream is moved off the LAN-facing port in
@@ -658,6 +668,12 @@ def do_update(repo: Path, manifest: dict, dry_run: bool,
         print(f"update validation failed; restoring previous release {previous}: {error}", file=sys.stderr)
         if questarr_proxy_needs_start:
             run(["systemctl", "disable", "--now", "lulu-questarr-auth-proxy.service"], check=False)
+            if "lulu-questarr-auth-proxy.service" in active_units:
+                active_units.remove("lulu-questarr-auth-proxy.service")
+        if questarr_pam_auth_needs_start:
+            run(["systemctl", "disable", "--now", "lulu-questarr-pam-auth.service"], check=False)
+            if "lulu-questarr-pam-auth.service" in active_units:
+                active_units.remove("lulu-questarr-pam-auth.service")
         if selected_new_release:
             run([sys.executable, str(repo / "scripts/release.py"), "activate", "--release-dir", str(previous)])
         for path, old in old_units.items():

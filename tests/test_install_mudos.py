@@ -149,7 +149,8 @@ def test_update_selects_verified_release_without_touching_mutable_state(tmp_path
     monkeypatch.setattr(installer, "_session_state", lambda: {"lifecycle": "shell"})
     monkeypatch.setattr(installer, "_active",
                         lambda unit: unit not in {"lulu-file-browser.service",
-                                                  "lulu-questarr-auth-proxy.service"})
+                                                  "lulu-questarr-auth-proxy.service",
+                                                  "lulu-questarr-pam-auth.service"})
     monkeypatch.setattr(installer, "mutable_paths",
                         lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("mutable paths read")))
     monkeypatch.setattr(installer, "install_integration",
@@ -182,8 +183,10 @@ def test_update_selects_verified_release_without_touching_mutable_state(tmp_path
     assert not steam_data_root.exists()  # update does not initialize absent Steam state
     assert restarted == ["lulu-session@2.service", "lulu-consoled.service",
                          "lulu-acquisition.service", "lulu-admin.service",
-                         "mudos-recovery.service", "lulu-questarr.service"]
+                         "mudos-recovery.service", "lulu-questarr.service",
+                         "lulu-questarr-pam-auth.service"]
     assert ["systemctl", "enable", "--now", "lulu-questarr-auth-proxy.service"] in commands
+    assert ["systemctl", "enable", "--now", "lulu-questarr-pam-auth.service"] in commands
     assert not any("pacman" in " ".join(command) or "purge" in " ".join(command)
                    for command in commands)
 
@@ -538,11 +541,16 @@ def test_questarr_uses_configured_storage_resolver_not_hardcoded_host_root():
 def test_questarr_provisioning_installs_auth_proxy_and_restarts_private_upstream():
     provision = (ROOT / "scripts/provision-questarr.sh").read_text()
     assert "lulu-questarr-auth-proxy.service" in provision
+    assert "lulu-questarr-pam-auth.service" in provision
     assert "systemctl restart lulu-questarr.service" in provision
     assert "systemctl enable --now lulu-questarr-auth-proxy.service" in provision
+    assert "systemctl enable --now lulu-questarr-pam-auth.service" in provision
     proxy_unit = (ROOT / "packaging/lulu-questarr-auth-proxy.service").read_text()
-    assert "After=network-online.target lulu-questarr.service lulu-acquisition.service" in proxy_unit
+    assert "Requires=lulu-questarr.service lulu-questarr-pam-auth.service" in proxy_unit
     assert "ReadWritePaths=/home/lulu/.local/share/lulu" in proxy_unit
+    auth_unit = (ROOT / "packaging/lulu-questarr-pam-auth.service").read_text()
+    assert "User=root" in auth_unit
+    assert "ReadWritePaths=/run/lulu-questarr-pam /run/faillock" in auth_unit
 
 
 def test_release_builder_installs_questarr_launcher_at_service_exec_path():

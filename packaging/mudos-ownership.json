@@ -26,10 +26,12 @@
       "/etc/systemd/system/lulu-osk@.service",
       "/etc/systemd/system/lulu-questarr.service", "/etc/systemd/system/lulu-questarr-reconcile.service",
       "/etc/systemd/system/lulu-questarr-auth-proxy.service",
+      "/etc/systemd/system/lulu-questarr-pam-auth.service",
       "/etc/systemd/system/lulu-provider-install@.service.d/storage.conf",
       "/etc/systemd/system/multi-user.target.wants/lulu-transmission.service",
       "/etc/systemd/system/multi-user.target.wants/lulu-questarr.service",
-      "/etc/systemd/system/multi-user.target.wants/lulu-questarr-auth-proxy.service"
+      "/etc/systemd/system/multi-user.target.wants/lulu-questarr-auth-proxy.service",
+      "/etc/systemd/system/multi-user.target.wants/lulu-questarr-pam-auth.service"
     ],
     "system_files": [
       "/etc/pam.d/lulu-session", "/etc/lulu/presentation.conf", "/etc/lulu/mudos-recovery-token",

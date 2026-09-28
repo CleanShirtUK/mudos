@@ -45,12 +45,13 @@ class QuestarrAuthProxyTests(unittest.TestCase):
         secrets.put("web/questarr", "username", "lulu")
         secrets.put("web/questarr", "password", "internal-random-secret")
         with patch.object(proxy, "SecretStore", return_value=secrets), \
-                patch.object(proxy, "authenticate_managed_account", return_value=True) as pam, \
+                patch.object(proxy, "_pam_helper_authenticate",
+                             return_value={"authenticated": True, "category": "accepted"}) as pam, \
                 patch.object(proxy, "_json_request", return_value=(200, b'{"token":"opaque"}')) as upstream:
             status, response = proxy._login_system_user("josh", "pam-password-not-saved")
         self.assertEqual(status, 200)
         self.assertEqual(json.loads(response)["token"], "opaque")
-        pam.assert_called_once_with("pam-password-not-saved", account="josh")
+        pam.assert_called_once_with("josh", "pam-password-not-saved")
         self.assertTrue(upstream.call_args.args[1]["username"] == "lulu")
         self.assertTrue(upstream.call_args.args[1]["password"] == "internal-random-secret")
         self.assertFalse(any(value == "pam-password-not-saved"
@@ -58,7 +59,7 @@ class QuestarrAuthProxyTests(unittest.TestCase):
         self.assertFalse(any(value == "pam-password-not-saved" for value in secrets.values.values()))
 
     def test_non_appliance_user_never_reaches_pam_or_questarr(self):
-        with patch.object(proxy, "authenticate_managed_account") as pam, \
+        with patch.object(proxy, "_pam_helper_authenticate") as pam, \
                 patch.object(proxy, "_json_request") as upstream:
             status, _ = proxy._login_system_user("other-user", "password")
         self.assertEqual(status, 401)
@@ -67,7 +68,7 @@ class QuestarrAuthProxyTests(unittest.TestCase):
 
     def test_runtime_service_account_is_not_the_questarr_pam_principal(self):
         self.assertEqual(proxy.QUESTARR_PAM_ACCOUNT, "josh")
-        with patch.object(proxy, "authenticate_managed_account") as pam:
+        with patch.object(proxy, "_pam_helper_authenticate") as pam:
             status, _ = proxy._login_system_user("lulu", "not-used")
         self.assertEqual(status, 401)
         pam.assert_not_called()
