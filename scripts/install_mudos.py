@@ -601,6 +601,10 @@ def do_update(repo: Path, manifest: dict, dry_run: bool,
     if "lulu-session@2.service" not in active_units:
         raise InstallError("--update requires the normal Mudos graphical session to be active")
     previous_pids = {unit: _main_pid(unit) for unit in active_units}
+    questarr_proxy_needs_start = (
+        "lulu-questarr.service" in active_units
+        and "lulu-questarr-auth-proxy.service" not in active_units
+    )
     release = existing_release(release_root, sha)
     if release is None:
         release = release_root / f"{sha[:7]}-candidate-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}"
@@ -640,12 +644,20 @@ def do_update(repo: Path, manifest: dict, dry_run: bool,
                 created_aliases.append(alias)
         repair_steam_bootstrap_directory(steam_data_root)
         _restart_update_services(active_units)
+        if questarr_proxy_needs_start:
+            # Questarr's private upstream is moved off the LAN-facing port in
+            # this integration release. Start its new PAM proxy on the first
+            # upgrade where Questarr was already enabled and running.
+            run(["systemctl", "enable", "--now", "lulu-questarr-auth-proxy.service"])
+            active_units.append("lulu-questarr-auth-proxy.service")
         _verify_update_services(active_units, previous_pids)
         after_state = _session_state()
         if after_state.get("lifecycle") != "shell":
             raise InstallError("updated Sessiond did not restore the normal Mudos shell")
     except Exception as error:
         print(f"update validation failed; restoring previous release {previous}: {error}", file=sys.stderr)
+        if questarr_proxy_needs_start:
+            run(["systemctl", "disable", "--now", "lulu-questarr-auth-proxy.service"], check=False)
         if selected_new_release:
             run([sys.executable, str(repo / "scripts/release.py"), "activate", "--release-dir", str(previous)])
         for path, old in old_units.items():

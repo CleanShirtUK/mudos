@@ -147,7 +147,9 @@ def test_update_selects_verified_release_without_touching_mutable_state(tmp_path
     monkeypatch.setattr(installer, "source_revision", lambda _repo: (revision, "test"))
     monkeypatch.setattr(installer.os, "geteuid", lambda: 0)
     monkeypatch.setattr(installer, "_session_state", lambda: {"lifecycle": "shell"})
-    monkeypatch.setattr(installer, "_active", lambda unit: unit != "lulu-file-browser.service")
+    monkeypatch.setattr(installer, "_active",
+                        lambda unit: unit not in {"lulu-file-browser.service",
+                                                  "lulu-questarr-auth-proxy.service"})
     monkeypatch.setattr(installer, "mutable_paths",
                         lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("mutable paths read")))
     monkeypatch.setattr(installer, "install_integration",
@@ -180,8 +182,8 @@ def test_update_selects_verified_release_without_touching_mutable_state(tmp_path
     assert not steam_data_root.exists()  # update does not initialize absent Steam state
     assert restarted == ["lulu-session@2.service", "lulu-consoled.service",
                          "lulu-acquisition.service", "lulu-admin.service",
-                         "mudos-recovery.service", "lulu-questarr.service",
-                         "lulu-questarr-auth-proxy.service"]
+                         "mudos-recovery.service", "lulu-questarr.service"]
+    assert ["systemctl", "enable", "--now", "lulu-questarr-auth-proxy.service"] in commands
     assert not any("pacman" in " ".join(command) or "purge" in " ".join(command)
                    for command in commands)
 
