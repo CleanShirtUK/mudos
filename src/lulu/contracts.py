@@ -57,7 +57,14 @@ class LaunchDescriptor:
     classification: SessionClassification = SessionClassification.GAME
     title: str = ""
     presentation: Presentation = Presentation.GAME
-    input_mode: InputMode = InputMode.GAME
+    input_mode: InputMode | None = None
+
+    def __post_init__(self) -> None:
+        if self.input_mode is None:
+            default_mode = (InputMode.COMPAT
+                            if self.classification is SessionClassification.UTILITY
+                            else InputMode.GAME)
+            object.__setattr__(self, "input_mode", default_mode)
 
 
 @dataclass(frozen=True, slots=True)

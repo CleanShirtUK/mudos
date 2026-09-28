@@ -42,6 +42,13 @@ class SessionModelTests(unittest.TestCase):
 
         asyncio.run(exercise())
 
+    def test_utility_classification_defaults_to_compat_and_game_keeps_gamepad(self) -> None:
+        utility = LaunchDescriptor(
+            primary_id="utility:fixture", classification=SessionClassification.UTILITY)
+        game = LaunchDescriptor(primary_id="game:fixture")
+        self.assertEqual(utility.input_mode, InputMode.COMPAT)
+        self.assertEqual(game.input_mode, InputMode.GAME)
+
     def test_failed_utility_launch_rolls_compatibility_profile_back(self) -> None:
         async def exercise() -> None:
             session = SessionStateModel()

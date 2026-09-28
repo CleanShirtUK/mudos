@@ -575,7 +575,6 @@ class ConsoleSessionInterface(ServiceInterface):
             classification=SessionClassification.UTILITY,
             title=title.strip(),
             presentation=Presentation.FOREIGN_UI,
-            input_mode=InputMode.COMPAT,
         )
         try:
             return await self.supervisor.launch(
