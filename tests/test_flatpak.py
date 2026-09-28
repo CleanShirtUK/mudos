@@ -177,7 +177,8 @@ class FlatpakTests(unittest.TestCase):
         adapter = FakeFlatpak()
         self.assertEqual(adapter.launch_command("org.openttd.OpenTTD"),
                          ["/usr/bin/flatpak", "run", "--socket=x11", "--env=SDL_VIDEODRIVER=x11",
-                           "org.openttd.OpenTTD"])
+                          "--env=GDK_BACKEND=x11", "--env=QT_QPA_PLATFORM=xcb",
+                          "org.openttd.OpenTTD"])
         self.assertEqual(adapter.launch_command("app/org.example.Graphics/x86_64/stable")[-1],
                          "app/org.example.Graphics/x86_64/stable")
         with tempfile.TemporaryDirectory() as directory:

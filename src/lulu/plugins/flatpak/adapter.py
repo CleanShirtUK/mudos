@@ -567,11 +567,11 @@ class FlatpakAdapter:
         elif (not application_id or "/" in application_id
               or not re.fullmatch(r"[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)+", application_id)):
             raise FlatpakError("invalid-application-id", "Flatpak application ID is invalid")
-        # Gamescope selects the supervised application's X11 window. Prefer
-        # SDL's X11 backend for Flatpak apps so Wayland-native clients do not
-        # bypass that focusable-window registry.
+        # Gamescope selects the supervised application's X11 window. Keep
+        # common application toolkits on X11; otherwise GTK/Qt may prefer the
+        # nested Wayland socket and bypass Gamescope's focusable-window registry.
         return [self.command, "run", "--socket=x11", "--env=SDL_VIDEODRIVER=x11",
-                target]
+                "--env=GDK_BACKEND=x11", "--env=QT_QPA_PLATFORM=xcb", target]
 
     async def prepare_browser_handoff(self, uri: str) -> dict[str, str]:
         """Fetch and validate one claimed flatpak+https flatpakref."""
