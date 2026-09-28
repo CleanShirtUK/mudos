@@ -1036,6 +1036,11 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertIn('cardWidth: root.homeNavigationCardWidth', system_landing)
         self.assertIn('cardHeight: root.homeNavigationCardHeight', system_landing)
 
+    def test_back_from_utilities_returns_to_main_home_like_other_system_pages(self) -> None:
+        back = QML.split("function back() {", 1)[1].split("\n    function ", 1)[0]
+        self.assertNotIn('systemCategories[systemCategoryIndex] === "Utilities"', back)
+        self.assertIn('space = "home"', back)
+
     def test_game_options_owns_confirm_and_ignores_reopen(self) -> None:
         native_shell = (ROOT / "native" / "lulu-shell.cpp").read_text()
         self.assertIn("confirmButton = nintendoLayout_", native_shell)

@@ -2676,10 +2676,6 @@ import QtQuick.Controls
                 && controllerSettingsRef.back())
             return
         if (space === "system") {
-            if (!systemLanding && systemCategories[systemCategoryIndex] === "Utilities") {
-                systemLanding = true
-                return
-            }
             if (!systemLanding && systemCategories[systemCategoryIndex] === "Network"
                     && internetSettingsRef && internetSettingsRef.credentialView) {
                 internetSettingsRef.credentialView = false
