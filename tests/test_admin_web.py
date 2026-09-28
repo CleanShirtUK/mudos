@@ -226,6 +226,22 @@ class AdminWebTests(unittest.TestCase):
             states = app.setup_provider_states()
         self.assertEqual([row["status"] for row in states], ["configuration_required"] * 2)
 
+        class ConfiguredTorrent:
+            configured = True
+
+        with patch("lulu.admin_web.provider_manifest", return_value=rows), \
+                patch("lulu.admin_web.onboarding_state", return_value={
+                    "selected_providers": ["torrent"]}), \
+                patch.object(app, "test_provider", return_value=(False, "RPC unavailable")), \
+                patch.object(app, "service_state", return_value="inactive"), \
+                patch.object(app.config, "provider", return_value=ConfiguredTorrent()):
+            torrent = app.setup_provider_states()[0]
+        self.assertTrue(torrent["configured"])
+        self.assertFalse(torrent["connected"])
+        self.assertFalse(torrent["running"])
+        self.assertEqual(torrent["status"], "degraded")
+        self.assertIn("RPC unavailable", torrent["status_message"])
+
     def test_oobe_usenet_save_enables_acquisition_executor_and_reloads_service(self):
         class Secrets(FakeSecrets):
             pass
@@ -1127,10 +1143,11 @@ var fetch=async function(path,options){calls.push(path);let body=options&&option
         app.config.provider = lambda _provider: Config()
         app._auth = lambda provider: Auth() if provider in {"epic", "gog"} else None
         with patch("lulu.plugins.romm.RommConfig.from_file",
-                   return_value=type("Romm", (), {"client_token": "stored-secret-reference"})()):
+                   return_value=type("Romm", (), {"server_url": "https://romm.example",
+                                                    "client_token": "stored-secret-reference"})()):
             rows = {row["id"]: row for row in app.provider_rows()}
         for provider in ("epic", "gog"):
-            self.assertEqual(rows[provider]["status"], "configured")
+            self.assertEqual(rows[provider]["status"], "authenticated")
             self.assertTrue(rows[provider]["configured"])
         self.assertEqual(rows["providers.romm"]["status"], "configured")
         self.assertTrue(rows["providers.romm"]["configured"])

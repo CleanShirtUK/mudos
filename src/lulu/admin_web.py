@@ -283,6 +283,7 @@ class AdminApp:
         self.auth_transactions = AuthTransactionStore()
 
     def setup_snapshot(self) -> dict[str, object]:
+        self.config = ProviderConfigurationService.from_environment(secrets=self.secrets)
         integrations = []
         config_ids = {"providers.romm": "providers.romm",
                       "providers.steam": "providers.steam",
@@ -447,7 +448,7 @@ class AdminApp:
                 healthy, message = self.test_provider("questarr")
                 # Health, an account, and a backend do not prove Questarr's
                 # authenticated configuration or initial reconciliation.
-                row["configured"] = False
+                row["configured"] = None
                 row["running"] = running
                 row["healthy"] = bool(healthy)
                 row["status"] = "running" if running and healthy else "degraded"
@@ -462,10 +463,7 @@ class AdminApp:
                 row["running"] = self.service_state(
                     "lulu-transmission.service" if provider_id == "torrent" else "nzbget.service") == "active"
                 row["healthy"] = bool(ok)
-                if not ok:
-                    row["status"] = "configuration_required"
-                    row["status_message"] = message
-                elif provider_id == "usenet":
+                if provider_id == "usenet":
                     server = self.config.provider("providers.usenet.server")
                     acquisition = self.config.provider("providers.usenet")
                     server_credentials_configured = (
@@ -491,23 +489,31 @@ class AdminApp:
                             if isinstance(server_validation, dict) else
                             "Usenet server credentials have not been tested.",
                     }
-                    row["status"] = "configured" if server_configured else "configuration_required"
+                    row["status"] = ("configured" if server_configured and ok else
+                                      "degraded" if server_configured else "configuration_required")
                     row["configured"] = server_configured
                     row["acquisition_configured"] = server_configured
+                    row["degraded"] = bool(server_configured and not ok)
                     row["status_message"] = (
                         "NZBGet RPC healthy; NNTP credentials were accepted, but a real transfer is not validated."
-                        if server_configured and server_authenticated is True else
+                        if server_configured and ok and server_authenticated is True else
                         "NZBGet RPC healthy; NNTP connection test failed. Correct the server settings and retry."
-                        if server_configured and server_authenticated is False else
+                        if server_configured and ok and server_authenticated is False else
                         "NZBGet RPC healthy; test the saved Usenet server credentials before downloads can be Ready."
-                        if server_configured else
+                        if server_configured and ok else
+                        message if server_configured else
                         "Usenet server credentials are saved, but Acquisitiond has no registered Usenet executor."
                         if server_credentials_configured else
                         "NZBGet RPC healthy; configure and test a news server before downloads can be Ready.")
                 else:
-                    row["status"] = "configured"
-                    row["configured"] = True
-                    row["status_message"] = "Transmission RPC healthy; a real transfer has not been validated."
+                    torrent_config = self.config.provider(target)
+                    torrent_configured = bool(getattr(torrent_config, "configured", ok))
+                    row["configured"] = torrent_configured
+                    row["status"] = ("configured" if ok else
+                                      "degraded" if torrent_configured else "configuration_required")
+                    row["degraded"] = bool(torrent_configured and not ok)
+                    row["status_message"] = ("Transmission RPC healthy; a real transfer has not been validated."
+                                              if ok else message)
             else:
                 row["status"] = "installed"
                 row["status_message"] = "Installed; game and content launch readiness has not been validated."
@@ -990,36 +996,68 @@ class AdminApp:
             self.sessions.pop(token, None)
 
     def provider_rows(self) -> list[dict[str, object]]:
+        # ProviderConfigurationService is a snapshot object. Recreate it for
+        # each status read so edits made by OOBE, Admin, or an operator become
+        # visible without restarting this long-running web process.
+        self.config = ProviderConfigurationService.from_environment(secrets=self.secrets)
         rows = []
         declared = list(PROVIDERS)
         known = {provider_id for provider_id, _ in declared}
         declared.extend((component.component_id, component.name)
                         for component in self.components.all()
                         if component.component_id not in known and component.provider_ids)
+        try:
+            installed_manifest = {str(item.get("id")): bool(item.get("installed"))
+                                  for item in provider_manifest(self.components)}
+        except Exception:
+            LOGGER.exception("provider installation status unavailable")
+            installed_manifest = {}
         for provider_id, name in declared:
             config = self.config.provider(provider_id)
             auth = self._auth(provider_id)
-            auth_state = auth.status() if auth else {"status": "unavailable"}
+            auth_state = self.auth_status(provider_id) if auth else {"status": "unavailable"}
             status = config.status
             configured = config.configured
+            dimensions: dict[str, object] = {}
             if provider_id in {"epic", "gog"}:
                 # OOBE and the catalogue/acquisition clients use Legendary's
                 # and gogdl's provider-owned auth files. Generic TOML config is
                 # not their authentication authority.
-                configured = bool(auth_state.get("authenticated") or auth_state.get("configured"))
-                status = "configured" if configured else "not_configured"
+                authenticated = auth_state.get("authenticated")
+                configured = bool(auth_state.get("configured") or authenticated)
+                status = ("authenticated" if authenticated else
+                          str(auth_state.get("status", "authentication_required")))
+                dimensions["authenticated"] = bool(authenticated)
             elif provider_id == "providers.romm":
                 from .plugins.romm import RommConfig
+                from .plugins.romm.readiness import RommReadinessStore
                 romm = RommConfig.from_file()
-                configured = bool(romm and romm.client_token)
-                status = "configured" if configured else "not_configured"
+                configured = bool(romm and romm.server_url and romm.client_token)
+                readiness = RommReadinessStore().snapshot(selected=True, installed=True, config=romm)
+                dimensions.update({"catalogue_reconciled": readiness.get("status") == "ready",
+                                  "last_error": readiness.get("message", "") if readiness.get("status") not in {"ready", "authenticated"} else ""})
+                readiness_status = str(readiness.get("status", "not_configured"))
+                status = ("configured" if configured and readiness_status in {"installed", "authenticated"}
+                          else readiness_status)
             elif provider_id == "steam":
                 from .plugins.steam.entitlements import SteamEntitlementConfig
                 steam = SteamEntitlementConfig.from_file()
                 configured = bool(steam and self.secrets.configured("steam", "web-api-key"))
-                status = "configured" if configured else "not_configured"
+                auth = self.auth_status("steam")
+                dimensions["authenticated"] = bool(auth.get("authenticated"))
+                status = str(auth.get("status", "authentication_required"))
+            service_unit = {"providers.torrent": "lulu-transmission.service",
+                            "providers.usenet": "nzbget.service",
+                            "providers.prowlarr": "prowlarr.service",
+                            "questarr": "lulu-questarr.service"}.get(provider_id)
+            if service_unit:
+                service_state = self.service_state(service_unit)
+                dimensions["running"] = service_state == "active"
+                dimensions["service_state"] = service_state
+            installed = installed_manifest.get(provider_id)
             rows.append({"id": provider_id, "name": name, "status": status,
-                         "configured": configured,
+                         "installed": installed, "configured": configured,
+                         **dimensions,
                          "secrets": {key: config.secret_available(key) for key in config.secret_refs},
                          "authentication": auth_state})
         return rows
