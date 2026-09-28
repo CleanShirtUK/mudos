@@ -3672,6 +3672,8 @@ import QtQuick.Controls
             visible: root.space === "system" && root.systemLanding
             categories: root.systemCategories
             selectedIndex: root.systemCategoryIndex
+            cardWidth: root.homeNavigationCardWidth
+            cardHeight: root.homeNavigationCardHeight
             uiScale: root.uiScale
             typography: typography
             luluPalette: luluPalette

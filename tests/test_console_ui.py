@@ -1031,6 +1031,11 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertIn("for (const QString &compositePath : controllerCompositePaths_)", native_shell)
         self.assertIn("Sessiond's connected controller inventory is authoritative", native_shell)
 
+    def test_system_landing_cards_use_home_card_dimensions(self) -> None:
+        system_landing = QML.split('id: systemLandingHome', 1)[1].split('\n        }', 1)[0]
+        self.assertIn('cardWidth: root.homeNavigationCardWidth', system_landing)
+        self.assertIn('cardHeight: root.homeNavigationCardHeight', system_landing)
+
     def test_game_options_owns_confirm_and_ignores_reopen(self) -> None:
         native_shell = (ROOT / "native" / "lulu-shell.cpp").read_text()
         self.assertIn("confirmButton = nintendoLayout_", native_shell)
