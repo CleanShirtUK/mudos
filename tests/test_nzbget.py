@@ -105,6 +105,91 @@ class NzbGetClientTests(unittest.TestCase):
 
 
 class UsenetProviderTests(unittest.TestCase):
+    def test_terminal_cancel_cleanup_removes_only_matching_owned_queue_group(self) -> None:
+        async def exercise():
+            with tempfile.TemporaryDirectory() as directory:
+                base = Path(directory)
+                paths = MudosPaths(base / "Games", base / "config", base / "data", base / "cache", base / "run")
+                dupe_key = "mudos:job-cancelled"
+                group = NzbDownload(4, "owned", "mudos", dupe_key, "DOWNLOADING",
+                                    100, 50, 50, 0, "/incomplete/owned", "", None, "NONE")
+
+                class FakeClient:
+                    def __init__(self, groups):
+                        self.groups = list(groups)
+                        self.removed = []
+                    async def find(self, key):
+                        return next((item for item in self.groups if item.dupe_key == key), None), None
+                    async def remove(self, nzbid, *, preserve_history=True):
+                        self.removed.append((nzbid, preserve_history))
+                        self.groups = [item for item in self.groups if item.nzbid != nzbid]
+
+                client = FakeClient([group])
+                provider = UsenetProvider(client, paths)
+                job = DownloadJob("job-cancelled", "usenet", "Questarr",
+                                  content_identity="file:///staging/request.nzb",
+                                  state=JobState.CANCELLED, stage="cancelled", origin="questarr",
+                                  provider_job_id="4", backend="nzbget", ownership_label=dupe_key)
+                provider._record(job, 4, str(paths.usenet_complete_root))
+
+                await provider.cleanup_cancelled(job)
+                await provider.cleanup_cancelled(job)
+
+                self.assertEqual(client.removed, [(4, True)])
+                self.assertEqual(client.groups, [])
+                self.assertEqual(job.state, JobState.CANCELLED)
+
+        asyncio.run(exercise())
+
+    def test_terminal_cancel_cleanup_is_noop_when_owned_provider_group_is_absent(self) -> None:
+        async def exercise():
+            with tempfile.TemporaryDirectory() as directory:
+                base = Path(directory)
+                paths = MudosPaths(base / "Games", base / "config", base / "data", base / "cache", base / "run")
+
+                class FakeClient:
+                    removed = []
+                    async def find(self, key): return None, None
+                    async def remove(self, nzbid, *, preserve_history=True): self.removed.append(nzbid)
+
+                client = FakeClient()
+                provider = UsenetProvider(client, paths)
+                job = DownloadJob("job-absent", "usenet", "Questarr", state=JobState.CANCELLED,
+                                  origin="questarr", provider_job_id="4", backend="nzbget",
+                                  ownership_label="mudos:job-absent")
+                provider._record(job, 4, str(paths.usenet_complete_root))
+                await provider.cleanup_cancelled(job)
+                self.assertEqual(client.removed, [])
+                self.assertEqual(job.state, JobState.CANCELLED)
+
+        asyncio.run(exercise())
+
+    def test_terminal_cancel_cleanup_does_not_remove_same_numeric_id_with_wrong_ownership(self) -> None:
+        async def exercise():
+            with tempfile.TemporaryDirectory() as directory:
+                base = Path(directory)
+                paths = MudosPaths(base / "Games", base / "config", base / "data", base / "cache", base / "run")
+                unrelated = NzbDownload(4, "unrelated", "external", "external:other", "DOWNLOADING",
+                                        100, 50, 50, 0, "/incomplete/unrelated", "", None, "NONE")
+
+                class FakeClient:
+                    removed = []
+                    async def find(self, key): return unrelated, None
+                    async def remove(self, nzbid, *, preserve_history=True): self.removed.append(nzbid)
+
+                client = FakeClient()
+                provider = UsenetProvider(client, paths)
+                dupe_key = "mudos:job-unowned"
+                job = DownloadJob("job-unowned", "usenet", "Questarr", state=JobState.CANCELLED,
+                                  origin="questarr", provider_job_id="4", backend="nzbget",
+                                  ownership_label=dupe_key)
+                provider._record(job, 4, str(paths.usenet_complete_root))
+                await provider.cleanup_cancelled(job)
+                self.assertEqual(client.removed, [])
+                self.assertEqual(job.state, JobState.CANCELLED)
+
+        asyncio.run(exercise())
+
     def test_external_manual_item_is_discovered_without_claiming_mudos_ownership(self) -> None:
         class FakeClient:
             async def groups(self):

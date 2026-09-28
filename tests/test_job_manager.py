@@ -53,6 +53,14 @@ class ExternalDiscoveryExecutor(ControlledExecutor):
         return ()
 
 
+class TerminalCleanupExecutor:
+    def __init__(self) -> None:
+        self.cleanup_calls: list[str] = []
+
+    async def cleanup_cancelled(self, job: DownloadJob) -> None:
+        self.cleanup_calls.append(job.job_id)
+
+
 class TerminalCancellationExecutor:
     async def run(self, job: DownloadJob, reporter: JobReporter) -> None:
         raise JobCancelled
@@ -166,6 +174,28 @@ class JobDomainTests(unittest.TestCase):
             await cancel
             self.assertEqual(manager.jobs[job.job_id].state, JobState.CANCELLED)
             self.assertEqual(manager.active_download_count, 0)
+        asyncio.run(exercise())
+
+    def test_repeated_terminal_cancel_reconciles_provider_cleanup_without_mutating_row(self) -> None:
+        async def exercise() -> None:
+            executor = TerminalCleanupExecutor()
+            manager = JobManager()
+            manager.register_executor("usenet", executor)
+            cancelled = DownloadJob("cancelled-owned", "usenet", "Questarr",
+                                    content_identity="file:///private/request.nzb",
+                                    state=JobState.CANCELLED, stage="cancelled",
+                                    cancellation_supported=True, origin="questarr",
+                                    provider_job_id="4", backend="nzbget",
+                                    ownership_label="mudos:cancelled-owned")
+            manager.jobs[cancelled.job_id] = cancelled
+
+            first = await manager.cancel(cancelled.job_id)
+            second = await manager.cancel(cancelled.job_id)
+            self.assertEqual(first, cancelled)
+            self.assertEqual(second, cancelled)
+            self.assertEqual(manager.jobs[cancelled.job_id], cancelled)
+            self.assertEqual(executor.cleanup_calls, [cancelled.job_id, cancelled.job_id])
+
         asyncio.run(exercise())
 
     def test_external_reconciliation_does_not_cancel_acquisitiond_owned_questarr_job(self) -> None:

@@ -469,3 +469,34 @@ class UsenetProvider:
     async def cancel(self, job: DownloadJob) -> None:
         if job.provider_job_id:
             await self.client.remove(int(job.provider_job_id), preserve_history=True)
+
+    async def cleanup_cancelled(self, job: DownloadJob) -> None:
+        """Remove a still-queued provider job for a terminal owned job.
+
+        A numeric NZBGet ID is not proof of ownership: verify the durable
+        Acquisitiond ownership sidecar, dupe key, and live queue record before
+        issuing the provider's normal owned-job removal operation.
+        """
+        if job.provider != self.provider_id or job.state != JobState.CANCELLED \
+                or job.backend != "nzbget" or not job.provider_job_id:
+            return
+        dupe_key = self._dupe_key(job)
+        if job.ownership_label != dupe_key:
+            return
+        ownership_path = self._ownership_path(job)
+        if ownership_path.is_symlink() or not ownership_path.is_file():
+            return
+        try:
+            ownership = json.loads(ownership_path.read_text())
+        except (OSError, ValueError, json.JSONDecodeError):
+            return
+        if not isinstance(ownership, dict) or ownership.get("job_id") != job.job_id \
+                or ownership.get("provider") != self.provider_id \
+                or ownership.get("dupe_key") != dupe_key \
+                or str(ownership.get("nzbid", "")) != str(job.provider_job_id):
+            return
+        group, _history = await self.client.find(dupe_key)
+        if group is None or group.dupe_key != dupe_key \
+                or str(group.nzbid) != str(job.provider_job_id):
+            return
+        await self.client.remove(group.nzbid, preserve_history=True)

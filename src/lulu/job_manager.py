@@ -220,6 +220,16 @@ class JobManager:
         job = self._require(job_id)
         if not job.cancellation_supported:
             return job
+        if job.state == JobState.CANCELLED:
+            # Local cancellation is terminal and idempotent, but a prior
+            # cancellation may have raced provider metadata persistence or
+            # provider cleanup. Let capable executors reconcile owned remote
+            # state without changing this historical row.
+            executor = self.executors.get(job.provider)
+            cleanup = getattr(executor, "cleanup_cancelled", None)
+            if cleanup is not None:
+                await cleanup(job)
+            return self.jobs[job_id]
         if job.state in {JobState.QUEUED, JobState.FAILED}:
             executor = self.executors.get(job.provider)
             cancel = getattr(executor, "cancel", None)
