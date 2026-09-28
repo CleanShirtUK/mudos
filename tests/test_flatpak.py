@@ -29,6 +29,42 @@ class FakeFlatpak(FlatpakAdapter):
 
 
 class FlatpakTests(unittest.TestCase):
+    def test_appstream_metadata_is_the_shared_game_utility_classifier(self):
+        from pathlib import Path
+        fixtures = Path(__file__).parent / "fixtures/flatpak"
+        game_metadata = FlatpakAdapter._appstream_records(
+            str(fixtures / "org.supertuxproject.SuperTux.metainfo.xml"))["org.supertuxproject.SuperTux"]
+        utility_metadata = FlatpakAdapter._appstream_records(
+            str(fixtures / "org.example.Graphics.metainfo.xml"))["org.example.Graphics"]
+        game = FlatpakApplication("org.supertuxproject.SuperTux", "SuperTux",
+                                  categories=tuple(game_metadata["categories"]),
+                                  component_type=str(game_metadata["component_type"]))
+        utility = FlatpakApplication("org.example.Graphics", str(utility_metadata["name"]),
+                                     categories=tuple(utility_metadata["categories"]),
+                                     component_type=str(utility_metadata["component_type"]),
+                                     summary=str(utility_metadata["summary"]),
+                                     description=str(utility_metadata["description"]),
+                                     developer=str(utility_metadata["developer"]),
+                                     publisher=str(utility_metadata["publisher"]),
+                                     screenshots=tuple(utility_metadata["screenshots"]),
+                                     source_metadata=utility_metadata)
+        unknown = FlatpakApplication("org.example.Unknown", "Unknown")
+        misleading = FlatpakApplication("org.example.Misleading", "Misleading",
+                                        categories=("NotAGame",),
+                                        component_type="desktop-application")
+
+        self.assertTrue(game.is_game)
+        self.assertEqual(game.classification, "game")
+        self.assertEqual(utility.classification, "utility")
+        self.assertFalse(utility.is_game)
+        self.assertEqual(utility.summary, "Create and edit images")
+        self.assertEqual(utility.developer, "Example Studio")
+        self.assertEqual(utility.publisher, "Example Publishing")
+        self.assertEqual(len(utility.screenshots), 2)
+        self.assertEqual(utility.source_metadata["categories"], ("Graphics", "2DGraphics"))
+        self.assertEqual(unknown.classification, "unclassified")
+        self.assertEqual(misleading.classification, "utility")
+
     def test_missing_runtime_error_names_application_and_exact_required_ref(self):
         error = _flatpak_operation_failure("org.example.Game", [
             "The application requires the runtime org.freedesktop.Platform/x86_64/26.08 which was not found"
@@ -136,7 +172,9 @@ class FlatpakTests(unittest.TestCase):
         adapter = FakeFlatpak()
         self.assertEqual(adapter.launch_command("org.openttd.OpenTTD"),
                          ["/usr/bin/flatpak", "run", "--socket=x11", "--env=SDL_VIDEODRIVER=x11",
-                          "org.openttd.OpenTTD"])
+                           "org.openttd.OpenTTD"])
+        self.assertEqual(adapter.launch_command("app/org.example.Graphics/x86_64/stable")[-1],
+                         "app/org.example.Graphics/x86_64/stable")
         # The operation command is intentionally constructed without
         # --delete-data; Flatpak owns application data retention policy.
         self.assertNotIn("--delete-data", " ".join(["flatpak", "--user", "uninstall", "--noninteractive"]))

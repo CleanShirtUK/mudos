@@ -353,8 +353,14 @@ class ConsoleCatalog:
                     LOGGER.info("catalogue stage started name=component provider=%s", component_provider)
                     applications = asyncio.run(source.reconcile())
                     games = [CatalogueGame.from_component_app(item) for item in applications
-                             if bool(getattr(item, "game", False))]
-                    self.store.reconcile_component_apps(component_provider, games)
+                             if (str(getattr(item, "classification", "")) == "game"
+                                 if component_provider == "flatpak"
+                                 else bool(getattr(item, "game", False)))]
+                    flatpak_inventory = ({item.application_id: (item.classification, item.installed)
+                                          for item in applications}
+                                         if component_provider == "flatpak" else None)
+                    self.store.reconcile_component_apps(component_provider, games,
+                                                        flatpak_inventory=flatpak_inventory)
                     if self.store.last_deltas:
                         self.last_delta_batches.append(self.store.last_deltas)
                     LOGGER.info("catalogue stage completed name=component provider=%s games=%d",
@@ -2058,6 +2064,46 @@ class ConsoleInterface(ServiceInterface):
         return [self._variants(game.as_dict()) for game in games]
 
     @method()
+    async def ListUtilities(self) -> "s":
+        adapter = next((source for source in self._plugins.with_capability("catalogue")
+                        if getattr(source, "provider_id", "") == "flatpak"
+                        and hasattr(source, "reconcile")), None)
+        if adapter is None:
+            return "[]"
+        applications = await adapter.reconcile()
+        return json.dumps([item.as_dict() for item in applications
+                           if item.installed and item.classification == "utility"], sort_keys=True)
+
+    @method()
+    async def LaunchUtility(self, application_ref: "s", timeout_ms: "u") -> "s":
+        parts = application_ref.split("/")
+        if len(parts) != 4 or parts[0] != "app":
+            raise ValueError("Flatpak application ref is invalid")
+        application_id = parts[1]
+        adapters = self._plugins.with_capability("catalogue")
+        flatpak = next((source for source in adapters
+                        if getattr(source, "provider_id", "") == "flatpak"
+                        and hasattr(source, "reconcile") and hasattr(source, "launch_command")), None)
+        if flatpak is None:
+            raise ValueError("Flatpak provider is unavailable")
+        applications = await flatpak.reconcile()
+        target = next((item for item in applications if item.application_id == application_id
+                       and item.installed and item.classification == "utility"
+                       and application_ref == f"app/{item.application_id}/{item.arch}/{item.branch}"), None)
+        if target is None:
+            raise ValueError("Flatpak Utility is no longer installed or is not classified as an application")
+        if self.sessiond is None:
+            raise ValueError("console session is unavailable")
+        command = flatpak.launch_command(application_ref)
+        context = {key: os.environ[key] for key in (
+            "DISPLAY", "WAYLAND_DISPLAY", "XDG_RUNTIME_DIR", "XDG_SESSION_TYPE",
+            "DBUS_SESSION_BUS_ADDRESS", "XAUTHORITY", "HOME", "USER",
+        ) if os.environ.get(key)}
+        await self.sessiond.call_set_delegated_launch_context(json.dumps(context, sort_keys=True))
+        utility_id = f"utility:flatpak:{application_id}"
+        return await self.sessiond.call_request_game_launch(utility_id, command, timeout_ms)
+
+    @method()
     def GetCatalogueSnapshot(self) -> "(ts)":
         return self._get_catalogue_snapshot()
 
@@ -2470,6 +2516,16 @@ class ConsoleInterface(ServiceInterface):
         game = games.get(game_id)
         if game is None or not game.launchable:
             raise ValueError("game is not installed and launchable")
+        if game.provider == "flatpak":
+            adapter = next((source for source in self._plugins.with_capability("catalogue")
+                            if getattr(source, "provider_id", "") == "flatpak"
+                            and hasattr(source, "reconcile")), None)
+            if adapter is None:
+                raise ValueError("Flatpak game classification is unavailable")
+            applications = await adapter.reconcile()
+            if not any(item.application_id == game.provider_id and item.installed and item.is_game
+                       for item in applications):
+                raise ValueError("Flatpak application is not currently classified as an installed game")
         LOGGER.info("launch dispatch game_id=%s provider=%s provider_id=%s", game_id, game.provider, game.provider_id)
         for launcher in self._plugins.with_capability("launch"):
             provider_ids = tuple(getattr(launcher, "provider_ids", ()))

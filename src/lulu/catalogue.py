@@ -169,6 +169,7 @@ class CatalogueGame:
     preview_still_provider: str = ""
     preview_still_source_url: str = ""
     preview_animation_url: str = ""
+    component_classification: str = ""
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "platform", normalize_platform_identity(self.platform))
@@ -206,13 +207,20 @@ class CatalogueGame:
         value = app if isinstance(app, dict) else {
             key: getattr(app, key, "") for key in (
                 "application_id", "name", "summary", "version", "branch", "remote",
-                "installed", "icon", "categories",
+                "installed", "icon", "categories", "classification",
             )
         }
+        if value.get("classification") not in (None, "game"):
+            raise ValueError("only game-classified component applications belong in the game catalogue")
         application_id = str(value.get("application_id", "")).strip()
         title = str(value.get("name", application_id)).strip() or application_id
         installed = bool(value.get("installed", False))
         categories = tuple(str(item) for item in value.get("categories", ()))
+        from .flatpak_classification import classify_flatpak
+        classification = str(value.get("classification") or classify_flatpak(
+            str(value.get("component_type", "")), categories))
+        if classification != "game":
+            raise ValueError("only game-classified component applications belong in the game catalogue")
         return cls(
             game_id=f"flatpak:{application_id}", provider="flatpak", provider_id=application_id,
             title=title, platform="PC", install_state="installed" if installed else "available",
@@ -222,6 +230,7 @@ class CatalogueGame:
             availability_state="installed" if installed else "available", provider_record_id=application_id,
             content_identity=application_id, catalogue_source="flatpak", icon_url=str(value.get("icon", "")),
             artwork_type="icon", artwork_provider="flatpak",
+            component_classification=classification,
         )
 
     @classmethod
@@ -346,7 +355,7 @@ def canonical_metadata_required(record: CatalogueGame, *, in_library: bool = Fal
 # user's entitlement/access.  Provider catalogue discovery is deliberately
 # not enough.  RomM is retained here because it is the user's accessible
 # catalogue, while component/Flathub discovery remains storefront-only.
-INSTALLABLE_CATALOGUE_SOURCES = frozenset({"steam", "romm", "gog", "epic"})
+INSTALLABLE_CATALOGUE_SOURCES = frozenset({"steam", "romm", "gog", "epic", "flatpak"})
 
 
 # These two provider-observation fields are deliberately excluded from
@@ -384,7 +393,7 @@ SELECT_COLUMNS = (
         "protondb_trending_tier, protondb_best_tier, protondb_report_count, protondb_fetched_at, "
          "component_paths, component_roles, component_title_ids, mudos_owned, artwork_type, artwork_provider, "
             "artwork_width, artwork_height, icon_url, canonical_cover_url, canonical_cover_width, canonical_cover_height, preview_video, preview_video_provider, preview_video_source_url, landscape_artwork_url, "
-             "icon_square_url, icon_square_provider, icon_square_source_url, preview_video_url, preview_still_url, preview_still_provider, preview_still_source_url, preview_animation_url"
+              "icon_square_url, icon_square_provider, icon_square_source_url, preview_video_url, preview_still_url, preview_still_provider, preview_still_source_url, preview_animation_url, component_classification"
 )
 SELECT_FIELD_ORDER = (
     "game_id", "provider", "provider_id", "title", "platform", "install_state", "launchable",
@@ -401,7 +410,7 @@ SELECT_FIELD_ORDER = (
      "protondb_report_count", "protondb_fetched_at", "component_paths", "component_roles",
       "component_title_ids", "mudos_owned", "artwork_type", "artwork_provider", "artwork_width",
           "artwork_height", "icon_url", "canonical_cover_url", "canonical_cover_width", "canonical_cover_height", "preview_video", "preview_video_provider", "preview_video_source_url", "landscape_artwork_url",
-           "icon_square_url", "icon_square_provider", "icon_square_source_url", "preview_video_url", "preview_still_url", "preview_still_provider", "preview_still_source_url", "preview_animation_url",
+            "icon_square_url", "icon_square_provider", "icon_square_source_url", "preview_video_url", "preview_still_url", "preview_still_provider", "preview_still_source_url", "preview_animation_url", "component_classification",
 )
 
 
@@ -475,7 +484,8 @@ class CatalogueStore:
                            "icon_square_source_url": "TEXT NOT NULL DEFAULT ''", "preview_video_url": "TEXT NOT NULL DEFAULT ''",
                             "preview_still_url": "TEXT NOT NULL DEFAULT ''", "preview_still_provider": "TEXT NOT NULL DEFAULT ''",
                             "preview_still_source_url": "TEXT NOT NULL DEFAULT ''",
-                            "preview_animation_url": "TEXT NOT NULL DEFAULT ''"}
+                           "preview_animation_url": "TEXT NOT NULL DEFAULT ''",
+                        "component_classification": "TEXT NOT NULL DEFAULT ''"}
         for name, definition in migrations.items():
             if name not in columns:
                 try:
@@ -1052,7 +1062,8 @@ class CatalogueStore:
         self._finish_operation(deltas)
         return game
 
-    def reconcile_component_apps(self, provider: str, games: list[CatalogueGame]) -> list[CatalogueGame]:
+    def reconcile_component_apps(self, provider: str, games: list[CatalogueGame], *,
+                                 flatpak_inventory: dict[str, tuple[str, bool]] | None = None) -> list[CatalogueGame]:
         """Reconcile a component-owned snapshot by stable provider identity."""
         deltas: list[CatalogueDelta] = []
         incoming = {game.game_id for game in games}
@@ -1060,9 +1071,12 @@ class CatalogueStore:
         with self.atomic():
             for current in self._rows("SELECT %s FROM games WHERE provider=?" % SELECT_COLUMNS, (provider,)):
                 if current.game_id not in incoming:
+                    inventory_state = (flatpak_inventory or {}).get(current.provider_id)
+                    classification = inventory_state[0] if inventory_state else current.component_classification
                     self._apply_existing_locked(current, replace(current, install_state="available",
                                              launchable=False, install_dir="",
-                                             availability_state="available"), deltas)
+                                             availability_state="available",
+                                             component_classification=classification), deltas)
             for game in games:
                 current = self.get_game(game.game_id)
                 if current is None:
@@ -1193,7 +1207,8 @@ class CatalogueStore:
         )
 
     def list_games(self, scope: str = "all") -> list[CatalogueGame]:
-        query = f"SELECT {SELECT_COLUMNS} FROM games WHERE {self._installed_presentation_where()}"
+        query = (f"SELECT {SELECT_COLUMNS} FROM games WHERE {self._installed_presentation_where()} "
+                 "AND (provider<>'flatpak' OR component_classification='game')")
         parameters: tuple[object, ...] = ()
         if scope == "pc":
             # PC Games includes native/managed PC applications from all
@@ -1224,6 +1239,7 @@ class CatalogueStore:
     def list_recent(self) -> list[CatalogueGame]:
         return self._rows(
             f"SELECT {SELECT_COLUMNS} FROM games WHERE {self._installed_presentation_where()} "
+            "AND (provider<>'flatpak' OR component_classification='game') "
             "AND last_played>0 ORDER BY last_played DESC"
         )
 
@@ -1235,6 +1251,7 @@ class CatalogueStore:
         query = (
             f"SELECT {SELECT_COLUMNS} FROM games WHERE "
             "availability_state='available' AND install_state='available' "
+            "AND (catalogue_source<>'flatpak' OR component_classification='game') "
             f"AND catalogue_source IN ({sources})"
         )
         parameters: tuple[object, ...] = tuple(sorted(INSTALLABLE_CATALOGUE_SOURCES))

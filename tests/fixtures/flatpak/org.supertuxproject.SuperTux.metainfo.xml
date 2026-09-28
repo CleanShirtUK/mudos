@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>org.supertuxproject.SuperTux</id>
+  <name>SuperTux</name>
+  <summary>A jump-and-run game starring Tux the Penguin</summary>
+  <description><p>Run and jump through multiple worlds with Tux.</p></description>
+  <developer id="org.supertuxproject"><name>The SuperTux Team</name></developer>
+  <categories><category>Game</category><category>ActionGame</category><category>ArcadeGame</category></categories>
+  <screenshots><screenshot type="default"><image>https://www.supertux.org/images/0_7_0/07-1.png</image><caption>Tux running through icy-island.</caption></screenshot></screenshots>
+</component>

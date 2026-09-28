@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import configparser
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 import hashlib
 import json
 import os
@@ -18,6 +18,7 @@ from urllib.request import Request, urlopen
 
 from ...job_manager import JobCancelled, JobExecutionError, JobReporter
 from ...jobs import DownloadJob, JobOperation, JobState
+from ...flatpak_classification import classify_flatpak, is_flatpak_game
 
 
 class FlatpakError(RuntimeError):
@@ -62,15 +63,42 @@ class FlatpakApplication:
     categories: tuple[str, ...] = ()
     icon: str = ""
     commit: str = ""
+    description: str = ""
+    developer: str = ""
+    publisher: str = ""
+    screenshots: tuple[dict[str, str], ...] = ()
+    component_type: str = ""
+    source_metadata: dict[str, object] = field(default_factory=dict)
 
     @property
     def game(self) -> bool:
-        categories = {item.casefold() for item in self.categories}
-        return bool(categories & {"game", "games", "arcadegame", "strategygame", "actiongame"})
+        return self.is_game
+
+    @property
+    def is_game(self) -> bool:
+        return is_flatpak_game(self.component_type, self.categories)
+
+    @property
+    def classification(self) -> str:
+        return classify_flatpak(self.component_type, self.categories)
 
     @property
     def game_id(self) -> str:
         return f"flatpak:{self.application_id}"
+
+    def as_dict(self) -> dict[str, object]:
+        return {
+            "application_id": self.application_id, "name": self.name, "summary": self.summary,
+            "description": self.description, "developer": self.developer,
+            "publisher": self.publisher, "version": self.version, "branch": self.branch,
+            "arch": self.arch, "remote": self.remote, "scope": self.scope,
+            "installed": self.installed, "categories": list(self.categories),
+            "icon": self.icon, "screenshots": list(self.screenshots),
+            "classification": self.classification, "component_type": self.component_type,
+            "is_game": self.is_game,
+            "source_metadata": self.source_metadata,
+            "ref": f"app/{self.application_id}/{self.arch}/{self.branch}",
+        }
 
 
 class FlatpakAdapter:
@@ -115,7 +143,8 @@ class FlatpakAdapter:
         records: dict[str, dict[str, object]] = {}
         if not path:
             return records
-        xml_path = Path(path) / "appstream.xml"
+        source_path = Path(path)
+        xml_path = source_path if source_path.is_file() else source_path / "appstream.xml"
         if not xml_path.exists():
             xml_path = Path(path) / "appstream.xml.gz"
             if xml_path.exists():
@@ -131,11 +160,18 @@ class FlatpakAdapter:
                     continue
                 identifier = next((child.text or "" for child in element
                                    if child.tag.rsplit("}", 1)[-1] == "id"), "")
-                values: dict[str, object] = {}
+                values: dict[str, object] = {
+                    "component_type": str(element.attrib.get("type", "")),
+                }
                 for child in element:
                     tag = child.tag.rsplit("}", 1)[-1]
-                    if tag in {"name", "summary", "description"}:
+                    if tag in {"name", "summary"}:
                         values[tag] = " ".join("".join(child.itertext()).split())
+                    elif tag == "description":
+                        values[tag] = "\n\n".join(
+                            " ".join("".join(part.itertext()).split())
+                            for part in child if part.tag.rsplit("}", 1)[-1] in {"p", "ul"}
+                        ) or " ".join("".join(child.itertext()).split())
                     elif tag == "categories":
                         values["categories"] = tuple(
                             "".join(item.itertext()).strip() for item in child
@@ -143,6 +179,24 @@ class FlatpakAdapter:
                         )
                     elif tag == "icon":
                         values["icon"] = "".join(child.itertext()).strip()
+                    elif tag == "developer":
+                        developer_name = next((item for item in child
+                                               if item.tag.rsplit("}", 1)[-1] == "name"), None)
+                        values["developer"] = " ".join("".join(developer_name.itertext()).split()) if developer_name is not None else ""
+                        values["developer_id"] = str(child.attrib.get("id", ""))
+                    elif tag == "project_group":
+                        values["publisher"] = " ".join("".join(child.itertext()).split())
+                    elif tag == "screenshots":
+                        screenshots = []
+                        for shot in child:
+                            if shot.tag.rsplit("}", 1)[-1] != "screenshot":
+                                continue
+                            image = next((item for item in shot if item.tag.rsplit("}", 1)[-1] == "image"), None)
+                            caption = next((item for item in shot if item.tag.rsplit("}", 1)[-1] == "caption"), None)
+                            if image is not None and image.text:
+                                screenshots.append({"url": image.text.strip(),
+                                                    "caption": " ".join("".join(caption.itertext()).split()) if caption is not None else ""})
+                        values["screenshots"] = tuple(screenshots)
                 if identifier:
                     records[identifier] = values
                 element.clear()
@@ -176,6 +230,12 @@ class FlatpakAdapter:
                     arch=ref.get_arch(), remote=remote.get_name(),
                     categories=tuple(metadata.get("categories", ())),
                     icon=str(metadata.get("icon") or ""), commit=ref.get_commit(),
+                    description=str(metadata.get("description", "")),
+                    developer=str(metadata.get("developer", "")),
+                    publisher=str(metadata.get("publisher", "")),
+                    screenshots=tuple(metadata.get("screenshots", ())),
+                    component_type=str(metadata.get("component_type", "")),
+                    source_metadata=dict(metadata),
                 ))
         return tuple(result)
 
@@ -186,11 +246,21 @@ class FlatpakAdapter:
             installation = self._native_installation_for(False)
             result = []
             for ref in installation.list_installed_refs_by_kind(self._gi.RefKind.APP):
+                deploy_value = ref.get_deploy_dir()
+                deploy = Path(deploy_value) if deploy_value else None
+                metadata = self._installed_appstream_record(deploy, ref.get_name())
                 result.append(FlatpakApplication(
-                    ref.get_name(), ref.get_appdata_name() or ref.get_name(),
-                    summary=ref.get_appdata_summary() or "", version=ref.get_appdata_version() or "",
+                    ref.get_name(), str(metadata.get("name") or ref.get_appdata_name() or ref.get_name()),
+                    summary=str(metadata.get("summary") or ref.get_appdata_summary() or ""), version=ref.get_appdata_version() or "",
                     branch=ref.get_branch(), arch=ref.get_arch(), remote=ref.get_origin(),
                     scope="system", installed=True, commit=ref.get_commit(),
+                    categories=tuple(metadata.get("categories", ())),
+                    icon=self._deployed_icon(deploy, ref.get_name(), str(metadata.get("icon", ""))),
+                    description=str(metadata.get("description", "")),
+                    developer=str(metadata.get("developer", "")), publisher=str(metadata.get("publisher", "")),
+                    screenshots=tuple(metadata.get("screenshots", ())),
+                    component_type=str(metadata.get("component_type", "")),
+                    source_metadata=dict(metadata),
                 ))
             return tuple(result)
         installation = self._installation()
@@ -198,13 +268,53 @@ class FlatpakAdapter:
             return ()
         result = []
         for ref in installation.list_installed_refs_by_kind(self._gi.RefKind.APP):
+            deploy_value = ref.get_deploy_dir()
+            deploy = Path(deploy_value) if deploy_value else None
+            metadata = self._installed_appstream_record(deploy, ref.get_name())
             result.append(FlatpakApplication(
-                ref.get_name(), ref.get_appdata_name() or ref.get_name(),
-                summary=ref.get_appdata_summary() or "", version=ref.get_appdata_version() or "",
+                ref.get_name(), str(metadata.get("name") or ref.get_appdata_name() or ref.get_name()),
+                summary=str(metadata.get("summary") or ref.get_appdata_summary() or ""), version=ref.get_appdata_version() or "",
                 branch=ref.get_branch(), arch=ref.get_arch(), remote=ref.get_origin(),
                 scope="user", installed=True, commit=ref.get_commit(),
+                categories=tuple(metadata.get("categories", ())),
+                icon=self._deployed_icon(deploy, ref.get_name(), str(metadata.get("icon", ""))),
+                description=str(metadata.get("description", "")),
+                developer=str(metadata.get("developer", "")), publisher=str(metadata.get("publisher", "")),
+                screenshots=tuple(metadata.get("screenshots", ())),
+                component_type=str(metadata.get("component_type", "")),
+                source_metadata=dict(metadata),
             ))
         return tuple(result)
+
+    @classmethod
+    def _installed_appstream_record(cls, deploy: Path | None,
+                                    application_id: str) -> dict[str, object]:
+        if deploy is None:
+            return {}
+        for base in (deploy / "export/share/metainfo", deploy / "files/share/metainfo"):
+            for path in (base / f"{application_id}.metainfo.xml",
+                         base / f"{application_id}.appdata.xml"):
+                if path.is_file():
+                    try:
+                        records = cls._appstream_records(str(path))
+                        if application_id in records:
+                            return records[application_id]
+                    except (OSError, ET.ParseError):
+                        continue
+        return {}
+
+    @staticmethod
+    def _deployed_icon(deploy: Path | None, application_id: str, appstream_icon: str) -> str:
+        if deploy is None:
+            return appstream_icon
+        if appstream_icon.startswith(("https://", "http://", "file://")):
+            return appstream_icon
+        for size in ("128x128", "256x256", "scalable"):
+            extension = "svg" if size == "scalable" else "png"
+            icon = deploy / "export/share/icons/hicolor" / size / "apps" / f"{application_id}.{extension}"
+            if icon.is_file():
+                return icon.as_uri()
+        return appstream_icon or application_id
 
     def _native_installation_for(self, user: bool):
         return self._gi.Installation.new_user() if user else self._gi.Installation.new_system()
@@ -265,6 +375,25 @@ class FlatpakAdapter:
                     value for value in metadata.get("categories", "").replace(",", ";").split(";") if value
                 ), icon=metadata.get("icon", ""), commit=metadata.get("commit", ""))
             except FlatpakError:
+                pass
+            try:
+                location = (await self._lines("info", "--show-location", item.application_id,
+                                              user=user))[0].strip()
+                appstream = self._installed_appstream_record(Path(location), item.application_id)
+                item = replace(
+                    item, name=str(appstream.get("name") or item.name),
+                    summary=str(appstream.get("summary") or item.summary),
+                    categories=tuple(appstream.get("categories", item.categories)),
+                    icon=self._deployed_icon(Path(location), item.application_id,
+                                             str(appstream.get("icon") or item.icon)),
+                    description=str(appstream.get("description", "")),
+                    developer=str(appstream.get("developer", "")),
+                    publisher=str(appstream.get("publisher", "")),
+                    screenshots=tuple(appstream.get("screenshots", ())),
+                    component_type=str(appstream.get("component_type", "")),
+                    source_metadata=dict(appstream),
+                )
+            except (FlatpakError, IndexError, OSError):
                 pass
             result.append(item)
         return tuple(result)
@@ -338,6 +467,7 @@ class FlatpakAdapter:
             if installed is not None:
                 item = replace(
                     item,
+                    name=(installed.name if item.name == app_id and installed.name != app_id else item.name),
                     version=installed.version or item.version,
                     branch=installed.branch or item.branch,
                     arch=installed.arch or item.arch,
@@ -345,6 +475,15 @@ class FlatpakAdapter:
                     scope=installed.scope,
                     installed=True,
                     commit=installed.commit or item.commit,
+                    summary=item.summary or installed.summary,
+                    categories=item.categories or installed.categories,
+                    icon=item.icon or installed.icon,
+                    description=item.description or installed.description,
+                    developer=item.developer or installed.developer,
+                    publisher=item.publisher or installed.publisher,
+                    screenshots=item.screenshots or installed.screenshots,
+                    component_type=item.component_type or installed.component_type,
+                    source_metadata={**installed.source_metadata, **item.source_metadata},
                 )
             scopes = [scope for scope, values in (("user", user), ("system", system)) if app_id in values]
             result.append(replace(item, scope="+".join(scopes) or item.scope,
@@ -353,13 +492,21 @@ class FlatpakAdapter:
 
     def launch_command(self, application_id: str) -> list[str]:
         self._require()
-        if not application_id or "/" in application_id or "." not in application_id:
+        target = application_id
+        if application_id.startswith("app/"):
+            parts = application_id.split("/")
+            if (len(parts) != 4 or not parts[1] or not re.fullmatch(r"[A-Za-z0-9._-]+", parts[1])
+                    or not re.fullmatch(r"[A-Za-z0-9._-]+", parts[2])
+                    or not re.fullmatch(r"[A-Za-z0-9._-]+", parts[3])):
+                raise FlatpakError("invalid-application-ref", "Flatpak application ref is invalid")
+        elif (not application_id or "/" in application_id
+              or not re.fullmatch(r"[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)+", application_id)):
             raise FlatpakError("invalid-application-id", "Flatpak application ID is invalid")
         # Gamescope selects the supervised application's X11 window. Prefer
         # SDL's X11 backend for Flatpak apps so Wayland-native clients do not
         # bypass that focusable-window registry.
         return [self.command, "run", "--socket=x11", "--env=SDL_VIDEODRIVER=x11",
-                application_id]
+                target]
 
     async def prepare_browser_handoff(self, uri: str) -> dict[str, str]:
         """Fetch and validate one claimed flatpak+https flatpakref."""

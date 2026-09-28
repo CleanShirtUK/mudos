@@ -146,6 +146,7 @@ var systemIcons = {
     Bluetooth: "bluetooth",
     Controllers: "controller",
     Storage: "storage",
+    Utilities: "applications",
     System: "wrench",
     Lulu: "settings"
 }

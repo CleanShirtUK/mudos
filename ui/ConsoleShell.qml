@@ -249,8 +249,10 @@ import QtQuick.Controls
     property var systemHomeRailRef: null
     property int systemRowIndex: 0
     property bool systemLanding: true
-    property var systemCategories: ["System", "Display", "Audio", "Network", "Bluetooth", "Controllers", "Storage"]
+    property var systemCategories: ["System", "Display", "Audio", "Network", "Bluetooth", "Controllers", "Storage", "Utilities"]
     property var systemSettings: []
+    property var utilities: []
+    property var utilitiesHomeRef: null
     property string pendingMudosAction: ""
     property var standaloneProviderModes: ({})
     property var networkState: ({available: false, wifi_enabled: false, state: "unavailable",
@@ -1205,6 +1207,10 @@ import QtQuick.Controls
             refreshMudosMenu()
             return
         }
+        if (systemCategories[systemCategoryIndex] === "Utilities") {
+            refreshUtilities()
+            return
+        }
         var selectedKey = systemSettings[systemRowIndex] ? systemSettings[systemRowIndex].key : ""
         request("/settings?category=" + encodeURIComponent(systemCategories[systemCategoryIndex]),
                 "GET", "", function(data) {
@@ -1215,6 +1221,27 @@ import QtQuick.Controls
                     systemRowIndex = stableIndex >= 0 ? stableIndex
                         : Math.min(systemRowIndex, Math.max(0, data.length - 1))
                 })
+    }
+
+    function refreshUtilities() {
+        request("/utilities", "GET", "", function(data) {
+            utilities = Array.isArray(data) ? data : []
+            if (utilitiesHomeRef) {
+                utilitiesHomeRef.applications = utilities
+                utilitiesHomeRef.statusMessage = ""
+            }
+        }, "Utilities are unavailable", undefined, function() {
+            utilities = []
+            if (utilitiesHomeRef)
+                utilitiesHomeRef.statusMessage = "Flatpak application inventory is unavailable."
+        })
+    }
+
+    function launchUtility(applicationRef) {
+        message = "Launching application…"
+        request("/utilities/launch", "POST", JSON.stringify({ref: applicationRef}), function() {
+            message = ""
+        }, "Application could not be launched", undefined, function() { message = "" })
     }
 
     function activateBluetoothSetting(key) {
@@ -2390,6 +2417,11 @@ import QtQuick.Controls
             return
         }
         if (space === "system") {
+            if (!systemLanding && systemCategories[systemCategoryIndex] === "Utilities") {
+                if (utilitiesHomeRef)
+                    utilitiesHomeRef.activateSelected()
+                return
+            }
             if (!systemLanding && systemCategories[systemCategoryIndex] === "System"
                     && systemSettings[systemRowIndex]) {
                 var selectedKey = systemSettings[systemRowIndex].key
@@ -2644,6 +2676,10 @@ import QtQuick.Controls
                 && controllerSettingsRef.back())
             return
         if (space === "system") {
+            if (!systemLanding && systemCategories[systemCategoryIndex] === "Utilities") {
+                systemLanding = true
+                return
+            }
             if (!systemLanding && systemCategories[systemCategoryIndex] === "Network"
                     && internetSettingsRef && internetSettingsRef.credentialView) {
                 internetSettingsRef.credentialView = false
@@ -2848,6 +2884,8 @@ import QtQuick.Controls
             else if (root.space === "downloads") root.moveDownloads(-1)
             else if (root.space === "system") {
                 if (root.systemLanding) root.moveSystemCategory(-4)
+                else if (root.systemCategories[root.systemCategoryIndex] === "Utilities" && root.utilitiesHomeRef)
+                    root.utilitiesHomeRef.move(-1)
                 else if (root.systemCategories[root.systemCategoryIndex] === "Network" && root.internetSettingsRef)
                     root.internetSettingsRef.move(-1)
                 else if (root.systemCategories[root.systemCategoryIndex] === "Audio" && root.audioSettingsRef)
@@ -2881,6 +2919,8 @@ import QtQuick.Controls
             else if (root.space === "downloads") root.moveDownloads(1)
             else if (root.space === "system") {
                 if (root.systemLanding) root.moveSystemCategory(4)
+                else if (root.systemCategories[root.systemCategoryIndex] === "Utilities" && root.utilitiesHomeRef)
+                    root.utilitiesHomeRef.move(1)
                 else if (root.systemCategories[root.systemCategoryIndex] === "Network" && root.internetSettingsRef)
                     root.internetSettingsRef.move(1)
                 else if (root.systemCategories[root.systemCategoryIndex] === "Audio" && root.audioSettingsRef)
@@ -2915,6 +2955,8 @@ import QtQuick.Controls
                 else root.moveStoreCategory(-1)
             } else if (root.space === "system") {
                 if (root.systemLanding) root.moveSystemCategory(-1)
+                else if (root.systemCategories[root.systemCategoryIndex] === "Utilities" && root.utilitiesHomeRef)
+                    root.utilitiesHomeRef.moveScreenshot(-1)
                 else if (root.systemCategories[root.systemCategoryIndex] === "Network" && root.internetSettingsRef)
                     root.internetSettingsRef.move(-1)
                 else if (root.systemCategories[root.systemCategoryIndex] === "Audio" && root.audioSettingsRef)
@@ -2951,6 +2993,8 @@ import QtQuick.Controls
                 root.moveDownloads(1)
             } else if (root.space === "system") {
                 if (root.systemLanding) root.moveSystemCategory(1)
+                else if (root.systemCategories[root.systemCategoryIndex] === "Utilities" && root.utilitiesHomeRef)
+                    root.utilitiesHomeRef.moveScreenshot(1)
                 else if (root.systemCategories[root.systemCategoryIndex] === "Network" && root.internetSettingsRef)
                     root.internetSettingsRef.move(1)
                 else if (root.systemCategories[root.systemCategoryIndex] === "Audio" && root.audioSettingsRef)
@@ -3642,6 +3686,7 @@ import QtQuick.Controls
             anchors.fill: parent
             visible: root.space === "system" && !root.systemLanding
                 && root.systemCategories[root.systemCategoryIndex] !== "Network"
+                && root.systemCategories[root.systemCategoryIndex] !== "Utilities"
             category: root.systemCategories[root.systemCategoryIndex]
             settings: root.systemSettings
             selectedIndex: root.systemRowIndex
@@ -3664,6 +3709,29 @@ import QtQuick.Controls
                 else if (key === "lulu.reset") root.resetMudos()
             }
             onTextInputRequested: root.request("/keyboard/show", "POST", "", function() {})
+        }
+
+        UtilitiesHome {
+            id: utilitiesHome
+            anchors.fill: parent
+            visible: root.space === "system" && !root.systemLanding
+                && root.systemCategories[root.systemCategoryIndex] === "Utilities"
+            applications: root.utilities
+            uiScale: root.uiScale
+            typography: typography
+            luluPalette: luluPalette
+            canonicalTexture: orbitTexture
+            canonicalCoordinateRoot: orbitRenderSource
+            canonicalSize: Qt.size(root.width, root.height)
+            expandedShellX: root.expandedShellX
+            expandedShellY: root.expandedShellY
+            expandedShellWidth: root.expandedShellWidth
+            expandedShellHeight: root.expandedShellHeight
+            onLaunchRequested: function(applicationRef) { root.launchUtility(applicationRef) }
+            Component.onCompleted: {
+                root.utilitiesHomeRef = utilitiesHome
+                utilitiesHome.applications = root.utilities
+            }
         }
 
         InternetSettings {

@@ -178,6 +178,22 @@ class ConsoleUiBridge:
         rows = await self.consoled.call_list_games(scope)
         return [{key: value.value for key, value in row.items()} for row in rows]
 
+    async def utilities(self) -> list[dict[str, object]]:
+        return json.loads(await self.consoled.call_list_utilities())
+
+    async def launch_utility(self, application_ref: str) -> dict[str, str]:
+        application_id = application_ref.split("/")[1] if application_ref.startswith("app/") else "unknown"
+        utility_id = f"utility:flatpak:{application_id}"
+        self.launch_logs.start(utility_id)
+        self.launch_logs.note("Lulu", f"Flatpak Utility launch requested ref={application_ref}")
+        try:
+            token = await self.consoled.call_launch_utility(application_ref, 15000)
+            self.launch_logs.note("Lulu", f"Flatpak Utility launch accepted ref={application_ref} token={token}")
+            return {"token": token}
+        except Exception as error:
+            self.launch_logs.note("Lulu", f"Flatpak Utility launch failed ref={application_ref}: {error}")
+            raise
+
     async def list_platforms(self) -> list[dict[str, object]]:
         rows = await self.consoled.call_list_platform_categories()
         return [{key: value.value for key, value in row.items()} for row in rows]
@@ -321,6 +337,11 @@ class ConsoleUiBridge:
             if not provider_id:
                 raise ValueError("provider content identity is missing")
             content_identity = f"{provider}:{provider_id}"
+        elif provider == "flatpak":
+            application_id = str(selected.get("provider_id", ""))
+            if not application_id:
+                raise ValueError("Flatpak application identity is missing")
+            content_identity = f"flatpak:{application_id}"
         else:
             raise ValueError("game provider is not acquirable")
         existing_snapshot = await self.acquisition()
@@ -678,6 +699,12 @@ class ApiHandler(BaseHTTPRequestHandler):
             except Exception as error:  # pragma: no cover - live IPC failure path
                 self._respond(503, {"error": str(error)})
             return
+        if urlparse(self.path).path == "/utilities":
+            try:
+                self._respond(200, self.bridge.call(self.bridge.utilities(), timeout=60))
+            except Exception as error:
+                self._respond(503, {"error": str(error) or type(error).__name__})
+            return
         if urlparse(self.path).path == "/network":
             try:
                 self._respond(200, self.bridge.call(self.bridge.network_state()))
@@ -806,6 +833,16 @@ class ApiHandler(BaseHTTPRequestHandler):
                 self._respond(200, {"status": "requested", "group": group})
             except OSError as error:
                 self._respond(409, {"error": str(error)})
+            return
+        if path == "/utilities/launch":
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+                payload = json.loads(self.rfile.read(length) or b"{}")
+                application_ref = str(payload.get("ref", ""))
+                self._respond(200, self.bridge.call(
+                    self.bridge.launch_utility(application_ref), timeout=20))
+            except Exception as error:
+                self._respond(409, {"error": str(error) or type(error).__name__})
             return
         if path.startswith("/artwork/"):
             try:

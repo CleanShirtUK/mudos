@@ -523,7 +523,7 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertIn('surfaceVisible: true', settings_page)
         self.assertIn('MudosCardSurface {', settings_page)
         self.assertIn('MudosSettingsPage {', system_space)
-        self.assertIn('property var systemCategories: ["System", "Display", "Audio", "Network", "Bluetooth", "Controllers", "Storage"]', QML)
+        self.assertIn('property var systemCategories: ["System", "Display", "Audio", "Network", "Bluetooth", "Controllers", "Storage", "Utilities"]', QML)
         self.assertNotIn('"Plugins"', QML)
         self.assertNotIn('"Lulu"', QML)
         self.assertIn('request("/settings?category=System"', QML)

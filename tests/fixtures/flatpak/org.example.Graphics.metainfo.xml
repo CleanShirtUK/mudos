@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>org.example.Graphics</id>
+  <name>Example Graphics</name>
+  <summary>Create and edit images</summary>
+  <description><p>A representative desktop graphics application.</p><p>Includes layered editing tools.</p></description>
+  <developer id="org.example"><name>Example Studio</name></developer>
+  <project_group>Example Publishing</project_group>
+  <categories><category>Graphics</category><category>2DGraphics</category></categories>
+  <icon type="remote">https://example.test/icons/graphics.png</icon>
+  <screenshots>
+    <screenshot type="default"><image>https://example.test/screenshots/graphics-1.png</image><caption>Image editing workspace</caption></screenshot>
+    <screenshot><image>https://example.test/screenshots/graphics-2.png</image><caption>Layer tools</caption></screenshot>
+  </screenshots>
+</component>

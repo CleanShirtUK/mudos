@@ -7,6 +7,7 @@ from unittest.mock import Mock, patch
 
 from lulu.consoled import (ConsoleCatalog, ConsoleInterface,
                            _validated_metadata_refresh_stages)
+from lulu.plugins.flatpak import FlatpakApplication
 
 ROOT = Path(__file__).parents[1]
 
@@ -88,6 +89,57 @@ class ConsoledStartupTests(unittest.TestCase):
         auth = interface._plugins.for_plugin("steam", "authentication")
         self.assertTrue(auth)
         self.assertIs(auth[0].acquisition.credentials, interface.credentials)
+
+    def test_utilities_projection_and_launch_use_installed_non_game_flatpak(self) -> None:
+        class Adapter:
+            provider_id = "flatpak"
+
+            async def reconcile(self):
+                return (
+                    FlatpakApplication(
+                        "org.example.Graphics", "Example Graphics", summary="Image editor",
+                        branch="stable", arch="x86_64", installed=True,
+                        categories=("Graphics",), component_type="desktop-application",
+                        description="Layered editing.", developer="Example Studio",
+                        screenshots=({"url": "https://example.test/one.png", "caption": "Workspace"},),
+                    ),
+                    FlatpakApplication("org.example.Game", "Example Game", installed=True,
+                                       categories=("Game",), component_type="desktop-application"),
+                    FlatpakApplication("org.example.Unknown", "Unknown", installed=True),
+                )
+
+            def launch_command(self, application_ref):
+                return ["flatpak", "run", application_ref]
+
+        class Session:
+            def __init__(self):
+                self.context = ""
+                self.launch = None
+
+            async def call_set_delegated_launch_context(self, context):
+                self.context = context
+
+            async def call_request_game_launch(self, game_id, command, timeout_ms):
+                self.launch = (game_id, command, timeout_ms)
+                return "launch-token"
+
+        async def exercise():
+            session = Session()
+            interface = ConsoleInterface(SimpleNamespace(), sessiond=session)
+            interface._plugins = SimpleNamespace(with_capability=lambda _capability: [Adapter()])
+            rows = json.loads(await interface.ListUtilities.__wrapped__(interface))
+            self.assertEqual([row["application_id"] for row in rows], ["org.example.Graphics"])
+            self.assertEqual(rows[0]["classification"], "utility")
+            self.assertEqual(rows[0]["developer"], "Example Studio")
+            self.assertEqual(rows[0]["screenshots"][0]["url"], "https://example.test/one.png")
+            ref = "app/org.example.Graphics/x86_64/stable"
+            token = await interface.LaunchUtility.__wrapped__(interface, ref, 15000)
+            self.assertEqual(token, "launch-token")
+            self.assertEqual(session.launch, (
+                "utility:flatpak:org.example.Graphics", ["flatpak", "run", ref], 15000))
+
+        import json
+        asyncio.run(exercise())
 
 
 if __name__ == "__main__":

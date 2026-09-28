@@ -1,5 +1,34 @@
 # Astra execution log
 
+## Mudos black-screen incident — separate runtime defect, recovered 2026-09-28
+
+- At 08:02:28, the shell from release `50293d0` (`/opt/lulu/bin/lulu-shell`)
+  terminated with SIGSEGV. The captured core stack points into Qt Quick
+  geometry/binding work while `SystemStatusBridge::updateAcquisitionSnapshot`
+  updated a QML-bound height.
+- systemd automatically restarted the graphical session at 08:02:33 into the
+  active `54070b4` release. Consoled's unit was active, but its D-Bus/API was
+  unresponsive. The restarted shell remained in `RECONCILING_LIBRARY`, with
+  startup content hidden behind the catalogue-readiness barrier.
+- The supported Recovery Foundation `restart_consoled` action restored
+  Consoled's API. A subsequent supported Sessiond `ResetMudos` restarted the
+  shell and completed readiness/presentation. No reboot, data clear, or
+  reinstall was required; persisted acquisition/provider state was preserved.
+- The uncommitted Flatpak/Utilities source was never loaded by the live shell:
+  the active runtime used release `54070b4`, whose QML differed from the
+  working tree and did not contain `UtilitiesHome.qml`. Standalone QML tests
+  against the source tree ran after the crash/restart and did not start a dev
+  shell. The SIGSEGV is a separate runtime defect for later targeted
+  investigation; no speculative crash fix is included in the Utilities work.
+- Downloads QML bookkeeping: the full-suite report listed ten failures although
+  the recorded pre-pass baseline listed nine. The additional
+  `test_selected_row_stays_inside_clipping_viewport` failure was reproduced on
+  both clean `HEAD` (`54070b4`) and the Utilities working tree, at the same
+  delegate-discovery assertion. Neither the test nor `DownloadsHome.qml` is
+  changed by Utilities. This is an existing committed-source failure omitted
+  from the earlier baseline, not a Utilities regression; it is not redefined
+  as part of the baseline.
+
 ## Downloads selection/focus stability — source correction pending physical acceptance
 
 - Production path traced: `JobManager` publishes every progress/state mutation to

@@ -501,6 +501,32 @@ class CatalogueTests(unittest.TestCase):
         self.assertFalse(game.launchable)
         self.assertEqual(store.list_games("pc"), [])
 
+    def test_flatpak_games_split_into_installable_and_library_while_utilities_stay_out(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = CatalogueStore(Path(directory) / "catalogue.sqlite3")
+            app = {
+                "application_id": "org.supertuxproject.SuperTux", "name": "SuperTux",
+                "summary": "A jump-and-run game", "installed": False,
+                "categories": ("Game", "ActionGame"), "classification": "game",
+                "icon": "file:///flatpak/supertux.svg",
+            }
+            store.reconcile_component_apps("flatpak", [CatalogueGame.from_component_app(app)])
+            installable = store.list_available_games("flatpak")
+            self.assertEqual([item.provider_id for item in installable],
+                             ["org.supertuxproject.SuperTux"])
+            app["installed"] = True
+            store.reconcile_component_apps("flatpak", [CatalogueGame.from_component_app(app)])
+            library = store.list_games()
+            self.assertEqual([item.provider_id for item in library],
+                             ["org.supertuxproject.SuperTux"])
+            self.assertEqual(store.list_available_games("flatpak"), [])
+            utility = {"application_id": "org.example.Graphics", "name": "Example Graphics",
+                       "installed": True, "classification": "utility"}
+            with self.assertRaisesRegex(ValueError, "only game-classified"):
+                CatalogueGame.from_component_app(utility)
+            self.assertEqual([item.provider_id for item in store.list_games()],
+                             ["org.supertuxproject.SuperTux"])
+
     def test_romm_links_to_local_without_duplicate_library_cards_or_title_dedupe(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory) / "roms"
