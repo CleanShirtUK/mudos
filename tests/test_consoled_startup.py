@@ -152,8 +152,8 @@ class ConsoledStartupTests(unittest.TestCase):
             async def call_set_delegated_launch_context(self, context):
                 self.context = context
 
-            async def call_request_game_launch(self, game_id, command, timeout_ms):
-                self.launch = (game_id, command, timeout_ms)
+            async def call_request_utility_launch(self, utility_id, title, command, timeout_ms):
+                self.launch = (utility_id, title, command, timeout_ms)
                 return "launch-token"
 
         async def exercise():
@@ -169,7 +169,8 @@ class ConsoledStartupTests(unittest.TestCase):
             token = await interface.LaunchUtility.__wrapped__(interface, ref, 15000)
             self.assertEqual(token, "launch-token")
             self.assertEqual(session.launch, (
-                "utility:flatpak:org.example.Graphics", ["flatpak", "run", ref], 15000))
+                "utility:flatpak:org.example.Graphics", "Example Graphics",
+                ["flatpak", "run", ref], 15000))
 
         import json
         asyncio.run(exercise())

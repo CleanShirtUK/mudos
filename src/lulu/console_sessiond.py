@@ -7,7 +7,8 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from .process_supervisor import ProcessResult
 
-from .contracts import InputMode, Lifecycle, Overlay, Presentation, ServiceDescriptor, ServiceName
+from .contracts import (InputMode, LaunchDescriptor, Lifecycle, Overlay, Presentation,
+                        ServiceDescriptor, ServiceName, SessionClassification)
 
 
 DESCRIPTOR = ServiceDescriptor(
@@ -29,6 +30,7 @@ class SessionState:
     delegated_surface: str | None = None
     requested_surface: str | None = None
     session_kind: str = "shell"
+    session_title: str = ""
     provider_id: str | None = None
     controller_mode: str | None = None
 
@@ -41,18 +43,24 @@ class SessionStateModel:
         self.last_failure_reason: str | None = None
         self.last_result: ProcessResult | None = None
 
-    def request_launch(self, primary_id: str) -> str:
+    def request_launch(self, primary_id: str | LaunchDescriptor) -> str:
         if self.state.lifecycle is not Lifecycle.SHELL:
             raise ValueError("launch requires the shell lifecycle")
-        if not primary_id:
+        descriptor = primary_id if isinstance(primary_id, LaunchDescriptor) else None
+        identity = descriptor.primary_id if descriptor is not None else primary_id
+        if not identity:
             raise ValueError("primary id is required")
         token = uuid4().hex
         self.last_failure_reason = None
-        self.state.primary_id = primary_id
-        if primary_id.startswith("provider:"):
+        self.state.primary_id = identity
+        if descriptor is not None:
+            self.state.session_kind = descriptor.classification.value
+            self.state.session_title = descriptor.title
+            self.state.provider_id = None
+        elif identity.startswith("provider:"):
             self.state.session_kind = "provider_standalone"
-            self.state.provider_id = primary_id.split(":", 2)[1]
-        elif primary_id == "steam-store" or primary_id.startswith("steam-install:"):
+            self.state.provider_id = identity.split(":", 2)[1]
+        elif identity == "steam-store" or identity.startswith("steam-install:"):
             # Delegated provider surfaces still have an owning provider even
             # though they are not ordinary game launches.
             self.state.session_kind = "game"
@@ -94,6 +102,8 @@ class SessionStateModel:
             self.state.delegated_surface = "store"
         elif str(self.state.primary_id or "").startswith("steam-install:"):
             self.state.delegated_surface = "steam-install"
+        elif self.state.session_kind == SessionClassification.UTILITY.value:
+            self.state.delegated_surface = SessionClassification.UTILITY.value
 
     def set_delegated_surface(self, surface: str) -> None:
         if self.state.primary_id != "steam-store" or self.state.lifecycle is not Lifecycle.GAME:

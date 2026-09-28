@@ -11,7 +11,7 @@ from typing import Awaitable, Callable
 from uuid import uuid4
 
 from .console_sessiond import SessionStateModel
-from .contracts import InputMode, Presentation
+from .contracts import InputMode, LaunchDescriptor, Presentation
 from .gamescope import GamescopePresentation
 from .launch_identity import LaunchIdentity
 from .plugins.steam.provider import SteamLaunch, SteamProvider, SteamLaunchRequest
@@ -140,6 +140,7 @@ class ProcessSupervisor:
         presentation: Presentation = Presentation.GAME,
         input_mode: InputMode = InputMode.GAME,
         presentation_controller: GamescopePresentation | None = None,
+        descriptor: LaunchDescriptor | None = None,
     ) -> str:
         if not command or not command[0]:
             raise ValueError("launch command is required")
@@ -150,7 +151,11 @@ class ProcessSupervisor:
         async with self._launch_lock:
             if self.active_identity is not None or self.model.state.lifecycle.value != "shell":
                 raise ValueError("another launch owns the session")
-            token = self.model.request_launch(primary_id or command[0])
+            if descriptor is not None:
+                primary_id = descriptor.primary_id
+                presentation = descriptor.presentation
+                input_mode = descriptor.input_mode
+            token = self.model.request_launch(descriptor or primary_id or command[0])
             await self._notify()
             self._active_launch_task = asyncio.current_task()
             try:
@@ -203,12 +208,14 @@ class ProcessSupervisor:
                 if "process" in locals():
                     await self._terminate_group(os.getpgid(process.pid))
                 if self.model.state.lifecycle.value != "shell":
+                    self._restore_shell_input_mode()
                     self.model.fail(token, "launch cancelled")
                     self.model.return_complete(token)
                     await self._notify()
                 self._active_launch_task = None
                 raise
-            except (OSError, RuntimeError, asyncio.TimeoutError, TimeoutError) as error:
+            except (OSError, RuntimeError, ValueError, asyncio.TimeoutError, TimeoutError,
+                    subprocess.SubprocessError) as error:
                 reason = f"launch failed: {error}"
                 result_pid: int | None = None
                 result_pgid: int | None = None
@@ -228,6 +235,7 @@ class ProcessSupervisor:
                 self.active_identity = None
                 self._process = None
                 self._process_output_tasks = []
+                self._restore_shell_input_mode()
                 self.model.fail(token, reason)
                 self.model.record_result(
                     ProcessResult(
@@ -335,6 +343,12 @@ class ProcessSupervisor:
         if self._input_mode_changed is not None:
             self._input_mode_changed(mode)
 
+    def _restore_shell_input_mode(self) -> None:
+        try:
+            self._set_input_mode(InputMode.SHELL)
+        except (OSError, RuntimeError, ValueError, subprocess.SubprocessError):
+            self._logger.exception("shell input profile restoration failed")
+
     def ensure_shell_presentation(self) -> None:
         if self.model.state.lifecycle.value != "shell":
             return
@@ -381,12 +395,12 @@ class ProcessSupervisor:
         self.model.state.delegated_surface = None
         self.model.state.controller_mode = None
         self.model.record_result(result)
+        self._restore_shell_input_mode()
         self.model.return_complete(identity.token)
         self.active_identity = None
         self._process = None
         if self._presentation is not None and self._shell_process is not None:
             self._presentation.select_shell(self._shell_process.pid)
-        self._set_input_mode(InputMode.SHELL)
         await self._notify()
 
     @staticmethod

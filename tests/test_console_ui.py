@@ -18,6 +18,57 @@ SHELL_PROFILE = (ROOT / "config" / "inputplumber" / "profiles" / "shell.yaml").r
 
 
 class ConsoleUiTests(unittest.TestCase):
+    def test_utility_guide_is_explicit_and_quit_targets_sessiond_identity(self) -> None:
+        interface = ConsoleInterface.__new__(ConsoleInterface)
+        interface._base_guide = ()
+        interface._mudos_guide = ()
+        interface._providers = SimpleNamespace(
+            get=lambda _provider: self.fail("Utility Guide must not resolve a game provider"),
+            guide_actions=lambda *_args: (),
+        )
+        utility_state = {
+            "lifecycle": "game", "session_kind": "utility", "session_title": "Ptyxis",
+            "primary_id": "utility:flatpak:app.devsuite.Ptyxis", "launch_token": "token",
+            "active_identity": {"token": "token", "pgid": 1234},
+            "delegated_surface": "utility",
+        }
+        interface.sessiond = SimpleNamespace(
+            call_get_state=AsyncMock(return_value=json.dumps(utility_state)),
+            call_quit_active_session=AsyncMock(),
+        )
+        context, provider = interface._guide_context(utility_state)
+        self.assertEqual(context, "utility")
+        self.assertIsNone(provider)
+        actions = json.loads(asyncio.run(ConsoleInterface.GetGuideActions.__wrapped__(interface)))
+        self.assertEqual([action["id"] for action in actions], ["utility-close"])
+        self.assertEqual(actions[0]["label"], "Close Utility")
+
+        result = asyncio.run(ConsoleInterface.ExecuteGuideAction.__wrapped__(interface, "utility-close"))
+        self.assertEqual(result, "executed")
+        interface.sessiond.call_quit_active_session.assert_awaited_once_with()
+
+    def test_utility_guide_heading_identifies_classification_and_item(self) -> None:
+        guide = (ROOT / "ui" / "MudosGuide.qml").read_text()
+        native = (ROOT / "native" / "mudos-guide.cpp").read_text()
+        self.assertIn('guideModel.sessionClassification !== ""', guide)
+        self.assertIn('guideModel.sessionTitle', guide)
+        self.assertIn('kind == QStringLiteral("utility")', native)
+        self.assertIn('QStringLiteral("UTILITY")', native)
+        self.assertIn('surface == QStringLiteral("browser")', native)
+        self.assertIn('QStringLiteral("BROWSER")', native)
+
+    def test_game_and_browser_guide_contexts_remain_distinct(self) -> None:
+        interface = ConsoleInterface.__new__(ConsoleInterface)
+        interface.catalogue = SimpleNamespace(store=SimpleNamespace(get_game=lambda _game: None))
+        interface._platforms = SimpleNamespace()
+        interface._providers = SimpleNamespace(get=lambda _provider: None)
+        self.assertEqual(interface._guide_context({"lifecycle": "game", "session_kind": "game",
+                                                   "provider_id": "steam"})[0], "game")
+        self.assertEqual(interface._guide_context({"lifecycle": "game", "session_kind": "utility",
+                                                   "delegated_surface": "utility"})[0], "utility")
+        self.assertEqual(interface._guide_context({"lifecycle": "game", "delegated_surface": "browser"})[0],
+                         "browser")
+
     def test_dolphin_guide_quit_routes_through_sessiond_identity(self) -> None:
         interface = ConsoleInterface.__new__(ConsoleInterface)
         interface._base_guide = ()

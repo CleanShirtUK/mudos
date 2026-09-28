@@ -1508,6 +1508,8 @@ class ConsoleInterface(ServiceInterface):
     def _guide_context(self, state: dict[str, object]) -> tuple[str, object | None]:
         if str(state.get("delegated_surface", "")) == "browser":
             return "browser", None
+        if str(state.get("session_kind", "")) == "utility":
+            return "utility", None
         lifecycle = str(state.get("lifecycle", "shell"))
         if lifecycle == "shell":
             return "shell", None
@@ -1547,6 +1549,9 @@ class ConsoleInterface(ServiceInterface):
                                        "process-group-terminate", ("game",), False, 90))
         if context == "browser":
             actions.append(GuideAction("browser-quit", "Quit", "quit", "browser:quit", ("browser",), False, 1))
+        if context == "utility":
+            actions.append(GuideAction("utility-close", "Close Utility", "quit",
+                                       "session:quit-utility", ("utility",), False, 1))
         actions.extend(action for action in self._base_guide if context in action.contexts)
         actions.extend(action for action in self._mudos_guide if context in action.contexts)
         return json.dumps([{
@@ -1572,6 +1577,18 @@ class ConsoleInterface(ServiceInterface):
             state = json.loads(await self.sessiond.call_get_state())
             if not state.get("active_identity"):
                 raise ValueError("no owned process is active")
+            await self.sessiond.call_quit_active_session()
+            return "executed"
+        if action_id == "utility-close":
+            state = json.loads(await self.sessiond.call_get_state())
+            identity = state.get("active_identity")
+            launch_token = state.get("launch_token")
+            if (str(state.get("session_kind", "")) != "utility"
+                    or not isinstance(identity, dict)
+                    or not launch_token
+                    or identity.get("token") != launch_token
+                    or not str(state.get("primary_id", "")).startswith("utility:")):
+                raise ValueError("no Sessiond-owned Utility is active")
             await self.sessiond.call_quit_active_session()
             return "executed"
         action = next((item for item in self._base_guide if item.action_id == action_id), None)
@@ -2108,7 +2125,8 @@ class ConsoleInterface(ServiceInterface):
         ) if os.environ.get(key)}
         await self.sessiond.call_set_delegated_launch_context(json.dumps(context, sort_keys=True))
         utility_id = f"utility:flatpak:{application_id}"
-        return await self.sessiond.call_request_game_launch(utility_id, command, timeout_ms)
+        return await self.sessiond.call_request_utility_launch(
+            utility_id, str(target.name), command, timeout_ms)
 
     @method()
     def GetCatalogueSnapshot(self) -> "(ts)":

@@ -345,6 +345,27 @@ int main(int argc, char **argv)
         }
     }
 
+    QString sessionClassification;
+    QString sessionTitle;
+    QDBusInterface sessiond("org.lulu.ConsoleSessiond", "/org/lulu/ConsoleSession",
+                            "org.lulu.ConsoleSession", QDBusConnection::sessionBus());
+    const auto stateReply = sessiond.call("GetState");
+    if (stateReply.type() != QDBusMessage::ErrorMessage && !stateReply.arguments().isEmpty()) {
+        const auto state = QJsonDocument::fromJson(
+            stateReply.arguments().constFirst().toString().toUtf8()).object();
+        const auto kind = state.value("session_kind").toString();
+        const auto surface = state.value("delegated_surface").toString();
+        sessionTitle = state.value("session_title").toString();
+        if (kind == QStringLiteral("utility"))
+            sessionClassification = QStringLiteral("UTILITY");
+        else if (surface == QStringLiteral("browser"))
+            sessionClassification = QStringLiteral("BROWSER");
+        else if (kind == QStringLiteral("provider_standalone"))
+            sessionClassification = QStringLiteral("PROVIDER");
+        else if (kind == QStringLiteral("game"))
+            sessionClassification = QStringLiteral("GAME");
+    }
+
     QGuiApplication application(argc, argv);
     QQmlPropertyMap viewModel;
     viewModel.insert("selection", 0);
@@ -352,6 +373,8 @@ int main(int argc, char **argv)
     viewModel.insert("confirmationPending", false);
     viewModel.insert("confirmationAction", QString());
     viewModel.insert("confirmationId", QString());
+    viewModel.insert("sessionClassification", sessionClassification);
+    viewModel.insert("sessionTitle", sessionTitle);
     QQmlApplicationEngine engine;
     engine.rootContext()->setContextProperty("guideModel", &viewModel);
     engine.load(QUrl::fromLocalFile(qEnvironmentVariable("LULU_GUIDE_UI_FILE",

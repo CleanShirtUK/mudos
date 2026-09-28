@@ -44,6 +44,22 @@ class InputMode(StrEnum):
     COMPAT = "compat"
 
 
+class SessionClassification(StrEnum):
+    GAME = "game"
+    UTILITY = "utility"
+
+
+@dataclass(frozen=True, slots=True)
+class LaunchDescriptor:
+    """Session-owned description of a launched surface and input policy."""
+
+    primary_id: str
+    classification: SessionClassification = SessionClassification.GAME
+    title: str = ""
+    presentation: Presentation = Presentation.GAME
+    input_mode: InputMode = InputMode.GAME
+
+
 @dataclass(frozen=True, slots=True)
 class ServiceDescriptor:
     """The inspectable boundary of a service, not an IPC registration."""

@@ -47,7 +47,11 @@ Window {
             spacing: 18
 
             Text {
-                text: confirmationPending ? "CONFIRM" : "GUIDE"
+                text: confirmationPending ? "CONFIRM"
+                      : guideModel.sessionClassification !== ""
+                        ? guideModel.sessionClassification
+                          + (guideModel.sessionTitle !== "" ? " · " + guideModel.sessionTitle : "")
+                        : "GUIDE"
                 color: luluPalette.headingAccent
                 font.family: typography.majorHeadingFamily
                 font.weight: typography.majorHeadingWeight

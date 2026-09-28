@@ -1,15 +1,103 @@
 import unittest
 import asyncio
 import time
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 from lulu.console_sessiond import SessionStateModel
-from lulu.contracts import InputMode, Lifecycle, Presentation
+from lulu.contracts import (InputMode, LaunchDescriptor, Lifecycle, Presentation,
+                            SessionClassification)
 from lulu.process_supervisor import ProcessSupervisor
 from lulu.sessiond import ConsoleSessionInterface
 
 
 class SessionModelTests(unittest.TestCase):
+    def utility_descriptor(self) -> LaunchDescriptor:
+        return LaunchDescriptor(
+            primary_id="utility:flatpak:app.devsuite.Ptyxis",
+            classification=SessionClassification.UTILITY,
+            title="Ptyxis",
+            presentation=Presentation.FOREIGN_UI,
+            input_mode=InputMode.COMPAT,
+        )
+
+    def test_utility_descriptor_is_authoritative_and_uses_compat_mode(self) -> None:
+        async def exercise() -> None:
+            session = SessionStateModel()
+            modes = []
+            supervisor = ProcessSupervisor(session, input_mode_changed=modes.append)
+            await supervisor.launch(["/bin/sh", "-c", "sleep 0.05"], 1000,
+                                    descriptor=self.utility_descriptor(),
+                                    presentation_controller=None)
+            self.assertEqual(session.state.session_kind, "utility")
+            self.assertEqual(session.state.session_title, "Ptyxis")
+            self.assertEqual(session.state.delegated_surface, "utility")
+            self.assertEqual(session.state.presentation, Presentation.FOREIGN_UI)
+            self.assertEqual(session.state.input_mode, InputMode.COMPAT)
+            await supervisor._watch_task
+            self.assertEqual(modes, [InputMode.COMPAT, InputMode.SHELL])
+            self.assertEqual(session.state.lifecycle, Lifecycle.SHELL)
+            self.assertEqual(session.state.session_kind, "shell")
+            self.assertEqual(session.state.input_mode, InputMode.SHELL)
+
+        asyncio.run(exercise())
+
+    def test_failed_utility_launch_rolls_compatibility_profile_back(self) -> None:
+        async def exercise() -> None:
+            session = SessionStateModel()
+            modes = []
+
+            def apply(mode: InputMode) -> None:
+                modes.append(mode)
+                if mode is InputMode.COMPAT:
+                    raise RuntimeError("compat profile activation failed")
+
+            supervisor = ProcessSupervisor(session, input_mode_changed=apply)
+            with self.assertRaisesRegex(ValueError, "compat profile activation failed"):
+                await supervisor.launch(["/bin/sh", "-c", "sleep 5"], 1000,
+                                        descriptor=self.utility_descriptor(),
+                                        presentation_controller=None)
+            self.assertEqual(modes, [InputMode.COMPAT, InputMode.SHELL])
+            self.assertEqual(session.state.lifecycle, Lifecycle.SHELL)
+            self.assertEqual(session.state.input_mode, InputMode.SHELL)
+            self.assertEqual(session.state.session_kind, "shell")
+            self.assertIsNone(supervisor.active_identity)
+
+        asyncio.run(exercise())
+
+    def test_sessiond_utility_launch_passes_first_class_descriptor(self) -> None:
+        async def exercise() -> None:
+            interface = ConsoleSessionInterface.__new__(ConsoleSessionInterface)
+            interface.supervisor = SimpleNamespace(launch=AsyncMock(return_value="token"))
+            result = await ConsoleSessionInterface.RequestUtilityLaunch.__wrapped__(
+                interface, "utility:flatpak:app.devsuite.Ptyxis", "Ptyxis",
+                ["flatpak", "run", "ptyxis"], 15000)
+            self.assertEqual(result, "token")
+            call = interface.supervisor.launch.await_args
+            descriptor = call.kwargs["descriptor"]
+            self.assertEqual(descriptor.classification, SessionClassification.UTILITY)
+            self.assertEqual(descriptor.title, "Ptyxis")
+            self.assertEqual(descriptor.input_mode, InputMode.COMPAT)
+            self.assertEqual(descriptor.presentation, Presentation.FOREIGN_UI)
+
+        asyncio.run(exercise())
+
+    def test_crashed_utility_returns_to_shell_mode(self) -> None:
+        async def exercise() -> None:
+            session = SessionStateModel()
+            modes = []
+            supervisor = ProcessSupervisor(session, input_mode_changed=modes.append)
+            await supervisor.launch(["/bin/sh", "-c", "exit 17"], 1000,
+                                    descriptor=self.utility_descriptor(),
+                                    presentation_controller=None)
+            await supervisor._watch_task
+            self.assertEqual(session.last_result.exit_code, 17)
+            self.assertEqual(session.state.lifecycle, Lifecycle.SHELL)
+            self.assertEqual(session.state.input_mode, InputMode.SHELL)
+            self.assertEqual(modes[-1], InputMode.SHELL)
+
+        asyncio.run(exercise())
+
     def test_conflicting_launch_is_rejected(self) -> None:
         session = SessionStateModel()
         session.request_launch("first")
@@ -145,6 +233,43 @@ class SessionModelTests(unittest.TestCase):
         supervisor = ProcessSupervisor(rebooted)
         self.assertIsNone(supervisor.active_identity)
         self.assertIsNone(supervisor._shell_identity)
+
+    def test_sessiond_recovery_initializes_connected_controller_in_shell_mode(self) -> None:
+        async def exercise() -> None:
+            interface = ConsoleSessionInterface.__new__(ConsoleSessionInterface)
+            interface.model = SessionStateModel()
+            interface._inputplumber = SimpleNamespace(
+                ensure_default_intercept=unittest.mock.Mock(),
+                runtime_composite_statuses=lambda: {},
+                load_mode=unittest.mock.Mock(),
+            )
+            interface._initialized_composites = {}
+            await interface._initialize_composite("/controller/0", ("composite", ("/event0",)))
+            interface._inputplumber.ensure_default_intercept.assert_called_once_with("/controller/0")
+            interface._inputplumber.load_mode.assert_called_once_with(InputMode.SHELL)
+            self.assertEqual(interface.model.state.input_mode, InputMode.SHELL)
+
+        asyncio.run(exercise())
+
+    def test_controller_recreation_preserves_utility_compat_but_keeps_game_default(self) -> None:
+        async def exercise(kind: str, expected: InputMode) -> None:
+            interface = ConsoleSessionInterface.__new__(ConsoleSessionInterface)
+            interface.model = SessionStateModel()
+            interface.model.state.lifecycle = Lifecycle.GAME
+            interface.model.state.session_kind = kind
+            interface.model.state.input_mode = InputMode.COMPAT
+            interface._inputplumber = SimpleNamespace(
+                ensure_default_intercept=unittest.mock.Mock(),
+                runtime_composite_statuses=lambda: {},
+                load_mode=unittest.mock.Mock(),
+            )
+            interface._initialized_composites = {}
+            await interface._initialize_composite("/controller/0", ("composite", ("/event0",)))
+            self.assertEqual(interface.model.state.input_mode, expected)
+            interface._inputplumber.load_mode.assert_called_once_with(expected)
+
+        asyncio.run(exercise("utility", InputMode.COMPAT))
+        asyncio.run(exercise("game", InputMode.GAME))
 
     def test_application_exit_restores_shell_input_mode(self) -> None:
         async def exercise() -> None:

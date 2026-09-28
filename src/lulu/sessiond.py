@@ -20,7 +20,7 @@ from .console_sessiond import SessionStateModel
 from .controllerd import ControllerRegistry, default_inputplumber_client
 from .inputplumber import sdl_gamepad_inventory
 from .gamescope import GamescopeInvocation, GamescopePresentation, discover_presentation_output
-from .contracts import InputMode, Lifecycle, Presentation
+from .contracts import InputMode, LaunchDescriptor, Lifecycle, Presentation, SessionClassification
 from .launch_identity import LaunchIdentity
 from .process_supervisor import ProcessSupervisor
 from .process_supervisor import ProcessResult
@@ -194,7 +194,11 @@ class ConsoleSessionInterface(ServiceInterface):
         )
         # A recreated composite always starts from the safe gamepad baseline;
         # Compatibility Mode must never survive a device rebuild.
-        reset_mode = InputMode.SHELL if self.model.state.lifecycle.value == "shell" else InputMode.GAME
+        reset_mode = (
+            InputMode.SHELL if self.model.state.lifecycle.value == "shell" else
+            InputMode.COMPAT if self.model.state.session_kind == SessionClassification.UTILITY.value else
+            InputMode.GAME
+        )
         self._apply_input_mode(reset_mode)
         self.model.set_input_mode(reset_mode)
         self._initialized_composites[object_path] = composite
@@ -557,6 +561,25 @@ class ConsoleSessionInterface(ServiceInterface):
         """Launch an owned game process while retaining its catalogue identity."""
         try:
             return await self.supervisor.launch(list(command), startup_timeout_ms, primary_id=game_id)
+        except ValueError as error:
+            raise self._error(error) from error
+
+    @method()
+    async def RequestUtilityLaunch(self, utility_id: "s", title: "s", command: "as",
+                                   startup_timeout_ms: "u") -> "s":
+        """Launch a Utility as an explicitly classified Sessiond-owned session."""
+        if not utility_id.startswith("utility:flatpak:") or not title.strip():
+            raise self._error(ValueError("utility launch descriptor is invalid"))
+        descriptor = LaunchDescriptor(
+            primary_id=utility_id,
+            classification=SessionClassification.UTILITY,
+            title=title.strip(),
+            presentation=Presentation.FOREIGN_UI,
+            input_mode=InputMode.COMPAT,
+        )
+        try:
+            return await self.supervisor.launch(
+                list(command), startup_timeout_ms, descriptor=descriptor)
         except ValueError as error:
             raise self._error(error) from error
 
