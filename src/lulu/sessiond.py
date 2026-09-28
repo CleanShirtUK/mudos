@@ -67,9 +67,18 @@ class ConsoleSessionInterface(ServiceInterface):
             model,
             self._state_changed,
             presentation=GamescopePresentation(),
-            input_mode_changed=None if self._native_controller else self._apply_input_mode,
+            input_mode_changed=self._apply_supervised_input_mode,
         )
         self._reset_requested = False
+
+    def _apply_supervised_input_mode(self, mode: InputMode) -> None:
+        """Apply supervised Utility profiles even when shell input is native."""
+        if self._native_controller and self.model.state.session_kind != SessionClassification.UTILITY.value:
+            # Native game/shell input remains managed by the existing native
+            # controller path. Utilities still require InputPlumber's desktop
+            # compatibility mapping on entry and a Default reset on return.
+            return
+        self._apply_input_mode(mode)
 
     def _state_json(self) -> str:
         state = asdict(self.model.state)

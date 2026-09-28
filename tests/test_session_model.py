@@ -89,6 +89,37 @@ class SessionModelTests(unittest.TestCase):
 
         asyncio.run(exercise())
 
+    def test_native_controller_path_still_applies_utility_compat_and_restores_default(self) -> None:
+        interface = ConsoleSessionInterface.__new__(ConsoleSessionInterface)
+        interface._native_controller = True
+        interface.model = SessionStateModel()
+        token = interface.model.request_launch(self.utility_descriptor())
+        interface.model.launch_starting(token)
+        interface.model.primary_started(token, presentation=Presentation.FOREIGN_UI,
+                                        input_mode=InputMode.COMPAT)
+        path = "/org/shadowblip/InputPlumber/CompositeDevice0"
+        inputplumber = SimpleNamespace(
+            runtime_composite_statuses=lambda: {path: ("controller", ("/dev/input/event0",))},
+            load_mode=unittest.mock.Mock(),
+            ensure_default_intercept=unittest.mock.Mock(),
+        )
+        interface._inputplumber = inputplumber
+        interface._applied_input_modes = {}
+
+        interface._apply_supervised_input_mode(InputMode.COMPAT)
+        inputplumber.load_mode.assert_called_once_with(InputMode.COMPAT, path)
+
+        interface._apply_supervised_input_mode(InputMode.SHELL)
+        inputplumber.ensure_default_intercept.assert_called_once_with(path)
+
+        # Native ordinary-game input is unaffected by the Utility integration.
+        interface.model.state.session_kind = "game"
+        inputplumber.load_mode.reset_mock()
+        inputplumber.ensure_default_intercept.reset_mock()
+        interface._apply_supervised_input_mode(InputMode.GAME)
+        inputplumber.load_mode.assert_not_called()
+        inputplumber.ensure_default_intercept.assert_not_called()
+
     def test_crashed_utility_returns_to_shell_mode(self) -> None:
         async def exercise() -> None:
             session = SessionStateModel()
