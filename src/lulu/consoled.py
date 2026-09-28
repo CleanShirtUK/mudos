@@ -192,11 +192,12 @@ class ConsoleCatalog:
                 LOGGER.info("catalogue stage skipped name=romm reason=not-validated status=%s",
                             romm_state.get("status", "unknown"))
                 selected.discard("romm")
-        flatpak_inventory_available = any(
+        plugin_registry = getattr(self, "_plugins", None)
+        flatpak_inventory_available = bool(plugin_registry) and any(
             getattr(source, "provider_id", "") == "flatpak"
             and hasattr(source, "reconcile")
             and getattr(source, "available", True)
-            for source in self._plugins.with_capability("catalogue")
+            for source in plugin_registry.with_capability("catalogue")
         )
         if "components" in selected and not selected_providers and not flatpak_inventory_available:
             LOGGER.info("catalogue stage skipped name=components reason=no-selected-providers")
