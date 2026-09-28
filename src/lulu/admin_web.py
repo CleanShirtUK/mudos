@@ -1055,15 +1055,12 @@ class AdminApp:
                 dimensions["running"] = service_state == "active"
                 dimensions["service_state"] = service_state
                 if provider_id == "questarr":
-                    # Questarr's service and HTTP health are observable, but
-                    # neither establishes operator account/downloader setup.
-                    row_health = next((item for item in SERVICES if item[0] == "questarr"), None)
-                    health = self.service_health(row_health) if row_health else "unknown"
-                    dimensions["connected"] = health == "healthy"
-                    dimensions["healthy"] = health == "healthy"
-                    configured = None
-                    status = ("stopped" if service_state != "active" else
-                              "running" if health == "healthy" else "degraded")
+                    readiness = self.questarr_readiness()
+                    dimensions.update(readiness)
+                    dimensions["connected"] = bool(readiness["web_reachable"])
+                    dimensions["healthy"] = readiness["overall"] == "ready"
+                    configured = readiness["overall"] == "ready"
+                    status = str(readiness["overall"])
             manifest_id = {"providers.romm": "romm", "providers.torrent": "torrent",
                            "providers.usenet": "usenet", "providers.prowlarr": "questarr"}.get(
                                provider_id, provider_id)
@@ -1191,6 +1188,97 @@ class AdminApp:
             pass
         return "unknown"
 
+    def questarr_readiness(self) -> dict[str, object]:
+        """Report independent, evidence-based Questarr integration dimensions."""
+        import pwd
+        import xmlrpc.client
+        from .questarr_reconciler import QUESTARR_URL, QuestarrApi, QuestarrApiError
+
+        service_running = self.service_state("lulu-questarr.service") == "active"
+        proxy_running = self.service_state("lulu-questarr-auth-proxy.service") == "active"
+        acquisition_running = self.service_state("lulu-acquisition.service") == "active"
+        health_row = next((item for item in SERVICES if item[0] == "questarr"), None)
+        web_reachable = bool(service_running and proxy_running and health_row
+                             and self.service_health(health_row) == "healthy")
+        try:
+            pwd.getpwnam("lulu")
+            pam_available = Path("/etc/pam.d/login").is_file()
+        except KeyError:
+            pam_available = False
+        internal_identity = (self.secrets.configured("web/questarr", "username")
+                             and self.secrets.configured("web/questarr", "password"))
+        authentication_configured = bool(proxy_running and pam_available and internal_identity)
+        metadata_configured = self.config.provider("metadata.igdb").configured
+        gateway_configured = False
+        try:
+            class GatewayTransport(xmlrpc.client.Transport):
+                def make_connection(self, host):
+                    connection = super().make_connection(host)
+                    connection.timeout = 1.5
+                    return connection
+            gateway_configured = xmlrpc.client.ServerProxy(
+                "http://127.0.0.1:5001/xmlrpc", allow_none=False,
+                use_builtin_types=True, transport=GatewayTransport(),
+            ).version().startswith("24.0-mudos-gateway")
+        except Exception:
+            pass
+        usenet_executor_ready = False
+        if acquisition_running:
+            try:
+                account = pwd.getpwnam("lulu")
+                environment = dict(os.environ)
+                environment.update({"HOME": account.pw_dir,
+                                    "XDG_RUNTIME_DIR": f"/run/user/{account.pw_uid}",
+                                    "DBUS_SESSION_BUS_ADDRESS": f"unix:path=/run/user/{account.pw_uid}/bus"})
+                probe = subprocess.run(
+                    ["busctl", "--user", "--timeout=3s", "call", "org.lulu.Acquisitiond",
+                     "/org/lulu/Acquisition", "org.lulu.Acquisition", "GetUsenetReadiness"],
+                    stdin=subprocess.DEVNULL, capture_output=True, text=True,
+                    timeout=4, check=False, env=environment)
+                if probe.returncode == 0:
+                    match = re.search(r'^s "((?:[^"\\]|\\.)*)"$', probe.stdout.strip())
+                    if match:
+                        payload = json.loads('"' + match.group(1) + '"')
+                        state = json.loads(payload)
+                        usenet_executor_ready = bool(state.get("executor_registered")
+                                                     and state.get("enabled")
+                                                     and state.get("configured")
+                                                     and state.get("rpc_secret_available"))
+            except (OSError, ValueError, TypeError, subprocess.SubprocessError):
+                pass
+        acquisitiond_reachable = bool(acquisition_running and gateway_configured
+                                      and usenet_executor_ready)
+        indexer_count = 0
+        try:
+            username = self.secrets.get("web/questarr", "username") or ""
+            password = self.secrets.get("web/questarr", "password") or ""
+            if username and password:
+                from urllib.request import urlopen
+                api = QuestarrApi(base_url=QUESTARR_URL,
+                                  opener=lambda request, timeout=15: urlopen(request, timeout=min(timeout, 2)))
+                api.ensure_authenticated(username, password)
+                values = api.get("/api/indexers")
+                indexer_count = len(values) if isinstance(values, list) else 0
+        except (QuestarrApiError, OSError, ValueError, TypeError):
+            indexer_count = 0
+        indexers_available = indexer_count > 0
+        dimensions = {
+            "service_running": service_running,
+            "web_reachable": web_reachable,
+            "authentication_configured": authentication_configured,
+            "metadata_configured": metadata_configured,
+            "indexers_available": indexers_available,
+            "indexer_count": indexer_count,
+            "mudos_acquisition_gateway_configured": gateway_configured,
+            "acquisitiond_reachable": acquisitiond_reachable,
+            "usenet_executor_ready": usenet_executor_ready,
+        }
+        required = (service_running, web_reachable, authentication_configured,
+                    indexers_available, gateway_configured, acquisitiond_reachable)
+        dimensions["overall"] = "ready" if all(required) and metadata_configured else (
+            "degraded" if any(required) else "unavailable")
+        return dimensions
+
     @staticmethod
     def plugin_service_status(service: object) -> str:
         # The Flatpak contribution describes a local command provider, not a
@@ -1245,21 +1333,24 @@ class AdminApp:
                 LOGGER.exception("Steam ownership validation/reconciliation failed")
                 return False, "Steam ownership validation or catalogue reconciliation failed"
         if provider_id == "questarr":
-            if self.service_state("lulu-questarr.service") != "active":
+            state = self.questarr_readiness()
+            if state["overall"] == "ready":
+                return True, "Questarr is ready through appliance authentication and Mudos Acquisitiond"
+            if not state["service_running"]:
                 return False, "Questarr service is not installed or running"
-            questarr_service = next((item for item in SERVICES if item[0] == "questarr"), None)
-            if questarr_service is None or self.service_health(questarr_service) != "healthy":
-                return False, "Questarr API health check failed"
-            account = self.questarr_account_status()
-            if account == "missing":
-                return False, "Create the Questarr first-run account in its UI before configuring downloads"
-            if account == "unknown":
-                return False, "Questarr account setup status is unavailable"
-            backends = [self.test_provider("providers.torrent"), self.test_provider("providers.usenet")]
-            if not any(ok for ok, _ in backends):
-                return False, "Questarr is running but no Transmission or NZBGet backend is ready"
-            return False, ("Questarr account exists and an acquisition backend is healthy; "
-                           "verify authenticated Questarr setup and initial reconciliation in its UI")
+            if not state["web_reachable"]:
+                return False, "Questarr or its PAM authentication proxy is not reachable"
+            if not state["authentication_configured"]:
+                return False, "Questarr appliance-user authentication is not configured"
+            if not state["mudos_acquisition_gateway_configured"]:
+                return False, "Mudos NZB acquisition gateway is unavailable"
+            if not state["acquisitiond_reachable"]:
+                return False, "Mudos Acquisitiond or its configured NZBGet executor is unavailable"
+            if not state["indexers_available"]:
+                return False, "Questarr has no usable indexers configured"
+            if not state["metadata_configured"]:
+                return False, "Questarr is usable for requests, but Mudos IGDB credentials are not configured"
+            return False, "Questarr acquisition handoff is degraded; inspect its service readiness details"
         if provider_id == "metadata.igdb":
             try:
                 from .igdb import IGDBClient, IGDBError

@@ -28,6 +28,8 @@ SYSTEMD_UNITS = {
     "lulu-osk@.service": "lulu-osk@.service", "lulu-file-browser.service": "lulu-file-browser.service",
     "lulu-transmission-config.service": "lulu-transmission-config.service",
     "lulu-questarr-reconcile.service": "lulu-questarr-reconcile.service",
+    "lulu-questarr.service": "lulu-questarr.service",
+    "lulu-questarr-auth-proxy.service": "lulu-questarr-auth-proxy.service",
 }
 
 
@@ -338,7 +340,8 @@ def plan(repo: Path, manifest: dict, action: str, *, purge: bool = False) -> lis
 def stop_services(apply: bool, manifest: dict, *, stop_host_mounts: bool) -> None:
     units = ["lulu.target", "lulu-session@2.service", "lulu-admin.service", "lulu-consoled.service",
              "lulu-acquisition.service", "mudos-recovery.service", "mudos-recovery-ui.service",
-             "lulu-transmission.service", "lulu-questarr.service", "lulu-questarr-reconcile.service",
+             "lulu-transmission.service", "lulu-questarr.service", "lulu-questarr-auth-proxy.service",
+             "lulu-questarr-reconcile.service",
              "nzbget.service", "lulu-file-browser.service"]
     for unit in units:
         if apply:
@@ -533,7 +536,8 @@ def repair_steam_bootstrap_directory(
 def _restart_update_services(active_units: list[str]) -> None:
     # Sessiond's PartOf edges restart Consoled and Acquisitiond with the shell.
     order = ("lulu-session@2.service", "lulu-admin.service", "mudos-recovery.service",
-             "lulu-file-browser.service")
+             "lulu-file-browser.service", "lulu-questarr.service",
+             "lulu-questarr-auth-proxy.service")
     for unit in order:
         if unit in active_units:
             run(["systemctl", "restart", unit])
@@ -545,7 +549,8 @@ def _verify_update_services(active_units: list[str], previous_pids: dict[str, in
         if not _active(unit):
             raise InstallError(f"Mudos service did not return active after update: {unit}")
         if unit not in {"lulu-session@2.service", "lulu-admin.service", "mudos-recovery.service",
-                        "lulu-consoled.service", "lulu-acquisition.service"}:
+                        "lulu-consoled.service", "lulu-acquisition.service",
+                        "lulu-questarr-auth-proxy.service"}:
             continue
         try:
             pid = _main_pid(unit)
@@ -589,8 +594,9 @@ def do_update(repo: Path, manifest: dict, dry_run: bool,
     if before_state.get("lifecycle") != "shell":
         raise InstallError("--update is allowed only while the Mudos shell owns the session")
     active_units = [unit for unit in ("lulu-session@2.service", "lulu-consoled.service",
-                                      "lulu-acquisition.service", "lulu-admin.service",
-                                      "mudos-recovery.service", "lulu-file-browser.service")
+                                       "lulu-acquisition.service", "lulu-admin.service",
+                                       "mudos-recovery.service", "lulu-file-browser.service",
+                                       "lulu-questarr.service", "lulu-questarr-auth-proxy.service")
                     if _active(unit)]
     if "lulu-session@2.service" not in active_units:
         raise InstallError("--update requires the normal Mudos graphical session to be active")

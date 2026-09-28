@@ -350,37 +350,25 @@ class AdminWebTests(unittest.TestCase):
             self.assertEqual(app.questarr_account_status(), "unknown")
         with patch("lulu.admin_web.urllib.request.urlopen", side_effect=urllib.error.URLError("offline")):
             self.assertEqual(app.questarr_account_status(), "unknown")
-        with patch.object(app, "service_state", return_value="active"), \
-                patch.object(app, "service_health", return_value="healthy"), \
-                patch.object(app, "questarr_account_status", return_value="missing"), \
-                patch.object(app, "test_provider", wraps=app.test_provider) as validate:
+        with patch.object(app, "questarr_readiness", return_value={
+                "overall": "unavailable", "service_running": True, "web_reachable": True,
+                "authentication_configured": False, "metadata_configured": False,
+                "indexers_available": False, "mudos_acquisition_gateway_configured": False,
+                "acquisitiond_reachable": False}):
             ok, reason = app.test_provider("questarr")
             self.assertFalse(ok)
-            self.assertIn("first-run account", reason)
-            self.assertEqual(validate.call_count, 1)  # no backend probe before account setup
-        with patch.object(app, "service_state", return_value="active"), \
-                patch.object(app, "service_health", return_value="healthy"), \
-                patch.object(app, "questarr_account_status", return_value="present"):
-            # An account and a healthy backend are still not evidence of an
-            # authenticated Questarr setup or initial reconciliation.
-            original = app.test_provider
-            def backend(provider):
-                return (True, "Backend healthy") if provider.startswith("providers.") else original(provider)
-            with patch.object(app, "test_provider", side_effect=backend):
-                ok, reason = app.test_provider("questarr")
-            self.assertFalse(ok)
-            self.assertIn("verify authenticated Questarr setup", reason)
+            self.assertIn("authentication is not configured", reason)
         with patch("lulu.admin_web.provider_manifest", return_value=[dict(
                 id="questarr", name="Questarr", installed=True)]), \
                 patch("lulu.admin_web.onboarding_state", return_value={"selected_providers": ["questarr"]}), \
                 patch.object(app, "service_state", return_value="active"), \
-                patch.object(app, "test_provider", return_value=(False, "Create the Questarr first-run account")):
+                patch.object(app, "test_provider", return_value=(False, "Questarr appliance-user authentication is not configured")):
             row = app.setup_provider_states()[0]
         self.assertEqual(row["status"], "degraded")
         self.assertTrue(row["state"]["running"])
         self.assertFalse(row["state"]["healthy"])
         self.assertFalse(row["state"]["configured"])
-        self.assertIn("first-run account", row["status_message"])
+        self.assertIn("appliance-user authentication", row["status_message"])
 
     def test_setup_integration_state_uses_provider_selection_and_persisted_skip(self):
         app = AdminApp()
@@ -1115,18 +1103,26 @@ var fetch=async function(path,options){calls.push(path);let body=options&&option
             rows = app.provider_rows()
             self.assertTrue(all(all(isinstance(value, bool) for value in row["secrets"].values()) for row in rows))
 
-    def test_questarr_running_health_does_not_claim_configuration(self):
+    def test_questarr_provider_row_exposes_independent_readiness_dimensions(self):
         app = AdminApp()
+        readiness = {
+            "overall": "degraded", "service_running": True, "web_reachable": True,
+            "authentication_configured": True, "metadata_configured": False,
+            "indexers_available": True, "indexer_count": 6,
+            "mudos_acquisition_gateway_configured": True, "acquisitiond_reachable": True,
+        }
         with patch("lulu.admin_web.provider_manifest", return_value=[
                 {"id": "questarr", "installed": True}]), \
                 patch.object(app, "service_state", return_value="active"), \
-                patch.object(app, "service_health", return_value="healthy"):
+                patch.object(app, "questarr_readiness", return_value=readiness):
             row = next(row for row in app.provider_rows() if row["id"] == "questarr")
         self.assertTrue(row["installed"])
-        self.assertIsNone(row["configured"])
+        self.assertFalse(row["configured"])
         self.assertTrue(row["running"])
         self.assertTrue(row["connected"])
-        self.assertEqual(row["status"], "running")
+        self.assertEqual(row["status"], "degraded")
+        self.assertFalse(row["metadata_configured"])
+        self.assertEqual(row["indexer_count"], 6)
 
     def test_nzbget_restart_readiness_waits_for_authenticated_rpc(self):
         app = AdminApp()

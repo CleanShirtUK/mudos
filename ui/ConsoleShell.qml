@@ -1839,8 +1839,9 @@ import QtQuick.Controls
         browserLaunchName = displayName
         browserLaunchUrl = url
         browserReturnSpace = "home"
-        openBrowser(url, id === "questarr" ? "questarr" : "", id === "questarr"
-            ? "http://127.0.0.1:5000" : "")
+        // Questarr login credentials are appliance PAM passwords. Do not route
+        // them through trusted-web autofill/capture or persist them in SecretStore.
+        openBrowser(url)
     }
 
     function closeBrowser() {

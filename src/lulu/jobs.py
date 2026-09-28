@@ -89,6 +89,7 @@ class DownloadJob:
     provider_state: str | None = None
     ownership_label: str | None = None
     origin: str = "mudos"
+    origin_metadata: dict[str, object] = field(default_factory=dict)
     deletion_policy: str = "preserve-partial"
     artifact_files: tuple[dict[str, object], ...] = ()
     seeding: bool = False

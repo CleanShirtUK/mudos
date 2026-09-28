@@ -53,6 +53,9 @@ class Config:
             "providers.prowlarr": Provider(
                 {"enabled": False}, {},
             ),
+            "metadata.igdb": Provider(
+                {"enabled": True, "client_id": ""}, {},
+            ),
         }
 
     def provider(self, name):
@@ -82,6 +85,8 @@ class Api:
         self.calls.append(("post", path, body))
         if path == "/api/indexers/prowlarr/sync" and self.prowlarr_error:
             raise RuntimeError("offline")
+        if path == "/api/settings/igdb":
+            return {"success": True}
         if path.endswith("/test"):
             return {"success": True}
         item = dict(body)
@@ -111,30 +116,50 @@ class QuestarrReconcilerTests(unittest.TestCase):
         self.assertEqual(result.status, "unconfigured")
         self.assertEqual(api.calls, [])
 
-    def test_reconciliation_creates_two_managed_downloaders_and_tests_them(self):
+    def test_reconciliation_configures_only_acquisitiond_nzb_gateway(self):
         api = Api()
         result = self.configured(api).reconcile()
         self.assertEqual(result.status, "ok")
-        self.assertEqual(result.transmission, "created")
+        self.assertEqual(result.transmission, "deferred-until-torrent-gateway")
         self.assertEqual(result.nzbget, "created")
-        self.assertEqual(len([c for c in api.calls if c[0] == "post" and c[1].endswith("/test")]), 2)
-        self.assertEqual(len(api.downloaders), 2)
+        self.assertEqual(len([c for c in api.calls if c[0] == "post" and c[1].endswith("/test")]), 1)
+        self.assertEqual(len(api.downloaders), 1)
         self.assertTrue(all('"owner":"mudos.questarr"' in d["settings"] for d in api.downloaders))
+        downloader = api.downloaders[0]
+        self.assertEqual(downloader["url"], "http://127.0.0.1")
+        self.assertEqual(downloader["port"], 5001)
+        self.assertEqual(downloader["username"], "")
+        self.assertEqual(downloader["password"], "")
+        self.assertEqual(downloader["urlPath"], "/xmlrpc")
+        self.assertNotIn("nzb-pass", repr(downloader))
 
-    def test_managed_entries_update_without_duplicate(self):
+    def test_managed_gateway_entry_updates_without_duplicate(self):
         api = Api()
         self.configured(api).reconcile()
         api.calls.clear()
         result = self.configured(api).reconcile()
-        self.assertEqual(result.transmission, "updated")
+        self.assertEqual(result.transmission, "deferred-until-torrent-gateway")
         self.assertEqual(result.nzbget, "updated")
-        self.assertEqual(len(api.downloaders), 2)
+        self.assertEqual(len(api.downloaders), 1)
         self.assertEqual(len([c for c in api.calls if c[0] == "post" and c[1] == "/api/downloaders"]), 0)
+
+    def test_igdb_is_projected_only_from_mudos_managed_configuration(self):
+        api = Api()
+        reconciler = self.configured(api)
+        igdb = reconciler.config.providers["metadata.igdb"]
+        igdb.values.update({"enabled": True, "client_id": "managed-client"})
+        igdb._secrets["client_secret"] = "test-only-managed-secret"
+        result = reconciler.reconcile()
+        self.assertEqual(result.metadata, "configured")
+        projection = next(call[2] for call in api.calls
+                          if call[0] == "post" and call[1] == "/api/settings/igdb")
+        self.assertTrue(projection["clientId"] == "managed-client")
+        self.assertTrue(bool(projection["clientSecret"]))
 
     def test_unmarked_equivalent_is_not_overwritten(self):
         api = Api([{"id": "manual", "type": "transmission", "url": "http://127.0.0.1", "port": 9091}])
         result = self.configured(api).reconcile()
-        self.assertEqual(result.transmission, "manual-equivalent")
+        self.assertEqual(result.transmission, "deferred-until-torrent-gateway")
         self.assertEqual(len(api.downloaders), 2)
 
     def test_runtime_jwt_cache_is_reused(self):
@@ -157,7 +182,7 @@ class QuestarrReconcilerTests(unittest.TestCase):
             second = QuestarrApi(opener=lambda *_: (_ for _ in ()).throw(AssertionError("login repeated")),
                                  cache_path=cache)
             second.ensure_authenticated("u", "p")
-        self.assertEqual(calls, ["http://127.0.0.1:5000/api/auth/login"])
+        self.assertEqual(calls, ["http://127.0.0.1:5002/api/auth/login"])
 
     def test_429_is_deferred_without_destructive_calls(self):
         def opener(request, timeout=15):
@@ -192,7 +217,7 @@ class QuestarrReconcilerTests(unittest.TestCase):
             api = QuestarrApi(opener=opener, cache_path=Path(directory) / "session.json")
             api.ensure_authenticated("u", "p")
             self.assertEqual(api.get("/api/indexers"), [])
-        self.assertEqual(calls.count("http://127.0.0.1:5000/api/auth/login"), 2)
+        self.assertEqual(calls.count("http://127.0.0.1:5002/api/auth/login"), 2)
 
     def test_concurrent_reconcile_is_coalesced(self):
         with tempfile.TemporaryDirectory() as directory:

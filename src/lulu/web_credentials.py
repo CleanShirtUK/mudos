@@ -22,9 +22,7 @@ class WebCredentialProfile:
         return (f"web/{self.profile_id}", "password")
 
 
-TRUSTED_WEB_PROFILES = {
-    "questarr": WebCredentialProfile("questarr", "http://127.0.0.1:5000"),
-}
+TRUSTED_WEB_PROFILES: dict[str, WebCredentialProfile] = {}
 
 
 def exact_origin(url: str) -> str:

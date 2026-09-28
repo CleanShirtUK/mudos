@@ -1,0 +1,29 @@
+[Unit]
+Description=Questarr appliance-authenticated LAN gateway
+After=network-online.target lulu-questarr.service lulu-acquisition.service
+Wants=network-online.target lulu-acquisition.service
+Requires=lulu-questarr.service
+
+[Service]
+Type=simple
+User=lulu
+Environment=HOME=/home/lulu
+Environment=USER=lulu
+Environment=LOGNAME=lulu
+Environment=XDG_CONFIG_HOME=/home/lulu/.config
+Environment=XDG_DATA_HOME=/home/lulu/.local/share
+Environment=XDG_CACHE_HOME=/home/lulu/.cache
+Environment=XDG_RUNTIME_DIR=/run/user/958
+Environment=PYTHONPATH=/opt/lulu/current/lib
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=LULU_INSTALL_ROOT=/opt/lulu/current
+ExecStart=/usr/bin/python -m lulu.questarr_auth_proxy
+Restart=on-failure
+RestartSec=5s
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/home/lulu/.local/share/lulu /home/lulu/.config/lulu
+
+[Install]
+WantedBy=multi-user.target

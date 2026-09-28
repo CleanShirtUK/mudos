@@ -118,7 +118,8 @@ class JobManager:
                cancellation_supported: bool = False,
                pause_supported: bool = False,
                provider_job_id: str | None = None, attempt: int = 1,
-               parent_job_id: str | None = None) -> DownloadJob:
+               parent_job_id: str | None = None, origin: str = "mudos",
+               origin_metadata: dict[str, object] | None = None) -> DownloadJob:
         if provider not in self.executors:
             raise ValueError(f"no executor registered for provider: {provider}")
         for existing in self.jobs.values():
@@ -146,6 +147,7 @@ class JobManager:
             cancellation_supported=cancellation_supported,
             pause_supported=pause_supported,
             provider_job_id=provider_job_id,
+            origin=origin, origin_metadata=dict(origin_metadata or {}),
             created_at=utc_now(), updated_at=utc_now(), attempt=attempt,
             parent_job_id=parent_job_id,
         )
@@ -168,6 +170,7 @@ class JobManager:
             pause_supported=previous.pause_supported,
             attempt=previous.attempt + 1,
             parent_job_id=previous.job_id,
+            origin=previous.origin, origin_metadata=previous.origin_metadata,
         )
 
     def retire(self, job_id: str) -> DownloadJob:

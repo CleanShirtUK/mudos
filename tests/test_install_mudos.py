@@ -180,7 +180,8 @@ def test_update_selects_verified_release_without_touching_mutable_state(tmp_path
     assert not steam_data_root.exists()  # update does not initialize absent Steam state
     assert restarted == ["lulu-session@2.service", "lulu-consoled.service",
                          "lulu-acquisition.service", "lulu-admin.service",
-                         "mudos-recovery.service"]
+                         "mudos-recovery.service", "lulu-questarr.service",
+                         "lulu-questarr-auth-proxy.service"]
     assert not any("pacman" in " ".join(command) or "purge" in " ".join(command)
                    for command in commands)
 
@@ -529,6 +530,17 @@ def test_questarr_uses_configured_storage_resolver_not_hardcoded_host_root():
     assert "mudos-questarr" in unit
     assert "PATHS.torrent_root" in launcher and "PATHS.usenet_root" in launcher
     assert "-d ${host_roots[0]}" in launcher
+    assert "PORT=5002" in launcher and "HOST=127.0.0.1" in launcher
+
+
+def test_questarr_provisioning_installs_auth_proxy_and_restarts_private_upstream():
+    provision = (ROOT / "scripts/provision-questarr.sh").read_text()
+    assert "lulu-questarr-auth-proxy.service" in provision
+    assert "systemctl restart lulu-questarr.service" in provision
+    assert "systemctl enable --now lulu-questarr-auth-proxy.service" in provision
+    proxy_unit = (ROOT / "packaging/lulu-questarr-auth-proxy.service").read_text()
+    assert "After=network-online.target lulu-questarr.service lulu-acquisition.service" in proxy_unit
+    assert "ReadWritePaths=/home/lulu/.local/share/lulu" in proxy_unit
 
 
 def test_release_builder_installs_questarr_launcher_at_service_exec_path():

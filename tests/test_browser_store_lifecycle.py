@@ -84,8 +84,9 @@ class BrowserStoreLifecycleTests(unittest.TestCase):
     def test_builtin_only_trust_is_not_inferred_from_url(self) -> None:
         shell = (ROOT / "ui" / "ConsoleShell.qml").read_text()
         browser = (ROOT / "ui" / "MudosBrowser.qml").read_text()
-        self.assertIn('id === "questarr" ? "questarr"', shell)
-        self.assertIn('"http://127.0.0.1:5000"', shell)
+        self.assertIn("openBrowser(url)", shell)
+        self.assertNotIn('"browser_profile":"questarr"',
+                         (ROOT / "config/plugins/questarr/store-card.json").read_text())
         self.assertIn("location.origin!==origin", browser)
         self.assertIn('browserTrustProfile = trustProfile || ""', shell)
 

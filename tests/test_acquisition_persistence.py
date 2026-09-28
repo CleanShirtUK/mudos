@@ -53,6 +53,23 @@ class AcquisitionPersistenceTests(unittest.TestCase):
             reopened.close()
             store.close()
 
+    def test_questarr_origin_correlation_survives_job_store_restart(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "acquisition.sqlite3"
+            store = AcquisitionStore(path)
+            questarr = DownloadJob(
+                "questarr-job", "usenet", "Safe NZB", content_identity="file:///safe.nzb",
+                origin="questarr", origin_metadata={"transport": "usenet", "external_client_id": 17},
+            )
+            store.save_all([questarr])
+            reopened = AcquisitionStore(path)
+            restored = reopened.load()[0]
+            self.assertEqual(restored.origin, "questarr")
+            self.assertEqual(restored.origin_metadata,
+                             {"transport": "usenet", "external_client_id": 17})
+            reopened.close()
+            store.close()
+
     def test_active_jobs_recover_as_queued_for_provider_reconciliation(self) -> None:
         async def exercise() -> None:
           with tempfile.TemporaryDirectory() as directory:

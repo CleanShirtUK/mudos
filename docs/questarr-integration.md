@@ -1,124 +1,119 @@
 # Questarr integration
 
-## Upstream reconnaissance
+## Upstream evidence
 
-The selected upstream release is **Questarr v1.4.2**, released 2026-08-11.
-The release provides an official container image and Docker Compose deployment;
-the image is pinned in the appliance unit by digest rather than using `latest`.
-The supported native development/production path is Node.js/npm, but this host
-had no Node runtime and upstream's production packaging is container-first.
+The appliance image is pinned to
+`ghcr.io/doezer/questarr@sha256:6faaf75f484a20805309315dd9eb9f1550b039a668efb89c13fc028c72b45485`.
+The source tag selected for this integration is **Questarr v1.4.2**. Its
+download-client behavior was checked in the tagged sources:
 
-Questarr v1.4.2 uses Node 26 in its image, Express, and a self-contained SQLite
-database. `SQLITE_DB_PATH` defaults to `sqlite.db`; the appliance sets it to
-`/app/data/sqlite.db`. The public liveness endpoint is `/api/health` and the
-readiness endpoint is `/api/ready` (readiness requires authentication).
-HTTP defaults to port 5000 and upstream defaults to `0.0.0.0`; the appliance
-retains that bind for the LAN browser and restricts access with UFW.
+- `server/downloaders/transmission.ts`
+- `server/downloaders/nzbget.ts`
+- `server/downloaders/manager.ts`
 
-First-run setup is intentionally upstream-owned. `GET /api/auth/status` is
-public; when it reports no users, the operator must open Questarr and create
-the first username/password through its setup page. Mudos does not invent or
-store that password. Authenticated API calls use the returned JWT bearer token.
-Questarr generates and persists its JWT signing secret and credential-encryption
-key in its SQLite `system_config` table when environment values are absent.
-Downloader and indexer credentials are AES-256-GCM encrypted at rest by
-Questarr. The persistent database path is `/var/lib/lulu-questarr/data/sqlite.db`.
+The NZBGet client calls `version`, `append`, `listgroups`, `history`, `status`,
+and `editqueue` (`GroupPause`, `GroupResume`, `GroupDelete`). The Transmission
+client calls `session-get`, `torrent-add`, `torrent-get`, `torrent-stop`,
+`torrent-start`, `torrent-remove`, and `free-space`. The Questarr UI/API invokes
+the latter status/action methods for client tests, download display, and
+download management. No generic external-webhook request path is used.
 
-The supported integration mechanisms are:
+## Ownership and request flow
 
-- `POST /api/indexers/prowlarr/sync` for Prowlarr synchronization. It reads
-  `/api/v1/indexer`, filters torrent/usenet protocols, and creates Torznab or
-  Newznab indexers using Prowlarr's `/<indexer-id>/api` feeds.
-- Native Questarr Transmission and NZBGet downloader clients.
-- Downloader categories/labels. Transmission receives labels; NZBGet receives
-  the configured category. Mudos uses `questarr` for both provenance markers.
-- Questarr's authenticated downloader test and submission APIs.
+Acquisitiond remains the only Mudos acquisition-job authority. The NZBGet
+compatibility surface is implemented by `lulu.questarr_gateway` inside the
+Acquisitiond process and listens on loopback TCP 5001. For the first transport,
+the supported flow is:
 
-Questarr's importer supports `move`, `copy`, `hardlink`, and `symlink`, and has
-an auto-delete-after-import option. It resolves completed paths from downloader
-metadata and supports path mappings. Automatic import/destructive cleanup is
-not enabled in this pass: the acquisition trees are mounted read-only and the
-canonical downloaded-versus-installed Mudos boundary remains authoritative.
-
-## Appliance deployment
-
-Questarr is deployed as the systemd-managed rootful Podman service
-`lulu-questarr.service`. Rootful Podman was selected over native Node because
-it follows upstream's supported production packaging, contains the Node/npm
-runtime, avoids adding a second host-level JavaScript runtime, and does not
-require a heavyweight orchestration stack. The unit uses host networking only
-for narrow local appliance connectivity to the existing Transmission/NZBGet
-services; UFW permits TCP 5000 only from the detected LAN subnet.
-
-The image is pinned to:
-
-`ghcr.io/doezer/questarr@sha256:6faaf75f484a20805309315dd9eb9f1550b039a668efb89c13fc028c72b45485`
-
-Persistent state is outside the mutable Mudos runtime at
-`/var/lib/lulu-questarr/data`. The existing acquisition trees are exposed at
-identical in-container paths, read-only for this pass:
-
-- `/home/lulu/Games/.acquisition/torrents`
-- `/home/lulu/Games/.acquisition/usenet`
-
-No second Transmission or NZBGet daemon is created. Questarr is enabled
-independently at boot and a failure does not make the graphical Mudos session a
-systemd dependency.
-
-## Current integration boundary
-
-Questarr is also an active acquisition source for Nintendo Switch base games,
-updates, and DLC.  Its game record is the parent identity and its individual
-download records retain the structured `downloadType` (`game`, `update`, or
-`dlc`), downloader identity, release title, and status.  Mudos must consume
-these as `GameContentComponent` records: each transfer remains visible as its
-own download job, while all completed components attach to one Switch library
-identity.  Filename parsing is only a fallback when a provider result omits
-the structured role.
-
-Questarr is visible in the Mudos admin Services page with service state, an
-HTTP health result from `/api/health`, and an Open UI link. The fixed Home Store
-card **Questarr** launches the existing Mudos WebEngine browser at
-`http://mudos.local:5000/`; it is non-removable and uses the already-implemented
-generic delegated browser/compatibility lifecycle.
-
-The Mudos QML Store card uses the internal loopback URL
-`http://127.0.0.1:5000/`. The Mudos admin Open UI link and normal LAN browsers
-continue to use `http://mudos.local:5000/`; custom bookmark behavior is
-unchanged.
-
-The appliance Prowlarr endpoint is now known as
-`http://192.168.0.197:9696/`. From inside the Questarr container, an
-authenticated probe succeeded against `/api/v1/system/status` (Prowlarr
-version 2.5.2.5491) and `/api/v1/indexer` (six indexers: four torrent and two
-usenet). The supplied API-key file was read only at runtime; its value was not
-copied, logged, or committed.
-
-Questarr has no users yet. Its supported API places Prowlarr synchronization
-behind JWT authentication, so synchronization cannot be invoked before the
-operator completes first-run setup. SQLite manipulation is explicitly not used.
-
-## Mudos-owned credential authority
-
-The migrated Prowlarr configuration is now in
-`/home/lulu/.config/lulu/provider-services.toml`:
-
-```toml
-[providers.prowlarr]
-enabled = true
-endpoint = "http://192.168.0.197:9696/"
-
-[providers.prowlarr.secrets]
-api_key = "prowlarr/api-key"
+```text
+Questarr NZBGet client
+  -> 127.0.0.1:5001/xmlrpc (host-networked container)
+  -> durable Questarr client-ID/fingerprint mapping
+  -> Acquisitiond JobManager.submit(provider=usenet, origin=questarr)
+  -> existing Mudos NZBGet executor
+  -> real NZBGet
 ```
 
-The API key itself is in the Mudos SecretStore under `prowlarr/api-key` and
-does not appear in the TOML. The temporary RTF is superseded and may be
-removed by the operator after confirming the migration.
+The gateway stores the NZB in Mudos' mutable Usenet NZB area, keyed by its
+content digest. A SQLite mapping preserves Questarr's numeric NZBGet ID,
+content fingerprint, and Mudos job ID across gateway/Acquisitiond restarts.
+Duplicate submissions resolve to the existing mapping/job. Questarr polling is
+projected from the persisted Acquisitiond `DownloadJob`; the gateway does not
+create a second progress or execution queue. The Mudos job records
+`origin=questarr` and transport/request correlation metadata.
 
-The existing host-networked Questarr container can reach the existing
-downloaders at `http://127.0.0.1:9091/transmission/rpc` and
-`http://127.0.0.1:6789/xmlrpc`. Credential probes from inside the container
-succeeded. Once Questarr authentication is available, configure Transmission
-with label `questarr` and NZBGet with category `questarr`; Mudos discovery
-maps both markers to `origin=questarr`.
+Questarr is configured only with the gateway URL and empty daemon credentials.
+The gateway binds to `127.0.0.1`; Questarr's host-networked container can reach
+it, but LAN clients cannot. The actual NZBGet endpoint and credentials remain
+in Mudos provider configuration and are used only by Acquisitiond. Direct
+Mudos NZBGet submissions retain their existing path and semantics.
+
+The current first milestone implements only the NZBGet protocol subset needed
+for connection tests, add, list/status/history, free-space, pause/resume, and
+remove. Transmission compatibility is not yet enabled; reconciliation must
+not configure Questarr with the real Transmission endpoint or credentials.
+
+## Authentication and web topology
+
+Questarr runs as a pinned rootful Podman service with persistent data at
+`/var/lib/lulu-questarr/data`. Its own HTTP server binds to `127.0.0.1:5002`.
+The LAN-facing Mudos auth proxy listens on port 5000, the existing LAN-only
+UFW rule. It forwards normal Questarr requests and handles login specially:
+
+1. Require the appliance username and validate the supplied password using the
+   system PAM `login` service.
+2. Exchange that successful PAM authentication for a Questarr JWT using a
+   randomly generated Questarr-internal credential stored only in Mudos
+   SecretStore (`web/questarr`).
+3. Never store, forward to Questarr, or log the user's PAM password. Public
+   first-run setup is disabled; the proxy provisions the Questarr internal user
+   automatically when Questarr has no users.
+4. Establish an opaque, HttpOnly, same-site proxy session (eight-hour maximum).
+   Protected API and Socket.IO polling requests require that PAM-established
+   session; a Questarr bearer token by itself is not sufficient at the LAN
+   boundary. Proxy restart invalidates these sessions and requires a fresh
+   PAM login.
+
+Both the delegated Mudos browser and LAN browsers reach the same port-5000
+proxy and authenticate against the system account. Questarr is not configured
+as a trusted-web autofill profile, preventing the PAM password from being
+captured into browser credential storage. The proxy applies its own login
+rate limit because upstream login is performed with the private internal
+credential after PAM succeeds.
+
+## IGDB and indexers
+
+Prowlarr remains an indexer/search source and is synchronized through
+Questarr's supported API. It does not select or own download execution.
+
+When Mudos IGDB credentials are configured, the reconciler projects Mudos'
+client ID and SecretStore-backed client secret through Questarr's supported
+`POST /api/settings/igdb` API. No secret is placed in the release, provider
+TOML, logs, or tests. When Mudos IGDB is not configured, metadata readiness is
+reported incomplete; this does not invent credentials or block the NZB
+gateway's request ownership.
+
+## Readiness
+
+Admin derives Questarr readiness from separate observations: Questarr service
+state, public web health, auth-proxy/PAM/internal-identity availability,
+metadata configuration, authenticated indexer count, loopback gateway test,
+and Acquisitiond service state. Missing IGDB yields `degraded`, not a false
+claim of full readiness. Provider/source readiness remains distinct from
+service liveness.
+
+## Physical acceptance still required
+
+The source/API and deterministic unit tests establish the implemented
+boundary, but the appliance must still prove the end-to-end path with a small,
+safe NZB request:
+
+```text
+Questarr -> gateway -> stable Acquisitiond job -> Downloads -> real NZBGet
+        -> Questarr status projection
+```
+
+Cancel the request after ownership/progress is verified and before substantial
+transfer. Do not reuse or disturb the already accepted direct NZBGet fixture.
+After this milestone is accepted, add and validate the Transmission gateway
+using the same ownership and correlation model.

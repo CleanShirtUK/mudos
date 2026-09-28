@@ -35,7 +35,7 @@ class QuestarrDownloadMetadata:
 class QuestarrMetadataClient:
     """Use Questarr's supported API; never mutate its database or downloads."""
 
-    def __init__(self, base_url: str = "http://127.0.0.1:5000", *, ttl: float = 30.0,
+    def __init__(self, base_url: str = "http://127.0.0.1:5002", *, ttl: float = 30.0,
                  transport: Any | None = None) -> None:
         self.ttl = ttl
         self.api = QuestarrApi(base_url=base_url, opener=transport)

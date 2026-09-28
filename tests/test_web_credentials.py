@@ -27,16 +27,13 @@ class WebCredentialTests(unittest.TestCase):
                          "http://127.0.0.1.evil.example:5000")
         self.assertEqual(exact_origin("https://127.0.0.1:5000/"), "https://127.0.0.1:5000")
 
-    def test_save_get_replace_and_clear_use_secretstore_refs(self):
+    def test_questarr_credentials_are_not_exposed_to_the_browser(self):
         secrets = MemorySecrets()
         store = WebCredentialStore(secrets)
-        self.assertFalse(store.get("questarr", "http://127.0.0.1:5000/")["configured"])
-        store.save("questarr", "http://127.0.0.1:5000/login", "user", "password")
-        self.assertEqual(store.get("questarr", "http://127.0.0.1:5000/")["username"], "user")
-        store.save("questarr", "http://127.0.0.1:5000", "new-user", "new-password")
-        self.assertEqual(store.get("questarr", "http://127.0.0.1:5000/")["password"], "new-password")
-        store.clear("questarr", "http://127.0.0.1:5000")
-        self.assertFalse(store.get("questarr", "http://127.0.0.1:5000")["configured"])
+        with self.assertRaises(ValueError):
+            store.get("questarr", "http://127.0.0.1:5000/")
+        with self.assertRaises(ValueError):
+            store.save("questarr", "http://127.0.0.1:5000", "user", "password")
         self.assertFalse(secrets.values)
 
     def test_custom_store_and_wrong_origin_cannot_read_or_write(self):

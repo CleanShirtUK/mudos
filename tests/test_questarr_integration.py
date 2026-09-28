@@ -29,6 +29,22 @@ class QuestarrIntegrationTests(unittest.TestCase):
         self.assertIn("/var/lib/lulu-questarr/data:/app/data", launcher)
         self.assertIn("PATHS.torrent_root", launcher)
         self.assertIn("PATHS.usenet_root", launcher)
+        self.assertIn("PORT=5002", launcher)
+        self.assertIn("HOST=127.0.0.1", launcher)
+
+    def test_auth_proxy_and_acquisition_gateway_own_the_public_boundaries(self) -> None:
+        proxy = (ROOT / "src/lulu/questarr_auth_proxy.py").read_text()
+        gateway = (ROOT / "src/lulu/questarr_gateway.py").read_text()
+        unit = (ROOT / "packaging/lulu-questarr-auth-proxy.service").read_text()
+        acquisitiond = (ROOT / "src/lulu/acquisitiond.py").read_text()
+        self.assertIn("authenticate_managed_account", proxy)
+        self.assertIn("/api/auth/setup", proxy)
+        self.assertIn("PUBLIC_PORT = 5000", proxy)
+        self.assertIn("UPSTREAM = \"http://127.0.0.1:5002\"", proxy)
+        self.assertIn("GetUsenetReadiness", (ROOT / "src/lulu/admin_web.py").read_text())
+        self.assertIn("origin=\"questarr\"", gateway)
+        self.assertIn('serve_gateway(questarr_gateway)', acquisitiond)
+        self.assertIn("User=lulu", unit)
 
     def test_admin_registry_exposes_questarr_health_and_ui(self) -> None:
         admin = (ROOT / "src/lulu/admin_web.py").read_text()
@@ -88,6 +104,9 @@ class QuestarrIntegrationTests(unittest.TestCase):
         self.assertIn('"mudos.questarr"', reconciler)
         self.assertIn("User=lulu", unit)
         self.assertNotIn("sqlite", reconciler.lower())
+        self.assertIn('"http://127.0.0.1:5001"', reconciler)
+        self.assertNotIn('"http://127.0.0.1:9091/transmission/rpc"', reconciler)
+        self.assertNotIn('torrent.secret("password")', reconciler)
 
     def test_reconciler_has_no_secret_logging_or_public_token_state(self) -> None:
         reconciler = (ROOT / "src/lulu/questarr_reconciler.py").read_text()

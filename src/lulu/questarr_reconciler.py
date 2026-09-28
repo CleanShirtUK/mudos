@@ -22,7 +22,7 @@ from .credential import SecretStore
 from .provider_config import ProviderConfigurationService
 
 LOGGER = logging.getLogger("lulu.questarr-reconciler")
-QUESTARR_URL = "http://127.0.0.1:5000"
+QUESTARR_URL = "http://127.0.0.1:5002"
 MANAGED_MARKER = "mudos.questarr"
 
 
@@ -225,6 +225,7 @@ class ReconcileResult:
     nzbget: str
     prowlarr: str
     indexers: dict[str, int]
+    metadata: str = "unavailable"
 
 
 def _marker(settings: object, role: str) -> bool:
@@ -322,25 +323,15 @@ class QuestarrReconciler:
             self.api.ensure_authenticated(web, password)
         else:
             self.api.login(web, password)
-        torrent = self.config.provider("providers.torrent")
         usenet = self.config.provider("providers.usenet")
-        if not torrent.configured or not usenet.configured:
+        if not usenet.configured:
             return ReconcileResult("unconfigured", "skipped", "skipped", "skipped", {})
-        transmission_endpoint = _endpoint_fields(
-            torrent.get("endpoint", "http://127.0.0.1:9091/transmission/rpc"), 9091
-        )
-        nzbget_endpoint = _endpoint_fields(
-            usenet.get("endpoint", "http://127.0.0.1:6789"), 6789, drop_path=True
-        )
-        transmission = self._downloader("transmission", {
-            "name": "Mudos Transmission", "type": "transmission", **transmission_endpoint,
-            "username": torrent.secret("username") or "", "password": torrent.secret("password") or "",
-            "enabled": True, "priority": 1, "category": "questarr", "label": "questarr",
-            "downloadPath": "/home/lulu/Games/.acquisition/torrents/complete",
-        })
+        # Questarr must submit through Acquisitiond, never the real NZBGet
+        # endpoint. The loopback gateway projects Acquisitiond-owned jobs.
+        nzbget_endpoint = _endpoint_fields("http://127.0.0.1:5001", 5001, drop_path=True)
         nzbget = self._downloader("nzbget", {
             "name": "Mudos NZBGet", "type": "nzbget", **nzbget_endpoint,
-            "username": str(usenet.get("username", "mudos")), "password": usenet.secret("rpc_password") or "",
+            "username": "", "password": "", "urlPath": "/xmlrpc",
             "enabled": True, "priority": 1, "category": "questarr", "label": "questarr",
         })
         prowlarr = self.config.provider("providers.prowlarr")
@@ -356,10 +347,25 @@ class QuestarrReconciler:
             except QuestarrApiError:
                 LOGGER.warning("Questarr Prowlarr sync is degraded")
                 prowlarr_status = "degraded"
+        metadata = self.config.provider("metadata.igdb")
+        metadata_status = "incomplete"
+        if metadata.configured:
+            try:
+                self.api.post("/api/settings/igdb", {
+                    "clientId": metadata.get("client_id", ""),
+                    "clientSecret": metadata.secret("client_secret") or "",
+                })
+                metadata_status = "configured"
+            except QuestarrRateLimited:
+                raise
+            except QuestarrApiError:
+                LOGGER.warning("Questarr IGDB configuration projection is degraded")
+                metadata_status = "degraded"
         indexers = self.api.get("/api/indexers")
         counts = {"total": len(indexers) if isinstance(indexers, list) else 0,
                   "torrent": 0, "usenet": 0}
         for item in indexers if isinstance(indexers, list) else []:
             protocol = str(item.get("protocol", "")).casefold() if isinstance(item, dict) else ""
             counts["usenet" if protocol == "newznab" else "torrent"] += 1
-        return ReconcileResult("ok", transmission, nzbget, prowlarr_status, counts)
+        return ReconcileResult("ok", "deferred-until-torrent-gateway", nzbget,
+                               prowlarr_status, counts, metadata_status)
