@@ -1,0 +1,64 @@
+"""Narrow Questarr container projections for Mudos-owned filesystems."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from pathlib import Path
+
+from .paths import PATHS, MudosPaths
+from .platforms import load_platforms
+
+
+QUESTARR_DOWNLOAD_ROOT = Path("/home/lulu/Games/.acquisition/usenet")
+QUESTARR_LIBRARY_ROOT = Path("/data")
+
+
+@dataclass(frozen=True, slots=True)
+class QuestarrLibraryMount:
+    platform_id: str
+    host_path: Path
+    container_path: Path
+
+
+def questarr_library_mounts(paths: MudosPaths = PATHS) -> tuple[QuestarrLibraryMount, ...]:
+    """Map configured Mudos platform roots to Questarr's native folder names."""
+    definitions = load_platforms()
+    mounts: list[QuestarrLibraryMount] = []
+    seen: set[str] = set()
+    for platform_id, definition in definitions.items():
+        library_dir = definition.questarr_library_dir
+        if not library_dir:
+            continue
+        key = library_dir.casefold()
+        if key in seen:
+            raise ValueError(f"duplicate Questarr library directory: {library_dir}")
+        seen.add(key)
+        host_path = definition.content_root(paths.rom_root)
+        mounts.append(QuestarrLibraryMount(
+            platform_id, host_path, QUESTARR_LIBRARY_ROOT / library_dir))
+    return tuple(mounts)
+
+
+def questarr_completed_download_path(
+    host_path: str | Path,
+    *,
+    paths: MudosPaths = PATHS,
+    container_download_root: Path = QUESTARR_DOWNLOAD_ROOT,
+) -> str | None:
+    """Translate an existing successful Usenet output into Questarr's view.
+
+    Only a path beneath the configured completed root is eligible. Active jobs,
+    failed jobs, missing output and paths outside the read-only/writable
+    completed-output projection are deliberately not projected.
+    """
+    try:
+        complete_root = paths.usenet_complete_root.resolve(strict=True)
+        source_root = paths.usenet_root.resolve(strict=True)
+        candidate = Path(host_path).resolve(strict=True)
+        relative_to_complete = candidate.relative_to(complete_root)
+        relative_to_source = candidate.relative_to(source_root)
+    except (OSError, ValueError, RuntimeError):
+        return None
+    if not relative_to_complete.parts or not candidate.exists():
+        return None
+    return str(container_download_root / relative_to_source)

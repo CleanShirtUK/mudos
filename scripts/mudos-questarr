@@ -2,19 +2,51 @@
 set -euo pipefail
 export PYTHONDONTWRITEBYTECODE=1
 
-roots=$(HOME=/home/lulu XDG_CONFIG_HOME=/home/lulu/.config \
-  PYTHONPATH=/opt/lulu/current/lib /usr/bin/python -c \
-  'import json; from lulu.paths import PATHS; print(json.dumps([str(PATHS.torrent_root), str(PATHS.usenet_root)]))')
-readarray -t host_roots < <(printf '%s' "$roots" | /usr/bin/python -c \
+mounts=$(HOME=/home/lulu XDG_CONFIG_HOME=/home/lulu/.config \
+  PYTHONPATH=/opt/lulu/current/lib /usr/bin/python -c '
+import json
+import pwd
+import stat
+from lulu.paths import PATHS
+from lulu.questarr_paths import questarr_library_mounts
+uid = pwd.getpwnam("lulu").pw_uid
+gid = pwd.getpwnam("lulu").pw_gid
+def lulu_can_write(path):
+    info = path.stat()
+    if info.st_mode & stat.S_IWOTH:
+        return False
+    owner_write = info.st_uid == uid and info.st_mode & stat.S_IWUSR
+    group_write = info.st_gid == gid and info.st_mode & stat.S_IWGRP
+    return bool(owner_write or group_write)
+values = [str(PATHS.torrent_root), str(PATHS.usenet_root), str(PATHS.usenet_complete_root)]
+for mount in questarr_library_mounts():
+    if not mount.host_path.is_dir() or not lulu_can_write(mount.host_path):
+        raise SystemExit("Mudos ROM platform path is not safely writable by lulu: " + str(mount.host_path))
+    values.extend((str(mount.host_path), str(mount.container_path)))
+print(json.dumps(values))')
+readarray -t host_paths < <(printf '%s' "$mounts" | /usr/bin/python -c \
   'import json,sys; print("\n".join(json.load(sys.stdin)))')
-[[ ${#host_roots[@]} -eq 2 && -d ${host_roots[0]} && -d ${host_roots[1]} ]] || {
-  echo "Questarr acquisition storage is unavailable; configure a valid Mudos storage target." >&2
+[[ ${#host_paths[@]} -ge 3 && $(( (${#host_paths[@]} - 3) % 2 )) -eq 0 \
+   && -d ${host_paths[0]} && -d ${host_paths[1]} && -d ${host_paths[2]} ]] || {
+  echo "Questarr Mudos storage projections are unavailable; configure a valid Mudos storage target." >&2
   exit 78
 }
+for ((index=3; index<${#host_paths[@]}; index+=2)); do
+  [[ -d ${host_paths[index]} && ${host_paths[index+1]} == /data/* ]] || {
+    echo "Questarr platform library projection is unavailable." >&2
+    exit 78
+  }
+done
+library_volumes=()
+for ((index=3; index<${#host_paths[@]}; index+=2)); do
+  library_volumes+=(--volume "${host_paths[index]}:${host_paths[index+1]}:rw")
+done
 exec /usr/bin/podman run --name questarr --network host --user root \
   --env PUID=958 --env PGID=958 --env PORT=5002 --env HOST=127.0.0.1 \
   --env NODE_ENV=production --env SQLITE_DB_PATH=/app/data/sqlite.db \
   --volume /var/lib/lulu-questarr/data:/app/data:Z \
-  --volume "${host_roots[0]}:/home/lulu/Games/.acquisition/torrents:ro" \
-  --volume "${host_roots[1]}:/home/lulu/Games/.acquisition/usenet:ro" \
+  --volume "${host_paths[0]}:/home/lulu/Games/.acquisition/torrents:ro" \
+  --volume "${host_paths[1]}:/home/lulu/Games/.acquisition/usenet:ro" \
+  --volume "${host_paths[2]}:/home/lulu/Games/.acquisition/usenet/complete:rw" \
+  "${library_volumes[@]}" \
   ghcr.io/doezer/questarr@sha256:6faaf75f484a20805309315dd9eb9f1550b039a668efb89c13fc028c72b45485

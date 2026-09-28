@@ -53,6 +53,7 @@ class NzbGetClientTests(unittest.TestCase):
             self.assertEqual(values["WebDir"], "/usr/share/nzbget/webui")
             self.assertEqual(values["ConfigTemplate"], "/usr/share/nzbget/nzbget.conf")
             self.assertEqual(values["ScriptDir"], "/var/lib/nzbget/scripts")
+            self.assertEqual(values["UMask"], "0002")
 
     def test_json_rpc_auth_and_health(self) -> None:
         calls = []

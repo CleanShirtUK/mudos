@@ -52,6 +52,37 @@ it, but LAN clients cannot. The actual NZBGet endpoint and credentials remain
 in Mudos provider configuration and are used only by Acquisitiond. Direct
 Mudos NZBGet submissions retain their existing path and semantics.
 
+## Completed-output and library path projection
+
+Questarr's pinned image sees the Mudos Usenet root at
+`/home/lulu/Games/.acquisition/usenet`. The completed subdirectory is the only
+writable part of that acquisition projection; incomplete data, NZB input, and
+ownership metadata remain read-only. This write access is required only for
+Questarr's own `move` import semantics. The Questarr process drops to the host
+`lulu` UID/GID, and NZBGet's shared-output umask keeps imported files readable
+and writable by that group without world-writable permissions.
+
+Platform-library bind mounts are generated from normalized Mudos platform
+definitions. A definition may set `questarr.library_dir`; Questarr's native
+library name is projected onto that platform's configured Mudos `content_root`
+under `/data`. For example, Questarr `/data/Wii` is a writable bind mount of
+Mudos `PATHS.rom_root / "wii"`; there is no second `/data` library.
+
+For completed Usenet jobs, the gateway derives the XML-RPC history `DestDir`
+from the persisted Acquisitiond `completion_path`, only after the output exists
+and only when it resolves beneath Mudos's configured Usenet complete root. It
+translates that host path through the exact container mount mapping; active,
+failed, missing-output, and out-of-root jobs do not receive a download path.
+
+Questarr v1.4.2's manual import plan supports an explicit source path and its
+confirm API supports a selected file and destination override inside the
+configured library root. This permits importing a playable image file without
+including PAR/RAR/NFO release debris. The pinned v1.4.2 NZBGet client currently
+parses history `DestDir` but drops it when constructing `DownloadDetails`, so
+the field alone does not make its automatic completion poll supply
+`downloadDir`. Do not enable automatic post-processing until that upstream
+client handoff is corrected and verified against the pinned client.
+
 The current first milestone implements only the NZBGet protocol subset needed
 for connection tests, add, list/status/history, free-space, pause/resume, and
 remove. Transmission compatibility is not yet enabled; reconciliation must

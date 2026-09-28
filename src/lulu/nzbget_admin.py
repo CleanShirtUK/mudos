@@ -52,6 +52,9 @@ def apply_packaged_paths(path: Path = CONFIG_PATH) -> None:
         # CachyOS's package has no /usr/share/nzbget/scripts directory;
         # retain the writable managed script directory instead.
         "ScriptDir": MANAGED_SCRIPT_DIR,
+        # Completed outputs live in the Mudos shared-storage group so Questarr
+        # can move only selected import payloads without world-writable modes.
+        "UMask": "0002",
     }
     lines = path.read_text().splitlines()
     output: list[str] = []

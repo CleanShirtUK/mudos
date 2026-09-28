@@ -29,6 +29,10 @@ class QuestarrIntegrationTests(unittest.TestCase):
         self.assertIn("/var/lib/lulu-questarr/data:/app/data", launcher)
         self.assertIn("PATHS.torrent_root", launcher)
         self.assertIn("PATHS.usenet_root", launcher)
+        self.assertIn("PATHS.usenet_complete_root", launcher)
+        self.assertIn("questarr_library_mounts", launcher)
+        self.assertIn("/home/lulu/Games/.acquisition/usenet/complete:rw", launcher)
+        self.assertIn('"${library_volumes[@]}"', launcher)
         self.assertIn("PORT=5002", launcher)
         self.assertIn("HOST=127.0.0.1", launcher)
 

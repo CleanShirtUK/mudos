@@ -20,6 +20,7 @@ from xmlrpc.client import Fault, dumps, loads
 from .jobs import DownloadJob, JobState
 from .job_manager import JobManager
 from .paths import PATHS
+from .questarr_paths import QUESTARR_DOWNLOAD_ROOT
 
 LOGGER = logging.getLogger("lulu.questarr-gateway")
 GATEWAY_HOST = "127.0.0.1"
@@ -32,7 +33,10 @@ class QuestarrGateway:
     """Expose only Questarr v1.4.2's required NZBGet XML-RPC operations."""
 
     def __init__(self, manager: JobManager, loop: Any, *, database: Path | None = None,
-                 nzb_root: Path | None = None, watched_nzb_root: Path | None = None) -> None:
+                 nzb_root: Path | None = None, watched_nzb_root: Path | None = None,
+                 usenet_mount_root: Path | None = None,
+                 usenet_complete_root: Path | None = None,
+                 questarr_download_root: Path = QUESTARR_DOWNLOAD_ROOT) -> None:
         self.manager = manager
         self.loop = loop
         self.database = database or PATHS.data_root / "questarr-gateway.sqlite3"
@@ -40,6 +44,9 @@ class QuestarrGateway:
         # must stay in Acquisitiond-private storage, never in that watched tree.
         self.watched_nzb_root = Path(watched_nzb_root or PATHS.usenet_nzb_root).resolve()
         self.nzb_root = Path(nzb_root or PATHS.data_root / "questarr-nzb-staging").resolve()
+        self.usenet_mount_root = Path(usenet_mount_root or PATHS.usenet_root)
+        self.usenet_complete_root = Path(usenet_complete_root or PATHS.usenet_complete_root)
+        self.questarr_download_root = Path(questarr_download_root)
         if self.nzb_root == self.watched_nzb_root or self.watched_nzb_root in self.nzb_root.parents:
             raise ValueError("Questarr NZB staging must be outside NZBGet's watched NzbDir")
         self._lock = threading.RLock()
@@ -223,6 +230,22 @@ class QuestarrGateway:
             return "DELETED"
         return "FAILURE"
 
+    def _completed_download_dir(self, job: DownloadJob) -> str:
+        """Return only real successful output visible through Questarr's mount."""
+        if job.state != JobState.COMPLETED or not job.completion_path:
+            return ""
+        try:
+            mount_root = self.usenet_mount_root.resolve(strict=True)
+            complete_root = self.usenet_complete_root.resolve(strict=True)
+            completed = Path(job.completion_path).resolve(strict=True)
+            completed.relative_to(complete_root)
+            relative = completed.relative_to(mount_root)
+        except (OSError, ValueError, RuntimeError):
+            return ""
+        if not relative.parts or not completed.exists():
+            return ""
+        return str(self.questarr_download_root / relative)
+
     def _status_row(self, client_id: int, job: DownloadJob, title: str,
                     category: str = "questarr") -> dict[str, Any]:
         total = job.total_bytes or 0
@@ -235,7 +258,7 @@ class QuestarrGateway:
                     "FileSizeMB": total / 1048576, "DownloadTimeSec": 0,
                     "ParStatus": "NONE", "UnpackStatus": "NONE", "FailedArticles": 0,
                     "DeleteStatus": "MANUAL" if state == "DELETED" else "NONE",
-                    "DestDir": job.destination or ""}
+                    "DestDir": self._completed_download_dir(job)}
         return {**common, "NZBName": title, "Status": state,
                 "FileSizeMB": total / 1048576, "RemainingSizeMB": remaining / 1048576,
                 "DownloadedSizeMB": downloaded / 1048576,

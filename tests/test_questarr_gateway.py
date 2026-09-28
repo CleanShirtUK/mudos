@@ -2,6 +2,7 @@ import asyncio
 import base64
 import tempfile
 import threading
+import time
 import unittest
 from pathlib import Path
 from http.server import ThreadingHTTPServer
@@ -34,12 +35,32 @@ class UnavailableNzbGetExecutor:
         return None
 
 
+class CompletedOutputExecutor:
+    supports_pause = True
+
+    def __init__(self, output):
+        self.output = output
+
+    async def run(self, job, reporter):
+        await reporter.state(JobState.TRANSFERRING, stage="transferring")
+        await reporter.metadata(completion_path=str(self.output), destination=str(self.output))
+        await reporter.state(JobState.FINALIZING, stage="unpacking")
+        await reporter.state(JobState.COMPLETED, stage="completed")
+
+    async def cancel(self, _job):
+        return None
+
+
 class QuestarrGatewayTests(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
         root = Path(self.temporary.name)
         self.loop = asyncio.new_event_loop()
         self.watched_nzb_root = root / "nzbget-watch"
+        self.usenet_root = root / "host-usenet"
+        self.usenet_complete_root = self.usenet_root / "complete"
+        self.usenet_complete_root.mkdir(parents=True)
+        self.container_usenet_root = Path("/questarr/downloads/usenet")
         self.thread = threading.Thread(target=self.loop.run_forever, daemon=True)
         self.thread.start()
         async def initialize():
@@ -53,7 +74,10 @@ class QuestarrGatewayTests(unittest.TestCase):
         self.gateway = QuestarrGateway(self.manager, self.loop,
                                        database=root / "gateway.sqlite3",
                                        nzb_root=staged_root,
-                                       watched_nzb_root=self.watched_nzb_root)
+                                       watched_nzb_root=self.watched_nzb_root,
+                                       usenet_mount_root=self.usenet_root,
+                                       usenet_complete_root=self.usenet_complete_root,
+                                       questarr_download_root=Path("/questarr/downloads/usenet"))
         self._start_http()
 
     def _start_http(self):
@@ -98,6 +122,22 @@ class QuestarrGatewayTests(unittest.TestCase):
         return self.rpc.append(title, base64.b64encode(content).decode(), category,
                                0, False, False, "", 0, "SCORE", [])
 
+    def wait_for_state(self, client_id, expected):
+        for _ in range(100):
+            job, _title = self.gateway._job_row(client_id)
+            if job and job.state == expected:
+                return job
+            time.sleep(0.01)
+        raise AssertionError(f"Questarr client {client_id} did not reach {expected}")
+
+    def wait_for_executor_idle(self, client_id):
+        job, _title = self.gateway._job_row(client_id)
+        for _ in range(100):
+            if job and job.job_id not in self.manager._tasks:
+                return
+            time.sleep(0.01)
+        raise AssertionError(f"Questarr client {client_id} executor did not settle")
+
     def test_version_connectivity_and_submission_are_acquisitiond_owned(self):
         self.assertIn("mudos-gateway", self.rpc.version())
         client_id = self.submit()
@@ -120,6 +160,83 @@ class QuestarrGatewayTests(unittest.TestCase):
         self.assertEqual(job.origin_metadata["rpc"]["document_root"], "nzb")
         self.assertEqual(self.rpc.listgroups()[0]["NZBID"], client_id)
         self.assertIn(self.gateway._state(job), {"QUEUED", "DOWNLOADING"})
+        self.assertNotIn("DestDir", self.rpc.listgroups()[0])
+
+    def test_completed_history_projects_only_existing_path_inside_completed_mount(self):
+        output = self.usenet_complete_root / "fixture-job"
+        output.mkdir()
+        (output / "game.iso").write_bytes(b"fixture")
+        async def install_completed_executor():
+            self.manager.replace_executor("usenet", CompletedOutputExecutor(output), limit=1)
+        asyncio.run_coroutine_threadsafe(install_completed_executor(), self.loop).result(timeout=2)
+        client_id = self.submit("Wii fixture")
+        completed = self.wait_for_state(client_id, JobState.COMPLETED)
+        self.assertEqual(completed.completion_path, str(output))
+        history = self.rpc.history()[0]
+        self.assertEqual(history["NZBID"], client_id)
+        self.assertEqual(history["DestDir"], str(self.container_usenet_root / "complete/fixture-job"))
+
+    def test_failed_history_does_not_project_a_download_directory(self):
+        async def install_unavailable_executor():
+            self.manager.replace_executor("usenet", UnavailableNzbGetExecutor(), limit=1)
+        asyncio.run_coroutine_threadsafe(install_unavailable_executor(), self.loop).result(timeout=2)
+        self.submit()
+        async def wait_terminal():
+            for _ in range(100):
+                job = self.manager.snapshot()[0]
+                if job.state == JobState.FAILED:
+                    return
+                await asyncio.sleep(0.01)
+            raise AssertionError("provider task did not fail")
+        self.gateway._on_loop(wait_terminal())
+        failed_client_id = self.gateway._db.execute(
+            "select client_id from nzb_requests order by client_id desc limit 1"
+        ).fetchone()[0]
+        self.wait_for_executor_idle(failed_client_id)
+        self.assertEqual(self.rpc.history()[0]["DestDir"], "")
+
+    def test_completed_path_outside_allowed_mount_is_not_projected(self):
+        outside = Path(self.temporary.name) / "outside"
+        outside.mkdir()
+        async def install_completed_executor():
+            self.manager.replace_executor("usenet", CompletedOutputExecutor(outside), limit=1)
+        asyncio.run_coroutine_threadsafe(install_completed_executor(), self.loop).result(timeout=2)
+        client_id = self.submit()
+        self.wait_for_state(client_id, JobState.COMPLETED)
+        self.wait_for_executor_idle(client_id)
+        self.assertEqual(self.rpc.history()[0]["DestDir"], "")
+
+    def test_completed_path_mapping_survives_acquisition_and_gateway_restart(self):
+        output = self.usenet_complete_root / "persisted-job"
+        output.mkdir()
+        (output / "game.iso").write_bytes(b"fixture")
+        async def install_completed_executor():
+            self.manager.replace_executor("usenet", CompletedOutputExecutor(output), limit=1)
+        asyncio.run_coroutine_threadsafe(install_completed_executor(), self.loop).result(timeout=2)
+        client_id = self.submit("Persisted fixture")
+        self.wait_for_state(client_id, JobState.COMPLETED)
+        self.wait_for_executor_idle(client_id)
+        expected = str(self.container_usenet_root / "complete/persisted-job")
+        self.assertEqual(self.rpc.history()[0]["DestDir"], expected)
+
+        database, staged_root = self.gateway.database, self.gateway.nzb_root
+        self.gateway.close()
+        async def restart_acquisitiond():
+            self.store.close()
+            self.store = AcquisitionStore(Path(self.temporary.name) / "acquisition.sqlite3")
+            self.manager = JobManager(store=self.store)
+        asyncio.run_coroutine_threadsafe(restart_acquisitiond(), self.loop).result(timeout=2)
+        self.gateway = QuestarrGateway(
+            self.manager, self.loop, database=database, nzb_root=staged_root,
+            watched_nzb_root=self.watched_nzb_root, usenet_mount_root=self.usenet_root,
+            usenet_complete_root=self.usenet_complete_root,
+            questarr_download_root=self.container_usenet_root,
+        )
+        self._restart_http()
+        restored = self.gateway._job_row(client_id)[0]
+        self.assertEqual(restored.completion_path, str(output))
+        self.assertEqual(self.rpc.history()[0]["NZBID"], client_id)
+        self.assertEqual(self.rpc.history()[0]["DestDir"], expected)
 
     def test_duplicate_submission_and_gateway_restart_reuse_stable_mapping(self):
         client_id = self.submit()
