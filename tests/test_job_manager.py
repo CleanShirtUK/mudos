@@ -47,6 +47,12 @@ class ControlledExecutorWithPause(ControlledExecutor):
     supports_pause = True
 
 
+class ExternalDiscoveryExecutor(ControlledExecutor):
+    async def discover_external(self):
+        # The NZBGet adapter deliberately omits Mudos dupe-key jobs here.
+        return ()
+
+
 class TerminalCancellationExecutor:
     async def run(self, job: DownloadJob, reporter: JobReporter) -> None:
         raise JobCancelled
@@ -160,6 +166,39 @@ class JobDomainTests(unittest.TestCase):
             await cancel
             self.assertEqual(manager.jobs[job.job_id].state, JobState.CANCELLED)
             self.assertEqual(manager.active_download_count, 0)
+        asyncio.run(exercise())
+
+    def test_external_reconciliation_does_not_cancel_acquisitiond_owned_questarr_job(self) -> None:
+        async def exercise() -> None:
+            executor = ExternalDiscoveryExecutor()
+            manager = JobManager()
+            manager.register_executor("usenet", executor)
+            questarr = manager.submit("usenet", "file:///private/staging/request.nzb", "Questarr",
+                                      origin="questarr", origin_metadata={"source": "Questarr"})
+            await asyncio.sleep(0)
+            await manager.reconcile_external()
+            self.assertEqual(manager.jobs[questarr.job_id].state, JobState.TRANSFERRING)
+            self.assertFalse(manager.jobs[questarr.job_id].retired)
+
+            # Genuine provider-imported rows that disappear from discovery
+            # still retire as before.
+            external = DownloadJob("external-1", "usenet", "Imported",
+                                   content_identity="nzbget:external:1",
+                                   state=JobState.TRANSFERRING, origin="external")
+            mudos = DownloadJob("mudos-1", "usenet", "Mudos-owned",
+                                content_identity="file:///private/mudos/request.nzb",
+                                state=JobState.TRANSFERRING, origin="mudos")
+            manager.jobs[external.job_id] = external
+            manager.jobs[mudos.job_id] = mudos
+            await manager.reconcile_external()
+            self.assertEqual(manager.jobs[external.job_id].state, JobState.CANCELLED)
+            self.assertTrue(manager.jobs[external.job_id].retired)
+            self.assertEqual(manager.jobs[mudos.job_id].state, JobState.TRANSFERRING)
+            self.assertFalse(manager.jobs[mudos.job_id].retired)
+
+            executor.release.set()
+            await manager._tasks[questarr.job_id]
+
         asyncio.run(exercise())
 
     def test_paused_provider_cancel_is_immediate_and_not_failure(self) -> None:

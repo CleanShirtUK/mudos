@@ -349,7 +349,11 @@ class JobManager:
                         artifact_files=(record.metadata,) if record.metadata else existing.artifact_files,
                         error=record.error if record.state == JobState.FAILED else None)
             for job_id, job in tuple(self.jobs.items()):
-                if job.provider == provider and job.origin != "mudos" \
+                # Questarr jobs are Acquisitiond-owned too, even though the
+                # provider's external-discovery adapter intentionally skips
+                # their Mudos dupe keys. Only imported external rows may be
+                # retired when they disappear from provider discovery.
+                if job.provider == provider and job.origin == "external" \
                         and job.content_identity not in seen \
                         and job.state not in {JobState.COMPLETED, JobState.FAILED, JobState.CANCELLED}:
                     self._cancelled(job_id)
