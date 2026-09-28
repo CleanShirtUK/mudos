@@ -251,6 +251,7 @@ class SessionModelTests(unittest.TestCase):
                 load_mode=unittest.mock.Mock(),
             )
             interface._initialized_composites = {}
+            interface._applied_input_modes = {}
             await interface._initialize_composite("/controller/0", ("composite", ("/event0",)))
             interface._inputplumber.ensure_default_intercept.assert_called_once_with("/controller/0")
             interface._inputplumber.load_mode.assert_called_once_with(InputMode.SHELL)
@@ -271,6 +272,7 @@ class SessionModelTests(unittest.TestCase):
                 load_mode=unittest.mock.Mock(),
             )
             interface._initialized_composites = {}
+            interface._applied_input_modes = {}
             await interface._initialize_composite("/controller/0", ("composite", ("/event0",)))
             self.assertEqual(interface.model.state.input_mode, expected)
             interface._inputplumber.load_mode.assert_called_once_with(expected)

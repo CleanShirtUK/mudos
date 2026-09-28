@@ -16,7 +16,8 @@ from lulu.metadata import MetadataCandidate
 from lulu.controllerd import BatteryKind, BatteryState, Controller, ControllerRegistry
 from lulu.controllerd import default_inputplumber_client
 from lulu.inputplumber import InputPlumberClient
-from lulu.contracts import InputMode, Lifecycle, Overlay, Role, ServiceName
+from lulu.contracts import (InputMode, LaunchDescriptor, Lifecycle, Overlay, Presentation,
+                            Role, ServiceName, SessionClassification)
 from lulu.gamescope import GamescopeInvocation, GamescopePresentation, discover_presentation_output
 from lulu.launch_identity import LaunchIdentity
 from lulu.sessiond import ConsoleSessionInterface
@@ -653,6 +654,30 @@ class BoundaryTests(unittest.TestCase):
 
         self.assertEqual(interface.model.state.input_mode, InputMode.GAME)
         self.assertEqual(client.baselines, [path])
+
+    def test_recreated_utility_composite_reapplies_compat_after_default_baseline(self) -> None:
+        path = "/org/shadowblip/InputPlumber/CompositeDevice0"
+        composite = ("045e_0291", ("/dev/input/event13",))
+        client = RecordingInputPlumber({path: composite})
+        interface = input_mode_interface(client)
+        descriptor = LaunchDescriptor(
+            primary_id="utility:flatpak:app.devsuite.Ptyxis",
+            classification=SessionClassification.UTILITY,
+            title="Ptyxis",
+        )
+        token = interface.model.request_launch(descriptor)
+        interface.model.launch_starting(token)
+        interface.model.primary_started(token, presentation=Presentation.FOREIGN_UI,
+                                        input_mode=InputMode.COMPAT)
+        # Reproduce an already-applied mode cached for the reused object path.
+        interface._applied_input_modes[path] = InputMode.COMPAT
+        interface._initialized_composites = {}
+
+        asyncio.run(interface._initialize_composite(path, composite))
+
+        self.assertEqual(client.baselines, [path])
+        self.assertEqual(client.loads[-1], (InputMode.COMPAT, path))
+        self.assertEqual(interface.model.state.input_mode, InputMode.COMPAT)
 
     def test_shell_bootstrap_does_not_require_a_controller_then_initializes_late_composite(self) -> None:
         class ShellSupervisor:

@@ -192,8 +192,14 @@ class ConsoleSessionInterface(ServiceInterface):
             self._inputplumber.ensure_default_intercept,
             object_path,
         )
-        # A recreated composite always starts from the safe gamepad baseline;
-        # Compatibility Mode must never survive a device rebuild.
+        # ensure_default_intercept() has forcibly replaced the active profile
+        # with InputPlumber's Default baseline. Invalidate our cache so the
+        # desired session profile is reapplied even when its enum matches the
+        # previously recorded mode for this reused object path.
+        self._applied_input_modes.pop(object_path, None)
+        # A recreated composite starts from its safe baseline, then resumes
+        # the active session's required profile (Utility COMPAT, game gamepad,
+        # or shell navigation).
         reset_mode = (
             InputMode.SHELL if self.model.state.lifecycle.value == "shell" else
             InputMode.COMPAT if self.model.state.session_kind == SessionClassification.UTILITY.value else
