@@ -2,9 +2,12 @@
 <component type="desktop-application">
   <id>org.example.Graphics</id>
   <name>Example Graphics</name>
+  <name xml:lang="fr">Graphismes Exemple</name>
   <summary>Create and edit images</summary>
-  <description><p>A representative desktop graphics application.</p><p>Includes layered editing tools.</p></description>
+  <summary xml:lang="fr">Créer et modifier des images</summary>
+  <description><p>A representative desktop graphics application.</p><p>Includes layered editing tools.</p><p xml:lang="fr">Une application graphique représentative.</p><ul><li>English feature.</li><li xml:lang="fr">Fonctionnalité en français.</li></ul></description>
   <developer id="org.example"><name>Example Studio</name></developer>
+  <developer_name>Example Person</developer_name>
   <project_group>Example Publishing</project_group>
   <categories><category>Graphics</category><category>2DGraphics</category></categories>
   <icon type="remote">https://example.test/icons/graphics.png</icon>

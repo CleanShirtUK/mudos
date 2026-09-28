@@ -1,4 +1,6 @@
 import asyncio
+from pathlib import Path
+import tempfile
 import unittest
 from unittest.mock import patch
 
@@ -30,7 +32,6 @@ class FakeFlatpak(FlatpakAdapter):
 
 class FlatpakTests(unittest.TestCase):
     def test_appstream_metadata_is_the_shared_game_utility_classifier(self):
-        from pathlib import Path
         fixtures = Path(__file__).parent / "fixtures/flatpak"
         game_metadata = FlatpakAdapter._appstream_records(
             str(fixtures / "org.supertuxproject.SuperTux.metainfo.xml"))["org.supertuxproject.SuperTux"]
@@ -57,8 +58,12 @@ class FlatpakTests(unittest.TestCase):
         self.assertEqual(game.classification, "game")
         self.assertEqual(utility.classification, "utility")
         self.assertFalse(utility.is_game)
+        self.assertEqual(utility.name, "Example Graphics")
         self.assertEqual(utility.summary, "Create and edit images")
-        self.assertEqual(utility.developer, "Example Studio")
+        self.assertEqual(utility.description,
+                         "A representative desktop graphics application.\n\nIncludes layered editing tools.\n\nEnglish feature.")
+        self.assertEqual(utility.developer, "Example Person")
+        self.assertEqual(utility.source_metadata["developer_id"], "org.example")
         self.assertEqual(utility.publisher, "Example Publishing")
         self.assertEqual(len(utility.screenshots), 2)
         self.assertEqual(utility.source_metadata["categories"], ("Graphics", "2DGraphics"))
@@ -175,6 +180,13 @@ class FlatpakTests(unittest.TestCase):
                            "org.openttd.OpenTTD"])
         self.assertEqual(adapter.launch_command("app/org.example.Graphics/x86_64/stable")[-1],
                          "app/org.example.Graphics/x86_64/stable")
+        with tempfile.TemporaryDirectory() as directory:
+            deploy = Path(directory)
+            icon = deploy / "export/share/icons/hicolor/512x512/apps/org.example.Graphics.png"
+            icon.parent.mkdir(parents=True)
+            icon.write_bytes(b"icon")
+            self.assertEqual(FlatpakAdapter._deployed_icon(deploy, "org.example.Graphics", "org.example.Graphics"),
+                             icon.as_uri())
         # The operation command is intentionally constructed without
         # --delete-data; Flatpak owns application data retention policy.
         self.assertNotIn("--delete-data", " ".join(["flatpak", "--user", "uninstall", "--noninteractive"]))

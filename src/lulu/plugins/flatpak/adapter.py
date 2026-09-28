@@ -138,6 +138,64 @@ class FlatpakAdapter:
         return self._gi.Installation.new_user()
 
     @staticmethod
+    def _appstream_text(element: ET.Element) -> str:
+        """Choose one AppStream translation instead of concatenating all locales."""
+        lang_attribute = "{http://www.w3.org/XML/1998/namespace}lang"
+        candidates = list(element)
+        if not candidates:
+            return " ".join("".join(element.itertext()).split())
+        # AppStream's untranslated value is the source/default text and is
+        # preferred; otherwise use English, then the first supplied language.
+        unlocalized = [item for item in candidates if not item.attrib.get(lang_attribute)]
+        english = [item for item in candidates
+                   if item.attrib.get(lang_attribute, "").casefold().split("-")[0] == "en"]
+        selected = unlocalized[:1] or english[:1] or candidates[:1]
+        return " ".join(" ".join("".join(item.itertext()).split()) for item in selected).strip()
+
+    @staticmethod
+    def _appstream_variant(elements: list[ET.Element]) -> ET.Element | None:
+        """Select one language variant from sibling AppStream fields."""
+        lang_attribute = "{http://www.w3.org/XML/1998/namespace}lang"
+        if not elements:
+            return None
+        unlocalized = next((item for item in elements if not item.attrib.get(lang_attribute)), None)
+        if unlocalized is not None:
+            return unlocalized
+        return next((item for item in elements
+                     if item.attrib.get(lang_attribute, "").casefold().split("-")[0] == "en"), elements[0])
+
+    @staticmethod
+    def _appstream_description(element: ET.Element) -> str:
+        """Render source-language description blocks, with one locale fallback."""
+        lang_attribute = "{http://www.w3.org/XML/1998/namespace}lang"
+        blocks = [item for item in element
+                  if item.tag.rsplit("}", 1)[-1] in {"p", "ul"}]
+        if not blocks:
+            return " ".join("".join(element.itertext()).split())
+        unlocalized = [item for item in blocks if not item.attrib.get(lang_attribute)]
+        english = [item for item in blocks
+                   if item.attrib.get(lang_attribute, "").casefold().split("-")[0] == "en"]
+        selected = unlocalized or english or blocks[:1]
+
+        def block_text(block: ET.Element) -> str:
+            text = [block.text or ""]
+            children = list(block)
+            groups: dict[str, list[ET.Element]] = {}
+            for child in children:
+                groups.setdefault(child.tag.rsplit("}", 1)[-1], []).append(child)
+            for group in groups.values():
+                variants = [item for item in group if not item.attrib.get(lang_attribute)]
+                if not variants:
+                    variants = [item for item in group
+                                if item.attrib.get(lang_attribute, "").casefold().split("-")[0] == "en"]
+                for item in variants or group[:1]:
+                    text.append(block_text(item))
+                    text.append(item.tail or "")
+            return " ".join(" ".join("".join(text).split()).split())
+
+        return "\n\n".join(block_text(item) for item in selected)
+
+    @staticmethod
     def _appstream_records(path: str | None) -> dict[str, dict[str, object]]:
         """Read AppStream components without making AppStream a core dependency."""
         records: dict[str, dict[str, object]] = {}
@@ -166,12 +224,15 @@ class FlatpakAdapter:
                 for child in element:
                     tag = child.tag.rsplit("}", 1)[-1]
                     if tag in {"name", "summary"}:
-                        values[tag] = " ".join("".join(child.itertext()).split())
+                        siblings = [item for item in element if item.tag.rsplit("}", 1)[-1] == tag]
+                        if child is not FlatpakAdapter._appstream_variant(siblings):
+                            continue
+                        values[tag] = FlatpakAdapter._appstream_text(child)
                     elif tag == "description":
-                        values[tag] = "\n\n".join(
-                            " ".join("".join(part.itertext()).split())
-                            for part in child if part.tag.rsplit("}", 1)[-1] in {"p", "ul"}
-                        ) or " ".join("".join(child.itertext()).split())
+                        siblings = [item for item in element if item.tag.rsplit("}", 1)[-1] == tag]
+                        if child is not FlatpakAdapter._appstream_variant(siblings):
+                            continue
+                        values[tag] = FlatpakAdapter._appstream_description(child)
                     elif tag == "categories":
                         values["categories"] = tuple(
                             "".join(item.itertext()).strip() for item in child
@@ -182,8 +243,11 @@ class FlatpakAdapter:
                     elif tag == "developer":
                         developer_name = next((item for item in child
                                                if item.tag.rsplit("}", 1)[-1] == "name"), None)
-                        values["developer"] = " ".join("".join(developer_name.itertext()).split()) if developer_name is not None else ""
+                        values["developer"] = FlatpakAdapter._appstream_text(
+                            developer_name if developer_name is not None else child)
                         values["developer_id"] = str(child.attrib.get("id", ""))
+                    elif tag == "developer_name":
+                        values["developer"] = FlatpakAdapter._appstream_text(child)
                     elif tag == "project_group":
                         values["publisher"] = " ".join("".join(child.itertext()).split())
                     elif tag == "screenshots":
@@ -309,11 +373,12 @@ class FlatpakAdapter:
             return appstream_icon
         if appstream_icon.startswith(("https://", "http://", "file://")):
             return appstream_icon
-        for size in ("128x128", "256x256", "scalable"):
-            extension = "svg" if size == "scalable" else "png"
-            icon = deploy / "export/share/icons/hicolor" / size / "apps" / f"{application_id}.{extension}"
-            if icon.is_file():
-                return icon.as_uri()
+        icon_root = deploy / "export/share/icons/hicolor"
+        for size in ("scalable", "512x512", "256x256", "128x128", "64x64", "symbolic"):
+            for extension in ("svg", "png", "webp"):
+                icon = icon_root / size / "apps" / f"{application_id}.{extension}"
+                if icon.is_file():
+                    return icon.as_uri()
         return appstream_icon or application_id
 
     def _native_installation_for(self, user: bool):
