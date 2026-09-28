@@ -1115,6 +1115,19 @@ var fetch=async function(path,options){calls.push(path);let body=options&&option
             rows = app.provider_rows()
             self.assertTrue(all(all(isinstance(value, bool) for value in row["secrets"].values()) for row in rows))
 
+    def test_questarr_running_health_does_not_claim_configuration(self):
+        app = AdminApp()
+        with patch("lulu.admin_web.provider_manifest", return_value=[
+                {"id": "questarr", "installed": True}]), \
+                patch.object(app, "service_state", return_value="active"), \
+                patch.object(app, "service_health", return_value="healthy"):
+            row = next(row for row in app.provider_rows() if row["id"] == "questarr")
+        self.assertTrue(row["installed"])
+        self.assertIsNone(row["configured"])
+        self.assertTrue(row["running"])
+        self.assertTrue(row["connected"])
+        self.assertEqual(row["status"], "running")
+
     def test_nzbget_restart_readiness_waits_for_authenticated_rpc(self):
         app = AdminApp()
         app.test_provider = Mock(side_effect=[(False, "starting"), (True, "NZBGet RPC healthy")])

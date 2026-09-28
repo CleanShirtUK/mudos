@@ -1054,7 +1054,20 @@ class AdminApp:
                 service_state = self.service_state(service_unit)
                 dimensions["running"] = service_state == "active"
                 dimensions["service_state"] = service_state
-            installed = installed_manifest.get(provider_id)
+                if provider_id == "questarr":
+                    # Questarr's service and HTTP health are observable, but
+                    # neither establishes operator account/downloader setup.
+                    row_health = next((item for item in SERVICES if item[0] == "questarr"), None)
+                    health = self.service_health(row_health) if row_health else "unknown"
+                    dimensions["connected"] = health == "healthy"
+                    dimensions["healthy"] = health == "healthy"
+                    configured = None
+                    status = ("stopped" if service_state != "active" else
+                              "running" if health == "healthy" else "degraded")
+            manifest_id = {"providers.romm": "romm", "providers.torrent": "torrent",
+                           "providers.usenet": "usenet", "providers.prowlarr": "questarr"}.get(
+                               provider_id, provider_id)
+            installed = installed_manifest.get(manifest_id)
             rows.append({"id": provider_id, "name": name, "status": status,
                          "installed": installed, "configured": configured,
                          **dimensions,
