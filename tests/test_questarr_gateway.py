@@ -8,7 +8,7 @@ from http.server import ThreadingHTTPServer
 from xmlrpc.client import Fault, ServerProxy
 
 from lulu.acquisition_store import AcquisitionStore
-from lulu.job_manager import JobManager
+from lulu.job_manager import JobExecutionError, JobManager
 from lulu.jobs import JobError, JobState
 from lulu.questarr_gateway import QuestarrGateway, make_handler
 
@@ -24,11 +24,22 @@ class HeldExecutor:
         return None
 
 
+class UnavailableNzbGetExecutor:
+    supports_pause = True
+
+    async def run(self, _job, _reporter):
+        raise JobExecutionError("provider-failure", "NZBGet RPC is unavailable", retryable=True)
+
+    async def cancel(self, _job):
+        return None
+
+
 class QuestarrGatewayTests(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
         root = Path(self.temporary.name)
         self.loop = asyncio.new_event_loop()
+        self.watched_nzb_root = root / "nzbget-watch"
         self.thread = threading.Thread(target=self.loop.run_forever, daemon=True)
         self.thread.start()
         async def initialize():
@@ -36,9 +47,13 @@ class QuestarrGatewayTests(unittest.TestCase):
             self.manager = JobManager(store=self.store)
             self.manager.register_executor("usenet", HeldExecutor())
         asyncio.run_coroutine_threadsafe(initialize(), self.loop).result(timeout=2)
+        staged_root = root / "usenet"
+        staged_root.mkdir(mode=0o755)
+        staged_root.chmod(0o755)
         self.gateway = QuestarrGateway(self.manager, self.loop,
                                        database=root / "gateway.sqlite3",
-                                       nzb_root=root / "usenet")
+                                       nzb_root=staged_root,
+                                       watched_nzb_root=self.watched_nzb_root)
         self._start_http()
 
     def _start_http(self):
@@ -92,7 +107,13 @@ class QuestarrGatewayTests(unittest.TestCase):
         self.assertEqual(job.origin, "questarr")
         self.assertEqual(job.origin_metadata["transport"], "usenet")
         self.assertEqual(job.origin_metadata["external_client_id"], client_id)
-        self.assertTrue(Path(job.content_identity.removeprefix("file://")).is_file())
+        staged = Path(job.content_identity.removeprefix("file://"))
+        self.assertTrue(staged.is_file())
+        self.assertNotEqual(self.gateway.nzb_root, self.watched_nzb_root)
+        self.assertNotIn(self.watched_nzb_root, self.gateway.nzb_root.parents)
+        self.assertEqual(self.gateway.nzb_root.stat().st_mode & 0o777, 0o700)
+        self.assertEqual(staged.stat().st_mode & 0o777, 0o600)
+        self.assertFalse(self.watched_nzb_root.exists())
         self.assertEqual(job.origin_metadata["rpc"]["method"], "append")
         self.assertEqual(job.origin_metadata["rpc"]["parameter_count"], 10)
         self.assertEqual(job.origin_metadata["rpc"]["content_form"], "base64-xml")
@@ -105,7 +126,8 @@ class QuestarrGatewayTests(unittest.TestCase):
         job_id = self.gateway._jobs()[0].job_id
         database, nzb_root = self.gateway.database, self.gateway.nzb_root
         self.gateway.close()
-        self.gateway = QuestarrGateway(self.manager, self.loop, database=database, nzb_root=nzb_root)
+        self.gateway = QuestarrGateway(self.manager, self.loop, database=database, nzb_root=nzb_root,
+                                       watched_nzb_root=self.watched_nzb_root)
         self._restart_http()
         self.assertEqual(self.submit(), client_id)
         self.assertEqual(len(self.gateway._jobs()), 1)
@@ -125,12 +147,48 @@ class QuestarrGatewayTests(unittest.TestCase):
             self.manager = JobManager(store=self.store)
             self.manager.register_executor("usenet", HeldExecutor())
         asyncio.run_coroutine_threadsafe(restart_manager(), self.loop).result(timeout=2)
-        self.gateway = QuestarrGateway(self.manager, self.loop, database=database, nzb_root=nzb_root)
+        self.gateway = QuestarrGateway(self.manager, self.loop, database=database, nzb_root=nzb_root,
+                                       watched_nzb_root=self.watched_nzb_root)
         self._restart_http()
         self.assertEqual(self.submit(), client_id)
         restored = self.gateway._jobs()
         self.assertEqual(len(restored), 1)
         self.assertEqual(restored[0].job_id, job_id)
+
+    def test_staging_equal_to_or_inside_watched_nzb_dir_is_rejected(self):
+        for index, staging in enumerate((self.watched_nzb_root, self.watched_nzb_root / "gateway")):
+            with self.subTest(staging=staging), self.assertRaisesRegex(ValueError, "outside NZBGet"):
+                QuestarrGateway(self.manager, self.loop,
+                                database=Path(self.temporary.name) / f"invalid-{index}.sqlite3",
+                                nzb_root=staging, watched_nzb_root=self.watched_nzb_root)
+
+    def test_nzbget_unavailable_path_keeps_one_failed_correlated_job(self):
+        async def install_unavailable_executor():
+            self.manager.replace_executor("usenet", UnavailableNzbGetExecutor(), limit=1)
+        asyncio.run_coroutine_threadsafe(install_unavailable_executor(), self.loop).result(timeout=2)
+        client_id = self.submit()
+
+        async def wait_terminal():
+            for _ in range(100):
+                job = self.manager.snapshot()[0]
+                if job.state in {JobState.FAILED, JobState.CANCELLED, JobState.COMPLETED}:
+                    return job
+                await asyncio.sleep(0.01)
+            raise AssertionError("provider task did not reach a terminal state")
+
+        job = self.gateway._on_loop(wait_terminal())
+        self.assertEqual(job.state, JobState.FAILED)
+        self.assertEqual(job.error.message, "NZBGet RPC is unavailable")
+        self.assertEqual(job.origin, "questarr")
+        self.assertEqual(job.origin_metadata["external_client_id"], client_id)
+        history = self.rpc.history()
+        self.assertEqual(history[0]["NZBID"], client_id)
+        self.assertEqual(history[0]["Status"], "FAILURE")
+        rows = self.gateway._db.execute("select client_id,job_id,fingerprint from nzb_requests").fetchall()
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(tuple(rows[0]), (client_id, job.job_id,
+                                          job.origin_metadata["request_fingerprint"]))
+        self.assertFalse(self.watched_nzb_root.exists())
 
     def test_remove_cancels_the_authoritative_job_and_history_reflects_it(self):
         client_id = self.submit()

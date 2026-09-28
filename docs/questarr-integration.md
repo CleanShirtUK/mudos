@@ -34,9 +34,13 @@ Questarr NZBGet client
   -> real NZBGet
 ```
 
-The gateway stores the NZB in Mudos' mutable Usenet NZB area, keyed by its
-content digest. A SQLite mapping preserves Questarr's numeric NZBGet ID,
-content fingerprint, and Mudos job ID across gateway/Acquisitiond restarts.
+The gateway stages the NZB in private Mudos application data, outside NZBGet's
+recursively watched `NzbDir`, keyed by its content digest. The staging
+directory is owner-only (`0700`) and submitted files are owner-only (`0600`).
+The existing Usenet executor reads staged content and submits it through the
+NZBGet RPC; NZBGet never discovers gateway files by scanning an input
+directory. A SQLite mapping preserves Questarr's numeric NZBGet ID, content
+fingerprint, and Mudos job ID across gateway/Acquisitiond restarts.
 Duplicate submissions resolve to the existing mapping/job. Questarr polling is
 projected from the persisted Acquisitiond `DownloadJob`; the gateway does not
 create a second progress or execution queue. The Mudos job records

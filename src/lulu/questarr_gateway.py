@@ -32,15 +32,22 @@ class QuestarrGateway:
     """Expose only Questarr v1.4.2's required NZBGet XML-RPC operations."""
 
     def __init__(self, manager: JobManager, loop: Any, *, database: Path | None = None,
-                 nzb_root: Path | None = None) -> None:
+                 nzb_root: Path | None = None, watched_nzb_root: Path | None = None) -> None:
         self.manager = manager
         self.loop = loop
         self.database = database or PATHS.data_root / "questarr-gateway.sqlite3"
-        self.nzb_root = nzb_root or PATHS.usenet_nzb_root / "questarr"
+        # NZBGet recursively scans its configured NzbDir. Gateway-owned files
+        # must stay in Acquisitiond-private storage, never in that watched tree.
+        self.watched_nzb_root = Path(watched_nzb_root or PATHS.usenet_nzb_root).resolve()
+        self.nzb_root = Path(nzb_root or PATHS.data_root / "questarr-nzb-staging").resolve()
+        if self.nzb_root == self.watched_nzb_root or self.watched_nzb_root in self.nzb_root.parents:
+            raise ValueError("Questarr NZB staging must be outside NZBGet's watched NzbDir")
         self._lock = threading.RLock()
         self.database.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
         self.nzb_root.mkdir(parents=True, exist_ok=True)
         os.chmod(self.nzb_root, 0o700)
+        if self.nzb_root.stat().st_mode & 0o077:
+            raise PermissionError("Questarr NZB staging must be private to its owner")
         self._db = sqlite3.connect(self.database, check_same_thread=False)
         os.chmod(self.database, 0o600)
         self._db.execute("PRAGMA journal_mode=WAL")
