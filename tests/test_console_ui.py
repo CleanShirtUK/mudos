@@ -1025,6 +1025,12 @@ class ConsoleUiTests(unittest.TestCase):
         strip = (ROOT / "ui" / "SystemStatusStrip.qml").read_text()
         self.assertIn('controller.identity || "player:" + controller.index', strip)
 
+    def test_guide_dbus_relays_follow_sessiond_connected_composites(self) -> None:
+        native_shell = (ROOT / "native" / "lulu-shell.cpp").read_text()
+        self.assertIn("controllerCompositePaths_.append(iterator.key())", native_shell)
+        self.assertIn("for (const QString &compositePath : controllerCompositePaths_)", native_shell)
+        self.assertIn("Sessiond's connected controller inventory is authoritative", native_shell)
+
     def test_game_options_owns_confirm_and_ignores_reopen(self) -> None:
         native_shell = (ROOT / "native" / "lulu-shell.cpp").read_text()
         self.assertIn("confirmButton = nintendoLayout_", native_shell)

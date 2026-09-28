@@ -942,6 +942,12 @@ private:
                document.object().value(QStringLiteral("requested_surface")).toString());
         const QJsonObject controllerRoot = document.object().value(QStringLiteral("controller"))
             .toObject().value(QStringLiteral("controllers")).toObject();
+        controllerCompositePaths_.clear();
+        for (auto iterator = controllerRoot.constBegin(); iterator != controllerRoot.constEnd(); ++iterator) {
+            if (iterator.value().toObject().value(QStringLiteral("connected")).toBool())
+                controllerCompositePaths_.append(iterator.key());
+        }
+        std::sort(controllerCompositePaths_.begin(), controllerCompositePaths_.end());
         const QString navigationId = document.object().value(QStringLiteral("controller"))
             .toObject().value(QStringLiteral("navigation_controller_id")).toString();
         const QString navigationMode = document.object().value(QStringLiteral("controller"))
@@ -1259,13 +1265,12 @@ private:
 
     void refreshDbusSubscriptions()
     {
-        QDBusInterface manager(inputService,
-                               "/org/shadowblip/InputPlumber/Manager",
-                               "org.shadowblip.InputManager",
-                               QDBusConnection::systemBus());
-        const QStringList composites = manager.property("GamepadOrder").toStringList();
         QSet<QString> discovered;
-        for (const QString &compositePath : composites) {
+        // Sessiond's connected controller inventory is authoritative. The
+        // InputPlumber GamepadOrder property can lag newly-created composites,
+        // which otherwise leaves their Guide D-Bus targets unsubscribed even
+        // while SDL and the status strip already see those controllers.
+        for (const QString &compositePath : controllerCompositePaths_) {
             QDBusInterface composite(inputService, compositePath,
                                      "org.shadowblip.Input.CompositeDevice",
                                      QDBusConnection::systemBus());
@@ -1685,6 +1690,7 @@ private:
     QTimer dbusDiscoveryTimer_;
     QTimer keyboardOwnershipTimer_;
     QHash<QString, DbusInputRelay *> dbusRelays_;
+    QStringList controllerCompositePaths_;
     QHash<SDL_JoystickID, SDL_Gamepad *> allGamepads_;
     QHash<uint8_t, QString> guideKeyboardActions_;
     QString guideOwnerComposite_;
