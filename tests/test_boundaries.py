@@ -127,6 +127,156 @@ class BoundaryTests(unittest.TestCase):
             # SDL identity must not be guessed from the source/order position.
             self.assertEqual(client.runtime_gamepad_slots(), [])
 
+    def test_composite_disappearing_during_snapshot_is_skipped_and_reappears(self) -> None:
+        first = "/org/shadowblip/InputPlumber/CompositeDevice0"
+        transient = "/org/shadowblip/InputPlumber/CompositeDevice1"
+        source_a = "/org/shadowblip/InputPlumber/devices/source/event13"
+        source_b = "/org/shadowblip/InputPlumber/devices/source/event14"
+        vanished = {transient}
+
+        class RacingClient(InputPlumberClient):
+            def gamepad_order(self, *, execute: bool = True) -> tuple[str, ...]:
+                return (first, transient)
+
+            def _source_gamepad_path(self, *, execute: bool = True) -> str | None:
+                return None
+
+        def get_property(command, **kwargs):
+            path, prop = command[3], command[-1]
+            if path == transient and path in vanished:
+                error = subprocess.CalledProcessError(1, command, stderr=(
+                    "Call failed: org.freedesktop.DBus.Error.UnknownObject: "
+                    "Unknown object at path"
+                ))
+                raise error
+            values = {
+                (first, "PersistentId"): 's "045e_0291"',
+                (first, "SourceDevicePaths"): f'as 1 "{source_a}"',
+                (transient, "PersistentId"): 's "045e_0292"',
+                (transient, "SourceDevicePaths"): f'as 1 "{source_b}"',
+            }
+            return type("Result", (), {"stdout": values[(path, prop)]})()
+
+        client = RacingClient(first, {})
+        registry = ControllerRegistry()
+        with patch("lulu.inputplumber.subprocess.run", side_effect=get_property):
+            initial = client.runtime_composite_statuses()
+            self.assertEqual(set(initial), {first})
+            self.assertTrue(initial[first][0].startswith("045e_0291"))
+            registry.observe_runtime_composites(initial)
+            vanished.clear()
+            returned = client.runtime_composite_statuses()
+            registry.observe_runtime_composites(returned)
+
+        self.assertEqual(set(returned), {first, transient})
+        self.assertTrue(returned[transient][0].startswith("045e_0292"))
+        self.assertTrue(registry.controllers[first].connected)
+        self.assertTrue(registry.controllers[transient].connected)
+        self.assertEqual(registry.navigation_mode, "all")
+
+    def test_only_disappearing_composite_produces_empty_snapshot(self) -> None:
+        path = "/org/shadowblip/InputPlumber/CompositeDevice1"
+
+        class RacingClient(InputPlumberClient):
+            def gamepad_order(self, *, execute: bool = True) -> tuple[str, ...]:
+                return (path,)
+
+            def _source_gamepad_path(self, *, execute: bool = True) -> str | None:
+                return None
+
+        def vanished(command, **kwargs):
+            raise subprocess.CalledProcessError(
+                1, command, stderr="org.freedesktop.DBus.Error.UnknownObject: Unknown object"
+            )
+
+        with patch("lulu.inputplumber.subprocess.run", side_effect=vanished):
+            self.assertEqual(RacingClient(path, {}).runtime_composite_statuses(), {})
+
+    def test_unrelated_composite_dbus_error_is_not_swallowed(self) -> None:
+        path = "/org/shadowblip/InputPlumber/CompositeDevice0"
+
+        class RacingClient(InputPlumberClient):
+            def gamepad_order(self, *, execute: bool = True) -> tuple[str, ...]:
+                return (path,)
+
+        def failed(command, **kwargs):
+            raise subprocess.CalledProcessError(1, command, stderr="AccessDenied")
+
+        with patch("lulu.inputplumber.subprocess.run", side_effect=failed):
+            with self.assertRaises(subprocess.CalledProcessError):
+                RacingClient(path, {}).runtime_composite_statuses()
+
+    def test_target_lookup_race_keeps_other_controller_slot(self) -> None:
+        first = "/org/shadowblip/InputPlumber/CompositeDevice0"
+        transient = "/org/shadowblip/InputPlumber/CompositeDevice1"
+
+        class RacingClient(InputPlumberClient):
+            def gamepad_order(self, *, execute: bool = True) -> tuple[str, ...]:
+                return (first, transient)
+
+            def composite_status(self, object_path=None, *, execute=True):
+                return (object_path, (f"/dev/input/{object_path[-1]}",))
+
+        def get_target(command, **kwargs):
+            if command[3] == transient:
+                raise subprocess.CalledProcessError(
+                    1, command, stderr="org.freedesktop.DBus.Error.UnknownObject: Unknown object"
+                )
+            return type("Result", (), {
+                "stdout": 'ao 1 "/org/shadowblip/InputPlumber/devices/target/gamepad0"'
+            })()
+
+        with patch("lulu.inputplumber.subprocess.run", side_effect=get_target), patch(
+            "lulu.inputplumber.associate_sdl_targets", return_value={first: 0}
+        ):
+            slots = RacingClient(first, {}).runtime_gamepad_slots([])
+        self.assertEqual(slots, [(first, first, 0)])
+
+    def test_session_controller_monitor_starts_with_no_controller(self) -> None:
+        client = RecordingInputPlumber({})
+        interface = input_mode_interface(client)
+        interface._inputplumber_event = None
+        interface._presentation_watchdog_enabled = False
+        interface._shell_selection_task = None
+        interface._presentation_watchdog_task = None
+
+        class FakeBus:
+            def __init__(self):
+                self.handlers = []
+                self.rules = []
+
+            async def connect(self):
+                return self
+
+            def _add_match_rule(self, rule):
+                self.rules.append(rule)
+
+            def add_message_handler(self, handler):
+                self.handlers.append(handler)
+
+            def remove_message_handler(self, handler):
+                self.handlers.remove(handler)
+
+            def disconnect(self):
+                pass
+
+            async def introspect(self, *args):
+                raise AssertionError("Sessiond startup must not introspect a controller object")
+
+        fake_bus = FakeBus()
+
+        async def exercise() -> None:
+            with patch("lulu.sessiond.MessageBus", return_value=fake_bus), patch(
+                "lulu.sessiond.sdl_gamepad_inventory", return_value=[]
+            ):
+                await interface.start_controller_monitor()
+                self.assertEqual(interface.controller_registry.controllers, {})
+                self.assertIsNotNone(interface._controller_monitor_task)
+                self.assertEqual(len(fake_bus.handlers), 1)
+                await interface.stop_controller_monitor()
+
+        asyncio.run(exercise())
+
     def test_console_catalog_metadata_search_exposes_duplicate_candidates(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             store = CatalogueStore(Path(directory) / "catalogue.sqlite3")
@@ -621,6 +771,15 @@ class BoundaryTests(unittest.TestCase):
         interface._reconcile_input_mode(client.composites, InputMode.SHELL)
 
         self.assertEqual(client.loads, [(InputMode.SHELL, None), (InputMode.SHELL, path)])
+
+    def test_native_input_mode_does_not_require_a_controller(self) -> None:
+        interface = input_mode_interface(RecordingInputPlumber({}))
+        interface._native_controller = True
+
+        interface._apply_input_mode(InputMode.SHELL)
+
+        self.assertEqual(interface._inputplumber.baselines, [])
+        self.assertEqual(interface._inputplumber.loads, [])
 
     def test_recreated_composite_is_reapplied_while_shell_remains_active(self) -> None:
         path = "/org/shadowblip/InputPlumber/CompositeDevice0"

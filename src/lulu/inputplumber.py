@@ -15,6 +15,43 @@ DEFAULT_PROFILE_PATH = "/usr/share/inputplumber/profiles/default.yaml"
 LOGGER = logging.getLogger("lulu.inputplumber")
 
 
+class InputPlumberObjectDisappeared(RuntimeError):
+    """A live InputPlumber object vanished between topology and property reads."""
+
+
+def _object_disappeared(error: subprocess.CalledProcessError) -> bool:
+    """Return true only for the D-Bus error used when a hotplugged object vanishes."""
+    detail = "\n".join(str(value or "") for value in (error.stderr, error.stdout, error))
+    return bool(re.search(
+        r"(?:org\.freedesktop\.DBus\.Error\.UnknownObject|"
+        r"Unknown object(?: at path)?|No such object|object .* does not exist)",
+        detail,
+        re.IGNORECASE,
+    ))
+
+
+def is_service_unavailable(error: subprocess.CalledProcessError) -> bool:
+    """Identify a missing/restarting InputPlumber name without masking other errors."""
+    detail = "\n".join(str(value or "") for value in (error.stderr, error.stdout, error))
+    return bool(re.search(
+        r"(?:org\.freedesktop\.DBus\.Error\.(?:ServiceUnknown|NameHasNoOwner|NoReply)|"
+        r"The name .* is not activatable|NameHasNoOwner)",
+        detail,
+        re.IGNORECASE,
+    ))
+
+
+def _run_object_command(command: list[str]) -> subprocess.CompletedProcess[str]:
+    """Run a command against a runtime object, ignoring only its disappearance."""
+    try:
+        return subprocess.run(command, check=True, capture_output=True, text=True)
+    except subprocess.CalledProcessError as error:
+        if not _object_disappeared(error):
+            raise
+        LOGGER.debug("InputPlumber object disappeared during operation path=%s", command[3])
+        raise InputPlumberObjectDisappeared(command[3]) from error
+
+
 def sdl_gamepad_inventory() -> list[dict[str, object]]:
     """Return current SDL gamepad connection identities, when SDL is available."""
     try:
@@ -157,7 +194,7 @@ class InputPlumberClient:
             ).stdout
             if object_path not in tree:
                 return command
-            subprocess.run(command, check=True)
+            _run_object_command(command)
         return command
 
     def set_intercept_mode(
@@ -181,7 +218,7 @@ class InputPlumberClient:
             str(mode),
         ]
         if execute:
-            subprocess.run(command, check=True)
+            _run_object_command(command)
         return command
 
     def ensure_default_intercept(
@@ -201,10 +238,9 @@ class InputPlumberClient:
         profile_exists = profile_path.is_file()
         properties = {}
         for name in ("ProfilePath", "InterceptMode"):
-            result = subprocess.run(
+            result = _run_object_command(
                 [self.busctl, "get-property", "org.shadowblip.InputPlumber", object_path,
                  "org.shadowblip.Input.CompositeDevice", name],
-                check=True, capture_output=True, text=True,
             )
             properties[name] = result.stdout.strip()
         if not profile_exists:
@@ -213,23 +249,21 @@ class InputPlumberClient:
         if properties["ProfilePath"] == f's "{DEFAULT_PROFILE_PATH}"' and properties["InterceptMode"] == "u 1":
             return []
         try:
-            result = subprocess.run(load_command, check=True, capture_output=True, text=True)
+            result = _run_object_command(load_command)
         except subprocess.CalledProcessError as error:
             LOGGER.error(
                 "InputPlumber LoadProfilePath failed object=%s rc=%s stdout=%r stderr=%r",
                 object_path, error.returncode, error.stdout, error.stderr,
             )
             raise
-        subprocess.run(mode_command, check=True)
-        profile = subprocess.run(
+        _run_object_command(mode_command)
+        profile = _run_object_command(
             [self.busctl, "get-property", "org.shadowblip.InputPlumber", object_path,
              "org.shadowblip.Input.CompositeDevice", "ProfileName"],
-            check=True, capture_output=True, text=True,
         ).stdout.strip()
-        intercept = subprocess.run(
+        intercept = _run_object_command(
             [self.busctl, "get-property", "org.shadowblip.InputPlumber", object_path,
              "org.shadowblip.Input.CompositeDevice", "InterceptMode"],
-            check=True, capture_output=True, text=True,
         ).stdout.strip()
         if profile != 's "Default"' or intercept != "u 1":
             raise RuntimeError(
@@ -251,12 +285,8 @@ class InputPlumberClient:
         ]
         if not execute:
             return "", ()
-        identity = subprocess.run(
-            [*base, "PersistentId"], check=True, capture_output=True, text=True
-        ).stdout
-        sources = subprocess.run(
-            [*base, "SourceDevicePaths"], check=True, capture_output=True, text=True
-        ).stdout
+        identity = _run_object_command([*base, "PersistentId"]).stdout
+        sources = _run_object_command([*base, "SourceDevicePaths"]).stdout
         identity_values = re.findall(r'"([^"]*)"', identity)
         source_values = tuple(re.findall(r'"([^"]*)"', sources))
         return (identity_values[0] if identity_values else ""), source_values
@@ -267,26 +297,15 @@ class InputPlumberClient:
         """Read the manager's current runtime composite topology."""
         if not execute:
             return {}
-        tree = subprocess.run(
-            [
-                self.busctl,
-                "tree",
-                "org.shadowblip.InputPlumber",
-            ],
-            check=True,
-            capture_output=True,
-            text=True,
-        ).stdout
         paths = list(self.gamepad_order())
-        if not paths:
-            paths = sorted(
-                set(
-                    re.findall(
-                        r"(/org/shadowblip/InputPlumber/CompositeDevice\d+)", tree
-                    )
-                )
-            )
-        composites = {path: self.composite_status(path) for path in paths}
+        composites = {}
+        for path in paths:
+            try:
+                composites[path] = self.composite_status(path)
+            except InputPlumberObjectDisappeared:
+                # The manager's order is a momentary topology snapshot, not a
+                # lease on the object. Keep other controllers in this scan.
+                continue
         if composites:
             normalized = {}
             for runtime_path, (persistent_id, source_paths) in composites.items():
@@ -335,26 +354,27 @@ class InputPlumberClient:
             r"(/org/shadowblip/InputPlumber/devices/source/event\d+)", tree
         )))
         for source in sources:
-            device_class = subprocess.run(
-                [self.busctl, "get-property", "org.shadowblip.InputPlumber", source,
-                 "org.shadowblip.Input.Source.EventDevice", "DeviceClass"],
-                check=True, capture_output=True, text=True,
-            ).stdout
-            if '"joystick"' not in device_class:
-                continue
-            axes = subprocess.run(
-                [self.busctl, "get-property", "org.shadowblip.InputPlumber", source,
-                 "org.shadowblip.Input.Source.EventDevice", "SupportedAbsoluteAxes"],
-                check=False, capture_output=True, text=True,
-            ).stdout
-            if re.search(r"\baq\s+[1-9]", axes):
-                phys = subprocess.run(
+            try:
+                device_class = _run_object_command(
+                    [self.busctl, "get-property", "org.shadowblip.InputPlumber", source,
+                     "org.shadowblip.Input.Source.EventDevice", "DeviceClass"],
+                ).stdout
+                if '"joystick"' not in device_class:
+                    continue
+                axes = _run_object_command(
+                    [self.busctl, "get-property", "org.shadowblip.InputPlumber", source,
+                     "org.shadowblip.Input.Source.EventDevice", "SupportedAbsoluteAxes"],
+                ).stdout
+                if not re.search(r"\baq\s+[1-9]", axes):
+                    continue
+                phys = _run_object_command(
                     [self.busctl, "get-property", "org.shadowblip.InputPlumber", source,
                      "org.shadowblip.Input.Source.EventDevice", "PhysPath"],
-                    check=False, capture_output=True, text=True,
                 ).stdout
                 if 's ""' not in phys and 'virtual/' not in phys:
                     return source
+            except InputPlumberObjectDisappeared:
+                continue
         return None
 
     def gamepad_order(self, *, execute: bool = True) -> tuple[str, ...]:
@@ -402,22 +422,25 @@ class InputPlumberClient:
             return []
         runtime_targets: list[tuple[str, str, str]] = []
         for runtime_path in runtime_paths:
-            persistent_id, source_paths = self.composite_status(runtime_path)
+            try:
+                persistent_id, source_paths = self.composite_status(runtime_path)
+            except InputPlumberObjectDisappeared:
+                continue
             if not source_paths:
                 continue
-            targets = subprocess.run(
-                [
-                    self.busctl,
-                    "get-property",
-                    "org.shadowblip.InputPlumber",
-                    runtime_path,
-                    "org.shadowblip.Input.CompositeDevice",
-                    "TargetDevices",
-                ],
-                check=True,
-                capture_output=True,
-                text=True,
-            ).stdout
+            try:
+                targets = _run_object_command(
+                    [
+                        self.busctl,
+                        "get-property",
+                        "org.shadowblip.InputPlumber",
+                        runtime_path,
+                        "org.shadowblip.Input.CompositeDevice",
+                        "TargetDevices",
+                    ],
+                ).stdout
+            except InputPlumberObjectDisappeared:
+                continue
             gamepad_targets = re.findall(
                 r'"(/org/shadowblip/InputPlumber/devices/target/gamepad\d+)"', targets
             )

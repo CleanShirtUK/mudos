@@ -27,6 +27,15 @@ recovered cleanly instead. Mudos therefore listens for InputPlumber's
 `InterceptMode=1` exactly once, and otherwise leaves device and client
 lifecycle handling to InputPlumber and the clients.
 
+Inventory is a best-effort runtime snapshot, not a Sessiond startup
+prerequisite. A composite or source that disappears between topology listing
+and D-Bus property reads is skipped for that pass; other resolved devices are
+published and periodic/event-driven reconciliation discovers later
+reappearances. Only explicit D-Bus unknown-object errors are treated as
+hotplug. Other D-Bus failures remain visible. This protects Sessiond from
+transient InputPlumber object lifetimes; it does not repair InputPlumber-side
+`EBUSY` composite-creation failures.
+
 Recovery must not depend on restarting the InputPlumber daemon, polling for
 devices, switching profiles, or changing modes as part of controller
 lifecycle handling. Mudos navigation and already-running Steam/Proton/Wine

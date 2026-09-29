@@ -2,7 +2,9 @@ import asyncio
 import unittest
 from unittest.mock import AsyncMock, patch
 
-from lulu.sessiond import ConsoleSessionInterface, _wait_for_stop
+from lulu.console_sessiond import SessionStateModel
+from lulu.controllerd import ControllerRegistry
+from lulu.sessiond import ConsoleSessionInterface, _wait_for_stop, serve
 
 
 class SessiondTests(unittest.TestCase):
@@ -61,6 +63,90 @@ class SessiondTests(unittest.TestCase):
             self.assertTrue(task.done())
 
         asyncio.run(exercise())
+
+    def test_session_api_becomes_ready_without_any_controller(self) -> None:
+        interface = ConsoleSessionInterface.__new__(ConsoleSessionInterface)
+        interface.model = SessionStateModel()
+        interface._inputplumber = type("NoControllers", (), {
+            "runtime_composite_statuses": lambda self: {},
+        })()
+        interface.controller_registry = ControllerRegistry()
+        interface._native_controller = False
+        interface._initialized_composites = {}
+        interface._applied_input_modes = {}
+        interface._inputplumber_event = None
+        interface._controller_monitor_task = None
+        interface._presentation_watchdog_enabled = False
+        interface._presentation_watchdog_task = None
+        interface._shell_selection_task = None
+        interface._local_identity = None
+        interface.StateChanged = lambda state: None
+        interface.supervisor = type("Supervisor", (), {
+            "stop": AsyncMock(),
+        })()
+
+        class FakeBus:
+            def __init__(self):
+                self.calls = []
+                self.handlers = []
+
+            async def connect(self):
+                self.calls.append("connect")
+                return self
+
+            def export(self, path, exported):
+                self.calls.append(("export", path))
+
+            async def request_name(self, name):
+                self.calls.append(("name", name))
+
+            def _add_match_rule(self, rule):
+                self.calls.append(("match", rule))
+
+            def add_message_handler(self, handler):
+                self.handlers.append(handler)
+
+            def remove_message_handler(self, handler):
+                self.handlers.remove(handler)
+
+            def disconnect(self):
+                self.calls.append("disconnect")
+
+        buses = []
+        ready_state = {}
+
+        def new_bus(*args, **kwargs):
+            bus = FakeBus()
+            buses.append(bus)
+            return bus
+
+        async def exercise() -> None:
+            with patch("lulu.sessiond.MessageBus", side_effect=new_bus), \
+                    patch("lulu.sessiond.ConsoleSessionInterface", return_value=interface), \
+                    patch("lulu.sessiond.recovery_required", return_value=False), \
+                    patch("lulu.sessiond.sdl_gamepad_inventory", return_value=[]), \
+                    patch("lulu.sessiond._notify_systemd_ready",
+                          side_effect=lambda: ready_state.update({
+                              "api_exported": ("export", "/org/lulu/ConsoleSession") in buses[0].calls,
+                              "name_owned": ("name", "org.lulu.ConsoleSessiond") in buses[0].calls,
+                              "controller_signal_subscribed": any(
+                                  call[0] == "match" for call in buses[1].calls
+                              ),
+                          })) as notify_ready, \
+                    patch("lulu.sessiond._wait_for_stop", new=AsyncMock()):
+                await serve()
+            notify_ready.assert_called_once()
+
+        asyncio.run(exercise())
+        self.assertGreaterEqual(len(buses), 2)
+        self.assertLess(buses[0].calls.index(("export", "/org/lulu/ConsoleSession")),
+                        buses[0].calls.index(("name", "org.lulu.ConsoleSessiond")))
+        self.assertTrue(any(call[0] == "match" for call in buses[1].calls))
+        self.assertEqual(ready_state, {
+            "api_exported": True,
+            "name_owned": True,
+            "controller_signal_subscribed": True,
+        })
 
     def test_reset_requests_systemd_restart_of_the_owned_vt2_session(self) -> None:
         interface = ConsoleSessionInterface.__new__(ConsoleSessionInterface)

@@ -18,7 +18,8 @@ from dbus_next.service import ServiceInterface, method, signal
 
 from .console_sessiond import SessionStateModel
 from .controllerd import ControllerRegistry, default_inputplumber_client
-from .inputplumber import sdl_gamepad_inventory
+from .inputplumber import (InputPlumberObjectDisappeared, is_service_unavailable,
+                           sdl_gamepad_inventory)
 from .gamescope import GamescopeInvocation, GamescopePresentation, discover_presentation_output
 from .contracts import InputMode, LaunchDescriptor, Lifecycle, Presentation, SessionClassification
 from .launch_identity import LaunchIdentity
@@ -136,7 +137,15 @@ class ConsoleSessionInterface(ServiceInterface):
         self.StateChanged(self._state_json())
 
     async def start_controller_monitor(self) -> None:
-        composites, target_indices, sdl_devices = await asyncio.to_thread(self._controller_inventory_snapshot)
+        try:
+            composites, target_indices, sdl_devices = await asyncio.to_thread(
+                self._controller_inventory_snapshot
+            )
+        except subprocess.CalledProcessError as error:
+            if not is_service_unavailable(error):
+                raise
+            LOGGER.warning("InputPlumber is restarting; starting Sessiond with empty controller inventory")
+            composites, target_indices, sdl_devices = {}, {}, {}
         self.controller_registry.observe_runtime_composites(composites, target_indices, sdl_devices)
         for object_path, composite in composites.items():
             _, source_paths = composite
@@ -149,13 +158,9 @@ class ConsoleSessionInterface(ServiceInterface):
                     )
         self._inputplumber_event = asyncio.Event()
         self._inputplumber_bus = await MessageBus(bus_type=BusType.SYSTEM).connect()
-        introspection = await self._inputplumber_bus.introspect(
-            "org.shadowblip.InputPlumber", "/org/shadowblip/InputPlumber/Manager"
-        )
-        proxy = self._inputplumber_bus.get_proxy_object(
-            "org.shadowblip.InputPlumber", "/org/shadowblip/InputPlumber/Manager", introspection
-        )
-        self._inputplumber_proxy = proxy
+        # Subscribe directly to the manager signal. Introspection here would
+        # make the Sessiond API depend on a live InputPlumber object during
+        # startup; topology is instead reconciled below on a timer as well.
         self._inputplumber_bus._add_match_rule(
             "type='signal',sender='org.shadowblip.InputPlumber',"
             "path='/org/shadowblip/InputPlumber/Manager',"
@@ -246,22 +251,31 @@ class ConsoleSessionInterface(ServiceInterface):
         for runtime_path in sorted(connected_paths):
             if self._applied_input_modes.get(runtime_path) is mode:
                 continue
-            if getattr(self, "_native_controller", False) and mode is not InputMode.COMPAT:
-                self._inputplumber.ensure_default_intercept(runtime_path)
-            else:
-                self._inputplumber.load_mode(mode, runtime_path)
+            try:
+                if getattr(self, "_native_controller", False) and mode is not InputMode.COMPAT:
+                    self._inputplumber.ensure_default_intercept(runtime_path)
+                else:
+                    self._inputplumber.load_mode(mode, runtime_path)
+            except InputPlumberObjectDisappeared:
+                # The snapshot is already stale. The next reconciliation will
+                # initialize a replacement object without failing the session.
+                continue
             self._applied_input_modes[runtime_path] = mode
 
     def _apply_input_mode(self, mode: InputMode) -> None:
-        composites = self._inputplumber.runtime_composite_statuses()
+        try:
+            composites = self._inputplumber.runtime_composite_statuses()
+        except subprocess.CalledProcessError as error:
+            if not is_service_unavailable(error):
+                raise
+            LOGGER.warning("InputPlumber unavailable while applying input mode=%s; deferring", mode.value)
+            return
         if composites:
             self._reconcile_input_mode(composites, mode)
         else:
             # Preserve the no-controller path; a future composite will converge
             # through the monitor when it appears.
-            if getattr(self, "_native_controller", False) and mode is not InputMode.COMPAT:
-                self._inputplumber.ensure_default_intercept()
-            else:
+            if not getattr(self, "_native_controller", False) or mode is InputMode.COMPAT:
                 self._inputplumber.load_mode(mode)
 
     async def _monitor_controller_events(self) -> None:
