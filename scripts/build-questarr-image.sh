@@ -40,7 +40,7 @@ if [[ $record_image_id == 1 ]]; then
     exit 78
   }
 else
-  [[ $expected_image_id =~ ^sha256:[0-9a-f]{64}$ ]] || {
+  [[ $expected_image_id =~ ^[0-9a-f]{64}$ ]] || {
     echo "Questarr image lock lacks a pinned image id." >&2
     exit 78
   }
