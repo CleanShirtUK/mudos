@@ -10,7 +10,7 @@ in `packages/questarr`; `packages/questarr/IMAGE.lock` pins the output image ID,
 manifest digest, base image, source revision, and patch hash. The image built
 from Mudos recipe commit `52f7e44ace2a326949a1a8e669804bcb9e2d1766` has manifest
 digest `sha256:b460c1209c2a6047df58ad4eab35aba5eb20d58a08c86a955f3cce8b1c9e23c6`
-and image ID `sha256:a0d34387aa9744e658a5dac577722729bc99dffd8d9e6e3cbcd6569c997e6450`.
+and Podman image ID `a0d34387aa9744e658a5dac577722729bc99dffd8d9e6e3cbcd6569c997e6450`.
 Provisioning pins by the manifest digest and does not track upstream latest. Its
 download-client behavior was checked in the tagged sources:
 
