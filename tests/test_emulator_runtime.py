@@ -526,7 +526,7 @@ class EmulatorRuntimeTests(unittest.TestCase):
             )
             self.assertTrue((provider_root / "Config" / "Hotkeys.ini").is_file())
 
-    def test_retroarch_generated_autoconfig_uses_native_face_buttons(self) -> None:
+    def test_retroarch_generated_autoconfig_translates_xbox_to_retropad_face_buttons(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             enabled = ensure_retroarch_autoconfig(root)
@@ -534,10 +534,10 @@ class EmulatorRuntimeTests(unittest.TestCase):
             ensure_retroarch_autoconfig(root)
             disabled_content = next(enabled.glob("*.cfg")).read_text()
         self.assertIn('input_device = "Microsoft X-Box 360 pad"', enabled_content)
-        self.assertIn('input_a_btn = "0"', enabled_content)
-        self.assertIn('input_b_btn = "1"', enabled_content)
-        self.assertIn('input_x_btn = "2"', enabled_content)
-        self.assertIn('input_y_btn = "3"', enabled_content)
+        self.assertIn('input_a_btn = "1"', enabled_content)
+        self.assertIn('input_b_btn = "0"', enabled_content)
+        self.assertIn('input_x_btn = "3"', enabled_content)
+        self.assertIn('input_y_btn = "2"', enabled_content)
         self.assertIn('input_l2_axis = "+2"', enabled_content)
         self.assertEqual(enabled_content, disabled_content)
 
@@ -553,8 +553,8 @@ class EmulatorRuntimeTests(unittest.TestCase):
                 child_path.unlink(missing_ok=True)
         self.assertIn('input_player1_joypad_index = "0"', child)
         self.assertIn('input_player2_joypad_index = "2"', child)
-        self.assertIn('input_a_btn = "0"', profile)
-        self.assertIn('input_b_btn = "1"', profile)
+        self.assertIn('input_a_btn = "1"', profile)
+        self.assertIn('input_b_btn = "0"', profile)
 
     def test_retroarch_profile_is_generic_to_normalized_pads_and_players(self) -> None:
         fixtures = (

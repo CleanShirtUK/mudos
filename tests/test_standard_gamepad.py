@@ -48,10 +48,10 @@ class StandardGamepadTests(unittest.TestCase):
 
         self.assertIn("Cross = SDL-0/FaceSouth", pcsx2)
         self.assertIn("Buttons/A = `Button A`", dolphin)
-        self.assertIn('input_a_btn = "0"', retroarch)
-        self.assertIn('input_b_btn = "1"', retroarch)
-        self.assertIn('input_x_btn = "2"', retroarch)
-        self.assertIn('input_y_btn = "3"', retroarch)
+        self.assertIn('input_a_btn = "1"', retroarch)
+        self.assertIn('input_b_btn = "0"', retroarch)
+        self.assertIn('input_x_btn = "3"', retroarch)
+        self.assertIn('input_y_btn = "2"', retroarch)
 
     def test_inputplumber_profile_preseeds_live_devices_and_supports_hotplug(self) -> None:
         spec = importlib.util.spec_from_file_location(

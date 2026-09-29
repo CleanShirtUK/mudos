@@ -201,7 +201,10 @@ def ensure_retroarch_autoconfig(
 ) -> Path:
     """Generate RetroArch's udev profile for InputPlumber's normalized pad."""
     root = config_root or PATHS.provider_config_root("retroarch")
-    face = {"a": "0", "b": "1", "x": "2", "y": "3"}
+    # RetroArch's libretro A/B and X/Y labels follow the Nintendo-style
+    # semantic layout. On an Xbox-style physical pad, South/East/West/North
+    # therefore map to RetroPad B/A/Y/X respectively.
+    face = {"a": "1", "b": "0", "x": "3", "y": "2"}
     bindings = {
         "input_a_btn": face["a"], "input_b_btn": face["b"],
         "input_x_btn": face["x"], "input_y_btn": face["y"],
