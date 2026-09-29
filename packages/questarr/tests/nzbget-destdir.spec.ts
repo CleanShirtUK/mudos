@@ -36,7 +36,7 @@ const successHistory = (overrides: Record<string, unknown> = {}) => ({
 
 function nzbget(history: unknown[], active: unknown[] = []) {
   const client = new NZBGetClient(downloader("nzbget"));
-  const rpc = vi.spyOn(client as any, "makeXMLRPCRequest").mockImplementation(async (method: string) => {
+  const rpc = vi.spyOn(client as any, "makeXMLRPCRequest").mockImplementation(async (method: unknown) => {
     if (method === "listgroups") return active;
     if (method === "history") return history;
     throw new Error(`unexpected NZBGet method: ${method}`);
