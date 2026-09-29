@@ -343,7 +343,7 @@ class EmulatorRuntimeTests(unittest.TestCase):
             self.assertIn("Extension = Classic Controller", wiimote_content)
             self.assertIn("Classic/Buttons/A = `Button A`", wiimote_content)
             hotkeys = path.parent / "Hotkeys.ini"
-            self.assertIn("Wii/Press Sync Button = @(Ctrl+Shift+F12)", hotkeys.read_text())
+            self.assertIn("Wii/Press Sync Button = bracketright", hotkeys.read_text())
 
     def test_dolphin_sync_hotkey_update_preserves_unrelated_hotkeys(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -361,7 +361,7 @@ class EmulatorRuntimeTests(unittest.TestCase):
             repeated = hotkeys.read_text()
         self.assertEqual(updated, repeated)
         self.assertIn("General/Stop = Escape", updated)
-        self.assertIn("Wii/Press Sync Button = @(Ctrl+Shift+F12)", updated)
+        self.assertIn("Wii/Press Sync Button = bracketright", updated)
         self.assertIn("[Other]\nPreference = keep", updated)
 
     def test_dolphin_continuous_wiimote_scan_preserves_other_core_options(self) -> None:

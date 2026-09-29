@@ -48,8 +48,11 @@ standard GameCube controller with `SIDevice0 = 6`; all four GameCube ports are
 enabled and receive Mudos-owned SDL gamepad profiles. Dolphin's continuous
 Wiimote scan option remains enabled so Bluetooth passthrough can discover
 remotes. The Guide menu's Dolphin-only **Sync Wii Remotes** action sends the
-`Ctrl+Shift+F12` chord bound in Dolphin's active `Hotkeys.ini`. This does not
-create a global OS shortcut. Real Bluetooth passthrough remains Dolphin-owned.
+`bracketright` key bound in Dolphin's active `Hotkeys.ini`. This matches the
+InputPlumber COMPAT profile's right-brace keyboard event and does not create a
+global OS shortcut. Real Bluetooth passthrough remains Dolphin-owned.
+The passthrough lease enables Dolphin's Bluetooth passthrough for the launch
+but preserves Dolphin's own adapter selection, including **Automatic**.
 
 ## Provisioning Boundary
 

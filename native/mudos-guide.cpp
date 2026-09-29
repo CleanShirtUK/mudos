@@ -266,7 +266,7 @@ private:
         // Provider manifests may request only these exact, known Guide keys.
         // Never turn an arbitrary target string into keyboard input.
         const bool steamOverlay = key == QStringLiteral("Shift+Tab");
-        const bool dolphinSync = key == QStringLiteral("Ctrl+Shift+F12");
+        const bool dolphinSync = key == QStringLiteral("bracketright");
         if (!steamOverlay && !dolphinSync && key != QStringLiteral("F12"))
             return false;
         auto *x11 = qGuiApp->nativeInterface<QNativeInterface::QX11Application>();
@@ -276,48 +276,36 @@ private:
         auto *keySymbols = xcb_key_symbols_alloc(connection);
         if (!keySymbols)
             return false;
-        auto *keycodes = xcb_key_symbols_get_keycode(keySymbols, steamOverlay ? XK_Tab : XK_F12);
-        auto *shiftCodes = (steamOverlay || dolphinSync)
-            ? xcb_key_symbols_get_keycode(keySymbols, XK_Shift_L) : nullptr;
-        auto *controlCodes = dolphinSync ? xcb_key_symbols_get_keycode(keySymbols, XK_Control_L) : nullptr;
+        const auto keySymbol = steamOverlay ? XK_Tab : dolphinSync ? XK_bracketright : XK_F12;
+        auto *keycodes = xcb_key_symbols_get_keycode(keySymbols, keySymbol);
+        auto *shiftCodes = steamOverlay ? xcb_key_symbols_get_keycode(keySymbols, XK_Shift_L) : nullptr;
         if (!keycodes || keycodes[0] == XCB_NO_SYMBOL
-            || (steamOverlay && (!shiftCodes || shiftCodes[0] == XCB_NO_SYMBOL))
-            || (dolphinSync && (!shiftCodes || shiftCodes[0] == XCB_NO_SYMBOL
-                                || !controlCodes || controlCodes[0] == XCB_NO_SYMBOL))) {
+            || (steamOverlay && (!shiftCodes || shiftCodes[0] == XCB_NO_SYMBOL))) {
             free(keycodes);
             free(shiftCodes);
-            free(controlCodes);
             xcb_key_symbols_free(keySymbols);
             return false;
         }
         const auto setup = xcb_get_setup(connection);
         const auto screen = xcb_setup_roots_iterator(setup).data;
         xcb_set_input_focus(connection, XCB_INPUT_FOCUS_NONE, targetXid_, XCB_CURRENT_TIME);
-        if (dolphinSync)
-            xcb_test_fake_input(connection, XCB_KEY_PRESS, controlCodes[0], XCB_CURRENT_TIME,
-                                screen->root, 0, 0, 0);
-        if (steamOverlay || dolphinSync)
+        if (steamOverlay)
             xcb_test_fake_input(connection, XCB_KEY_PRESS, shiftCodes[0], XCB_CURRENT_TIME,
                                 screen->root, 0, 0, 0);
         xcb_test_fake_input(connection, XCB_KEY_PRESS, keycodes[0], XCB_CURRENT_TIME,
                             screen->root, 0, 0, 0);
-        // Dolphin polls hotkey state on its emulation thread. Keep the chord
-        // held long enough for that poll to observe it instead of queuing an
-        // effectively instantaneous press/release pair.
+        // Keep the key held long enough for the target application to observe
+        // it instead of queuing an effectively instantaneous press/release.
         xcb_flush(connection);
         usleep(100 * 1000);
         xcb_test_fake_input(connection, XCB_KEY_RELEASE, keycodes[0], XCB_CURRENT_TIME,
                             screen->root, 0, 0, 0);
-        if (steamOverlay || dolphinSync)
+        if (steamOverlay)
             xcb_test_fake_input(connection, XCB_KEY_RELEASE, shiftCodes[0], XCB_CURRENT_TIME,
-                                screen->root, 0, 0, 0);
-        if (dolphinSync)
-            xcb_test_fake_input(connection, XCB_KEY_RELEASE, controlCodes[0], XCB_CURRENT_TIME,
                                 screen->root, 0, 0, 0);
         xcb_flush(connection);
         free(keycodes);
         free(shiftCodes);
-        free(controlCodes);
         xcb_key_symbols_free(keySymbols);
         return true;
     }

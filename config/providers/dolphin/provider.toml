@@ -27,7 +27,7 @@ order = 40
 id = "dolphin-wiimote-sync"
 label = "Sync Wii Remotes"
 role = "provider"
-target = "key:Ctrl+Shift+F12"
+target = "key:bracketright"
 contexts = ["game", "standalone"]
 order = 50
 

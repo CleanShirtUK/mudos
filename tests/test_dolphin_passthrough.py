@@ -287,12 +287,32 @@ class DolphinPassthroughTests(unittest.TestCase):
                 run.return_value = type("Result", (), {"returncode": 0})()
                 lease.acquire()
                 self.assertEqual(NativeConfigAdapter(config).get("BluetoothPassthrough", "Enabled"), "True")
-                self.assertEqual(NativeConfigAdapter(config).get("BluetoothPassthrough", "VID"), "3034")
-                self.assertEqual(NativeConfigAdapter(config).get("BluetoothPassthrough", "PID"), "34673")
+                self.assertEqual(NativeConfigAdapter(config).get("BluetoothPassthrough", "VID"), "1")
+                self.assertEqual(NativeConfigAdapter(config).get("BluetoothPassthrough", "PID"), "2")
                 self.assertEqual(NativeConfigAdapter(config).get("Core", "Unrelated"), "keep")
                 lease.release()
             self.assertEqual(config.read_text(), original)
             self.assertFalse(dolphin_config_lease_path(config).exists())
+
+    def test_lease_preserves_dolphin_automatic_adapter_selection(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            config = Path(directory) / "Dolphin.ini"
+            original = "[BluetoothPassthrough]\nEnabled = True\n[Core]\nUnrelated = keep\n"
+            config.write_text(original)
+            lease = DolphinBluetoothLease(Path("/helper"), config, "d" * 32, {
+                "BluetoothPassthrough.Enabled": "True",
+                "BluetoothPassthrough.VID": None,
+                "BluetoothPassthrough.PID": None,
+            })
+            with patch("lulu.dolphin_passthrough.subprocess.run") as run:
+                run.return_value = type("Result", (), {"returncode": 0})()
+                lease.acquire()
+                active = NativeConfigAdapter(config)
+                self.assertEqual(active.get("BluetoothPassthrough", "Enabled"), "True")
+                self.assertIsNone(active.get("BluetoothPassthrough", "VID"))
+                self.assertIsNone(active.get("BluetoothPassthrough", "PID"))
+                lease.release()
+            self.assertEqual(config.read_text(), original)
 
     def test_failed_launch_acquisition_rolls_back_every_temporary_config_key(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

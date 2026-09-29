@@ -337,7 +337,7 @@ def ensure_provider_controller_config(
         hotkeys_path = dolphin_root / "Hotkeys.ini"
         hotkeys_source = hotkeys_path.read_text(encoding="utf-8") if hotkeys_path.exists() else ""
         hotkeys_source = _update_section_values(
-            hotkeys_source, "Hotkeys", {"Wii/Press Sync Button": "@(Ctrl+Shift+F12)"},
+            hotkeys_source, "Hotkeys", {"Wii/Press Sync Button": "bracketright"},
         )
         _write_if_changed(hotkeys_path, hotkeys_source)
         _write_if_changed(
