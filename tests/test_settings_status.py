@@ -36,11 +36,16 @@ class SettingsStatusTests(unittest.TestCase):
             settings = SettingsStore(path)
             self.assertEqual(settings.get("display.output"), "auto")
             self.assertTrue(settings.get("launch_overlay_enabled"))
-            self.assertTrue(settings.get("controllers.nintendo_button_layout"))
+            # Simulate a pre-V1 appliance with the removed key persisted true.
+            settings.connection.execute(
+                "INSERT INTO settings(key, value) VALUES (?, ?)",
+                ("controllers.nintendo_button_layout", "true"),
+            )
+            settings.connection.commit()
             settings.set("display.output", "auto")
             self.assertEqual(SettingsStore(path).get("display.output"), "auto")
-            settings.set("controllers.nintendo_button_layout", False)
-            self.assertFalse(SettingsStore(path).get("controllers.nintendo_button_layout"))
+            with self.assertRaisesRegex(KeyError, "unknown setting"):
+                settings.get("controllers.nintendo_button_layout")
 
         with self.assertRaises(TypeError):
             settings.set("network.enabled", "yes")

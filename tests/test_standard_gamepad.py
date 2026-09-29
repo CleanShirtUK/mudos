@@ -1,25 +1,57 @@
 import tempfile
 import unittest
 import importlib.util
+import sqlite3
 from pathlib import Path
 
 from lulu.controllerd import Controller, ControllerRegistry
-from lulu.controller_provisioning import ensure_provider_controller_config
-from lulu.controller_policy import face_button_indices, face_button_swap
+from lulu.controller_provisioning import (
+    ensure_provider_controller_config,
+    ensure_retroarch_autoconfig,
+)
 from lulu.inputplumber import associate_sdl_targets, normalized_controller_identity
 from lulu.switch_provider import SwitchProvider
 
 
 class StandardGamepadTests(unittest.TestCase):
-    def test_canonical_face_policy_projects_enabled_and_disabled_layouts(self) -> None:
-        self.assertEqual(face_button_indices(True), {"a": 1, "b": 0, "x": 3, "y": 2})
-        self.assertEqual(face_button_indices(False), {"a": 0, "b": 1, "x": 2, "y": 3})
-        self.assertEqual(face_button_swap(True), {
-            "south": "east", "east": "south", "west": "north", "north": "west",
-        })
-        self.assertEqual(face_button_swap(False), {
-            "south": "south", "east": "east", "west": "west", "north": "north",
-        })
+    def test_native_face_button_profiles_preserve_identity(self) -> None:
+        from lulu.controller_provisioning import _pcsx2_values, _dolphin_values
+        pcsx2 = _pcsx2_values(0)
+        self.assertEqual(pcsx2["Cross"], "SDL-0/FaceSouth")
+        self.assertEqual(pcsx2["Circle"], "SDL-0/FaceEast")
+        self.assertEqual(pcsx2["Square"], "SDL-0/FaceWest")
+        self.assertEqual(pcsx2["Triangle"], "SDL-0/FaceNorth")
+        dolphin = _dolphin_values("SDL Gamepad", 0)
+        self.assertEqual(dolphin["Buttons/A"], "`Button A`")
+        self.assertEqual(dolphin["Buttons/B"], "`Button B`")
+        self.assertEqual(dolphin["Buttons/X"], "`Button X`")
+        self.assertEqual(dolphin["Buttons/Y"], "`Button Y`")
+
+    def test_legacy_true_layout_setting_cannot_change_generated_profiles(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            legacy_db = sqlite3.connect(root / "settings.sqlite3")
+            legacy_db.execute(
+                "CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)",
+            )
+            legacy_db.execute(
+                "INSERT INTO settings VALUES (?, ?)",
+                ("controllers.nintendo_button_layout", "true"),
+            )
+            legacy_db.commit()
+            legacy_db.close()
+
+            pcsx2 = ensure_provider_controller_config("pcsx2", root, 1, {1: 0}).read_text()
+            dolphin = ensure_provider_controller_config("dolphin", root, 1, {1: 0}).read_text()
+            retroarch_dir = ensure_retroarch_autoconfig(root)
+            retroarch = next(retroarch_dir.glob("*.cfg")).read_text()
+
+        self.assertIn("Cross = SDL-0/FaceSouth", pcsx2)
+        self.assertIn("Buttons/A = `Button A`", dolphin)
+        self.assertIn('input_a_btn = "0"', retroarch)
+        self.assertIn('input_b_btn = "1"', retroarch)
+        self.assertIn('input_x_btn = "2"', retroarch)
+        self.assertIn('input_y_btn = "3"', retroarch)
 
     def test_inputplumber_profile_preseeds_live_devices_and_supports_hotplug(self) -> None:
         spec = importlib.util.spec_from_file_location(
@@ -301,7 +333,7 @@ class StandardGamepadTests(unittest.TestCase):
         self.assertIn("SDL/0/DualSense", content)
         self.assertIn("SDL/1/Generic SDL Pad", content)
 
-    def test_eden_uses_each_live_guid_but_nintendo_policy_is_shared(self) -> None:
+    def test_eden_uses_each_live_guid_with_native_face_buttons(self) -> None:
         pads = {
             1: self._pad("sony", "DualSense", "guid-sony", 0),
             2: self._pad("generic", "Generic SDL Pad", "guid-generic", 1),
@@ -311,8 +343,8 @@ class StandardGamepadTests(unittest.TestCase):
             content = path.ensure_controller_config(2, {1: 0, 2: 1}, pads).read_text()
         self.assertIn("port:0,guid:guid-sony", content)
         self.assertIn("port:1,guid:guid-generic", content)
-        self.assertIn('player_0_button_a="engine:sdl,port:0,guid:guid-sony,button:1"', content)
-        self.assertIn('player_1_button_a="engine:sdl,port:1,guid:guid-generic,button:1"', content)
+        self.assertIn('player_0_button_a="engine:sdl,port:0,guid:guid-sony,button:0"', content)
+        self.assertIn('player_1_button_a="engine:sdl,port:1,guid:guid-generic,button:0"', content)
         self.assertNotIn("030081b85e0400008e02000001000000", content)
 
     def test_same_guid_still_uses_separate_runtime_indices(self) -> None:

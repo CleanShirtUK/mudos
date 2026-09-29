@@ -5,7 +5,6 @@ import json
 import os
 
 from .paths import PATHS
-from .controller_policy import face_button_indices, nintendo_layout_enabled
 
 # SDL's standard gamepad order. Eden's SDL backend consumes these values in
 # the serialized input parameter packages.
@@ -65,7 +64,6 @@ class SwitchProvider:
         player_count: int | None = None,
         device_indices: dict[int, int] | None = None,
         controller_identities: dict[int, object] | None = None,
-        nintendo_layout: bool | None = None,
     ) -> Path:
         if player_count is None:
             player_count = max(device_indices, default=4) if device_indices else 4
@@ -74,9 +72,7 @@ class SwitchProvider:
         device_indices = device_indices or {
             player: player - 1 for player in range(1, player_count + 1)
         }
-        if nintendo_layout is None:
-            nintendo_layout = nintendo_layout_enabled()
-        buttons = {**face_button_indices(nintendo_layout), **{
+        buttons = {"a": 0, "b": 1, "x": 2, "y": 3, **{
             name: button for name, button in _BUTTONS.items() if name not in {"a", "b", "x", "y"}
         }}
         sections = ["[Controls]"]
@@ -233,10 +229,8 @@ class SwitchProvider:
         player_count: int | None = None,
         device_indices: dict[int, int] | None = None,
         controller_identities: dict[int, object] | None = None,
-        nintendo_layout: bool | None = None,
     ) -> tuple[str, ...]:
-        config = self.ensure_controller_config(player_count, device_indices, controller_identities,
-                                              nintendo_layout)
+        config = self.ensure_controller_config(player_count, device_indices, controller_identities)
         return (
             "--appimage-extract-and-run",
             "--config", str(config), "-f", "--fullscreen", "--game", content_path,

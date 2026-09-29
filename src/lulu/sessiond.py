@@ -84,8 +84,6 @@ class ConsoleSessionInterface(ServiceInterface):
     def _state_json(self) -> str:
         state = asdict(self.model.state)
         settings = getattr(self, "settings", None)
-        nintendo_layout = (settings.get("controllers.nintendo_button_layout")
-                           if settings is not None else True)
         state.update(
             {
                 "lifecycle": self.model.state.lifecycle.value,
@@ -96,7 +94,6 @@ class ConsoleSessionInterface(ServiceInterface):
                 "controller": {
                     "navigation_controller_id": self.controller_registry.navigation_controller_id,
                     "navigation_mode": self.controller_registry.navigation_mode,
-                    "nintendo_layout": nintendo_layout,
                     "dolphin_wii_remote_mode": settings.get("dolphin.wii_remote_mode")
                     if settings is not None else "standard",
                     "controllers": {
@@ -413,13 +410,6 @@ class ConsoleSessionInterface(ServiceInterface):
     @method()
     def SetNavigationController(self, controller_id: "s") -> "s":
         self.controller_registry.set_navigation_controller(controller_id or None)
-        state = self._state_json()
-        self.StateChanged(state)
-        return state
-
-    @method()
-    def SetNintendoLayoutEnabled(self, enabled: "b") -> "s":
-        self.settings.set("controllers.nintendo_button_layout", enabled)
         state = self._state_json()
         self.StateChanged(state)
         return state

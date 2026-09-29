@@ -1010,8 +1010,9 @@ class ConsoleUiTests(unittest.TestCase):
 
     def test_controller_x_routes_to_shared_game_options_action(self) -> None:
         native_shell = (ROOT / "native" / "lulu-shell.cpp").read_text()
-        self.assertIn("optionsButton = nintendoLayout_", native_shell)
-        self.assertIn('{optionsButton, "options"}', native_shell)
+        self.assertIn('{SDL_GAMEPAD_BUTTON_WEST, "options"}', native_shell)
+        self.assertIn('{SDL_GAMEPAD_BUTTON_EAST, "back"}', native_shell)
+        self.assertIn('{SDL_GAMEPAD_BUTTON_NORTH, "downloads"}', native_shell)
         self.assertIn('{"options", "openSelectedGameOptions"}', native_shell)
         self.assertIn("function openSelectedGameOptions()", QML)
         self.assertIn("openGameOptions(selectedGameForOptions)", QML)
@@ -1043,8 +1044,8 @@ class ConsoleUiTests(unittest.TestCase):
 
     def test_game_options_owns_confirm_and_ignores_reopen(self) -> None:
         native_shell = (ROOT / "native" / "lulu-shell.cpp").read_text()
-        self.assertIn("confirmButton = nintendoLayout_", native_shell)
-        self.assertIn('{confirmButton, "confirm"}', native_shell)
+        self.assertIn('{SDL_GAMEPAD_BUTTON_SOUTH, "confirm"}', native_shell)
+        self.assertNotIn("nintendoLayout", native_shell)
         self.assertIn("if (gameOptionsOpen) {\n            activateGameOptions()", QML)
         self.assertIn("if (gameOptionsOpen)\n            return\n        if (selectedGameForOptions)", QML)
         self.assertIn('if (gameOptionsOpen) {\n            if (gameOptionsTextEntryActive)', QML)

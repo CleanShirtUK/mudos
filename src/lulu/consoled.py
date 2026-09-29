@@ -27,7 +27,6 @@ from .artwork import LocalArtworkCache, SteamGridDBArtwork, local_artwork_path, 
 from .media_assets import LocalMediaAssets
 from .contracts import ServiceDescriptor, ServiceName
 from .controller_provisioning import ensure_provider_controller_config, ensure_retroarch_autoconfig
-from .controller_policy import nintendo_layout_enabled
 from .dolphin_passthrough import DolphinBluetoothLease
 from .emulator_runtime import EmulatorRuntimeAdapter
 from .emulation import PLATFORMS, current_rom_root, ensure_storage
@@ -1671,7 +1670,6 @@ class ConsoleInterface(ServiceInterface):
             device_indices = await asyncio.to_thread(_mudos_provider_device_indices)
             autoconfig_directory = await asyncio.to_thread(
                 ensure_retroarch_autoconfig, PATHS.provider_config_root("retroarch"),
-                nintendo_layout=nintendo_layout_enabled(),
             )
             child_config_path = await asyncio.to_thread(
                 _retroarch_child_config, device_indices, autoconfig_directory,
@@ -2613,11 +2611,9 @@ class ConsoleInterface(ServiceInterface):
             controller_identities = None
             if game.platform in {"switch", "ps2", "wii", "nes", "genesis"}:
                 controller_identities = await asyncio.to_thread(_mudos_provider_controller_identities)
-            nintendo_layout = nintendo_layout_enabled()
             intent = self.local_runtime.launch_intent(
                 game, device_indices=device_indices,
                 controller_identities=controller_identities,
-                nintendo_layout=nintendo_layout,
             )
             command = [intent.executable, *intent.arguments]
             is_pcsx2 = intent.provider == "pcsx2"
@@ -2645,7 +2641,6 @@ class ConsoleInterface(ServiceInterface):
                     PATHS.provider_config_root(controller_provider) / "dolphin-emu"
                     if controller_provider == "dolphin" else None,
                     controller_identities,
-                    nintendo_layout,
                     dolphin_passthrough is not None,
                 )
                 LOGGER.info(
@@ -2657,7 +2652,6 @@ class ConsoleInterface(ServiceInterface):
                 device_indices = await asyncio.to_thread(_mudos_provider_device_indices)
                 autoconfig_directory = await asyncio.to_thread(
                     ensure_retroarch_autoconfig, PATHS.provider_config_root("retroarch"),
-                    nintendo_layout=nintendo_layout,
                 )
                 child_config_path = await asyncio.to_thread(
                     _retroarch_child_config, device_indices, autoconfig_directory,
@@ -2865,6 +2859,50 @@ async def serve() -> None:
     interface = ConsoleInterface(catalogue, runtime, sessiond=sessiond)
     bus.export(OBJECT_PATH, interface)
     await bus.request_name(BUS_NAME)
+
+    async def regenerate_mudos_controller_mappings() -> None:
+        """Refresh only Mudos-owned mappings after a release/service restart."""
+        try:
+            await asyncio.to_thread(
+                ensure_retroarch_autoconfig, PATHS.provider_config_root("retroarch"),
+            )
+        except Exception:
+            LOGGER.exception("RetroArch Mudos autoconfig migration failed")
+        try:
+            identities = await asyncio.to_thread(_mudos_provider_controller_identities)
+            device_indices = {
+                player: int(identity["sdl_index"])
+                for player, identity in identities.items()
+                if isinstance(identity.get("sdl_index"), int)
+            }
+            settings = SettingsStore(PATHS.config_root / "settings.sqlite3")
+            try:
+                passthrough = settings.get("dolphin.wii_remote_mode") == "passthrough"
+            finally:
+                settings.connection.close()
+            for provider, count in (("pcsx2", 2), ("dolphin", 4)):
+                await asyncio.to_thread(
+                    ensure_provider_controller_config,
+                    provider,
+                    PATHS.provider_config_root(provider),
+                    count,
+                    device_indices or None,
+                    PATHS.provider_config_root(provider) / "dolphin-emu"
+                    if provider == "dolphin" else None,
+                    identities or None,
+                    passthrough if provider == "dolphin" else False,
+                )
+            if identities:
+                await asyncio.to_thread(
+                    runtime.switch_provider.ensure_controller_config,
+                    max(identities), device_indices, identities,
+                )
+        except Exception:
+            LOGGER.exception("Mudos emulator controller mapping migration failed")
+
+    asyncio.create_task(
+        regenerate_mudos_controller_mappings(), name="controller-mapping-migration",
+    )
     # Publish the D-Bus boundary before the potentially slow provider refresh.
     # sessiond starts the shell during bootstrap, and the bridge must be able to
     # discover Consoled while the catalogue is being populated.

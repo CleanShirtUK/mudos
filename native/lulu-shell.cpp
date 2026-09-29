@@ -954,9 +954,6 @@ private:
             .toObject().value(QStringLiteral("navigation_mode"))
             .toString(QStringLiteral("all"));
         navigationAll_ = navigationMode == QStringLiteral("all");
-        nintendoLayout_ = document.object().value(QStringLiteral("controller"))
-            .toObject().value(QStringLiteral("nintendo_layout")).toBool(true);
-        insert(QStringLiteral("nintendoLayout"), nintendoLayout_);
         QVariantList controllers;
         QVector<int> liveSdlIndices;
         navigationSdlIndex_ = -1;
@@ -1414,19 +1411,13 @@ private:
                         startGuide();
                     continue;
                 }
-                const SDL_GamepadButton confirmButton = nintendoLayout_
-                    ? SDL_GAMEPAD_BUTTON_EAST : SDL_GAMEPAD_BUTTON_SOUTH;
-                const SDL_GamepadButton backButton = nintendoLayout_
-                    ? SDL_GAMEPAD_BUTTON_SOUTH : SDL_GAMEPAD_BUTTON_EAST;
-                const SDL_GamepadButton optionsButton = nintendoLayout_
-                    ? SDL_GAMEPAD_BUTTON_NORTH : SDL_GAMEPAD_BUTTON_WEST;
-                const SDL_GamepadButton downloadsButton = nintendoLayout_
-                    ? SDL_GAMEPAD_BUTTON_WEST : SDL_GAMEPAD_BUTTON_NORTH;
                 const std::pair<SDL_GamepadButton, const char *> routes[] = {
                     {SDL_GAMEPAD_BUTTON_DPAD_UP, "up"}, {SDL_GAMEPAD_BUTTON_DPAD_DOWN, "down"},
                     {SDL_GAMEPAD_BUTTON_DPAD_LEFT, "left"}, {SDL_GAMEPAD_BUTTON_DPAD_RIGHT, "right"},
-                    {confirmButton, "confirm"}, {backButton, "back"},
-                    {optionsButton, "options"}, {downloadsButton, "downloads"},
+                    {SDL_GAMEPAD_BUTTON_SOUTH, "confirm"},
+                    {SDL_GAMEPAD_BUTTON_EAST, "back"},
+                    {SDL_GAMEPAD_BUTTON_WEST, "options"},
+                    {SDL_GAMEPAD_BUTTON_NORTH, "downloads"},
                     {SDL_GAMEPAD_BUTTON_LEFT_SHOULDER, "leftShoulder"},
                     {SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER, "rightShoulder"},
                 };
@@ -1704,7 +1695,6 @@ private:
     int gamepadSlot_ = 0;
     int navigationPlayer_ = 1;
     bool navigationAll_ = true;
-    bool nintendoLayout_ = true;
     int navigationSdlIndex_ = -1;
     QVector<int> navigationSdlIndices_;
 

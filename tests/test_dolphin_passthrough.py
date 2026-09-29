@@ -95,7 +95,6 @@ class DolphinPassthroughTests(unittest.TestCase):
                     patch("lulu.consoled.SettingsStore", return_value=SimpleNamespace(
                         get=lambda _key: "passthrough", connection=SimpleNamespace(close=lambda: None),
                     )), \
-                    patch("lulu.consoled.nintendo_layout_enabled", return_value=True), \
                     patch("lulu.consoled.asyncio.to_thread", side_effect=inline_thread), \
                     patch("lulu.consoled.asyncio.create_subprocess_exec", side_effect=spawn), \
                     patch("lulu.consoled.asyncio.create_task", side_effect=lambda coroutine: tasks.append(coroutine)), \
@@ -125,7 +124,6 @@ class DolphinPassthroughTests(unittest.TestCase):
                     patch("lulu.consoled.SettingsStore", return_value=SimpleNamespace(
                         get=lambda _key: "passthrough", connection=SimpleNamespace(close=lambda: None),
                     )), \
-                    patch("lulu.consoled.nintendo_layout_enabled", return_value=True), \
                     patch("lulu.consoled.asyncio.to_thread", side_effect=inline_thread), \
                     patch("lulu.consoled.asyncio.create_subprocess_exec", side_effect=spawn), \
                     patch("lulu.consoled.os.getpgid", return_value=7721), \

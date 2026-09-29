@@ -153,10 +153,10 @@ class EmulatorRuntimeTests(unittest.TestCase):
             second_content = second.read_text()
 
         self.assertEqual(intent.arguments, ("--appimage-extract-and-run", "--config", str(second), "-f", "--fullscreen", "--game", "/fixture/game.nsp"))
-        self.assertIn('player_0_button_a="engine:sdl,port:0,guid:synthetic-live-guid,button:1"', config)
-        self.assertIn('player_0_button_b="engine:sdl,port:0,guid:synthetic-live-guid,button:0"', config)
-        self.assertIn('player_0_button_x="engine:sdl,port:0,guid:synthetic-live-guid,button:3"', config)
-        self.assertIn('player_0_button_y="engine:sdl,port:0,guid:synthetic-live-guid,button:2"', config)
+        self.assertIn('player_0_button_a="engine:sdl,port:0,guid:synthetic-live-guid,button:0"', config)
+        self.assertIn('player_0_button_b="engine:sdl,port:0,guid:synthetic-live-guid,button:1"', config)
+        self.assertIn('player_0_button_x="engine:sdl,port:0,guid:synthetic-live-guid,button:2"', config)
+        self.assertIn('player_0_button_y="engine:sdl,port:0,guid:synthetic-live-guid,button:3"', config)
         self.assertIn("player_0_type=0", config)
         self.assertIn("player_0_connected=true", config)
         self.assertIn("player_0_connected\\default=false", config)
@@ -171,19 +171,19 @@ class EmulatorRuntimeTests(unittest.TestCase):
             config = provider.ensure_controller_config(device_indices={1: 0, 2: 2, 3: 1})
             content = config.read_text()
 
-        self.assertIn("player_0_button_a=\"engine:sdl,port:0,guid:synthetic-live-guid,button:1\"", content)
-        self.assertIn("player_1_button_a=\"engine:sdl,port:2,guid:synthetic-live-guid,button:1\"", content)
-        self.assertIn("player_2_button_a=\"engine:sdl,port:1,guid:synthetic-live-guid,button:1\"", content)
+        self.assertIn("player_0_button_a=\"engine:sdl,port:0,guid:synthetic-live-guid,button:0\"", content)
+        self.assertIn("player_1_button_a=\"engine:sdl,port:2,guid:synthetic-live-guid,button:0\"", content)
+        self.assertIn("player_2_button_a=\"engine:sdl,port:1,guid:synthetic-live-guid,button:0\"", content)
         self.assertNotIn("player_3_", content)
 
-    def test_switch_three_player_profile_has_unique_gamepads_and_nintendo_mapping(self) -> None:
+    def test_switch_three_player_profile_has_unique_gamepads_and_native_mapping(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             provider = SwitchProvider(Path(directory) / "eden-cli", Path(directory) / "eden")
             path = provider.ensure_controller_config(3, {1: 0, 2: 1, 3: 2})
             content = path.read_text()
 
         for player, port in enumerate((0, 1, 2)):
-            for name, button in (("a", 1), ("b", 0), ("x", 3), ("y", 2)):
+            for name, button in (("a", 0), ("b", 1), ("x", 2), ("y", 3)):
                 self.assertIn(
                     f'player_{player}_button_{name}="engine:sdl,port:{port},guid:synthetic-live-guid,button:{button}"',
                     content,
@@ -256,8 +256,8 @@ class EmulatorRuntimeTests(unittest.TestCase):
             self.assertEqual(path.read_text(), first)
             self.assertIn("[Pad1]", first)
             self.assertIn(f"Bios = {PATHS.bios_root / 'ps2'}", first)
-            self.assertIn("Cross = SDL-0/FaceEast", first)
-            self.assertIn("Circle = SDL-0/FaceSouth", first)
+            self.assertIn("Cross = SDL-0/FaceSouth", first)
+            self.assertIn("Circle = SDL-0/FaceEast", first)
             pad1 = first.split("[Pad2]", 1)[0]
             self.assertNotIn("SDL-1/", pad1)
             self.assertIn("Up = SDL-0/DPadDown", first)
@@ -270,7 +270,7 @@ class EmulatorRuntimeTests(unittest.TestCase):
             self.assertIn("OpenPauseMenu = Keyboard/F12", first)
             self.assertIn("[EmuCore/GS]\nRenderer = -1", first)
             self.assertIn("[Pad2]", first)
-            self.assertIn("Cross = SDL-1/FaceEast", first)
+            self.assertIn("Cross = SDL-1/FaceSouth", first)
 
     def test_pcsx2_default_storage_bios_path_is_provisioned_into_native_config(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -317,7 +317,7 @@ class EmulatorRuntimeTests(unittest.TestCase):
             content = path.read_text()
 
             self.assertIn("Device = SDL/0/SDL Gamepad", content)
-            self.assertIn("Buttons/A = `Button B`", content)
+            self.assertIn("Buttons/A = `Button A`", content)
             self.assertIn("Main Stick/Up = `Left Y+`", content)
             self.assertIn("Triggers/L-Analog = `Trigger L`", content)
             self.assertIn("Main Stick/Calibration = 100.00", content)
@@ -335,7 +335,7 @@ class EmulatorRuntimeTests(unittest.TestCase):
             wiimote_content = wiimote.read_text()
             self.assertIn("[Wiimote1]", wiimote_content)
             self.assertIn("Extension = Classic Controller", wiimote_content)
-            self.assertIn("Classic/Buttons/A = `Button B`", wiimote_content)
+            self.assertIn("Classic/Buttons/A = `Button A`", wiimote_content)
 
     def test_dolphin_stop_confirmation_update_preserves_other_preferences(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -374,20 +374,20 @@ class EmulatorRuntimeTests(unittest.TestCase):
             ).read_text()
 
         self.assertIn("[Pad2]", pcsx2)
-        self.assertIn("Cross = SDL-2/FaceEast", pcsx2)
+        self.assertIn("Cross = SDL-2/FaceSouth", pcsx2)
         self.assertIn("[GCPad2]", dolphin)
         self.assertIn("Device = SDL/2/SDL Gamepad", dolphin)
         self.assertIn("[GCPad3]", dolphin)
         self.assertIn("Device = SDL/1/SDL Gamepad", dolphin)
 
-    def test_standard_face_layout_projects_without_swap_when_disabled(self) -> None:
+    def test_standard_face_layout_is_always_identity(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             pcsx2 = ensure_provider_controller_config(
-                "pcsx2", root, 1, {1: 0}, nintendo_layout=False,
+                "pcsx2", root, 1, {1: 0},
             ).read_text()
             dolphin = ensure_provider_controller_config(
-                "dolphin", root, 1, {1: 0}, nintendo_layout=False,
+                "dolphin", root, 1, {1: 0},
             ).read_text()
         self.assertIn("Cross = SDL-0/FaceSouth", pcsx2)
         self.assertIn("Circle = SDL-0/FaceEast", pcsx2)
@@ -406,9 +406,9 @@ class EmulatorRuntimeTests(unittest.TestCase):
                 "dolphin", root, 1, {1: 0}, real_wiimote_passthrough=True,
             )
             self.assertIn("WiimoteSource0 = 2", dolphin_ini.read_text())
-            self.assertIn("Buttons/A = `Button B`", passthrough.with_name("GCPadNew.ini").read_text())
+            self.assertIn("Buttons/A = `Button A`", passthrough.with_name("GCPadNew.ini").read_text())
 
-    def test_passthrough_keeps_native_wiimote_mapping_out_of_global_nintendo_projection(self) -> None:
+    def test_passthrough_keeps_native_wiimote_mapping_untouched(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             dolphin_root = root / "dolphin-emu" / "Config"
@@ -418,12 +418,12 @@ class EmulatorRuntimeTests(unittest.TestCase):
             native_remote.write_text(original)
             generated = ensure_provider_controller_config(
                 "dolphin", root, 2, {1: 0, 2: 2},
-                nintendo_layout=True, real_wiimote_passthrough=True,
+                real_wiimote_passthrough=True,
             )
             gc_pads = generated.read_text()
             native_remote_content = native_remote.read_text()
         self.assertEqual(native_remote_content, original)
-        self.assertIn("Buttons/A = `Button B`", gc_pads)
+        self.assertIn("Buttons/A = `Button A`", gc_pads)
         self.assertIn("[GCPad2]", gc_pads)
         self.assertIn("Device = SDL/2/SDL Gamepad", gc_pads)
 
@@ -435,7 +435,7 @@ class EmulatorRuntimeTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             generated = ensure_provider_controller_config(
                 "dolphin", Path(directory), 2, {1: 0, 2: 2},
-                controller_identities=pads, nintendo_layout=True,
+                controller_identities=pads,
             )
             content = generated.read_text()
         self.assertIn("[GCPad1]\nDevice = SDL/0/Xbox 360 Wireless Controller", content)
@@ -459,28 +459,25 @@ class EmulatorRuntimeTests(unittest.TestCase):
                 generated, provider_root / "dolphin-emu" / "Config" / "GCPadNew.ini",
             )
 
-    def test_retroarch_generated_autoconfig_uses_shared_nintendo_policy(self) -> None:
+    def test_retroarch_generated_autoconfig_uses_native_face_buttons(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            enabled = ensure_retroarch_autoconfig(root, nintendo_layout=True)
+            enabled = ensure_retroarch_autoconfig(root)
             enabled_content = next(enabled.glob("*.cfg")).read_text()
-            ensure_retroarch_autoconfig(root, nintendo_layout=False)
+            ensure_retroarch_autoconfig(root)
             disabled_content = next(enabled.glob("*.cfg")).read_text()
         self.assertIn('input_device = "Microsoft X-Box 360 pad"', enabled_content)
-        self.assertIn('input_a_btn = "1"', enabled_content)
-        self.assertIn('input_b_btn = "0"', enabled_content)
-        self.assertIn('input_x_btn = "3"', enabled_content)
-        self.assertIn('input_y_btn = "2"', enabled_content)
+        self.assertIn('input_a_btn = "0"', enabled_content)
+        self.assertIn('input_b_btn = "1"', enabled_content)
+        self.assertIn('input_x_btn = "2"', enabled_content)
+        self.assertIn('input_y_btn = "3"', enabled_content)
         self.assertIn('input_l2_axis = "+2"', enabled_content)
-        self.assertIn('input_a_btn = "0"', disabled_content)
-        self.assertIn('input_b_btn = "1"', disabled_content)
-        self.assertIn('input_x_btn = "2"', disabled_content)
-        self.assertIn('input_y_btn = "3"', disabled_content)
+        self.assertEqual(enabled_content, disabled_content)
 
     def test_retroarch_two_identical_pads_use_distinct_indices_and_shared_layout(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            autoconfig = ensure_retroarch_autoconfig(root, nintendo_layout=True)
+            autoconfig = ensure_retroarch_autoconfig(root)
             child_path = Path(_retroarch_child_config({1: 0, 2: 2}, autoconfig))
             try:
                 child = child_path.read_text()
@@ -489,8 +486,8 @@ class EmulatorRuntimeTests(unittest.TestCase):
                 child_path.unlink(missing_ok=True)
         self.assertIn('input_player1_joypad_index = "0"', child)
         self.assertIn('input_player2_joypad_index = "2"', child)
-        self.assertIn('input_a_btn = "1"', profile)
-        self.assertIn('input_b_btn = "0"', profile)
+        self.assertIn('input_a_btn = "0"', profile)
+        self.assertIn('input_b_btn = "1"', profile)
 
     def test_retroarch_profile_is_generic_to_normalized_pads_and_players(self) -> None:
         fixtures = (
@@ -500,7 +497,7 @@ class EmulatorRuntimeTests(unittest.TestCase):
         )
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            autoconfig = ensure_retroarch_autoconfig(root, nintendo_layout=True)
+            autoconfig = ensure_retroarch_autoconfig(root)
             profile = next(autoconfig.glob("*.cfg")).read_text()
             child_path = Path(_retroarch_child_config(
                 {player + 1: fixture["index"] for player, fixture in enumerate(fixtures)},

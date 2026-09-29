@@ -249,8 +249,6 @@ class ConsoleUiBridge:
                 controller_id, int(payload.get("player", 0)))
         elif action == "navigation":
             result = await self.sessiond.call_set_navigation_controller(controller_id)
-        elif action == "nintendo-layout":
-            result = await self.sessiond.call_set_nintendo_layout_enabled(controller_id == "true")
         elif action == "dolphin-wii-mode":
             result = await self.sessiond.call_set_dolphin_wii_remote_mode(controller_id)
         else:

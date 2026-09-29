@@ -3,8 +3,7 @@ import QtQuick
 Row {
     property string action: "confirm"
     property string label: ""
-    property string controllerProfile: (typeof controllerBridge !== "undefined"
-        && controllerBridge.nintendoLayout) ? "nintendo" : "xbox"
+    property string controllerProfile: "xbox"
     property real uiScale: 1
     property var typography
     property var luluPalette

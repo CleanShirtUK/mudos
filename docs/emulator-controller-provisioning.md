@@ -16,8 +16,8 @@ provider profiles therefore never identify a controller by model, VID/PID, or
 
 PCSX2 2.8.2 uses SDL3 bindings in `PCSX2.ini` under `[Pad1]`. The native
 binding syntax is `SDL-1/<semantic-control>` for the first controller exposed
-by the current Lulu session. The profile maps Xbox positional face buttons to
-the DualShock 2 layout, both sticks, triggers, shoulders, d-pad, Start, Select,
+by the current Mudos session. Face buttons retain their native SDL logical
+positions; the profile also maps both sticks, triggers, shoulders, d-pad, Start, Select,
 and stick clicks. Digital d-pad controls are kept separate from analog stick
 controls so resting stick drift cannot produce menu navigation. The Xbox-class
 SDL D-pad polarity is provisioned with the provider's observed direction
@@ -31,15 +31,12 @@ The profile is written to the service user's
 
 Dolphin's native GameCube profile is `Config/GCPadNew.ini`. The first profile
 selects the current `SDL/<index>/<name>` identity and uses Dolphin's SDL semantic controls
-for face buttons, shoulders, sticks, triggers, d-pad, and Start. The Nintendo
-face-button convention is shared with Eden: A/B and X/Y are translated from
-the normalized logical controls.
+for face buttons, shoulders, sticks, triggers, d-pad, and Start. Face buttons
+retain their native logical mappings; Mudos performs no face-button translation.
 
 The profile is written below the `--user` root at
 `~/.config/lulu/providers/dolphin/config/Config/GCPadNew.ini` and preserves
-other controller slots and unrelated settings. The Nintendo face-button
-translation is renderer policy over SDL logical controls, not a physical
-controller identity rule.
+other controller slots and unrelated settings.
 
 For the Wii validation path, Dolphin's GameCube Port 1 is explicitly set to a
 standard GameCube controller with `SIDevice0 = 6`. Wii Remote 1 is emulated

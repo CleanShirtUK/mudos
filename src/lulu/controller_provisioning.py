@@ -4,7 +4,6 @@ from pathlib import Path
 import os
 
 from .paths import PATHS
-from .controller_policy import face_button_swap, nintendo_face_binding, nintendo_layout_enabled
 
 
 DEFAULT_CONTROLLER_NAME = "SDL Gamepad"
@@ -89,11 +88,8 @@ def _write_if_changed(path: Path, content: str) -> None:
     path.write_text(content, encoding="utf-8")
 
 
-def _pcsx2_values(sdl_player: int, nintendo_layout: bool) -> dict[str, str]:
+def _pcsx2_values(sdl_player: int) -> dict[str, str]:
     device = f"SDL-{sdl_player}"
-    projected = face_button_swap(nintendo_layout)
-    button = {"south": "FaceSouth", "east": "FaceEast",
-              "west": "FaceWest", "north": "FaceNorth"}
     return {
         "Type": "DualShock2",
         "InvertL": "0",
@@ -108,10 +104,10 @@ def _pcsx2_values(sdl_player: int, nintendo_layout: bool) -> dict[str, str]:
         "Right": f"{device}/DPadLeft",
         "Down": f"{device}/DPadUp",
         "Left": f"{device}/DPadRight",
-        "Triangle": f"{device}/{button[projected['north']]}",
-        "Circle": f"{device}/{button[projected['east']]}",
-        "Cross": f"{device}/{button[projected['south']]}",
-        "Square": f"{device}/{button[projected['west']]}",
+        "Triangle": f"{device}/FaceNorth",
+        "Circle": f"{device}/FaceEast",
+        "Cross": f"{device}/FaceSouth",
+        "Square": f"{device}/FaceWest",
         "Select": f"{device}/Back",
         "Start": f"{device}/Start",
         "L1": f"{device}/LeftShoulder",
@@ -131,15 +127,15 @@ def _pcsx2_values(sdl_player: int, nintendo_layout: bool) -> dict[str, str]:
     }
 
 
-def _dolphin_values(device: str, sdl_index: int, nintendo_layout: bool) -> dict[str, str]:
+def _dolphin_values(device: str, sdl_index: int) -> dict[str, str]:
     prefix = f"SDL/{sdl_index}/{device}"
     return {
         "Device": prefix,
         # Match Dolphin's installed "SDL Gamepad (Stock)" profile.
-        "Buttons/A": f"`{nintendo_face_binding('a', nintendo_layout)}`",
-        "Buttons/B": f"`{nintendo_face_binding('b', nintendo_layout)}`",
-        "Buttons/X": f"`{nintendo_face_binding('x', nintendo_layout)}`",
-        "Buttons/Y": f"`{nintendo_face_binding('y', nintendo_layout)}`",
+        "Buttons/A": "`Button A`",
+        "Buttons/B": "`Button B`",
+        "Buttons/X": "`Button X`",
+        "Buttons/Y": "`Button Y`",
         "Buttons/Z": "`Shoulder R`",
         "Buttons/Start": "`Start`",
         "Main Stick/Up": "`Left Y+`",
@@ -164,15 +160,15 @@ def _dolphin_values(device: str, sdl_index: int, nintendo_layout: bool) -> dict[
     }
 
 
-def _dolphin_classic_values(device: str, sdl_index: int, nintendo_layout: bool) -> dict[str, str]:
+def _dolphin_classic_values(device: str, sdl_index: int) -> dict[str, str]:
     prefix = f"SDL/{sdl_index}/{device}"
     return {
         "Device": prefix,
         "Extension": "Classic Controller",
-        "Classic/Buttons/A": f"`{nintendo_face_binding('a', nintendo_layout)}`",
-        "Classic/Buttons/B": f"`{nintendo_face_binding('b', nintendo_layout)}`",
-        "Classic/Buttons/X": f"`{nintendo_face_binding('x', nintendo_layout)}`",
-        "Classic/Buttons/Y": f"`{nintendo_face_binding('y', nintendo_layout)}`",
+        "Classic/Buttons/A": "`Button A`",
+        "Classic/Buttons/B": "`Button B`",
+        "Classic/Buttons/X": "`Button X`",
+        "Classic/Buttons/Y": "`Button Y`",
         "Classic/Buttons/ZL": "`Left Shoulder`",
         "Classic/Buttons/ZR": "`Right Shoulder`",
         "Classic/Buttons/-": "`Back`",
@@ -200,17 +196,11 @@ def _dolphin_classic_values(device: str, sdl_index: int, nintendo_layout: bool) 
 
 
 def ensure_retroarch_autoconfig(
-    config_root: Path | None = None, *, nintendo_layout: bool | None = None,
+    config_root: Path | None = None,
 ) -> Path:
     """Generate RetroArch's udev profile for InputPlumber's normalized pad."""
     root = config_root or PATHS.provider_config_root("retroarch")
-    if nintendo_layout is None:
-        nintendo_layout = nintendo_layout_enabled()
-    face = {
-        "a": "0", "b": "1", "x": "2", "y": "3",
-    }
-    if nintendo_layout:
-        face = {"a": "1", "b": "0", "x": "3", "y": "2"}
+    face = {"a": "0", "b": "1", "x": "2", "y": "3"}
     bindings = {
         "input_a_btn": face["a"], "input_b_btn": face["b"],
         "input_x_btn": face["x"], "input_y_btn": face["y"],
@@ -250,7 +240,6 @@ def ensure_provider_controller_config(
     device_indices: dict[int, int] | None = None,
     native_user_root: Path | None = None,
     controller_identities: dict[int, object] | None = None,
-    nintendo_layout: bool | None = None,
     real_wiimote_passthrough: bool = False,
 ) -> Path:
     """Provision native profiles for the active logical player slots."""
@@ -260,8 +249,6 @@ def ensure_provider_controller_config(
         raise ValueError("player_count must be between 1 and 4")
     device_indices = device_indices or {player: player - 1 for player in range(1, player_count + 1)}
     root = config_root or _config_root()
-    if nintendo_layout is None:
-        nintendo_layout = nintendo_layout_enabled()
     if provider == "pcsx2":
         path = root / "PCSX2" / "inis" / "PCSX2.ini"
         source = path.read_text(encoding="utf-8") if path.exists() else ""
@@ -290,7 +277,7 @@ def ensure_provider_controller_config(
             source = _replace_section(
                 source,
                 f"Pad{player}",
-                _pcsx2_values(device_indices.get(player, player - 1), nintendo_layout),
+                _pcsx2_values(device_indices.get(player, player - 1)),
             )
         _write_if_changed(path, source)
         return path
@@ -305,7 +292,6 @@ def ensure_provider_controller_config(
                 f"GCPad{player}",
                 _dolphin_values(
                     *_identity((controller_identities or {}).get(player), device_indices.get(player, player - 1)),
-                    nintendo_layout,
                 ),
             )
         _write_if_changed(path, source)
@@ -318,7 +304,6 @@ def ensure_provider_controller_config(
             wiimote_source = _replace_section(
                 wiimote_source, "Wiimote1", _dolphin_classic_values(
                     *_identity((controller_identities or {}).get(1), device_indices.get(1, 0)),
-                    nintendo_layout,
                 ),
             )
             _write_if_changed(wiimote_path, wiimote_source)

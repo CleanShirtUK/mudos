@@ -68,7 +68,7 @@ class EdenManagedProvisioningTests(unittest.TestCase):
         self.assertIn("fullscreen=false", content)
         self.assertIn("theme=keep-me", content)
         self.assertIn("[Renderer]\nbackend=1", content)
-        self.assertIn("player_0_button_a=\"engine:sdl,port:0,guid:synthetic-live-guid,button:1\"", content)
+        self.assertIn("player_0_button_a=\"engine:sdl,port:0,guid:synthetic-live-guid,button:0\"", content)
         self.assertNotIn("old-keyboard-binding", content)
         self.assertTrue(source_exists)
 
