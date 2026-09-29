@@ -12,6 +12,7 @@ import json
 import logging
 import os
 import pwd
+import re
 from pathlib import Path
 import secrets
 import shutil

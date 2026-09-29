@@ -23,6 +23,35 @@ class FakeSecrets:
 
 
 class AdminWebTests(unittest.TestCase):
+    def test_questarr_readiness_parses_usenet_executor_dbus_response(self):
+        from types import SimpleNamespace
+
+        app = AdminApp()
+        executor_state = {
+            "executor_registered": True,
+            "enabled": True,
+            "configured": True,
+            "rpc_secret_available": True,
+        }
+        busctl_output = 's ' + json.dumps(json.dumps(executor_state))
+        with patch.object(app, "service_state", return_value="active"), \
+                patch.object(app, "service_health", return_value="healthy"), \
+                patch.object(app.secrets, "configured", return_value=True), \
+                patch.object(app.secrets, "get", return_value="configured"), \
+                patch.object(app.config, "provider", return_value=SimpleNamespace(configured=True)), \
+                patch("lulu.admin_web.subprocess.run", return_value=SimpleNamespace(
+                    returncode=0, stdout=busctl_output)), \
+                patch("xmlrpc.client.ServerProxy") as gateway, \
+                patch("lulu.questarr_reconciler.QuestarrApi") as questarr_api, \
+                patch("lulu.questarr_paths.questarr_post_processing_readiness",
+                      return_value=(True, "ready")):
+            gateway.return_value.version.return_value = "24.0-mudos-gateway"
+            questarr_api.return_value.get.return_value = [{"id": "indexer"}]
+            result = app.questarr_readiness()
+
+        self.assertTrue(result["usenet_executor_ready"])
+        self.assertTrue(result["acquisitiond_reachable"])
+
     def test_deselected_provider_does_not_retain_stale_install_failure_status(self):
         app = AdminApp()
         source = [dict(id="steam", name="Steam", installed=False)]
