@@ -25,7 +25,13 @@ convention: PCSX2 `Up` consumes `DPadDown`, `Down` consumes `DPadUp`, and the
 horizontal pair is similarly exchanged.
 
 The profile is written to the service user's
-`~/.config/PCSX2/inis/PCSX2.ini` and preserves unrelated INI sections.
+`~/.config/lulu/providers/pcsx2/config/PCSX2/inis/PCSX2.ini` and preserves
+unrelated INI sections.
+Managed Flatpak launches pass PCSX2's `-datapath` explicitly to the Mudos-owned
+`PCSX2` data directory. This is necessary because Flatpak reserves
+`XDG_CONFIG_HOME` for its private tree even when an environment override is
+requested. The BIOS directory is separately exposed read-only; BIOS files are
+never copied into Flatpak-private storage.
 
 ## Dolphin
 

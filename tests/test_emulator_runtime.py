@@ -307,9 +307,10 @@ class EmulatorRuntimeTests(unittest.TestCase):
     def test_pcsx2_flatpak_wrapper_exposes_dynamic_mudos_config_and_bios(self) -> None:
         wrapper = (Path(__file__).parents[1] / "packaging/pcsx2-qt-flatpak").read_text()
         self.assertIn('"--filesystem=$config_home:rw"', wrapper)
-        self.assertIn('"--env=XDG_CONFIG_HOME=$config_home"', wrapper)
+        self.assertIn('pcsx2_args+=("-datapath" "$config_home/PCSX2")', wrapper)
         self.assertIn('"--filesystem=$bios_dir:ro"', wrapper)
         self.assertIn('"$@"', wrapper)
+        self.assertIn('"${pcsx2_args[@]}"', wrapper)
 
     def test_dolphin_controller_profile_uses_inputplumber_virtual_name(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

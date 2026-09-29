@@ -3,14 +3,16 @@ set -eu
 
 app=net.pcsx2.PCSX2
 args=()
+pcsx2_args=()
 
-# A managed local-game launch supplies the Mudos-owned PCSX2 XDG config root.
-# Explicitly expose it: Flatpak otherwise redirects XDG_CONFIG_HOME to the
-# app-private tree, so the generated BIOS, wizard and Pad configuration is
-# ignored. Keep ordinary/manual launches on Flatpak's normal private config.
+# A managed local-game launch supplies Mudos' XDG config root. Flatpak reserves
+# XDG_CONFIG_HOME for its private tree even with --env, so pass PCSX2's native
+# -datapath option to select the Mudos-owned PCSX2 data directory explicitly.
+# Keep ordinary/manual launches on Flatpak's normal private config.
 if [ -n "${MUDOS_PCSX2_CONFIG_HOME:-}" ]; then
     config_home=$MUDOS_PCSX2_CONFIG_HOME
-    args+=("--filesystem=$config_home:rw" "--env=XDG_CONFIG_HOME=$config_home")
+    args+=("--filesystem=$config_home:rw")
+    pcsx2_args+=("-datapath" "$config_home/PCSX2")
 fi
 
 # BIOS files remain authoritative in Mudos storage and are exposed read-only.
@@ -21,4 +23,4 @@ if [ -n "${MUDOS_PCSX2_BIOS_DIR:-}" ]; then
 fi
 
 # Preserve paths (including spaces) and the game's argv exactly.
-exec /usr/bin/flatpak run --system "${args[@]}" "$app" "$@"
+exec /usr/bin/flatpak run --system "${args[@]}" "$app" "${pcsx2_args[@]}" "$@"
