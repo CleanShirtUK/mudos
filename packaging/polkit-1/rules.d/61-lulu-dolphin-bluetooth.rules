@@ -1,8 +1,12 @@
 // The root helper accepts only acquire/release and the configured adapter.
 polkit.addRule(function(action, subject) {
+    // pkexec canonicalizes /opt/lulu/current before PolicyKit evaluates the
+    // action, so the program detail names the immutable release directory.
+    var program = action.lookup("program");
     if (subject.user == "lulu" &&
         action.id == "org.freedesktop.policykit.exec" &&
-        action.lookup("program") == "/opt/lulu/current/scripts/dolphin-bluetooth-lease.py") {
+        program &&
+        /^\/opt\/lulu\/releases\/[A-Za-z0-9._-]+\/scripts\/dolphin-bluetooth-lease\.py$/.test(program)) {
         return polkit.Result.YES;
     }
 });

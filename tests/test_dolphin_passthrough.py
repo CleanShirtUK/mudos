@@ -265,6 +265,10 @@ class DolphinPassthroughTests(unittest.TestCase):
         self.assertIn('ATTR{idVendor}=="0bda", ATTR{idProduct}=="8771", TAG+="uaccess"', rule)
         self.assertIn('id = "dolphin-quit"', provider)
         self.assertIn('target = "process-group-terminate"', provider)
+        polkit_rule = (ROOT / "packaging/polkit-1/rules.d/61-lulu-dolphin-bluetooth.rules").read_text()
+        self.assertIn("/opt\\/lulu\\/releases\\/", polkit_rule)
+        self.assertIn("dolphin-bluetooth-lease\\.py$", polkit_rule)
+        self.assertNotIn('action.lookup("program") == "/opt/lulu/current/', polkit_rule)
         with tempfile.TemporaryDirectory() as directory:
             config = Path(directory) / "Dolphin.ini"
             original = (
