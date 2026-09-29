@@ -265,6 +265,9 @@ def ensure_provider_controller_config(
             source,
             "UI",
             {
+                # PCSX2 2.8.2 prompts to reset settings when this version
+                # marker is absent or does not match its supported version.
+                "SettingsVersion": "1",
                 "ConfirmShutdown": "false",
                 "StartFullscreen": "true",
                 "StartBigPictureMode": "false",

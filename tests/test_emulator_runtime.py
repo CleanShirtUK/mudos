@@ -266,6 +266,7 @@ class EmulatorRuntimeTests(unittest.TestCase):
             self.assertIn("ConfirmShutdown = false", first)
             self.assertIn("StartFullscreen = true", first)
             self.assertIn("StartBigPictureMode = false", first)
+            self.assertIn("SettingsVersion = 1", first)
             self.assertIn("SetupWizardIncomplete = false", first)
             self.assertIn("OpenPauseMenu = Keyboard/F12", first)
             self.assertIn("[EmuCore/GS]\nRenderer = -1", first)
