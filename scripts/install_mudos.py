@@ -32,6 +32,9 @@ SYSTEMD_UNITS = {
     "lulu-questarr-auth-proxy.service": "lulu-questarr-auth-proxy.service",
     "lulu-questarr-pam-auth.service": "lulu-questarr-pam-auth.service",
 }
+DOLPHIN_BLUETOOTH_POLKIT_RULE = Path(
+    "/etc/polkit-1/rules.d/61-lulu-dolphin-bluetooth.rules"
+)
 
 
 def load_manifest(path: Path) -> dict:
@@ -637,6 +640,11 @@ def do_update(repo: Path, manifest: dict, dry_run: bool,
     for target in SYSTEMD_UNITS.values():
         path = systemd_root / target
         old_units[path] = (path.read_bytes(), path.stat().st_mode & 0o777) if path.is_file() else None
+    old_dolphin_polkit_rule = (
+        (DOLPHIN_BLUETOOTH_POLKIT_RULE.read_bytes(),
+         DOLPHIN_BLUETOOTH_POLKIT_RULE.stat().st_mode & 0o777)
+        if DOLPHIN_BLUETOOTH_POLKIT_RULE.is_file() else None
+    )
     created_aliases: list[Path] = []
     selected_new_release = False
     try:
@@ -644,6 +652,13 @@ def do_update(repo: Path, manifest: dict, dry_run: bool,
         run(["systemctl", "daemon-reload"])
         run([sys.executable, str(repo / "scripts/release.py"), "activate", "--release-dir", str(release)])
         selected_new_release = True
+        dolphin_polkit_source = packaging / "polkit-1/rules.d/61-lulu-dolphin-bluetooth.rules"
+        if not dolphin_polkit_source.is_file():
+            raise InstallError("release is missing the Dolphin Bluetooth Polkit rule")
+        DOLPHIN_BLUETOOTH_POLKIT_RULE.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(dolphin_polkit_source, DOLPHIN_BLUETOOTH_POLKIT_RULE)
+        DOLPHIN_BLUETOOTH_POLKIT_RULE.chmod(0o644)
+        run(["systemctl", "reload", "polkit.service"])
         for raw in manifest["immutable"]["application_roots"]:
             alias = Path(raw)
             if not alias.is_symlink():
@@ -683,6 +698,13 @@ def do_update(repo: Path, manifest: dict, dry_run: bool,
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_bytes(old[0])
                 path.chmod(old[1])
+        if old_dolphin_polkit_rule is None:
+            DOLPHIN_BLUETOOTH_POLKIT_RULE.unlink(missing_ok=True)
+        else:
+            DOLPHIN_BLUETOOTH_POLKIT_RULE.parent.mkdir(parents=True, exist_ok=True)
+            DOLPHIN_BLUETOOTH_POLKIT_RULE.write_bytes(old_dolphin_polkit_rule[0])
+            DOLPHIN_BLUETOOTH_POLKIT_RULE.chmod(old_dolphin_polkit_rule[1])
+        run(["systemctl", "reload", "polkit.service"], check=False)
         for alias in created_aliases:
             alias.unlink(missing_ok=True)
         run(["systemctl", "daemon-reload"], check=False)

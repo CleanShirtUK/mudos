@@ -68,6 +68,7 @@ def test_update_repairs_only_steam_bootstrap_directory_metadata(tmp_path, monkey
 
 def test_transmission_admin_config_unit_and_polkit_rule_are_installed_and_purge_owned():
     data = manifest()
+    assert "/etc/polkit-1/rules.d/61-lulu-dolphin-bluetooth.rules" in data["system_integration"]["system_files"]
     assert "/etc/systemd/system/lulu-transmission-config.service" in data["system_integration"]["systemd_files"]
     assert "/etc/polkit-1/rules.d/54-lulu-transmission.rules" in data["system_integration"]["system_files"]
     assert "/etc/polkit-1/rules.d/55-lulu-transmission-config.rules" in data["system_integration"]["system_files"]
@@ -139,6 +140,9 @@ def test_update_selects_verified_release_without_touching_mutable_state(tmp_path
     (candidate / "RELEASE").write_text(f"revision={revision}\nstatus=clean\nimmutable=true\n")
     for source in installer.SYSTEMD_UNITS:
         (candidate / "packaging" / source).write_text(f"# updated {source}\n")
+    candidate_polkit = candidate / "packaging/polkit-1/rules.d"
+    candidate_polkit.mkdir(parents=True)
+    (candidate_polkit / "61-lulu-dolphin-bluetooth.rules").write_text("updated bluetooth rule\n")
     mutable_state = tmp_path / "user-state" / "provider-secret"
     mutable_state.parent.mkdir()
     mutable_state.write_text("keep-this-byte-for-byte")
@@ -173,11 +177,15 @@ def test_update_selects_verified_release_without_touching_mutable_state(tmp_path
 
     monkeypatch.setattr(installer, "run", fake_run)
     systemd_root = tmp_path / "etc/systemd/system"
+    polkit_rule = tmp_path / "etc/polkit-1/rules.d/61-lulu-dolphin-bluetooth.rules"
+    monkeypatch.setattr(installer, "DOLPHIN_BLUETOOTH_POLKIT_RULE", polkit_rule)
     steam_data_root = tmp_path / "Steam"
     installer.do_update(ROOT, data, False, systemd_root=systemd_root,
                         steam_data_root=steam_data_root)
 
     assert selector.resolve() == candidate
+    assert polkit_rule.read_text() == "updated bluetooth rule\n"
+    assert ["systemctl", "reload", "polkit.service"] in commands
     assert previous.is_dir()  # retained immutable rollback release
     assert mutable_state.read_bytes() == before_state
     assert not steam_data_root.exists()  # update does not initialize absent Steam state
