@@ -275,14 +275,13 @@ class DolphinPassthroughTests(unittest.TestCase):
             config = Path(directory) / "Dolphin.ini"
             original = (
                 "[BluetoothPassthrough]\nEnabled = False\nVID = 1\nPID = 2\n"
-                "[Core]\nWiimoteSource0 = 1\nUnrelated = keep\n"
+                "[Core]\nUnrelated = keep\n"
             )
             config.write_text(original)
             lease = DolphinBluetoothLease(Path("/helper"), config, "c" * 32, {
                 "BluetoothPassthrough.Enabled": "False",
                 "BluetoothPassthrough.VID": "1",
                 "BluetoothPassthrough.PID": "2",
-                "Core.WiimoteSource0": "1",
             })
             with patch("lulu.dolphin_passthrough.subprocess.run") as run:
                 run.return_value = type("Result", (), {"returncode": 0})()
@@ -290,7 +289,7 @@ class DolphinPassthroughTests(unittest.TestCase):
                 self.assertEqual(NativeConfigAdapter(config).get("BluetoothPassthrough", "Enabled"), "True")
                 self.assertEqual(NativeConfigAdapter(config).get("BluetoothPassthrough", "VID"), "3034")
                 self.assertEqual(NativeConfigAdapter(config).get("BluetoothPassthrough", "PID"), "34673")
-                self.assertEqual(NativeConfigAdapter(config).get("Core", "WiimoteSource0"), "2")
+                self.assertEqual(NativeConfigAdapter(config).get("Core", "Unrelated"), "keep")
                 lease.release()
             self.assertEqual(config.read_text(), original)
             self.assertFalse(dolphin_config_lease_path(config).exists())
@@ -298,13 +297,12 @@ class DolphinPassthroughTests(unittest.TestCase):
     def test_failed_launch_acquisition_rolls_back_every_temporary_config_key(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             config = Path(directory) / "Dolphin.ini"
-            original = "[Interface]\nLanguageCode = en\n[Core]\nWiimoteSource0 = 1\n"
+            original = "[Interface]\nLanguageCode = en\n[Core]\nUnrelated = keep\n"
             config.write_text(original)
             lease = DolphinBluetoothLease(Path("/helper"), config, "f" * 32, {
                 "BluetoothPassthrough.Enabled": None,
                 "BluetoothPassthrough.VID": None,
                 "BluetoothPassthrough.PID": None,
-                "Core.WiimoteSource0": "1",
             })
             with patch("lulu.dolphin_passthrough.subprocess.run", side_effect=[
                 __import__("subprocess").CalledProcessError(1, "pkexec"),
@@ -332,21 +330,20 @@ class DolphinPassthroughTests(unittest.TestCase):
             config = Path(directory) / "Dolphin.ini"
             config.write_text(
                 "[BluetoothPassthrough]\nEnabled = True\nVID = 3034\nPID = 34673\n"
-                "[Core]\nWiimoteSource0 = 2\n"
+                "[Core]\nUnrelated = keep\n"
             )
             lease_path = dolphin_config_lease_path(config)
             lease_path.write_text(json.dumps({"token": "g" * 32, "values": {
                 "BluetoothPassthrough.Enabled": "False",
                 "BluetoothPassthrough.VID": None,
                 "BluetoothPassthrough.PID": None,
-                "Core.WiimoteSource0": "1",
             }}))
             self.assertTrue(_restore_persisted_config(config))
             restored = NativeConfigAdapter(config)
             self.assertEqual(restored.get("BluetoothPassthrough", "Enabled"), "False")
             self.assertIsNone(restored.get("BluetoothPassthrough", "VID"))
             self.assertIsNone(restored.get("BluetoothPassthrough", "PID"))
-            self.assertEqual(restored.get("Core", "WiimoteSource0"), "1")
+            self.assertEqual(restored.get("Core", "Unrelated"), "keep")
             self.assertFalse(lease_path.exists())
 
     def test_session_recovery_restores_adapter_then_persisted_dolphin_config(self) -> None:
@@ -354,13 +351,12 @@ class DolphinPassthroughTests(unittest.TestCase):
             config = Path(directory) / "Dolphin.ini"
             config.write_text(
                 "[BluetoothPassthrough]\nEnabled = True\nVID = 3034\nPID = 34673\n"
-                "[Core]\nWiimoteSource0 = 2\n"
+                "[Core]\nUnrelated = keep\n"
             )
             dolphin_config_lease_path(config).write_text(json.dumps({"token": "j" * 32, "values": {
                 "BluetoothPassthrough.Enabled": "False",
                 "BluetoothPassthrough.VID": "3034",
                 "BluetoothPassthrough.PID": "34673",
-                "Core.WiimoteSource0": "1",
             }}))
             async def recover() -> None:
                 with patch("lulu.dolphin_passthrough.dolphin_config_path", return_value=config), \
@@ -371,7 +367,7 @@ class DolphinPassthroughTests(unittest.TestCase):
             asyncio.run(recover())
             restored = NativeConfigAdapter(config)
             self.assertEqual(restored.get("BluetoothPassthrough", "Enabled"), "False")
-            self.assertEqual(restored.get("Core", "WiimoteSource0"), "1")
+            self.assertEqual(restored.get("Core", "Unrelated"), "keep")
             self.assertFalse(dolphin_config_lease_path(config).exists())
 
     def test_active_passthrough_release_retries_transient_adapter_restore_failure(self) -> None:

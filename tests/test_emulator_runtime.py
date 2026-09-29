@@ -326,18 +326,17 @@ class EmulatorRuntimeTests(unittest.TestCase):
             self.assertIn("[GCPad4]", content)
             self.assertIn("Device = SDL/3/SDL Gamepad", content)
 
-            dolphin = Path(directory) / "dolphin-emu" / "Config" / "Dolphin.ini"
+            dolphin = Path(directory) / "dolphin-emu" / "Dolphin.ini"
             dolphin_content = dolphin.read_text()
             self.assertIn("SIDevice0 = 6", dolphin_content)
             self.assertIn("SIDevice1 = 6", dolphin_content)
             self.assertIn("SIDevice2 = 6", dolphin_content)
             self.assertIn("SIDevice3 = 6", dolphin_content)
-            self.assertIn("WiimoteSource0 = 1", dolphin_content)
             self.assertIn("WiimoteContinuousScanning = True", dolphin_content)
             self.assertIn("[Interface]", dolphin_content)
             self.assertIn("ConfirmStop = false", dolphin_content)
 
-            wiimote = Path(directory) / "dolphin-emu" / "Config" / "WiimoteNew.ini"
+            wiimote = Path(directory) / "dolphin-emu" / "WiimoteNew.ini"
             wiimote_content = wiimote.read_text()
             self.assertIn("[Wiimote1]", wiimote_content)
             self.assertIn("Extension = Classic Controller", wiimote_content)
@@ -348,7 +347,7 @@ class EmulatorRuntimeTests(unittest.TestCase):
     def test_dolphin_sync_hotkey_update_preserves_unrelated_hotkeys(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            config_root = root / "dolphin-emu" / "Config"
+            config_root = root / "dolphin-emu"
             config_root.mkdir(parents=True)
             hotkeys = config_root / "Hotkeys.ini"
             hotkeys.write_text(
@@ -367,7 +366,7 @@ class EmulatorRuntimeTests(unittest.TestCase):
     def test_dolphin_continuous_wiimote_scan_preserves_other_core_options(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            dolphin_ini = root / "dolphin-emu" / "Config" / "Dolphin.ini"
+            dolphin_ini = root / "dolphin-emu" / "Dolphin.ini"
             dolphin_ini.parent.mkdir(parents=True)
             dolphin_ini.write_text("[Core]\nCustomPreference = keep\nWiimoteContinuousScanning = False\n")
             ensure_provider_controller_config("dolphin", root, 1, {1: 0})
@@ -378,7 +377,7 @@ class EmulatorRuntimeTests(unittest.TestCase):
     def test_dolphin_stop_confirmation_update_preserves_other_preferences(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            config = root / "dolphin-emu" / "Config" / "Dolphin.ini"
+            config = root / "dolphin-emu" / "Dolphin.ini"
             config.parent.mkdir(parents=True)
             config.write_text("[Interface]\nConfirmStop = true\nLanguageCode = en\n\n"
                               "[Core]\nCustomPreference = keep\n")
@@ -438,18 +437,18 @@ class EmulatorRuntimeTests(unittest.TestCase):
             standard = ensure_provider_controller_config(
                 "dolphin", root, 1, {1: 0}, real_wiimote_passthrough=False,
             )
-            dolphin_ini = standard.parent / "Dolphin.ini"
-            self.assertIn("WiimoteSource0 = 1", dolphin_ini.read_text())
+            wiimote_ini = standard.with_name("WiimoteNew.ini")
+            self.assertIn("Source = 1", wiimote_ini.read_text())
             passthrough = ensure_provider_controller_config(
                 "dolphin", root, 1, {1: 0}, real_wiimote_passthrough=True,
             )
-            self.assertIn("WiimoteSource0 = 2", dolphin_ini.read_text())
+            self.assertIn("Source = 2", wiimote_ini.read_text())
             self.assertIn("Buttons/A = `Button A`", passthrough.with_name("GCPadNew.ini").read_text())
 
     def test_passthrough_keeps_native_wiimote_mapping_untouched(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            dolphin_root = root / "dolphin-emu" / "Config"
+            dolphin_root = root / "dolphin-emu"
             dolphin_root.mkdir(parents=True)
             native_remote = dolphin_root / "WiimoteNew.ini"
             original = "[Wiimote1]\nDevice = Bluetooth passthrough\nButtons/A = `A`\n"
@@ -460,7 +459,8 @@ class EmulatorRuntimeTests(unittest.TestCase):
             )
             gc_pads = generated.read_text()
             native_remote_content = native_remote.read_text()
-        self.assertEqual(native_remote_content, original)
+        self.assertIn("Buttons/A = `A`", native_remote_content)
+        self.assertIn("Source = 2", native_remote_content)
         self.assertIn("Buttons/A = `Button A`", gc_pads)
         self.assertIn("[GCPad2]", gc_pads)
         self.assertIn("Device = SDL/2/SDL Gamepad", gc_pads)
@@ -494,7 +494,7 @@ class EmulatorRuntimeTests(unittest.TestCase):
 
         root = PATHS.provider_config_root("dolphin")
         self.assertEqual(
-            dolphin_config_path(), root / "dolphin-emu" / "Config" / "Dolphin.ini",
+            dolphin_config_path(), root / "dolphin-emu" / "Dolphin.ini",
         )
         with tempfile.TemporaryDirectory() as directory:
             provider_root = Path(directory)
@@ -503,8 +503,10 @@ class EmulatorRuntimeTests(unittest.TestCase):
                 provider_root / "dolphin-emu",
             )
             self.assertEqual(
-                generated, provider_root / "dolphin-emu" / "Config" / "GCPadNew.ini",
+                generated, provider_root / "dolphin-emu" / "GCPadNew.ini",
             )
+            self.assertTrue((provider_root / "dolphin-emu" / "Hotkeys.ini").is_file())
+            self.assertFalse((provider_root / "dolphin-emu" / "Config").exists())
 
     def test_retroarch_generated_autoconfig_uses_native_face_buttons(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

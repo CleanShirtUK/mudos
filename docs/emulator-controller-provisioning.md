@@ -29,21 +29,25 @@ The profile is written to the service user's
 
 ## Dolphin
 
-Dolphin's native GameCube profile is `Config/GCPadNew.ini`. The first profile
+Dolphin 2606 stores `GCPadNew.ini`, `WiimoteNew.ini`, `Dolphin.ini`, and
+`Hotkeys.ini` directly under its per-user `dolphin-emu` directory (not in a
+nested `Config/` directory). Mudos provisions the files Dolphin actually loads.
+The native GameCube profile's first port
 selects the current `SDL/<index>/<name>` identity and uses Dolphin's SDL semantic controls
 for face buttons, shoulders, sticks, triggers, d-pad, and Start. Face buttons
 retain their native logical mappings; Mudos performs no face-button translation.
 
-The profile is written below the `--user` root at
-`~/.config/lulu/providers/dolphin/config/Config/GCPadNew.ini` and preserves
-other controller slots and unrelated settings.
+The profile is written at
+`~/.config/lulu/providers/dolphin/config/dolphin-emu/GCPadNew.ini` and preserves
+other controller slots and unrelated settings. The real-Wii-Remote setting is
+stored as `Source = 2` in `WiimoteNew.ini`; standard emulation uses `Source = 1`.
 
 For the Wii validation path, Dolphin's GameCube Port 1 is explicitly set to a
 standard GameCube controller with `SIDevice0 = 6`; all four GameCube ports are
 enabled and receive Mudos-owned SDL gamepad profiles. Dolphin's continuous
 Wiimote scan option remains enabled so Bluetooth passthrough can discover
 remotes. The Guide menu's Dolphin-only **Sync Wii Remotes** action sends the
-`Ctrl+Shift+F12` chord bound to Dolphin's Wii Remote Sync hotkey. This does not
+`Ctrl+Shift+F12` chord bound in Dolphin's active `Hotkeys.ini`. This does not
 create a global OS shortcut. Real Bluetooth passthrough remains Dolphin-owned.
 
 ## Provisioning Boundary

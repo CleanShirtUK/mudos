@@ -164,6 +164,7 @@ def _dolphin_classic_values(device: str, sdl_index: int) -> dict[str, str]:
     prefix = f"SDL/{sdl_index}/{device}"
     return {
         "Device": prefix,
+        "Source": "1",
         "Extension": "Classic Controller",
         "Classic/Buttons/A": "`Button A`",
         "Classic/Buttons/B": "`Button B`",
@@ -282,8 +283,9 @@ def ensure_provider_controller_config(
         _write_if_changed(path, source)
         return path
     if provider == "dolphin":
-        # Dolphin 5.x resolves --user/<root> native settings under Config/.
-        dolphin_root = (native_user_root or (root / "dolphin-emu")) / "Config"
+        # Dolphin 2606 stores native user files directly in its user directory
+        # (the path ending in dolphin-emu), not in a nested Config/ directory.
+        dolphin_root = native_user_root or (root / "dolphin-emu")
         path = dolphin_root / "GCPadNew.ini"
         source = path.read_text(encoding="utf-8") if path.exists() else ""
         fallback_identity = next(iter((controller_identities or {}).values()), None)
@@ -314,13 +316,17 @@ def ensure_provider_controller_config(
                     *_identity((controller_identities or {}).get(1), device_indices.get(1, 0)),
                 ),
             )
-            _write_if_changed(wiimote_path, wiimote_source)
+        else:
+            # Keep Dolphin's real-remote bindings untouched; only select the
+            # real Bluetooth source for Wii Remote 1.
+            wiimote_source = _update_section_values(
+                wiimote_source, "Wiimote1", {"Source": "2"},
+            )
+        _write_if_changed(wiimote_path, wiimote_source)
         dolphin_path = dolphin_root / "Dolphin.ini"
         dolphin_source = dolphin_path.read_text(encoding="utf-8") if dolphin_path.exists() else ""
         sidevices = {f"SIDevice{port}": "6" for port in range(4)}
-        # Real Bluetooth passthrough remains governed by Dolphin's existing
-        # Wiimote lease/source configuration, independent of GC pad ports.
-        sidevices["WiimoteSource0"] = "2" if real_wiimote_passthrough else "1"
+        # Wii Remote source selection is stored per remote in WiimoteNew.ini.
         dolphin_source = _update_section_values(
             dolphin_source, "Interface", {"ConfirmStop": "false"},
         )

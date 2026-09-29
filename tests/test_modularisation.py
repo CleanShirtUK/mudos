@@ -67,8 +67,10 @@ class ModularisationTests(unittest.TestCase):
             path = ensure_provider_controller_config(
                 "dolphin", root / "xdg", native_user_root=root / "lulu-dolphin"
             )
-            self.assertEqual(path, root / "lulu-dolphin/Config/GCPadNew.ini")
-            self.assertTrue((root / "lulu-dolphin/Config/Dolphin.ini").is_file())
+            self.assertEqual(path, root / "lulu-dolphin/GCPadNew.ini")
+            self.assertTrue((root / "lulu-dolphin/Dolphin.ini").is_file())
+            self.assertTrue((root / "lulu-dolphin/Hotkeys.ini").is_file())
+            self.assertTrue((root / "lulu-dolphin/WiimoteNew.ini").is_file())
 
     def test_user_registry_override_is_deterministic(self):
         with tempfile.TemporaryDirectory() as temporary:

@@ -21,7 +21,7 @@ ADAPTER_PRODUCT_ID = "8771"
 
 
 def dolphin_config_path() -> Path:
-    return PATHS.provider_config_root("dolphin") / "dolphin-emu" / "Config" / "Dolphin.ini"
+    return PATHS.provider_config_root("dolphin") / "dolphin-emu" / "Dolphin.ini"
 
 
 def dolphin_config_lease_path(config_path: Path | None = None) -> Path:
@@ -33,7 +33,6 @@ _LEASED_KEYS = (
     ("BluetoothPassthrough", "Enabled"),
     ("BluetoothPassthrough", "VID"),
     ("BluetoothPassthrough", "PID"),
-    ("Core", "WiimoteSource0"),
 )
 
 
@@ -114,7 +113,6 @@ class DolphinBluetoothLease:
             config.set("BluetoothPassthrough", "VID", str(int(ADAPTER_VENDOR_ID, 16)))
             config.set("BluetoothPassthrough", "PID", str(int(ADAPTER_PRODUCT_ID, 16)))
             config.set("BluetoothPassthrough", "Enabled", "True")
-            config.set("Core", "WiimoteSource0", "2")
             subprocess.run(
                 ["pkexec", str(self.helper), "acquire", self.token, str(os.getpid())],
                 check=True, capture_output=True, text=True, timeout=20,
