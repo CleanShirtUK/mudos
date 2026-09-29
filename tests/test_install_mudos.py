@@ -143,6 +143,9 @@ def test_update_selects_verified_release_without_touching_mutable_state(tmp_path
     candidate_polkit = candidate / "packaging/polkit-1/rules.d"
     candidate_polkit.mkdir(parents=True)
     (candidate_polkit / "61-lulu-dolphin-bluetooth.rules").write_text("updated bluetooth rule\n")
+    candidate_udev = candidate / "packaging/udev"
+    candidate_udev.mkdir(parents=True)
+    (candidate_udev / "82-lulu-dolphin-bluetooth.rules").write_text("updated adapter permissions\n")
     mutable_state = tmp_path / "user-state" / "provider-secret"
     mutable_state.parent.mkdir()
     mutable_state.write_text("keep-this-byte-for-byte")
@@ -179,12 +182,18 @@ def test_update_selects_verified_release_without_touching_mutable_state(tmp_path
     systemd_root = tmp_path / "etc/systemd/system"
     polkit_rule = tmp_path / "etc/polkit-1/rules.d/61-lulu-dolphin-bluetooth.rules"
     monkeypatch.setattr(installer, "DOLPHIN_BLUETOOTH_POLKIT_RULE", polkit_rule)
+    udev_rule = tmp_path / "etc/udev/rules.d/82-lulu-dolphin-bluetooth.rules"
+    monkeypatch.setattr(installer, "DOLPHIN_BLUETOOTH_UDEV_RULE", udev_rule)
     steam_data_root = tmp_path / "Steam"
     installer.do_update(ROOT, data, False, systemd_root=systemd_root,
                         steam_data_root=steam_data_root)
 
     assert selector.resolve() == candidate
     assert polkit_rule.read_text() == "updated bluetooth rule\n"
+    assert udev_rule.read_text() == "updated adapter permissions\n"
+    assert ["udevadm", "control", "--reload-rules"] in commands
+    assert ["udevadm", "trigger", "--action=add", "--subsystem-match=usb",
+            "--attr-match=idVendor=0bda", "--attr-match=idProduct=8771"] in commands
     assert ["systemctl", "reload", "polkit.service"] in commands
     assert previous.is_dir()  # retained immutable rollback release
     assert mutable_state.read_bytes() == before_state

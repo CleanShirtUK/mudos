@@ -35,6 +35,9 @@ SYSTEMD_UNITS = {
 DOLPHIN_BLUETOOTH_POLKIT_RULE = Path(
     "/etc/polkit-1/rules.d/61-lulu-dolphin-bluetooth.rules"
 )
+DOLPHIN_BLUETOOTH_UDEV_RULE = Path(
+    "/etc/udev/rules.d/82-lulu-dolphin-bluetooth.rules"
+)
 
 
 def load_manifest(path: Path) -> dict:
@@ -652,6 +655,11 @@ def do_update(repo: Path, manifest: dict, dry_run: bool,
          DOLPHIN_BLUETOOTH_POLKIT_RULE.stat().st_mode & 0o777)
         if DOLPHIN_BLUETOOTH_POLKIT_RULE.is_file() else None
     )
+    old_dolphin_udev_rule = (
+        (DOLPHIN_BLUETOOTH_UDEV_RULE.read_bytes(),
+         DOLPHIN_BLUETOOTH_UDEV_RULE.stat().st_mode & 0o777)
+        if DOLPHIN_BLUETOOTH_UDEV_RULE.is_file() else None
+    )
     created_aliases: list[Path] = []
     selected_new_release = False
     try:
@@ -666,6 +674,18 @@ def do_update(repo: Path, manifest: dict, dry_run: bool,
         shutil.copy2(dolphin_polkit_source, DOLPHIN_BLUETOOTH_POLKIT_RULE)
         DOLPHIN_BLUETOOTH_POLKIT_RULE.chmod(0o644)
         run(["systemctl", "reload", "polkit.service"])
+        dolphin_udev_source = packaging / "udev/82-lulu-dolphin-bluetooth.rules"
+        if not dolphin_udev_source.is_file():
+            raise InstallError("release is missing the Dolphin Bluetooth udev rule")
+        DOLPHIN_BLUETOOTH_UDEV_RULE.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(dolphin_udev_source, DOLPHIN_BLUETOOTH_UDEV_RULE)
+        DOLPHIN_BLUETOOTH_UDEV_RULE.chmod(0o644)
+        run(["udevadm", "control", "--reload-rules"])
+        run([
+            "udevadm", "trigger", "--action=add", "--subsystem-match=usb",
+            "--attr-match=idVendor=0bda", "--attr-match=idProduct=8771",
+        ])
+        run(["udevadm", "settle"])
         for raw in manifest["immutable"]["application_roots"]:
             alias = Path(raw)
             if not alias.is_symlink():
@@ -712,6 +732,18 @@ def do_update(repo: Path, manifest: dict, dry_run: bool,
             DOLPHIN_BLUETOOTH_POLKIT_RULE.write_bytes(old_dolphin_polkit_rule[0])
             DOLPHIN_BLUETOOTH_POLKIT_RULE.chmod(old_dolphin_polkit_rule[1])
         run(["systemctl", "reload", "polkit.service"], check=False)
+        if old_dolphin_udev_rule is None:
+            DOLPHIN_BLUETOOTH_UDEV_RULE.unlink(missing_ok=True)
+        else:
+            DOLPHIN_BLUETOOTH_UDEV_RULE.parent.mkdir(parents=True, exist_ok=True)
+            DOLPHIN_BLUETOOTH_UDEV_RULE.write_bytes(old_dolphin_udev_rule[0])
+            DOLPHIN_BLUETOOTH_UDEV_RULE.chmod(old_dolphin_udev_rule[1])
+        run(["udevadm", "control", "--reload-rules"], check=False)
+        run([
+            "udevadm", "trigger", "--action=add", "--subsystem-match=usb",
+            "--attr-match=idVendor=0bda", "--attr-match=idProduct=8771",
+        ], check=False)
+        run(["udevadm", "settle"], check=False)
         for alias in created_aliases:
             alias.unlink(missing_ok=True)
         run(["systemctl", "daemon-reload"], check=False)
