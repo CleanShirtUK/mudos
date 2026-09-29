@@ -17,7 +17,8 @@ record_image_id=${LULU_QUESTARR_RECORD_IMAGE_ID:-0}
 pin_existing=${LULU_QUESTARR_PIN_EXISTING:-0}
 build_root=${LULU_QUESTARR_BUILD_ROOT:-/var/lib/lulu-questarr/build/questarr-v1.4.2-mudos1}
 source_root="$build_root/source"
-tag=localhost/mudos-questarr:1.4.2-mudos1
+image_repository=localhost/mudos-questarr
+tag="$image_repository:1.4.2-mudos1"
 
 [[ $source_commit =~ ^[0-9a-f]{40}$ ]] || {
   echo "Questarr image lock is incomplete or malformed." >&2
@@ -58,13 +59,13 @@ persist_image_pin() {
   local image_digest=$1
   data_root=${LULU_QUESTARR_DATA_ROOT:-/var/lib/lulu-questarr}
   install -d -o root -g root -m 0755 "$data_root"
-  printf '%s@%s\n' "$tag" "$image_digest" > "$data_root/questarr-image-ref.new"
+  printf '%s@%s\n' "$image_repository" "$image_digest" > "$data_root/questarr-image-ref.new"
   chmod 0644 "$data_root/questarr-image-ref.new"
   mv -f "$data_root/questarr-image-ref.new" "$data_root/questarr-image-ref"
 }
 
 if [[ $pin_existing == 1 ]]; then
-  immutable_ref="$tag@$expected_image_digest"
+  immutable_ref="$image_repository@$expected_image_digest"
   actual_image_id=$(podman image inspect --format '{{.Id}}' "$immutable_ref")
   actual_image_digest=$(podman image inspect --format '{{.Digest}}' "$immutable_ref")
   recipe_label=$(podman image inspect --format '{{ index .Config.Labels "org.mudos.questarr.build-recipe-commit" }}' "$immutable_ref")
@@ -78,7 +79,7 @@ if [[ $pin_existing == 1 ]]; then
     exit 78
   }
   persist_image_pin "$actual_image_digest"
-  printf 'Questarr image pinned: %s@%s (image id %s)\n' "$tag" "$actual_image_digest" "$actual_image_id"
+  printf 'Questarr image pinned: %s@%s (image id %s)\n' "$image_repository" "$actual_image_digest" "$actual_image_id"
   exit 0
 fi
 
@@ -142,4 +143,4 @@ else
 fi
 
 persist_image_pin "$actual_image_digest"
-printf 'Questarr image pinned: %s@%s (image id %s)\n' "$tag" "$actual_image_digest" "$actual_image_id"
+printf 'Questarr image pinned: %s@%s (image id %s)\n' "$image_repository" "$actual_image_digest" "$actual_image_id"

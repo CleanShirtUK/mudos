@@ -48,6 +48,7 @@ class QuestarrIntegrationTests(unittest.TestCase):
         self.assertIn("upstream_git_commit=0320b6f3123532e77346292a2d0836e6582f6010", lock)
         self.assertIn("upstream_image=ghcr.io/doezer/questarr@sha256:6faaf75f484a20805309315dd9eb9f1550b039a668efb89c13fc028c72b45485", lock)
         self.assertIn("image_digest=sha256:b460c1209c2a6047df58ad4eab35aba5eb20d58a08c86a955f3cce8b1c9e23c6", lock)
+        self.assertIn('image_repository=localhost/mudos-questarr', builder)
         self.assertIn("DestDir", patch)
         self.assertIn("downloadDir", patch)
         locked_patch_sha = next(line.split("=", 1)[1] for line in lock.splitlines()
