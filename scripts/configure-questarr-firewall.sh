@@ -10,3 +10,12 @@ subnet=${LULU_LAN_SUBNET:-$(ip -4 route show dev "$interface" proto kernel scope
 [ -n "$subnet" ] || subnet=192.168.0.0/24
 
 ufw allow in on "$interface" from "$subnet" to any port 5000 proto tcp comment 'Mudos Questarr'
+
+# Rootful Podman bridge containers need stateful outbound routing for DNS and
+# image-build package downloads. Keep this scoped to Podman's subnet, bridge,
+# and current default-route uplink; do not relax global UFW forwarding policy.
+podman_subnet=$(podman network inspect podman | python -c \
+  'import json,sys; print(json.load(sys.stdin)[0]["subnets"][0]["subnet"])')
+[ -n "$podman_subnet" ] || exit 78
+ufw route allow in on podman0 out on "$interface" from "$podman_subnet" to any \
+  comment 'Mudos Podman container egress'

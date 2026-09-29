@@ -67,6 +67,7 @@ rm -f "$source_root/server/nzbget-destdir.spec.ts" \
 git -C "$source_root" apply "$package_root/patches/$patch_file"
 install -m 0644 "$package_root/tests/nzbget-destdir.spec.ts" \
   "$source_root/server/nzbget-destdir.spec.ts"
+printf '!vitest.config.ts\n' >> "$source_root/.dockerignore"
 
 source_epoch=$(git -C "$source_root" show -s --format=%ct "$source_commit")
 podman pull "$node_image"

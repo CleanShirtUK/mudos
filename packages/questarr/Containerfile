@@ -8,7 +8,7 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
 COPY . .
-RUN npm test -- --run server/nzbget-destdir.spec.ts \
+RUN npm test -- --config vitest.config.ts --run server/nzbget-destdir.spec.ts \
     && npm run build
 
 FROM ${UPSTREAM_IMAGE} AS questarr-runtime
