@@ -344,5 +344,11 @@ def ensure_provider_controller_config(
             dolphin_path,
             _update_section_values(dolphin_source, "Core", sidevices),
         )
+        graphics_path = dolphin_root / "GFX.ini"
+        graphics_source = graphics_path.read_text(encoding="utf-8") if graphics_path.exists() else ""
+        _write_if_changed(
+            graphics_path,
+            _update_section_values(graphics_source, "Settings", {"InternalResolution": "3"}),
+        )
         return path
     raise ValueError(f"unsupported controller provider: {provider}")

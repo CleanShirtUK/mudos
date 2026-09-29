@@ -42,6 +42,8 @@ The profile is written at
 other controller slots and unrelated settings. The real-Wii-Remote setting is
 stored as `WiimoteSource0 = 2` in `Dolphin.ini` and `Source = 2` in
 `WiimoteNew.ini`; standard emulation uses `1` in both settings.
+Dolphin's `GFX.ini` is provisioned with `InternalResolution = 3` (3× internal
+resolution, the 1080p target) while preserving other graphics settings.
 
 For the Wii validation path, Dolphin's GameCube Port 1 is explicitly set to a
 standard GameCube controller with `SIDevice0 = 6`; all four GameCube ports are

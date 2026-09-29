@@ -344,6 +344,24 @@ class EmulatorRuntimeTests(unittest.TestCase):
             self.assertIn("Classic/Buttons/A = `Button A`", wiimote_content)
             hotkeys = path.parent / "Hotkeys.ini"
             self.assertIn("Wii/Press Sync Button = bracketright", hotkeys.read_text())
+            graphics = path.parent / "GFX.ini"
+            self.assertIn("InternalResolution = 3", graphics.read_text())
+
+    def test_dolphin_three_times_internal_resolution_preserves_other_graphics_settings(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            graphics = root / "Config" / "GFX.ini"
+            graphics.parent.mkdir(parents=True)
+            graphics.write_text(
+                "[Settings]\nInternalResolution = 2\nVSync = True\n\n[Other]\nValue = keep\n",
+            )
+            ensure_provider_controller_config("dolphin", root, 1, {1: 0})
+            updated = graphics.read_text()
+            ensure_provider_controller_config("dolphin", root, 1, {1: 0})
+            self.assertEqual(updated, graphics.read_text())
+        self.assertIn("InternalResolution = 3", updated)
+        self.assertIn("VSync = True", updated)
+        self.assertIn("[Other]\nValue = keep", updated)
 
     def test_dolphin_sync_hotkey_update_preserves_unrelated_hotkeys(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
