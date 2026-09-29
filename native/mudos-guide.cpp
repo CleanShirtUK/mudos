@@ -301,6 +301,11 @@ private:
                                 screen->root, 0, 0, 0);
         xcb_test_fake_input(connection, XCB_KEY_PRESS, keycodes[0], XCB_CURRENT_TIME,
                             screen->root, 0, 0, 0);
+        // Dolphin polls hotkey state on its emulation thread. Keep the chord
+        // held long enough for that poll to observe it instead of queuing an
+        // effectively instantaneous press/release pair.
+        xcb_flush(connection);
+        usleep(100 * 1000);
         xcb_test_fake_input(connection, XCB_KEY_RELEASE, keycodes[0], XCB_CURRENT_TIME,
                             screen->root, 0, 0, 0);
         if (steamOverlay || dolphinSync)

@@ -54,6 +54,7 @@ class ProviderLaunchContractTests(unittest.TestCase):
         self.assertIn('steamOverlay ? XK_Tab : XK_F12', key_handler)
         self.assertIn('xcb_key_symbols_get_keycode(keySymbols, XK_Shift_L)', key_handler)
         self.assertIn('XCB_KEY_PRESS, shiftCodes[0]', key_handler)
+        self.assertIn("xcb_flush(connection);\n        usleep(100 * 1000);", key_handler)
         self.assertIn('XCB_KEY_RELEASE, shiftCodes[0]', key_handler)
         self.assertIn('targetXid_', key_handler)
 
