@@ -479,6 +479,15 @@ class EmulatorRuntimeTests(unittest.TestCase):
         self.assertIn("[GCPad1]\nDevice = SDL/0/Xbox 360 Wireless Controller", content)
         self.assertIn("[GCPad2]\nDevice = SDL/2/Xbox 360 Wireless Controller", content)
 
+    def test_dolphin_reserves_unique_sdl_slots_for_unconnected_gamecube_ports(self) -> None:
+        pads = {1: {"sdl_index": 0, "sdl_name": "Xbox 360 Controller"}}
+        with tempfile.TemporaryDirectory() as directory:
+            content = ensure_provider_controller_config(
+                "dolphin", Path(directory), 1, {1: 0}, controller_identities=pads,
+            ).read_text()
+        for player, index in enumerate(range(4), 1):
+            self.assertIn(f"[GCPad{player}]\nDevice = SDL/{index}/Xbox 360 Controller", content)
+
     def test_runtime_dolphin_profiles_target_the_active_xdg_native_config_tree(self) -> None:
         from lulu.paths import PATHS
         from lulu.dolphin_passthrough import dolphin_config_path

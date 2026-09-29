@@ -290,8 +290,11 @@ def ensure_provider_controller_config(
         # Always provision all four native GameCube ports. An absent controller
         # still gets a stable SDL slot so an additional pad can be hot-plugged.
         for player in range(1, 5):
-            identity = (controller_identities or {}).get(player, fallback_identity)
             sdl_index = device_indices.get(player, player - 1)
+            identity = (controller_identities or {}).get(player)
+            if identity is None and fallback_identity is not None:
+                fallback_name, _ = _identity(fallback_identity, sdl_index)
+                identity = {"sdl_name": fallback_name, "sdl_index": sdl_index}
             source = _replace_section(
                 source,
                 f"GCPad{player}",
