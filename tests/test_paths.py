@@ -69,7 +69,10 @@ class MudosPathsTests(unittest.TestCase):
             (root / "external/Mudos/ROMs/wii").mkdir(parents=True)
             paths.usenet_complete_root.mkdir(parents=True)
 
-            ready, reason = questarr_post_processing_readiness(paths)
+            with patch.object(questarr_paths, "QUESTARR_IMAGE_REF_PATH", root / "missing-image-ref"), \
+                    patch.object(questarr_paths, "QUESTARR_RUNTIME_IMAGE_ATTESTATION",
+                                 root / "missing-runtime-attestation"):
+                ready, reason = questarr_post_processing_readiness(paths)
 
         self.assertFalse(ready)
         self.assertTrue(QUESTARR_AUTO_IMPORT_SOURCE_SUPPORTED)
