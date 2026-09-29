@@ -21,7 +21,7 @@ ADAPTER_PRODUCT_ID = "8771"
 
 
 def dolphin_config_path() -> Path:
-    return PATHS.provider_config_root("dolphin") / "dolphin-emu" / "Dolphin.ini"
+    return PATHS.provider_config_root("dolphin") / "Config" / "Dolphin.ini"
 
 
 def dolphin_config_lease_path(config_path: Path | None = None) -> Path:

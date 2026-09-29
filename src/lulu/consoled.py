@@ -2887,7 +2887,7 @@ async def serve() -> None:
                     PATHS.provider_config_root(provider),
                     count,
                     device_indices or None,
-                    PATHS.provider_config_root(provider) / "dolphin-emu"
+                    PATHS.provider_config_root(provider) / "Config"
                     if provider == "dolphin" else None,
                     identities or None,
                     passthrough if provider == "dolphin" else False,

@@ -29,18 +29,19 @@ The profile is written to the service user's
 
 ## Dolphin
 
-Dolphin 2606 stores `GCPadNew.ini`, `WiimoteNew.ini`, `Dolphin.ini`, and
-`Hotkeys.ini` directly under its per-user `dolphin-emu` directory (not in a
-nested `Config/` directory). Mudos provisions the files Dolphin actually loads.
+Dolphin stores its active `GCPadNew.ini`, `WiimoteNew.ini`, `Dolphin.ini`, and
+`Hotkeys.ini` under `Config/` in the `--user` directory. Mudos provisions those
+files, rather than similarly named files in a separate `dolphin-emu/` tree.
 The native GameCube profile's first port
 selects the current `SDL/<index>/<name>` identity and uses Dolphin's SDL semantic controls
 for face buttons, shoulders, sticks, triggers, d-pad, and Start. Face buttons
 retain their native logical mappings; Mudos performs no face-button translation.
 
 The profile is written at
-`~/.config/lulu/providers/dolphin/config/dolphin-emu/GCPadNew.ini` and preserves
+`~/.config/lulu/providers/dolphin/config/Config/GCPadNew.ini` and preserves
 other controller slots and unrelated settings. The real-Wii-Remote setting is
-stored as `Source = 2` in `WiimoteNew.ini`; standard emulation uses `Source = 1`.
+stored as `WiimoteSource0 = 2` in `Dolphin.ini` and `Source = 2` in
+`WiimoteNew.ini`; standard emulation uses `1` in both settings.
 
 For the Wii validation path, Dolphin's GameCube Port 1 is explicitly set to a
 standard GameCube controller with `SIDevice0 = 6`; all four GameCube ports are

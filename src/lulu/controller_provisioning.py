@@ -283,9 +283,10 @@ def ensure_provider_controller_config(
         _write_if_changed(path, source)
         return path
     if provider == "dolphin":
-        # Dolphin 2606 stores native user files directly in its user directory
-        # (the path ending in dolphin-emu), not in a nested Config/ directory.
-        dolphin_root = native_user_root or (root / "dolphin-emu")
+        # Dolphin's --user root is the provider config directory. It stores its
+        # active INIs beneath Config/; the dolphin-emu directory is a separate
+        # default Linux user-path layout.
+        dolphin_root = native_user_root or (root / "Config")
         path = dolphin_root / "GCPadNew.ini"
         source = path.read_text(encoding="utf-8") if path.exists() else ""
         fallback_identity = next(iter((controller_identities or {}).values()), None)
@@ -317,8 +318,6 @@ def ensure_provider_controller_config(
                 ),
             )
         else:
-            # Keep Dolphin's real-remote bindings untouched; only select the
-            # real Bluetooth source for Wii Remote 1.
             wiimote_source = _update_section_values(
                 wiimote_source, "Wiimote1", {"Source": "2"},
             )
@@ -326,12 +325,14 @@ def ensure_provider_controller_config(
         dolphin_path = dolphin_root / "Dolphin.ini"
         dolphin_source = dolphin_path.read_text(encoding="utf-8") if dolphin_path.exists() else ""
         sidevices = {f"SIDevice{port}": "6" for port in range(4)}
-        # Wii Remote source selection is stored per remote in WiimoteNew.ini.
         dolphin_source = _update_section_values(
             dolphin_source, "Interface", {"ConfirmStop": "false"},
         )
         dolphin_source = _update_section_values(
-            dolphin_source, "Core", {"WiimoteContinuousScanning": "True"},
+            dolphin_source, "Core", {
+                "WiimoteContinuousScanning": "True",
+                "WiimoteSource0": "2" if real_wiimote_passthrough else "1",
+            },
         )
         hotkeys_path = dolphin_root / "Hotkeys.ini"
         hotkeys_source = hotkeys_path.read_text(encoding="utf-8") if hotkeys_path.exists() else ""
