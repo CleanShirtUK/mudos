@@ -26,6 +26,8 @@ sed "s#/opt/lulu/current#$service_root#g" "$root/packaging/lulu-provider-install
     > /etc/systemd/system/lulu-provider-install@.service
 install -D -m 0644 "$root/packaging/polkit-1/rules.d/57-lulu-provider-install.rules" \
     /etc/polkit-1/rules.d/57-lulu-provider-install.rules
+install -D -m 0644 "$root/packaging/polkit-1/rules.d/61-lulu-dolphin-bluetooth.rules" \
+    /etc/polkit-1/rules.d/61-lulu-dolphin-bluetooth.rules
 install -D -m 0644 "$root/packaging/polkit-1/rules.d/60-lulu-recovery.rules" \
     /etc/polkit-1/rules.d/60-lulu-recovery.rules
 for unit in mudos-recovery.service mudos-recovery-guard.service mudos-recovery-ui.service; do

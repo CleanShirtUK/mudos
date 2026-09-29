@@ -269,6 +269,8 @@ class DolphinPassthroughTests(unittest.TestCase):
         self.assertIn("/opt\\/lulu\\/releases\\/", polkit_rule)
         self.assertIn("dolphin-bluetooth-lease\\.py$", polkit_rule)
         self.assertNotIn('action.lookup("program") == "/opt/lulu/current/', polkit_rule)
+        provisioner = (ROOT / "scripts/provision-admin.sh").read_text()
+        self.assertIn("61-lulu-dolphin-bluetooth.rules", provisioner)
         with tempfile.TemporaryDirectory() as directory:
             config = Path(directory) / "Dolphin.ini"
             original = (
