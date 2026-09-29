@@ -53,7 +53,9 @@ git -C "$source_root" fetch --depth=1 origin "$source_commit"
 git -C "$source_root" checkout --detach "$source_commit"
 git -C "$source_root" show "$source_commit:server/downloaders/nzbget.ts" \
   > "$source_root/server/downloaders/nzbget.ts"
-rm -f "$source_root/server/nzbget-destdir.spec.ts" "$source_root/server/nzbget-destdir.test.ts"
+rm -f "$source_root/server/nzbget-destdir.spec.ts" \
+  "$source_root/server/nzbget-destdir.test.ts" \
+  "$source_root/server/__tests__/nzbget-destdir.test.ts"
 [[ $(git -C "$source_root" rev-parse HEAD) == "$source_commit" ]] || {
   echo "Questarr source checkout does not match IMAGE.lock." >&2
   exit 78
