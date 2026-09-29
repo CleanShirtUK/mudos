@@ -1,0 +1,43 @@
+From: Mudos Project <mudos@example.invalid>
+Subject: [PATCH] Propagate successful NZBGet history DestDir to downloadDir
+
+Questarr's v1.4.2 automatic-import poll consumes DownloadDetails.downloadDir,
+but the NZBGet client drops the already available history DestDir. Preserve
+the NZBGet status behavior and expose the path only for the matching successful
+history row.
+
+diff --git a/server/downloaders/nzbget.ts b/server/downloaders/nzbget.ts
+index 1c214b6..4a1e617 100644
+--- a/server/downloaders/nzbget.ts
++++ b/server/downloaders/nzbget.ts
+@@ -437,9 +437,30 @@ export class NZBGetClient implements DownloaderClient {
+     const status = await this.getDownloadStatus(id);
+     if (!status) return null;
+ 
++    // Automatic import needs the completed output directory. NZBGet exposes
++    // it on history rows as DestDir; never infer a path for active, failed,
++    // deleted, or path-less downloads.
++    let downloadDir: string | undefined;
++    if (status.status === "completed") {
++      try {
++        const history = (await this.makeXMLRPCRequest("history")) as NZBGetHistoryResult[];
++        const item = history.find((entry) => entry.NZBID.toString() === id);
++        if (
++          item?.Status === "SUCCESS/ALL" &&
++          typeof item.DestDir === "string" &&
++          item.DestDir.trim().length > 0
++        ) {
++          downloadDir = item.DestDir;
++        }
++      } catch (error) {
++        downloadersLogger.warn({ error, id }, "Failed to resolve completed NZBGet output directory");
++      }
++    }
++
+     // NZBGet doesn't provide detailed file information easily
+     return {
+       ...status,
++      ...(downloadDir ? { downloadDir } : {}),
+       files: [],
+       filesSupport: "unsupported",
+       filesSupportReason: "NZBGet API does not expose per-file details for grouped downloads.",

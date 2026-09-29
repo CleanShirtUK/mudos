@@ -1,0 +1,28 @@
+ARG NODE_BUILD_IMAGE=node@sha256:725aeba2364a9b16beae49e180d83bd597dbd0b15c47f1f28875c290bfd255b9
+ARG UPSTREAM_IMAGE=ghcr.io/doezer/questarr@sha256:6faaf75f484a20805309315dd9eb9f1550b039a668efb89c13fc028c72b45485
+ARG MUDOS_PATCH_SHA256
+ARG MUDOS_BUILD_RECIPE_COMMIT
+
+FROM ${NODE_BUILD_IMAGE} AS questarr-builder
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm ci
+COPY . .
+RUN npm test -- --run server/nzbget-destdir.spec.ts \
+    && npm run build
+
+FROM ${UPSTREAM_IMAGE} AS questarr-runtime
+ARG MUDOS_PATCH_SHA256
+ARG MUDOS_BUILD_RECIPE_COMMIT
+COPY --from=questarr-builder /app/dist/server/downloaders/nzbget.js \
+    /app/dist/server/downloaders/nzbget.js
+
+LABEL org.opencontainers.image.title="Mudos Questarr"
+LABEL org.opencontainers.image.version="1.4.2-mudos1"
+LABEL org.opencontainers.image.source="https://github.com/Doezer/Questarr/tree/0320b6f3123532e77346292a2d0836e6582f6010"
+LABEL org.opencontainers.image.revision="0320b6f3123532e77346292a2d0836e6582f6010"
+LABEL org.opencontainers.image.base.name="ghcr.io/doezer/questarr"
+LABEL org.opencontainers.image.base.digest="sha256:6faaf75f484a20805309315dd9eb9f1550b039a668efb89c13fc028c72b45485"
+LABEL org.mudos.questarr.patch="0001-nzbget-history-destdir-download-dir.patch"
+LABEL org.mudos.questarr.patch.sha256="${MUDOS_PATCH_SHA256}"
+LABEL org.mudos.questarr.build-recipe-commit="${MUDOS_BUILD_RECIPE_COMMIT}"

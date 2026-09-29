@@ -19,7 +19,7 @@ import tempfile
 from typing import Iterable
 
 
-PAYLOAD_DIRS = ("ui", "scripts", "config", "packaging")
+PAYLOAD_DIRS = ("ui", "scripts", "config", "packaging", "packages")
 REQUIRED_FILES = (
     "bin/lulu-shell",
     "bin/mudos-guide",

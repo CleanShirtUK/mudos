@@ -1,3 +1,4 @@
+import hashlib
 from pathlib import Path
 import tempfile
 import unittest
@@ -25,7 +26,8 @@ class QuestarrIntegrationTests(unittest.TestCase):
         unit = (ROOT / "packaging/lulu-questarr.service").read_text()
         launcher = (ROOT / "scripts/mudos-questarr").read_text()
         self.assertIn("ExecStart=/opt/lulu/current/bin/mudos-questarr", unit)
-        self.assertIn("ghcr.io/doezer/questarr@sha256:", launcher)
+        self.assertIn("questarr-image-ref", launcher)
+        self.assertIn("verified-image-id", launcher)
         self.assertIn("/var/lib/lulu-questarr/data:/app/data", launcher)
         self.assertIn("PATHS.torrent_root", launcher)
         self.assertIn("PATHS.usenet_root", launcher)
@@ -35,6 +37,29 @@ class QuestarrIntegrationTests(unittest.TestCase):
         self.assertIn('"${library_volumes[@]}"', launcher)
         self.assertIn("PORT=5002", launcher)
         self.assertIn("HOST=127.0.0.1", launcher)
+
+    def test_mudos_questarr_downstream_patch_is_source_pinned_and_reproducible(self) -> None:
+        lock = (ROOT / "packages/questarr/IMAGE.lock").read_text()
+        patch = (ROOT / "packages/questarr/patches/0001-nzbget-history-destdir-download-dir.patch").read_text()
+        builder = (ROOT / "scripts/build-questarr-image.sh").read_text()
+        containerfile = (ROOT / "packages/questarr/Containerfile").read_text()
+        runtime_verifier = (ROOT / "scripts/verify-questarr-runtime.mjs").read_text()
+        self.assertIn("upstream_git_commit=0320b6f3123532e77346292a2d0836e6582f6010", lock)
+        self.assertIn("upstream_image=ghcr.io/doezer/questarr@sha256:6faaf75f484a20805309315dd9eb9f1550b039a668efb89c13fc028c72b45485", lock)
+        self.assertIn("DestDir", patch)
+        self.assertIn("downloadDir", patch)
+        locked_patch_sha = next(line.split("=", 1)[1] for line in lock.splitlines()
+                                if line.startswith("patch_sha256="))
+        self.assertEqual(hashlib.sha256(
+            (ROOT / "packages/questarr/patches/0001-nzbget-history-destdir-download-dir.patch")
+            .read_bytes()).hexdigest(), locked_patch_sha)
+        self.assertIn('apply "$package_root/patches/', builder)
+        self.assertIn("--no-cache --timestamp", builder)
+        self.assertIn("FROM ${UPSTREAM_IMAGE}", containerfile)
+        release = (ROOT / "scripts/release.py").read_text()
+        self.assertIn('"packages")', release)
+        self.assertIn("getDownloadDetails", runtime_verifier)
+        self.assertIn("access(importerPath", runtime_verifier)
 
     def test_auth_proxy_and_acquisition_gateway_own_the_public_boundaries(self) -> None:
         proxy = (ROOT / "src/lulu/questarr_auth_proxy.py").read_text()

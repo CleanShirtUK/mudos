@@ -2,9 +2,13 @@
 
 ## Upstream evidence
 
-The appliance image is pinned to
-`ghcr.io/doezer/questarr@sha256:6faaf75f484a20805309315dd9eb9f1550b039a668efb89c13fc028c72b45485`.
-The source tag selected for this integration is **Questarr v1.4.2**. Its
+The appliance image is derived from the pinned upstream image
+`ghcr.io/doezer/questarr@sha256:6faaf75f484a20805309315dd9eb9f1550b039a668efb89c13fc028c72b45485`
+and upstream source commit `0320b6f3123532e77346292a2d0836e6582f6010` (tag
+**Questarr v1.4.2**). The appliance-owned downstream patch and build recipe live
+in `packages/questarr`; `packages/questarr/IMAGE.lock` pins the output image ID,
+base image, source revision, and patch hash. Provisioning builds from that exact
+source and does not track upstream latest. Its
 download-client behavior was checked in the tagged sources:
 
 - `server/downloaders/transmission.ts`
@@ -78,16 +82,21 @@ Questarr v1.4.2's manual import plan supports an explicit source path and its
 confirm API supports a selected file and destination override inside the
 configured library root. This permits importing a playable image file without
 including PAR/RAR/NFO release debris. The gateway emits a configured-root
-container `DestDir` for successful NZBGet history rows. However, source review
-of the pinned v1.4.2 client confirms `getFromHistory()` parses `DestDir` and
-`getDownloadDetails()` then returns status/files/tracker fields without
-propagating it as `downloadDir`; the completion poll invokes automatic import
-only when that missing `downloadDir` is present. Therefore storage projection
-is correct but automatic post-processing is **not ready**. Mudos reconciliation
-keeps `enablePostProcessing=false` through Questarr's authenticated import
-configuration API and readiness reports degraded until the pinned-client
-handoff is fixed and verified. Do not bypass this gate or modify Questarr's
-database directly.
+container `DestDir` for successful NZBGet history rows. The pinned source had no
+setting, API field, or alternate mapped field for this path: `getDownloadDetails()`
+discarded it before the completion poll. The minimal downstream patch maps only
+the matching successful history row's non-empty `DestDir` to
+`DownloadDetails.downloadDir`; active/failed/pathless jobs and Transmission
+semantics remain unchanged. Patch regression tests run as part of the image
+build. At service startup, a synthetic read-only check exercises the patched
+client and Questarr's own import-path construction against the mounted completed
+directory, and confirms `/data/Wii` is writable. Only then is the running image
+attested for the Mudos readiness gate. Until the reproducible patched image is
+built, pinned, running, and attested, reconciliation must keep
+`enablePostProcessing=false` through Questarr's authenticated import API and
+readiness must remain degraded. Do not bypass this gate, modify Questarr's
+database, or use the already accepted Wii Sports Resort for automatic-import
+testing.
 
 The current first milestone implements only the NZBGet protocol subset needed
 for connection tests, add, list/status/history, free-space, pause/resume, and

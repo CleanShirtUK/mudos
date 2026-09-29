@@ -9,8 +9,8 @@ repo_root=${LULU_SOURCE_ROOT:-$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)}
 data_root=${LULU_QUESTARR_DATA_ROOT:-/var/lib/lulu-questarr}
 install -d -o lulu -g lulu -m 0750 "$data_root/data"
 
-pacman -S --needed --noconfirm podman
-podman pull ghcr.io/doezer/questarr@sha256:6faaf75f484a20805309315dd9eb9f1550b039a668efb89c13fc028c72b45485
+pacman -S --needed --noconfirm podman git
+LULU_SOURCE_ROOT="$repo_root" "$repo_root/scripts/build-questarr-image.sh"
 
 install -m 0644 "$repo_root/packaging/lulu-questarr.service" /etc/systemd/system/lulu-questarr.service
 install -m 0644 "$repo_root/packaging/lulu-questarr-auth-proxy.service" /etc/systemd/system/lulu-questarr-auth-proxy.service

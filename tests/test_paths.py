@@ -2,7 +2,9 @@ import os
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
+from lulu import questarr_paths
 from lulu.paths import MudosPaths
 from lulu.questarr_paths import (QUESTARR_AUTO_IMPORT_SOURCE_SUPPORTED,
                                  questarr_completed_download_path, questarr_library_mounts,
@@ -57,7 +59,7 @@ class MudosPathsTests(unittest.TestCase):
             outside.mkdir()
             self.assertIsNone(questarr_completed_download_path(outside, paths=paths))
 
-    def test_questarr_post_processing_stays_degraded_until_client_consumes_destdir(self) -> None:
+    def test_questarr_post_processing_stays_degraded_until_patched_runtime_is_verified(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             paths = MudosPaths(root, root / "config", root / "data", root / "cache", root / "runtime")
@@ -70,8 +72,33 @@ class MudosPathsTests(unittest.TestCase):
             ready, reason = questarr_post_processing_readiness(paths)
 
         self.assertFalse(ready)
-        self.assertFalse(QUESTARR_AUTO_IMPORT_SOURCE_SUPPORTED)
-        self.assertIn("DestDir", reason)
+        self.assertTrue(QUESTARR_AUTO_IMPORT_SOURCE_SUPPORTED)
+        self.assertIn("runtime path verification", reason)
+
+    def test_questarr_post_processing_requires_matching_verified_runtime_image(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            paths = MudosPaths(root, root / "config", root / "data", root / "cache", root / "runtime")
+            storage = paths.config_root / "storage-targets.json"
+            storage.parent.mkdir(parents=True)
+            storage.write_text('{"emulation_path":"' + str(root / "external") + '"}')
+            (root / "external/Mudos/ROMs/wii").mkdir(parents=True)
+            paths.usenet_complete_root.mkdir(parents=True)
+            ref = root / "image-ref"
+            attestation = root / "running-image"
+            ref.write_text("sha256:" + "a" * 64)
+            attestation.write_text("sha256:" + "a" * 64)
+
+            with patch.object(questarr_paths, "QUESTARR_AUTO_IMPORT_SOURCE_SUPPORTED", True), \
+                    patch.object(questarr_paths, "QUESTARR_IMAGE_REF_PATH", ref), \
+                    patch.object(questarr_paths, "QUESTARR_RUNTIME_IMAGE_ATTESTATION", attestation):
+                ready, reason = questarr_post_processing_readiness(paths)
+                attestation.write_text("sha256:" + "b" * 64)
+                mismatched, mismatch_reason = questarr_post_processing_readiness(paths)
+
+        self.assertTrue(ready, reason)
+        self.assertFalse(mismatched)
+        self.assertIn("does not match", mismatch_reason)
 
 
 if __name__ == "__main__":

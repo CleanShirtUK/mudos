@@ -103,7 +103,7 @@ class ReleaseToolTests(unittest.TestCase):
             repo = Path(directory) / "source-repo"
             repo.mkdir()
             subprocess.run(["git", "init", "-q", "-b", "main"], cwd=repo, check=True)
-            for name in ("src/lulu", "ui", "scripts", "config", "packaging",
+            for name in ("src/lulu", "ui", "scripts", "config", "packaging", "packages",
                          "deploy/payload/bin"):
                 (repo / name).mkdir(parents=True, exist_ok=True)
             build_script = repo / "scripts/build-lulu-shell.sh"
@@ -115,7 +115,7 @@ class ReleaseToolTests(unittest.TestCase):
                 "packaging/lulu-vt", "packaging/mudos-provider-install",
                 "scripts/mudos-questarr", "scripts/release.py",
                 "deploy/payload/bin/verify-mudos.sh", "src/lulu/__init__.py",
-                "ui/placeholder.qml", "config/placeholder.toml",
+                "ui/placeholder.qml", "config/placeholder.toml", "packages/placeholder.txt",
             ):
                 (repo / path).write_text("fixture\n")
             subprocess.run(["git", "add", "."], cwd=repo, check=True)

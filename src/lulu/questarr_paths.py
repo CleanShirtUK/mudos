@@ -12,10 +12,12 @@ from .platforms import load_platforms
 
 QUESTARR_DOWNLOAD_ROOT = Path("/home/lulu/Games/.acquisition/usenet")
 QUESTARR_LIBRARY_ROOT = Path("/data")
-# Questarr v1.4.2's NZBGet getDownloadDetails() drops history DestDir instead
-# of returning downloadDir. Automatic import is unsafe until that upstream
-# handoff is supported by the pinned client.
-QUESTARR_AUTO_IMPORT_SOURCE_SUPPORTED = False
+# Questarr's appliance-owned v1.4.2 patch maps successful NZBGet DestDir to
+# downloadDir. Runtime attestation below prevents enabling import on an
+# unpatched or unverified container.
+QUESTARR_AUTO_IMPORT_SOURCE_SUPPORTED = True
+QUESTARR_IMAGE_REF_PATH = Path("/var/lib/lulu-questarr/questarr-image-ref")
+QUESTARR_RUNTIME_IMAGE_ATTESTATION = Path("/run/lulu-questarr/verified-image-id")
 
 
 @dataclass(frozen=True, slots=True)
@@ -89,4 +91,11 @@ def questarr_post_processing_readiness(paths: MudosPaths = PATHS) -> tuple[bool,
         return False, "completed Usenet output cannot be inspected"
     if not QUESTARR_AUTO_IMPORT_SOURCE_SUPPORTED:
         return False, "Questarr v1.4.2 does not project NZBGet DestDir as downloadDir"
+    try:
+        image_ref = QUESTARR_IMAGE_REF_PATH.read_text(encoding="ascii").strip()
+        running_image = QUESTARR_RUNTIME_IMAGE_ATTESTATION.read_text(encoding="ascii").strip()
+    except OSError:
+        return False, "patched Questarr image has not passed its runtime path verification"
+    if not image_ref.startswith("sha256:") or image_ref != running_image:
+        return False, "running Questarr image does not match the verified downstream image pin"
     return True, "Questarr library and completed-download projections are ready"
