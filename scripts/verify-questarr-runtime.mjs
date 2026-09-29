@@ -2,6 +2,7 @@ import { access } from "node:fs/promises";
 import { constants } from "node:fs";
 import path from "node:path";
 import { NZBGetClient } from "/app/dist/server/downloaders/nzbget.js";
+import { PCImportStrategy } from "/app/dist/server/services/ImportStrategies.js";
 
 const downloadDir = process.env.QUESTARR_VERIFY_DESTDIR;
 if (!downloadDir || !downloadDir.startsWith("/home/lulu/Games/.acquisition/usenet/complete/")) {
@@ -57,4 +58,24 @@ await access(importerPath, constants.R_OK | constants.X_OK);
 if (path.resolve(importerPath) !== path.resolve(downloadDir)) {
   throw new Error("Questarr automatic-import path builder changed the verified source path");
 }
-console.log(JSON.stringify({ status: details.status, downloadDir: details.downloadDir, importerPath }));
+const plan = await new PCImportStrategy().planImport(
+  importerPath,
+  { title: "Mudos Runtime Path Verification" },
+  "/data",
+  { overwriteExisting: false },
+  "Wii",
+);
+if (
+  plan.originalPath !== importerPath ||
+  plan.needsReview ||
+  plan.proposedPath !== "/data/Wii/Mudos Runtime Path Verification"
+) {
+  throw new Error("Questarr importer planner rejected the verified completed source path");
+}
+console.log(JSON.stringify({
+  status: details.status,
+  downloadDir: details.downloadDir,
+  importerPath,
+  plannerAccepted: true,
+  proposedPath: plan.proposedPath,
+}));

@@ -66,6 +66,8 @@ class QuestarrIntegrationTests(unittest.TestCase):
         self.assertIn('"packages")', release)
         self.assertIn("getDownloadDetails", runtime_verifier)
         self.assertIn("access(importerPath", runtime_verifier)
+        self.assertIn("new PCImportStrategy().planImport", runtime_verifier)
+        self.assertIn("plannerAccepted: true", runtime_verifier)
 
     def test_auth_proxy_and_acquisition_gateway_own_the_public_boundaries(self) -> None:
         proxy = (ROOT / "src/lulu/questarr_auth_proxy.py").read_text()
