@@ -370,12 +370,12 @@ class QuestarrReconciler:
             protocol = str(item.get("protocol", "")).casefold() if isinstance(item, dict) else ""
             counts["usenet" if protocol == "newznab" else "torrent"] += 1
         import_ready, _reason = questarr_post_processing_readiness()
-        settings = self.api.get("/api/import/config")
+        settings = self.api.get("/api/imports/config")
         if not isinstance(settings, dict):
             raise QuestarrApiError("Questarr returned invalid import configuration")
         desired_post_processing = bool(import_ready)
         if settings.get("enablePostProcessing") is not desired_post_processing:
-            self.api.patch("/api/import/config", {
+            self.api.patch("/api/imports/config", {
                 "enablePostProcessing": desired_post_processing,
             })
         post_processing = "enabled" if desired_post_processing else "safely-disabled"
