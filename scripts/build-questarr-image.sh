@@ -6,12 +6,15 @@ package_root="$repo_root/packages/questarr"
 lock="$package_root/IMAGE.lock"
 source_commit=$(sed -n 's/^upstream_git_commit=//p' "$lock")
 upstream_image=$(sed -n 's/^upstream_image=//p' "$lock")
+upstream_digest=${upstream_image##*@}
 node_image=$(sed -n 's/^node_build_image=//p' "$lock")
 expected_image_id=$(sed -n 's/^image_id=//p' "$lock")
+expected_image_digest=$(sed -n 's/^image_digest=//p' "$lock")
 recipe_commit=$(sed -n 's/^build_recipe_commit=//p' "$lock")
 patch_file=$(sed -n 's/^patch=//p' "$lock")
 patch_sha=$(sed -n 's/^patch_sha256=//p' "$lock")
 record_image_id=${LULU_QUESTARR_RECORD_IMAGE_ID:-0}
+pin_existing=${LULU_QUESTARR_PIN_EXISTING:-0}
 build_root=${LULU_QUESTARR_BUILD_ROOT:-/var/lib/lulu-questarr/build/questarr-v1.4.2-mudos1}
 source_root="$build_root/source"
 tag=localhost/mudos-questarr:1.4.2-mudos1
@@ -26,7 +29,8 @@ tag=localhost/mudos-questarr:1.4.2-mudos1
   exit 78
 }
 if [[ $record_image_id == 1 ]]; then
-  [[ $expected_image_id == TO_BE_BUILT && $recipe_commit == TO_BE_BUILT ]] || {
+  [[ $expected_image_id == TO_BE_BUILT && $expected_image_digest == TO_BE_BUILT \
+     && $recipe_commit == TO_BE_BUILT ]] || {
     echo "Refusing to replace an existing pinned Questarr image id." >&2
     exit 78
   }
@@ -40,11 +44,44 @@ else
     echo "Questarr image lock lacks a pinned image id." >&2
     exit 78
   }
+  [[ $expected_image_digest =~ ^sha256:[0-9a-f]{64}$ ]] || {
+    echo "Questarr image lock lacks its pinned manifest digest." >&2
+    exit 78
+  }
   [[ $recipe_commit =~ ^[0-9a-f]{40}$ ]] || {
     echo "Questarr image lock lacks its Mudos build recipe commit." >&2
     exit 78
   }
 fi
+
+persist_image_pin() {
+  local image_digest=$1
+  data_root=${LULU_QUESTARR_DATA_ROOT:-/var/lib/lulu-questarr}
+  install -d -o root -g root -m 0755 "$data_root"
+  printf '%s@%s\n' "$tag" "$image_digest" > "$data_root/questarr-image-ref.new"
+  chmod 0644 "$data_root/questarr-image-ref.new"
+  mv -f "$data_root/questarr-image-ref.new" "$data_root/questarr-image-ref"
+}
+
+if [[ $pin_existing == 1 ]]; then
+  immutable_ref="$tag@$expected_image_digest"
+  actual_image_id=$(podman image inspect --format '{{.Id}}' "$immutable_ref")
+  actual_image_digest=$(podman image inspect --format '{{.Digest}}' "$immutable_ref")
+  recipe_label=$(podman image inspect --format '{{ index .Config.Labels "org.mudos.questarr.build-recipe-commit" }}' "$immutable_ref")
+  patch_label=$(podman image inspect --format '{{ index .Config.Labels "org.mudos.questarr.patch.sha256" }}' "$immutable_ref")
+  base_label=$(podman image inspect --format '{{ index .Config.Labels "org.opencontainers.image.base.digest" }}' "$immutable_ref")
+  source_label=$(podman image inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' "$immutable_ref")
+  [[ $actual_image_id == "$expected_image_id" && $actual_image_digest == "$expected_image_digest" \
+     && $recipe_label == "$recipe_commit" && $patch_label == "$patch_sha" \
+      && $base_label == "$upstream_digest" && $source_label == "$source_commit" ]] || {
+    echo "Existing Questarr image failed pin/provenance verification." >&2
+    exit 78
+  }
+  persist_image_pin "$actual_image_digest"
+  printf 'Questarr image pinned: %s@%s (image id %s)\n' "$tag" "$actual_image_digest" "$actual_image_id"
+  exit 0
+fi
+
 mkdir -p "$build_root"
 if [[ ! -d "$source_root/.git" ]]; then
   git clone --filter=blob:none --no-checkout https://github.com/Doezer/Questarr.git "$source_root"
@@ -80,9 +117,16 @@ podman build --pull=never --no-cache --timestamp "$source_epoch" \
   --file "$package_root/Containerfile" "$source_root"
 
 actual_image_id=$(podman image inspect --format '{{.Id}}' "$tag")
+actual_image_digest=$(podman image inspect --format '{{.Digest}}' "$tag")
+[[ $actual_image_digest =~ ^sha256:[0-9a-f]{64}$ ]] || {
+  echo "Built Questarr image has no usable manifest digest." >&2
+  exit 78
+}
 if [[ $record_image_id == 1 ]]; then
   sed -e "s/^build_recipe_commit=TO_BE_BUILT$/build_recipe_commit=$recipe_commit/" \
-      -e "s/^image_id=TO_BE_BUILT$/image_id=$actual_image_id/" "$lock" > "$lock.new"
+      -e "s/^image_id=TO_BE_BUILT$/image_id=$actual_image_id/" \
+      -e "s/^image_digest=TO_BE_BUILT$/image_digest=$actual_image_digest/" \
+      "$lock" > "$lock.new"
   chmod --reference="$lock" "$lock.new"
   chown --reference="$lock" "$lock.new"
   mv "$lock.new" "$lock"
@@ -91,11 +135,11 @@ else
     echo "Built Questarr image id $actual_image_id differs from IMAGE.lock $expected_image_id." >&2
     exit 78
   }
+  [[ $actual_image_digest == "$expected_image_digest" ]] || {
+    echo "Built Questarr manifest digest $actual_image_digest differs from IMAGE.lock $expected_image_digest." >&2
+    exit 78
+  }
 fi
 
-data_root=${LULU_QUESTARR_DATA_ROOT:-/var/lib/lulu-questarr}
-install -d -o root -g root -m 0755 "$data_root"
-printf '%s\n' "$actual_image_id" > "$data_root/questarr-image-ref.new"
-chmod 0644 "$data_root/questarr-image-ref.new"
-mv -f "$data_root/questarr-image-ref.new" "$data_root/questarr-image-ref"
-printf 'Questarr image pinned: %s (%s)\n' "$actual_image_id" "$tag"
+persist_image_pin "$actual_image_digest"
+printf 'Questarr image pinned: %s@%s (image id %s)\n' "$tag" "$actual_image_digest" "$actual_image_id"

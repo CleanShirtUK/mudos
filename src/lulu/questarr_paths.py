@@ -96,6 +96,7 @@ def questarr_post_processing_readiness(paths: MudosPaths = PATHS) -> tuple[bool,
         running_image = QUESTARR_RUNTIME_IMAGE_ATTESTATION.read_text(encoding="ascii").strip()
     except OSError:
         return False, "patched Questarr image has not passed its runtime path verification"
-    if not image_ref.startswith("sha256:") or image_ref != running_image:
+    expected_digest = image_ref.rsplit("@", 1)[-1] if "@" in image_ref else ""
+    if not expected_digest.startswith("sha256:") or expected_digest != running_image:
         return False, "running Questarr image does not match the verified downstream image pin"
     return True, "Questarr library and completed-download projections are ready"

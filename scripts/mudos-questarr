@@ -42,10 +42,11 @@ for ((index=3; index<${#host_paths[@]}; index+=2)); do
   library_volumes+=(--volume "${host_paths[index]}:${host_paths[index+1]}:rw")
 done
 image_ref=$(</var/lib/lulu-questarr/questarr-image-ref)
-[[ $image_ref =~ ^sha256:[0-9a-f]{64}$ ]] || {
+[[ $image_ref =~ ^localhost/mudos-questarr@sha256:[0-9a-f]{64}$ ]] || {
   echo "The reproducibly built Mudos Questarr image is not pinned." >&2
   exit 78
 }
+expected_image_digest=${image_ref##*@}
 ready_marker=/run/lulu-questarr/verified-image-id
 rm -f "$ready_marker"
 cleanup() {
@@ -64,8 +65,8 @@ trap cleanup EXIT
   "$image_ref"
 
 for attempt in {1..180}; do
-  active_image=$(/usr/bin/podman inspect --format '{{.Image}}' questarr 2>/dev/null || true)
-  if [[ $active_image == "$image_ref" ]] && \
+  active_image_digest=$(/usr/bin/podman inspect --format '{{.ImageDigest}}' questarr 2>/dev/null || true)
+  if [[ $active_image_digest == "$expected_image_digest" ]] && \
       /usr/bin/curl --silent --show-error --fail http://127.0.0.1:5002/api/health >/dev/null 2>&1 && \
       /usr/bin/podman exec --user 958:958 questarr test -d /data/Wii && \
       /usr/bin/podman exec --user 958:958 questarr test -w /data/Wii && \
@@ -74,7 +75,7 @@ for attempt in {1..180}; do
         --env QUESTARR_VERIFY_DESTDIR=/home/lulu/Games/.acquisition/usenet/complete/ \
         questarr node --input-type=module -e "$(</opt/lulu/current/scripts/verify-questarr-runtime.mjs)" \
         >/dev/null; then
-    printf '%s\n' "$active_image" > "$ready_marker"
+    printf '%s\n' "$active_image_digest" > "$ready_marker"
     chmod 0644 "$ready_marker"
     break
   fi

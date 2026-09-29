@@ -86,7 +86,7 @@ class MudosPathsTests(unittest.TestCase):
             paths.usenet_complete_root.mkdir(parents=True)
             ref = root / "image-ref"
             attestation = root / "running-image"
-            ref.write_text("sha256:" + "a" * 64)
+            ref.write_text("localhost/mudos-questarr@sha256:" + "a" * 64)
             attestation.write_text("sha256:" + "a" * 64)
 
             with patch.object(questarr_paths, "QUESTARR_AUTO_IMPORT_SOURCE_SUPPORTED", True), \
