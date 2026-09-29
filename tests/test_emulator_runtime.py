@@ -322,12 +322,18 @@ class EmulatorRuntimeTests(unittest.TestCase):
             self.assertIn("Triggers/L-Analog = `Trigger L`", content)
             self.assertIn("Main Stick/Calibration = 100.00", content)
             self.assertIn("[GCPad2]", content)
-            self.assertIn("Device = SDL/1/SDL Gamepad", content)
+            self.assertIn("[GCPad3]", content)
+            self.assertIn("[GCPad4]", content)
+            self.assertIn("Device = SDL/3/SDL Gamepad", content)
 
             dolphin = Path(directory) / "dolphin-emu" / "Config" / "Dolphin.ini"
             dolphin_content = dolphin.read_text()
             self.assertIn("SIDevice0 = 6", dolphin_content)
+            self.assertIn("SIDevice1 = 6", dolphin_content)
+            self.assertIn("SIDevice2 = 6", dolphin_content)
+            self.assertIn("SIDevice3 = 6", dolphin_content)
             self.assertIn("WiimoteSource0 = 1", dolphin_content)
+            self.assertIn("WiimoteContinuousScanning = True", dolphin_content)
             self.assertIn("[Interface]", dolphin_content)
             self.assertIn("ConfirmStop = false", dolphin_content)
 
@@ -336,6 +342,38 @@ class EmulatorRuntimeTests(unittest.TestCase):
             self.assertIn("[Wiimote1]", wiimote_content)
             self.assertIn("Extension = Classic Controller", wiimote_content)
             self.assertIn("Classic/Buttons/A = `Button A`", wiimote_content)
+            hotkeys = path.parent / "Hotkeys.ini"
+            self.assertIn("Wii/Press Sync Button = @(Ctrl+Shift+F12)", hotkeys.read_text())
+
+    def test_dolphin_sync_hotkey_update_preserves_unrelated_hotkeys(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            config_root = root / "dolphin-emu" / "Config"
+            config_root.mkdir(parents=True)
+            hotkeys = config_root / "Hotkeys.ini"
+            hotkeys.write_text(
+                "[Hotkeys]\nGeneral/Stop = Escape\nWii/Press Sync Button = Tab\n\n"
+                "[Other]\nPreference = keep\n",
+            )
+            ensure_provider_controller_config("dolphin", root, 1, {1: 0})
+            updated = hotkeys.read_text()
+            ensure_provider_controller_config("dolphin", root, 1, {1: 0})
+            repeated = hotkeys.read_text()
+        self.assertEqual(updated, repeated)
+        self.assertIn("General/Stop = Escape", updated)
+        self.assertIn("Wii/Press Sync Button = @(Ctrl+Shift+F12)", updated)
+        self.assertIn("[Other]\nPreference = keep", updated)
+
+    def test_dolphin_continuous_wiimote_scan_preserves_other_core_options(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            dolphin_ini = root / "dolphin-emu" / "Config" / "Dolphin.ini"
+            dolphin_ini.parent.mkdir(parents=True)
+            dolphin_ini.write_text("[Core]\nCustomPreference = keep\nWiimoteContinuousScanning = False\n")
+            ensure_provider_controller_config("dolphin", root, 1, {1: 0})
+            updated = dolphin_ini.read_text()
+        self.assertIn("WiimoteContinuousScanning = True", updated)
+        self.assertIn("CustomPreference = keep", updated)
 
     def test_dolphin_stop_confirmation_update_preserves_other_preferences(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

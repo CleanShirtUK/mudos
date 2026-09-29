@@ -28,10 +28,28 @@ class ProviderLaunchContractTests(unittest.TestCase):
                          ["steam-quit"])
         self.assertEqual(providers.guide_actions("romm", "game"), ())
 
+    def test_dolphin_wiimote_sync_is_guide_only_and_provider_scoped(self) -> None:
+        providers = load_providers()
+        for context in ("game", "standalone"):
+            action, = tuple(
+                item for item in providers.guide_actions("dolphin", context)
+                if item.action_id == "dolphin-wiimote-sync"
+            )
+            self.assertEqual(action.target, "key:Ctrl+Shift+F12")
+        self.assertNotIn(
+            "dolphin-wiimote-sync",
+            [item.action_id for item in providers.guide_actions("retroarch", "game")],
+        )
+        source = (Path(__file__).parents[1] / "native/mudos-guide.cpp").read_text()
+        key_handler = source.split("bool sendKey(", 1)[1].split("bool runCommand(", 1)[0]
+        self.assertIn('key == QStringLiteral("Ctrl+Shift+F12")', key_handler)
+        self.assertIn("XK_Control_L", key_handler)
+
     def test_guide_keys_are_allowlisted_and_steam_overlay_releases_modifier(self) -> None:
         source = (Path(__file__).parents[1] / "native/mudos-guide.cpp").read_text()
         key_handler = source.split("bool sendKey(", 1)[1].split("bool runCommand(", 1)[0]
         self.assertIn('key == QStringLiteral("Shift+Tab")', key_handler)
+        self.assertIn('key == QStringLiteral("Ctrl+Shift+F12")', key_handler)
         self.assertIn('key != QStringLiteral("F12")', key_handler)
         self.assertIn('steamOverlay ? XK_Tab : XK_F12', key_handler)
         self.assertIn('xcb_key_symbols_get_keycode(keySymbols, XK_Shift_L)', key_handler)

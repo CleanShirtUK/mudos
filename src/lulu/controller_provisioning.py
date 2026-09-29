@@ -286,12 +286,17 @@ def ensure_provider_controller_config(
         dolphin_root = (native_user_root or (root / "dolphin-emu")) / "Config"
         path = dolphin_root / "GCPadNew.ini"
         source = path.read_text(encoding="utf-8") if path.exists() else ""
-        for player in range(1, player_count + 1):
+        fallback_identity = next(iter((controller_identities or {}).values()), None)
+        # Always provision all four native GameCube ports. An absent controller
+        # still gets a stable SDL slot so an additional pad can be hot-plugged.
+        for player in range(1, 5):
+            identity = (controller_identities or {}).get(player, fallback_identity)
+            sdl_index = device_indices.get(player, player - 1)
             source = _replace_section(
                 source,
                 f"GCPad{player}",
                 _dolphin_values(
-                    *_identity((controller_identities or {}).get(player), device_indices.get(player, player - 1)),
+                    *_identity(identity, sdl_index),
                 ),
             )
         _write_if_changed(path, source)
@@ -309,13 +314,22 @@ def ensure_provider_controller_config(
             _write_if_changed(wiimote_path, wiimote_source)
         dolphin_path = dolphin_root / "Dolphin.ini"
         dolphin_source = dolphin_path.read_text(encoding="utf-8") if dolphin_path.exists() else ""
-        sidevices = {f"SIDevice{port}": "6" if port < player_count else "0" for port in range(4)}
-        # Emulate a Wii Remote with a Classic Controller extension; a real
-        # Bluetooth Wii Remote is deliberately not required.
+        sidevices = {f"SIDevice{port}": "6" for port in range(4)}
+        # Real Bluetooth passthrough remains governed by Dolphin's existing
+        # Wiimote lease/source configuration, independent of GC pad ports.
         sidevices["WiimoteSource0"] = "2" if real_wiimote_passthrough else "1"
         dolphin_source = _update_section_values(
             dolphin_source, "Interface", {"ConfirmStop": "false"},
         )
+        dolphin_source = _update_section_values(
+            dolphin_source, "Core", {"WiimoteContinuousScanning": "True"},
+        )
+        hotkeys_path = dolphin_root / "Hotkeys.ini"
+        hotkeys_source = hotkeys_path.read_text(encoding="utf-8") if hotkeys_path.exists() else ""
+        hotkeys_source = _update_section_values(
+            hotkeys_source, "Hotkeys", {"Wii/Press Sync Button": "@(Ctrl+Shift+F12)"},
+        )
+        _write_if_changed(hotkeys_path, hotkeys_source)
         _write_if_changed(
             dolphin_path,
             _update_section_values(dolphin_source, "Core", sidevices),

@@ -39,9 +39,12 @@ The profile is written below the `--user` root at
 other controller slots and unrelated settings.
 
 For the Wii validation path, Dolphin's GameCube Port 1 is explicitly set to a
-standard GameCube controller with `SIDevice0 = 6`. Wii Remote 1 is emulated
-(`WiimoteSource0 = 1`) with a Classic Controller extension, using the same
-stable SDL gamepad identity. A physical Wii Remote is not required.
+standard GameCube controller with `SIDevice0 = 6`; all four GameCube ports are
+enabled and receive Mudos-owned SDL gamepad profiles. Dolphin's continuous
+Wiimote scan option remains enabled so Bluetooth passthrough can discover
+remotes. The Guide menu's Dolphin-only **Sync Wii Remotes** action sends the
+`Ctrl+Shift+F12` chord bound to Dolphin's Wii Remote Sync hotkey. This does not
+create a global OS shortcut. Real Bluetooth passthrough remains Dolphin-owned.
 
 ## Provisioning Boundary
 
