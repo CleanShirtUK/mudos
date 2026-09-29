@@ -12,7 +12,8 @@ pcsx2_args=()
 if [ -n "${MUDOS_PCSX2_CONFIG_HOME:-}" ]; then
     config_home=$MUDOS_PCSX2_CONFIG_HOME
     args+=("--filesystem=$config_home:rw")
-    pcsx2_args+=("-datapath" "$config_home/PCSX2")
+    # PCSX2 appends its own "PCSX2" directory beneath the data path.
+    pcsx2_args+=("-datapath" "$config_home")
 fi
 
 # BIOS files remain authoritative in Mudos storage and are exposed read-only.

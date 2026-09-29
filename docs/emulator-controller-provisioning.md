@@ -28,7 +28,8 @@ The profile is written to the service user's
 `~/.config/lulu/providers/pcsx2/config/PCSX2/inis/PCSX2.ini` and preserves
 unrelated INI sections.
 Managed Flatpak launches pass PCSX2's `-datapath` explicitly to the Mudos-owned
-`PCSX2` data directory. This is necessary because Flatpak reserves
+config root; PCSX2 appends its own `PCSX2` subdirectory beneath that root. This
+is necessary because Flatpak reserves
 `XDG_CONFIG_HOME` for its private tree even when an environment override is
 requested. The BIOS directory is separately exposed read-only; BIOS files are
 never copied into Flatpak-private storage.
