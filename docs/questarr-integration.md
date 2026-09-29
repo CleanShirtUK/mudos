@@ -77,11 +77,17 @@ failed, missing-output, and out-of-root jobs do not receive a download path.
 Questarr v1.4.2's manual import plan supports an explicit source path and its
 confirm API supports a selected file and destination override inside the
 configured library root. This permits importing a playable image file without
-including PAR/RAR/NFO release debris. The pinned v1.4.2 NZBGet client currently
-parses history `DestDir` but drops it when constructing `DownloadDetails`, so
-the field alone does not make its automatic completion poll supply
-`downloadDir`. Do not enable automatic post-processing until that upstream
-client handoff is corrected and verified against the pinned client.
+including PAR/RAR/NFO release debris. The gateway emits a configured-root
+container `DestDir` for successful NZBGet history rows. However, source review
+of the pinned v1.4.2 client confirms `getFromHistory()` parses `DestDir` and
+`getDownloadDetails()` then returns status/files/tracker fields without
+propagating it as `downloadDir`; the completion poll invokes automatic import
+only when that missing `downloadDir` is present. Therefore storage projection
+is correct but automatic post-processing is **not ready**. Mudos reconciliation
+keeps `enablePostProcessing=false` through Questarr's authenticated import
+configuration API and readiness reports degraded until the pinned-client
+handoff is fixed and verified. Do not bypass this gate or modify Questarr's
+database directly.
 
 The current first milestone implements only the NZBGet protocol subset needed
 for connection tests, add, list/status/history, free-space, pause/resume, and

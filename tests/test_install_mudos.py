@@ -534,7 +534,8 @@ def test_questarr_uses_configured_storage_resolver_not_hardcoded_host_root():
     launcher = (ROOT / "scripts/mudos-questarr").read_text()
     assert "mudos-questarr" in unit
     assert "PATHS.torrent_root" in launcher and "PATHS.usenet_root" in launcher
-    assert "-d ${host_roots[0]}" in launcher
+    assert "questarr_library_mounts()" in launcher
+    assert 'library_volumes+=(--volume "${host_paths[index]}:${host_paths[index+1]}:rw")' in launcher
     assert "PORT=5002" in launcher and "HOST=127.0.0.1" in launcher
 
 

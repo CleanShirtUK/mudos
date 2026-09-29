@@ -20,6 +20,7 @@ from email.utils import parsedate_to_datetime
 
 from .credential import SecretStore
 from .provider_config import ProviderConfigurationService
+from .questarr_paths import questarr_post_processing_readiness
 
 LOGGER = logging.getLogger("lulu.questarr-reconciler")
 QUESTARR_URL = "http://127.0.0.1:5002"
@@ -226,6 +227,7 @@ class ReconcileResult:
     prowlarr: str
     indexers: dict[str, int]
     metadata: str = "unavailable"
+    post_processing: str = "unavailable"
 
 
 def _marker(settings: object, role: str) -> bool:
@@ -367,5 +369,16 @@ class QuestarrReconciler:
         for item in indexers if isinstance(indexers, list) else []:
             protocol = str(item.get("protocol", "")).casefold() if isinstance(item, dict) else ""
             counts["usenet" if protocol == "newznab" else "torrent"] += 1
-        return ReconcileResult("ok", "deferred-until-torrent-gateway", nzbget,
-                               prowlarr_status, counts, metadata_status)
+        import_ready, _reason = questarr_post_processing_readiness()
+        settings = self.api.get("/api/import/config")
+        if not isinstance(settings, dict):
+            raise QuestarrApiError("Questarr returned invalid import configuration")
+        desired_post_processing = bool(import_ready)
+        if settings.get("enablePostProcessing") is not desired_post_processing:
+            self.api.patch("/api/import/config", {
+                "enablePostProcessing": desired_post_processing,
+            })
+        post_processing = "enabled" if desired_post_processing else "safely-disabled"
+        status = "ok" if import_ready else "degraded"
+        return ReconcileResult(status, "deferred-until-torrent-gateway", nzbget,
+                               prowlarr_status, counts, metadata_status, post_processing)

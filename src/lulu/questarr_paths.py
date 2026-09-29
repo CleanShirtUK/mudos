@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import os
 from pathlib import Path
 
 from .paths import PATHS, MudosPaths
@@ -11,6 +12,10 @@ from .platforms import load_platforms
 
 QUESTARR_DOWNLOAD_ROOT = Path("/home/lulu/Games/.acquisition/usenet")
 QUESTARR_LIBRARY_ROOT = Path("/data")
+# Questarr v1.4.2's NZBGet getDownloadDetails() drops history DestDir instead
+# of returning downloadDir. Automatic import is unsafe until that upstream
+# handoff is supported by the pinned client.
+QUESTARR_AUTO_IMPORT_SOURCE_SUPPORTED = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -62,3 +67,26 @@ def questarr_completed_download_path(
     if not relative_to_complete.parts or not candidate.exists():
         return None
     return str(container_download_root / relative_to_source)
+
+
+def questarr_post_processing_readiness(paths: MudosPaths = PATHS) -> tuple[bool, str]:
+    """Require real writable projections and an upstream-consumable source path."""
+    mounts = questarr_library_mounts(paths)
+    if not mounts:
+        return False, "no Questarr platform library projections are configured"
+    for mount in mounts:
+        try:
+            if not mount.host_path.is_dir() or not os.access(mount.host_path, os.W_OK):
+                return False, f"Questarr library projection is not writable: {mount.platform_id}"
+        except OSError:
+            return False, f"Questarr library projection cannot be inspected: {mount.platform_id}"
+    try:
+        if not paths.usenet_complete_root.is_dir():
+            return False, "completed Usenet output is not mounted"
+        if not os.access(paths.usenet_complete_root, os.R_OK | os.X_OK):
+            return False, "completed Usenet output is not readable by Questarr"
+    except OSError:
+        return False, "completed Usenet output cannot be inspected"
+    if not QUESTARR_AUTO_IMPORT_SOURCE_SUPPORTED:
+        return False, "Questarr v1.4.2 does not project NZBGet DestDir as downloadDir"
+    return True, "Questarr library and completed-download projections are ready"

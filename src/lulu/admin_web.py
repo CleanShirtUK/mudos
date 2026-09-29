@@ -1193,6 +1193,7 @@ class AdminApp:
         import pwd
         import xmlrpc.client
         from .questarr_reconciler import QUESTARR_URL, QuestarrApi, QuestarrApiError
+        from .questarr_paths import questarr_post_processing_readiness
         from .questarr_auth_proxy import QUESTARR_PAM_ACCOUNT
 
         service_running = self.service_state("lulu-questarr.service") == "active"
@@ -1263,6 +1264,7 @@ class AdminApp:
         except (QuestarrApiError, OSError, ValueError, TypeError):
             indexer_count = 0
         indexers_available = indexer_count > 0
+        post_processing_ready, post_processing_reason = questarr_post_processing_readiness()
         dimensions = {
             "service_running": service_running,
             "web_reachable": web_reachable,
@@ -1273,10 +1275,13 @@ class AdminApp:
             "mudos_acquisition_gateway_configured": gateway_configured,
             "acquisitiond_reachable": acquisitiond_reachable,
             "usenet_executor_ready": usenet_executor_ready,
+            "post_processing_ready": post_processing_ready,
+            "post_processing_state": "ready" if post_processing_ready else "degraded",
+            "post_processing_reason": post_processing_reason,
         }
         required = (service_running, web_reachable, authentication_configured,
                     indexers_available, gateway_configured, acquisitiond_reachable)
-        dimensions["overall"] = "ready" if all(required) and metadata_configured else (
+        dimensions["overall"] = "ready" if all(required) and metadata_configured and post_processing_ready else (
             "degraded" if any(required) else "unavailable")
         return dimensions
 

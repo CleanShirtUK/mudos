@@ -68,6 +68,7 @@ class Api:
         self.calls = []
         self.prowlarr_error = prowlarr_error
         self.token = ""
+        self.import_config = {"enablePostProcessing": True}
 
     def login(self, username, password):
         self.calls.append(("login", username, password))
@@ -79,6 +80,8 @@ class Api:
             return self.downloaders
         if path == "/api/indexers":
             return [{"protocol": "torznab"}, {"protocol": "newznab"}]
+        if path == "/api/import/config":
+            return dict(self.import_config)
         raise AssertionError(path)
 
     def post(self, path, body):
@@ -96,6 +99,8 @@ class Api:
 
     def patch(self, path, body):
         self.calls.append(("patch", path, body))
+        if path == "/api/import/config":
+            self.import_config.update(body)
         return body
 
 
@@ -119,7 +124,10 @@ class QuestarrReconcilerTests(unittest.TestCase):
     def test_reconciliation_configures_only_acquisitiond_nzb_gateway(self):
         api = Api()
         result = self.configured(api).reconcile()
-        self.assertEqual(result.status, "ok")
+        self.assertEqual(result.status, "degraded")
+        self.assertEqual(result.post_processing, "safely-disabled")
+        self.assertFalse(api.import_config["enablePostProcessing"])
+        self.assertIn(("patch", "/api/import/config", {"enablePostProcessing": False}), api.calls)
         self.assertEqual(result.transmission, "deferred-until-torrent-gateway")
         self.assertEqual(result.nzbget, "created")
         self.assertEqual(len([c for c in api.calls if c[0] == "post" and c[1].endswith("/test")]), 1)
@@ -132,6 +140,14 @@ class QuestarrReconcilerTests(unittest.TestCase):
         self.assertEqual(downloader["password"], "")
         self.assertEqual(downloader["urlPath"], "/xmlrpc")
         self.assertNotIn("nzb-pass", repr(downloader))
+
+    def test_post_processing_state_is_idempotently_kept_disabled_while_source_unsupported(self):
+        api = Api()
+        api.import_config["enablePostProcessing"] = False
+        result = self.configured(api).reconcile()
+        self.assertEqual(result.post_processing, "safely-disabled")
+        self.assertFalse(any(call[0] == "patch" and call[1] == "/api/import/config"
+                             for call in api.calls))
 
     def test_managed_gateway_entry_updates_without_duplicate(self):
         api = Api()
