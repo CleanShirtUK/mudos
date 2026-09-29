@@ -432,6 +432,13 @@ def install_integration(repo: Path, release: Path, manifest: dict,
     # environments refer solely to the immutable current selector.
     run(["systemctl", "daemon-reload"])
     run(["udevadm", "control", "--reload-rules"], check=False)
+    # Apply the narrow Dolphin adapter permissions to an already-connected
+    # device as well as to future hotplug events.
+    run([
+        "udevadm", "trigger", "--action=add", "--subsystem-match=usb",
+        "--attr-match=idVendor=0bda", "--attr-match=idProduct=8771",
+    ], check=False)
+    run(["udevadm", "settle"], check=False)
     # Apply the persistent gamepad marker to already-connected devices before
     # InputPlumber enumerates them; the same udev rule handles future hotplug.
     run([

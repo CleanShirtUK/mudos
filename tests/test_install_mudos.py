@@ -209,10 +209,11 @@ def test_development_validation_dropin_is_purge_owned_and_removed_before_product
 def test_installer_reloads_inputplumber_then_reconciles_already_connected_gamepads():
     source = (ROOT / "scripts/install_mudos.py").read_text()
     reload_rules = source.index('run(["udevadm", "control", "--reload-rules"]')
+    dolphin_usb_permissions = source.index('"--attr-match=idVendor=0bda"')
     restart_inputplumber = source.index('run(["systemctl", "restart", "inputplumber.service"])')
     reconcile_devices = source.index('run(["systemctl", "start", "lulu-inputplumber-hotplug.service"])')
     start_session = source.index('run(["systemctl", "start", "lulu.target"])', reconcile_devices)
-    assert reload_rules < restart_inputplumber < reconcile_devices < start_session
+    assert reload_rules < dolphin_usb_permissions < restart_inputplumber < reconcile_devices < start_session
 
 
 def test_lulu_target_is_installable_and_installer_verifies_boot_enablement():

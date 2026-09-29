@@ -259,10 +259,10 @@ class DolphinPassthroughTests(unittest.TestCase):
                     HELPER.recover()
             self.assertTrue(state.exists())
 
-    def test_lease_restores_previous_dolphin_flags_and_device_access_is_uaccess(self) -> None:
+    def test_lease_restores_previous_dolphin_flags_and_adapter_has_service_access(self) -> None:
         rule = (ROOT / "packaging/udev/82-lulu-dolphin-bluetooth.rules").read_text()
         provider = (ROOT / "config/providers/dolphin/provider.toml").read_text()
-        self.assertIn('ATTR{idVendor}=="0bda", ATTR{idProduct}=="8771", TAG+="uaccess"', rule)
+        self.assertIn('ATTR{idVendor}=="0bda", ATTR{idProduct}=="8771", GROUP="lulu", MODE="0660", TAG+="uaccess"', rule)
         self.assertIn('id = "dolphin-quit"', provider)
         self.assertIn('target = "process-group-terminate"', provider)
         polkit_rule = (ROOT / "packaging/polkit-1/rules.d/61-lulu-dolphin-bluetooth.rules").read_text()
