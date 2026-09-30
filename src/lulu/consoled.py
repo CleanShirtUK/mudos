@@ -269,24 +269,10 @@ class ConsoleCatalog:
             if self.store.last_deltas:
                 self.last_delta_batches.append(self.store.last_deltas)
             if getattr(self.steam_entitlements, "last_refresh_succeeded", False):
-                authentication = self._plugins.for_plugin("steam", "authentication")
-                acquisition = {"status": "authentication-required"}
-                if authentication and hasattr(authentication[0], "verify_acquisition"):
-                    try:
-                        acquisition = asyncio.run(authentication[0].verify_acquisition())
-                    except Exception as error:
-                        LOGGER.warning("SteamCMD readiness verification failed error_type=%s",
-                                       type(error).__name__)
-                        acquisition = {"status": "authentication-failed"}
-                acquisition_ready = acquisition.get("status") == "authenticated"
-                status = "ready" if acquisition_ready else (
-                    "authentication_required" if acquisition.get("status") in {
-                        "authentication-required", "challenge-required"} else "auth_failed")
-                message = ("Steam account and SteamCMD acquisition were validated; owned games reconciled."
-                           if acquisition_ready else
-                           "Owned games were reconciled, but the separate SteamCMD acquisition session is not ready.")
                 self.provider_readiness.set(
-                    "steam", status, message=message,
+                    "steam", "authentication_required",
+                    message=("Owned Steam games were reconciled. SteamCMD authentication will be checked "
+                             "when a download is requested."),
                     catalogue_count=len(self.steam_entitlements.snapshot),
                 )
             elif steam_config is not None:

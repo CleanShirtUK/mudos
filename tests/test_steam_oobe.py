@@ -164,40 +164,32 @@ class SteamOobeTests(unittest.TestCase):
         self.assertEqual(status["persona"], "Test Account")
         self.assertIn("GetPluginAuthStatus", run.call_args.args[0])
 
-    def test_owned_sync_without_steamcmd_auth_does_not_report_ready(self):
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            registry = PluginRegistry(root / "plugins")
-            registry.discover()
-            catalog = ConsoleCatalog(
-                CatalogueStore(root / "catalogue.sqlite3"), FakeInstalledSteam(),
-                steam_entitlements=FakeSteamSource(), plugin_registry=registry,
-            )
-            with patch.object(onboarding, "_STATE_PATH", root / "onboarding.json"):
-                onboarding.save_progress(providers=["steam"])
-                catalog.refresh({"steam"})
-            state = catalog.provider_readiness.get("steam")
-            self.assertEqual(state["status"], "authentication_required")
-            self.assertEqual(state["catalogue_count"], 1)
+    def test_owned_sync_does_not_start_interactive_steamcmd_authentication(self):
+        class UnexpectedAuth:
+            def __init__(self):
+                self.calls = 0
 
-    def test_steam_ready_requires_verified_separate_acquisition_session(self):
-        class VerifiedAuth:
             async def verify_acquisition(self):
+                self.calls += 1
                 return {"status": "authenticated"}
 
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             registry = PluginRegistry(root / "plugins")
             registry.discover()
+            auth = UnexpectedAuth()
             catalog = ConsoleCatalog(
                 CatalogueStore(root / "catalogue.sqlite3"), FakeInstalledSteam(),
                 steam_entitlements=FakeSteamSource(), plugin_registry=registry,
             )
-            with patch.object(type(registry), "for_plugin", return_value=[VerifiedAuth()]), \
+            with patch.object(type(registry), "for_plugin", return_value=[auth]), \
                     patch.object(onboarding, "_STATE_PATH", root / "onboarding.json"):
                 onboarding.save_progress(providers=["steam"])
                 catalog.refresh({"steam"})
-            self.assertEqual(catalog.provider_readiness.get("steam")["status"], "ready")
+            state = catalog.provider_readiness.get("steam")
+            self.assertEqual(state["status"], "authentication_required")
+            self.assertEqual(state["catalogue_count"], 1)
+            self.assertEqual(auth.calls, 0)
 
     def test_gui_account_requires_live_client_and_matching_local_account_state(self):
         with tempfile.TemporaryDirectory() as directory:
