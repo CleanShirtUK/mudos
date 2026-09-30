@@ -304,11 +304,45 @@ private:
         }
         auto *focusReply = xcb_get_input_focus_reply(connection,
                                                       xcb_get_input_focus(connection), nullptr);
+        const xcb_window_t observedFocus = focusReply ? focusReply->focus : XCB_WINDOW_NONE;
         qInfo() << "Guide key injection" << key << "symbol=" << Qt::hex << keySymbol
                 << "keycode=" << Qt::dec << keycodes[0] << "window=" << Qt::hex << targetXid_
                 << "root=" << screen->root << "input_focus="
-                << (focusReply ? focusReply->focus : XCB_WINDOW_NONE);
+                << observedFocus;
         free(focusReply);
+        if (pcsx2Pause) {
+            const auto sendWindowKey = [connection, screen, this, keycodes](uint8_t type) {
+                xcb_key_press_event_t event{};
+                event.response_type = type;
+                event.detail = keycodes[0];
+                event.time = XCB_CURRENT_TIME;
+                event.root = screen->root;
+                event.event = targetXid_;
+                event.child = XCB_WINDOW_NONE;
+                event.same_screen = 1;
+                const auto mask = type == XCB_KEY_PRESS
+                    ? XCB_EVENT_MASK_KEY_PRESS : XCB_EVENT_MASK_KEY_RELEASE;
+                const auto cookie = xcb_send_event_checked(
+                    connection, 0, targetXid_, mask,
+                    reinterpret_cast<const char *>(&event));
+                if (auto *error = xcb_request_check(connection, cookie)) {
+                    qWarning() << "Guide PCSX2 window-key request failed" << key
+                               << "type=" << type << "error=" << error->error_code;
+                    free(error);
+                    return false;
+                }
+                qInfo() << "Guide PCSX2 window-key request sent" << key << "type=" << type
+                        << "window=" << Qt::hex << targetXid_;
+                return true;
+            };
+            const bool pressed = sendWindowKey(XCB_KEY_PRESS);
+            const bool released = sendWindowKey(XCB_KEY_RELEASE);
+            xcb_flush(connection);
+            free(keycodes);
+            free(shiftCodes);
+            xcb_key_symbols_free(keySymbols);
+            return pressed && released;
+        }
         const auto sendFakeInput = [connection, screen, key](uint8_t type, uint8_t detail) {
             const auto cookie = xcb_test_fake_input(connection, type, detail, XCB_CURRENT_TIME,
                                                     screen->root, 0, 0, 0);

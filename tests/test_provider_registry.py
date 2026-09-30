@@ -68,6 +68,9 @@ class ProviderLaunchContractTests(unittest.TestCase):
         self.assertIn('sendFakeInput(XCB_KEY_RELEASE, shiftCodes[0])', key_handler)
         self.assertIn("xcb_request_check(connection, cookie)", key_handler)
         self.assertIn('"input_focus="', key_handler)
+        self.assertIn("if (pcsx2Pause)", key_handler)
+        self.assertIn("xcb_send_event_checked(", key_handler)
+        self.assertIn('"Guide PCSX2 window-key request sent"', key_handler)
         self.assertIn('targetXid_', key_handler)
 
     def test_dolphin_and_eden_can_reveal_ui_without_quitting_or_toggling_fullscreen(self) -> None:
