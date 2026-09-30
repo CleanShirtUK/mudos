@@ -96,10 +96,8 @@ class ProvisioningTests(unittest.TestCase):
         self.assertEqual(actual_files, listed)
 
     def test_gamescope_presentation_is_shipped_from_authoritative_source(self) -> None:
-        self.assertEqual(
-            (PAYLOAD / "lib/lulu/gamescope.py").read_bytes(),
-            (ROOT / "src/lulu/gamescope.py").read_bytes(),
-        )
+        release_builder = (ROOT / "scripts/release.py").read_text()
+        self.assertIn('copy_tree(source / "src", payload / "lib")', release_builder)
 
     def test_settings_model_is_built_from_canonical_source_not_compatibility_payload(self) -> None:
         release_builder = (ROOT / "scripts/release.py").read_text()

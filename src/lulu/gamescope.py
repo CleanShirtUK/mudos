@@ -167,6 +167,18 @@ class GamescopePresentation:
                 raise TimeoutError(f"Gamescope window for PID {pid} was not found")
             time.sleep(self.poll_interval)
 
+    def request_window_close(self, window: int) -> None:
+        """Ask an Xwayland client to close through WM_DELETE_WINDOW."""
+        environment = os.environ.copy()
+        environment["DISPLAY"] = self.display
+        subprocess.run(
+            ["xdotool", "windowclose", str(window)],
+            check=True,
+            capture_output=True,
+            text=True,
+            env=environment,
+        )
+
     @staticmethod
     def _is_descendant(pid: int, ancestor_pid: int) -> bool:
         current = pid

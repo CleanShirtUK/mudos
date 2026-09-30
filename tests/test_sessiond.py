@@ -38,6 +38,59 @@ class SessiondTests(unittest.TestCase):
         self.assertEqual(result, "quit-requested")
         killpg.assert_called_once_with(1234, __import__("signal").SIGTERM)
 
+    def test_eden_quit_requests_window_close_before_any_signal(self) -> None:
+        from types import SimpleNamespace
+        from lulu.launch_identity import LaunchIdentity
+
+        presentation = SimpleNamespace(
+            window_for_pids=lambda pids, timeout: 88,
+            request_window_close=lambda window: None,
+            window_is_focusable=lambda window: False,
+        )
+        supervisor = SimpleNamespace(
+            _presentation=presentation,
+            _process_group_members=lambda pgid: {1234, 1235},
+        )
+        interface = ConsoleSessionInterface.__new__(ConsoleSessionInterface)
+        interface._local_identity = LaunchIdentity(
+            "owned-token", 1234, 1234, "/opt/lulu/current/packaging/eden-flatpak", ("eden-flatpak",)
+        )
+        interface.model = SimpleNamespace(state=SimpleNamespace(launch_token="owned-token"))
+        interface.supervisor = supervisor
+
+        with patch("lulu.sessiond.os.killpg") as killpg:
+            result = asyncio.run(ConsoleSessionInterface.QuitActiveSession.__wrapped__(interface))
+
+        self.assertEqual(result, "quit-requested")
+        killpg.assert_not_called()
+
+    def test_eden_quit_falls_back_to_owned_group_after_close_timeout(self) -> None:
+        from types import SimpleNamespace
+        from lulu.launch_identity import LaunchIdentity
+
+        presentation = SimpleNamespace(
+            window_for_pids=lambda pids, timeout: 88,
+            request_window_close=lambda window: None,
+            window_is_focusable=lambda window: True,
+        )
+        supervisor = SimpleNamespace(
+            _presentation=presentation,
+            _process_group_members=lambda pgid: {1234, 1235},
+        )
+        interface = ConsoleSessionInterface.__new__(ConsoleSessionInterface)
+        interface._local_identity = LaunchIdentity(
+            "owned-token", 1234, 1234, "/opt/lulu/current/packaging/eden-flatpak", ("eden-flatpak",)
+        )
+        interface.model = SimpleNamespace(state=SimpleNamespace(launch_token="owned-token"))
+        interface.supervisor = supervisor
+
+        with patch("lulu.sessiond.EDEN_WINDOW_CLOSE_TIMEOUT", 0), \
+                patch("lulu.sessiond.os.killpg") as killpg:
+            result = asyncio.run(ConsoleSessionInterface.QuitActiveSession.__wrapped__(interface))
+
+        self.assertEqual(result, "quit-requested")
+        killpg.assert_called_once_with(1234, __import__("signal").SIGTERM)
+
     def test_guide_quit_rejects_a_stale_session_identity(self) -> None:
         from types import SimpleNamespace
         from lulu.launch_identity import LaunchIdentity

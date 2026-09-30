@@ -69,6 +69,18 @@ def input_mode_interface(
 
 
 class BoundaryTests(unittest.TestCase):
+    def test_gamescope_close_targets_only_the_resolved_window(self) -> None:
+        from unittest.mock import patch
+
+        presentation = GamescopePresentation(display=":7")
+        with patch("lulu.gamescope.subprocess.run") as run:
+            presentation.request_window_close(456)
+
+        args, kwargs = run.call_args
+        self.assertEqual(args[0], ["xdotool", "windowclose", "456"])
+        self.assertTrue(kwargs["check"])
+        self.assertEqual(kwargs["env"]["DISPLAY"], ":7")
+
     def test_gamescope_waits_for_late_steam_window_and_refreshes_pids(self) -> None:
         presentation = GamescopePresentation(poll_interval=0.001)
         pid_sets = [[], [1234]]

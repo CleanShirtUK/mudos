@@ -35,6 +35,7 @@ BUS_NAME = "org.lulu.ConsoleSessiond"
 OBJECT_PATH = "/org/lulu/ConsoleSession"
 INTERFACE_NAME = "org.lulu.ConsoleSession"
 LOGGER = logging.getLogger("lulu.sessiond")
+EDEN_WINDOW_CLOSE_TIMEOUT = 12.0
 
 
 class ConsoleSessionInterface(ServiceInterface):
@@ -563,6 +564,28 @@ class ConsoleSessionInterface(ServiceInterface):
         if self._local_identity is not None:
             if self.model.state.launch_token != self._local_identity.token:
                 raise self._error(ValueError("local session no longer owns the launch"))
+            if Path(self._local_identity.executable).name == "eden-flatpak":
+                presentation = getattr(self.supervisor, "_presentation", None)
+                try:
+                    if presentation is None:
+                        raise RuntimeError("Gamescope presentation is unavailable")
+                    members = sorted(self.supervisor._process_group_members(self._local_identity.pgid))
+                    window = presentation.window_for_pids(members, timeout=2.0)
+                    presentation.request_window_close(window)
+                    LOGGER.info("Eden graceful close requested pid=%s pgid=%s window=%s",
+                                self._local_identity.pid, self._local_identity.pgid, window)
+                    deadline = asyncio.get_running_loop().time() + EDEN_WINDOW_CLOSE_TIMEOUT
+                    while presentation.window_is_focusable(window):
+                        remaining = deadline - asyncio.get_running_loop().time()
+                        if remaining <= 0:
+                            LOGGER.warning("Eden window remained after graceful-close timeout; sending SIGTERM pgid=%s",
+                                           self._local_identity.pgid)
+                            break
+                        await asyncio.sleep(min(0.1, remaining))
+                    else:
+                        return "quit-requested"
+                except (OSError, RuntimeError, TimeoutError, subprocess.SubprocessError) as error:
+                    LOGGER.warning("Eden graceful close unavailable; falling back to SIGTERM: %s", error)
             try:
                 os.killpg(self._local_identity.pgid, os_signal.SIGTERM)
             except ProcessLookupError:
