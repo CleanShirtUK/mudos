@@ -36,6 +36,7 @@ OBJECT_PATH = "/org/lulu/ConsoleSession"
 INTERFACE_NAME = "org.lulu.ConsoleSession"
 LOGGER = logging.getLogger("lulu.sessiond")
 EDEN_WINDOW_CLOSE_TIMEOUT = 12.0
+EDEN_TERMINATE_TIMEOUT = 5.0
 
 
 class ConsoleSessionInterface(ServiceInterface):
@@ -562,29 +563,29 @@ class ConsoleSessionInterface(ServiceInterface):
     async def QuitActiveSession(self) -> "s":
         """Quit only the process group recorded by Sessiond for this session."""
         if self._local_identity is not None:
-            if self.model.state.launch_token != self._local_identity.token:
+            identity = self._local_identity
+            if self.model.state.launch_token != identity.token:
                 raise self._error(ValueError("local session no longer owns the launch"))
             eden_launch = (
-                Path(self._local_identity.executable).name == "eden-flatpak"
-                or bool(self._local_identity.argv)
-                and Path(self._local_identity.argv[0]).name == "eden-flatpak"
+                Path(identity.executable).name == "eden-flatpak"
+                or (bool(identity.argv) and Path(identity.argv[0]).name == "eden-flatpak")
             )
             if eden_launch:
                 presentation = getattr(self.supervisor, "_presentation", None)
                 try:
                     if presentation is None:
                         raise RuntimeError("Gamescope presentation is unavailable")
-                    members = sorted(self.supervisor._process_group_members(self._local_identity.pgid))
+                    members = sorted(self.supervisor._process_group_members(identity.pgid))
                     window = presentation.window_for_pids(members, timeout=2.0)
                     presentation.request_window_close(window)
                     LOGGER.info("Eden graceful close requested pid=%s pgid=%s window=%s",
-                                self._local_identity.pid, self._local_identity.pgid, window)
+                                identity.pid, identity.pgid, window)
                     deadline = asyncio.get_running_loop().time() + EDEN_WINDOW_CLOSE_TIMEOUT
-                    while presentation.window_is_focusable(window):
+                    while self.supervisor._process_group_members(identity.pgid):
                         remaining = deadline - asyncio.get_running_loop().time()
                         if remaining <= 0:
-                            LOGGER.warning("Eden window remained after graceful-close timeout; sending SIGTERM pgid=%s",
-                                           self._local_identity.pgid)
+                            LOGGER.warning("Eden process group remained after graceful-close timeout; sending SIGTERM pgid=%s",
+                                           identity.pgid)
                             break
                         await asyncio.sleep(min(0.1, remaining))
                     else:
@@ -592,11 +593,28 @@ class ConsoleSessionInterface(ServiceInterface):
                 except (OSError, RuntimeError, TimeoutError, subprocess.SubprocessError) as error:
                     LOGGER.warning("Eden graceful close unavailable; falling back to SIGTERM: %s", error)
             try:
-                os.killpg(self._local_identity.pgid, os_signal.SIGTERM)
+                os.killpg(identity.pgid, os_signal.SIGTERM)
             except ProcessLookupError:
-                pass
+                return "quit-requested"
             except OSError as error:
                 raise self._error(ValueError(f"could not quit the owned local session: {error}")) from error
+            if eden_launch:
+                deadline = asyncio.get_running_loop().time() + EDEN_TERMINATE_TIMEOUT
+                while self.supervisor._process_group_members(identity.pgid):
+                    remaining = deadline - asyncio.get_running_loop().time()
+                    if remaining <= 0:
+                        LOGGER.error("Eden process group remained after SIGTERM; sending SIGKILL pgid=%s",
+                                     identity.pgid)
+                        try:
+                            os.killpg(identity.pgid, os_signal.SIGKILL)
+                        except ProcessLookupError:
+                            pass
+                        except OSError as error:
+                            raise self._error(ValueError(
+                                f"could not force-stop the owned Eden session: {error}"
+                            )) from error
+                        break
+                    await asyncio.sleep(min(0.1, remaining))
             return "quit-requested"
         try:
             await self.supervisor.quit_active_session()
