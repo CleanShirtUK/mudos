@@ -262,16 +262,34 @@ class EmulatorRuntimeTests(unittest.TestCase):
             self.assertNotIn("SDL-1/", pad1)
             self.assertIn("Up = SDL-0/DPadDown", first)
             self.assertIn("L2 = SDL-0/+LeftTrigger", first)
-            self.assertIn("OpenPauseMenu = Keyboard/F12", first)
             self.assertIn("ConfirmShutdown = false", first)
             self.assertIn("StartFullscreen = true", first)
             self.assertIn("StartBigPictureMode = false", first)
             self.assertIn("SettingsVersion = 1", first)
             self.assertIn("SetupWizardIncomplete = false", first)
-            self.assertIn("OpenPauseMenu = Keyboard/F12", first)
+            self.assertIn("[Hotkeys]\nOpenPauseMenu = Keyboard/F12", first)
+            ui = first.split("[UI]", 1)[1].split("[", 1)[0]
+            self.assertNotIn("OpenPauseMenu", ui)
             self.assertIn("[EmuCore/GS]\nRenderer = -1", first)
             self.assertIn("[Pad2]", first)
             self.assertIn("Cross = SDL-1/FaceSouth", first)
+
+    def test_pcsx2_migrates_open_pause_menu_to_hotkeys_section(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            ini = root / "PCSX2" / "inis" / "PCSX2.ini"
+            ini.parent.mkdir(parents=True)
+            ini.write_text(
+                "[UI]\nOpenPauseMenu = Keyboard/F12\nTheme = dark\n\n"
+                "[Hotkeys]\nToggleFullscreen = Keyboard/Alt & Keyboard/Return\n"
+            )
+            result = ensure_provider_controller_config("pcsx2", root).read_text()
+        ui = result.split("[UI]", 1)[1].split("[", 1)[0]
+        hotkeys = result.split("[Hotkeys]", 1)[1].split("[", 1)[0]
+        self.assertNotIn("OpenPauseMenu", ui)
+        self.assertIn("Theme = dark", ui)
+        self.assertIn("OpenPauseMenu = Keyboard/F12", hotkeys)
+        self.assertIn("ToggleFullscreen = Keyboard/Alt & Keyboard/Return", hotkeys)
 
     def test_pcsx2_default_storage_bios_path_is_provisioned_into_native_config(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

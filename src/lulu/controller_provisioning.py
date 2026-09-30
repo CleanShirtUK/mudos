@@ -64,6 +64,24 @@ def _update_section_values(text: str, section: str, values: dict[str, str]) -> s
     return "\n".join(lines) + "\n"
 
 
+def _remove_section_keys(text: str, section: str, keys: set[str]) -> str:
+    """Remove selected keys from an INI section without disturbing its peers."""
+    lines = text.splitlines()
+    header = f"[{section}]"
+    in_section = False
+    updated = []
+    for line in lines:
+        if line.startswith("["):
+            in_section = line == header
+            updated.append(line)
+            continue
+        key = line.split("=", 1)[0].strip() if "=" in line else None
+        if in_section and key in keys:
+            continue
+        updated.append(line)
+    return "\n".join(updated) + ("\n" if updated else "")
+
+
 def _remove_section(text: str, section: str) -> str:
     """Remove one generated INI section while leaving other profiles intact."""
     lines = text.splitlines()
@@ -271,12 +289,15 @@ def ensure_provider_controller_config(
                 "ConfirmShutdown": "false",
                 "StartFullscreen": "true",
                 "StartBigPictureMode": "false",
-                "OpenPauseMenu": "Keyboard/F12",
                 # Mudos owns BIOS and controller setup; never enter the
                 # interactive first-run wizard on a managed game launch.
                 "SetupWizardIncomplete": "false",
             },
         )
+        # OpenPauseMenu belongs to PCSX2's [Hotkeys] section, not [UI].
+        # Remove the legacy misplaced entry while preserving other UI values.
+        source = _remove_section_keys(source, "UI", {"OpenPauseMenu"})
+        source = _update_section_values(source, "Hotkeys", {"OpenPauseMenu": "Keyboard/F12"})
         # Use PCSX2's automatic renderer selection as seen in its 2.8.2
         # native config; fullscreen is handled by the Mudos game surface.
         source = _update_section_values(source, "EmuCore/GS", {"Renderer": "-1"})
