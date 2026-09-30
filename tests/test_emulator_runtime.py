@@ -22,7 +22,7 @@ class EmulatorRuntimeTests(unittest.TestCase):
         # Unit profiles use an explicit synthetic live identity. Production
         # callers always supply this from the controller inventory.
         self._old_guid = os.environ.get("LULU_SWITCH_SDL_GUID")
-        os.environ["LULU_SWITCH_SDL_GUID"] = "synthetic-live-guid"
+        os.environ["LULU_SWITCH_SDL_GUID"] = "030081b85e0400008e02000001000000"
 
     def tearDown(self) -> None:
         if self._old_guid is None:
@@ -153,16 +153,15 @@ class EmulatorRuntimeTests(unittest.TestCase):
             second_content = second.read_text()
 
         self.assertEqual(intent.arguments, ("--appimage-extract-and-run", "--config", str(second), "-f", "--fullscreen", "--game", "/fixture/game.nsp"))
-        self.assertIn('player_0_button_a="engine:sdl,port:0,guid:synthetic-live-guid,button:0"', config)
-        self.assertIn('player_0_button_b="engine:sdl,port:0,guid:synthetic-live-guid,button:1"', config)
-        self.assertIn('player_0_button_x="engine:sdl,port:0,guid:synthetic-live-guid,button:2"', config)
-        self.assertIn('player_0_button_y="engine:sdl,port:0,guid:synthetic-live-guid,button:3"', config)
+        for name, button in (("a", 0), ("b", 1), ("x", 2), ("y", 3)):
+            self.assertIn(f'player_0_button_{name}\\default=false', config)
+            self.assertIn(f'player_0_button_{name}="engine:sdl,port:0,guid:030000005e0400008e02000001000000,button:{button}"', config)
         self.assertIn("player_0_type=0", config)
         self.assertIn("player_0_connected=true", config)
         self.assertIn("player_0_connected\\default=false", config)
         self.assertNotIn("player_0_connect=", config)
         self.assertEqual(config, second_content)
-        self.assertIn('player_0_lstick="engine:sdl,port:0,guid:synthetic-live-guid,axis_x:0,axis_y:1,invert_x:+,invert_y:+"', config)
+        self.assertIn('player_0_lstick="engine:sdl,port:0,guid:030000005e0400008e02000001000000,axis_x:0,axis_y:1,invert_x:+,invert_y:+"', config)
 
     def test_switch_profile_follows_assigned_controller_indices(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -171,9 +170,9 @@ class EmulatorRuntimeTests(unittest.TestCase):
             config = provider.ensure_controller_config(device_indices={1: 0, 2: 2, 3: 1})
             content = config.read_text()
 
-        self.assertIn("player_0_button_a=\"engine:sdl,port:0,guid:synthetic-live-guid,button:0\"", content)
-        self.assertIn("player_1_button_a=\"engine:sdl,port:2,guid:synthetic-live-guid,button:0\"", content)
-        self.assertIn("player_2_button_a=\"engine:sdl,port:1,guid:synthetic-live-guid,button:0\"", content)
+        self.assertIn("player_0_button_a=\"engine:sdl,port:0,guid:030000005e0400008e02000001000000,button:0\"", content)
+        self.assertIn("player_1_button_a=\"engine:sdl,port:2,guid:030000005e0400008e02000001000000,button:0\"", content)
+        self.assertIn("player_2_button_a=\"engine:sdl,port:1,guid:030000005e0400008e02000001000000,button:0\"", content)
         self.assertNotIn("player_3_", content)
 
     def test_switch_three_player_profile_has_unique_gamepads_and_native_mapping(self) -> None:
@@ -185,7 +184,7 @@ class EmulatorRuntimeTests(unittest.TestCase):
         for player, port in enumerate((0, 1, 2)):
             for name, button in (("a", 0), ("b", 1), ("x", 2), ("y", 3)):
                 self.assertIn(
-                    f'player_{player}_button_{name}="engine:sdl,port:{port},guid:synthetic-live-guid,button:{button}"',
+                    f'player_{player}_button_{name}="engine:sdl,port:{port},guid:030000005e0400008e02000001000000,button:{button}"',
                     content,
                 )
             self.assertIn(f"player_{player}_type=0", content)

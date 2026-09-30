@@ -106,6 +106,24 @@
   pending. Stop for physical Eden launch acceptance; do not reopen PCSX2 or the
   controller gate.
 
+## Eden first-launch provisioning repair — 2026-09-30
+
+- The first physical launch booted the title but failed Gamescope's Xwayland
+  selection because Eden chose Wayland. The Eden-only wrapper selects Qt XCB;
+  Sessiond identifies the window through the owned Flatpak process group.
+- Eden 0.2.1's firmware installer copies source `.nca` files by basename into
+  writable `nand/system/Contents/registered`, rescans, and verifies. Mudos now
+  validates the canonical source, migrates only manifest-owned legacy symlinks
+  into regular NAND files, compares content hashes on subsequent launches, and
+  refuses unowned/modified NAND entries. Canonical firmware remains read-only.
+- Eden's `ReadStringSetting` ignores non-default controller values unless their
+  matching `\\default=false` entries exist. Mudos now writes those flags and
+  uses Eden SDL2's CRC-cleared live GUID and per-GUID port numbering. It does
+  not swap A/B/X/Y or pin an event node.
+- No-game offscreen Eden startup after provisioning reported firmware `22.5.0`,
+  zero read-only-open errors and retained the SDL bindings in active Controls.
+  These preflight checks are **not** physical gameplay acceptance.
+
 ## Controller superpass — pending physical validation (2026-09-28)
 
 - Source work is complete at checkpoints `2d06f16` (normalized controller

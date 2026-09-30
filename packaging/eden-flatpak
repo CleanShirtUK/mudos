@@ -12,14 +12,10 @@ if [ "${1:-}" = "--appimage-extract-and-run" ]; then
     shift
 fi
 
-# Eden stores keys and installed firmware in its user-data/NAND tree and does
-# not provide config keys for either path. Mudos projects its canonical files
-# there as symlinks, then grants the backing storage read-only at invocation.
+# Keys remain read-only projections. Firmware is copied from the canonical
+# source into Eden's managed writable NAND before launch.
 if [ -n "${MUDOS_EDEN_KEYS_DIR:-}" ]; then
     args+=("--filesystem=$MUDOS_EDEN_KEYS_DIR:ro")
-fi
-if [ -n "${MUDOS_EDEN_FIRMWARE_DIR:-}" ]; then
-    args+=("--filesystem=$MUDOS_EDEN_FIRMWARE_DIR:ro")
 fi
 if [ -n "${MUDOS_EDEN_GAME_DIR:-}" ]; then
     args+=("--filesystem=$MUDOS_EDEN_GAME_DIR:ro")

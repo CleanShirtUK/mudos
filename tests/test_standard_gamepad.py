@@ -335,26 +335,26 @@ class StandardGamepadTests(unittest.TestCase):
 
     def test_eden_uses_each_live_guid_with_native_face_buttons(self) -> None:
         pads = {
-            1: self._pad("sony", "DualSense", "guid-sony", 0),
-            2: self._pad("generic", "Generic SDL Pad", "guid-generic", 1),
+            1: self._pad("sony", "DualSense", "030081b85e0400008e02000001000000", 0),
+            2: self._pad("generic", "Generic SDL Pad", "03001234050400008e02000001000000", 1),
         }
         with tempfile.TemporaryDirectory() as directory:
             path = SwitchProvider(Path(directory) / "eden", Path(directory) / "config")
             content = path.ensure_controller_config(2, {1: 0, 2: 1}, pads).read_text()
-        self.assertIn("port:0,guid:guid-sony", content)
-        self.assertIn("port:1,guid:guid-generic", content)
-        self.assertIn('player_0_button_a="engine:sdl,port:0,guid:guid-sony,button:0"', content)
-        self.assertIn('player_1_button_a="engine:sdl,port:1,guid:guid-generic,button:0"', content)
+        self.assertIn("port:0,guid:030000005e0400008e02000001000000", content)
+        self.assertIn("port:0,guid:03000000050400008e02000001000000", content)
+        self.assertIn('player_0_button_a="engine:sdl,port:0,guid:030000005e0400008e02000001000000,button:0"', content)
+        self.assertIn('player_1_button_a="engine:sdl,port:0,guid:03000000050400008e02000001000000,button:0"', content)
         self.assertNotIn("030081b85e0400008e02000001000000", content)
 
     def test_same_guid_still_uses_separate_runtime_indices(self) -> None:
         pads = {
-            1: self._pad("one", "Pad One", "shared-guid", 0),
-            2: self._pad("two", "Pad Two", "shared-guid", 3),
+            1: self._pad("one", "Pad One", "030081b85e0400008e02000001000000", 0),
+            2: self._pad("two", "Pad Two", "030081b85e0400008e02000001000000", 3),
         }
         with tempfile.TemporaryDirectory() as directory:
             content = SwitchProvider(Path(directory) / "eden", Path(directory) / "config").ensure_controller_config(
                 2, {1: 0, 2: 3}, pads
             ).read_text()
-        self.assertIn("port:0,guid:shared-guid", content)
-        self.assertIn("port:3,guid:shared-guid", content)
+        self.assertIn("port:0,guid:030000005e0400008e02000001000000", content)
+        self.assertIn("port:1,guid:030000005e0400008e02000001000000", content)
