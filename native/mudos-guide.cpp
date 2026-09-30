@@ -304,14 +304,15 @@ private:
         }
         auto *focusReply = xcb_get_input_focus_reply(connection,
                                                       xcb_get_input_focus(connection), nullptr);
-        const xcb_window_t observedFocus = focusReply ? focusReply->focus : XCB_WINDOW_NONE;
+        const xcb_window_t observedFocus = focusReply
+            ? focusReply->focus : static_cast<xcb_window_t>(XCB_WINDOW_NONE);
         qInfo() << "Guide key injection" << key << "symbol=" << Qt::hex << keySymbol
                 << "keycode=" << Qt::dec << keycodes[0] << "window=" << Qt::hex << targetXid_
                 << "root=" << screen->root << "input_focus="
                 << observedFocus;
         free(focusReply);
         if (pcsx2Pause) {
-            const auto sendWindowKey = [connection, screen, this, keycodes](uint8_t type) {
+            const auto sendWindowKey = [connection, screen, this, keycodes, &key](uint8_t type) {
                 xcb_key_press_event_t event{};
                 event.response_type = type;
                 event.detail = keycodes[0];
