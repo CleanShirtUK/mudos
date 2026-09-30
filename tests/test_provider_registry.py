@@ -34,7 +34,7 @@ class ProviderLaunchContractTests(unittest.TestCase):
             actions = providers.guide_actions("pcsx2", context)
             menu_action, = (action for action in actions if action.action_id == "pcsx2-menu")
             quit_action, = (action for action in actions if action.role == "quit")
-            self.assertEqual(menu_action.target, "key:F12")
+            self.assertEqual(menu_action.target, "key:Escape")
             self.assertEqual(quit_action.action_id, "pcsx2-quit")
             self.assertEqual(quit_action.target, "process-group-terminate")
 
@@ -60,17 +60,17 @@ class ProviderLaunchContractTests(unittest.TestCase):
         key_handler = source.split("bool sendKey(", 1)[1].split("bool runCommand(", 1)[0]
         self.assertIn('key == QStringLiteral("Shift+Tab")', key_handler)
         self.assertIn('key == QStringLiteral("bracketright")', key_handler)
-        self.assertIn('key == QStringLiteral("F12")', key_handler)
-        self.assertIn('steamOverlay ? XK_Tab : dolphinSync ? XK_bracketright : XK_F12', key_handler)
+        self.assertIn('key == QStringLiteral("Escape")', key_handler)
+        self.assertIn('steamOverlay ? XK_Tab : XK_bracketright', key_handler)
         self.assertIn('xcb_key_symbols_get_keycode(keySymbols, XK_Shift_L)', key_handler)
         self.assertIn('if (steamOverlay)\n            sendFakeInput(XCB_KEY_PRESS, shiftCodes[0])', key_handler)
         self.assertIn("xcb_flush(connection);\n        if (dolphinSync)\n            usleep(100 * 1000);", key_handler)
         self.assertIn('sendFakeInput(XCB_KEY_RELEASE, shiftCodes[0])', key_handler)
         self.assertIn("xcb_request_check(connection, cookie)", key_handler)
         self.assertIn('"input_focus="', key_handler)
-        self.assertIn("if (pcsx2Pause)", key_handler)
-        self.assertIn("xcb_send_event_checked(", key_handler)
-        self.assertIn('"Guide PCSX2 window-key request sent"', key_handler)
+        self.assertIn("sendUInputKey(KEY_ESC, key)", key_handler)
+        self.assertIn('"/dev/uinput"', source)
+        self.assertIn('"Guide uinput key complete"', source)
         self.assertIn('targetXid_', key_handler)
 
     def test_dolphin_and_eden_can_reveal_ui_without_quitting_or_toggling_fullscreen(self) -> None:

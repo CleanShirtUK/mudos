@@ -295,9 +295,9 @@ class ConsoleUiTests(unittest.TestCase):
         retroarch = (ROOT / "config/providers/retroarch/provider.toml").read_text()
         pcsx2 = (ROOT / "config/providers/pcsx2/provider.toml").read_text()
         self.assertIn('target = "command:/usr/bin/retroarch --command MENU_TOGGLE"', retroarch)
-        self.assertIn('target = "key:F12"', pcsx2)
+        self.assertIn('target = "key:Escape"', pcsx2)
         self.assertIn('xcb_test_fake_input', native_guide)
-        self.assertIn('XK_F12', native_guide)
+        self.assertIn('KEY_ESC', native_guide)
 
     def test_extracted_ui_primitives_preserve_real_game_card_data(self) -> None:
         for filename in ("GameCard.qml", "RecentHome.qml", "LibraryHome.qml", "LibrarySpace.qml", "PlaceholderHome.qml"):

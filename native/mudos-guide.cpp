@@ -19,11 +19,15 @@
 #include <xcb/xtest.h>
 #include <xcb/xcb_keysyms.h>
 #include <X11/keysym.h>
+#include <linux/input.h>
+#include <linux/uinput.h>
 
 #include <cstdlib>
+#include <cerrno>
 #include <cstring>
 #include <dirent.h>
 #include <fcntl.h>
+#include <sys/ioctl.h>
 #include <unistd.h>
 #include <QHash>
 
@@ -267,23 +271,81 @@ private:
         return true;
     }
 
+    bool sendUInputKey(uint16_t keyCode, const QString &key)
+    {
+        const int fd = ::open("/dev/uinput", O_WRONLY | O_CLOEXEC);
+        if (fd < 0) {
+            qWarning() << "Guide uinput open failed" << key << std::strerror(errno);
+            return false;
+        }
+        const auto configure = [fd](unsigned long request, int value) {
+            return ::ioctl(fd, request, value) == 0;
+        };
+        if (!configure(UI_SET_EVBIT, EV_KEY) || !configure(UI_SET_KEYBIT, keyCode)) {
+            qWarning() << "Guide uinput key setup failed" << key << std::strerror(errno);
+            ::close(fd);
+            return false;
+        }
+        uinput_setup setup{};
+        setup.id.bustype = BUS_USB;
+        setup.id.vendor = 0x1209;
+        setup.id.product = 0x4c55;
+        setup.id.version = 1;
+        std::strncpy(setup.name, "Mudos PCSX2 Guide Keyboard", UINPUT_MAX_NAME_SIZE - 1);
+        if (::ioctl(fd, UI_DEV_SETUP, &setup) < 0 || ::ioctl(fd, UI_DEV_CREATE) < 0) {
+            qWarning() << "Guide uinput device creation failed" << key << std::strerror(errno);
+            ::close(fd);
+            return false;
+        }
+        ::usleep(100 * 1000);
+        const auto writeEvent = [fd](uint16_t type, uint16_t code, int32_t value) {
+            input_event event{};
+            event.type = type;
+            event.code = code;
+            event.value = value;
+            return ::write(fd, &event, sizeof(event)) == sizeof(event);
+        };
+        const bool pressed = writeEvent(EV_KEY, keyCode, 1) && writeEvent(EV_SYN, SYN_REPORT, 0);
+        ::usleep(50 * 1000);
+        const bool released = writeEvent(EV_KEY, keyCode, 0) && writeEvent(EV_SYN, SYN_REPORT, 0);
+        ::usleep(50 * 1000);
+        ::ioctl(fd, UI_DEV_DESTROY);
+        ::close(fd);
+        qInfo() << "Guide uinput key complete" << key << "pressed=" << pressed
+                << "released=" << released;
+        return pressed && released;
+    }
+
     bool sendKey(const QString &key)
     {
         // Provider manifests may request only these exact, known Guide keys.
         // Never turn an arbitrary target string into keyboard input.
         const bool steamOverlay = key == QStringLiteral("Shift+Tab");
         const bool dolphinSync = key == QStringLiteral("bracketright");
-        const bool pcsx2Pause = key == QStringLiteral("F12");
+        const bool pcsx2Pause = key == QStringLiteral("Escape");
         if (!steamOverlay && !dolphinSync && !pcsx2Pause)
             return false;
         auto *x11 = qGuiApp->nativeInterface<QNativeInterface::QX11Application>();
         if (!targetXid_ || !x11 || !x11->connection())
             return false;
         auto *connection = x11->connection();
+        if (pcsx2Pause) {
+            const auto focusCookie = xcb_set_input_focus(
+                connection, XCB_INPUT_FOCUS_NONE, targetXid_, XCB_CURRENT_TIME);
+            if (auto *error = xcb_request_check(connection, focusCookie)) {
+                qWarning() << "Guide PCSX2 focus request failed" << "window=" << Qt::hex
+                           << targetXid_ << "error=" << error->error_code;
+                free(error);
+            }
+            qInfo() << "Guide PCSX2 keyboard injection" << "window=" << Qt::hex << targetXid_
+                    << "key=Escape";
+            xcb_flush(connection);
+            return sendUInputKey(KEY_ESC, key);
+        }
         auto *keySymbols = xcb_key_symbols_alloc(connection);
         if (!keySymbols)
             return false;
-        const auto keySymbol = steamOverlay ? XK_Tab : dolphinSync ? XK_bracketright : XK_F12;
+        const auto keySymbol = steamOverlay ? XK_Tab : XK_bracketright;
         auto *keycodes = xcb_key_symbols_get_keycode(keySymbols, keySymbol);
         auto *shiftCodes = steamOverlay ? xcb_key_symbols_get_keycode(keySymbols, XK_Shift_L) : nullptr;
         if (!keycodes || keycodes[0] == XCB_NO_SYMBOL
@@ -311,39 +373,6 @@ private:
                 << "root=" << screen->root << "input_focus="
                 << observedFocus;
         free(focusReply);
-        if (pcsx2Pause) {
-            const auto sendWindowKey = [connection, screen, this, keycodes, &key](uint8_t type) {
-                xcb_key_press_event_t event{};
-                event.response_type = type;
-                event.detail = keycodes[0];
-                event.time = XCB_CURRENT_TIME;
-                event.root = screen->root;
-                event.event = targetXid_;
-                event.child = XCB_WINDOW_NONE;
-                event.same_screen = 1;
-                const auto mask = type == XCB_KEY_PRESS
-                    ? XCB_EVENT_MASK_KEY_PRESS : XCB_EVENT_MASK_KEY_RELEASE;
-                const auto cookie = xcb_send_event_checked(
-                    connection, 0, targetXid_, mask,
-                    reinterpret_cast<const char *>(&event));
-                if (auto *error = xcb_request_check(connection, cookie)) {
-                    qWarning() << "Guide PCSX2 window-key request failed" << key
-                               << "type=" << type << "error=" << error->error_code;
-                    free(error);
-                    return false;
-                }
-                qInfo() << "Guide PCSX2 window-key request sent" << key << "type=" << type
-                        << "window=" << Qt::hex << targetXid_;
-                return true;
-            };
-            const bool pressed = sendWindowKey(XCB_KEY_PRESS);
-            const bool released = sendWindowKey(XCB_KEY_RELEASE);
-            xcb_flush(connection);
-            free(keycodes);
-            free(shiftCodes);
-            xcb_key_symbols_free(keySymbols);
-            return pressed && released;
-        }
         const auto sendFakeInput = [connection, screen, key](uint8_t type, uint8_t detail) {
             const auto cookie = xcb_test_fake_input(connection, type, detail, XCB_CURRENT_TIME,
                                                     screen->root, 0, 0, 0);
@@ -359,8 +388,7 @@ private:
             sendFakeInput(XCB_KEY_PRESS, shiftCodes[0]);
         sendFakeInput(XCB_KEY_PRESS, keycodes[0]);
         // Dolphin polls hotkey state on its emulation thread, so its sync key
-        // needs a hold. PCSX2's historical pause-menu action uses a short F12
-        // tap; do not delay its release.
+        // needs a hold.
         xcb_flush(connection);
         if (dolphinSync)
             usleep(100 * 1000);

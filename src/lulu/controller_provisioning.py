@@ -297,7 +297,8 @@ def ensure_provider_controller_config(
         # OpenPauseMenu belongs to PCSX2's [Hotkeys] section, not [UI].
         # Remove the legacy misplaced entry while preserving other UI values.
         source = _remove_section_keys(source, "UI", {"OpenPauseMenu"})
-        source = _update_section_values(source, "Hotkeys", {"OpenPauseMenu": "Keyboard/F12"})
+        source = _update_section_values(source, "InputSources", {"Keyboard": "true"})
+        source = _update_section_values(source, "Hotkeys", {"OpenPauseMenu": "Keyboard/Escape"})
         # Use PCSX2's automatic renderer selection as seen in its 2.8.2
         # native config; fullscreen is handled by the Mudos game surface.
         source = _update_section_values(source, "EmuCore/GS", {"Renderer": "-1"})
