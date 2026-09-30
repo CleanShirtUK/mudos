@@ -34,7 +34,7 @@ class ProviderLaunchContractTests(unittest.TestCase):
             actions = providers.guide_actions("pcsx2", context)
             menu_action, = (action for action in actions if action.action_id == "pcsx2-menu")
             quit_action, = (action for action in actions if action.role == "quit")
-            self.assertEqual(menu_action.target, "key:Escape")
+            self.assertEqual(menu_action.target, "key:F12")
             self.assertEqual(quit_action.action_id, "pcsx2-quit")
             self.assertEqual(quit_action.target, "process-group-terminate")
 
@@ -60,11 +60,11 @@ class ProviderLaunchContractTests(unittest.TestCase):
         key_handler = source.split("bool sendKey(", 1)[1].split("bool runCommand(", 1)[0]
         self.assertIn('key == QStringLiteral("Shift+Tab")', key_handler)
         self.assertIn('key == QStringLiteral("bracketright")', key_handler)
-        self.assertIn('key == QStringLiteral("Escape")', key_handler)
-        self.assertIn('steamOverlay ? XK_Tab : dolphinSync ? XK_bracketright : XK_Escape', key_handler)
+        self.assertIn('key == QStringLiteral("F12")', key_handler)
+        self.assertIn('steamOverlay ? XK_Tab : dolphinSync ? XK_bracketright : XK_F12', key_handler)
         self.assertIn('xcb_key_symbols_get_keycode(keySymbols, XK_Shift_L)', key_handler)
         self.assertIn('if (steamOverlay)\n            xcb_test_fake_input(connection, XCB_KEY_PRESS, shiftCodes[0]', key_handler)
-        self.assertIn("xcb_flush(connection);\n        usleep(100 * 1000);", key_handler)
+        self.assertIn("xcb_flush(connection);\n        if (dolphinSync)\n            usleep(100 * 1000);", key_handler)
         self.assertIn('XCB_KEY_RELEASE, shiftCodes[0]', key_handler)
         self.assertIn('targetXid_', key_handler)
 

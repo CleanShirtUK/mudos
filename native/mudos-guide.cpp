@@ -267,7 +267,7 @@ private:
         // Never turn an arbitrary target string into keyboard input.
         const bool steamOverlay = key == QStringLiteral("Shift+Tab");
         const bool dolphinSync = key == QStringLiteral("bracketright");
-        const bool pcsx2Pause = key == QStringLiteral("Escape");
+        const bool pcsx2Pause = key == QStringLiteral("F12");
         if (!steamOverlay && !dolphinSync && !pcsx2Pause)
             return false;
         auto *x11 = qGuiApp->nativeInterface<QNativeInterface::QX11Application>();
@@ -277,7 +277,7 @@ private:
         auto *keySymbols = xcb_key_symbols_alloc(connection);
         if (!keySymbols)
             return false;
-        const auto keySymbol = steamOverlay ? XK_Tab : dolphinSync ? XK_bracketright : XK_Escape;
+        const auto keySymbol = steamOverlay ? XK_Tab : dolphinSync ? XK_bracketright : XK_F12;
         auto *keycodes = xcb_key_symbols_get_keycode(keySymbols, keySymbol);
         auto *shiftCodes = steamOverlay ? xcb_key_symbols_get_keycode(keySymbols, XK_Shift_L) : nullptr;
         if (!keycodes || keycodes[0] == XCB_NO_SYMBOL
@@ -295,10 +295,12 @@ private:
                                 screen->root, 0, 0, 0);
         xcb_test_fake_input(connection, XCB_KEY_PRESS, keycodes[0], XCB_CURRENT_TIME,
                             screen->root, 0, 0, 0);
-        // Keep the key held long enough for the target application to observe
-        // it instead of queuing an effectively instantaneous press/release.
+        // Dolphin polls hotkey state on its emulation thread, so its sync key
+        // needs a hold. PCSX2's historical pause-menu action uses a short F12
+        // tap; do not delay its release.
         xcb_flush(connection);
-        usleep(100 * 1000);
+        if (dolphinSync)
+            usleep(100 * 1000);
         xcb_test_fake_input(connection, XCB_KEY_RELEASE, keycodes[0], XCB_CURRENT_TIME,
                             screen->root, 0, 0, 0);
         if (steamOverlay)

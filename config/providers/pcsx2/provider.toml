@@ -19,7 +19,7 @@ command = "/usr/local/bin/pcsx2-qt"
 id = "pcsx2-menu"
 label = "Open PCSX2 Menu"
 role = "provider"
-target = "key:Escape"
+target = "key:F12"
 contexts = ["game", "standalone"]
 order = 10
 
