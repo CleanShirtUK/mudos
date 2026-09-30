@@ -27,6 +27,6 @@ order = 10
 id = "pcsx2-quit"
 label = "Quit PCSX2"
 role = "quit"
-target = "window-delete"
+target = "process-group-terminate"
 contexts = ["game", "standalone"]
 order = 90

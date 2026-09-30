@@ -28,6 +28,14 @@ class ProviderLaunchContractTests(unittest.TestCase):
                          ["steam-quit"])
         self.assertEqual(providers.guide_actions("romm", "game"), ())
 
+    def test_pcsx2_quit_targets_sessiond_owned_process(self) -> None:
+        providers = load_providers()
+        for context in ("game", "standalone"):
+            actions = providers.guide_actions("pcsx2", context)
+            quit_action, = (action for action in actions if action.role == "quit")
+            self.assertEqual(quit_action.action_id, "pcsx2-quit")
+            self.assertEqual(quit_action.target, "process-group-terminate")
+
     def test_dolphin_wiimote_sync_is_guide_only_and_provider_scoped(self) -> None:
         providers = load_providers()
         for context in ("game", "standalone"):
