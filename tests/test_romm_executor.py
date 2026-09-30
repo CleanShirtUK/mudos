@@ -32,6 +32,45 @@ class FakeRomm:
 
 
 class RommExecutorTests(unittest.TestCase):
+    def test_romm_library_missing_file_is_a_nonretryable_content_error(self) -> None:
+        client = FakeRomm(b"payload")
+        client.game = RommGame(243, "Missing fixture", 1, "switch", "Switch", "missing.nsp",
+                              ".nsp", 7, "", True,
+                              (RommFile(717, "missing.nsp", 7, rom_id=243),))
+        with self.assertRaises(Exception) as caught:
+            RommExecutor(client)._resolve("romm:243")
+        self.assertEqual(caught.exception.code, "romm-content-missing")
+        self.assertFalse(caught.exception.retryable)
+        self.assertIn("missing from storage", str(caught.exception))
+
+    def test_romm_download_404_is_not_reported_as_provider_unavailable(self) -> None:
+        from lulu.romm import RommApiError
+
+        class MissingContent(FakeRomm):
+            def open_file_stream(self, _romm_file, offset=0):
+                raise RommApiError(
+                    "RomM returned HTTP 404 for /roms/7/content/test.nes?file_ids=70"
+                )
+
+        async def exercise() -> None:
+            client = MissingContent(b"payload")
+            client.game = RommGame(7, "Test Kart", 1, "nes", "NES", "test.nes", ".nes",
+                                  7, "", False, (RommFile(70, "test.nes", 7, rom_id=7),))
+            manager = JobManager()
+            manager.register_executor("romm", RommExecutor(client))
+            job = manager.submit("romm", "romm:7", "Test Kart")
+            with tempfile.TemporaryDirectory() as directory, \
+                    patch.dict("os.environ", {"LULU_ROM_ROOT": directory}), \
+                    patch("lulu.plugins.romm.executor.ensure_storage"):
+                await manager._tasks[job.job_id]
+            result = manager.jobs[job.job_id]
+            self.assertEqual(result.state, JobState.FAILED)
+            self.assertEqual(result.error.code, "romm-content-missing")
+            self.assertFalse(result.error.retryable)
+            self.assertIn("HTTP 404", result.error.details["provider_message"])
+
+        asyncio.run(exercise())
+
     def test_ps1_cue_track_set_is_preserved_and_launches_the_cue(self) -> None:
         async def exercise() -> None:
             with tempfile.TemporaryDirectory() as directory:

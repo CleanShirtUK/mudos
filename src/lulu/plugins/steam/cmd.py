@@ -746,7 +746,9 @@ class SteamCmdExecutor:
         try:
             consume_tasks = {asyncio.create_task(consume(process.stdout)),
                              asyncio.create_task(consume(process.stderr))}
-            deadline = asyncio.get_running_loop().time() + 120
+            # SteamCMD can remain silent for minutes while depot data is being
+            # fetched.  Treat that as an idle watchdog, not a whole-job limit.
+            deadline = asyncio.get_running_loop().time() + 1800
             while consume_tasks:
                 remaining = max(0.0, deadline - asyncio.get_running_loop().time())
                 done, _ = await asyncio.wait(consume_tasks, timeout=remaining)
@@ -754,14 +756,19 @@ class SteamCmdExecutor:
                     if auth_active:
                         auth_changed.clear()
                         await auth_changed.wait()
-                        deadline = asyncio.get_running_loop().time() + 120
+                        deadline = asyncio.get_running_loop().time() + 1800
                         continue
-                    raise asyncio.TimeoutError
+                    raise SteamCmdError(
+                        "steamcmd-timeout",
+                        "SteamCMD made no observable progress for 30 minutes; the install may be retried.",
+                        retryable=True,
+                        details={"idle_timeout_seconds": 1800},
+                    )
                 for task in done:
                     consume_tasks.remove(task)
                     await task
                 if not auth_active:
-                    deadline = asyncio.get_running_loop().time() + 120
+                    deadline = asyncio.get_running_loop().time() + 1800
         except asyncio.CancelledError:
             if guard_task is not None and not guard_task.done():
                 guard_task.cancel()

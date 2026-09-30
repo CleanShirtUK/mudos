@@ -35,6 +35,12 @@ class SteamCmdParserTests(unittest.TestCase):
 
 
 class SteamCmdExecutorTests(unittest.TestCase):
+    def test_steam_silent_depot_transfer_gets_long_idle_watchdog(self) -> None:
+        source = (Path(__file__).parents[1] / "src/lulu/plugins/steam/cmd.py").read_text()
+        self.assertIn("time() + 1800", source)
+        self.assertIn('"steamcmd-timeout"', source)
+        self.assertIn("idle_timeout_seconds", source)
+
     def test_missing_steam_account_is_retryable_after_authentication_setup(self) -> None:
         executor = SteamCmdExecutor(account="", platforms={"42": "linux"})
         with self.assertRaises(SteamCmdError) as caught:

@@ -275,6 +275,22 @@ class JobDomainTests(unittest.TestCase):
             self.assertEqual(result.error.code, "provider-failure")
         asyncio.run(exercise())
 
+    def test_empty_provider_exception_still_has_user_visible_reason(self) -> None:
+        class EmptyFailure:
+            async def run(self, _job, _reporter):
+                raise RuntimeError()
+
+        async def exercise() -> None:
+            manager = JobManager()
+            manager.register_executor("fake", EmptyFailure())
+            job = manager.submit("fake", "fake:empty", "Title")
+            await manager._tasks[job.job_id]
+            failed = manager.jobs[job.job_id]
+            self.assertEqual(failed.state, JobState.FAILED)
+            self.assertTrue(failed.error.message)
+            self.assertIn("provider logs", failed.error.message)
+        asyncio.run(exercise())
+
     def test_non_retryable_failure_requires_correction(self) -> None:
         manager = JobManager()
         failed = DownloadJob("failed", "fake", "Title", state=JobState.FAILED,

@@ -409,7 +409,9 @@ class JobManager:
                 self._cancelled(job_id)
             elif self.jobs[job_id].state not in {JobState.CANCELLED, JobState.COMPLETED}:
                 self.transition(job_id, JobState.FAILED, stage="failed", error=JobError(
-                    "provider-failure", str(error), retryable=self.jobs[job_id].retryable,
+                    "provider-failure", str(error) or
+                    f"{provider} acquisition failed without a diagnostic message; see provider logs.",
+                    retryable=self.jobs[job_id].retryable,
                 ))
         finally:
             self._running[provider].discard(job_id)

@@ -54,7 +54,21 @@ class RommExecutor:
         except StopIteration as error:
             raise JobExecutionError("romm-content-missing", f"RomM ROM {rom_id} is unavailable", retryable=True) from error
         except RommApiError as error:
+            if "HTTP 404" in str(error):
+                raise JobExecutionError(
+                    "romm-content-missing",
+                    f"RomM reports that ROM {rom_id}'s file content is missing (HTTP 404).",
+                    retryable=False,
+                    details={"provider_message": str(error)},
+                ) from error
             raise JobExecutionError("romm-unavailable", str(error), retryable=True) from error
+        if game.missing_from_fs:
+            raise JobExecutionError(
+                "romm-content-missing",
+                f"RomM lists {game.title}, but its library reports the ROM file is missing from storage.",
+                retryable=False,
+                details={"rom_id": rom_id},
+            )
         if not game.files:
             raise JobExecutionError("romm-file-missing", f"RomM ROM {rom_id} has no downloadable file", retryable=True)
         if file_id is not None:
@@ -303,6 +317,13 @@ class RommExecutor:
             preserve_staging = True
             raise
         except RommApiError as error:
+            if "HTTP 404" in str(error):
+                raise JobExecutionError(
+                    "romm-content-missing",
+                    "RomM returned HTTP 404 for the selected file content; the library entry may point to missing storage.",
+                    retryable=False,
+                    details={"provider_message": str(error)},
+                ) from error
             raise JobExecutionError("romm-failure", str(error), retryable=True) from error
         except OSError as error:
             raise JobExecutionError("local-storage-failure", str(error), retryable=True) from error
