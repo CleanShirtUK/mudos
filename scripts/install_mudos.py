@@ -549,8 +549,11 @@ def repair_steam_bootstrap_directory(
 
 
 def _restart_update_services(active_units: list[str]) -> None:
-    # Sessiond's PartOf edges restart Consoled and Acquisitiond with the shell.
-    order = ("lulu-session@2.service", "lulu-admin.service", "mudos-recovery.service",
+    # Consoled remains live across ordinary graphical-session restarts. During
+    # a release update, replace the user-session APIs explicitly before the
+    # shell restarts and waits for their D-Bus objects.
+    order = ("lulu-consoled.service", "lulu-acquisition.service",
+             "lulu-session@2.service", "lulu-admin.service", "mudos-recovery.service",
              "lulu-file-browser.service", "lulu-questarr.service",
              "lulu-questarr-pam-auth.service", "lulu-questarr-auth-proxy.service")
     for unit in order:

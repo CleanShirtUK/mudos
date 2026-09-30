@@ -102,7 +102,9 @@ def test_update_refreshes_only_active_mudos_runtime_units(monkeypatch):
     installer._restart_update_services([
         "lulu-session@2.service", "lulu-consoled.service", "lulu-acquisition.service",
         "lulu-admin.service", "inputplumber.service", "bluetooth.service"])
-    assert calls == [["systemctl", "restart", "lulu-session@2.service"],
+    assert calls == [["systemctl", "restart", "lulu-consoled.service"],
+                     ["systemctl", "restart", "lulu-acquisition.service"],
+                     ["systemctl", "restart", "lulu-session@2.service"],
                      ["systemctl", "restart", "lulu-admin.service"]]
 
 
