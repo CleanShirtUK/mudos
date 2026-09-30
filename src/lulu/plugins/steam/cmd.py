@@ -635,12 +635,15 @@ class SteamCmdExecutor:
         guard_task: asyncio.Task[str] | None = None
         auth_active = False
         auth_changed = asyncio.Event()
+        output_activity: asyncio.Queue[float] = asyncio.Queue()
+        loop = asyncio.get_running_loop()
 
         async def consume(stream: asyncio.StreamReader) -> None:
             nonlocal success, finalizing, guard_task, auth_active
             buffer = ""
             prompt_seen = False
             while (chunk := await stream.read(256)):
+                output_activity.put_nowait(loop.time())
                 buffer += chunk.decode(errors="replace")
                 lower = buffer.casefold()
                 version_match = re.search(r"client version:\s*([0-9]+)", lower)
@@ -747,16 +750,19 @@ class SteamCmdExecutor:
             consume_tasks = {asyncio.create_task(consume(process.stdout)),
                              asyncio.create_task(consume(process.stderr))}
             # SteamCMD can remain silent for minutes while depot data is being
-            # fetched.  Treat that as an idle watchdog, not a whole-job limit.
-            deadline = asyncio.get_running_loop().time() + 1800
+            # fetched. Reset this watchdog whenever either output stream emits
+            # data; it must not become a whole-job duration limit.
+            deadline = loop.time() + 1800
+            activity_task = asyncio.create_task(output_activity.get())
             while consume_tasks:
-                remaining = max(0.0, deadline - asyncio.get_running_loop().time())
-                done, _ = await asyncio.wait(consume_tasks, timeout=remaining)
+                remaining = max(0.0, deadline - loop.time())
+                waiter = activity_task
+                done, _ = await asyncio.wait(consume_tasks | {waiter}, timeout=remaining)
                 if not done:
                     if auth_active:
                         auth_changed.clear()
                         await auth_changed.wait()
-                        deadline = asyncio.get_running_loop().time() + 1800
+                        deadline = loop.time() + 1800
                         continue
                     raise SteamCmdError(
                         "steamcmd-timeout",
@@ -764,12 +770,19 @@ class SteamCmdExecutor:
                         retryable=True,
                         details={"idle_timeout_seconds": 1800},
                     )
-                for task in done:
+                if waiter in done:
+                    deadline = loop.time() + 1800
+                    activity_task = asyncio.create_task(output_activity.get())
+                for task in done.intersection(consume_tasks):
                     consume_tasks.remove(task)
                     await task
-                if not auth_active:
-                    deadline = asyncio.get_running_loop().time() + 1800
+            activity_task.cancel()
+            await asyncio.gather(activity_task, return_exceptions=True)
+            activity_task = None
         except asyncio.CancelledError:
+            if activity_task is not None:
+                activity_task.cancel()
+                await asyncio.gather(activity_task, return_exceptions=True)
             if guard_task is not None and not guard_task.done():
                 guard_task.cancel()
                 await asyncio.gather(guard_task, return_exceptions=True)
@@ -791,6 +804,9 @@ class SteamCmdExecutor:
                 except ProcessLookupError:
                     pass
             await process.wait()
+            if activity_task is not None:
+                activity_task.cancel()
+                await asyncio.gather(activity_task, return_exceptions=True)
             if guard_task is not None and not guard_task.done():
                 guard_task.cancel()
                 await asyncio.gather(guard_task, return_exceptions=True)
