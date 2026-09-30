@@ -77,6 +77,11 @@ class ProviderLaunchContractTests(unittest.TestCase):
         self.assertNotIn('"/dev/uinput"', source)
         self.assertNotIn('"Guide uinput key complete"', source)
         self.assertIn('targetXid_', key_handler)
+        action_handler = source.split("bool executeAction(", 1)[1].split("bool setProperty(", 1)[0]
+        self.assertIn('id == QStringLiteral("pcsx2-menu") && key == QStringLiteral("F12")',
+                      action_handler)
+        self.assertIn("window_->hide();\n                QTimer::singleShot(100", action_handler)
+        self.assertIn("const bool sent = sendKey(key);", action_handler)
 
     def test_dolphin_and_eden_can_reveal_ui_without_quitting_or_toggling_fullscreen(self) -> None:
         providers = load_providers()

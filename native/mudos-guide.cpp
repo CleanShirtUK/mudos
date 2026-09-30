@@ -7,6 +7,7 @@
 #include <QUrl>
 #include <QSocketNotifier>
 #include <QProcess>
+#include <QTimer>
 #include <QDBusInterface>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -175,7 +176,19 @@ private:
         // process group inferred from whichever X11 window happens to be focused.
         if (target == "process-group-terminate") return false;
         if (target.startsWith("key:")) {
-            const bool sent = sendKey(target.mid(4));
+            const QString key = target.mid(4);
+            if (id == QStringLiteral("pcsx2-menu") && key == QStringLiteral("F12")) {
+                // Let Gamescope dismiss the external Guide surface before the
+                // captured PCSX2 window receives its historical XTest hotkey.
+                window_->hide();
+                QTimer::singleShot(100, this, [this, id, key]() {
+                    const bool sent = sendKey(key);
+                    qInfo() << "Guide key action complete" << id << "sent=" << sent;
+                    QCoreApplication::quit();
+                });
+                return false; // The delayed callback owns Guide process exit.
+            }
+            const bool sent = sendKey(key);
             qInfo() << "Guide key action complete" << id << "sent=" << sent;
             return sent;
         }
