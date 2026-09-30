@@ -20,6 +20,9 @@ from collections import deque
 
 from dbus_next import BusType, Variant, DBusError
 from dbus_next.aio import MessageBus
+from dbus_next.aio.message_bus import (
+    _MessageWriter, _future_set_exception, _future_set_result,
+)
 from dbus_next.service import ServiceInterface, method, signal as dbus_signal
 
 from .catalogue import CatalogueDelta, CatalogueGame, CatalogueStore, canonical_metadata_required
@@ -1279,26 +1282,55 @@ INTERFACE_NAME = "org.lulu.Console"
 LOGGER = logging.getLogger("lulu.consoled")
 
 
-class _DiagnosticMessageBus(MessageBus):
-    """Temporary transport diagnostics for the graphical-session regression."""
+class _BackpressureSafeMessageWriter(_MessageWriter):
+    """Treat EAGAIN from the nonblocking D-Bus socket as normal backpressure.
 
-    def _finalize(self, error: Exception | None) -> None:
-        if error is not None:
-            LOGGER.error("diagnostic D-Bus transport finalized error=%r", error,
-                         exc_info=(type(error), error, error.__traceback__))
-        else:
-            LOGGER.error("diagnostic D-Bus transport finalized without an error")
-        super()._finalize(error)
+    dbus-next's writer catches BlockingIOError in its generic fatal-error path,
+    which finalizes the bus and unregisters its reader. A writable callback may
+    still race with socket-buffer pressure, so retain the pending buffer and
+    let the event loop invoke this writer again when the fd is writable.
+    """
+
+    def write_callback(self) -> None:
+        try:
+            while True:
+                if self.buf is None:
+                    if self.messages.qsize() == 0:
+                        self.loop.remove_writer(self.fd)
+                        return
+                    buf, unix_fds, future = self.messages.get_nowait()
+                    self.unix_fds = unix_fds
+                    self.buf = memoryview(buf)
+                    self.offset = 0
+                    self.fut = future
+
+                try:
+                    if self.unix_fds and self.negotiate_unix_fd:
+                        import array
+                        import socket
+                        ancdata = [(socket.SOL_SOCKET, socket.SCM_RIGHTS,
+                                    array.array("i", self.unix_fds))]
+                        self.offset += self.sock.sendmsg([self.buf[self.offset:]], ancdata)
+                        self.unix_fds = None
+                    else:
+                        self.offset += self.sock.send(self.buf[self.offset:])
+                except BlockingIOError:
+                    return
+
+                if self.offset >= len(self.buf):
+                    self.buf = None
+                    _future_set_result(self.fut, None)
+                else:
+                    return
+        except Exception as error:
+            _future_set_exception(self.fut, error)
+            self.bus._finalize(error)
 
 
-def _log_bus_reader(loop: asyncio.AbstractEventLoop, bus: MessageBus, phase: str) -> None:
-    selector = getattr(loop, "_selector", None)
-    try:
-        registered = bus._fd in selector.get_map() if selector is not None else None
-    except Exception:
-        registered = None
-    LOGGER.warning("diagnostic D-Bus reader phase=%s pid=%d fd=%d registered=%s disconnected=%s",
-                   phase, os.getpid(), bus._fd, registered, bus._disconnected)
+class _BackpressureSafeMessageBus(MessageBus):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._writer = _BackpressureSafeMessageWriter(self)
 
 
 def _keyboard_boundary(action: str) -> bool:
@@ -2861,11 +2893,8 @@ async def serve() -> None:
         {platform: definition.core for platform, definition in PLATFORMS.items() if definition.core is not None},
         config_root=PATHS.providers_root,
     )
-    bus = await _DiagnosticMessageBus(bus_type=BusType.SESSION).connect()
-    loop = asyncio.get_running_loop()
-    _log_bus_reader(loop, bus, "connected")
+    bus = await _BackpressureSafeMessageBus(bus_type=BusType.SESSION).connect()
     session_introspection = await bus.introspect("org.lulu.ConsoleSessiond", "/org/lulu/ConsoleSession")
-    _log_bus_reader(loop, bus, "sessiond-introspected")
     session_proxy = bus.get_proxy_object(
         "org.lulu.ConsoleSessiond", "/org/lulu/ConsoleSession", session_introspection
     )
@@ -2873,7 +2902,6 @@ async def serve() -> None:
     interface = ConsoleInterface(catalogue, runtime, sessiond=sessiond)
     bus.export(OBJECT_PATH, interface)
     await bus.request_name(BUS_NAME)
-    _log_bus_reader(loop, bus, "name-acquired")
 
     async def regenerate_mudos_controller_mappings() -> None:
         """Refresh only Mudos-owned mappings after a release/service restart."""
@@ -2945,7 +2973,6 @@ async def serve() -> None:
                     # immediate Admin-to-Consoled request was unavailable.
                     stages.update(_validated_metadata_refresh_stages())
                 await interface.refresh_catalogue(stages)
-                _log_bus_reader(loop, bus, "catalogue-refresh-complete")
             except Exception:
                 LOGGER.exception("background catalogue synchronization failed")
                 if not startup_attempted:
@@ -2958,7 +2985,6 @@ async def serve() -> None:
             await asyncio.sleep(ROMM_SYNC_INTERVAL)
 
     asyncio.create_task(synchronize(), name="catalogue-sync")
-    _log_bus_reader(loop, bus, "serving")
     await asyncio.Event().wait()
 
 

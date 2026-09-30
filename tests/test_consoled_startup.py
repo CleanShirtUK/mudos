@@ -7,6 +7,7 @@ from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 from lulu.consoled import (ConsoleCatalog, ConsoleInterface,
+                           _BackpressureSafeMessageWriter,
                            _validated_metadata_refresh_stages)
 from lulu.catalogue import CatalogueStore
 from lulu.plugins.flatpak import FlatpakApplication
@@ -15,6 +16,29 @@ ROOT = Path(__file__).parents[1]
 
 
 class ConsoledStartupTests(unittest.TestCase):
+    def test_dbus_writer_keeps_connection_alive_on_socket_backpressure(self) -> None:
+        class Socket:
+            def send(self, _data):
+                raise BlockingIOError(11, "Resource temporarily unavailable")
+
+        class Loop:
+            def remove_writer(self, _fd):
+                raise AssertionError("writer must remain registered while data is pending")
+
+        bus = SimpleNamespace(
+            _negotiate_unix_fd=False, _sock=Socket(), _loop=Loop(), _fd=10,
+            _finalize=Mock(),
+        )
+        writer = _BackpressureSafeMessageWriter(bus)
+        writer.buf = memoryview(b"pending D-Bus message")
+
+        writer.write_callback()
+
+        self.assertEqual(writer.offset, 0)
+        self.assertEqual(bytes(writer.buf), b"pending D-Bus message")
+        self.assertIsNone(writer.fut)
+        bus._finalize.assert_not_called()
+
     def test_empty_dbus_provider_means_combined_installable_catalogue(self) -> None:
         store = Mock()
         store.list_available_games.return_value = []
