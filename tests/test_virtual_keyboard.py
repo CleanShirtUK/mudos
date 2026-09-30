@@ -5,6 +5,7 @@ from lulu.virtual_keyboard import (
     DEVICE_NAME,
     EV_KEY,
     EV_SYN,
+    KEY_CAPABILITIES,
     KEY_ESC,
     ManagedVirtualKeyboard,
     UI_DEV_CREATE,
@@ -32,7 +33,8 @@ class ManagedVirtualKeyboardTests(unittest.TestCase):
         self.assertEqual(keyboard.event_path, event_path)
         self.assertEqual(
             [call.args[1] for call in ioctl.call_args_list],
-            [UI_SET_EVBIT, UI_SET_KEYBIT, UI_DEV_CREATE, UI_DEV_DESTROY],
+            [UI_SET_EVBIT, *([UI_SET_KEYBIT] * len(KEY_CAPABILITIES)),
+             UI_DEV_CREATE, UI_DEV_DESTROY],
         )
         events = [keyboard.INPUT_EVENT.unpack(call.args[1])
                   for call in write.call_args_list[1:]]
