@@ -245,10 +245,13 @@ class ConsoleCatalog:
             LOGGER.info("catalogue direct diagnostic canonical_title transaction=%s", metrics)
             result = [game.as_dict() for game in self.store.list_games()]
             return result
-        steam_auth_configured = bool(getattr(self.steam_entitlements, "config", None))
+        steam_config = (self.steam_entitlements.reload_config()
+                        if self.steam_entitlements is not None
+                        and hasattr(self.steam_entitlements, "reload_config")
+                        else getattr(self.steam_entitlements, "config", None))
+        steam_auth_configured = bool(steam_config)
         if ("steam" in selected and self.steam_entitlements is not None and self.provider is not None
                 and steam_auth_configured):
-            steam_config = getattr(self.steam_entitlements, "config", None)
             LOGGER.info("catalogue stage started name=steam")
             self.provider_readiness.set(
                 "steam", "syncing",

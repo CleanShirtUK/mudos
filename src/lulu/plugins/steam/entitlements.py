@@ -101,6 +101,17 @@ class SteamEntitlementSource:
     def has_snapshot(self) -> bool:
         return bool(self._last_good)
 
+    def reload_config(self) -> SteamEntitlementConfig | None:
+        """Reload setup-managed configuration before an explicit sync.
+
+        Consoled may have started before Setup saved the Steam credentials, so
+        callers must not use the constructor-time config as a readiness gate.
+        Injected configs remain stable for tests and embedded callers.
+        """
+        if not self._config_injected:
+            self.config = SteamEntitlementConfig.from_file()
+        return self.config
+
     @property
     def snapshot(self) -> tuple[SteamEntitlement, ...]:
         return self._last_good
@@ -110,8 +121,7 @@ class SteamEntitlementSource:
             # Setup may configure Steam after Consoled constructed this source.
             # Reload on each explicit reconciliation so restarts are not
             # required merely to pick up a saved SteamID/key reference.
-            if not self._config_injected:
-                self.config = SteamEntitlementConfig.from_file()
+            self.reload_config()
             if self.config is None:
                 raise SteamEntitlementError("Steam entitlement configuration is unavailable")
             payload = self._request(self._url(self.config), self.config.timeout)

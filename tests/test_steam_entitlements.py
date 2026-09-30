@@ -2,6 +2,7 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from lulu.catalogue import CatalogueStore
 from lulu.steam_entitlements import (
@@ -22,6 +23,13 @@ class FakeSteamProvider:
 
 
 class SteamEntitlementTests(unittest.TestCase):
+    def test_reload_config_picks_up_credentials_saved_after_source_startup(self) -> None:
+        config = SteamEntitlementConfig("76561198000000000", Path("/unused/key"))
+        source = SteamEntitlementSource(config=None)
+        with patch("lulu.plugins.steam.entitlements.SteamEntitlementConfig.from_file",
+                   return_value=config):
+            self.assertIs(source.reload_config(), config)
+
     def test_entitlement_config_keeps_username_and_resolved_account_id(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
