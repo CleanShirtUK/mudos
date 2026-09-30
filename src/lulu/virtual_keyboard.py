@@ -14,14 +14,10 @@ import time
 LOGGER = logging.getLogger("lulu.virtual_keyboard")
 DEVICE_NAME = "Mudos Managed Keyboard"
 KEY_ESC = 1
-# systemd-udev's input_id keyboard heuristic requires these ordinary keyboard
-# marker keys in addition to Escape. Mudos emits only Escape; the other bits
-# make the device classify and route as a keyboard rather than "other".
-KEY_A = 30
-KEY_ENTER = 28
-KEY_SPACE = 57
-KEY_Z = 44
-KEY_CAPABILITIES = (KEY_ESC, KEY_ENTER, KEY_SPACE, KEY_A, KEY_Z)
+# systemd-udev's input_id keyboard heuristic requires bits 1..31 (Escape,
+# number row, and Q-D row). Mudos emits only Escape; the remaining bits let
+# Gamescope/libinput classify and route this as a keyboard rather than "other".
+KEY_CAPABILITIES = tuple(range(1, 32))
 EV_SYN = 0
 EV_KEY = 1
 SYN_REPORT = 0
