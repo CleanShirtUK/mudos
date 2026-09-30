@@ -617,6 +617,25 @@ class BoundaryTests(unittest.TestCase):
         interface.EndLocalSession(interface._local_identity.token, 0)
         self.assertEqual(presentation.selected[-1], ("shell", 99))
 
+    def test_eden_selects_owned_flatpak_group_members_not_wrapper_descendants(self) -> None:
+        class Presentation:
+            def __init__(self):
+                self.selected = []
+
+            def select_pids(self, pids, timeout, process_alive=None):
+                self.selected.append((pids(), timeout, process_alive()))
+
+        interface = input_mode_interface(RecordingInputPlumber({}))
+        presentation = Presentation()
+        interface.supervisor = type("Supervisor", (), {
+            "state_details": lambda self: {}, "_presentation": presentation,
+            "_process_group_members": lambda self, pgid: {321, 456} if pgid == 123 else set(),
+        })()
+        interface.BeginLocalSession("local:switch:game", 123, 123,
+                                    "/usr/bin/bash", ["/opt/lulu/current/packaging/eden-flatpak"])
+        self.assertEqual(presentation.selected, [([321, 456], 15.0, True)])
+        self.assertEqual(interface.model.state.lifecycle, Lifecycle.GAME)
+
     def test_failed_local_session_does_not_leave_state_owned(self) -> None:
         class FailingInputPlumber(RecordingInputPlumber):
             def load_mode(self, mode, object_path=None, *, execute=True):

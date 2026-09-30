@@ -437,7 +437,16 @@ class ConsoleSessionInterface(ServiceInterface):
                 # Consoled starts local runtimes directly (rather than through
                 # ProcessSupervisor.launch); give Gamescope the same explicit
                 # window handoff for emulator and delegated game surfaces.
-                presentation.select_pids([pid], 15.0)
+                if game_id.startswith("local:switch:") and Path(argv[0]).name == "eden-flatpak":
+                    # Flatpak's bwrap/Eden children need not remain descendants
+                    # of the short-lived launch wrapper. Match only processes
+                    # in this Eden launch's owned group, not the focused window.
+                    def eden_pids() -> list[int]:
+                        return sorted(self.supervisor._process_group_members(pgid))
+
+                    presentation.select_pids(eden_pids, 15.0, lambda: bool(eden_pids()))
+                else:
+                    presentation.select_pids([pid], 15.0)
             self._apply_input_mode(InputMode.GAME)
             self.model.primary_started(token, input_mode=InputMode.GAME)
         except (OSError, ValueError, TimeoutError, RuntimeError, subprocess.SubprocessError) as error:

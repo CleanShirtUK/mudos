@@ -39,6 +39,8 @@ class EdenManagedProvisioningTests(unittest.TestCase):
         self.assertIn('"--filesystem=$MUDOS_EDEN_KEYS_DIR:ro"', wrapper)
         self.assertIn('"--filesystem=$MUDOS_EDEN_FIRMWARE_DIR:ro"', wrapper)
         self.assertIn('"--filesystem=$MUDOS_EDEN_GAME_DIR:ro"', wrapper)
+        self.assertIn('"--nosocket=wayland"', wrapper)
+        self.assertIn('"--env=QT_QPA_PLATFORM=xcb"', wrapper)
 
     def test_eden_config_is_the_consumed_flatpak_file_and_preserves_unowned_settings(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -69,6 +71,11 @@ class EdenManagedProvisioningTests(unittest.TestCase):
         self.assertIn("theme=keep-me", content)
         self.assertIn("[Renderer]\nbackend=1", content)
         self.assertIn("player_0_button_a=\"engine:sdl,port:0,guid:synthetic-live-guid,button:0\"", content)
+        for name, button in (("b", 1), ("x", 2), ("y", 3)):
+            self.assertIn(
+                f'player_0_button_{name}="engine:sdl,port:0,guid:synthetic-live-guid,button:{button}"',
+                content,
+            )
         self.assertNotIn("old-keyboard-binding", content)
         self.assertTrue(source_exists)
 

@@ -2,7 +2,9 @@
 set -eu
 
 app=dev.eden_emu.eden
-args=()
+# Sessiond selects the owned game surface by Xwayland XID. Eden's Flatpak
+# otherwise prefers native Wayland, which never enters that candidate set.
+args=("--nosocket=wayland" "--env=QT_QPA_PLATFORM=xcb")
 
 # SwitchProvider emits this AppImage-runtime flag for native Eden releases;
 # the Flathub build is launched directly and receives the remaining game args.
