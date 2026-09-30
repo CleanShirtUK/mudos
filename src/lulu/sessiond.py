@@ -807,8 +807,13 @@ class ConsoleSessionInterface(ServiceInterface):
     def SetInputMode(self, mode: "s") -> "":
         try:
             requested = InputMode(mode)
-            if requested is InputMode.COMPAT and self.model.state.lifecycle.value != "game" \
-                    and self.model.state.delegated_surface != "browser":
+            state = self.model.state
+            steam_launch_starting = (
+                state.lifecycle.value in {"launch-requested", "starting"}
+                and str(state.primary_id or "").startswith("steam:")
+            )
+            if requested is InputMode.COMPAT and state.lifecycle.value != "game" \
+                    and state.delegated_surface != "browser" and not steam_launch_starting:
                 raise ValueError("Compatibility Mode requires an active application")
             self._apply_input_mode(requested)
             self.model.set_input_mode(requested)

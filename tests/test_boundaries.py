@@ -539,6 +539,26 @@ class BoundaryTests(unittest.TestCase):
         )
         self.assertEqual(interface.model.state.input_mode, InputMode.GAME)
 
+    def test_compatibility_mode_can_be_enabled_during_steam_launch_startup(self) -> None:
+        path = "/org/shadowblip/InputPlumber/CompositeDevice0"
+        client = RecordingInputPlumber({path: ("045e_0291", ("/dev/input/event13",))})
+        interface = input_mode_interface(client)
+        token = interface.model.request_launch("steam:40800")
+        interface.model.launch_starting(token)
+
+        interface.SetInputMode("compat")
+
+        self.assertEqual(client.loads, [(InputMode.COMPAT, path)])
+        self.assertEqual(interface.model.state.input_mode, InputMode.COMPAT)
+
+    def test_compatibility_mode_stays_blocked_during_non_steam_startup(self) -> None:
+        interface = input_mode_interface(RecordingInputPlumber({}))
+        token = interface.model.request_launch("game-1")
+        interface.model.launch_starting(token)
+
+        with self.assertRaises(Exception):
+            interface.SetInputMode("compat")
+
     def test_local_session_enters_and_leaves_authoritative_game_state(self) -> None:
         path = "/org/shadowblip/InputPlumber/CompositeDevice0"
         client = RecordingInputPlumber({path: ("045e_0291", ("/dev/input/event13",))})
