@@ -564,7 +564,12 @@ class ConsoleSessionInterface(ServiceInterface):
         if self._local_identity is not None:
             if self.model.state.launch_token != self._local_identity.token:
                 raise self._error(ValueError("local session no longer owns the launch"))
-            if Path(self._local_identity.executable).name == "eden-flatpak":
+            eden_launch = (
+                Path(self._local_identity.executable).name == "eden-flatpak"
+                or bool(self._local_identity.argv)
+                and Path(self._local_identity.argv[0]).name == "eden-flatpak"
+            )
+            if eden_launch:
                 presentation = getattr(self.supervisor, "_presentation", None)
                 try:
                     if presentation is None:

@@ -53,7 +53,8 @@ class SessiondTests(unittest.TestCase):
         )
         interface = ConsoleSessionInterface.__new__(ConsoleSessionInterface)
         interface._local_identity = LaunchIdentity(
-            "owned-token", 1234, 1234, "/opt/lulu/current/packaging/eden-flatpak", ("eden-flatpak",)
+            "owned-token", 1234, 1234, "/usr/bin/bash",
+            ("/opt/lulu/current/packaging/eden-flatpak", "--config", "/tmp/eden.ini"),
         )
         interface.model = SimpleNamespace(state=SimpleNamespace(launch_token="owned-token"))
         interface.supervisor = supervisor
@@ -79,7 +80,8 @@ class SessiondTests(unittest.TestCase):
         )
         interface = ConsoleSessionInterface.__new__(ConsoleSessionInterface)
         interface._local_identity = LaunchIdentity(
-            "owned-token", 1234, 1234, "/opt/lulu/current/packaging/eden-flatpak", ("eden-flatpak",)
+            "owned-token", 1234, 1234, "/usr/bin/bash",
+            ("/opt/lulu/current/packaging/eden-flatpak", "--config", "/tmp/eden.ini"),
         )
         interface.model = SimpleNamespace(state=SimpleNamespace(launch_token="owned-token"))
         interface.supervisor = supervisor
