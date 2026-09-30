@@ -267,7 +267,8 @@ private:
         // Never turn an arbitrary target string into keyboard input.
         const bool steamOverlay = key == QStringLiteral("Shift+Tab");
         const bool dolphinSync = key == QStringLiteral("bracketright");
-        if (!steamOverlay && !dolphinSync && key != QStringLiteral("F12"))
+        const bool pcsx2Pause = key == QStringLiteral("Escape");
+        if (!steamOverlay && !dolphinSync && !pcsx2Pause)
             return false;
         auto *x11 = qGuiApp->nativeInterface<QNativeInterface::QX11Application>();
         if (!targetXid_ || !x11 || !x11->connection())
@@ -276,7 +277,7 @@ private:
         auto *keySymbols = xcb_key_symbols_alloc(connection);
         if (!keySymbols)
             return false;
-        const auto keySymbol = steamOverlay ? XK_Tab : dolphinSync ? XK_bracketright : XK_F12;
+        const auto keySymbol = steamOverlay ? XK_Tab : dolphinSync ? XK_bracketright : XK_Escape;
         auto *keycodes = xcb_key_symbols_get_keycode(keySymbols, keySymbol);
         auto *shiftCodes = steamOverlay ? xcb_key_symbols_get_keycode(keySymbols, XK_Shift_L) : nullptr;
         if (!keycodes || keycodes[0] == XCB_NO_SYMBOL

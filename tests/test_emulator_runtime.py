@@ -267,7 +267,7 @@ class EmulatorRuntimeTests(unittest.TestCase):
             self.assertIn("StartBigPictureMode = false", first)
             self.assertIn("SettingsVersion = 1", first)
             self.assertIn("SetupWizardIncomplete = false", first)
-            self.assertIn("[Hotkeys]\nOpenPauseMenu = Keyboard/F12", first)
+            self.assertIn("[Hotkeys]\nOpenPauseMenu = Keyboard/Escape", first)
             ui = first.split("[UI]", 1)[1].split("[", 1)[0]
             self.assertNotIn("OpenPauseMenu", ui)
             self.assertIn("[EmuCore/GS]\nRenderer = -1", first)
@@ -288,7 +288,7 @@ class EmulatorRuntimeTests(unittest.TestCase):
         hotkeys = result.split("[Hotkeys]", 1)[1].split("[", 1)[0]
         self.assertNotIn("OpenPauseMenu", ui)
         self.assertIn("Theme = dark", ui)
-        self.assertIn("OpenPauseMenu = Keyboard/F12", hotkeys)
+        self.assertIn("OpenPauseMenu = Keyboard/Escape", hotkeys)
         self.assertIn("ToggleFullscreen = Keyboard/Alt & Keyboard/Return", hotkeys)
 
     def test_pcsx2_default_storage_bios_path_is_provisioned_into_native_config(self) -> None:
