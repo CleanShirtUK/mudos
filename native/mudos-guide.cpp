@@ -167,13 +167,19 @@ private:
             return false;
         }
         const QString target = reply.arguments().value(0).toString();
+        qInfo() << "Guide action resolved" << id << "target=" << target
+                << "window=" << Qt::hex << targetXid_ << "pid=" << Qt::dec << targetPid_;
         if (target == "executed") return true;
         if (target == "window-delete") return sendDelete();
         if (target == "window-unfullscreen") return removeFullscreen();
         // Process termination is owned by Sessiond. Never signal the PID or
         // process group inferred from whichever X11 window happens to be focused.
         if (target == "process-group-terminate") return false;
-        if (target.startsWith("key:")) return sendKey(target.mid(4));
+        if (target.startsWith("key:")) {
+            const bool sent = sendKey(target.mid(4));
+            qInfo() << "Guide key action complete" << id << "sent=" << sent;
+            return sent;
+        }
         if (target.startsWith("command:")) return runCommand(target.mid(8));
         qWarning() << "Guide action returned unusable target" << id << target;
         return false;
@@ -289,23 +295,43 @@ private:
         }
         const auto setup = xcb_get_setup(connection);
         const auto screen = xcb_setup_roots_iterator(setup).data;
-        xcb_set_input_focus(connection, XCB_INPUT_FOCUS_NONE, targetXid_, XCB_CURRENT_TIME);
+        const auto focusCookie = xcb_set_input_focus(
+            connection, XCB_INPUT_FOCUS_NONE, targetXid_, XCB_CURRENT_TIME);
+        if (auto *error = xcb_request_check(connection, focusCookie)) {
+            qWarning() << "Guide key focus request failed" << "window=" << Qt::hex << targetXid_
+                       << "error=" << error->error_code;
+            free(error);
+        }
+        auto *focusReply = xcb_get_input_focus_reply(connection,
+                                                      xcb_get_input_focus(connection), nullptr);
+        qInfo() << "Guide key injection" << key << "symbol=" << Qt::hex << keySymbol
+                << "keycode=" << Qt::dec << keycodes[0] << "window=" << Qt::hex << targetXid_
+                << "root=" << screen->root << "input_focus="
+                << (focusReply ? focusReply->focus : XCB_WINDOW_NONE);
+        free(focusReply);
+        const auto sendFakeInput = [connection, screen, key](uint8_t type, uint8_t detail) {
+            const auto cookie = xcb_test_fake_input(connection, type, detail, XCB_CURRENT_TIME,
+                                                    screen->root, 0, 0, 0);
+            if (auto *error = xcb_request_check(connection, cookie)) {
+                qWarning() << "Guide XTest request failed" << key << "type=" << type
+                           << "detail=" << detail << "error=" << error->error_code;
+                free(error);
+                return false;
+            }
+            return true;
+        };
         if (steamOverlay)
-            xcb_test_fake_input(connection, XCB_KEY_PRESS, shiftCodes[0], XCB_CURRENT_TIME,
-                                screen->root, 0, 0, 0);
-        xcb_test_fake_input(connection, XCB_KEY_PRESS, keycodes[0], XCB_CURRENT_TIME,
-                            screen->root, 0, 0, 0);
+            sendFakeInput(XCB_KEY_PRESS, shiftCodes[0]);
+        sendFakeInput(XCB_KEY_PRESS, keycodes[0]);
         // Dolphin polls hotkey state on its emulation thread, so its sync key
         // needs a hold. PCSX2's historical pause-menu action uses a short F12
         // tap; do not delay its release.
         xcb_flush(connection);
         if (dolphinSync)
             usleep(100 * 1000);
-        xcb_test_fake_input(connection, XCB_KEY_RELEASE, keycodes[0], XCB_CURRENT_TIME,
-                            screen->root, 0, 0, 0);
+        sendFakeInput(XCB_KEY_RELEASE, keycodes[0]);
         if (steamOverlay)
-            xcb_test_fake_input(connection, XCB_KEY_RELEASE, shiftCodes[0], XCB_CURRENT_TIME,
-                                screen->root, 0, 0, 0);
+            sendFakeInput(XCB_KEY_RELEASE, shiftCodes[0]);
         xcb_flush(connection);
         free(keycodes);
         free(shiftCodes);

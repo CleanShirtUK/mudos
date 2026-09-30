@@ -63,9 +63,11 @@ class ProviderLaunchContractTests(unittest.TestCase):
         self.assertIn('key == QStringLiteral("F12")', key_handler)
         self.assertIn('steamOverlay ? XK_Tab : dolphinSync ? XK_bracketright : XK_F12', key_handler)
         self.assertIn('xcb_key_symbols_get_keycode(keySymbols, XK_Shift_L)', key_handler)
-        self.assertIn('if (steamOverlay)\n            xcb_test_fake_input(connection, XCB_KEY_PRESS, shiftCodes[0]', key_handler)
+        self.assertIn('if (steamOverlay)\n            sendFakeInput(XCB_KEY_PRESS, shiftCodes[0])', key_handler)
         self.assertIn("xcb_flush(connection);\n        if (dolphinSync)\n            usleep(100 * 1000);", key_handler)
-        self.assertIn('XCB_KEY_RELEASE, shiftCodes[0]', key_handler)
+        self.assertIn('sendFakeInput(XCB_KEY_RELEASE, shiftCodes[0])', key_handler)
+        self.assertIn("xcb_request_check(connection, cookie)", key_handler)
+        self.assertIn('"input_focus="', key_handler)
         self.assertIn('targetXid_', key_handler)
 
     def test_dolphin_and_eden_can_reveal_ui_without_quitting_or_toggling_fullscreen(self) -> None:

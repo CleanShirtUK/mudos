@@ -1189,6 +1189,11 @@ private:
         guideProcess_ = new QProcess(this);
         connect(guideProcess_, &QProcess::finished, this,
                 [this](int, QProcess::ExitStatus) { finishGuide(); });
+        connect(guideProcess_, &QProcess::readyReadStandardError, this, [this]() {
+            const auto diagnostic = QString::fromLocal8Bit(guideProcess_->readAllStandardError()).trimmed();
+            if (!diagnostic.isEmpty())
+                qWarning().noquote() << "Guide diagnostic:" << diagnostic;
+        });
         const QString guideExecutable = qEnvironmentVariable(
             "LULU_GUIDE_EXECUTABLE", "/opt/lulu/bin/mudos-guide");
         guideProcess_->start(guideExecutable, {
