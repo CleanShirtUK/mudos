@@ -171,7 +171,7 @@ class ProvisioningTests(unittest.TestCase):
         self.assertIn("ReserveVT=0", policy)
         service = (ROOT / "packaging/lulu-consoled.service").read_text()
         self.assertIn("After=user@958.service lulu-session@2.service", service)
-        self.assertIn("PartOf=lulu-session@2.service", service)
+        self.assertNotIn("PartOf=lulu-session@2.service", service)
 
     def test_session_readiness_orders_daemons_before_graphical_bootstrap(self) -> None:
         session = (ROOT / "packaging/lulu-session@.service").read_text()
@@ -181,7 +181,7 @@ class ProvisioningTests(unittest.TestCase):
         self.assertIn("Wants=inputplumber.service lulu-osk@%i.service lulu-consoled.service lulu-acquisition.service", session)
         self.assertIn("Type=notify", session)
         self.assertIn("NotifyAccess=main", session)
-        self.assertIn("PartOf=lulu-session@2.service", consoled)
+        self.assertNotIn("PartOf=lulu-session@2.service", consoled)
         self.assertIn("After=user@958.service lulu-session@2.service", consoled)
         self.assertIn("PartOf=lulu-session@2.service", acquisition)
         self.assertIn("After=user@958.service lulu-session@2.service", acquisition)
