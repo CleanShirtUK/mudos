@@ -8,27 +8,6 @@ from lulu.sessiond import ConsoleSessionInterface, _wait_for_stop, serve
 
 
 class SessiondTests(unittest.TestCase):
-    def test_managed_keyboard_control_is_allowlisted_to_escape(self) -> None:
-        from dbus_next import DBusError
-
-        class Keyboard:
-            def __init__(self):
-                self.sent = 0
-
-            def send_escape(self):
-                self.sent += 1
-
-        interface = ConsoleSessionInterface.__new__(ConsoleSessionInterface)
-        interface._virtual_keyboard = Keyboard()
-        self.assertEqual(
-            ConsoleSessionInterface.SendManagedKeyboardKey.__wrapped__(interface, "Escape"),
-            "key-sent",
-        )
-        self.assertEqual(interface._virtual_keyboard.sent, 1)
-        with self.assertRaises(DBusError):
-            ConsoleSessionInterface.SendManagedKeyboardKey.__wrapped__(interface, "F12")
-        self.assertEqual(interface._virtual_keyboard.sent, 1)
-
     def test_cancel_launch_delegates_to_supervisor(self) -> None:
         interface = ConsoleSessionInterface.__new__(ConsoleSessionInterface)
 
@@ -143,7 +122,6 @@ class SessiondTests(unittest.TestCase):
 
         async def exercise() -> None:
             with patch("lulu.sessiond.MessageBus", side_effect=new_bus), \
-                    patch("lulu.sessiond.ManagedVirtualKeyboard") as create_keyboard, \
                     patch("lulu.sessiond.ConsoleSessionInterface", return_value=interface), \
                     patch("lulu.sessiond.recovery_required", return_value=False), \
                     patch("lulu.sessiond.sdl_gamepad_inventory", return_value=[]), \
@@ -157,7 +135,6 @@ class SessiondTests(unittest.TestCase):
                           })) as notify_ready, \
                     patch("lulu.sessiond._wait_for_stop", new=AsyncMock()):
                 await serve()
-            create_keyboard.assert_called_once_with()
             notify_ready.assert_called_once()
 
         asyncio.run(exercise())

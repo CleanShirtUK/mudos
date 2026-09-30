@@ -29,7 +29,6 @@ from .paths import PATHS
 from .service_readiness import wait_for_lulu_services
 from .recovery import clear_failures, record_failure, recovery_required
 from .settings import SettingsStore
-from .virtual_keyboard import ManagedVirtualKeyboard
 
 
 BUS_NAME = "org.lulu.ConsoleSessiond"
@@ -43,8 +42,7 @@ class ConsoleSessionInterface(ServiceInterface):
     # Lulu's Gamescope shell selection.
     _presentation_watchdog_enabled = True
 
-    def __init__(self, model: SessionStateModel,
-                 virtual_keyboard: ManagedVirtualKeyboard | None = None) -> None:
+    def __init__(self, model: SessionStateModel) -> None:
         super().__init__(INTERFACE_NAME)
         self.model = model
         inputplumber = default_inputplumber_client(
@@ -54,7 +52,6 @@ class ConsoleSessionInterface(ServiceInterface):
         self.settings = SettingsStore(PATHS.config_root / "settings.sqlite3")
         self._inputplumber = inputplumber
         self._native_controller = os.environ.get("LULU_NATIVE_CONTROLLER", "0") == "1"
-        self._virtual_keyboard = virtual_keyboard
         self._applied_input_modes: dict[str, InputMode] = {}
         self._local_identity: LaunchIdentity | None = None
         self._local_provider_id = ""
@@ -132,16 +129,6 @@ class ConsoleSessionInterface(ServiceInterface):
 
     def _error(self, error: ValueError) -> DBusError:
         return DBusError("org.lulu.ConsoleSession.Error.InvalidState", str(error))
-
-    @method()
-    def SendManagedKeyboardKey(self, key: "s") -> "s":
-        """Diagnostic/control endpoint for the session-owned minimal keyboard."""
-        if key != "Escape":
-            raise self._error(ValueError("managed virtual keyboard only allows Escape"))
-        if self._virtual_keyboard is None:
-            raise self._error(ValueError("managed virtual keyboard is unavailable"))
-        self._virtual_keyboard.send_escape()
-        return "key-sent"
 
     async def _state_changed(self) -> None:
         self.StateChanged(self._state_json())
@@ -390,10 +377,6 @@ class ConsoleSessionInterface(ServiceInterface):
             self._presentation_watchdog_task.cancel()
             await asyncio.gather(self._presentation_watchdog_task, return_exceptions=True)
             self._presentation_watchdog_task = None
-        keyboard = getattr(self, "_virtual_keyboard", None)
-        if keyboard is not None:
-            keyboard.close()
-            self._virtual_keyboard = None
 
     def _handle_inputplumber_signal(self, message: object) -> None:
         if (
@@ -822,13 +805,9 @@ async def bootstrap_after_services_ready(interface: ConsoleSessionInterface, bus
 
 async def serve(bus_type: BusType = BusType.SESSION, bootstrap_shell: bool = False) -> None:
     LOGGER.info("session_lifecycle event=start pid=%s uid=%s", os.getpid(), os.geteuid())
-    # Register the keyboard before readiness is announced and before the
-    # graphical bootstrap launches Gamescope, so the compositor sees a stable
-    # device from the beginning of its lifetime.
-    virtual_keyboard = ManagedVirtualKeyboard()
     bus = await MessageBus(bus_type=bus_type).connect()
     model = SessionStateModel()
-    interface = ConsoleSessionInterface(model, virtual_keyboard)
+    interface = ConsoleSessionInterface(model)
     interface.recovery_mode = recovery_required()
     bus.export(OBJECT_PATH, interface)
     await bus.request_name(BUS_NAME)

@@ -298,7 +298,7 @@ def ensure_provider_controller_config(
         # Remove the legacy misplaced entry while preserving other UI values.
         source = _remove_section_keys(source, "UI", {"OpenPauseMenu"})
         source = _update_section_values(source, "InputSources", {"Keyboard": "true"})
-        source = _update_section_values(source, "Hotkeys", {"OpenPauseMenu": "Keyboard/Escape"})
+        source = _update_section_values(source, "Hotkeys", {"OpenPauseMenu": "Keyboard/F12"})
         # Use PCSX2's automatic renderer selection as seen in its 2.8.2
         # native config; fullscreen is handled by the Mudos game surface.
         source = _update_section_values(source, "EmuCore/GS", {"Renderer": "-1"})
