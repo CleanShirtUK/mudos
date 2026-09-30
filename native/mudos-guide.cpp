@@ -297,7 +297,10 @@ private:
             ::close(fd);
             return false;
         }
-        ::usleep(100 * 1000);
+        // Gamescope/libinput discovers a newly-created uinput device
+        // asynchronously. Do not emit the tap immediately after UI_DEV_CREATE:
+        // the event can precede the compositor opening its evdev node.
+        ::usleep(500 * 1000);
         const auto writeEvent = [fd](uint16_t type, uint16_t code, int32_t value) {
             input_event event{};
             event.type = type;
