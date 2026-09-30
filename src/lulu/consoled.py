@@ -1279,6 +1279,28 @@ INTERFACE_NAME = "org.lulu.Console"
 LOGGER = logging.getLogger("lulu.consoled")
 
 
+class _DiagnosticMessageBus(MessageBus):
+    """Temporary transport diagnostics for the graphical-session regression."""
+
+    def _finalize(self, error: Exception | None) -> None:
+        if error is not None:
+            LOGGER.error("diagnostic D-Bus transport finalized error=%r", error,
+                         exc_info=(type(error), error, error.__traceback__))
+        else:
+            LOGGER.error("diagnostic D-Bus transport finalized without an error")
+        super()._finalize(error)
+
+
+def _log_bus_reader(loop: asyncio.AbstractEventLoop, bus: MessageBus, phase: str) -> None:
+    selector = getattr(loop, "_selector", None)
+    try:
+        registered = bus._fd in selector.get_map() if selector is not None else None
+    except Exception:
+        registered = None
+    LOGGER.warning("diagnostic D-Bus reader phase=%s pid=%d fd=%d registered=%s disconnected=%s",
+                   phase, os.getpid(), bus._fd, registered, bus._disconnected)
+
+
 def _keyboard_boundary(action: str) -> bool:
     """Call the provider-neutral Mudos keyboard boundary."""
     root = Path(os.environ.get("LULU_INSTALL_ROOT", "/opt/lulu/current"))
@@ -2839,8 +2861,11 @@ async def serve() -> None:
         {platform: definition.core for platform, definition in PLATFORMS.items() if definition.core is not None},
         config_root=PATHS.providers_root,
     )
-    bus = await MessageBus(bus_type=BusType.SESSION).connect()
+    bus = await _DiagnosticMessageBus(bus_type=BusType.SESSION).connect()
+    loop = asyncio.get_running_loop()
+    _log_bus_reader(loop, bus, "connected")
     session_introspection = await bus.introspect("org.lulu.ConsoleSessiond", "/org/lulu/ConsoleSession")
+    _log_bus_reader(loop, bus, "sessiond-introspected")
     session_proxy = bus.get_proxy_object(
         "org.lulu.ConsoleSessiond", "/org/lulu/ConsoleSession", session_introspection
     )
@@ -2848,6 +2873,7 @@ async def serve() -> None:
     interface = ConsoleInterface(catalogue, runtime, sessiond=sessiond)
     bus.export(OBJECT_PATH, interface)
     await bus.request_name(BUS_NAME)
+    _log_bus_reader(loop, bus, "name-acquired")
 
     async def regenerate_mudos_controller_mappings() -> None:
         """Refresh only Mudos-owned mappings after a release/service restart."""
@@ -2919,6 +2945,7 @@ async def serve() -> None:
                     # immediate Admin-to-Consoled request was unavailable.
                     stages.update(_validated_metadata_refresh_stages())
                 await interface.refresh_catalogue(stages)
+                _log_bus_reader(loop, bus, "catalogue-refresh-complete")
             except Exception:
                 LOGGER.exception("background catalogue synchronization failed")
                 if not startup_attempted:
@@ -2931,6 +2958,7 @@ async def serve() -> None:
             await asyncio.sleep(ROMM_SYNC_INTERVAL)
 
     asyncio.create_task(synchronize(), name="catalogue-sync")
+    _log_bus_reader(loop, bus, "serving")
     await asyncio.Event().wait()
 
 
