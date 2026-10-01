@@ -11,6 +11,27 @@ from collections.abc import Callable
 from .display_manager import display_environment
 
 
+class PresentationOutputUnavailable(RuntimeError):
+    """The DRM device exists, but no display connector is currently connected."""
+
+
+def has_connected_presentation_output(drm_path: str = "/sys/class/drm") -> bool:
+    return bool(connected_presentation_outputs(drm_path))
+
+
+def connected_presentation_outputs(drm_path: str = "/sys/class/drm") -> tuple[str, ...]:
+    connected: list[str] = []
+    for status_path in Path(drm_path).glob("card*-*/status"):
+        try:
+            if status_path.read_text().strip() == "connected":
+                connector = status_path.parent.name.split("-", 1)
+                if len(connector) == 2:
+                    connected.append(connector[1])
+        except OSError:
+            continue
+    return tuple(sorted(set(connected)))
+
+
 def optional_int_value(value: str | None) -> int | None:
     if value in (None, ""):
         return None
@@ -101,13 +122,9 @@ class GamescopeInvocation:
 
 def discover_presentation_output(drm_path: str = "/sys/class/drm") -> str:
     """Return a connected DRM connector, leaving mode choice to Gamescope."""
-    connected = sorted(
-        entry.parent.name.split("-", 1)[1]
-        for entry in Path(drm_path).glob("card*-*/status")
-        if entry.read_text().strip() == "connected"
-    )
+    connected = connected_presentation_outputs(drm_path)
     if not connected:
-        raise RuntimeError("no connected DRM presentation output found")
+        raise PresentationOutputUnavailable("no connected DRM presentation output found")
     if len(connected) > 1:
         raise RuntimeError(
             "multiple connected DRM presentation outputs found; set LULU_OUTPUT_CONNECTOR: "

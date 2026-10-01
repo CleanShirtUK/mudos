@@ -176,6 +176,25 @@ def _activate(output: Path, events: list[str]) -> None:
         if not wait_for_source_composite(source, active_sources):
             print(f"InputPlumber did not activate logical gamepad source {source}", file=sys.stderr)
 
+    recovery_ui = subprocess.run(
+        ["systemctl", "is-active", "--quiet", "mudos-recovery-ui.service"],
+        check=False, capture_output=True,
+    )
+    if recovery_ui.returncode == 0:
+        # Sessiond is deliberately absent while the standalone recovery UI owns
+        # presentation. Reuse its InputPlumber client/profile rather than
+        # restarting the daemon or introducing another input manager.
+        sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lib"))
+        from lulu.controllerd import default_inputplumber_client
+        from lulu.recovery_controller import apply_recovery_gamepad_mode
+
+        client = default_inputplumber_client(
+            Path(__file__).resolve().parent.parent / "config" / "inputplumber")
+        try:
+            apply_recovery_gamepad_mode(client)
+        except (OSError, RuntimeError, ValueError, subprocess.SubprocessError) as error:
+            print(f"Could not select Recovery Gamepad profile: {error}", file=sys.stderr)
+
 
 def main() -> int:
     if len(sys.argv) not in (2, 3):

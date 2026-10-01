@@ -199,7 +199,7 @@ class ProvisioningTests(unittest.TestCase):
         self.assertIn('install -m 0644 "$immutable_root/packaging/lulu-session@.service" "$session_unit"', dev_runtime)
         sessiond = (ROOT / "src/lulu/sessiond.py").read_text()
         self.assertIn("_notify_systemd_ready()", sessiond)
-        self.assertIn("await bootstrap_after_services_ready(interface, bus)", sessiond)
+        self.assertIn("asyncio.create_task(bootstrap_after_services_ready(interface, bus))", sessiond)
         readiness = (ROOT / "src/lulu/service_readiness.py").read_text()
         for name in ("org.lulu.ConsoleSessiond", "org.lulu.Consoled", "org.lulu.Acquisitiond"):
             self.assertIn(name, readiness)

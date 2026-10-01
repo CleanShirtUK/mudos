@@ -20,7 +20,9 @@ from .console_sessiond import SessionStateModel
 from .controllerd import ControllerRegistry, default_inputplumber_client
 from .inputplumber import (InputPlumberObjectDisappeared, is_service_unavailable,
                            sdl_gamepad_inventory)
-from .gamescope import GamescopeInvocation, GamescopePresentation, discover_presentation_output
+from .gamescope import (GamescopeInvocation, GamescopePresentation,
+                        PresentationOutputUnavailable, discover_presentation_output,
+                        connected_presentation_outputs, has_connected_presentation_output)
 from .gamescope_observer import GamescopeWindowObserver
 from .contracts import InputMode, LaunchDescriptor, Lifecycle, Presentation, SessionClassification
 from .launch_identity import LaunchIdentity
@@ -345,23 +347,46 @@ class ConsoleSessionInterface(ServiceInterface):
             await asyncio.sleep(0.25)
 
     async def bootstrap_shell(self) -> None:
-        output = self._bootstrap_output or discover_presentation_output()
-        invocation = GamescopeInvocation.from_environment()
-        invocation = GamescopeInvocation(
-            steam=False,
-            output=output,
-            output_width=invocation.output_width,
-            output_height=invocation.output_height,
-            output_refresh=invocation.output_refresh,
-            nested_width=invocation.nested_width,
-            nested_height=invocation.nested_height,
-        )
         shell = str(Path(__file__).resolve().parents[2] / "scripts" / "console-ui.sh")
         qml = "Recovery.qml" if getattr(self, "recovery_mode", False) else "ConsoleShell.qml"
         os.environ["LULU_UI_FILE"] = str(PATHS.install_root / "ui" / qml)
         if getattr(self, "recovery_mode", False):
             LOGGER.error("recovery surface selected after repeated graphical failures")
-        await self.supervisor.launch_shell(invocation.argv([shell]), 15000, select_shell=False)
+        last_wait_log = 0.0
+        while True:
+            try:
+                if not has_connected_presentation_output():
+                    raise PresentationOutputUnavailable("no connected DRM presentation output found")
+                available_outputs = connected_presentation_outputs()
+                output = (self._bootstrap_output
+                          if self._bootstrap_output in available_outputs else
+                          discover_presentation_output())
+            except PresentationOutputUnavailable:
+                now = time.monotonic()
+                if now - last_wait_log >= 30:
+                    LOGGER.warning("no connected DRM output; Sessiond remains active and will retry")
+                    last_wait_log = now
+                await asyncio.sleep(2.0)
+                continue
+
+            display = GamescopeInvocation.from_environment()
+            invocation = GamescopeInvocation(
+                steam=False,
+                output=output,
+                output_width=display.output_width,
+                output_height=display.output_height,
+                output_refresh=display.output_refresh,
+                nested_width=display.nested_width,
+                nested_height=display.nested_height,
+            )
+            try:
+                await self.supervisor.launch_shell(invocation.argv([shell]), 15000, select_shell=False)
+                break
+            except (OSError, RuntimeError, TimeoutError, ValueError, subprocess.SubprocessError):
+                if has_connected_presentation_output():
+                    raise
+                LOGGER.warning("DRM output disappeared during shell startup; retaining Sessiond and retrying")
+                await asyncio.sleep(2.0)
         self._shell_selection_task = asyncio.create_task(self._select_ready_shell())
 
     async def _select_ready_shell(self) -> None:
@@ -967,6 +992,23 @@ async def bootstrap_after_services_ready(interface: ConsoleSessionInterface, bus
     await interface.bootstrap_shell()
 
 
+async def restart_shell_after_display_loss(interface: ConsoleSessionInterface,
+                                           stop_task: asyncio.Task[None]) -> bool:
+    """If Gamescope died with the output, retain Sessiond and await hotplug."""
+    await asyncio.sleep(1.0)
+    if has_connected_presentation_output():
+        return False
+    LOGGER.warning("Gamescope exited while DRM output is absent; waiting in Sessiond for hotplug")
+    restart_task = asyncio.create_task(interface.bootstrap_shell())
+    done, _ = await asyncio.wait((stop_task, restart_task), return_when=asyncio.FIRST_COMPLETED)
+    if stop_task in done:
+        restart_task.cancel()
+        await asyncio.gather(restart_task, return_exceptions=True)
+        return True
+    await restart_task
+    return True
+
+
 async def serve(bus_type: BusType = BusType.SESSION, bootstrap_shell: bool = False) -> None:
     LOGGER.info("session_lifecycle event=start pid=%s uid=%s", os.getpid(), os.geteuid())
     bus = await MessageBus(bus_type=bus_type).connect()
@@ -978,12 +1020,6 @@ async def serve(bus_type: BusType = BusType.SESSION, bootstrap_shell: bool = Fal
     await interface.start_controller_monitor()
     _notify_systemd_ready()
     LOGGER.info("Sessiond D-Bus API ready; systemd dependents may now start")
-    if bootstrap_shell:
-        try:
-            await bootstrap_after_services_ready(interface, bus)
-        except Exception as error:
-            record_failure(f"graphical bootstrap failed: {type(error).__name__}: {error}")
-            raise
     stop_event = asyncio.Event()
     loop = asyncio.get_running_loop()
     def request_stop(stop_signal: os_signal.Signals) -> None:
@@ -993,23 +1029,45 @@ async def serve(bus_type: BusType = BusType.SESSION, bootstrap_shell: bool = Fal
 
     for stop_signal in (os_signal.SIGINT, os_signal.SIGTERM):
         loop.add_signal_handler(stop_signal, request_stop, stop_signal)
+    stop_task = asyncio.create_task(_wait_for_stop(stop_event))
+    if bootstrap_shell:
+        bootstrap_task = asyncio.create_task(bootstrap_after_services_ready(interface, bus))
+        done, _ = await asyncio.wait((stop_task, bootstrap_task), return_when=asyncio.FIRST_COMPLETED)
+        if stop_task in done:
+            bootstrap_task.cancel()
+            await asyncio.gather(bootstrap_task, return_exceptions=True)
+        else:
+            try:
+                await bootstrap_task
+            except Exception as error:
+                record_failure(f"graphical bootstrap failed: {type(error).__name__}: {error}")
+                raise
     stable_task = None
-    shell_task = getattr(interface.supervisor, "_shell_watch_task", None)
-    if bootstrap_shell and not interface.recovery_mode:
+    if bootstrap_shell and not interface.recovery_mode and not stop_event.is_set():
         async def clear_after_stable_session() -> None:
             await asyncio.sleep(120)
             clear_failures()
             LOGGER.info("graphical session stable; recovery failure history cleared")
         stable_task = asyncio.create_task(clear_after_stable_session())
-    stop_task = asyncio.create_task(_wait_for_stop(stop_event))
-    if shell_task is not None:
+    while bootstrap_shell and not stop_event.is_set():
+        shell_task = getattr(interface.supervisor, "_shell_watch_task", None)
+        if shell_task is None:
+            await stop_task
+            break
         done, _ = await asyncio.wait((stop_task, shell_task), return_when=asyncio.FIRST_COMPLETED)
-        if shell_task in done and not stop_event.is_set():
+        if stop_task in done or stop_event.is_set():
+            break
+        if shell_task in done:
+            # Gamescope can terminate when the DRM connector vanishes. That is
+            # a hardware transition, not a shell/application crash: keep this
+            # appliance service alive and relaunch when an output returns.
+            if await restart_shell_after_display_loss(interface, stop_task):
+                continue
             state = model.state
             reason = str(model.last_failure_reason or "shell presentation process exited unexpectedly")
             record_failure(reason)
             raise RuntimeError(reason)
-    else:
+    if not bootstrap_shell:
         await stop_task
     if stable_task is not None:
         stable_task.cancel()

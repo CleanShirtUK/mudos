@@ -163,7 +163,7 @@ Window {
             Text {
                 width: 230
                 text: controllerBridge.controllerConnected
-                      ? "Controller connected" : "Connect a controller · keyboard also works"
+                      ? "Controller connected" : "Reconnect your controller to navigate"
                 color: controllerBridge.controllerConnected ? "#8de0b2" : "#bac3d2"
                 font.pixelSize: 15
                 horizontalAlignment: Text.AlignRight
@@ -192,20 +192,56 @@ Window {
                 Repeater {
                     model: root.actions
                     delegate: Button {
+                        id: recoveryActionButton
                         required property int index
                         required property var modelData
                         width: parent.width
                         height: 58
                         text: modelData.label
+                        focus: root.selected === index
+                        activeFocusOnTab: true
                         highlighted: root.selected === index
+                        background: Rectangle {
+                            radius: 8
+                            color: root.selected === index ? "#283b5a" : "#1a1f29"
+                            border.width: root.selected === index ? 3 : 1
+                            border.color: root.selected === index ? "#91b5ff" : "#343b49"
+                        }
+                        contentItem: Text {
+                            text: recoveryActionButton.text
+                            color: "white"
+                            font.pixelSize: 17
+                            font.bold: root.selected === index
+                            horizontalAlignment: Text.AlignHCenter
+                            verticalAlignment: Text.AlignVCenter
+                            elide: Text.ElideRight
+                        }
                         onClicked: { root.selected = index; root.activate() }
                     }
                 }
                 Button {
+                    id: recoveryDetailsButton
                     width: parent.width
                     height: 58
                     text: "Diagnostics and component details"
+                    focus: root.selected === root.actions.length
+                    activeFocusOnTab: true
                     highlighted: root.selected === root.actions.length
+                    background: Rectangle {
+                        radius: 8
+                        color: root.selected === root.actions.length ? "#283b5a" : "#1a1f29"
+                        border.width: root.selected === root.actions.length ? 3 : 1
+                        border.color: root.selected === root.actions.length ? "#91b5ff" : "#343b49"
+                    }
+                    contentItem: Text {
+                        text: recoveryDetailsButton.text
+                        color: "white"
+                        font.pixelSize: 16
+                        font.bold: root.selected === root.actions.length
+                        horizontalAlignment: Text.AlignHCenter
+                        verticalAlignment: Text.AlignVCenter
+                        elide: Text.ElideRight
+                    }
                     onClicked: { root.selected = root.actions.length; root.activate() }
                 }
             }
@@ -330,8 +366,20 @@ Window {
                 }
                 Row {
                     spacing: 12
-                    Button { text: "Confirm"; highlighted: root.confirmChoice === 0; onClicked: { root.confirmChoice = 0; root.activate() } }
-                    Button { text: "Cancel"; highlighted: root.confirmChoice === 1; onClicked: root.confirmOpen = false }
+                    Button {
+                        text: "Confirm"
+                        focus: root.confirmChoice === 0
+                        activeFocusOnTab: true
+                        highlighted: root.confirmChoice === 0
+                        onClicked: { root.confirmChoice = 0; root.activate() }
+                    }
+                    Button {
+                        text: "Cancel"
+                        focus: root.confirmChoice === 1
+                        activeFocusOnTab: true
+                        highlighted: root.confirmChoice === 1
+                        onClicked: root.confirmOpen = false
+                    }
                 }
             }
         }

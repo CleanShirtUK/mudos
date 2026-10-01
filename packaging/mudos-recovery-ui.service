@@ -37,7 +37,6 @@ EnvironmentFile=/etc/lulu/mudos-recovery-token
 EnvironmentFile=-/etc/lulu/presentation.conf
 ExecStartPre=+/opt/lulu/current/bin/lulu-vt activate 2
 ExecStart=/opt/lulu/current/scripts/mudos-recovery-ui.py
-ExecStopPost=+/opt/lulu/current/bin/lulu-vt restore
 Restart=on-failure
 RestartSec=2s
 TimeoutStopSec=20s
