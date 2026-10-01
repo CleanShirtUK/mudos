@@ -316,7 +316,7 @@ class SessionModelTests(unittest.TestCase):
 
         asyncio.run(exercise())
 
-    def test_controller_recreation_preserves_utility_compat_but_keeps_game_default(self) -> None:
+    def test_controller_recreation_preserves_utility_and_unfocused_game_compat(self) -> None:
         async def exercise(kind: str, expected: InputMode) -> None:
             interface = ConsoleSessionInterface.__new__(ConsoleSessionInterface)
             interface.model = SessionStateModel()
@@ -335,7 +335,7 @@ class SessionModelTests(unittest.TestCase):
             interface._inputplumber.load_mode.assert_called_once_with(expected)
 
         asyncio.run(exercise("utility", InputMode.COMPAT))
-        asyncio.run(exercise("game", InputMode.GAME))
+        asyncio.run(exercise("game", InputMode.COMPAT))
 
     def test_application_exit_restores_shell_input_mode(self) -> None:
         async def exercise() -> None:

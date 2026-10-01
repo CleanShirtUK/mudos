@@ -69,6 +69,74 @@ def input_mode_interface(
 
 
 class BoundaryTests(unittest.TestCase):
+    def test_managed_game_input_policy_tracks_focus_fullscreen_and_session_override(self) -> None:
+        session = SessionStateModel()
+        token = session.request_launch("game-1")
+        session.launch_starting(token)
+        self.assertEqual(session.state.input_mode_override.value, "auto")
+        session.primary_started(token)
+
+        self.assertEqual(session.automatic_game_input_mode(focused=True, fullscreen=False), InputMode.COMPAT)
+        self.assertEqual(session.automatic_game_input_mode(focused=True, fullscreen=True), InputMode.GAME)
+        self.assertEqual(session.automatic_game_input_mode(focused=False, fullscreen=True), InputMode.COMPAT)
+        self.assertEqual(session.automatic_game_input_mode(focused=True, fullscreen=True), InputMode.GAME)
+
+        session.set_explicit_game_input_mode(InputMode.COMPAT)
+        self.assertEqual(session.state.input_mode_override.value, "explicit_compat")
+        self.assertEqual(session.automatic_game_input_mode(focused=True, fullscreen=True), InputMode.COMPAT)
+        session.set_explicit_game_input_mode(InputMode.GAME)
+        self.assertEqual(session.state.input_mode_override.value, "explicit_gamepad")
+        self.assertEqual(session.automatic_game_input_mode(focused=True, fullscreen=False), InputMode.GAME)
+
+        session.primary_exited(token)
+        session.return_complete(token)
+        self.assertEqual(session.state.input_mode, InputMode.SHELL)
+        self.assertEqual(session.state.input_mode_override.value, "auto")
+
+    def test_failed_and_cancelled_launch_do_not_retain_game_input_override(self) -> None:
+        for failed in (False, True):
+            session = SessionStateModel()
+            token = session.request_launch("game-1")
+            session.launch_starting(token)
+            if failed:
+                session.fail(token, "launch failed")
+            else:
+                session.fail(token, "launch cancelled")
+            session.return_complete(token)
+            self.assertEqual(session.state.lifecycle.value, "shell")
+            self.assertEqual(session.state.input_mode.value, "shell")
+            self.assertEqual(session.state.input_mode_override.value, "auto")
+
+    def test_sessiond_applies_mode_only_for_focused_owned_gamescope_surface(self) -> None:
+        from types import SimpleNamespace
+        from lulu.launch_identity import LaunchIdentity
+
+        path = "/org/shadowblip/InputPlumber/CompositeDevice0"
+        client = RecordingInputPlumber({path: ("045e_0291", ("/dev/input/event13",))})
+        interface = input_mode_interface(client)
+        interface._last_automatic_mode = None
+        interface._observed_game_surface = (None, None, False)
+        token = interface.model.request_launch("game-1")
+        interface.model.launch_starting(token)
+        interface.model.primary_started(token)
+        identity = LaunchIdentity(token, 4321, 4321, "/game", ("/game",))
+        interface.supervisor.active_identity = identity
+        interface.supervisor._process_group_members = lambda pgid: {4321, 4322}
+
+        interface._observed_game_surface = (123, 9999, True)
+        interface._reconcile_game_input_policy()
+        self.assertEqual(client.loads[-1][0], InputMode.COMPAT)
+        interface._observed_game_surface = (123, 4322, False)
+        interface._reconcile_game_input_policy()
+        self.assertEqual(client.loads[-1][0], InputMode.COMPAT)
+        interface._observed_game_surface = (123, 4322, True)
+        interface._reconcile_game_input_policy()
+        self.assertEqual(client.loads[-1][0], InputMode.GAME)
+
+        interface.model.set_explicit_game_input_mode(InputMode.COMPAT)
+        interface._reconcile_game_input_policy()
+        self.assertEqual(client.loads[-1][0], InputMode.COMPAT)
+
     def test_gamescope_close_targets_only_the_resolved_window(self) -> None:
         from unittest.mock import patch
 
@@ -314,7 +382,9 @@ class BoundaryTests(unittest.TestCase):
         async def exercise() -> None:
             with patch("lulu.sessiond.MessageBus", return_value=fake_bus), patch(
                 "lulu.sessiond.sdl_gamepad_inventory", return_value=[]
-            ):
+            ), patch("lulu.sessiond.GamescopeWindowObserver",
+                     return_value=type("Observer", (), {"start": lambda self: None,
+                                                          "stop": lambda self: None})()):
                 await interface.start_controller_monitor()
                 self.assertEqual(interface.controller_registry.controllers, {})
                 self.assertIsNotNone(interface._controller_monitor_task)
@@ -923,7 +993,7 @@ class BoundaryTests(unittest.TestCase):
 
         self.assertEqual(client.baselines, [path, path])
 
-    def test_recreated_composite_resets_compatibility_to_gamepad(self) -> None:
+    def test_recreated_composite_reapplies_automatic_unfocused_compatibility(self) -> None:
         path = "/org/shadowblip/InputPlumber/CompositeDevice0"
         client = RecordingInputPlumber({path: ("045e_0291", ("/dev/input/event13",))})
         interface = input_mode_interface(client)
@@ -935,7 +1005,7 @@ class BoundaryTests(unittest.TestCase):
 
         asyncio.run(interface._initialize_composite(path, client.composites[path]))
 
-        self.assertEqual(interface.model.state.input_mode, InputMode.GAME)
+        self.assertEqual(interface.model.state.input_mode, InputMode.COMPAT)
         self.assertEqual(client.baselines, [path])
 
     def test_recreated_utility_composite_reapplies_compat_after_default_baseline(self) -> None:

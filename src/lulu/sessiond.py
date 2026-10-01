@@ -21,6 +21,7 @@ from .controllerd import ControllerRegistry, default_inputplumber_client
 from .inputplumber import (InputPlumberObjectDisappeared, is_service_unavailable,
                            sdl_gamepad_inventory)
 from .gamescope import GamescopeInvocation, GamescopePresentation, discover_presentation_output
+from .gamescope_observer import GamescopeWindowObserver
 from .contracts import InputMode, LaunchDescriptor, Lifecycle, Presentation, SessionClassification
 from .launch_identity import LaunchIdentity
 from .process_supervisor import ProcessSupervisor
@@ -65,6 +66,10 @@ class ConsoleSessionInterface(ServiceInterface):
         self._initialized_composites: dict[str, tuple[str, tuple[str, ...]]] = {}
         self._presentation_watchdog_task: asyncio.Task[None] | None = None
         self._shell_selection_task: asyncio.Task[None] | None = None
+        self._gamescope_observer: GamescopeWindowObserver | None = None
+        self._observed_game_surface: tuple[int | None, int | None, bool] = (None, None, False)
+        self._last_automatic_mode: InputMode | None = None
+        self._input_policy_task: asyncio.Task[None] | None = None
         self._bootstrap_output = os.environ.get("LULU_OUTPUT_CONNECTOR")
         self.supervisor = ProcessSupervisor(
             model,
@@ -133,6 +138,10 @@ class ConsoleSessionInterface(ServiceInterface):
         return DBusError("org.lulu.ConsoleSession.Error.InvalidState", str(error))
 
     async def _state_changed(self) -> None:
+        if self.model.state.lifecycle.value == "game":
+            self._schedule_game_input_policy()
+        else:
+            self._reconcile_game_input_policy()
         self.StateChanged(self._state_json())
 
     async def start_controller_monitor(self) -> None:
@@ -167,6 +176,11 @@ class ConsoleSessionInterface(ServiceInterface):
         )
         self._inputplumber_bus.add_message_handler(self._handle_inputplumber_signal)
         self._controller_monitor_task = asyncio.create_task(self._monitor_controller_events())
+        self._gamescope_observer = GamescopeWindowObserver(
+            asyncio.get_running_loop(), self._gamescope_surface_changed,
+            display_name=os.environ.get("DISPLAY", ":0"),
+        )
+        self._gamescope_observer.start()
         if self._presentation_watchdog_enabled:
             self._presentation_watchdog_task = asyncio.create_task(self._monitor_presentation())
 
@@ -216,10 +230,20 @@ class ConsoleSessionInterface(ServiceInterface):
         reset_mode = (
             InputMode.SHELL if self.model.state.lifecycle.value == "shell" else
             InputMode.COMPAT if self.model.state.session_kind == SessionClassification.UTILITY.value else
-            InputMode.GAME
+            self.model.automatic_game_input_mode(
+                focused=(
+                    getattr(self, "_observed_game_surface", (None, None, False))[2]
+                    and getattr(self, "_observed_game_surface", (None, None, False))[1]
+                    in self._owned_game_pids()
+                ),
+                fullscreen=getattr(self, "_observed_game_surface", (None, None, False))[2],
+            )
         )
         self._apply_input_mode(reset_mode)
         self.model.set_input_mode(reset_mode)
+        if (self.model.state.lifecycle.value == "game"
+                and self.model.state.session_kind != SessionClassification.UTILITY.value):
+            self._last_automatic_mode = reset_mode
         self._initialized_composites[object_path] = composite
         logging.getLogger("lulu.sessiond").info(
             "initialized InputPlumber profile=Default InterceptMode=1 composite=%s", object_path
@@ -361,6 +385,15 @@ class ConsoleSessionInterface(ServiceInterface):
             raise
 
     async def stop_controller_monitor(self) -> None:
+        observer = getattr(self, "_gamescope_observer", None)
+        if observer is not None:
+            observer.stop()
+            self._gamescope_observer = None
+        policy_task = getattr(self, "_input_policy_task", None)
+        if policy_task is not None:
+            policy_task.cancel()
+            await asyncio.gather(policy_task, return_exceptions=True)
+            self._input_policy_task = None
         if self._shell_selection_task is not None:
             self._shell_selection_task.cancel()
             await asyncio.gather(self._shell_selection_task, return_exceptions=True)
@@ -379,6 +412,71 @@ class ConsoleSessionInterface(ServiceInterface):
             self._presentation_watchdog_task.cancel()
             await asyncio.gather(self._presentation_watchdog_task, return_exceptions=True)
             self._presentation_watchdog_task = None
+
+    def _gamescope_surface_changed(self, xid: int | None, pid: int | None, focused_fullscreen: bool) -> None:
+        self._observed_game_surface = (xid, pid, focused_fullscreen)
+        self._schedule_game_input_policy()
+
+    def _schedule_game_input_policy(self) -> None:
+        if self.model.state.lifecycle.value != "game":
+            return
+        previous = getattr(self, "_input_policy_task", None)
+        if previous is not None:
+            previous.cancel()
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            # Direct synchronous unit callers do not own an event loop; the
+            # production D-Bus service always schedules from its running loop.
+            self._input_policy_task = None
+            return
+        self._input_policy_task = loop.create_task(self._apply_game_input_policy_after_settle())
+
+    async def _apply_game_input_policy_after_settle(self) -> None:
+        try:
+            await asyncio.sleep(0.15)
+            before = self.model.state.input_mode
+            self._reconcile_game_input_policy()
+            if self.model.state.input_mode is not before:
+                self.StateChanged(self._state_json())
+        except asyncio.CancelledError:
+            raise
+
+    def _reconcile_game_input_policy(self) -> None:
+        state = self.model.state
+        if state.lifecycle.value != "game" or state.session_kind == SessionClassification.UTILITY.value:
+            self._last_automatic_mode = None
+            return
+        _xid, window_pid, focused_fullscreen = self._observed_game_surface
+        owned_pids = self._owned_game_pids()
+        # The focused Xwayland surface must belong to this Sessiond-owned
+        # process group; never infer a game's mode from an unrelated fullscreen window.
+        surface_is_owned = window_pid is not None and window_pid in owned_pids
+        mode = self.model.automatic_game_input_mode(
+            focused=surface_is_owned and focused_fullscreen,
+            fullscreen=surface_is_owned and focused_fullscreen,
+        )
+        if mode is self._last_automatic_mode and self.model.state.input_mode is mode:
+            return
+        try:
+            self._apply_input_mode(mode)
+        except (OSError, RuntimeError, ValueError, subprocess.SubprocessError):
+            LOGGER.exception("automatic game input-mode application failed mode=%s", mode.value)
+            return
+        self._last_automatic_mode = mode
+        self.model.set_input_mode(mode)
+
+    def _owned_game_pids(self) -> set[int]:
+        owned_pids: set[int] = set()
+        supervisor = getattr(self, "supervisor", None)
+        identity = self._local_identity or getattr(supervisor, "active_identity", None)
+        if identity is not None:
+            owned_pids.add(identity.pid)
+            try:
+                owned_pids.update(supervisor._process_group_members(identity.pgid))
+            except (AttributeError, OSError, ProcessLookupError):
+                pass
+        return owned_pids
 
     def _handle_inputplumber_signal(self, message: object) -> None:
         if (
@@ -458,6 +556,7 @@ class ConsoleSessionInterface(ServiceInterface):
                 self.model.fail(token, f"local launch failed: {error}")
                 self.model.return_complete(token)
             raise self._error(ValueError(str(error))) from error
+        self._schedule_game_input_policy()
         self.StateChanged(self._state_json())
         return token
 
@@ -511,6 +610,7 @@ class ConsoleSessionInterface(ServiceInterface):
                 self.model.fail(token, f"provider launch failed: {error}")
                 self.model.return_complete(token)
             raise self._error(ValueError(str(error))) from error
+        self._schedule_game_input_policy()
         self.StateChanged(self._state_json())
         return token
 
@@ -816,7 +916,11 @@ class ConsoleSessionInterface(ServiceInterface):
                     and state.delegated_surface != "browser" and not steam_launch_starting:
                 raise ValueError("Compatibility Mode requires an active application")
             self._apply_input_mode(requested)
-            self.model.set_input_mode(requested)
+            if state.lifecycle.value == "game" and state.session_kind != SessionClassification.UTILITY.value:
+                self.model.set_explicit_game_input_mode(requested)
+                self._last_automatic_mode = requested
+            else:
+                self.model.set_input_mode(requested)
         except (ValueError, KeyError) as error:
             raise self._error(ValueError(str(error))) from error
         self.StateChanged(self._state_json())

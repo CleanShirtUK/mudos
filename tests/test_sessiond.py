@@ -1,5 +1,6 @@
 import asyncio
 import unittest
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 from lulu.console_sessiond import SessionStateModel
@@ -186,6 +187,8 @@ class SessiondTests(unittest.TestCase):
                     patch("lulu.sessiond.ConsoleSessionInterface", return_value=interface), \
                     patch("lulu.sessiond.recovery_required", return_value=False), \
                     patch("lulu.sessiond.sdl_gamepad_inventory", return_value=[]), \
+                    patch("lulu.sessiond.GamescopeWindowObserver",
+                          return_value=SimpleNamespace(start=lambda: None, stop=lambda: None)), \
                     patch("lulu.sessiond._notify_systemd_ready",
                           side_effect=lambda: ready_state.update({
                               "api_exported": ("export", "/org/lulu/ConsoleSession") in buses[0].calls,

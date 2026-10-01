@@ -1,6 +1,7 @@
 """Authoritative session lifecycle and orthogonal presentation policy state."""
 
 from dataclasses import dataclass
+from enum import StrEnum
 from uuid import uuid4
 from typing import TYPE_CHECKING
 
@@ -9,6 +10,12 @@ if TYPE_CHECKING:
 
 from .contracts import (InputMode, LaunchDescriptor, Lifecycle, Overlay, Presentation,
                         ServiceDescriptor, ServiceName, SessionClassification)
+
+
+class InputModeOverride(StrEnum):
+    AUTO = "auto"
+    EXPLICIT_COMPAT = "explicit_compat"
+    EXPLICIT_GAMEPAD = "explicit_gamepad"
 
 
 DESCRIPTOR = ServiceDescriptor(
@@ -33,6 +40,7 @@ class SessionState:
     session_title: str = ""
     provider_id: str | None = None
     controller_mode: str | None = None
+    input_mode_override: InputModeOverride = InputModeOverride.AUTO
 
 
 class SessionStateModel:
@@ -164,6 +172,26 @@ class SessionStateModel:
 
     def set_input_mode(self, mode: InputMode) -> None:
         self.state.input_mode = mode
+
+    def set_explicit_game_input_mode(self, mode: InputMode) -> None:
+        if mode not in (InputMode.COMPAT, InputMode.GAME):
+            raise ValueError("only Compat and Gamepad can be selected explicitly")
+        self.state.input_mode_override = (
+            InputModeOverride.EXPLICIT_COMPAT if mode is InputMode.COMPAT
+            else InputModeOverride.EXPLICIT_GAMEPAD
+        )
+        self.state.input_mode = mode
+
+    def automatic_game_input_mode(self, *, focused: bool, fullscreen: bool) -> InputMode:
+        """Resolve the desired mode for an owned game surface unless overridden."""
+        if self.state.lifecycle is not Lifecycle.GAME:
+            return self.state.input_mode
+        override = self.state.input_mode_override
+        if override is InputModeOverride.EXPLICIT_COMPAT:
+            return InputMode.COMPAT
+        if override is InputModeOverride.EXPLICIT_GAMEPAD:
+            return InputMode.GAME
+        return InputMode.GAME if focused and fullscreen else InputMode.COMPAT
 
     def set_overlay(self, overlay: Overlay) -> None:
         self.state.overlay = overlay

@@ -7,7 +7,7 @@ name = "lulu"
 version = "0.1.0.dev0"
 description = "Initial service-boundary foundation for Project Lulu"
 requires-python = ">=3.11"
-dependencies = ["dbus-next>=0.2.3"]
+dependencies = ["dbus-next>=0.2.3", "python-xlib>=0.33"]
 
 [project.scripts]
 console-sessiond = "lulu.sessiond:main"
