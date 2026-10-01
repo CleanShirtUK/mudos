@@ -1096,6 +1096,15 @@ class ConsoleUiTests(unittest.TestCase):
         for mode in ("Single player", "Multiplayer", "Split screen"):
             self.assertNotIn(mode, game_card)
 
+    def test_recent_card_projection_preserves_library_metadata(self) -> None:
+        presentation = (ROOT / "ui" / "RecentCardPresentation.qml").read_text()
+        catalogue_header = (ROOT / "native" / "catalogue-model.h").read_text()
+        for field in ("release_date", "release_year", "developer", "publisher",
+                      "local_multiplayer", "online_multiplayer"):
+            self.assertIn(f"required property var {field}", presentation)
+            self.assertIn(f"{field}: {field}", presentation)
+        self.assertIn("DeveloperRole, PublisherRole", catalogue_header)
+
     def test_library_navigation_separates_grid_and_collection_controls(self) -> None:
         shell = (ROOT / "ui" / "ConsoleShell.qml").read_text()
         library_space = (ROOT / "ui" / "LibrarySpace.qml").read_text()

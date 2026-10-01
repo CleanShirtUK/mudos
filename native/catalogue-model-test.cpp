@@ -117,6 +117,27 @@ private slots:
         QCOMPARE(changedSpy.count(), 1);
         QCOMPARE(recent.gameIdAt(0), QStringLiteral("steam:a"));
     }
+
+    void recentRetainsLibraryMetadataRoles()
+    {
+        CatalogueModel source;
+        RecentModel recent(&source);
+        QVERIFY(source.loadSnapshot(60, R"([{"game_id":"steam:a","provider":"steam",
+            "install_state":"installed","last_played":10,"genres":["Racing"],
+            "game_modes":["Multiplayer"],"release_year":2020,
+            "local_multiplayer":true,"online_multiplayer":false,
+            "developer":"Studio","publisher":"Publisher"}])"));
+        QCOMPARE(recent.rowCount(), 1);
+        const QModelIndex item = recent.index(0, 0);
+        QCOMPARE(recent.data(item, CatalogueModel::GenresRole).toStringList(),
+                 QStringList({QStringLiteral("Racing")}));
+        QCOMPARE(recent.data(item, CatalogueModel::GameModesRole).toList().size(), 1);
+        QCOMPARE(recent.data(item, CatalogueModel::ReleaseYearRole).toInt(), 2020);
+        QCOMPARE(recent.data(item, CatalogueModel::LocalMultiplayerRole).toBool(), true);
+        QCOMPARE(recent.data(item, CatalogueModel::OnlineMultiplayerRole).toBool(), false);
+        QCOMPARE(recent.data(item, CatalogueModel::DeveloperRole).toString(), QStringLiteral("Studio"));
+        QCOMPARE(recent.data(item, CatalogueModel::PublisherRole).toString(), QStringLiteral("Publisher"));
+    }
 };
 
 QTEST_MAIN(CatalogueModelTests)

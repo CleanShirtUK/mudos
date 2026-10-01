@@ -24,10 +24,10 @@ public:
         MatchMethodRole, MatchConfidenceRole, MatchLockedRole, MetadataCheckedAtRole,
         DisplayTitleOverrideRole, ArtworkSuppressedRole, AvailabilityStateRole,
         ProviderRecordIdRole, ContentIdentityRole, CatalogueSourceRole, GenresRole,
-        ReleaseDateRole, ReleaseYearRole, TotalPlaytimeRole, LocalMultiplayerRole,
+        GameModesRole, ReleaseDateRole, ReleaseYearRole, TotalPlaytimeRole, LocalMultiplayerRole,
         OnlineMultiplayerRole, GameModeRole, ProtondbRatingRole, LastSeenAtRole,
         LastSyncedAtRole, ArtworkSourceUrlRole, MetadataResolverVersionRole,
-        InstalledGameIdRole
+        InstalledGameIdRole, DeveloperRole, PublisherRole
     };
     Q_ENUM(Role)
 

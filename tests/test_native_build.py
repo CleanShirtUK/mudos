@@ -32,8 +32,9 @@ class NativeBuildTests(unittest.TestCase):
                       "last_played", "genres", "game_modes", "game_mode"):
             self.assertIn(f"{field}: {field}", card_presentation)
             self.assertIn(f"required property", card_presentation)
-        self.assertNotIn("local_multiplayer: local_multiplayer", card_presentation)
-        self.assertNotIn("online_multiplayer: online_multiplayer", card_presentation)
+        for field in ("release_date", "release_year", "developer", "publisher",
+                      "local_multiplayer", "online_multiplayer"):
+            self.assertIn(f"{field}: {field}", card_presentation)
         self.assertIn("required property var game_modes", card_presentation)
         self.assertIn("game: root.gameRecord", card_presentation)
         self.assertIn("recentHome.itemCount - 1", (root / "ui" / "ConsoleShell.qml").read_text())

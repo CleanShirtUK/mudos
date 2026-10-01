@@ -19,6 +19,12 @@ Item {
     required property var artwork_suppressed
     required property var last_played
     required property var total_playtime
+    required property var release_date
+    required property var release_year
+    required property var developer
+    required property var publisher
+    required property var local_multiplayer
+    required property var online_multiplayer
     required property var runtime
     required property var genres
     // The native RecentModel exposes this role even when its value is empty;
@@ -98,6 +104,12 @@ Item {
         artwork_suppressed: artwork_suppressed,
         last_played: last_played,
         total_playtime: total_playtime,
+        release_date: release_date,
+        release_year: release_year,
+        developer: developer,
+        publisher: publisher,
+        local_multiplayer: local_multiplayer,
+        online_multiplayer: online_multiplayer,
         runtime: runtime,
         genres: genres,
         game_modes: game_modes,
