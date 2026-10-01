@@ -14,6 +14,12 @@ from Xlib import X, display
 WindowStateCallback = Callable[[int | None, int | None, bool], None]
 
 
+def _event_window_id(event: object) -> int | None:
+    """Return an X event's window id when that event type has one."""
+    window = getattr(event, "window", None)
+    return getattr(window, "id", None)
+
+
 class GamescopeWindowObserver:
     """Report Gamescope focus and effective fullscreen geometry without polling."""
 
@@ -111,7 +117,8 @@ class GamescopeWindowObserver:
                 select.select([connection.fileno()], [], [], 0.5)
                 while connection.pending_events():
                     event = connection.next_event()
-                    if event.type == X.PropertyNotify and event.window.id == root.id \
+                    event_window_id = _event_window_id(event)
+                    if event.type == X.PropertyNotify and event_window_id == root.id \
                             and event.atom in (focus_atom, focusable_atom):
                         if event.atom == focus_atom:
                             prop = root.get_full_property(focus_atom, X.AnyPropertyType)
@@ -119,7 +126,7 @@ class GamescopeWindowObserver:
                             refresh(xid or None)
                         else:
                             refresh(watched_xid)
-                    elif watched_xid is not None and event.window.id == watched_xid:
+                    elif watched_xid is not None and event_window_id == watched_xid:
                         refresh(watched_xid)
                 connection.flush()
         except Exception:
