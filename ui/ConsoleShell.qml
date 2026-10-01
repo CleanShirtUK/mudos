@@ -752,6 +752,7 @@ import QtQuick.Controls
         launchOverlayRetired = true
         launchOverlayVisible = false
         launchStatus = "idle"
+        message = ""
         launchToken = ""
         launchGameId = ""
         launchLogLines = []
@@ -2262,6 +2263,7 @@ import QtQuick.Controls
         launchOverlayRetired = true
         launchOverlayVisible = false
         launchStatus = "idle"
+        message = ""
         launchToken = ""
         launchGameId = ""
         launchLogLines = []
