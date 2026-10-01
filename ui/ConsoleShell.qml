@@ -356,7 +356,6 @@ import QtQuick.Controls
     property string launchTitle: ""
     property string launchGameId: ""
     property string launchToken: ""
-    property bool launchOverlayEnabled: controllerBridge.launchOverlayEnabled === true
     // Development-only parity switch for the stationary landing-card specimen.
     property bool catalogueRefreshTimerDisabled: true
     property bool launchOverlayVisible: false
@@ -364,6 +363,12 @@ import QtQuick.Controls
     property bool shellWasLeft: false
     property bool gamePresentationObserved: false
     property var launchLogLines: []
+    property string normalizedLaunchStage: "preparing"
+    property string normalizedLaunchStageLabel: "Preparing launch"
+    property string normalizedLaunchDetail: ""
+    property string normalizedLaunchProvider: ""
+    property bool normalizedLaunchCancellable: false
+    property bool launchCancellationRequested: false
     property bool gameOptionsOpen: false
     property string gameOptionsView: "menu"
     property int gameOptionsIndex: 0
@@ -408,7 +413,12 @@ import QtQuick.Controls
         || startupLifecycle !== "HOME"
         || presentationCoordinator.contentState !== presentationCoordinator.presentedState
     readonly property bool launchOverlayEffectiveVisible: launchOverlayVisible
-        && launchOverlayEnabled && !launchOverlayRetired
+        && !launchOverlayRetired
+    readonly property bool launchScreenVisible: launchOverlayEffectiveVisible
+        && presentationCoordinator.contentHidden
+        && launchLifecycle !== "game" && launchLifecycle !== "returning"
+        || (launchOverlayEffectiveVisible && launchStatus === "failed"
+            && presentationCoordinator.contentPresented)
 
     PresentationCoordinator {
         id: presentationCoordinator
@@ -818,13 +828,18 @@ import QtQuick.Controls
     }
 
     function refreshLaunchLog(generation) {
-        request("/launch-log", "GET", "", function(data) {
-            var accepted = generation === launchGeneration && !launchOverlayRetired && data.active && data.game_id === launchGameId
-            traceLaunchResponse("/launch-log", data, generation, data.token || "", accepted, accepted ? "apply" : "ignored")
-
-            if (generation !== launchGeneration || launchOverlayRetired)
+        request("/launch-status", "GET", "", function(data) {
+            var accepted = generation === launchGeneration && !launchOverlayRetired
+                && (!data.game_id || data.game_id === launchGameId)
+            traceLaunchResponse("/launch-status", data, generation, data.token || "", accepted, accepted ? "apply" : "ignored")
+            if (generation !== launchGeneration || launchOverlayRetired || !accepted)
                 return
-            if (data.active && data.game_id === launchGameId)
+            normalizedLaunchStage = data.stage || "preparing"
+            normalizedLaunchStageLabel = data.stage_label || "Preparing launch"
+            normalizedLaunchProvider = data.provider || ""
+            normalizedLaunchDetail = data.detail || ""
+            normalizedLaunchCancellable = data.cancellable === true && !launchCancellationRequested
+            if (data.lines)
                 launchLogLines = data.lines
         }, "", generation)
     }
@@ -2028,9 +2043,18 @@ import QtQuick.Controls
         }, "Clear failed")
     }
 
-    function launchGame(game) {
+    function launchGame(game, choreographyComplete) {
         if (!game)
             return
+        if (choreographyComplete !== true && presentationCoordinator.contentPresented) {
+            pendingHomeLaunch = game
+            pendingHomeLaunchPhase = "exiting"
+            if (!presentationCoordinator.beginContentExit()) {
+                pendingHomeLaunch = null
+                pendingHomeLaunchPhase = "idle"
+            }
+            return
+        }
         var generation = ++launchGeneration
         launchLifecycle = "launch_requested"
         returnPreparationStarted = false
@@ -2047,8 +2071,16 @@ import QtQuick.Controls
         launchLogLines = ["[Lulu] Play requested: " + game.title + " / " + game.game_id]
         launchLogTimer.start()
         launchStatus = "launching"
+        normalizedLaunchStage = "preparing"
+        normalizedLaunchStageLabel = "Preparing launch"
+        normalizedLaunchProvider = String(game.provider || "")
+        normalizedLaunchDetail = ""
+        normalizedLaunchCancellable = false
+        launchCancellationRequested = false
         launchStateRank = 1
         message = "Launching " + game.title
+        launchStatusTimer.start()
+        launchLogTimer.start()
         request("/launch/" + encodeURIComponent(game.game_id), "POST", "", function(data) {
             if (generation !== launchGeneration)
                 return
@@ -2060,7 +2092,6 @@ import QtQuick.Controls
                 return
             }
             refreshLaunchState(generation)
-            launchStatusTimer.start()
             refreshCatalogue()
         }, "Launch failed", generation, function() {
             if (generation !== launchGeneration)
@@ -2071,8 +2102,13 @@ import QtQuick.Controls
             stopReturnWatch("launch-failed")
             returnAlreadyHandled = false
             returnPresentationPending = true
-            launchOverlayRetired = true
-            launchOverlayVisible = false
+            launchOverlayRetired = false
+            launchOverlayVisible = true
+            normalizedLaunchStage = "failed"
+            normalizedLaunchStageLabel = "Launch failed"
+            normalizedLaunchCancellable = false
+            launchStatusTimer.stop()
+            launchLogTimer.stop()
             presentationCoordinator.beginStartup()
         })
     }
@@ -2090,13 +2126,18 @@ import QtQuick.Controls
         shellWasLeft = false
         gamePresentationObserved = false
         launchStatus = "launching"
+        normalizedLaunchStage = "preparing"
+        normalizedLaunchStageLabel = "Preparing provider"
+        normalizedLaunchProvider = String(provider.id || "")
+        launchCancellationRequested = false
         launchStateRank = 1
         message = "Launching " + launchTitle
+        launchStatusTimer.start()
+        launchLogTimer.start()
         request("/mudos/provider", "POST", JSON.stringify({id: provider.id}), function(data) {
             if (generation !== launchGeneration) return
             launchToken = data.token
             refreshLaunchState(generation)
-            launchStatusTimer.start()
         }, "Provider launch failed", generation)
     }
 
@@ -2145,7 +2186,7 @@ import QtQuick.Controls
         pendingHomeLaunchPhase = "launching"
         pendingHomeLaunch = null
         traceLaunchEvent("HOME_HIDDEN_LAUNCH_HANDOFF", {game_id: String(game.game_id)})
-        launchGame(game)
+        launchGame(game, true)
         startReturnWatch()
     }
 
@@ -2199,13 +2240,31 @@ import QtQuick.Controls
     function cancelLaunch() {
         if (!launchOverlayEffectiveVisible)
             return
+        launchCancellationRequested = true
+        normalizedLaunchStage = "cancelling"
+        normalizedLaunchStageLabel = "Cancelling launch…"
+        normalizedLaunchCancellable = false
         request("/cancel", "POST", "", function(data) {
             launchStatusTimer.stop()
-            launchLogLines.push("[Lulu] Launch cancelled")
+            normalizedLaunchStage = "cancelled"
+            normalizedLaunchStageLabel = "Launch cancelled"
             launchOverlayRetired = true
             launchOverlayVisible = false
+            launchLifecycle = "shell"
+            returnPresentationPending = true
+            returnPreparationStarted = false
+            presentationCoordinator.beginStartup()
             message = ""
         }, "Launch cancellation failed", launchGeneration)
+    }
+
+    function dismissLaunchFailure() {
+        launchOverlayRetired = true
+        launchOverlayVisible = false
+        launchStatus = "idle"
+        launchToken = ""
+        launchGameId = ""
+        launchLogLines = []
     }
 
     Connections {
@@ -3081,6 +3140,24 @@ import QtQuick.Controls
                     root.submitCredential(true)
                     event.accepted = true
                 }
+                return
+            }
+            if (root.launchScreenVisible) {
+                if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
+                    if (root.normalizedLaunchCancellable)
+                        root.cancelLaunch()
+                    else if (root.launchStatus === "failed")
+                        root.dismissLaunchFailure()
+                } else if (event.key === Qt.Key_Escape || event.key === Qt.Key_Backspace) {
+                    if (root.normalizedLaunchCancellable)
+                        root.cancelLaunch()
+                    else if (root.launchStatus === "failed")
+                        root.dismissLaunchFailure()
+                }
+                // The launch screen has one actionable control. Keep all
+                // controller navigation on that control instead of allowing
+                // hidden Home content to receive shell shortcuts.
+                event.accepted = true
                 return
             }
             if (root.homeLaunchGated) {
@@ -4057,44 +4134,89 @@ import QtQuick.Controls
     }
 
     Rectangle {
-        id: launchLogOverlay
-        visible: root.launchOverlayEffectiveVisible
+        id: launchScreen
+        visible: root.launchScreenVisible
         z: 100
         anchors.fill: parent
         clip: true
         color: luluPalette.launchOverlaySurface
-        border.color: luluPalette.accent
-        border.width: 1
-        Text {
-            x: root.design(12)
-            y: root.design(8)
-            width: parent.width - root.design(24)
-            text: "Launching " + root.launchTitle + " (" + root.launchGameId + ")\n\nB  Cancel"
-            color: luluPalette.primaryText
-            font.family: typography.interfaceFamily
-            font.pixelSize: typography.size("secondary", 16)
-            elide: Text.ElideRight
-        }
-        ListView {
-            anchors.left: parent.left
-            anchors.right: parent.right
-            anchors.top: parent.top
-            anchors.bottom: parent.bottom
-            anchors.margins: root.design(32)
-            anchors.topMargin: root.design(72)
-            model: root.launchLogLines
-            interactive: false
-            clip: true
-            onCountChanged: positionViewAtEnd()
-            delegate: Text {
-                width: launchLogOverlay.width - root.design(24)
-                height: implicitHeight
-                text: modelData
+        Column {
+            width: Math.min(parent.width * 0.76, root.design(900))
+            anchors.centerIn: parent
+            spacing: root.design(20)
+            BusyIndicator {
+                anchors.horizontalCenter: parent.horizontalCenter
+                width: root.design(94)
+                height: width
+                running: launchScreen.visible
+            }
+            Text {
+                width: parent.width
+                text: "Launching " + root.launchTitle
+                color: luluPalette.primaryText
+                font.family: typography.interfaceFamily
+                font.pixelSize: typography.size("title", 30)
+                horizontalAlignment: Text.AlignHCenter
+                wrapMode: Text.Wrap
+            }
+            Text {
+                width: parent.width
+                text: root.normalizedLaunchStageLabel
+                color: luluPalette.accent
+                font.family: typography.interfaceFamily
+                font.pixelSize: typography.size("heading", 21)
+                horizontalAlignment: Text.AlignHCenter
+                wrapMode: Text.Wrap
+            }
+            Text {
+                visible: root.normalizedLaunchProvider !== "" || root.normalizedLaunchDetail !== ""
+                width: parent.width
+                text: [root.normalizedLaunchProvider ? root.normalizedLaunchProvider.toUpperCase() : "",
+                       root.normalizedLaunchDetail].filter(function(value) { return value !== "" }).join(" · ")
                 color: luluPalette.secondaryText
-                font.family: "monospace"
-                font.pixelSize: typography.size("secondary", 10)
+                font.family: typography.interfaceFamily
+                font.pixelSize: typography.size("secondary", 14)
+                horizontalAlignment: Text.AlignHCenter
                 wrapMode: Text.Wrap
                 elide: Text.ElideRight
+            }
+            Column {
+                width: parent.width
+                spacing: root.design(8)
+                Repeater {
+                    model: root.launchLogLines.slice(-3)
+                    delegate: Text {
+                        required property string modelData
+                        width: root.width * 0.74
+                        text: modelData
+                        color: luluPalette.secondaryText
+                        font.family: "monospace"
+                        font.pixelSize: typography.size("secondary", 11)
+                        horizontalAlignment: Text.AlignHCenter
+                        wrapMode: Text.Wrap
+                        maximumLineCount: 2
+                        elide: Text.ElideRight
+                    }
+                }
+            }
+            Button {
+                id: cancelLaunchButton
+                anchors.horizontalCenter: parent.horizontalCenter
+                visible: root.launchStatus !== "failed"
+                    && root.normalizedLaunchCancellable
+                enabled: visible
+                text: "Cancel Launch"
+                focus: launchScreen.visible && visible
+                onClicked: root.cancelLaunch()
+                Accessible.name: "Cancel game launch"
+            }
+            Button {
+                anchors.horizontalCenter: parent.horizontalCenter
+                visible: root.launchStatus === "failed"
+                text: "Return to Home"
+                focus: launchScreen.visible && visible
+                onClicked: root.dismissLaunchFailure()
+                Accessible.name: "Return to Home after launch failure"
             }
         }
     }

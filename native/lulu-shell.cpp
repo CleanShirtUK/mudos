@@ -730,9 +730,6 @@ public:
         insert("requestedSurface", QString());
         insert("guideSelection", 0);
         insert("controllers", QVariantList());
-        insert("launchOverlayEnabled",
-               qEnvironmentVariable("LULU_LAUNCH_OVERLAY_ENABLED", "true")
-                   .compare(QStringLiteral("false"), Qt::CaseInsensitive) != 0);
         refreshDbusSubscriptions();
         QDBusConnection::sessionBus().connect(
             QStringLiteral("org.lulu.ConsoleSessiond"),

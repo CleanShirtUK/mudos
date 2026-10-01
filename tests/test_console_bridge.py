@@ -14,6 +14,46 @@ SPEC.loader.exec_module(BRIDGE)
 
 
 class ConsoleBridgeTests(unittest.TestCase):
+    def test_launch_status_normalizes_session_lifecycle_without_fake_progress(self) -> None:
+        async def exercise():
+            class Sessiond:
+                async def call_get_state(self):
+                    return json.dumps({
+                        "lifecycle": "starting", "primary_id": "steam:123",
+                        "launch_token": "token", "session_title": "Fixture",
+                        "launch_cancellable": True,
+                    })
+
+            bridge = BRIDGE.ConsoleUiBridge(asyncio.get_running_loop(), object(), Sessiond())
+            bridge.launch_logs.start("steam:123")
+            bridge.launch_logs.note("Steam", "Proton runtime preparation started")
+            status = await bridge.launch_status()
+            self.assertEqual(status["stage"], "runtime_preparation")
+            self.assertEqual(status["provider"], "steam")
+            self.assertEqual(status["title"], "Fixture")
+            self.assertEqual(status["lines"][-1], status["detail"])
+            self.assertIsNone(status["progress"])
+            self.assertTrue(status["cancellable"])
+
+        asyncio.run(exercise())
+
+    def test_launch_status_does_not_offer_unsupported_local_cancellation(self) -> None:
+        async def exercise():
+            class Sessiond:
+                async def call_get_state(self):
+                    return json.dumps({
+                        "lifecycle": "starting", "primary_id": "local:wii:fixture",
+                        "launch_token": "token", "launch_cancellable": False,
+                    })
+
+            bridge = BRIDGE.ConsoleUiBridge(asyncio.get_running_loop(), object(), Sessiond())
+            status = await bridge.launch_status()
+            self.assertEqual(status["stage"], "launching_executable")
+            self.assertFalse(status["cancellable"])
+            self.assertIsNone(status["progress"])
+
+        asyncio.run(exercise())
+
     def test_steam_authentication_failure_can_be_retried_after_auth_is_fixed(self) -> None:
         async def exercise():
             class Consoled:

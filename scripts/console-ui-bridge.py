@@ -144,7 +144,10 @@ class LaunchLogCapture:
     def _relevant(self, line: str) -> bool:
         lowered = line.lower()
         return self._appid in line or any(
-            word in lowered for word in ("launch", "process", "proton", "cuphead", "error", "failed")
+            word in lowered for word in (
+                "launch", "process", "proton", "runtime", "shader", "download",
+                "compil", "install", "update", "prepar", "cuphead", "error", "failed",
+            )
         )
 
     def _append(self, source: str, line: str) -> None:
@@ -219,6 +222,52 @@ class ConsoleUiBridge:
 
     def launch_log(self) -> dict[str, object]:
         return self.launch_logs.snapshot()
+
+    async def launch_status(self) -> dict[str, object]:
+        """Normalize Sessiond ownership with provider evidence for the launch screen."""
+        state = await self.state()
+        lifecycle = str(state.get("lifecycle", "shell"))
+        game_id = str(state.get("primary_id") or self.launch_logs.snapshot().get("game_id") or "")
+        provider = (game_id.split(":", 2)[1] if game_id.startswith("provider:")
+                    else "steam" if game_id.startswith("steam:") or game_id.startswith("steam-")
+                    else game_id.split(":", 1)[0] if ":" in game_id else "")
+        stage_by_lifecycle = {
+            "launch_requested": ("preparing", "Preparing launch"),
+            "starting": (("provider_preparation", "Starting provider") if game_id.startswith("provider:")
+                         else ("provider_preparation", "Waiting for Steam preparation") if provider == "steam"
+                         else ("launching_executable", "Starting game process")),
+            "presentation_pending": ("waiting_for_game_window", "Waiting for game window"),
+            "game": ("presented", "Game presentation selected"),
+            "returning": ("returning", "Returning to Mudos"),
+        }
+        stage, label = stage_by_lifecycle.get(lifecycle, ("idle", ""))
+        log = self.launch_logs.snapshot()
+        lines = log.get("lines", []) if log.get("game_id") == game_id else []
+        # Promote a provider stage only when Steam's own log explicitly
+        # names that activity. These are categorical observations, never a
+        # synthetic percentage or a claim that an absent log means idle.
+        if provider == "steam" and lifecycle in {"launch_requested", "starting"} and lines:
+            evidence = str(lines[-1]).casefold()
+            if "shader" in evidence:
+                stage, label = "shader_cache_preparation", "Steam shader-cache activity"
+            elif any(word in evidence for word in ("download", "installing content", "update state")):
+                stage, label = "acquiring_components", "Steam content download / preparation"
+            elif any(word in evidence for word in ("proton", "runtime", "umu")):
+                stage, label = "runtime_preparation", "Steam / Proton runtime preparation"
+        return {
+            "token": state.get("launch_token") or "",
+            "game_id": game_id,
+            "title": state.get("session_title") or game_id,
+            "lifecycle": lifecycle,
+            "stage": stage,
+            "stage_label": label,
+            "provider": provider,
+            "detail": lines[-1] if lines else "",
+            "lines": lines[-3:],
+            "progress": None,
+            "cancellable": bool(state.get("launch_cancellable", False)),
+            "failure": state.get("last_failure_reason") or "",
+        }
 
     async def launch_game(self, game_id: str) -> dict[str, object]:
         LOGGER.info("launch request game_id=%s", game_id)
@@ -692,6 +741,12 @@ class ApiHandler(BaseHTTPRequestHandler):
             return
         if urlparse(self.path).path == "/launch-log":
             self._respond(200, self.bridge.launch_log())
+            return
+        if urlparse(self.path).path == "/launch-status":
+            try:
+                self._respond(200, self.bridge.call(self.bridge.launch_status()))
+            except Exception as error:
+                self._respond(503, {"error": str(error) or type(error).__name__})
             return
         if urlparse(self.path).path == "/acquisition":
             try:

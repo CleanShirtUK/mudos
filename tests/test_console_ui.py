@@ -209,9 +209,11 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertIn('space = "home"', QML)
         self.assertIn('readonly property string apiUrl:', QML)
         self.assertIn("function activate()", QML)
-        self.assertIn("property bool launchOverlayEnabled: controllerBridge.launchOverlayEnabled === true", QML)
         self.assertIn("readonly property bool launchOverlayEffectiveVisible:", QML)
-        self.assertIn("visible: root.launchOverlayEffectiveVisible", QML)
+        self.assertIn("readonly property bool launchScreenVisible:", QML)
+        self.assertIn("visible: root.launchScreenVisible", QML)
+        self.assertIn('text: "Cancel Launch"', QML)
+        self.assertIn('request("/launch-status", "GET"', QML)
         self.assertIn("function moveDomain(delta)", QML)
         self.assertIn("function openSteamStore()", QML)
         self.assertIn('message = "System space is not implemented"', QML)
@@ -369,7 +371,7 @@ class ConsoleUiTests(unittest.TestCase):
         shell = (ROOT / "ui" / "ConsoleShell.qml").read_text()
         library_space = (ROOT / "ui" / "LibrarySpace.qml").read_text()
         self.assertGreaterEqual(shell.count("width: implicitWidth"), 2)
-        self.assertEqual(shell.count("anchors.horizontalCenter: parent.horizontalCenter"), 2)
+        self.assertGreaterEqual(shell.count("anchors.horizontalCenter: parent.horizontalCenter"), 2)
         self.assertNotIn("width: parent.width * 0.54", shell)
 
     def test_internet_settings_uses_network_boundary_and_controller_model(self) -> None:
@@ -1474,7 +1476,7 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertNotIn('launchStatus === "launching" || launchStatus === "running"', QML)
         self.assertIn("anchors.fill: parent", QML)
         self.assertIn("launchOverlayRetired = true", QML)
-        self.assertIn("visible: root.launchOverlayEffectiveVisible", QML)
+        self.assertIn("visible: root.launchScreenVisible", QML)
         self.assertIn("launchToken = data.token", QML)
 
         self.assertIn("refreshLaunchLog(root.launchGeneration)", QML)

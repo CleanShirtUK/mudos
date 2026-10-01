@@ -93,6 +93,8 @@ class ConsoleSessionInterface(ServiceInterface):
     def _state_json(self) -> str:
         state = asdict(self.model.state)
         settings = getattr(self, "settings", None)
+        active_launch_task = getattr(self.supervisor, "_active_launch_task", None)
+        steam_launch_task = getattr(self.supervisor, "_steam_launch_task", None)
         state.update(
             {
                 "lifecycle": self.model.state.lifecycle.value,
@@ -100,6 +102,10 @@ class ConsoleSessionInterface(ServiceInterface):
                 "overlay": self.model.state.overlay.value,
                 "input_mode": self.model.state.input_mode.value,
                 "last_failure_reason": self.model.last_failure_reason,
+                "launch_cancellable": bool(
+                    (active_launch_task is not None and not active_launch_task.done())
+                    or (steam_launch_task is not None and not steam_launch_task.done())
+                ),
                 "controller": {
                     "navigation_controller_id": self.controller_registry.navigation_controller_id,
                     "navigation_mode": self.controller_registry.navigation_mode,
