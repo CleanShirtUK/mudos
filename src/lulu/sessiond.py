@@ -39,6 +39,7 @@ OBJECT_PATH = "/org/lulu/ConsoleSession"
 INTERFACE_NAME = "org.lulu.ConsoleSession"
 LOGGER = logging.getLogger("lulu.sessiond")
 EDEN_TERMINATE_TIMEOUT = 5.0
+EDEN_KILL_REAP_TIMEOUT = 3.0
 
 
 class ConsoleSessionInterface(ServiceInterface):
@@ -738,11 +739,19 @@ class ConsoleSessionInterface(ServiceInterface):
                             raise self._error(ValueError(
                                 f"could not force-stop the owned Eden session: {error}"
                             )) from error
-                        remaining_members = sorted(self.supervisor._process_group_members(identity.pgid))
-                        if remaining_members:
-                            raise self._error(ValueError(
-                                f"Eden process group survived SIGKILL: {remaining_members}"
-                            ))
+                        reap_deadline = asyncio.get_running_loop().time() + EDEN_KILL_REAP_TIMEOUT
+                        while True:
+                            remaining_members = sorted(
+                                self.supervisor._process_group_members(identity.pgid)
+                            )
+                            if not remaining_members:
+                                break
+                            remaining = reap_deadline - asyncio.get_running_loop().time()
+                            if remaining <= 0:
+                                raise self._error(ValueError(
+                                    f"Eden process group survived SIGKILL: {remaining_members}"
+                                ))
+                            await asyncio.sleep(min(0.05, remaining))
                         break
                     await asyncio.sleep(min(0.1, remaining))
             return "quit-requested"

@@ -70,9 +70,21 @@ class SessiondTests(unittest.TestCase):
             request_window_close=lambda window: None,
         )
         group_members = {1234, 1235}
+        kill_sent = False
+        reap_polls = 0
+
+        def current_members(pgid):
+            nonlocal reap_polls
+            if kill_sent:
+                if reap_polls < 2:
+                    reap_polls += 1
+                    return set(group_members)
+                group_members.clear()
+            return set(group_members)
+
         supervisor = SimpleNamespace(
             _presentation=presentation,
-            _process_group_members=lambda pgid: set(group_members),
+            _process_group_members=current_members,
         )
         interface = ConsoleSessionInterface.__new__(ConsoleSessionInterface)
         interface._local_identity = LaunchIdentity(
@@ -83,8 +95,9 @@ class SessiondTests(unittest.TestCase):
         interface.supervisor = supervisor
 
         def signal_group(pgid, sig):
+            nonlocal kill_sent
             if sig == __import__("signal").SIGKILL:
-                group_members.clear()
+                kill_sent = True
 
         with patch("lulu.sessiond.EDEN_TERMINATE_TIMEOUT", 0), \
                 patch("lulu.sessiond.os.killpg", side_effect=signal_group) as killpg:
