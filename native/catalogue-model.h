@@ -27,7 +27,7 @@ public:
         GameModesRole, ReleaseDateRole, ReleaseYearRole, TotalPlaytimeRole, LocalMultiplayerRole,
         OnlineMultiplayerRole, GameModeRole, ProtondbRatingRole, LastSeenAtRole,
         LastSyncedAtRole, ArtworkSourceUrlRole, MetadataResolverVersionRole,
-        InstalledGameIdRole, DeveloperRole, PublisherRole
+        InstalledGameIdRole
     };
     Q_ENUM(Role)
 
