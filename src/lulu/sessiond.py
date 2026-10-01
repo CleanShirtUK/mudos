@@ -38,7 +38,6 @@ BUS_NAME = "org.lulu.ConsoleSessiond"
 OBJECT_PATH = "/org/lulu/ConsoleSession"
 INTERFACE_NAME = "org.lulu.ConsoleSession"
 LOGGER = logging.getLogger("lulu.sessiond")
-EDEN_WINDOW_CLOSE_TIMEOUT = 12.0
 EDEN_TERMINATE_TIMEOUT = 5.0
 
 
@@ -646,11 +645,26 @@ class ConsoleSessionInterface(ServiceInterface):
         return token
 
     @method()
-    def EndLocalSession(self, token: "s", exit_code: "i") -> "":
+    async def EndLocalSession(self, token: "s", exit_code: "i") -> "":
         if self._local_identity is None or self._local_identity.token != token:
             return
         identity = self._local_identity
         provider_id = getattr(self, "_local_provider_id", "")
+        process_group_members = getattr(self.supervisor, "_process_group_members", lambda _pgid: set())
+        previous_members: set[int] = set()
+        while True:
+            members = process_group_members(identity.pgid) - {identity.pid, os.getpid()}
+            for pid in sorted(previous_members - members):
+                LOGGER.info("local session process-group member exited token=%s pgid=%s pid=%s",
+                            token, identity.pgid, pid)
+            for pid in sorted(members - previous_members):
+                LOGGER.info("local session process-group member remains token=%s pgid=%s pid=%s",
+                            token, identity.pgid, pid)
+            if not members:
+                break
+            previous_members = members
+            await asyncio.sleep(0.05)
+        LOGGER.info("local session process group empty token=%s pgid=%s", token, identity.pgid)
         if self.model.state.lifecycle is Lifecycle.GAME:
             self.model.primary_exited(token, success=exit_code == 0)
             self.model.record_result(ProcessResult(
@@ -664,16 +678,6 @@ class ConsoleSessionInterface(ServiceInterface):
                 outcome="success" if exit_code == 0 else "failed",
                 error=None if exit_code == 0 else f"process exited with status {exit_code}",
             ))
-            try:
-                self._apply_input_mode(InputMode.SHELL)
-            except (OSError, RuntimeError, subprocess.SubprocessError) as error:
-                # Input devices can disappear while an external client owns
-                # presentation. A failed profile restore must not strand the
-                # lifecycle token or prevent the Mudos shell from returning.
-                LOGGER.warning("session return input-mode restore failed token=%s: %s",
-                               token, error)
-            self.model.set_input_mode(InputMode.SHELL)
-            self.model.return_complete(token)
             presentation = getattr(self.supervisor, "_presentation", None)
             shell_process = getattr(self.supervisor, "_shell_process", None)
             if presentation is not None and shell_process is not None:
@@ -684,6 +688,16 @@ class ConsoleSessionInterface(ServiceInterface):
                                     token, shell_process.pid)
                 except (OSError, RuntimeError, TimeoutError, subprocess.SubprocessError):
                     LOGGER.exception("local session return could not restore the Mudos shell surface")
+            try:
+                self._apply_input_mode(InputMode.SHELL)
+            except (OSError, RuntimeError, subprocess.SubprocessError) as error:
+                # Input devices can disappear while an external client owns
+                # presentation. A failed profile restore must not strand the
+                # lifecycle token or prevent the Mudos shell from returning.
+                LOGGER.warning("session return input-mode restore failed token=%s: %s",
+                               token, error)
+            self.model.set_input_mode(InputMode.SHELL)
+            self.model.return_complete(token)
         self._local_identity = None
         self._local_provider_id = ""
         if provider_id == "steam":
@@ -701,29 +715,9 @@ class ConsoleSessionInterface(ServiceInterface):
                 Path(identity.executable).name == "eden-flatpak"
                 or (bool(identity.argv) and Path(identity.argv[0]).name == "eden-flatpak")
             )
-            if eden_launch:
-                presentation = getattr(self.supervisor, "_presentation", None)
-                try:
-                    if presentation is None:
-                        raise RuntimeError("Gamescope presentation is unavailable")
-                    members = sorted(self.supervisor._process_group_members(identity.pgid))
-                    window = presentation.window_for_pids(members, timeout=2.0)
-                    presentation.request_window_close(window)
-                    LOGGER.info("Eden graceful close requested pid=%s pgid=%s window=%s",
-                                identity.pid, identity.pgid, window)
-                    deadline = asyncio.get_running_loop().time() + EDEN_WINDOW_CLOSE_TIMEOUT
-                    while self.supervisor._process_group_members(identity.pgid):
-                        remaining = deadline - asyncio.get_running_loop().time()
-                        if remaining <= 0:
-                            LOGGER.warning("Eden process group remained after graceful-close timeout; sending SIGTERM pgid=%s",
-                                           identity.pgid)
-                            break
-                        await asyncio.sleep(min(0.1, remaining))
-                    else:
-                        return "quit-requested"
-                except (OSError, RuntimeError, TimeoutError, subprocess.SubprocessError) as error:
-                    LOGGER.warning("Eden graceful close unavailable; falling back to SIGTERM: %s", error)
             try:
+                LOGGER.info("local session SIGTERM requested token=%s pid=%s pgid=%s eden=%s",
+                            identity.token, identity.pid, identity.pgid, eden_launch)
                 os.killpg(identity.pgid, os_signal.SIGTERM)
             except ProcessLookupError:
                 return "quit-requested"
@@ -744,6 +738,11 @@ class ConsoleSessionInterface(ServiceInterface):
                             raise self._error(ValueError(
                                 f"could not force-stop the owned Eden session: {error}"
                             )) from error
+                        remaining_members = sorted(self.supervisor._process_group_members(identity.pgid))
+                        if remaining_members:
+                            raise self._error(ValueError(
+                                f"Eden process group survived SIGKILL: {remaining_members}"
+                            ))
                         break
                     await asyncio.sleep(min(0.1, remaining))
             return "quit-requested"

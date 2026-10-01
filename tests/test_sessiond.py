@@ -39,19 +39,13 @@ class SessiondTests(unittest.TestCase):
         self.assertEqual(result, "quit-requested")
         killpg.assert_called_once_with(1234, __import__("signal").SIGTERM)
 
-    def test_eden_quit_requests_window_close_before_any_signal(self) -> None:
+    def test_eden_quit_uses_owned_group_sigterm_without_unmapping_window_first(self) -> None:
         from types import SimpleNamespace
         from lulu.launch_identity import LaunchIdentity
 
-        group_members = iter(({1234, 1235}, set()))
-        close_requests = []
-        presentation = SimpleNamespace(
-            window_for_pids=lambda pids, timeout: 88,
-            request_window_close=close_requests.append,
-        )
         supervisor = SimpleNamespace(
-            _presentation=presentation,
-            _process_group_members=lambda pgid: next(group_members),
+            _presentation=None,
+            _process_group_members=lambda pgid: set(),
         )
         interface = ConsoleSessionInterface.__new__(ConsoleSessionInterface)
         interface._local_identity = LaunchIdentity(
@@ -65,10 +59,9 @@ class SessiondTests(unittest.TestCase):
             result = asyncio.run(ConsoleSessionInterface.QuitActiveSession.__wrapped__(interface))
 
         self.assertEqual(result, "quit-requested")
-        self.assertEqual(close_requests, [88])
-        killpg.assert_not_called()
+        killpg.assert_called_once_with(1234, __import__("signal").SIGTERM)
 
-    def test_eden_quit_falls_back_to_owned_group_after_close_timeout(self) -> None:
+    def test_eden_quit_falls_back_to_sigkill_after_termination_timeout(self) -> None:
         from types import SimpleNamespace
         from lulu.launch_identity import LaunchIdentity
 
@@ -76,9 +69,10 @@ class SessiondTests(unittest.TestCase):
             window_for_pids=lambda pids, timeout: 88,
             request_window_close=lambda window: None,
         )
+        group_members = {1234, 1235}
         supervisor = SimpleNamespace(
             _presentation=presentation,
-            _process_group_members=lambda pgid: {1234, 1235},
+            _process_group_members=lambda pgid: set(group_members),
         )
         interface = ConsoleSessionInterface.__new__(ConsoleSessionInterface)
         interface._local_identity = LaunchIdentity(
@@ -88,9 +82,12 @@ class SessiondTests(unittest.TestCase):
         interface.model = SimpleNamespace(state=SimpleNamespace(launch_token="owned-token"))
         interface.supervisor = supervisor
 
-        with patch("lulu.sessiond.EDEN_WINDOW_CLOSE_TIMEOUT", 0), \
-                patch("lulu.sessiond.EDEN_TERMINATE_TIMEOUT", 0), \
-                patch("lulu.sessiond.os.killpg") as killpg:
+        def signal_group(pgid, sig):
+            if sig == __import__("signal").SIGKILL:
+                group_members.clear()
+
+        with patch("lulu.sessiond.EDEN_TERMINATE_TIMEOUT", 0), \
+                patch("lulu.sessiond.os.killpg", side_effect=signal_group) as killpg:
             result = asyncio.run(ConsoleSessionInterface.QuitActiveSession.__wrapped__(interface))
 
         self.assertEqual(result, "quit-requested")
@@ -99,6 +96,54 @@ class SessiondTests(unittest.TestCase):
             unittest.mock.call(1234, signal.SIGTERM),
             unittest.mock.call(1234, signal.SIGKILL),
         ])
+
+    def test_local_session_return_waits_for_process_group_before_restoring_shell(self) -> None:
+        from lulu.launch_identity import LaunchIdentity
+
+        model = SessionStateModel()
+        token = model.request_launch("local:switch:game")
+        model.launch_starting(token)
+        model.primary_started(token)
+        members = iter(({456}, set()))
+        observed = []
+
+        class Presentation:
+            def select_shell(self, pid):
+                observed.append(("presentation", model.state.lifecycle, model.state.input_mode))
+
+        interface = ConsoleSessionInterface.__new__(ConsoleSessionInterface)
+        interface.model = model
+        interface._local_identity = LaunchIdentity(token, 123, 123, "/eden", ("eden",))
+        interface._local_provider_id = "eden"
+        interface._applied_input_modes = {}
+        interface._native_controller = False
+        interface._inputplumber = SimpleNamespace(runtime_composite_statuses=lambda: {})
+        interface._apply_input_mode = lambda mode: observed.append(("input", mode))
+        interface._state_changed = lambda: None
+        interface._state_json = lambda: "{}"
+        interface.StateChanged = lambda state: None
+        interface.supervisor = SimpleNamespace(
+            _process_group_members=lambda pgid: next(members),
+            _presentation=Presentation(),
+            _shell_process=SimpleNamespace(pid=99),
+        )
+
+        async def exercise():
+            task = asyncio.create_task(
+                ConsoleSessionInterface.EndLocalSession.__wrapped__(interface, token, -15)
+            )
+            await asyncio.sleep(0)
+            self.assertEqual(model.state.lifecycle.value, "game")
+            await task
+
+        asyncio.run(exercise())
+        self.assertEqual(observed[0][0], "presentation")
+        self.assertEqual(observed[0][1].value, "returning")
+        self.assertEqual(observed[0][2].value, "gamepad")
+        self.assertEqual(observed[1][0], "input")
+        self.assertEqual(observed[1][1].value, "shell")
+        self.assertEqual(model.state.lifecycle.value, "shell")
+        self.assertEqual(model.state.input_mode.value, "shell")
 
     def test_guide_quit_rejects_a_stale_session_identity(self) -> None:
         from types import SimpleNamespace

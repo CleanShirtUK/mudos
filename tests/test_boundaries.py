@@ -675,7 +675,9 @@ class BoundaryTests(unittest.TestCase):
         self.assertEqual(state.input_mode, InputMode.GAME)
         self.assertEqual(interface._local_identity.executable, "/usr/bin/dolphin-emu")
 
-        interface.EndLocalSession(interface._local_identity.token, 0)
+        asyncio.run(ConsoleSessionInterface.EndLocalSession.__wrapped__(
+            interface, interface._local_identity.token, 0
+        ))
 
         self.assertEqual(interface.model.state.lifecycle, Lifecycle.SHELL)
         self.assertIsNone(interface._local_identity)
@@ -696,7 +698,7 @@ class BoundaryTests(unittest.TestCase):
         interface._local_provider_id = "steam"
         interface.model.primary_started(token)
         with patch.object(interface, "_apply_input_mode", side_effect=RuntimeError("controller disconnected")):
-            interface.EndLocalSession(token, -15)
+            asyncio.run(ConsoleSessionInterface.EndLocalSession.__wrapped__(interface, token, -15))
         self.assertEqual(interface.model.state.lifecycle, Lifecycle.SHELL)
         self.assertEqual(interface.model.state.input_mode, InputMode.SHELL)
         self.assertIsNone(interface._local_identity)
@@ -727,7 +729,9 @@ class BoundaryTests(unittest.TestCase):
         self.assertEqual(interface.model.state.input_mode, InputMode.COMPAT)
         self.assertEqual(interface.model.state.lifecycle, Lifecycle.GAME)
         self.assertEqual(interface._local_provider_id, "steam")
-        interface.EndLocalSession(interface._local_identity.token, 0)
+        asyncio.run(ConsoleSessionInterface.EndLocalSession.__wrapped__(
+            interface, interface._local_identity.token, 0
+        ))
         self.assertEqual(presentation.selected[-1], ("shell", 99))
 
     def test_local_runtime_window_is_selected_and_shell_restored_on_exit(self) -> None:
@@ -750,7 +754,9 @@ class BoundaryTests(unittest.TestCase):
         interface.BeginLocalSession("local:gamecube:fixture", 123, 123,
                                     "/usr/bin/dolphin-emu", ["dolphin-emu", "fixture.iso"])
         self.assertEqual(presentation.selected, [([123], 15.0)])
-        interface.EndLocalSession(interface._local_identity.token, 0)
+        asyncio.run(ConsoleSessionInterface.EndLocalSession.__wrapped__(
+            interface, interface._local_identity.token, 0
+        ))
         self.assertEqual(presentation.selected[-1], ("shell", 99))
 
     def test_eden_selects_owned_flatpak_group_members_not_wrapper_descendants(self) -> None:
