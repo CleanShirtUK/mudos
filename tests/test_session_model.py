@@ -1,5 +1,6 @@
 import unittest
 import asyncio
+import threading
 import time
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
@@ -12,6 +13,31 @@ from lulu.sessiond import ConsoleSessionInterface
 
 
 class SessionModelTests(unittest.TestCase):
+    def test_presentation_call_finishes_worker_before_propagating_cancellation(self) -> None:
+        async def exercise() -> None:
+            session = SessionStateModel()
+            supervisor = ProcessSupervisor(session)
+            started = threading.Event()
+            release = threading.Event()
+            finished = threading.Event()
+
+            def slow_unmap() -> None:
+                started.set()
+                release.wait(timeout=2)
+                finished.set()
+
+            operation = asyncio.create_task(supervisor._presentation_call(slow_unmap))
+            self.assertTrue(await asyncio.to_thread(started.wait, 1))
+            operation.cancel()
+            await asyncio.sleep(0.02)
+            self.assertFalse(finished.is_set())
+            release.set()
+            with self.assertRaises(asyncio.CancelledError):
+                await operation
+            self.assertTrue(finished.is_set())
+
+        asyncio.run(exercise())
+
     def utility_descriptor(self) -> LaunchDescriptor:
         return LaunchDescriptor(
             primary_id="utility:flatpak:app.devsuite.Ptyxis",

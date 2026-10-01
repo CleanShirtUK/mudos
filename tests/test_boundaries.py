@@ -112,6 +112,40 @@ class BoundaryTests(unittest.TestCase):
             presentation.window_for_pids(lambda: [1234], timeout=10,
                                           process_alive=lambda: False)
 
+    def test_gamescope_return_maps_shell_before_discovery_and_selection(self) -> None:
+        presentation = GamescopePresentation(poll_interval=0)
+        presentation.shell_window = 456
+        presentation.shell_window_pid = 100
+        events = []
+        presentation._cached_shell_matches = lambda pid: pid == 100
+        presentation._window_command = lambda action, window: events.append((action, window))
+
+        def focusable():
+            events.append(("discover", 456))
+            return [(456, 0, 100)]
+
+        presentation._focusable_windows = focusable
+        presentation._select_window = lambda window: events.append(("select", window)) or True
+
+        self.assertEqual(presentation.select_shell(100), 456)
+        self.assertEqual(events[0], ("map", 456))
+        self.assertLess(events.index(("map", 456)), events.index(("select", 456)))
+        self.assertEqual(presentation.shell_owner_pid, 100)
+
+    def test_gamescope_game_suspension_unmaps_after_surface_selection(self) -> None:
+        presentation = GamescopePresentation()
+        presentation.shell_window = 456
+        events = []
+        presentation.window_for_pids = lambda *args, **kwargs: 789
+        presentation._select_window = lambda window: events.append(("select", window)) or True
+        presentation._focusable_windows = lambda: [(456, 0, 100)]
+        presentation._window_command = lambda action, window: events.append((action, window))
+
+        self.assertEqual(presentation.select_pids([200]), 789)
+        presentation.selected_base_window = lambda: 789
+        presentation.suspend_shell_window()
+        self.assertEqual(events, [("select", 789), ("unmap", 456)])
+
     def test_capable_source_is_inventory_fallback_when_composite_order_is_empty(self) -> None:
         from unittest.mock import patch
 

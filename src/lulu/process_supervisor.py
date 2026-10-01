@@ -131,6 +131,23 @@ class ProcessSupervisor:
             if result is not None:
                 await result
 
+    async def _presentation_call(self, method, *args):
+        """Finish an X11 presentation operation before cancellation cleanup.
+
+        Cancelling ``asyncio.to_thread`` does not stop its worker. Let an
+        in-flight map/unmap/selection finish before the caller restores the
+        shell, so cancellation cannot race a late window unmap.
+        """
+        operation = asyncio.create_task(asyncio.to_thread(method, *args))
+        try:
+            return await asyncio.shield(operation)
+        except asyncio.CancelledError:
+            try:
+                await operation
+            except Exception:
+                self._logger.exception("presentation operation failed during cancellation cleanup")
+            raise
+
     async def launch(
         self,
         command: list[str],
@@ -189,18 +206,21 @@ class ProcessSupervisor:
                             members.discard(os.getpid())
                             return sorted(members)
 
-                        await asyncio.to_thread(
+                        await self._presentation_call(
                             presentation_controller.select_pids, launch_process_group,
                             max(self._presentation_watchdog, startup_timeout_ms / 1000),
                             lambda: bool(launch_process_group()),
                         )
                     else:
-                        await asyncio.to_thread(
+                        await self._presentation_call(
                             presentation_controller.select_pid, process.pid
                         )
                 self._set_input_mode(input_mode)
                 self.model.primary_started(token, presentation=presentation, input_mode=input_mode)
                 await self._notify()
+                if (presentation is Presentation.GAME and presentation_controller is not None
+                        and hasattr(presentation_controller, "suspend_shell_window")):
+                    await self._presentation_call(presentation_controller.suspend_shell_window)
                 self._watch_task = asyncio.create_task(self._watch(identity, process))
                 self._active_launch_task = None
                 return token
@@ -210,6 +230,10 @@ class ProcessSupervisor:
                 if self.model.state.lifecycle.value != "shell":
                     self._restore_shell_input_mode()
                     self.model.fail(token, "launch cancelled")
+                    if presentation_controller is not None and self._shell_process is not None:
+                        await asyncio.to_thread(
+                            presentation_controller.select_shell, self._shell_process.pid
+                        )
                     self.model.return_complete(token)
                     await self._notify()
                 self._active_launch_task = None
@@ -251,6 +275,16 @@ class ProcessSupervisor:
                         error=reason,
                     )
                 )
+                if presentation_controller is not None and self._shell_process is not None:
+                    try:
+                        await asyncio.to_thread(
+                            presentation_controller.select_shell, self._shell_process.pid
+                        )
+                    except (OSError, RuntimeError, TimeoutError, subprocess.SubprocessError) as recovery_error:
+                        self.model.return_failed(token, f"Presentation recovery failed: {recovery_error}")
+                        await self._notify()
+                        self._active_launch_task = None
+                        raise ValueError(f"{reason}; shell presentation recovery failed: {recovery_error}") from error
                 self.model.return_complete(token)
                 await self._notify()
                 self._active_launch_task = None
@@ -396,11 +430,18 @@ class ProcessSupervisor:
         self.model.state.controller_mode = None
         self.model.record_result(result)
         self._restore_shell_input_mode()
-        self.model.return_complete(identity.token)
         self.active_identity = None
         self._process = None
         if self._presentation is not None and self._shell_process is not None:
-            self._presentation.select_shell(self._shell_process.pid)
+            try:
+                # Keep the externally visible lifecycle in RETURNING until
+                # Gamescope has remapped, discovered, and selected the shell.
+                await asyncio.to_thread(self._presentation.select_shell, self._shell_process.pid)
+            except (OSError, RuntimeError, TimeoutError, subprocess.SubprocessError) as error:
+                self.model.return_failed(identity.token, f"Presentation recovery failed: {error}")
+                await self._notify()
+                return
+        self.model.return_complete(identity.token)
         await self._notify()
 
     @staticmethod
@@ -649,6 +690,8 @@ class ProcessSupervisor:
                         self._presentation.select_pid(launch.title.pid)
                 self._set_input_mode(InputMode.GAME)
                 self.model.primary_started(token, presentation=Presentation.GAME, input_mode=InputMode.GAME)
+                if hasattr(self._presentation, "suspend_shell_window"):
+                    await self._presentation_call(self._presentation.suspend_shell_window)
                 self._steam_launch = launch
                 self.active_identity = launch.title
                 await self._notify()
@@ -675,7 +718,7 @@ class ProcessSupervisor:
                         raise
                     self._logger.info("CANCEL_PROVIDER_STOP_RETURN task=%s task_id=%s request=%s token=%s", asyncio.current_task().get_name(), id(asyncio.current_task()), id(request), token)
                 raise
-            except (OSError, TimeoutError, ValueError) as error:
+            except (OSError, RuntimeError, TimeoutError, ValueError) as error:
                 if launch is not None:
                     await provider.stop(launch)
                 reason = f"Steam launch failed: {error}"

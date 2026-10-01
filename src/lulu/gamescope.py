@@ -123,6 +123,8 @@ class GamescopePresentation:
         self.display = display or os.environ.get("DISPLAY", ":0")
         self.poll_interval = poll_interval
         self.shell_window: int | None = None
+        self.shell_window_pid: int | None = None
+        self.shell_owner_pid: int | None = None
         self._logger = logging.getLogger("lulu.gamescope")
 
     def _xprop(self, *arguments: str) -> str:
@@ -167,6 +169,127 @@ class GamescopePresentation:
                 raise TimeoutError(f"Gamescope window for PID {pid} was not found")
             time.sleep(self.poll_interval)
 
+    def _window_pid(self, window: int) -> int | None:
+        return next((pid for candidate, _app_id, pid in self._focusable_windows()
+                     if candidate == window), None)
+
+    def _cached_shell_matches(self, pid: int) -> bool:
+        window_pid = self.shell_window_pid
+        return bool(
+            self.shell_window is not None
+            and window_pid is not None
+            and (window_pid == pid or self._is_descendant(window_pid, pid))
+        )
+
+    def _window_command(self, action: str, window: int) -> None:
+        environment = os.environ.copy()
+        environment["DISPLAY"] = self.display
+        subprocess.run(
+            ["xdotool", f"window{action}", str(window)],
+            check=True,
+            capture_output=True,
+            text=True,
+            env=environment,
+        )
+
+    def _unmapped_window_for_pid(self, pid: int) -> int:
+        """Find a shell XID even when Gamescope no longer advertises it."""
+        environment = os.environ.copy()
+        environment["DISPLAY"] = self.display
+        completed = subprocess.run(
+            ["xdotool", "search", "--pid", str(pid)],
+            check=True,
+            capture_output=True,
+            text=True,
+            env=environment,
+        )
+        windows = [int(value) for value in completed.stdout.split() if value.isdecimal()]
+        if not windows:
+            raise TimeoutError(f"X11 window for shell PID {pid} was not found")
+        return windows[0]
+
+    def _wait_for_focusable_window(self, window: int, pid: int, timeout: float) -> int:
+        deadline = time.monotonic() + timeout
+        while True:
+            for candidate, _app_id, window_pid in self._focusable_windows():
+                if candidate == window and (
+                    window_pid == pid or self._is_descendant(window_pid, pid)
+                ):
+                    return candidate
+            if time.monotonic() >= deadline:
+                raise TimeoutError(
+                    f"Gamescope window {window} for shell PID {pid} was not focusable after mapping"
+                )
+            time.sleep(self.poll_interval)
+
+    def _map_shell_before_selection(self, pid: int, timeout: float = 10.0,
+                                    *, map_first: bool = False) -> int:
+        """Restore the remembered shell XID before looking it up in Gamescope.
+
+        An unmapped X11 shell is intentionally absent from
+        GAMESCOPE_FOCUSABLE_WINDOWS. Keep its XID while the shell process lives,
+        map it at the existing return-to-shell boundary, then wait for Gamescope
+        to publish it as focusable before selecting it.
+        """
+        if not self._cached_shell_matches(pid):
+            try:
+                window = self.window_for_pid(pid, timeout=timeout)
+                window_pid = self._window_pid(window)
+            except TimeoutError:
+                # The session daemon may have restarted while the shell stayed
+                # alive and unmapped. Recover its XID from the X server, map it,
+                # and only then rely on Gamescope's focusable-window list.
+                window = self._unmapped_window_for_pid(pid)
+                self._window_command("map", window)
+                self._wait_for_focusable_window(window, pid, timeout)
+                window_pid = pid
+            self.shell_window = window
+            self.shell_window_pid = window_pid
+            return window
+
+        assert self.shell_window is not None
+        window = self.shell_window
+        if map_first or not any(candidate == window for candidate, _app_id, _window_pid
+                                in self._focusable_windows()):
+            self._logger.info("map hidden shell window before return pid=%s window=%s", pid, window)
+            self._window_command("map", window)
+        self._wait_for_focusable_window(window, pid, timeout)
+        self.shell_owner_pid = pid
+        return window
+
+    def _unmap_shell_after_game_selection(self, game_window: int) -> None:
+        shell_window = self.shell_window
+        if shell_window is None or shell_window == game_window:
+            return
+        if not any(candidate == shell_window for candidate, _app_id, _pid
+                   in self._focusable_windows()):
+            return
+        self._logger.info("unmap shell after game selection shell=%s game=%s",
+                          shell_window, game_window)
+        try:
+            self._window_command("unmap", shell_window)
+        except (OSError, subprocess.SubprocessError):
+            # If the X server accepted the unmap but the helper reported an
+            # error, restore focusability before the caller rolls back launch.
+            self._window_command("map", shell_window)
+            owner_pid = self.shell_owner_pid or self.shell_window_pid
+            if owner_pid is not None:
+                self._wait_for_focusable_window(shell_window, owner_pid, 2.0)
+            raise
+
+    def _select_window(self, window: int) -> bool:
+        self._xprop(
+            "-f", "GAMESCOPECTRL_BASELAYER_WINDOW", "32c", "-set",
+            "GAMESCOPECTRL_BASELAYER_WINDOW", str(window),
+        )
+        selected = self.selected_base_window()
+        accepted = selected == window
+        self._logger.info(
+            "gamescope_surface_selection stage=select-result requested_window=%s selected_window=%s accepted=%s",
+            window, selected, accepted,
+        )
+        return accepted
+
     def request_window_close(self, window: int) -> None:
         """Ask an Xwayland client to close through WM_DELETE_WINDOW."""
         environment = os.environ.copy()
@@ -198,14 +321,8 @@ class GamescopePresentation:
     def select_pid(self, pid: int) -> int:
         window = self.window_for_pid(pid, timeout=10.0)
         self._logger.info("select pid=%s window=%s", pid, window)
-        self._xprop(
-            "-f",
-            "GAMESCOPECTRL_BASELAYER_WINDOW",
-            "32c",
-            "-set",
-            "GAMESCOPECTRL_BASELAYER_WINDOW",
-            str(window),
-        )
+        if not self._select_window(window):
+            raise RuntimeError(f"Gamescope did not select window {window} for PID {pid}")
         return window
 
     def window_for_pids(self, pids: list[int] | Callable[[], list[int]], timeout: float = 10.0,
@@ -248,17 +365,19 @@ class GamescopePresentation:
         requested_pids = pids() if callable(pids) else pids
         self._logger.info("gamescope_surface_selection stage=select-request pids=%s window=%s",
                           requested_pids, window)
-        self._xprop(
-            "-f", "GAMESCOPECTRL_BASELAYER_WINDOW", "32c", "-set",
-            "GAMESCOPECTRL_BASELAYER_WINDOW", str(window),
-        )
-        selected = self.selected_base_window()
-        self._logger.info("gamescope_surface_selection stage=select-result requested_window=%s selected_window=%s accepted=%s",
-                          window, selected, selected == window)
+        if not self._select_window(window):
+            raise RuntimeError(f"Gamescope did not select window {window} for process set {requested_pids}")
         return window
 
+    def suspend_shell_window(self) -> None:
+        """Unmap the cached shell after a game surface owns Gamescope."""
+        selected = self.selected_base_window()
+        if selected is None:
+            raise RuntimeError("Gamescope selected surface could not be verified")
+        self._unmap_shell_after_game_selection(selected)
+
     def ensure_shell(self, pid: int) -> int:
-        window = self.window_for_pid(pid)
+        window = self._map_shell_before_selection(pid)
         try:
             selected = self._xprop("GAMESCOPECTRL_BASELAYER_WINDOW")
         except subprocess.CalledProcessError:
@@ -267,13 +386,20 @@ class GamescopePresentation:
         current = int(values[0], 0) if values else 0
         if current != window:
             self._logger.info("reassert shell pid=%s window=%s previous=%s", pid, window, current)
-            self.select_pid(pid)
+            self._select_window(window)
         self.shell_window = window
+        self.shell_owner_pid = pid
         return window
 
     def select_shell(self, pid: int) -> int:
-        self.shell_window = self.select_pid(pid)
-        return self.shell_window
+        # Mapping precedes Gamescope discovery/selection. This ordering is
+        # required because an unmapped shell is not advertised as focusable.
+        window = self._map_shell_before_selection(pid, map_first=True)
+        if not self._select_window(window):
+            raise RuntimeError(f"Gamescope did not select shell window {window}")
+        self.shell_window = window
+        self.shell_owner_pid = pid
+        return window
 
     def clear_selection(self) -> None:
         self._logger.info("clear selection")
