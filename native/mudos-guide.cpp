@@ -9,6 +9,9 @@
 #include <QProcess>
 #include <QTimer>
 #include <QDBusInterface>
+#include <QDBusPendingCallWatcher>
+#include <QDBusPendingReply>
+#include <QDateTime>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonArray>
@@ -170,11 +173,35 @@ private:
     bool executeAndDismiss(const QVariantMap &action)
     {
         const bool dismiss = action.value("role").toString() == QStringLiteral("quit");
-        if (dismiss)
+        if (dismiss) {
+            const QString id = action.value("id").toString();
+            qInfo() << "Guide quit handoff started" << id
+                    << "wall_ms=" << QDateTime::currentMSecsSinceEpoch();
             window_->hide();
+            // Do not block the Guide event loop while Sessiond waits for Eden
+            // to close. A synchronous D-Bus call prevents the compositor from
+            // processing the hide until Eden has already exited.
+            QDBusInterface consoled("org.lulu.Consoled", "/org/lulu/Console",
+                                    "org.lulu.Console", QDBusConnection::sessionBus());
+            auto *watcher = new QDBusPendingCallWatcher(
+                consoled.asyncCall("ExecuteGuideAction", id), this);
+            connect(watcher, &QDBusPendingCallWatcher::finished, this,
+                    [this, watcher, id]() {
+                const QDBusPendingReply<QString> reply = *watcher;
+                watcher->deleteLater();
+                qInfo() << "Guide quit handoff completed" << id
+                        << "wall_ms=" << QDateTime::currentMSecsSinceEpoch()
+                        << "error=" << reply.isError();
+                if (reply.isError()) {
+                    qWarning() << "Guide action failed" << id << reply.error().message();
+                    window_->show();
+                    return;
+                }
+                QCoreApplication::quit();
+            });
+            return true;
+        }
         const bool completed = executeAction(action.value("id").toString());
-        if (dismiss && !completed)
-            window_->show();
         return completed;
     }
 

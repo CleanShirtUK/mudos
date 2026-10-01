@@ -275,6 +275,7 @@ import QtQuick.Controls
     property real libraryTransitionProgress: 0
     property bool libraryTransitionExpanding: true
     property bool libraryHandoffPending: false
+    property var pendingLibraryLaunch: null
     property real homeContentOpacity: 1
     property real libraryContentOpacity: 0
     property bool homeCategoryTransitioning: false
@@ -2527,7 +2528,18 @@ import QtQuick.Controls
             return
         }
         if (space === "library") {
-            launchGame(visibleLibraryGame)
+            if (visibleLibraryGame && !libraryTransitioning) {
+                pendingLibraryLaunch = visibleLibraryGame
+                libraryTransitionState = "ACTIVATING"
+                libraryTransitioning = true
+                libraryTransitionExpanding = false
+                libraryTransitionProgress = 1
+                libraryTransitionAnimation.restart()
+                libraryContentFadeIn.stop()
+                libraryContentFadeOut.restart()
+                homeFadeOut.stop()
+                homeFadeIn.restart()
+            }
             return
         }
         if (space === "store") {
@@ -2857,6 +2869,12 @@ import QtQuick.Controls
             root.libraryTransitioning = false
             root.libraryTransitionState = "RESTING"
             root.libraryHandoffPending = false
+            if (root.pendingLibraryLaunch) {
+                var game = root.pendingLibraryLaunch
+                root.pendingLibraryLaunch = null
+                root.traceLaunchEvent("LIBRARY_EXIT_HANDOFF", {game_id: String(game.game_id)})
+                root.launchGame(game, true)
+            }
         }
     }
 
