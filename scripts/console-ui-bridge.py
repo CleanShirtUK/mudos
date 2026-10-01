@@ -412,19 +412,27 @@ class ConsoleUiBridge:
 
     async def cancel_launch(self) -> dict[str, str]:
         self.launch_logs.note_cancellation()
-        if self.local_token is not None:
+        state = await self.state() if hasattr(self.sessiond, "call_get_state") else {}
+        primary_id = str(state.get("primary_id") or "")
+        session_kind = str(state.get("session_kind") or "")
+        # ``local_token`` is retained after a completed managed launch for
+        # legacy local-runtime cancellation. It is not proof that Consoled
+        # owns the currently active process: normal provider games are owned
+        # by Sessiond and must cancel through its launch task.
+        consoled_owns_process = (
+            session_kind == "provider_standalone" or primary_id.startswith("local:")
+        )
+        if consoled_owns_process or (
+            self.local_token is not None and state.get("lifecycle") in (None, "shell")
+        ):
             await self.consoled.call_cancel_local_launch()
             self.local_token = None
         else:
-            if hasattr(self.sessiond, "call_get_state"):
-                state = await self.state()
-                primary_id = str(state.get("primary_id") or "")
-                if state.get("lifecycle") == "game" and primary_id.startswith("steam-install:"):
-                    await self.sessiond.call_quit_delegated()
-                else:
-                    await self.sessiond.call_cancel_launch()
+            if state.get("lifecycle") == "game" and primary_id.startswith("steam-install:"):
+                await self.sessiond.call_quit_delegated()
             else:
                 await self.sessiond.call_cancel_launch()
+            self.local_token = None
         return {"status": "cancelled"}
 
     async def reset_mudos(self) -> dict[str, str]:

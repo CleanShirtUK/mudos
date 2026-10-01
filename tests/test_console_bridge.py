@@ -292,6 +292,62 @@ class ConsoleBridgeTests(unittest.TestCase):
 
         asyncio.run(exercise())
 
+    def test_managed_game_cancellation_ignores_stale_local_token(self) -> None:
+        class Session:
+            def __init__(self) -> None:
+                self.cancelled = False
+
+            async def call_get_state(self) -> str:
+                return json.dumps({
+                    "lifecycle": "game",
+                    "session_kind": "game",
+                    "primary_id": "epic:installed-game",
+                })
+
+            async def call_cancel_launch(self) -> None:
+                self.cancelled = True
+
+        class Consoled:
+            async def call_cancel_local_launch(self) -> None:
+                raise AssertionError("managed game cancellation used Consoled")
+
+        async def exercise() -> None:
+            session = Session()
+            bridge = BRIDGE.ConsoleUiBridge(asyncio.get_running_loop(), Consoled(), session)
+            bridge.local_token = "stale-token-from-prior-game"
+            await bridge.cancel_launch()
+            self.assertTrue(session.cancelled)
+            self.assertIsNone(bridge.local_token)
+
+        asyncio.run(exercise())
+
+    def test_local_game_cancellation_uses_consoled_before_token_is_returned(self) -> None:
+        class Session:
+            async def call_get_state(self) -> str:
+                return json.dumps({
+                    "lifecycle": "starting",
+                    "session_kind": "game",
+                    "primary_id": "local:nes:game",
+                })
+
+            async def call_cancel_launch(self) -> None:
+                raise AssertionError("local runtime cancellation bypassed Consoled")
+
+        class Consoled:
+            def __init__(self) -> None:
+                self.cancelled = False
+
+            async def call_cancel_local_launch(self) -> None:
+                self.cancelled = True
+
+        async def exercise() -> None:
+            consoled = Consoled()
+            bridge = BRIDGE.ConsoleUiBridge(asyncio.get_running_loop(), consoled, Session())
+            await bridge.cancel_launch()
+            self.assertTrue(consoled.cancelled)
+
+        asyncio.run(exercise())
+
     def test_cancellation_log_entry_is_emitted_once(self) -> None:
         class Session:
             async def call_cancel_launch(self) -> None:
