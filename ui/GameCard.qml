@@ -464,6 +464,7 @@ Rectangle {
                     required property var modelData
                     required property int index
                     width: focalMetadata.width
+                    height: metadataRow.implicitHeight
                     FocalMetadataRow {
                         id: metadataRow
                         width: parent.width
