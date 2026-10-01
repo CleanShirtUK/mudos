@@ -40,14 +40,15 @@ class BC250FanCurveTests(unittest.TestCase):
             'invalid_pwm "$count" 110; done'),
             ["110"] * 7)
 
-    def test_existing_curve_and_hysteresis_settings_are_unchanged(self) -> None:
+    def test_lower_curve_and_requested_gaming_temperature_band(self) -> None:
         self.assertEqual(bash_policy(
-            'for t in 50 51 55 56 60 61 65 66 75 76 78 79 80 81 82 83 84 85; '
-            'do if (( t >= 85 )); then echo 255; else curve_pwm "$t"; fi; done'),
+            'for t in 50 51 55 56 60 61 65 66 75 76 80 84 85 86 87 88 90; '
+            'do curve_pwm "$t"; done'),
             ["90", "100", "100", "110", "110", "120", "120", "128", "128",
-             "150", "150", "175", "175", "210", "210", "235", "235", "255"])
+             "150", "150", "150", "175", "175", "210", "255", "255"])
         source = SCRIPT.read_text()
         self.assertIn("DOWN_DELAY_SAMPLES=5", source)
+        self.assertIn("if (( temp >= 88 )); then", source)
         self.assertIn('sleep "$SAMPLE_INTERVAL"', source)
         self.assertIn("trap restore_firmware EXIT", source)
         self.assertIn('echo 2 > "$ENABLE" 2>/dev/null || true', source)

@@ -42,7 +42,7 @@ find_temp_label() {
     return 1
 }
 
-# Keep this established temperature/PWM curve unchanged.
+# Keep the lower established curve and change only the gaming-temperature band.
 curve_pwm() {
     local temp="$1"
 
@@ -51,10 +51,9 @@ curve_pwm() {
     elif (( temp <= 60 )); then echo 110
     elif (( temp <= 65 )); then echo 120
     elif (( temp <= 75 )); then echo 128
-    elif (( temp <= 78 )); then echo 150
-    elif (( temp <= 80 )); then echo 175
-    elif (( temp <= 82 )); then echo 210
-    elif (( temp <= 84 )); then echo 235
+    elif (( temp <= 84 )); then echo 150
+    elif (( temp <= 86 )); then echo 175
+    elif (( temp <= 87 )); then echo 210
     else                          echo 255
     fi
 }
@@ -167,7 +166,7 @@ while (( running )); do
     fi
 
     # Raw emergency override. Do not wait for hysteresis.
-    if (( temp >= 85 )); then
+    if (( temp >= 88 )); then
         wanted_pwm=255
     else
         wanted_pwm="$(curve_pwm "$temp")"
