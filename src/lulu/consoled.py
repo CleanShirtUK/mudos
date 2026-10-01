@@ -1594,7 +1594,17 @@ class ConsoleInterface(ServiceInterface):
         if context == "utility":
             actions.append(GuideAction("utility-close", "Close Utility", "quit",
                                        "session:quit-utility", ("utility",), False, 1))
-        actions.extend(action for action in self._base_guide if context in action.contexts)
+        input_mode = str(state.get("input_mode", ""))
+        for action in self._base_guide:
+            if context not in action.contexts:
+                continue
+            if action.target == "session:set-input-mode":
+                action = GuideAction(
+                    action.action_id,
+                    "Switch to Gamepad Mode" if input_mode == "compat" else "Switch to Compatibility Mode",
+                    action.role, action.target, action.contexts, action.confirm, action.order,
+                )
+            actions.append(action)
         actions.extend(action for action in self._mudos_guide if context in action.contexts)
         return json.dumps([{
             "id": action.action_id, "label": action.label, "role": action.role,
@@ -1638,7 +1648,9 @@ class ConsoleInterface(ServiceInterface):
             action = next((item for item in self._mudos_guide if item.action_id == action_id), None)
         if action is not None:
             if action.target == "session:set-input-mode":
-                await self.sessiond.call_set_input_mode("compat")
+                state = json.loads(await self.sessiond.call_get_state())
+                target_mode = "gamepad" if state.get("input_mode") == "compat" else "compat"
+                await self.sessiond.call_set_input_mode(target_mode)
             elif action.target == "session:reset-mudos":
                 await self.sessiond.call_reset_mudos()
             elif action.target == "system:reboot":

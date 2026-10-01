@@ -15,14 +15,12 @@ mapping:
         button: DPadUp
     target_events:
       - keyboard: KeyUp
-      - dbus: ui_up
   - name: D-pad down
     source_event:
       gamepad:
         button: DPadDown
     target_events:
       - keyboard: KeyDown
-      - dbus: ui_down
   - name: D-pad left
     source_event:
       gamepad:

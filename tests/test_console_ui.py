@@ -18,6 +18,27 @@ SHELL_PROFILE = (ROOT / "config" / "inputplumber" / "profiles" / "shell.yaml").r
 
 
 class ConsoleUiTests(unittest.TestCase):
+    def test_guide_input_mode_action_toggles_and_names_current_transition(self) -> None:
+        interface = ConsoleInterface.__new__(ConsoleInterface)
+        interface._base_guide = (GuideAction(
+            "switch-compatibility", "Switch Input Mode", "system", "session:set-input-mode",
+            ("game",), False, 10,
+        ),)
+        interface._mudos_guide = ()
+        interface._providers = SimpleNamespace(get=lambda _provider: None, guide_actions=lambda *_args: ())
+        state = {"lifecycle": "game", "provider_id": "steam", "session_kind": "game",
+                 "input_mode": "compat"}
+        interface.sessiond = SimpleNamespace(
+            call_get_state=AsyncMock(return_value=json.dumps(state)),
+            call_set_input_mode=AsyncMock(),
+        )
+
+        actions = json.loads(asyncio.run(ConsoleInterface.GetGuideActions.__wrapped__(interface)))
+        self.assertEqual(actions[0]["label"], "Switch to Gamepad Mode")
+        self.assertEqual(asyncio.run(ConsoleInterface.ExecuteGuideAction.__wrapped__(
+            interface, "switch-compatibility")), "executed")
+        interface.sessiond.call_set_input_mode.assert_awaited_once_with("gamepad")
+
     def test_utility_guide_is_explicit_and_quit_targets_sessiond_identity(self) -> None:
         interface = ConsoleInterface.__new__(ConsoleInterface)
         interface._base_guide = ()

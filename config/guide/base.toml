@@ -2,7 +2,7 @@
 
 [[guide.actions]]
 id = "switch-compatibility"
-label = "Switch to Compatibility Mode"
+label = "Switch Input Mode"
 role = "system"
 target = "session:set-input-mode"
 contexts = ["shell", "game", "standalone"]

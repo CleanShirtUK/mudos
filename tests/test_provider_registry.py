@@ -9,7 +9,7 @@ class ProviderLaunchContractTests(unittest.TestCase):
     def test_base_guide_is_ordered_and_provider_quit_is_declared(self) -> None:
         actions = load_base_guide()
         self.assertEqual([action.label for action in actions], [
-            "Switch to Compatibility Mode", "Restart Mudos", "Reboot System", "Shutdown System",
+            "Switch Input Mode", "Restart Mudos", "Reboot System", "Shutdown System",
         ])
         self.assertEqual([action.label for action in load_mudos_guide()], ["Open Downloads"])
         providers = load_providers()

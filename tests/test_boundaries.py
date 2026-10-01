@@ -691,14 +691,21 @@ class BoundaryTests(unittest.TestCase):
         self.assertIn("button: East", profile)
         self.assertIn("axis:\n          name: LeftStick", profile)
         self.assertIn("keyboard: KeyEnter", profile)
-        for event in ("ui_up", "ui_down", "ui_accept", "ui_back", "ui_guide"):
+        for event in ("ui_accept", "ui_back", "ui_guide"):
             self.assertIn(f"dbus: {event}", profile)
+        for event in ("ui_up", "ui_down"):
+            self.assertNotIn(f"dbus: {event}", profile)
+        self.assertIn("keyboard: KeyUp", profile)
+        self.assertIn("keyboard: KeyDown", profile)
 
     def test_guide_consumes_semantic_navigation_from_both_input_profiles(self) -> None:
         native_shell = (Path(__file__).parents[1] / "native/lulu-shell.cpp").read_text()
         compat = (Path(__file__).parents[1] / "config/inputplumber/profiles/compat.yaml").read_text()
         for event in ("ui_guide", "ui_up", "ui_down", "ui_accept", "ui_back"):
             self.assertIn(f'QStringLiteral("{event}")', native_shell)
+        self.assertNotIn("dbus: ui_up", compat)
+        self.assertNotIn("dbus: ui_down", compat)
+        for event in ("ui_guide", "ui_accept", "ui_back"):
             self.assertIn(f"dbus: {event}", compat)
 
     def test_osk_profile_has_no_second_keyboard_or_mouse_output(self) -> None:
