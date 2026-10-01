@@ -533,12 +533,15 @@ def test_file_browser_bind_sources_are_initialized_for_first_start():
 
 def test_dufs_is_provisioned_as_a_canonical_core_service():
     provisioner = (ROOT / "scripts/provision-dufs.sh").read_text()
+    firewall = (ROOT / "scripts/configure-acquisition-firewall.sh").read_text()
     pkgbuild = (ROOT / "packages/dufs/PKGBUILD").read_text()
     installer_source = (ROOT / "scripts/install_mudos.py").read_text()
     assert "provision-dufs.sh" in installer_source
     assert "file-browser.env" in provisioner
     assert "makepkg --cleanbuild" in provisioner
     assert "pacman -U" in provisioner
+    assert '"$repo_root/scripts/configure-acquisition-firewall.sh"' in provisioner
+    assert 'to any port 8080 proto tcp comment \'Mudos file browser\'' in firewall
     assert "817769f726613194bcff9d0e3e481eaccc86ac11208857614f36a8c02f410977" in pkgbuild
     assert "core DUFS file manager package is not installed" in installer_source
 

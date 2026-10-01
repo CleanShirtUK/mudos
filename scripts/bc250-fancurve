@@ -1,0 +1,218 @@
+#!/usr/bin/env bash
+
+set -u
+
+SAMPLE_INTERVAL=3
+DOWN_DELAY_SAMPLES=5
+
+log() {
+    printf 'bc250-fancurve: %s\n' "$*"
+}
+
+find_hwmon() {
+    local wanted="$1"
+    local name
+
+    for name in /sys/class/hwmon/hwmon*/name; do
+        [[ -r "$name" ]] || continue
+
+        if [[ "$(cat "$name")" == "$wanted" ]]; then
+            dirname "$name"
+            return 0
+        fi
+    done
+
+    return 1
+}
+
+find_temp_label() {
+    local hwmon="$1"
+    local wanted="$2"
+    local label
+
+    for label in "$hwmon"/temp*_label; do
+        [[ -r "$label" ]] || continue
+
+        if [[ "$(cat "$label")" == "$wanted" ]]; then
+            printf '%s\n' "${label%_label}_input"
+            return 0
+        fi
+    done
+
+    return 1
+}
+
+# Keep this established temperature/PWM curve unchanged.
+curve_pwm() {
+    local temp="$1"
+
+    if   (( temp <= 50 )); then echo 90
+    elif (( temp <= 55 )); then echo 100
+    elif (( temp <= 60 )); then echo 110
+    elif (( temp <= 65 )); then echo 120
+    elif (( temp <= 75 )); then echo 128
+    elif (( temp <= 78 )); then echo 150
+    elif (( temp <= 80 )); then echo 175
+    elif (( temp <= 82 )); then echo 210
+    elif (( temp <= 84 )); then echo 235
+    else                          echo 255
+    fi
+}
+
+# Compute fault targets without applying temperature hysteresis. Hysteresis is
+# only for normal valid readings; a latched full-fan fail-safe lasts until the
+# next valid sample.
+invalid_pwm() {
+    local invalid_samples="$1"
+    local last_good="$2"
+
+    if (( invalid_samples <= 2 )); then
+        echo "$last_good"
+    elif (( invalid_samples == 3 )); then
+        (( last_good > 175 )) && echo "$last_good" || echo 175
+    elif (( invalid_samples == 4 )); then
+        (( last_good > 210 )) && echo "$last_good" || echo 210
+    else
+        echo 255
+    fi
+}
+
+FAN_HWMON="$(find_hwmon nct6686)" || {
+    log "ERROR: nct6686 hwmon device not found"
+    exit 1
+}
+
+CPU_HWMON="$(find_hwmon k10temp)" || {
+    log "ERROR: k10temp hwmon device not found"
+    exit 1
+}
+
+GPU_HWMON="$(find_hwmon amdgpu)" || {
+    log "ERROR: amdgpu hwmon device not found"
+    exit 1
+}
+
+PWM="$FAN_HWMON/pwm2"
+ENABLE="$FAN_HWMON/pwm2_enable"
+RPM="$FAN_HWMON/fan2_input"
+
+CPU_TEMP="$(find_temp_label "$CPU_HWMON" Tctl)" || \
+    CPU_TEMP="$CPU_HWMON/temp1_input"
+
+GPU_TEMP="$(find_temp_label "$GPU_HWMON" edge)" || \
+    GPU_TEMP="$GPU_HWMON/temp1_input"
+
+for path in "$PWM" "$ENABLE" "$CPU_TEMP" "$GPU_TEMP"; do
+    if [[ ! -e "$path" ]]; then
+        log "ERROR: required sysfs path missing: $path"
+        exit 1
+    fi
+done
+
+restore_firmware() {
+    log "returning fan to firmware control"
+    echo 2 > "$ENABLE" 2>/dev/null || true
+}
+
+running=1
+trap restore_firmware EXIT
+trap 'running=0' INT TERM
+
+# Take control safely: manual mode, then full fan until first
+# valid sensor reading has been obtained.
+echo 1 > "$ENABLE"
+echo 255 > "$PWM"
+
+log "fan=$FAN_HWMON cpu=$CPU_TEMP gpu=$GPU_TEMP"
+log "manual PWM control enabled"
+
+current_pwm=255
+last_good_pwm=255
+invalid_samples=0
+down_samples=0
+initialized=0
+failsafe_latched=0
+
+while (( running )); do
+    cpu_raw="$(cat "$CPU_TEMP" 2>/dev/null || true)"
+    gpu_raw="$(cat "$GPU_TEMP" 2>/dev/null || true)"
+
+    # Retain the existing validation rule: both sensors must be nonempty
+    # unsigned integer millidegree readings.
+    if ! [[ "$cpu_raw" =~ ^[0-9]+$ && "$gpu_raw" =~ ^[0-9]+$ ]]; then
+        invalid_samples=$((invalid_samples + 1))
+        target_pwm="$(invalid_pwm "$invalid_samples" "$last_good_pwm")"
+        if (( target_pwm != current_pwm )); then
+            echo "$target_pwm" > "$PWM"
+            current_pwm="$target_pwm"
+        fi
+        if (( target_pwm == 255 )); then
+            failsafe_latched=1
+            log "WARNING: invalid sensor data; sample=$invalid_samples forcing PWM=255"
+        else
+            log "WARNING: invalid sensor data; sample=$invalid_samples holding/escalating PWM=$current_pwm"
+        fi
+        down_samples=0
+        sleep "$SAMPLE_INTERVAL"
+        continue
+    fi
+
+    cpu=$((cpu_raw / 1000))
+    gpu=$((gpu_raw / 1000))
+
+    if (( cpu > gpu )); then
+        temp=$cpu
+    else
+        temp=$gpu
+    fi
+
+    # Raw emergency override. Do not wait for hysteresis.
+    if (( temp >= 85 )); then
+        wanted_pwm=255
+    else
+        wanted_pwm="$(curve_pwm "$temp")"
+    fi
+
+    # Any valid reading immediately clears the consecutive-failure state.
+    invalid_samples=0
+    failsafe_latched=0
+
+    if (( initialized == 0 )); then
+        # First valid reading: leave startup failsafe immediately.
+        current_pwm="$wanted_pwm"
+        echo "$current_pwm" > "$PWM"
+        down_samples=0
+        initialized=1
+
+    elif (( wanted_pwm > current_pwm )); then
+        # Heat is rising: respond immediately.
+        current_pwm="$wanted_pwm"
+        echo "$current_pwm" > "$PWM"
+        down_samples=0
+
+    elif (( wanted_pwm < current_pwm )); then
+        # Cooling down: require 15 seconds at the lower demand
+        # before reducing fan speed.
+        down_samples=$((down_samples + 1))
+
+        if (( down_samples >= DOWN_DELAY_SAMPLES )); then
+            current_pwm="$wanted_pwm"
+            echo "$current_pwm" > "$PWM"
+            down_samples=0
+        fi
+
+    else
+        down_samples=0
+    fi
+
+    # Record the actual last known-good applied output, including a normal
+    # hysteresis hold while cooling down.
+    last_good_pwm="$current_pwm"
+
+    rpm="?"
+    [[ -r "$RPM" ]] && rpm="$(cat "$RPM")"
+
+    log "cpu=${cpu}C gpu=${gpu}C control=${temp}C pwm=${current_pwm} rpm=${rpm}"
+
+    sleep "$SAMPLE_INTERVAL"
+done

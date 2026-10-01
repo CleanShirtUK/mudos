@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Normal appliance policy: acquisition administration is LAN-only.  This is
+# Normal appliance policy: local administration services are LAN-only. This is
 # deliberately separate from Sunshine so installs without remote streaming
 # still receive the service firewall policy.
 command -v ufw >/dev/null 2>&1 || exit 0
@@ -17,3 +17,4 @@ subnet=${subnet:-192.168.0.0/24}
 ufw allow in on "$interface" from "$subnet" to any port 6789 proto tcp
 ufw allow in on "$interface" from "$subnet" to any port 9091 proto tcp
 ufw allow in on "$interface" from "$subnet" to any port 80 proto tcp
+ufw allow in on "$interface" from "$subnet" to any port 8080 proto tcp comment 'Mudos file browser'

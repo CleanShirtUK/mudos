@@ -45,6 +45,41 @@ class ConsoleBridgeTests(unittest.TestCase):
 
         asyncio.run(exercise())
 
+    def test_retired_authentication_failure_allows_a_fresh_acquisition(self) -> None:
+        async def exercise():
+            class Consoled:
+                async def call_resolve_steam_install(self, _game_id): return "2124490"
+
+            class Acquisition:
+                def __init__(self): self.submitted = None; self.retried = None
+                async def call_get_snapshot(self):
+                    return json.dumps({"jobs": [{
+                        "job_id": "old-failed-job", "provider": "steam",
+                        "content_identity": "steam:2124490", "state": "failed",
+                        "retired": True, "retryable": False,
+                        "error": {"code": "authentication-cancelled", "retryable": False},
+                    }]})
+                async def call_submit_job(self, provider, identity, title):
+                    self.submitted = (provider, identity, title)
+                    return "fresh-job"
+                async def call_retry_job(self, job_id):
+                    self.retried = job_id
+                    raise AssertionError("retired failed attempts must not be retried")
+
+            acquisition = Acquisition()
+            bridge = BRIDGE.ConsoleUiBridge(asyncio.get_running_loop(), Consoled(),
+                                             object(), acquisition)
+            bridge.list_available_games = lambda _provider: asyncio.sleep(0, result=[{
+                "game_id": "steam:2124490", "provider": "steam", "title": "Silent Hill 2",
+            }])
+            result = await bridge.install_game("steam:2124490")
+            await asyncio.sleep(0)
+            self.assertEqual(result, {"token": "fresh-job"})
+            self.assertEqual(acquisition.submitted, ("steam", "steam:2124490", "Silent Hill 2"))
+            self.assertIsNone(acquisition.retried)
+
+        asyncio.run(exercise())
+
     def test_selected_mapping_candidate_preserves_its_igdb_identity(self) -> None:
         class Consoled:
             def __init__(self): self.selected = None

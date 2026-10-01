@@ -346,7 +346,8 @@ class ConsoleUiBridge:
         existing = next((item for item in existing_snapshot.get("jobs", [])
                          if item.get("provider") == provider
                          and item.get("content_identity") == content_identity
-                         and item.get("state") == "failed"), None)
+                         and item.get("state") == "failed"
+                         and not item.get("retired", False)), None)
         if existing is not None:
             error = existing.get("error") or {}
             authentication_recovered = (

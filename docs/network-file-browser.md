@@ -25,6 +25,8 @@ enabled; command execution is not.
 The installer creates `/etc/lulu/file-browser.env` with a random credential when
 one does not already exist, and enforces mode `0600`. Install and enable
 `lulu-file-browser.service` with the other units; `lulu.target` starts it.
+When UFW is active, provisioning allows TCP port 8080 only from the detected
+LAN subnet and on the selected LAN interface.
 
 The Settings Network category reports `active`/`inactive` status and the URL
 formed from the first address returned by `hostname -I` and port 8080. This is

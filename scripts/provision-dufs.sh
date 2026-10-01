@@ -41,3 +41,6 @@ EOF
 fi
 chown root:root "$config"
 chmod 0600 "$config"
+
+# DUFS listens on 8080; expose it only to the current LAN subnet/interface.
+"$repo_root/scripts/configure-acquisition-firewall.sh"
