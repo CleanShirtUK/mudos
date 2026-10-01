@@ -3629,15 +3629,19 @@ import QtQuick.Controls
             opacity: 0.58
         }
 
-             LibrarySpace {
-            id: librarySpace
-            anchors.fill: parent
+          LibrarySpace {
+             id: librarySpace
+            x: 0
+            width: parent.width
+            height: parent.height
             visible: root.space === "library" || root.libraryTransitioning
              canonicalGames: root.libraryGames
              acquisitionJobs: root.acquisitionJobs
              dimensionKey: root.libraryDimension
              dimensionLabel: root.libraryDimensionLabel(root.libraryDimension)
              transitionState: root.libraryTransitionState
+             transitionProgress: root.libraryTransitionProgress
+             transitionExpanding: root.libraryTransitionExpanding
              returnState: root.space === "library" ? "EXPANDED" : "RESTING"
              uiScale: root.uiScale
              typography: typography

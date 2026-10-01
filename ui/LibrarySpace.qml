@@ -7,6 +7,7 @@ import "MudosAssetCatalog.js" as MudosAssetCatalog
 
 Item {
     id: root
+    y: !transitionExpanding ? (1 - transitionProgress) * height : 0
     property var canonicalGames: []
     property var acquisitionJobs: ({})
     property string dimensionKey: "platform"
@@ -23,6 +24,8 @@ Item {
     property int selectedIndex: 0
     property string transitionState: "RESTING"
     property string returnState: "RESTING"
+    property real transitionProgress: 1
+    property bool transitionExpanding: true
     property real contentOpacity: 1
     property real gameContentOpacity: 1
     property bool gameContentVisible: true

@@ -28,7 +28,7 @@ def launch_arguments(provider: ProviderDefinition, game: LocalContentGame,
         return (*prefix, "-L", str(core), content)
     if provider.provider_id == "dolphin":
         prefix = ("--user", str(config_root)) if config_root else ()
-        return (*prefix, "--batch", "-e", content)
+        return (*prefix, "--batch", "-f", "-e", content)
     if provider.provider_id == "pcsx2":
         # PCSX2 honors XDG_CONFIG_HOME; consoled supplies the provider's
         # persistent config directory in the child environment.

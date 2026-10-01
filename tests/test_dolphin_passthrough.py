@@ -61,7 +61,7 @@ class DolphinPassthroughTests(unittest.TestCase):
         interface.catalogue = SimpleNamespace(store=store)
         interface._plugins = SimpleNamespace(with_capability=lambda _capability: ())
         interface.local_runtime = SimpleNamespace(launch_intent=lambda *args, **kwargs: SimpleNamespace(
-            executable="/usr/bin/dolphin-emu", arguments=("--batch", "-e", "/fixture/game.rvz"),
+            executable="/usr/bin/dolphin-emu", arguments=("--batch", "-f", "-e", "/fixture/game.rvz"),
             provider="dolphin", platform="wii",
         ))
         interface.sessiond = SimpleNamespace(

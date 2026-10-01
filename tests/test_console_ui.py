@@ -1147,6 +1147,12 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertIn('property: "libraryTransitionProgress"', shell)
         self.assertIn('duration: 500', shell)
         self.assertIn('easing.type: Easing.OutQuint', shell)
+        self.assertIn('transitionProgress: root.libraryTransitionProgress', shell)
+        self.assertIn('transitionExpanding: root.libraryTransitionExpanding', shell)
+        self.assertIn('y: !transitionExpanding ? (1 - transitionProgress) * height : 0', library_space)
+        library_host = shell.split('LibrarySpace {', 1)[1].split('StoreOptions {', 1)[0]
+        self.assertNotIn('anchors.fill: parent', library_host)
+        self.assertIn('height: parent.height', library_host)
         self.assertIn('LibrarySpatialSurface {', shell)
         self.assertIn('homeX: root.homeContentRailX', shell)
         self.assertIn('fullscreenWidth: root.expandedShellWidth', shell)

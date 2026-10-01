@@ -74,6 +74,12 @@ class GuideKeyboardRecoveryTests(unittest.TestCase):
         self.assertIn('guideProcess_->write("ui_guide edge=down\\n")', self.shell)
         self.assertIn("SDL_GAMEPAD_BUTTON", self.shell)
 
+    def test_quit_action_hides_guide_before_waiting_for_sessiond(self) -> None:
+        dismiss = self.guide[self.guide.index("bool executeAndDismiss("):]
+        self.assertLess(dismiss.index("window_->hide()"), dismiss.index("executeAction("))
+        self.assertIn('action.value("role").toString() == QStringLiteral("quit")', dismiss)
+        self.assertIn("if (dismiss && !completed)\n            window_->show();", dismiss)
+
 
 if __name__ == "__main__":
     unittest.main()

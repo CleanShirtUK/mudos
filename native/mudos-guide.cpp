@@ -112,7 +112,7 @@ private:
                     viewModel_->insert("confirmationPending", false);
                     viewModel_->insert("selection", 0);
                 } else {
-                    if (executeAction(viewModel_->value("confirmationId").toString()))
+                    if (executeAndDismiss(actionForId(viewModel_->value("confirmationId").toString())))
                         QCoreApplication::quit();
                 }
                 return;
@@ -126,7 +126,7 @@ private:
                 viewModel_->insert("selection", 1);
                 return;
             }
-            if (executeAction(action.value("id").toString()))
+            if (executeAndDismiss(action))
                 QCoreApplication::quit();
         }
         else if (action == QStringLiteral("ui_back")) {
@@ -155,6 +155,27 @@ private:
     QVariantMap actionAt(int index) const
     {
         return index >= 0 && index < actions_.size() ? actions_.at(index).toMap() : QVariantMap();
+    }
+
+    QVariantMap actionForId(const QString &id) const
+    {
+        for (const auto &value : actions_) {
+            const auto action = value.toMap();
+            if (action.value("id").toString() == id)
+                return action;
+        }
+        return {};
+    }
+
+    bool executeAndDismiss(const QVariantMap &action)
+    {
+        const bool dismiss = action.value("role").toString() == QStringLiteral("quit");
+        if (dismiss)
+            window_->hide();
+        const bool completed = executeAction(action.value("id").toString());
+        if (dismiss && !completed)
+            window_->show();
+        return completed;
     }
 
     bool executeAction(const QString &id)
