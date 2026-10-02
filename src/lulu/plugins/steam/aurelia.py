@@ -393,7 +393,39 @@ class AureliaClient:
             return False
 
     async def stop(self, app_id: str) -> Any:
-        return await self.command("stop", app_id)
+        if not app_id.isdecimal() or int(app_id) < 1:
+            raise AureliaError("invalid-app-id", "Aurelia stop requires a positive AppID")
+        if not self.available:
+            raise AureliaError("unavailable", "Aurelia executable is unavailable", retryable=True)
+        self._ensure_config_dir()
+        environment = self._environment()
+        # Aurelia's stop command terminates the tracked process tree locally, but
+        # normally forwards through its daemon. During `play`, that daemon may be
+        # occupied; bypass it rather than waiting behind the blocking play request.
+        environment["AURELIA_NO_DAEMON"] = "1"
+        process: asyncio.subprocess.Process | None = None
+        try:
+            process = await asyncio.create_subprocess_exec(
+                self.executable, "--json", "stop", app_id, env=environment,
+                stdin=asyncio.subprocess.DEVNULL, stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.DEVNULL,
+            )
+            stdout, _stderr = await asyncio.wait_for(process.communicate(), timeout=30)
+        except (OSError, TimeoutError, asyncio.TimeoutError) as error:
+            if process is not None and process.returncode is None:
+                process.terminate()
+                try:
+                    await asyncio.wait_for(process.wait(), timeout=2)
+                except TimeoutError:
+                    process.kill()
+                    await process.wait()
+            raise AureliaError("stop-failed", "Aurelia could not complete the game stop", retryable=True) from error
+        if process.returncode:
+            raise AureliaError("stop-failed", f"Aurelia game stop failed (exit {process.returncode})", retryable=True)
+        try:
+            return json.loads(stdout) if stdout.strip() else None
+        except json.JSONDecodeError as error:
+            raise AureliaError("malformed-output", "Aurelia stop returned malformed JSON") from error
 
 
 def map_progress(event: dict[str, Any]) -> dict[str, Any]:

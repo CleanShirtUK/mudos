@@ -22,12 +22,13 @@ class FakeCLI:
 
 
 class FakeAurelia:
-    def __init__(self, *, running=None, cli=None):
+    def __init__(self, *, running=None, cli=None, daemon_states=None):
         self.process = cli or FakeCLI()
         self.running_value = running if running is not None else {
             "running": [{"app_id": "945360", "pid": 30003}]
         }
         self.stopped = []
+        self.daemon_states = iter(daemon_states) if daemon_states is not None else None
 
     async def spawn_play(self, app_id):
         self.app_id = app_id
@@ -52,6 +53,8 @@ class FakeAurelia:
                      and str(row.get("app_id")) == app_id), None)
 
     def daemon_alive(self):
+        if self.daemon_states is not None:
+            return next(self.daemon_states, False)
         return True
 
     async def stop(self, app_id):
@@ -105,11 +108,11 @@ class AureliaSessionLaunchTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.model.last_result.outcome, "start-failed")
 
     async def test_daemon_disappearance_before_game_is_failure(self):
-        aurelia = FakeAurelia(running=AureliaError("unavailable", "daemon gone"))
+        aurelia = FakeAurelia(running={"running": []}, daemon_states=[True, False])
         self.supervisor._aurelia_client = aurelia
         self.provider._candidate_pids = lambda _app: []
-        with self.assertRaisesRegex(ValueError, "daemon gone"):
-            await self.supervisor._launch_aurelia("945360", 1, self.model.request_launch("steam-aurelia:945360"))
+        with self.assertRaisesRegex(ValueError, "daemon disappeared"):
+            await self.supervisor._launch_aurelia("945360", 10000, self.model.request_launch("steam-aurelia:945360"))
         self.assertEqual(self.model.state.lifecycle.value, "shell")
 
     async def test_running_game_stop_uses_aurelia_and_cancel_is_rejected(self):

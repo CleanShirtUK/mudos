@@ -7,7 +7,7 @@ import os
 from pathlib import Path
 import tempfile
 import unittest
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 from lulu.jobs import DownloadJob, JobState
 from lulu.acquisition_store import AcquisitionStore
@@ -221,6 +221,18 @@ class AureliaLaunchTests(unittest.IsolatedAsyncioTestCase):
             client = AureliaClient(executable="aurelia", config_dir=config, run=lambda *_a, **_k: None)
             with self.assertRaisesRegex(AureliaError, "invalid AppID/PID"):
                 await client.running_record("104200")
+
+    async def test_running_game_stop_bypasses_aurelia_daemon(self):
+        with tempfile.TemporaryDirectory() as directory:
+            client = AureliaClient(executable="/usr/bin/aurelia", config_dir=Path(directory))
+            process = Mock(returncode=0)
+            process.communicate = AsyncMock(return_value=(b'{"status":"stopped"}', b""))
+            with patch("lulu.plugins.steam.aurelia.asyncio.create_subprocess_exec",
+                       new_callable=AsyncMock, return_value=process) as spawn:
+                result = await client.stop("104200")
+            self.assertEqual(result["status"], "stopped")
+            self.assertEqual(spawn.call_args.args[:4], ("/usr/bin/aurelia", "--json", "stop", "104200"))
+            self.assertEqual(spawn.call_args.kwargs["env"]["AURELIA_NO_DAEMON"], "1")
 
     async def test_running_pid_requires_exact_kernel_appid_evidence(self):
         class Client:
