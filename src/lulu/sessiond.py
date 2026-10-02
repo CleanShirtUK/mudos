@@ -101,10 +101,12 @@ class ConsoleSessionInterface(ServiceInterface):
 
     def _apply_supervised_input_mode(self, mode: InputMode) -> None:
         """Apply supervised Utility profiles even when shell input is native."""
-        if self._native_controller and self.model.state.session_kind != SessionClassification.UTILITY.value:
+        if (self._native_controller and mode is not InputMode.SHELL
+                and self.model.state.session_kind != SessionClassification.UTILITY.value):
             # Native game/shell input remains managed by the existing native
             # controller path. Utilities still require InputPlumber's desktop
-            # compatibility mapping on entry and a Default reset on return.
+            # compatibility mapping on entry; every return still resets the
+            # InputPlumber profile to its shell/default baseline.
             return
         self._apply_input_mode(mode)
 

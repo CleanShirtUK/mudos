@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import asyncio
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from lulu.console_sessiond import SessionStateModel
+from lulu.contracts import InputMode
 from lulu.plugins.steam.aurelia import AureliaError
 from lulu.plugins.steam.provider import SteamProvider
 from lulu.process_supervisor import ProcessSupervisor
+from lulu.sessiond import ConsoleSessionInterface
 
 
 class FakeCLI:
@@ -91,6 +93,35 @@ class AureliaSessionLaunchTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(self.model.state.lifecycle.value, "game")
             await self.supervisor._watch_task
         self.assertEqual(self.model.state.lifecycle.value, "shell")
+
+    async def test_aurelia_normal_exit_restores_native_controller_shell_profile(self):
+        """Native-controller mode must not suppress the supervised SHELL reset."""
+        sessiond = ConsoleSessionInterface.__new__(ConsoleSessionInterface)
+        sessiond.model = self.model
+        sessiond._native_controller = True
+        sessiond._apply_input_mode = Mock()
+        self.supervisor = ProcessSupervisor(
+            self.model, input_mode_changed=sessiond._apply_supervised_input_mode)
+        provider = self.provider
+        self.supervisor._steam_provider = provider
+        self.supervisor._aurelia_client = FakeAurelia(
+            running={"running": [{"app_id": "40800", "pid": 30003}]})
+        candidates = iter(([], [30002], [30002], []))
+        provider._candidate_pids = lambda _app: next(candidates, [])
+        provider._argv = lambda _pid: ("/games/supermeatboy",)
+        with patch("lulu.process_supervisor.os.getpgid", return_value=30002), \
+                patch("lulu.process_supervisor.os.path.realpath", return_value="/games/supermeatboy"), \
+                patch.object(provider, "_process_has_app_id", return_value=True):
+            token = self.supervisor.queue_aurelia_launch("40800", 1000)
+            await self.supervisor._aurelia_launch_task
+            self.assertEqual(self.model.state.lifecycle.value, "game")
+            await self.supervisor._watch_task
+
+        self.assertEqual(self.model.state.lifecycle.value, "shell")
+        self.assertEqual(self.model.state.presentation.value, "shell")
+        self.assertEqual(self.model.state.input_mode, InputMode.SHELL)
+        self.assertEqual(self.model.last_result.token, token)
+        sessiond._apply_input_mode.assert_called_once_with(InputMode.SHELL)
 
     async def test_runner_pid_without_exact_appid_evidence_never_enters_game(self):
         cli = FakeCLI()
