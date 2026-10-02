@@ -1213,9 +1213,9 @@ class CatalogueStore:
         if scope == "pc":
             # PC Games includes native/managed PC applications from all
             # enabled PC providers, not only Steam rows.
-            query += " AND provider IN ('steam', 'gog', 'epic', 'flatpak', 'lutris', 'local')"
+            query += " AND provider IN ('steam', 'steam-aurelia', 'gog', 'epic', 'flatpak', 'lutris', 'local')"
         elif scope == "steam":
-            query += " AND provider=?"; parameters = ("steam",)
+            query += " AND provider IN ('steam', 'steam-aurelia')"
         elif scope.startswith("platform:"):
             query += " AND catalogue_source='local' AND platform=?"; parameters = (scope.removeprefix("platform:"),)
         games = self._rows(query + " ORDER BY title COLLATE NOCASE", parameters)

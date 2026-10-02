@@ -42,6 +42,7 @@ class AureliaClientTests(unittest.IsolatedAsyncioTestCase):
             installed_game = next(game for game in games if game.provider_id == "730")
             self.assertEqual(installed_game.install_state, "installed")
             self.assertEqual(installed_game.install_dir, "/games/cs2")
+            self.assertIn("730", [game.provider_id for game in store.list_games("steam")])
 
     async def test_entitlement_source_filters_nonowned_and_preserves_installed_metadata(self):
         responses = iter([
