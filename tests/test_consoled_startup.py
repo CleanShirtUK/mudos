@@ -16,6 +16,47 @@ ROOT = Path(__file__).parents[1]
 
 
 class ConsoledStartupTests(unittest.TestCase):
+    def test_aurelia_library_entry_routes_launch_game_directly_to_sessiond(self) -> None:
+        class Sessiond:
+            def __init__(self):
+                self.requests = []
+
+            async def call_request_aurelia_launch(self, app_id, timeout_ms):
+                self.requests.append((app_id, timeout_ms))
+                return "aurelia-session-token"
+
+            async def call_request_steam_launch(self, *_args):
+                raise AssertionError("Aurelia library entry fell back to legacy Steam")
+
+        class PluginRegistry:
+            def with_capability(self, capability):
+                raise AssertionError(f"Aurelia dispatch incorrectly searched {capability} plugins")
+
+        game = SimpleNamespace(
+            game_id="steam-aurelia:104200", provider="steam-aurelia",
+            provider_id="104200", launchable=True,
+        )
+        store = SimpleNamespace(
+            list_games=Mock(return_value=[game]),
+            mark_played=Mock(return_value="catalogue-delta"),
+        )
+        consoled = ConsoleInterface.__new__(ConsoleInterface)
+        consoled.catalogue = SimpleNamespace(store=store)
+        consoled._plugins = PluginRegistry()
+        consoled.sessiond = Sessiond()
+        consoled._publish_delta = Mock()
+
+        async def exercise():
+            with patch.object(consoled, "CatalogueChanged", lambda: None):
+                result = await ConsoleInterface.LaunchGame.__wrapped__(
+                    consoled, "steam-aurelia:104200", 30000)
+            self.assertEqual(result, "aurelia-session-token")
+
+        asyncio.run(exercise())
+        self.assertEqual(consoled.sessiond.requests, [("104200", 30000)])
+        store.mark_played.assert_called_once_with("steam-aurelia:104200")
+        consoled._publish_delta.assert_called_once_with("catalogue-delta")
+
     def test_dbus_writer_keeps_connection_alive_on_socket_backpressure(self) -> None:
         class Socket:
             def send(self, _data):

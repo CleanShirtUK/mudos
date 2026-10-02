@@ -2611,6 +2611,22 @@ class ConsoleInterface(ServiceInterface):
         game = games.get(game_id)
         if game is None or not game.launchable:
             raise ValueError("game is not installed and launchable")
+        if game.provider == "steam-aurelia":
+            # Aurelia is a Sessiond-owned launch backend, not a Consoled launch
+            # plugin. Keep this direct library-entry boundary supported for
+            # callers that submit LaunchGame over D-Bus instead of the UI
+            # bridge's /launch/<game-id> endpoint.
+            if self.sessiond is None:
+                raise ValueError("console session is unavailable")
+            app_id = str(game.provider_id)
+            if not app_id.isdecimal() or int(app_id) < 1:
+                raise ValueError("Steam Aurelia AppID is invalid")
+            LOGGER.info("Aurelia launch routed to Sessiond game_id=%s app_id=%s", game_id, app_id)
+            token = await self.sessiond.call_request_aurelia_launch(app_id, timeout_ms)
+            delta = self.catalogue.store.mark_played(game.game_id)
+            self._publish_delta(delta)
+            self.CatalogueChanged()
+            return token
         if game.provider == "flatpak":
             adapter = next((source for source in self._plugins.with_capability("catalogue")
                             if getattr(source, "provider_id", "") == "flatpak"
