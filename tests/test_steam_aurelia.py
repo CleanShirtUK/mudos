@@ -199,6 +199,29 @@ class AureliaAcquisitionTests(unittest.IsolatedAsyncioTestCase):
 
 
 class AureliaLaunchTests(unittest.IsolatedAsyncioTestCase):
+    async def test_running_record_reads_aurelia_runner_pid_without_cli_query(self):
+        with tempfile.TemporaryDirectory() as directory:
+            config = Path(directory)
+            running = config / "running"
+            running.mkdir()
+            (running / "104200.json").write_text(
+                json.dumps({"app_id": 104200, "name": "BEEP", "pid": 4321})
+            )
+            client = AureliaClient(executable="aurelia", config_dir=config, run=lambda *_a, **_k: None)
+            self.assertEqual(await client.running_record("104200"),
+                             {"app_id": 104200, "name": "BEEP", "pid": 4321})
+            self.assertIsNone(await client.running_record("945360"))
+
+    async def test_malformed_running_record_is_rejected(self):
+        with tempfile.TemporaryDirectory() as directory:
+            config = Path(directory)
+            running = config / "running"
+            running.mkdir()
+            (running / "104200.json").write_text('{"app_id":104200,"pid":"not-a-pid"}')
+            client = AureliaClient(executable="aurelia", config_dir=config, run=lambda *_a, **_k: None)
+            with self.assertRaisesRegex(AureliaError, "invalid AppID/PID"):
+                await client.running_record("104200")
+
     async def test_running_pid_requires_exact_kernel_appid_evidence(self):
         class Client:
             available = True

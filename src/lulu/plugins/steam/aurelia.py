@@ -354,6 +354,44 @@ class AureliaClient:
     async def running(self) -> Any:
         return await self.command("running")
 
+    async def running_record(self, app_id: str) -> dict[str, Any] | None:
+        """Read Aurelia's per-AppID record while its blocking play command runs.
+
+        Asking the daemon to execute `running` can contend with a long-running
+        `play` request in some Aurelia builds. The record is Aurelia's own source
+        of truth for stop/running and is atomically refreshed by its launch code.
+        """
+        def read_record() -> dict[str, Any] | None:
+            path = self.config_dir / "running" / f"{app_id}.json"
+            try:
+                value = json.loads(path.read_text(encoding="utf-8"))
+            except FileNotFoundError:
+                return None
+            except (OSError, json.JSONDecodeError) as error:
+                raise AureliaError("malformed-running-state", "Aurelia running record is unreadable") from error
+            if (not isinstance(value, dict) or str(value.get("app_id")) != app_id
+                    or not isinstance(value.get("pid"), int) or value["pid"] < 2):
+                raise AureliaError("malformed-running-state", "Aurelia running record has invalid AppID/PID fields")
+            return value
+
+        return await asyncio.to_thread(read_record)
+
+    def daemon_alive(self) -> bool:
+        """Check the selected Aurelia daemon endpoint without issuing a CLI call."""
+        environment = self._environment()
+        endpoint = environment.get("AURELIA_DAEMON_SOCKET")
+        if not endpoint:
+            return False
+        socket_path = Path(endpoint)
+        try:
+            if not stat.S_ISSOCK(socket_path.stat().st_mode):
+                return False
+            marker = json.loads(socket_path.with_suffix(".info").read_text(encoding="utf-8"))
+            pid = marker.get("pid") if isinstance(marker, dict) else None
+            return isinstance(pid, int) and pid > 1 and Path(f"/proc/{pid}").exists()
+        except (OSError, json.JSONDecodeError):
+            return False
+
     async def stop(self, app_id: str) -> Any:
         return await self.command("stop", app_id)
 
@@ -694,5 +732,9 @@ def _process_has_app_id(pid: int, app_id: str) -> bool:
         raw = Path(f"/proc/{pid}/environ").read_bytes()
     except OSError:
         return False
-    expected = {f"STEAM_COMPAT_APP_ID={app_id}".encode(), f"SteamAppId={app_id}".encode()}
+    expected = {
+        f"STEAM_COMPAT_APP_ID={app_id}".encode(),
+        f"SteamAppId={app_id}".encode(),
+        f"SteamGameId={app_id}".encode(),
+    }
     return any(value in expected for value in raw.split(b"\0"))

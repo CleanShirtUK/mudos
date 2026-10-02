@@ -805,29 +805,22 @@ class ProcessSupervisor:
                 await self._notify()
                 self.model.launch_starting(token)
                 await self._notify()
+                if provider._candidate_pids(app_id):
+                    raise RuntimeError(f"AppID {app_id} already has a running Steam game process")
                 process = await client.spawn_play(app_id)
                 self._aurelia_process, self._aurelia_app_id = process, app_id
-                deadline = asyncio.get_running_loop().time() + startup_timeout_ms / 1000
+                loop = asyncio.get_running_loop()
+                started_at = loop.time()
+                deadline = started_at + startup_timeout_ms / 1000
+                daemon_seen = False
+                daemon_missing_since: float | None = None
                 # Aurelia's JSON PID is only a hint and can be a runner. Verify
                 # its exact AppID marker, then let SteamProvider select the actual
                 # game PID from its established AppID-filtered candidate set.
                 while game is None:
                     candidates = provider._candidate_pids(app_id)
-                    try:
-                        running = await client.running()
-                    except AureliaError as error:
-                        if process.returncode is not None:
-                            raise RuntimeError(f"Aurelia CLI exited before game detection ({process.returncode}); running query failed") from error
-                        if asyncio.get_running_loop().time() > deadline:
-                            raise RuntimeError("Aurelia daemon unavailable before game detection") from error
-                        await asyncio.sleep(provider.poll_interval)
-                        continue
-                    rows = running.get("running") if isinstance(running, dict) else None
-                    if not isinstance(rows, list):
-                        raise RuntimeError("Aurelia returned malformed running-state data")
-                    row = next((item for item in rows if isinstance(item, dict)
-                                and str(item.get("app_id")) == app_id), None)
-                    pid = row.get("pid") if row is not None else None
+                    row = await client.running_record(app_id)
+                    pid = row.get("pid") if isinstance(row, dict) else None
                     if (isinstance(pid, int) and pid > 1
                             and provider._process_has_app_id(pid, app_id) and candidates):
                         # The verified Aurelia record establishes that Aurelia
@@ -843,7 +836,19 @@ class ProcessSupervisor:
                         break
                     if process.returncode is not None:
                         raise RuntimeError(f"Aurelia CLI exited before a verified game appeared (status {process.returncode})")
-                    if asyncio.get_running_loop().time() >= deadline:
+                    now = loop.time()
+                    # Give the launch request time to spawn/refresh the daemon,
+                    # then fail promptly if the daemon endpoint disappears.
+                    daemon_alive = client.daemon_alive()
+                    if daemon_alive:
+                        daemon_seen = True
+                        daemon_missing_since = None
+                    else:
+                        daemon_missing_since = daemon_missing_since or now
+                        if ((daemon_seen and now - daemon_missing_since > 2)
+                                or (not daemon_seen and now - started_at > 5)):
+                            raise RuntimeError("Aurelia daemon disappeared before a verified game appeared")
+                    if now >= deadline:
                         raise TimeoutError(f"Aurelia launch timed out waiting for verified AppID {app_id} process")
                     await asyncio.sleep(provider.poll_interval)
 

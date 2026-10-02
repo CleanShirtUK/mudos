@@ -38,6 +38,22 @@ class FakeAurelia:
             raise self.running_value
         return self.running_value
 
+    async def running_record(self, app_id):
+        if isinstance(self.running_value, Exception):
+            raise self.running_value
+        if not isinstance(self.running_value, dict):
+            raise AureliaError("malformed-running-state", "bad running record")
+        rows = self.running_value.get("running")
+        if rows == "bad":
+            raise AureliaError("malformed-running-state", "bad running record")
+        if not isinstance(rows, list):
+            return None
+        return next((row for row in rows if isinstance(row, dict)
+                     and str(row.get("app_id")) == app_id), None)
+
+    def daemon_alive(self):
+        return True
+
     async def stop(self, app_id):
         self.stopped.append(app_id)
         return {"stopped": True}
@@ -54,7 +70,7 @@ class AureliaSessionLaunchTests(unittest.IsolatedAsyncioTestCase):
         cli = FakeCLI()
         aurelia = FakeAurelia(cli=cli)
         self.supervisor._aurelia_client = aurelia
-        candidates = iter(([30002], [30002], []))
+        candidates = iter(([], [30002], [30002], []))
         self.provider._candidate_pids = lambda _app: next(candidates, [])
         self.provider._argv = lambda _pid: ("/games/example",)
         with patch("lulu.process_supervisor.os.getpgid", return_value=30002), \
@@ -77,7 +93,8 @@ class AureliaSessionLaunchTests(unittest.IsolatedAsyncioTestCase):
         cli = FakeCLI()
         aurelia = FakeAurelia(cli=cli)
         self.supervisor._aurelia_client = aurelia
-        self.provider._candidate_pids = lambda _app: [30002]
+        candidates = iter(([], [30002]))
+        self.provider._candidate_pids = lambda _app: next(candidates, [30002])
         cli.returncode = 2
         with patch.object(self.provider, "_process_has_app_id", return_value=False):
             token = self.supervisor.queue_aurelia_launch("945360", 1000)
@@ -91,7 +108,7 @@ class AureliaSessionLaunchTests(unittest.IsolatedAsyncioTestCase):
         aurelia = FakeAurelia(running=AureliaError("unavailable", "daemon gone"))
         self.supervisor._aurelia_client = aurelia
         self.provider._candidate_pids = lambda _app: []
-        with self.assertRaisesRegex(ValueError, "daemon unavailable"):
+        with self.assertRaisesRegex(ValueError, "daemon gone"):
             await self.supervisor._launch_aurelia("945360", 1, self.model.request_launch("steam-aurelia:945360"))
         self.assertEqual(self.model.state.lifecycle.value, "shell")
 
@@ -115,7 +132,7 @@ class AureliaSessionLaunchTests(unittest.IsolatedAsyncioTestCase):
         self.supervisor._aurelia_client = aurelia
         self.provider._candidate_pids = lambda _app: []
         token = self.model.request_launch("steam-aurelia:945360")
-        with self.assertRaisesRegex(ValueError, "malformed running-state"):
+        with self.assertRaisesRegex(ValueError, "bad running record"):
             await self.supervisor._launch_aurelia("945360", 1000, token)
         self.assertEqual(self.model.state.lifecycle.value, "shell")
 
