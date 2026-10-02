@@ -79,6 +79,41 @@ class AureliaClient:
             raise AureliaError("session-storage-unavailable", "Aurelia session directory permissions could not be secured", retryable=False) from error
         if self.config_dir.stat().st_mode & 0o077:
             raise AureliaError("session-storage-unavailable", "Aurelia session directory is not private", retryable=False)
+        self._ensure_launcher_config()
+
+    def _ensure_launcher_config(self) -> None:
+        """Pin Aurelia to Mudos' canonical library without overwriting settings."""
+        path = self.config_dir / "config.json"
+        canonical = PATHS.steam_library_root
+        if path.exists():
+            try:
+                config = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError) as error:
+                raise AureliaError("invalid-config", "Aurelia configuration is unreadable; refusing to continue") from error
+            configured = config.get("steam_library_path") if isinstance(config, dict) else None
+            if not isinstance(configured, str) or Path(configured).expanduser().absolute() != canonical.absolute():
+                raise AureliaError("library-path-mismatch", "Aurelia is not configured for the canonical Mudos Steam library")
+            try:
+                path.chmod(0o600)
+            except OSError as error:
+                raise AureliaError("session-storage-unavailable", "Aurelia configuration permissions could not be secured") from error
+            return
+        baseline = {
+            "steam_library_path": str(canonical),
+            "proton_version": "experimental",
+            "enable_cloud_sync": False,
+            "windows_steam_discovery_enabled": False,
+        }
+        try:
+            with path.open("x", encoding="utf-8") as stream:
+                os.chmod(path, 0o600)
+                json.dump(baseline, stream, sort_keys=True)
+                stream.write("\n")
+        except FileExistsError:
+            # Another Mudos caller won initialization; validate its result.
+            return self._ensure_launcher_config()
+        except OSError as error:
+            raise AureliaError("session-storage-unavailable", "Aurelia configuration could not be initialized") from error
 
     def _environment(self) -> dict[str, str]:
         env = os.environ.copy()

@@ -25,6 +25,12 @@ copy, back up, or serialize the session token. The configured
 `steam_library_path` must explicitly be Mudos' canonical Steam library before
 any future mutation test.
 
+On the first Aurelia command, the adapter creates a minimal config with that
+canonical library path, cloud sync off, and Windows-Steam discovery off. An
+existing config is never rewritten; if its library path differs or it is
+malformed, the adapter fails closed for operator review. The config file is
+mode `0600`.
+
 ## Credential introduction and expiry
 
 Credentials must eventually enter through Aurelia's supported interactive/QR

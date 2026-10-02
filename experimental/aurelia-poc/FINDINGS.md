@@ -623,7 +623,9 @@ NDJSON progress conversion, shared-daemon cancellation, active-job discovery
 and restart adoption, plus a coarse launch controller. The current provider is
 not replaced. Registration defaults off at
 `providers.steam_aurelia.enabled=false`; only explicit provider-services
-configuration registers the executor. See `docs/aurelia-auth-storage.md` for
+configuration registers the executor. Its first invocation creates a minimal
+private Aurelia config pinned to Mudos' canonical library with cloud sync and
+Windows-Steam discovery off; pre-existing mismatched config fails closed. See `docs/aurelia-auth-storage.md` for
 session ownership, credential introduction and keyring policy.
 
 Important boundary still outstanding: Sessiond's production launch path

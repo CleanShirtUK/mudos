@@ -13,6 +13,7 @@ from lulu.plugins.steam.aurelia import (
     AureliaAcquisitionExecutor, AureliaCapabilities, AureliaClient,
     AureliaError, AureliaLaunchController, PROVIDER_ID, map_progress,
 )
+from lulu.paths import PATHS
 from lulu.provider_config import ProviderConfigurationService
 
 
@@ -61,6 +62,19 @@ class AureliaClientTests(unittest.IsolatedAsyncioTestCase):
         client = AureliaClient("fake", root, run=lambda *a, **kw: (0, "{}", ""))
         await client.command("libraries")
         self.assertEqual(root.stat().st_mode & 0o777, 0o700)
+        config = json.loads((root / "config.json").read_text())
+        self.assertEqual(config["steam_library_path"], str(PATHS.steam_library_root))
+        self.assertFalse(config["enable_cloud_sync"])
+        self.assertEqual((root / "config.json").stat().st_mode & 0o777, 0o600)
+
+    async def test_existing_noncanonical_library_fails_closed(self):
+        root = Path(tempfile.mkdtemp()) / "aurelia"
+        root.mkdir(mode=0o700)
+        (root / "config.json").write_text(json.dumps({"steam_library_path": "/not/the/mudos/library"}))
+        client = AureliaClient("fake", root, run=lambda *a, **kw: (0, "{}", ""))
+        with self.assertRaises(AureliaError) as caught:
+            await client.command("libraries")
+        self.assertEqual(caught.exception.code, "library-path-mismatch")
 
 
 class AureliaAcquisitionTests(unittest.IsolatedAsyncioTestCase):
