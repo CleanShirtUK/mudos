@@ -77,7 +77,7 @@ class ProviderReadinessStore:
         if status not in {"installing", "install_failed", "installed",
                           "authentication_required", "authenticating", "authorization_pending",
                           "auth_failed", "authenticated", "configuration_required",
-                          "reconciling", "syncing", "sync_failed", "ready"}:
+                          "reconciling", "syncing", "sync_failed", "ready", "unavailable"}:
             raise ValueError("invalid provider readiness status")
         record = {"status": status, "message": message[:240],
                   "catalogue_count": max(0, int(catalogue_count)),

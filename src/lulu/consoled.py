@@ -45,6 +45,7 @@ from .storage_manager import StorageManagerAdapter
 from .plugins.romm.client import RommApiError, RommClient, RommConfig, RommGame
 from .plugins.romm.readiness import RommReadinessStore
 from .provider_readiness import ProviderReadinessStore
+from .plugins.external import catalogue_authentication_state
 from .plugins.steam.provider import (SteamProvider, STEAM_SURFACE_STARTUP_TIMEOUT)
 from .plugins.steam.entitlements import SteamEntitlementSource
 from .system_settings import CATEGORIES as SYSTEM_CATEGORIES, SystemSettingsProvider
@@ -297,12 +298,16 @@ class ConsoleCatalog:
             if provider_id != "steam-aurelia" and provider_id not in selected_providers:
                 LOGGER.info("catalogue stage skipped name=%s reason=not-selected", provider_id)
                 continue
-            auth_path = getattr(source, "config_path", None) or getattr(source, "auth_path", None)
-            if not auth_path or not auth_path.is_file():
-                LOGGER.info("catalogue stage skipped name=%s reason=authentication-required", provider_id)
+            authentication = catalogue_authentication_state(source)
+            if authentication != "authenticated":
+                readiness_status = ("unavailable" if authentication == "unavailable"
+                                    else "authentication_required")
+                LOGGER.info("catalogue stage skipped name=%s reason=%s", provider_id, authentication)
                 self.provider_readiness.set(
-                    provider_id, "authentication_required",
-                    message=f"Sign in to {provider_id.title()} before syncing owned games.",
+                    provider_id, readiness_status,
+                    message=(f"{provider_id.title()} catalogue provider is unavailable."
+                             if readiness_status == "unavailable" else
+                             f"Sign in to {provider_id.title()} before syncing owned games."),
                 )
                 continue
             LOGGER.info("catalogue stage started name=%s", provider_id)

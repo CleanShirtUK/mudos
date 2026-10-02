@@ -121,6 +121,15 @@ class AureliaEntitlementSource:
     def installed(self) -> tuple[AureliaInstalledGame, ...]:
         return self._installed
 
+    def catalogue_authentication_status(self) -> str:
+        """Expose the daemon-owned login state to generic catalogue readiness."""
+        try:
+            return asyncio.run(self.client.auth_status())
+        except RuntimeError:
+            # Catalogue refresh is synchronous and normally runs on a worker
+            # thread. Fail closed if embedded in a running event loop.
+            return "unavailable"
+
 
 class AureliaClient:
     """Secret-free CLI boundary. Credentials are never accepted as arguments."""

@@ -2,13 +2,14 @@ import tempfile
 import asyncio
 import json
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, Mock, patch
 from pathlib import Path
 import unittest
 
 from lulu.catalogue import CatalogueStore
 from lulu.plugins.external import (CliAcquisitionExecutor, OwnedProviderGame,
-                                   SnapshotEntitlementSource, normalize_game)
+                                   SnapshotEntitlementSource, catalogue_authentication_state,
+                                   normalize_game)
 from lulu.plugins.epic import EpicAcquisitionExecutor, EpicAuthentication, EpicEntitlementSource
 from lulu.plugins.gog import GogAuthentication
 from lulu.jobs import DownloadJob, JobOperation
@@ -20,6 +21,65 @@ from lulu.job_manager import JobExecutionError
 
 
 class ExternalProviderTests(unittest.TestCase):
+    def test_catalogue_authentication_supports_local_files_and_service_owned_sessions(self):
+        with tempfile.TemporaryDirectory() as directory:
+            auth_file = Path(directory) / "auth.json"
+            auth_file.write_text("{}")
+            self.assertEqual(catalogue_authentication_state(
+                SimpleNamespace(auth_path=auth_file)), "authenticated")
+        self.assertEqual(catalogue_authentication_state(
+            SimpleNamespace(catalogue_authentication_status=lambda: "authenticated")),
+            "authenticated")
+        self.assertEqual(catalogue_authentication_state(
+            SimpleNamespace(catalogue_authentication_status=lambda: "unauthenticated")),
+            "unauthenticated")
+
+    def test_aurelia_service_auth_reaches_catalogue_without_steam_fallback(self):
+        class AureliaSource:
+            provider_id = "steam-aurelia"
+            last_error = ""
+            snapshot = ()
+
+            def __init__(self, authentication):
+                self.authentication = authentication
+                self.discoveries = 0
+
+            def catalogue_authentication_status(self):
+                return self.authentication
+
+            def refresh(self):
+                self.discoveries += 1
+                self.snapshot = (OwnedProviderGame("440", "Team Fortress 2"),)
+
+            def installed(self):
+                return ()
+
+        class SteamSource:
+            config = object()
+            refresh = Mock()
+
+            def reload_config(self):
+                return self.config
+
+        for authentication, expected_discoveries, expected_available in (
+                ("authenticated", 1, ["440"]), ("unauthenticated", 0, [])):
+            with self.subTest(authentication=authentication), tempfile.TemporaryDirectory() as directory:
+                aurelia = AureliaSource(authentication)
+                steam = SteamSource()
+                plugins = SimpleNamespace(with_capability=lambda capability: (
+                    (aurelia,) if capability == "installed_catalogue" else ()))
+                store = CatalogueStore(Path(directory) / "catalogue.sqlite3")
+                catalog = ConsoleCatalog(store=store, provider=object(),
+                                         steam_entitlements=steam, plugin_registry=plugins)
+                catalog.external_entitlements = (aurelia,)
+                with patch("lulu.onboarding.onboarding_state", return_value={
+                        "selected_providers": ["steam"], "selected_integrations": []}):
+                    catalog.refresh({"steam"})
+                self.assertEqual(aurelia.discoveries, expected_discoveries)
+                self.assertEqual([game.provider_id for game in store.list_available_games("steam-aurelia")],
+                                 expected_available)
+                steam.refresh.assert_not_called()
+
     def test_acquisitiond_reload_loads_rpc_secret_authenticates_and_registers_executor(self) -> None:
         executor = object()
         client = SimpleNamespace(health=AsyncMock(return_value={"version": "26.2"}))

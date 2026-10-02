@@ -52,7 +52,22 @@ def normalize_game(value: object, *, provider_id_keys: tuple[str, ...],
                              str(item.get("platform") or "PC"),
                              str(item.get("artwork_url") or item.get("cover") or ""),
                              int(item.get("last_played") or 0),
-                             str(item.get("availability_state") or "available"))
+                              str(item.get("availability_state") or "available"))
+
+
+def catalogue_authentication_state(source: object) -> str:
+    """Return provider auth state without assuming credentials are local files.
+
+    Providers with daemon/service-owned sessions implement
+    ``catalogue_authentication_status()``. Existing file-backed providers keep
+    the historical auth-artifact check as the default behavior.
+    """
+    status = getattr(source, "catalogue_authentication_status", None)
+    if callable(status):
+        value = str(status()).strip().lower().replace("_", "-")
+        return value or "unavailable"
+    auth_path = getattr(source, "config_path", None) or getattr(source, "auth_path", None)
+    return "authenticated" if auth_path is not None and auth_path.is_file() else "authentication-required"
 
 
 class SnapshotEntitlementSource:
