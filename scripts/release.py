@@ -22,6 +22,9 @@ from typing import Iterable
 PAYLOAD_DIRS = ("ui", "scripts", "config", "packaging", "packages")
 RUNTIME_EXCLUDED_SCRIPTS = (
     "dev-runtime.sh",
+    "configure-dev-sunshine-firewall.sh",
+    "epic-acquisition-test.py",
+    "gamescope-dbus-probe.py",
     "sessiond-dbus-probe.py",
     "steam-lifecycle-probe.py",
     "steam-bootstrap.sh",
@@ -29,6 +32,7 @@ RUNTIME_EXCLUDED_SCRIPTS = (
     "provision-steamcmd.sh",
     "migrate-prowlarr-key.sh",
     "usenet-acquisition-test.py",
+    "test_provisioning.py",
 )
 REQUIRED_FILES = (
     "bin/lulu-shell",

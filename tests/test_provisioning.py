@@ -106,7 +106,9 @@ class ProvisioningTests(unittest.TestCase):
 
     def test_legacy_steam_bootstraps_are_not_in_the_immutable_runtime(self) -> None:
         release_source = (ROOT / "scripts/release.py").read_text()
-        for name in ("steam-session-bootstrap.sh", "steam-bootstrap.sh", "provision-steamcmd.sh"):
+        for name in ("steam-session-bootstrap.sh", "steam-bootstrap.sh", "provision-steamcmd.sh",
+                     "gamescope-dbus-probe.py", "sessiond-dbus-probe.py",
+                     "epic-acquisition-test.py", "test_provisioning.py"):
             self.assertIn(f'"{name}"', release_source)
         console_ui = (PAYLOAD / "scripts/console-ui.sh").read_text()
         self.assertNotIn("steam-session-bootstrap", console_ui)
