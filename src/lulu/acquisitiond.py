@@ -44,6 +44,10 @@ LOGGER = logging.getLogger("lulu.acquisitiond")
 
 def _completed_job_refresh_stages(provider: str) -> list[str]:
     """Return catalogue stages invalidated by a completed provider job."""
+    if provider == "steam-aurelia":
+        # Aurelia is a distinct acquisition identity, but Steam's installed
+        # catalogue remains authoritative for the shared Steam library.
+        return ["steam"]
     stages = [provider]
     if provider == "romm":
         # RomM downloads are materialized into the local ROM library. Refresh
@@ -132,8 +136,9 @@ class AcquisitionInterface(ServiceInterface):
             job = self.manager.jobs.get(job_id)
             if job is None:
                 return
+            catalogue_provider = "steam" if job.provider == "steam-aurelia" else job.provider
             source = next((item for item in self.plugins.with_capability("installed_catalogue")
-                           if str(getattr(item, "provider_id", "")) == job.provider), None)
+                           if str(getattr(item, "provider_id", "")) == catalogue_provider), None)
             if source is None or self.bus is None:
                 return
             # Consoled owns provider refresh and catalogue delta publication.
