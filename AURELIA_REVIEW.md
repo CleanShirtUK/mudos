@@ -1,4 +1,4 @@
-# EXTREMELY EARLY DEVELOPMENT BUILD — NOT FOR GENERAL USE
+# ⚠️ EXTREMELY EARLY DEVELOPMENT BUILD — NOT FOR GENERAL USE ⚠️
 
 This document covers the Mudos Aurelia review build. It is based on the
 physically tested checkpoint `checkpoint/aurelia-only-steam-56827df-20261002`
@@ -18,16 +18,19 @@ Aurelia → Mudos Installable → Acquisitiond → canonical Steam library
         → Mudos UI → Sessiond → Aurelia → Proton/Wine → Gamescope
 ```
 
-- **External dependency:** Aurelia is not bundled. `packages/aurelia/PKGBUILD`
-  fetches upstream release/tag **v0.1.38** and verifies executable SHA-256
+- **External dependency:** Aurelia is an independent external dependency.
+  Mudos does not bundle Aurelia source or its executable, and does not patch,
+  fork, or embed Aurelia. `packages/aurelia/PKGBUILD` fetches upstream
+  release/tag **v0.1.38** and verifies the official artifact SHA-256
   `3b67cf258100d466a75095c60b3500dfe1803cf1d803e1f414f1cf53d8c80a8e`.
   `scripts/provision-aurelia.sh` builds and installs that package through
   `makepkg` and `pacman`, then checks the installed package identity. This
   preserves Aurelia's separate source, licensing, and release lifecycle.
 - **Version display:** the official v0.1.38 release executable itself prints
-  `aurelia 0.1.37` for `--version`. The upstream release tag and pinned binary
-  checksum define the dependency identity; the executable's reported version
-  string is an upstream presentation distinction, not a different artifact.
+  `aurelia 0.1.37` for `--version`. This is an upstream release/versioning
+  characteristic. The upstream tag and official artifact checksum define the
+  dependency identity; the reported version does not indicate a Mudos-modified
+  or Mudos-built executable.
 - **Clean install:** `./install-mudos.sh` builds/verifies/activates the Mudos
   immutable release, provisions the pinned Aurelia package as an external
   dependency, configures `LULU_AURELIA_EXECUTABLE=/usr/bin/aurelia` in the
@@ -70,6 +73,12 @@ pinned release URL/checksum, sets the executable path, writes the provider
 enablement without replacing unrelated provider settings, and initializes the
 Aurelia library config as the Mudos user. Authentication remains a separate
 user action. No legacy Steam client or SteamCMD is installed.
+
+**Clean-install limitation:** this exact review snapshot has been validated
+through installer dry-run, pinned Aurelia package construction/checksum
+verification, configuration tests, and Mudos release-manifest verification.
+It has **not** been physically installed from scratch on a clean appliance.
+It must not be considered a verified turnkey installation.
 
 For a reproducible inactive Mudos candidate, use the canonical release builder
 on the canonical build host from a clean committed review branch:
