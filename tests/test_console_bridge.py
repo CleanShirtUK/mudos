@@ -4,6 +4,7 @@ import http.client
 import json
 from pathlib import Path
 import unittest
+from unittest.mock import patch
 
 
 ROOT = Path(__file__).parents[1]
@@ -310,6 +311,29 @@ class ConsoleBridgeTests(unittest.TestCase):
             self.assertIsInstance(result["token"], str)
             self.assertEqual(json.loads(json.dumps(result))["token"], "transaction-token")
             self.assertEqual(result, {"token": "transaction-token", "navigation_only": False})
+
+        asyncio.run(exercise())
+
+    def test_aurelia_launch_is_independently_selected(self) -> None:
+        class Session:
+            async def call_request_aurelia_launch(self, appid: str, timeout: int) -> str:
+                self.request = (appid, timeout)
+                return "aurelia-token"
+
+            async def call_request_steam_launch(self, appid: str, timeout: int) -> str:
+                raise AssertionError("selected Aurelia route fell back to production Steam")
+
+        class Consoled:
+            async def call_launch_game(self, game_id: str, timeout: int) -> str:
+                raise AssertionError("Steam launch bypassed sessiond")
+
+        async def exercise() -> None:
+            session = Session()
+            bridge = BRIDGE.ConsoleUiBridge(asyncio.get_running_loop(), Consoled(), session)
+            with patch.dict(BRIDGE.os.environ, {"LULU_STEAM_LAUNCH_PROVIDER": "steam-aurelia"}):
+                result = await bridge.launch_game("steam:104200")
+            self.assertEqual(result, {"token": "aurelia-token", "navigation_only": False})
+            self.assertEqual(session.request, ("104200", 15000))
 
         asyncio.run(exercise())
 

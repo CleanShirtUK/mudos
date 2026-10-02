@@ -37,7 +37,7 @@ class AureliaCapabilities:
     acquisition_cancel: bool = True
     updates: bool = False  # Provider command exists; Acquisitiond update jobs are not wired yet.
     dlc: bool = False  # DLC operations exist upstream; Mudos component jobs are not wired yet.
-    launch: bool = False  # Must remain false until Sessiond owns the integrated path.
+    launch: bool = True  # Sessiond route exists; still separately gated by explicit opt-in.
     running_state: bool = True
     authentication_status: bool = True
     detailed_launch_progress: bool = False
@@ -337,6 +337,20 @@ class AureliaClient:
     async def launch(self, app_id: str) -> Any:
         return await self.command("play", app_id, "--no-update", "--no-script", timeout=24 * 3600)
 
+    async def spawn_play(self, app_id: str) -> asyncio.subprocess.Process:
+        """Start blocking `play` without blocking Sessiond's event loop."""
+        if not app_id.isdecimal() or int(app_id) < 1:
+            raise AureliaError("invalid-app-id", "Aurelia launch requires a positive AppID")
+        if not self.available:
+            raise AureliaError("unavailable", "Aurelia executable is unavailable", retryable=True)
+        self._ensure_config_dir()
+        return await asyncio.create_subprocess_exec(
+            self.executable, "--json", "play", app_id, "--no-update", "--no-script",
+            env=self._environment(), stdin=asyncio.subprocess.DEVNULL,
+            stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL,
+            start_new_session=True,
+        )
+
     async def running(self) -> Any:
         return await self.command("running")
 
@@ -582,6 +596,8 @@ class AureliaLaunchController:
         self.app_id: str | None = None
         self.error: str | None = None
         self._task: asyncio.Task[Any] | None = None
+        self._runner_pid: int | None = None
+        self._launch_result: Any = None
 
     def can_launch(self, app_id: str) -> bool:
         return bool(app_id.isdecimal() and int(app_id) > 0 and self.client.available)
@@ -592,8 +608,8 @@ class AureliaLaunchController:
         if self._task and not self._task.done():
             raise AureliaError("busy", "Aurelia launch is already active")
         self.app_id, self.error, self.state = app_id, None, "requested"
-        self._task = asyncio.create_task(self._play())
         self.state = "preparing"
+        self._task = asyncio.create_task(self._play())
 
     async def _play(self) -> None:
         assert self.app_id is not None
@@ -601,7 +617,7 @@ class AureliaLaunchController:
             # The CLI provides no reliable pre-spawn phase signal. `preparing`
             # remains until the AppID appears in the provider running list.
             self.state = "preparing"
-            await self.client.launch(self.app_id)
+            self._launch_result = await self.client.launch(self.app_id)
             if self.state != "cancelled":
                 self.state = "exited"
         except asyncio.CancelledError:
@@ -621,9 +637,17 @@ class AureliaLaunchController:
             except AureliaError:
                 # An unavailable observation is not evidence of exit/failure.
                 return self.state
-            rows = value.get("running", []) if isinstance(value, dict) else []
-            if any(str(row.get("app_id")) == self.app_id for row in rows if isinstance(row, dict)):
-                self.state = "running"
+            rows = value.get("running", []) if isinstance(value, dict) else None
+            if not isinstance(rows, list):
+                self.error = "malformed-running-state"
+                return self.state
+            match = next((row for row in rows if isinstance(row, dict)
+                          and str(row.get("app_id")) == self.app_id), None)
+            if match is not None:
+                pid = match.get("pid")
+                if isinstance(pid, int) and pid > 1 and _process_has_app_id(pid, self.app_id):
+                    self._runner_pid = pid
+                    self.state = "running"
         return self.state
 
     async def stop(self) -> str:
@@ -640,7 +664,35 @@ class AureliaLaunchController:
             self.state = "failed"
         return self.state
 
+    @property
+    def runner_pid(self) -> int | None:
+        return self._runner_pid
+
+    @property
+    def launch_task(self) -> asyncio.Task[Any] | None:
+        return self._task
+
+    async def cancel_preparing(self) -> str:
+        """Cancel only a not-yet-running play request; never imply game stop."""
+        if self.state == "running":
+            raise AureliaError("already-running", "Aurelia game is running; use the explicit stop operation")
+        if self._task and not self._task.done():
+            self._task.cancel()
+            await asyncio.gather(self._task, return_exceptions=True)
+        self.state = "cancelled"
+        return self.state
+
     def snapshot(self) -> dict[str, object]:
         return {"provider": PROVIDER_ID, "app_id": self.app_id,
                 "state": self.state, "error": self.error,
                 "detailed_launch_progress": False}
+
+
+def _process_has_app_id(pid: int, app_id: str) -> bool:
+    """Require kernel process evidence, rather than trusting Aurelia's PID JSON."""
+    try:
+        raw = Path(f"/proc/{pid}/environ").read_bytes()
+    except OSError:
+        return False
+    expected = {f"STEAM_COMPAT_APP_ID={app_id}".encode(), f"SteamAppId={app_id}".encode()}
+    return any(value in expected for value in raw.split(b"\0"))

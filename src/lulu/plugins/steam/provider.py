@@ -782,7 +782,8 @@ class SteamProvider:
                 if entry.stat().st_uid != os.getuid():
                     continue
                 env = self._environment(pid)
-                if env.get("SteamAppId") != app_id and env.get("SteamGameId") != app_id:
+                if (env.get("SteamAppId") != app_id and env.get("SteamGameId") != app_id
+                        and env.get("STEAM_COMPAT_APP_ID") != app_id):
                     continue
                 executable = os.path.realpath(f"/proc/{pid}/exe")
                 argv = self._argv(pid)
@@ -796,6 +797,15 @@ class SteamProvider:
     def presentation_pids(self, app_id: str) -> list[int]:
         """Return current non-runtime AppID processes that may own its window."""
         return self._candidate_pids(app_id)
+
+    @staticmethod
+    def _process_has_app_id(pid: int, app_id: str) -> bool:
+        try:
+            env = SteamProvider._environment(pid)
+        except (FileNotFoundError, PermissionError, OSError):
+            return False
+        return (env.get("SteamAppId") == app_id or env.get("SteamGameId") == app_id
+                or env.get("STEAM_COMPAT_APP_ID") == app_id)
 
     @staticmethod
     def _environment(pid: int) -> dict[str, str]:

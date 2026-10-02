@@ -32,6 +32,7 @@ from .paths import PATHS
 from .service_readiness import wait_for_lulu_services
 from .recovery import clear_failures, record_failure, recovery_required
 from .settings import SettingsStore
+from .provider_config import ProviderConfigurationService
 
 
 BUS_NAME = "org.lulu.ConsoleSessiond"
@@ -105,6 +106,8 @@ class ConsoleSessionInterface(ServiceInterface):
                 "launch_cancellable": bool(
                     (active_launch_task is not None and not active_launch_task.done())
                     or (steam_launch_task is not None and not steam_launch_task.done())
+                    or (getattr(self.supervisor, "_aurelia_launch_task", None) is not None
+                        and not self.supervisor._aurelia_launch_task.done())
                 ),
                 "controller": {
                     "navigation_controller_id": self.controller_registry.navigation_controller_id,
@@ -503,6 +506,15 @@ class ConsoleSessionInterface(ServiceInterface):
         identity = self._local_identity or getattr(supervisor, "active_identity", None)
         if identity is not None:
             owned_pids.add(identity.pid)
+            aurelia_app_id = getattr(supervisor, "_aurelia_app_id", None)
+            if aurelia_app_id is not None:
+                # Aurelia's play CLI can share a process group with its runner.
+                # Only the existing Steam AppID matcher defines Aurelia game
+                # ownership; never absorb the CLI/Steam daemon by process group.
+                provider = getattr(supervisor, "_steam_provider", None)
+                if provider is not None:
+                    owned_pids.update(provider._candidate_pids(aurelia_app_id))
+                return owned_pids
             try:
                 owned_pids.update(supervisor._process_group_members(identity.pgid))
             except (AttributeError, OSError, ProcessLookupError):
@@ -838,6 +850,16 @@ class ConsoleSessionInterface(ServiceInterface):
             raise self._error(error) from error
 
     @method()
+    def RequestAureliaLaunch(self, app_id: "s", startup_timeout_ms: "u") -> "s":
+        try:
+            if not ProviderConfigurationService.from_environment().provider(
+                    "providers.steam_aurelia").enabled:
+                raise ValueError("Steam Aurelia launch is disabled; explicitly enable the experimental provider first")
+            return self.supervisor.queue_aurelia_launch(app_id, startup_timeout_ms)
+        except ValueError as error:
+            raise self._error(error) from error
+
+    @method()
     async def CancelLaunch(self) -> "":
         task = asyncio.current_task()
         LOGGER.info("CANCEL_DBUS_ENTER task=%s task_id=%s", task.get_name() if task is not None else "none", id(task) if task is not None else None)
@@ -847,6 +869,13 @@ class ConsoleSessionInterface(ServiceInterface):
             raise self._error(error) from error
         finally:
             LOGGER.info("CANCEL_DBUS_FINALLY task=%s task_id=%s", task.get_name() if task is not None else "none", id(task) if task is not None else None)
+
+    @method()
+    async def StopGame(self) -> "":
+        try:
+            await self.supervisor.stop_aurelia_game()
+        except ValueError as error:
+            raise self._error(error) from error
 
     @method()
     async def RequestSteamStore(self, startup_timeout_ms: "u") -> "s":

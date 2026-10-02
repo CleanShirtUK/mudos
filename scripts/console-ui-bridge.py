@@ -274,9 +274,14 @@ class ConsoleUiBridge:
         appid = game_id.removeprefix("steam:")
         self.launch_logs.note("Lulu", f"HTTP launch request started game_id={game_id}")
         if game_id.startswith("steam:"):
-            token = normalize_launch_token(await self.sessiond.call_request_steam_launch(appid, 15000))
+            if os.environ.get("LULU_STEAM_LAUNCH_PROVIDER") == "steam-aurelia":
+                token = normalize_launch_token(await self.sessiond.call_request_aurelia_launch(appid, 15000))
+                self.launch_logs.note("Steam Aurelia", f"aurelia play {appid}")
+            else:
+                token = normalize_launch_token(await self.sessiond.call_request_steam_launch(appid, 15000))
             self.launch_logs.note("Lulu", f"session launch boundary reached game_id={game_id} appid={appid} token={token}")
-            self.launch_logs.note("Steam", f"steam://rungameid/{appid}")
+            if os.environ.get("LULU_STEAM_LAUNCH_PROVIDER") != "steam-aurelia":
+                self.launch_logs.note("Steam", f"steam://rungameid/{appid}")
         else:
             startup_timeout = 120000 if game_id.startswith("epic:") else 15000
             token = await self.consoled.call_launch_game(game_id, startup_timeout)

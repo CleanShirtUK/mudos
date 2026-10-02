@@ -199,6 +199,32 @@ class AureliaAcquisitionTests(unittest.IsolatedAsyncioTestCase):
 
 
 class AureliaLaunchTests(unittest.IsolatedAsyncioTestCase):
+    async def test_running_pid_requires_exact_kernel_appid_evidence(self):
+        class Client:
+            available = True
+            async def launch(self, _app_id): await asyncio.Event().wait()
+            async def running(self): return {"running": [{"app_id": "40800", "pid": 999}]}
+
+        controller = AureliaLaunchController(Client())
+        await controller.request("40800")
+        with patch("lulu.plugins.steam.aurelia._process_has_app_id", return_value=False):
+            self.assertEqual(await controller.observe(), "preparing")
+        self.assertIsNone(controller.runner_pid)
+        await controller.cancel_preparing()
+        self.assertEqual(controller.state, "cancelled")
+
+    async def test_malformed_running_state_does_not_claim_game_running(self):
+        class Client:
+            available = True
+            async def launch(self, _app_id): await asyncio.Event().wait()
+            async def running(self): return {"running": "not-a-list"}
+
+        controller = AureliaLaunchController(Client())
+        await controller.request("40800")
+        self.assertEqual(await controller.observe(), "preparing")
+        self.assertEqual(controller.error, "malformed-running-state")
+        await controller.cancel_preparing()
+
     async def test_coarse_state_and_cancel_remain_provider_operation_only(self):
         class Client:
             available = True
@@ -214,7 +240,8 @@ class AureliaLaunchTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(controller.can_launch("40800"))
         await controller.request("40800")
         await client.started.wait()
-        self.assertEqual(await controller.observe(), "running")
+        with patch("lulu.plugins.steam.aurelia._process_has_app_id", return_value=True):
+            self.assertEqual(await controller.observe(), "running")
         state = await controller.stop()
         self.assertEqual(state, "cancelled")
         snapshot = controller.snapshot()

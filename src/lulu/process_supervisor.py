@@ -15,6 +15,7 @@ from .contracts import InputMode, LaunchDescriptor, Presentation
 from .gamescope import GamescopePresentation
 from .launch_identity import LaunchIdentity
 from .plugins.steam.provider import SteamLaunch, SteamProvider, SteamLaunchRequest
+from .plugins.steam.aurelia import AureliaClient, AureliaError
 
 
 def _redact_argv(argv: tuple[str, ...] | list[str]) -> tuple[str, ...]:
@@ -75,6 +76,10 @@ class ProcessSupervisor:
         self._shell_identity: LaunchIdentity | None = None
         self._shell_watch_task: asyncio.Task[None] | None = None
         self._steam_launch_task: asyncio.Task[str] | None = None
+        self._aurelia_launch_task: asyncio.Task[str] | None = None
+        self._aurelia_process: asyncio.subprocess.Process | None = None
+        self._aurelia_app_id: str | None = None
+        self._aurelia_client: AureliaClient | None = None
         self._steam_store_watch_task: asyncio.Task[None] | None = None
         self._steam_store_window: int | None = None
         self._shell_output_tasks: list[asyncio.Task[None]] = []
@@ -459,7 +464,9 @@ class ProcessSupervisor:
         return members
 
     async def cancel_launch(self) -> None:
-        task = self._active_launch_task or self._steam_launch_task
+        if self._aurelia_app_id is not None and self.model.state.lifecycle.value == "game":
+            raise ValueError("Aurelia game is already running; use StopGame, not CancelLaunch")
+        task = self._active_launch_task or self._steam_launch_task or self._aurelia_launch_task
         if task is None:
             return
         if task is asyncio.current_task():
@@ -486,6 +493,8 @@ class ProcessSupervisor:
             raise
         finally:
             self._logger.info("CANCEL_LAUNCH_GATHER_FINALLY target=%s target_id=%s done=%s cancelled=%s", task.get_name(), id(task), task.done(), task.cancelled())
+        if self._aurelia_app_id is not None and self.model.state.lifecycle.value == "game":
+            raise ValueError("Aurelia game started during cancellation; use StopGame to stop it")
         if self._process is not None:
             try:
                 await self._terminate_group(os.getpgid(self._process.pid))
@@ -496,7 +505,8 @@ class ProcessSupervisor:
         if self._steam_launch is not None:
             await provider.stop(self._steam_launch)
             self._steam_launch = None
-        await provider.stop_owned_client()
+        if self._aurelia_app_id is None:
+            await provider.stop_owned_client()
         if self.model.state.lifecycle.value != "shell":
             self.model.fail(self.model.state.launch_token, "launch cancelled")
             self._set_input_mode(InputMode.SHELL)
@@ -507,6 +517,10 @@ class ProcessSupervisor:
         self._steam_store_window = None
         self._active_launch_task = None
         self._steam_launch_task = None
+        self._aurelia_launch_task = None
+        if self.model.state.lifecycle.value == "shell":
+            self._aurelia_app_id = None
+            self._aurelia_process = None
         await self._notify()
 
     async def launch_steam(self, app_id: str, startup_timeout_ms: int) -> str:
@@ -764,6 +778,187 @@ class ProcessSupervisor:
         self._steam_launch = None
         await self._notify()
 
+    def queue_aurelia_launch(self, app_id: str, startup_timeout_ms: int) -> str:
+        if startup_timeout_ms < 1:
+            raise ValueError("startup timeout must be positive")
+        if not app_id.isdecimal() or int(app_id) < 1:
+            raise ValueError("Steam AppID must be a positive integer")
+        if self.active_identity is not None or self.model.state.lifecycle.value != "shell":
+            raise ValueError("another launch owns the session")
+        token = self.model.request_launch(f"steam-aurelia:{app_id}")
+        self._aurelia_launch_task = asyncio.create_task(
+            self._launch_aurelia(app_id, startup_timeout_ms, token),
+            name=f"aurelia-launch-{token}",
+        )
+        return token
+
+    async def _launch_aurelia(self, app_id: str, startup_timeout_ms: int, token: str) -> str:
+        async with self._launch_lock:
+            client = self._aurelia_client or AureliaClient()
+            self._aurelia_client = client
+            provider = self._steam_provider or SteamProvider()
+            self._steam_provider = provider
+            process: asyncio.subprocess.Process | None = None
+            game: LaunchIdentity | None = None
+            self._active_launch_task = asyncio.current_task()
+            try:
+                await self._notify()
+                self.model.launch_starting(token)
+                await self._notify()
+                process = await client.spawn_play(app_id)
+                self._aurelia_process, self._aurelia_app_id = process, app_id
+                deadline = asyncio.get_running_loop().time() + startup_timeout_ms / 1000
+                # Aurelia's JSON PID is only a hint and can be a runner. Verify
+                # its exact AppID marker, then let SteamProvider select the actual
+                # game PID from its established AppID-filtered candidate set.
+                while game is None:
+                    candidates = provider._candidate_pids(app_id)
+                    try:
+                        running = await client.running()
+                    except AureliaError as error:
+                        if process.returncode is not None:
+                            raise RuntimeError(f"Aurelia CLI exited before game detection ({process.returncode}); running query failed") from error
+                        if asyncio.get_running_loop().time() > deadline:
+                            raise RuntimeError("Aurelia daemon unavailable before game detection") from error
+                        await asyncio.sleep(provider.poll_interval)
+                        continue
+                    rows = running.get("running") if isinstance(running, dict) else None
+                    if not isinstance(rows, list):
+                        raise RuntimeError("Aurelia returned malformed running-state data")
+                    row = next((item for item in rows if isinstance(item, dict)
+                                and str(item.get("app_id")) == app_id), None)
+                    pid = row.get("pid") if row is not None else None
+                    if (isinstance(pid, int) and pid > 1
+                            and provider._process_has_app_id(pid, app_id) and candidates):
+                        # The verified Aurelia record establishes that Aurelia
+                        # is tracking this AppID; it is not assumed to be the
+                        # window-owning game. Select the actual game PID using
+                        # SteamProvider's established candidate ordering.
+                        game_pid = candidates[0]
+                        if not provider._process_has_app_id(game_pid, app_id):
+                            raise RuntimeError("Steam process correlation returned a PID without the exact AppID marker")
+                        game = LaunchIdentity(token, game_pid, os.getpgid(game_pid),
+                                              os.path.realpath(f"/proc/{game_pid}/exe"),
+                                              provider._argv(game_pid))
+                        break
+                    if process.returncode is not None:
+                        raise RuntimeError(f"Aurelia CLI exited before a verified game appeared (status {process.returncode})")
+                    if asyncio.get_running_loop().time() >= deadline:
+                        raise TimeoutError(f"Aurelia launch timed out waiting for verified AppID {app_id} process")
+                    await asyncio.sleep(provider.poll_interval)
+
+                self.model.primary_observed(token)
+                await self._notify()
+                if self._presentation is not None:
+                    self._presentation.select_pids(lambda: provider._candidate_pids(app_id), timeout=self._presentation_watchdog)
+                self._set_input_mode(InputMode.GAME)
+                self.model.primary_started(token, presentation=Presentation.GAME, input_mode=InputMode.GAME)
+                if hasattr(self._presentation, "suspend_shell_window"):
+                    await self._presentation_call(self._presentation.suspend_shell_window)
+                self.active_identity = game
+                await self._notify()
+                self._watch_task = asyncio.create_task(self._watch_aurelia(provider, app_id, game),
+                                                       name=f"aurelia-game-watch-{token}")
+                self._active_launch_task = None
+                return token
+            except asyncio.CancelledError:
+                if process is not None and process.returncode is None:
+                    process.terminate()
+                    try:
+                        await asyncio.wait_for(process.wait(), timeout=5)
+                    except TimeoutError:
+                        process.kill()
+                        await process.wait()
+                # Aurelia provides no play-cancel API. Observe a settling window
+                # after reaping only our CLI child to catch a launch handoff race.
+                deadline = asyncio.get_running_loop().time() + 2
+                appeared = False
+                while asyncio.get_running_loop().time() < deadline:
+                    if provider._candidate_pids(app_id):
+                        appeared = True
+                        break
+                    await asyncio.sleep(max(provider.poll_interval, 0.05))
+                if appeared:
+                    try:
+                        await client.stop(app_id)
+                    except AureliaError as error:
+                        self._logger.error("Aurelia launch raced cancellation and stop failed app_id=%s error=%s", app_id, error)
+                    deadline = asyncio.get_running_loop().time() + 10
+                    while asyncio.get_running_loop().time() < deadline:
+                        if not provider._candidate_pids(app_id):
+                            break
+                        await asyncio.sleep(max(provider.poll_interval, 0.05))
+                    if provider._candidate_pids(app_id):
+                        await self._adopt_aurelia_game(token, app_id, provider)
+                        return token
+                raise
+            except (AureliaError, OSError, RuntimeError, TimeoutError, ValueError) as error:
+                if process is not None and process.returncode is None:
+                    process.terminate()
+                    await process.wait()
+                self.model.fail(token, f"Aurelia launch failed: {error}")
+                self.model.record_result(ProcessResult(token, game.pid if game else None,
+                    game.pgid if game else None, game.executable if game else "aurelia",
+                    game.argv if game else ("aurelia", "play", app_id), None, None,
+                    "start-failed", str(error)))
+                self._set_input_mode(InputMode.SHELL)
+                if self._presentation is not None and self._shell_process is not None:
+                    await self._presentation_call(lambda: self._presentation.select_shell(self._shell_process.pid))
+                self.model.return_complete(token)
+                self._aurelia_app_id = None
+                self._aurelia_process = None
+                await self._notify()
+                raise ValueError(f"Aurelia launch failed: {error}") from error
+            finally:
+                self._active_launch_task = None
+
+    async def _adopt_aurelia_game(self, token: str, app_id: str, provider: SteamProvider) -> None:
+        """Keep Sessiond authoritative if a game wins the cancellation race."""
+        candidates = provider._candidate_pids(app_id)
+        if not candidates:
+            return
+        pid = candidates[0]
+        if not provider._process_has_app_id(pid, app_id):
+            raise RuntimeError("cannot adopt Aurelia cancellation-race process without exact AppID evidence")
+        identity = LaunchIdentity(token, pid, os.getpgid(pid),
+                                  os.path.realpath(f"/proc/{pid}/exe"), provider._argv(pid))
+        self.model.primary_observed(token)
+        if self._presentation is not None:
+            self._presentation.select_pids(lambda: provider._candidate_pids(app_id), timeout=self._presentation_watchdog)
+        self._set_input_mode(InputMode.GAME)
+        self.model.primary_started(token, presentation=Presentation.GAME, input_mode=InputMode.GAME)
+        self.active_identity = identity
+        self._watch_task = asyncio.create_task(self._watch_aurelia(provider, app_id, identity),
+                                               name=f"aurelia-game-watch-{token}")
+        await self._notify()
+
+    async def _watch_aurelia(self, provider: SteamProvider, app_id: str, identity: LaunchIdentity) -> None:
+        # Track the verified AppID process set, not the blocking CLI or daemon.
+        absent_since: float | None = None
+        loop = asyncio.get_running_loop()
+        while absent_since is None or loop.time() - absent_since < 0.5:
+            if provider._candidate_pids(app_id):
+                absent_since = None
+            elif absent_since is None:
+                absent_since = loop.time()
+            await asyncio.sleep(provider.poll_interval)
+        self.model.primary_exited(identity.token)
+        self.model.record_result(ProcessResult(identity.token, identity.pid, identity.pgid,
+            identity.executable, identity.argv, 0, None, "success"))
+        try:
+            self._set_input_mode(InputMode.SHELL)
+            if self._presentation is not None and self._shell_process is not None:
+                await self._presentation_call(lambda: self._presentation.select_shell(self._shell_process.pid))
+        except Exception as error:
+            self.model.return_failed(identity.token, f"Presentation recovery failed: {error}")
+            await self._notify()
+            return
+        self.model.return_complete(identity.token)
+        self.active_identity = None
+        self._aurelia_app_id = None
+        self._aurelia_process = None
+        await self._notify()
+
     async def _terminate_group(self, pgid: int) -> None:
         try:
             os.killpg(pgid, signal.SIGTERM)
@@ -776,6 +971,13 @@ class ProcessSupervisor:
             pass
 
     async def stop(self) -> None:
+        if self._aurelia_launch_task is not None and not self._aurelia_launch_task.done():
+            try:
+                await self.cancel_launch()
+            except ValueError:
+                if self._aurelia_app_id is None or self.model.state.lifecycle.value != "game":
+                    raise
+                await self.stop_aurelia_game()
         if self._steam_store_watch_task is not None:
             self._steam_store_watch_task.cancel()
             await asyncio.gather(self._steam_store_watch_task, return_exceptions=True)
@@ -784,6 +986,9 @@ class ProcessSupervisor:
             await (self._steam_provider or SteamProvider()).stop(self._steam_launch)
             if self._watch_task is not None:
                 await self._watch_task
+        if self._aurelia_app_id is not None:
+            await self.stop_aurelia_game()
+            return
         if self._shell_process is not None:
             await self._terminate_group(os.getpgid(self._shell_process.pid))
             if self._shell_watch_task is not None:
@@ -801,7 +1006,19 @@ class ProcessSupervisor:
         identity = self.active_identity
         if identity is None or self.model.state.launch_token != identity.token:
             raise ValueError("no owned game session is active")
+        if self._aurelia_app_id is not None:
+            await self.stop_aurelia_game()
+            return
         await self._terminate_group(identity.pgid)
+        if self._watch_task is not None:
+            await self._watch_task
+
+    async def stop_aurelia_game(self) -> None:
+        """Stop a verified running title through Aurelia, never by process group."""
+        app_id = self._aurelia_app_id
+        if app_id is None or self.model.state.lifecycle.value != "game":
+            raise ValueError("no running Aurelia game is owned by this session")
+        await (self._aurelia_client or AureliaClient()).stop(app_id)
         if self._watch_task is not None:
             await self._watch_task
 

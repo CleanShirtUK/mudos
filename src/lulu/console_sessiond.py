@@ -73,6 +73,9 @@ class SessionStateModel:
             # though they are not ordinary game launches.
             self.state.session_kind = "game"
             self.state.provider_id = "steam"
+        elif identity.startswith("steam-aurelia:"):
+            self.state.session_kind = "game"
+            self.state.provider_id = "steam-aurelia"
         else:
             self.state.session_kind = "game"
             self.state.provider_id = None
