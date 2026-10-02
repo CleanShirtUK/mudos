@@ -34,7 +34,6 @@ class ApplianceSessionRecoveryTests(unittest.TestCase):
         interface = ConsoleSessionInterface.__new__(ConsoleSessionInterface)
         interface._bootstrap_output = None
         interface.recovery_mode = False
-        interface._select_ready_shell = AsyncMock()
         interface.supervisor = SimpleNamespace(launch_shell=AsyncMock())
 
         async def exercise() -> None:

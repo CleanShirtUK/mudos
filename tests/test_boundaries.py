@@ -1051,7 +1051,6 @@ class BoundaryTests(unittest.TestCase):
         interface._initialized_composites = {}
         interface._bootstrap_output = "HDMI-A-1"
         interface.supervisor = ShellSupervisor()
-        interface._select_ready_shell = AsyncMock()
 
         async def exercise() -> None:
             with patch("lulu.sessiond.has_connected_presentation_output", return_value=True), \

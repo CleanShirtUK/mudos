@@ -198,7 +198,6 @@ class SessiondTests(unittest.TestCase):
         interface._controller_monitor_task = None
         interface._presentation_watchdog_enabled = False
         interface._presentation_watchdog_task = None
-        interface._shell_selection_task = None
         interface._local_identity = None
         interface.StateChanged = lambda state: None
         interface.supervisor = type("Supervisor", (), {

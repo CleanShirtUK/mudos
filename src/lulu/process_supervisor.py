@@ -388,11 +388,15 @@ class ProcessSupervisor:
         except (OSError, RuntimeError, ValueError, subprocess.SubprocessError):
             self._logger.exception("shell input profile restoration failed")
 
-    def ensure_shell_presentation(self) -> None:
+    def ensure_shell_presentation(self) -> int | None:
         if self.model.state.lifecycle.value != "shell":
-            return
+            return None
         if self._presentation is not None and self._shell_process is not None:
-            self._presentation.ensure_shell(self._shell_process.pid)
+            window = self._presentation.ensure_shell(self._shell_process.pid)
+            if (self._presentation.selected_base_window() == window
+                    and self._presentation.window_is_focusable(window)):
+                return window
+        return None
 
     async def _watch(self, identity: LaunchIdentity, process: asyncio.subprocess.Process) -> None:
         exit_code = await process.wait()

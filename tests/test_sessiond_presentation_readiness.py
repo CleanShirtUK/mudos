@@ -1,14 +1,15 @@
 from __future__ import annotations
 
 import asyncio
-from pathlib import Path
+import json
 from types import SimpleNamespace
 import unittest
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import Mock, patch
 
 from dbus_next import DBusError
 
 from lulu.console_sessiond import SessionStateModel
+from lulu.process_supervisor import ProcessSupervisor
 from lulu.sessiond import ConsoleSessionInterface
 
 
@@ -89,7 +90,6 @@ class SessiondPresentationReadinessTests(unittest.TestCase):
         interface._presentation_ready = False
         interface.recovery_mode = False
         interface.supervisor = SimpleNamespace(launch_shell=Mock())
-        interface._select_ready_shell = Mock()
         sleep_calls = 0
 
         async def stop_waiting(_seconds: float) -> None:
@@ -108,85 +108,115 @@ class SessiondPresentationReadinessTests(unittest.TestCase):
         asyncio.run(exercise())
         self.assertEqual(sleep_calls, 3)
         interface.supervisor.launch_shell.assert_not_called()
-        interface._select_ready_shell.assert_not_called()
         self.assertFalse(interface._presentation_ready)
 
-    def test_successful_shell_window_selection_marks_presentation_ready(self) -> None:
+    def test_watchdog_selection_sets_readiness_and_launch_remains_allowed(self) -> None:
         interface = ConsoleSessionInterface.__new__(ConsoleSessionInterface)
+        interface.model = SessionStateModel()
+        interface.controller_registry = SimpleNamespace(
+            navigation_controller_id=None, navigation_mode="all", controllers={})
+        interface._local_identity = None
+        interface._local_provider_id = ""
         interface._presentation_ready = False
         shell_process = SimpleNamespace(returncode=None)
         interface.supervisor = SimpleNamespace(
-            _presentation=SimpleNamespace(select_shell=Mock()),
+            _presentation=object(),
             _shell_process=shell_process,
+            ensure_shell_presentation=Mock(return_value=321),
+            queue_aurelia_launch=Mock(return_value="aurelia-token"),
+            state_details=Mock(return_value={}),
         )
+        aurelia_config = SimpleNamespace(provider=Mock(return_value=SimpleNamespace(enabled=True)))
 
         async def exercise() -> None:
             async def run_in_thread(function, *args):
                 return function(*args)
 
-            with patch.object(Path, "read_text", return_value="321"), \
-                    patch("lulu.sessiond.asyncio.to_thread", side_effect=run_in_thread), \
-                    patch("lulu.sessiond.has_connected_presentation_output", return_value=True):
-                await interface._select_ready_shell()
-
-        asyncio.run(exercise())
-        self.assertTrue(interface._presentation_ready)
-        interface.supervisor._presentation.select_shell.assert_called_once_with(321)
-
-    def test_shell_window_selection_keeps_retrying_until_the_window_is_available(self) -> None:
-        interface = ConsoleSessionInterface.__new__(ConsoleSessionInterface)
-        interface._presentation_ready = False
-        shell_process = SimpleNamespace(returncode=None)
-        select_shell = Mock(side_effect=[RuntimeError("window not ready"), None])
-        interface.supervisor = SimpleNamespace(
-            _presentation=SimpleNamespace(select_shell=select_shell),
-            _shell_process=shell_process,
-        )
-
-        async def exercise() -> None:
-            async def run_in_thread(function, *args):
-                return function(*args)
-
-            with patch.object(Path, "read_text", return_value="321"), \
-                    patch("lulu.sessiond.asyncio.to_thread", side_effect=run_in_thread), \
+            with patch("lulu.sessiond.asyncio.to_thread", side_effect=run_in_thread), \
                     patch("lulu.sessiond.has_connected_presentation_output", return_value=True), \
-                    patch("lulu.sessiond.asyncio.sleep", new=AsyncMock()) as sleep:
-                await interface._select_ready_shell()
-            sleep.assert_awaited_once_with(1.0)
+                    patch("lulu.sessiond.ProviderConfigurationService.from_environment",
+                          return_value=aurelia_config), \
+                    patch.object(interface, "StateChanged", Mock()) as state_changed:
+                await interface._refresh_presentation_readiness()
+                self.assertTrue(interface._presentation_ready)
+                self.assertTrue(json.loads(state_changed.call_args.args[0])["presentation_ready"])
+                token = ConsoleSessionInterface.RequestAureliaLaunch.__wrapped__(
+                    interface, "104200", 15000)
+
+            self.assertEqual(token, "aurelia-token")
+            interface.supervisor.queue_aurelia_launch.assert_called_once_with("104200", 15000)
 
         asyncio.run(exercise())
         self.assertTrue(interface._presentation_ready)
-        self.assertEqual(select_shell.call_count, 2)
+        interface.supervisor.ensure_shell_presentation.assert_called_once_with()
 
-    def test_shell_selection_waits_for_display_return_without_failing_lifecycle(self) -> None:
+    def test_watchdog_clears_readiness_when_output_disappears_and_restores_it(self) -> None:
         interface = ConsoleSessionInterface.__new__(ConsoleSessionInterface)
-        interface._presentation_ready = False
+        interface.model = SessionStateModel()
+        interface.controller_registry = SimpleNamespace(
+            navigation_controller_id=None, navigation_mode="all", controllers={})
+        interface._local_identity = None
+        interface._local_provider_id = ""
+        interface._presentation_ready = True
         shell_process = SimpleNamespace(returncode=None)
-        select_shell = Mock()
         interface.supervisor = SimpleNamespace(
-            _presentation=SimpleNamespace(select_shell=select_shell),
+            _presentation=object(),
             _shell_process=shell_process,
+            ensure_shell_presentation=Mock(return_value=321),
+            queue_aurelia_launch=Mock(return_value="aurelia-token"),
+            state_details=Mock(return_value={}),
         )
-        output_states = iter((False, True, True))
+        aurelia_config = SimpleNamespace(provider=Mock(return_value=SimpleNamespace(enabled=True)))
+        output = False
 
         async def exercise() -> None:
-            async def stop_waiting(_seconds: float) -> None:
-                if not interface._presentation_ready:
-                    return
-
             async def run_in_thread(function, *args):
                 return function(*args)
 
-            with patch.object(Path, "read_text", return_value="321"), \
-                    patch("lulu.sessiond.asyncio.to_thread", side_effect=run_in_thread), \
+            nonlocal output
+            with patch("lulu.sessiond.asyncio.to_thread", side_effect=run_in_thread), \
                     patch("lulu.sessiond.has_connected_presentation_output",
-                          side_effect=lambda: next(output_states, True)), \
-                    patch("lulu.sessiond.asyncio.sleep", side_effect=stop_waiting):
-                await interface._select_ready_shell()
+                          side_effect=lambda: output), \
+                    patch("lulu.sessiond.ProviderConfigurationService.from_environment",
+                          return_value=aurelia_config), \
+                    patch.object(interface, "StateChanged", Mock()):
+                await interface._refresh_presentation_readiness()
+                self.assertFalse(interface._presentation_ready)
+                with self.assertRaisesRegex(DBusError, "no connected DRM presentation output"):
+                    ConsoleSessionInterface.RequestAureliaLaunch.__wrapped__(
+                        interface, "104200", 15000)
+                interface.supervisor.queue_aurelia_launch.assert_not_called()
+
+                output = True
+                await interface._refresh_presentation_readiness()
+                self.assertTrue(interface._presentation_ready)
+                token = ConsoleSessionInterface.RequestAureliaLaunch.__wrapped__(
+                    interface, "104200", 15000)
+                self.assertEqual(token, "aurelia-token")
 
         asyncio.run(exercise())
-        self.assertTrue(interface._presentation_ready)
-        select_shell.assert_called_once_with(321)
+        self.assertEqual(interface.supervisor.ensure_shell_presentation.call_count, 1)
+
+    def test_supervisor_only_reports_shell_ready_after_gamescope_selection_verifies(self) -> None:
+        class Presentation:
+            def __init__(self, selected: int | None) -> None:
+                self.selected = selected
+
+            def ensure_shell(self, _pid: int) -> int:
+                return 321
+
+            def selected_base_window(self) -> int | None:
+                return self.selected
+
+            def window_is_focusable(self, window: int) -> bool:
+                return window == 321
+
+        for selected, expected in ((321, 321), (999, None), (None, None)):
+            with self.subTest(selected=selected):
+                supervisor = ProcessSupervisor(
+                    SessionStateModel(), presentation=Presentation(selected))
+                supervisor._shell_process = SimpleNamespace(pid=123, returncode=None)
+                self.assertEqual(supervisor.ensure_shell_presentation(), expected)
 
 
 if __name__ == "__main__":

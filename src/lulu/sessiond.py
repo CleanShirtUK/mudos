@@ -68,7 +68,7 @@ class ConsoleSessionInterface(ServiceInterface):
         self._inputplumber_event: asyncio.Event | None = None
         self._initialized_composites: dict[str, tuple[str, tuple[str, ...]]] = {}
         self._presentation_watchdog_task: asyncio.Task[None] | None = None
-        self._shell_selection_task: asyncio.Task[None] | None = None
+        self._presentation_wait_log_at = 0.0
         self._gamescope_observer: GamescopeWindowObserver | None = None
         self._observed_game_surface: tuple[int | None, int | None, bool] = (None, None, False)
         self._last_automatic_mode: InputMode | None = None
@@ -104,6 +104,7 @@ class ConsoleSessionInterface(ServiceInterface):
             {
                 "lifecycle": self.model.state.lifecycle.value,
                 "presentation": self.model.state.presentation.value,
+                "presentation_ready": getattr(self, "_presentation_ready", False),
                 "overlay": self.model.state.overlay.value,
                 "input_mode": self.model.state.input_mode.value,
                 "last_failure_reason": self.model.last_failure_reason,
@@ -266,12 +267,38 @@ class ConsoleSessionInterface(ServiceInterface):
 
     async def _monitor_presentation(self) -> None:
         while True:
-            try:
-                if self.model.state.lifecycle.value != "game":
-                    self.supervisor.ensure_shell_presentation()
-            except (OSError, RuntimeError, TimeoutError, subprocess.SubprocessError) as error:
-                logging.getLogger("lulu.sessiond").warning("shell presentation check failed: %s", error)
+            await self._refresh_presentation_readiness()
             await asyncio.sleep(0.5)
+
+    async def _refresh_presentation_readiness(self) -> None:
+        """Keep the readiness gate aligned with verified shell selection."""
+        was_ready = self._presentation_ready
+        shell_process = getattr(self.supervisor, "_shell_process", None)
+        presentation = getattr(self.supervisor, "_presentation", None)
+        if (self.model.state.lifecycle.value != "shell"
+                or not has_connected_presentation_output()
+                or shell_process is None or shell_process.returncode is not None
+                or presentation is None):
+            self._presentation_ready = False
+        else:
+            try:
+                selected_window = await asyncio.to_thread(self.supervisor.ensure_shell_presentation)
+                self._presentation_ready = bool(
+                    selected_window is not None
+                    and has_connected_presentation_output()
+                    and self.model.state.lifecycle.value == "shell"
+                    and self.supervisor._shell_process is shell_process
+                    and shell_process.returncode is None
+                )
+            except (OSError, RuntimeError, TimeoutError, subprocess.SubprocessError) as error:
+                self._presentation_ready = False
+                now = time.monotonic()
+                if now - self._presentation_wait_log_at >= 30:
+                    LOGGER.warning("shell presentation check pending; Sessiond remains active and will retry: %s",
+                                   error)
+                    self._presentation_wait_log_at = now
+        if was_ready != self._presentation_ready:
+            self.StateChanged(self._state_json())
 
     def _reconcile_input_mode(
         self,
@@ -401,41 +428,6 @@ class ConsoleSessionInterface(ServiceInterface):
                     raise
                 LOGGER.warning("DRM output disappeared during shell startup; retaining Sessiond and retrying")
                 await asyncio.sleep(2.0)
-        self._shell_selection_task = asyncio.create_task(self._select_ready_shell())
-
-    async def _select_ready_shell(self) -> None:
-        marker = PATHS.runtime_root / "mudos-shell.pid"
-        last_wait_log = 0.0
-        try:
-            while True:
-                try:
-                    pid = int(marker.read_text().strip())
-                except (FileNotFoundError, ValueError):
-                    await asyncio.sleep(1.0)
-                    continue
-                shell_process = getattr(self.supervisor, "_shell_process", None)
-                if (not has_connected_presentation_output() or shell_process is None
-                        or shell_process.returncode is not None):
-                    await asyncio.sleep(1.0)
-                    continue
-                try:
-                    await asyncio.to_thread(self.supervisor._presentation.select_shell, pid)
-                    if (has_connected_presentation_output() and shell_process is not None
-                            and shell_process.returncode is None):
-                        self._presentation_ready = True
-                        return
-                    await asyncio.sleep(1.0)
-                except (OSError, RuntimeError, TimeoutError, subprocess.SubprocessError) as error:
-                    now = time.monotonic()
-                    if now - last_wait_log >= 30:
-                        logging.getLogger("lulu.sessiond").warning(
-                            "shell presentation selection pending; Sessiond remains active and will retry: %s",
-                            error,
-                        )
-                        last_wait_log = now
-                    await asyncio.sleep(1.0)
-        except asyncio.CancelledError:
-            raise
 
     def _require_game_presentation_ready(self) -> None:
         """Fail closed until the bootstrapped Gamescope shell is selectable."""
@@ -457,10 +449,6 @@ class ConsoleSessionInterface(ServiceInterface):
             policy_task.cancel()
             await asyncio.gather(policy_task, return_exceptions=True)
             self._input_policy_task = None
-        if self._shell_selection_task is not None:
-            self._shell_selection_task.cancel()
-            await asyncio.gather(self._shell_selection_task, return_exceptions=True)
-            self._shell_selection_task = None
         if self._controller_monitor_task is not None:
             self._controller_monitor_task.cancel()
             await asyncio.gather(self._controller_monitor_task, return_exceptions=True)
