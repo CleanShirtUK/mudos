@@ -1,4 +1,7 @@
-# Aurelia POC findings
+# Aurelia Steam-backend feasibility findings
+
+Assessment expanded on 2026-10-02 from the committed POC. Upstream inspected:
+`Drackrath/Aurelia@50c44d33b97f4aee6fe694e90c464951970d9fd8` (v0.1.37).
 
 ## Bottom line
 
@@ -143,13 +146,26 @@ The filtered `list --installed` output correctly included known Mudos rows:
 ```
 
 Reported paths were in `/home/lulu/.local/share/Steam/steamapps/common/...`.
-The Mudos library is registered in `libraryfolders.vdf`; Mudos/desktop manifest
-paths for AppID 40800 are hardlinked (same device/inode and SHA-256), as are
-the game directories. Thus this discovery did **not** establish independent
-content in, or safe write behavior against, the canonical Mudos root. It did
-show Aurelia sees that root through Steam's registered library list. A future
-install test must explicitly target and validate
-`/home/lulu/Games/Executables/steam`.
+The Mudos library is registered in `libraryfolders.vdf`. A follow-up mount
+inspection corrected the earlier POC's “hardlinked” interpretation: the
+desktop Steam `steamapps` path is a **Btrfs bind mount** of
+`/home/lulu/Games/Executables/steam/steamapps`, not a set of hardlinks or a
+second copy. `findmnt -T` reported the desktop path mounted from
+`/dev/nvme0n1p2[/@home/lulu/Games/Executables/steam/steamapps]`; the canonical
+path itself resolves through `/home`. The identical device/inode with `nlink=1`
+for AppID 40800's manifest and game executable is consistent with that bind
+mount. Consequently the canonical Mudos `steamapps` tree is the backing storage
+authority, while Steam/Aurelia may report its desktop alias as the game path.
+This improves compatibility prospects, but no Aurelia write was attempted.
+
+The POC config explicitly set `steam_library_path` to the canonical Mudos path.
+Aurelia source uses that setting as the default install destination, and accepts
+an explicit `--library` override. **Do not rely on the discovered default**:
+`LauncherConfig::default()` uses `detect_steam_path()` (the desktop Steam root
+on this host), and duplicate alias scans can report a path under
+`~/.local/share/Steam`. A production adapter must pin the config to the
+canonical Mudos path and treat the desktop path as a mount alias, not another
+library to reconcile or delete.
 
 Known installed Mudos AppIDs checked against `CatalogueStore`/local Mudos
 manifest enumeration included 26800, 224760, 40800, and 220780. The returned
@@ -248,7 +264,8 @@ ownership, error normalization, and fallback.
   VAC implications before use; do not assume headless/third-party launch is
   safe for every title.
 - **Steam file mutation:** Aurelia directly modifies Steam manifests/content,
-  and current Mudos has a hardlinked shared view of paths. Establish backup,
+  and current Mudos exposes the canonical `steamapps` tree to desktop Steam via
+  a bind mount. Establish backup,
   locking, atomicity, recovery, and one-writer policy first.
 - **Steamworks/DRM:** standalone launches may differ; Aurelia has optional host
   Steam/in-Wine integration, but compatibility is game-specific. Shared-account,
@@ -259,23 +276,339 @@ ownership, error normalization, and fallback.
 - **Lifecycle:** daemon is command relay rather than versioned provider RPC;
   launch status is not an authoritative event feed; PIDs/running records need
   stale/reuse/descendant analysis. Mudos still owns shell lifecycle.
-- **Storage:** discovery found the Mudos path registered, but actual scan
-  resolved duplicate hardlinked manifests to desktop path. No import/relink or
-  write test was performed. Targeted install must be separately controlled.
+- **Storage:** discovery found the Mudos path registered; the duplicate desktop
+  path is a bind-mounted alias of canonical `steamapps`. Aurelia reported that
+  alias for existing apps. No import/relink or write test was performed.
+  Targeted install must be separately controlled.
 - **Recovery:** keep current provider available; never automatically switch a
   game or migrate library state. Provide per-provider opt-in, disable switch,
   independent backups, and tested rollback before any appliance deployment.
 
+## Expanded assessment (2026-10-02)
+
+### 1. Authentication and session ownership — the strongest case for Aurelia
+
+**Source-level evidence:** Aurelia implements Steam CM authentication in its
+Rust client (`steam-vent`): password login, QR login, refresh-token restore,
+Steam Guard email/device codes, and Steam Mobile device confirmation. Its JSON
+login protocol emits challenge/Guard events instead of requiring Mudos to scrape
+a SteamCMD prompt. OpenID proves browser identity only and does not mint the CM
+session; the optional web token is short-lived/web-audience and does not replace
+the client session needed for library/install/launch.
+
+A full session is persisted as `session.json` under Aurelia's config dir
+(`~/.config/Aurelia` by default; `AURELIA_CONFIG_DIR` can isolate it). It
+contains a refresh token/account identity. After a successful full login,
+Aurelia enables ChaCha20-Poly1305 encryption with a random key stored in the OS
+keyring. If the keyring is unavailable, the code explicitly falls back to
+plaintext JSON and owner-only mode `0600`; that fallback, keyring availability
+in a headless systemd user service, backup/recovery, and session-file ownership
+must be policy decisions, not assumptions. No token or secret was read,
+printed, copied, or persisted during this assessment.
+
+The daemon watches the session file's mtime, restores a changed/new token, and
+shares one live Steam connection across forwarded CLI calls. It periodically
+probes connection liveness and reconnects after confirmed loss. Restore errors
+are classified and retried with backoff; `login --health` reports authenticated
+state and `login --reconnect` forces a daemon reconnect. A missing, expired, or
+rejected refresh token becomes an auth error; it does not silently obtain a new
+password/Guard factor. Re-login and any new Guard/device approval remain an
+interactive account step. QR challenges and Guard events are machine-readable,
+so Mudos could route them through its existing `CredentialBroker`/Guide surfaces.
+
+**Single owner conclusion:** Aurelia plausibly can be the sole Mudos CM-session
+owner for enumeration, ownership/library refresh, acquisition, DLC state, and
+standalone launch. Those callers must share the same config directory, UID,
+daemon socket, and persistent daemon. `AURELIA_NO_DAEMON` is not suitable for
+the production operation path: it creates independent connections and makes
+install-list/cancel state process-local. The POC used that flag only for
+read-only discovery. An Aurelia service plus Mudos adapter is needed to manage
+daemon startup, health, update/restart, logs, socket permissions, and credential
+handoff. The daemon is a command relay, not a stable typed API.
+
+This would replace the **SteamCMD password/session/Guard machinery** and could
+replace Mudos' separate Web API-key ownership source after ownership parity is
+validated. It would not necessarily remove Steam GUI: Aurelia's `--steam`
+launch option starts/reuses host Steam for Steamworks, and Family-Shared games
+require Steam integration. The optional in-Wine Steam runtime is a further
+Steam-client path with its own prefix/session needs. The graphical client may
+also remain for Store/Big Picture/overlay use. Therefore this can reduce
+independent auth mechanisms from GUI + SteamCMD + Web API key to Aurelia CM plus
+an optional Steamworks client, but cannot yet claim “one Steam auth everywhere”.
+
+**Live evidence:** there was no existing authenticated Aurelia session in the
+default user config, so no sign-in or account request was made. On 2026-10-02,
+`aurelia --json login --health` against the empty isolated POC config returned
+`logged_in:false`, `account:null`, `steam_id:null`, `web_token:false`,
+`daemon:false`. No credentials were supplied and no session file was created.
+This confirms only the logged-out path—not successful auth, Guard, token
+survival, or refresh behavior.
+
+### 2. Canonical library and storage compatibility
+
+The canonical Mudos path remains `~/Games/Executables/steam`. On this host its
+`steamapps` subtree is the backing tree exposed to desktop Steam by a Btrfs bind
+mount at `~/.local/share/Steam/steamapps`; `libraryfolders.vdf`, manifests,
+game files, `compatdata`, `shadercache`, and the standard Steam library layout
+are therefore shared through the mount. Existing Steam appmanifests are native
+Steam metadata and Aurelia parses/writes that format. This is a conventional
+Steam library layout from Aurelia's perspective; there is no evidence a storage
+migration is needed.
+
+`libraries` and installed discovery demonstrably saw the Mudos path and games.
+`install_game()` defaults to `LauncherConfig.steam_library_path`, accepts
+`--library`, creates `steamapps/common/<installdir>`, writes ACF metadata, and
+for DLC writes into the base game's directory/manifest. With an explicit
+canonical path this is source-supported as compatible. **It is not live-proven
+safe**: no Aurelia install/update touched files, and the bind mount plus the
+running Steam client's own cache/writes create concurrency/atomicity risks.
+Some `steamapps` metadata resides at the Steam root outside this mount (for
+example client `appcache`/`userdata`), which Aurelia also discovers from the
+desktop Steam install root.
+
+Required storage gate: run all Aurelia operations with the explicit Mudos
+canonical library; verify exact destination, appmanifest and content before /
+after on a controlled disposable AppID or independently backed-up test game;
+verify mount identity survives any installer/packaging/service start; establish
+one-writer coordination with Steam GUI and Mudos. Never use Aurelia
+`import`/`relink`/`move` as a substitute for this validation. Avoid any cleanup
+logic that treats the desktop alias as duplicate physical content.
+
+### 3. Installation, update, DLC, and Acquisitiond fit
+
+**Source-supported surface:** install by AppID/platform/library; dry-run size
+estimate; update check and per-AppID update; integrity verify; pause/pin/branch
+and other operations exist in Aurelia, but pause/resume semantics should not be
+assumed equivalent to Mudos job semantics. Install progress is genuine
+provider-reported state: NDJSON on stderr with state (`queued`, `downloading`,
+`verifying`, `moving`), aggregate/depot bytes and totals, percentages, speed,
+ETA, depot ID and current file; terminal result JSON is on stdout. The adapter
+can map these to `JobReporter` without calling bytes-on-disk “wire bytes”.
+`install list` provides active job status; `install stop APPID` sets the
+registered operation abort flag. In the daemon mode, separate forwarded calls
+share that process-global registry.
+
+Failure behavior is partly good and partly a gap. Size check can report
+insufficient free space; depot/CDN errors try hosts and ultimately emit a
+failed progress state/command error. A partial install writes an incomplete
+manifest (`StateUpdateRequired`, not fully installed), so installed discovery
+does not falsely mark it ready. The source reuses an existing install
+directory and download code has hash-checked chunk reuse, making retry/resume
+plausible. There is no demonstrated durable job journal/recovery contract
+across Aurelia daemon/process death: active install state is an in-memory
+registry, so a daemon crash may leave partial files and an incomplete manifest
+without a Mudos-owned job row. Retrying may reuse chunks; exact recovery and
+cleanup need a controlled interruption test. Mudos' Acquisitiond already
+provides durable jobs, cancellation, retry and state-change signals, but the
+Steam plugin currently registers its own executor and process-group cancellation.
+An Aurelia executor must reconcile Aurelia's active jobs after restarts and
+must not report a canceled job until Aurelia has stopped writing.
+
+**DLC:** Aurelia resolves DLC IDs/names and their parent; reports per-DLC
+`owned`, `installed`, `disabled`; installs DLC into the base game's install
+directory and registers DLC depots with `dlcappid` in the base ACF; and supports
+enable/disable. This is a useful component-level substrate. Its commands are
+per AppID, not a Mudos logical-title transaction: it does not itself present a
+single “base game + selected component set” acquisition job with ordered
+dependencies, aggregate progress/cancel, or Mudos catalogue parent/component
+identity. The Mario Kart-style requirement should map to one Mudos title with
+base/update/DLC components retained separately, while calls to Aurelia remain
+per-AppID and are sequenced by an Acquisitiond content-set executor. Base must
+be installed before DLC; the source explicitly rejects DLC without a base ACF.
+Mudos currently has `SubmitContentSet` scaffolding but it is RomM-only, and
+Steam's `CatalogueGame.from_steam()` currently models one AppID row. That
+grouping is Mudos adapter/catalogue work, not a fundamental Aurelia blocker.
+
+Known gaps: no live authenticated download, cancellation, update, DLC query or
+mutation was performed. Offline/cache listing and inspected source do not prove
+entitlements, depot availability, resume semantics, or behavior against this
+Steam account. No appmanifest was altered.
+
+### 4. Launch lifecycle and Sessiond ownership
+
+Aurelia can run native games or select a Windows launch option and invoke a
+configured Proton/Wine runner; `play` can perform pre-launch update (best effort
+for owned titles; mandatory for Family-Shared), optional Steam DRM-ticket
+preflight, cloud save sync, runtime/prefix setup, and then wait for the child to
+exit. `--no-update` suppresses owned-game update but not the Family-Shared
+requirement. The CLI reports final `finished` JSON after game exit; launch error
+has nonzero exit/typed error. Its internal event logs identify pipeline stages,
+spawn attempt, verification and exit, and it writes a running record.
+
+Coarse truthful Mudos states are viable without rich telemetry:
+
+| Mudos state | Evidence Mudos could use |
+|---|---|
+| requested | Sessiond launch request/token accepted |
+| preparing | Aurelia play request accepted; keep shell/presentation under Sessiond |
+| launching | Aurelia's per-AppID `running` record/process evidence appears; this is spawn evidence, not visible-window readiness |
+| running | Mudos Gamescope/window observer confirms game presentation; Aurelia AppID state can corroborate |
+| exited | `play` returns and Mudos observes the AppID process/presentation gone |
+| failed | CLI exits nonzero before running, or short-lived process exits during the configured health window; report exact known failure only |
+| cancelled | Mudos cancellation requested and Aurelia stop/cancel plus process reap confirmed |
+
+“Preparing” may remain a coarse wait state; do not assert shader compilation,
+Proton download or runtime setup unless a progress event proves it. Failed vs
+slow cannot be determined from absence of `running` alone; Mudos needs bounded
+startup policy and process/error evidence. Rich internal events could be
+exposed upstream through a stable lifecycle NDJSON/RPC interface, but Mudos
+should not scrape log files as a production contract.
+
+**Ownership complication:** with the Aurelia daemon enabled (necessary for one
+shared authenticated session), the `play` command is executed inside the daemon
+and the client process only relays stdio/exit. Sessiond cannot treat the
+short-lived CLI client's PID/process group as the game owner. It must correlate
+AppID and Aurelia's running/process state, invoke Aurelia stop on cancellation,
+wait for actual game descendants to be gone, and retain its own launch token
+until presentation/input are restored. A dedicated upstream launch RPC that
+returns an operation ID/PID and accepts cancel/status would simplify this, but
+coarse polling plus the Mudos Gamescope observer may suffice. Never let Aurelia
+own Sessiond lifecycle, Gamescope, input, or return-to-shell policy.
+
+Mudos Sessiond already owns launch token, coarse lifecycle, presentation, input
+mode, cancellation, process supervision, and Home return. Consoled dispatches
+Steam and calls Sessiond; `ProcessSupervisor` currently requests Steam URI,
+observes AppID processes, and selects/returns Gamescope presentation. A thin
+`AureliaBackend` should expose start/wait/status/stop and never bypass Sessiond.
+Production configuration would opt in per Steam provider, leaving the current
+Steam client backend available for fallback.
+
+### 5. Proton / runtime / launch compatibility
+
+Aurelia's standalone default resolves native Linux vs Windows depot/launch
+options, chooses explicit/per-game/global Proton, prepares Aurelia's configured
+prefix, builds a command and directly spawns it. Its Windows runner uses a
+`proton run` path, Steam AppID and compatdata environment; optional `--umu`
+uses `umu-run` with `GAMEID`/`PROTONPATH`. It scans installed Valve Proton from
+the configured library `steamapps/common` and custom tools under Steam's
+`compatibilitytools.d`; Aurelia can install Valve Proton and community builds.
+Its `--steam` option may start host Steam for Steamworks, or use its separate
+in-Wine Steam runtime according to policy. The source contains explicit prefix,
+Steamworks and runtime-policy handling.
+
+Current Mudos Steam launches are delegated by `steam://rungameid/<appid>` to
+the official desktop Steam client. That means the current working launch path
+uses Steam's per-game compatibility configuration, container/runtime behavior,
+shader cache, Steam Input/overlay, and Steam client lifecycle. Mudos does not
+currently put Steam games through its non-Steam UMU wrapper; the UMU code in
+Mudos is for other launch backends. Aurelia standalone Proton/UMU is therefore
+not proven equivalent merely because the same Proton directory is present.
+Likely ported settings include selected Proton version and launch options;
+potential compatibility gaps include Steam's pressure-vessel/Steam Linux
+Runtime environment, shader pre-caching/cache ownership, controller/overlay,
+Steamworks DRM, per-game Proton override migration, compatdata/prefix mode, and
+launch flags. With `--steam`, some games will still depend on the desktop
+client; Aurelia's in-Wine Steam is explicitly a different environment.
+
+Recommendation for ownership: one owner per launch. First evaluate Aurelia's
+native Proton path **or** its UMU path against the current Steam GUI path; do
+not stack Aurelia UMU under a second Mudos UMU wrapper. Do not switch all titles
+to standalone launch until known-good game evidence covers process tree,
+runtime environment, prefix location, shader behavior, Steamworks and stop.
+No such launch comparison was performed in this recon.
+
+### 6. Failure/restart semantics
+
+- **Aurelia daemon exit:** forwarded command fails; game children may or may not
+  survive independently. Sessiond must reconcile AppID processes and presentation,
+  not infer game exit from lost CLI/daemon connection.
+- **Session expiry / Steam unavailable:** commands return auth/network typed
+  errors; daemon has refresh/reconnect and backoff, but Guard reauthentication
+  requires user action. Report auth-required vs network failure distinctly.
+- **Network loss during install:** CDN loop retries hosts then fails; partial
+  files/incomplete manifest may remain. Reattempt may hash-reuse chunks; no
+  durable recovery guarantee was live-tested.
+- **Cancellation:** install stop is source-supported within the same daemon
+  registry. Acquisitiond can model CANCELLING/CANCELLED, but adapter must wait
+  until Aurelia has stopped writing. Launch stop depends on a running record;
+  pre-spawn/preparation cancellation is not an authoritative Aurelia operation.
+- **Launch failed / instant exit:** CLI eventually returns result; internal
+  verification logs lifetime/exit and Mudos can observe early process exit.
+  A black-box no-running timeout alone is ambiguous.
+- **Lost running record:** Aurelia's `running` implementation refreshes PID from
+  `/proc` AppID environment for Proton/native processes and prunes stale records.
+  This is better than a bare PID, but remains same-UID `/proc` polling and
+  application-process correlation, not a process-group/job-object guarantee.
+- **Mudos restart during install:** Acquisitiond's durable row may survive,
+  but Aurelia's daemon-memory operation registry/progress source might not. A
+  restart reconciliation protocol or explicit “provider status unknown, retry
+  safely” state is needed.
+- **Mudos/Sessiond restart during launch:** Aurelia may still own a game; Mudos
+  must query `running`, reconstruct/repair lifecycle ownership, or use an
+  explicit recovery screen. Never start a duplicate AppID blindly.
+
+These map to existing `JobManager`/Acquisitiond states and Sessiond lifecycle,
+but need an adapter that preserves uncertainty rather than converting every
+lost connection to failed/completed.
+
+### 7. Capability matrix
+
+| Question/capability | Status | Evidence / gap |
+|---|---|---|
+| Sole CM authentication/session owner? | **Source-supported but untested** | Full refresh-token session plus one shared daemon connection; no safe existing account session available for live test. |
+| Replace SteamCMD auth/password/Guard path? | **Source-supported but untested** | Aurelia install/update uses its CM client and one persisted session; first login and Guard still need a deliberate user flow. |
+| Remove Steam GUI and all parallel Steam auth? | **Unknown/blocking by title** | Store UI, overlay/Steamworks, Family-Shared and in-Wine runtime may still require official Steam client/session. |
+| Persist auth across Mudos restarts? | **Source-supported but untested** | Refresh token stored; encrypted via OS keyring after login, plaintext 0600 fallback; daemon restores by mtime. Deployment/keyring behavior untested. |
+| Enumerate canonical Steam library / installed titles? | **Demonstrated in isolated POC** | Safe read-only scan found registered canonical library and matching known Mudos AppIDs. Reported alias is bind-mounted view. |
+| Safe install into canonical Mudos root? | **Source-supported but untested** | Config/`--library` select root; conventional ACF layout and bind mount. No write test, concurrent-writer or recovery validation. |
+| Updates and byte progress? | **Source-supported but untested** | CLI/source provides update, install list and NDJSON progress; prior POC verified schema, not a live download. |
+| Install cancellation? | **Source-supported but untested** | `install stop` flips shared abort signal; daemon mode is required for cross-call state. Reap-before-CANCELLED adapter behavior needed. |
+| Durable resume/recovery? | **Unknown/blocking for automatic recovery** | Chunk reuse and incomplete manifest behavior exist; operation journal/restart recovery not established. |
+| DLC ownership/install/enable state? | **Source-supported but untested** | DLC discovery/status and base-manifest install/enable exist; requires auth and was not queried live. |
+| Mario Kart-style content set as one Mudos logical title? | **Requires implementation** | Aurelia operates per AppID; Mudos needs content-set orchestration/catalogue component mapping through Acquisitiond. |
+| Resolve/install Proton and optional UMU? | **Demonstrated in isolated POC / source-supported** | Read-only runtime list showed Proton Experimental/Hotfix; installs and game selection not tested. |
+| Launch existing game via Aurelia? | **Unknown/blocking for replacement** | No auth session and no launch attempted. Source has direct Proton/UMU launch and host Steam paths. |
+| Coarse launch states for Sessiond? | **Requires implementation; telemetry nice-to-have** | CLI `play`, running AppID state, process observation and Mudos Gamescope observer can support truthful coarse states; daemon means CLI PID is not game owner. |
+| Rich launch-stage telemetry? | **Nice-to-have / requires upstream or adapter change** | Internal pipeline events exist, no stable live event API. Not a prerequisite if coarse states are honest. |
+| Cancellation/restart recovery across Sessiond? | **Requires implementation** | Mudos must correlate and stop Aurelia-owned AppID process, wait for reap, reconstruct lifecycle after service restart. |
+| Stable error/progress boundary for Acquisitiond? | **Requires implementation** | Normalize command-specific JSON/NDJSON, typed errors, uncertain state and recovery without fabricating fields. |
+
+### 8. Concrete gaps and next implementation milestone
+
+No fundamental source-level blocker was found to Aurelia owning Steam CM
+authentication and acquisition. The gaps that actually gate replacement are:
+
+1. **Integration:** implement a non-production Aurelia executor/backend that
+   runs and supervises one daemon, offers secret-free auth-health, login/Guard
+   events, library/catalogue, install/update/DLC and AppID status/stop through
+   stable Mudos interfaces. Reuse `CredentialBroker`, Acquisitiond and
+   Sessiond; do not give raw credentials to arbitrary shells/logs.
+2. **Auth policy:** decide keyring requirement/fallback, service UID/session
+   bus behavior, file permissions/backup/recovery, who may request login, how
+   Guard/device approval is surfaced, and how expired tokens recover.
+3. **Storage:** set Aurelia's library path explicitly to the canonical Mudos
+   root; validate bind mount and a disposable/backup-protected install/update
+   end-to-end; coordinate Steam GUI writes and avoid duplicate-alias cleanup.
+4. **Lifecycle/runtime:** approved low-risk installed-game launch comparison
+   with current `steam://` baseline; capture process tree, effective command/env
+   without leaking secrets, runtime and prefix paths, Gamescope presentation,
+   Steamworks, clean stop, immediate exit and Sessiond restart recovery.
+5. **Content model:** one Acquisitiond transaction for base/update/DLC
+   components, truthful aggregate progress, cancellation barriers and replay
+   after daemon restart.
+6. **Fallback/rollout:** opt-in per Steam provider, preserve current path,
+   no automatic migration, and test switch-back without touching install data.
+
+Launch telemetry is not on this critical path. A future typed event stream is
+an upstream quality improvement, not a prerequisite for the first controlled
+backend trial.
+
 ## Recommendation
 
-Proceed to a **bounded engineering evaluation**, not replacement. There is
-enough evidence that Aurelia can be a useful Steam protocol/install backend and
-provide better structured acquisition progress. It demonstrably discovers
-Mudos' registered library and several installed games. The largest original
-motivation—clean authoritative launch lifecycle—is not solved by current CLI
-surface: no live launch event contract, incomplete cancellation semantics for
-pre-running launch, PID-based running truth, and no demonstrated Gamescope/
-Sessiond integration. First request/assess upstream lifecycle API support; then
-run a deliberately approved isolated launch of a low-risk known-good game and
-verify process tree, Proton/UMU ownership, Steamworks, presentation, stop, and
-account policy. Only after these gates should a fuller adapter phase be scoped.
+Proceed to a **bounded implementation milestone behind opt-in, not replacement**.
+The best technical case is real: Aurelia can plausibly collapse SteamCMD's
+separate credential/Guard/session path and Mudos' separate account ownership
+lookup behind one persisted CM session and one shared daemon, while providing
+install/update/DLC APIs. It discovers the canonical Mudos storage through its
+Steam bind-mounted alias; the previous POC's hardlink interpretation has been
+corrected. Install destination is controllable, but write safety is unproven.
+
+The blocking evidence gap is not verbose launch telemetry; it is live proof of
+auth/session persistence/re-auth UX, safe canonical-root install/update and
+cancellation/recovery, and one known-good Aurelia launch using the actual
+Mudos-compatible Proton/UMU/Steamworks/presentation path. Therefore Aurelia
+deserves a proper, isolated adapter phase, but not yet canonical appliance
+activation. The next gate should be implementation of the minimal opt-in
+Acquisitiond/Sessiond adapter plus review of session-key storage, followed by a
+separately approved account-authenticated content test and controlled game
+launch. Do not migrate or change the production provider until those pass.

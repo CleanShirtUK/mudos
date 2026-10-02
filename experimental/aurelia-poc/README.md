@@ -2,8 +2,10 @@
 
 This is an isolated, non-production adapter prototype. It does not alter or
 register with Mudos' production Steam provider. It shells out to Aurelia's
-documented CLI/JSON surface and preserves the upstream command output and exit
-status. No credentials are accepted by this adapter.
+CLI/JSON surface and preserves the upstream command output and exit status. No
+credentials are accepted by this adapter. The expanded 2026-10-02 feasibility,
+authentication, storage, Acquisitiond, lifecycle and Proton assessment is in
+`FINDINGS.md`.
 
 ## Setup and safe inspection
 
