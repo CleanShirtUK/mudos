@@ -15,6 +15,7 @@ and conditions that were true when they were captured.
 
 ## Architecture And Evidence
 
+- [Aurelia developer review](../AURELIA_REVIEW.md): checkpoint-bounded integration and packaging status.
 - [Framework checkpoint](framework-checkpoint-20260909.md): authoritative UI and settings checkpoint.
 - [UI checkpoint](ui-checkpoint-20260909.md): dated UI baseline and historical queue.
 - [Controller architecture](controller-architecture.md)
