@@ -13,6 +13,8 @@ import json
 import os
 from pathlib import Path
 import shutil
+import stat
+import time
 from typing import Any, Callable
 
 from ...jobs import DownloadJob, ExternalAcquisition, JobState
@@ -60,6 +62,8 @@ class AureliaClient:
         self.executable = executable or os.environ.get("LULU_AURELIA_EXECUTABLE") or shutil.which("aurelia")
         self.config_dir = config_dir or PATHS.provider_root(PROVIDER_ID) / "aurelia"
         self._run = run
+        self._startup_lock = asyncio.Lock()
+        self._daemon_ready = False
 
     @property
     def available(self) -> bool:
@@ -118,6 +122,34 @@ class AureliaClient:
     def _environment(self) -> dict[str, str]:
         env = os.environ.copy()
         env["AURELIA_CONFIG_DIR"] = str(self.config_dir)
+        # Aurelia's daemon endpoint is keyed by XDG_RUNTIME_DIR and uid, not by
+        # AURELIA_CONFIG_DIR. Keep Mudos callers on one endpoint even when a
+        # caller (for example an offline maintenance shell) omitted XDG_RUNTIME_DIR.
+        runtime_dir = Path(env["XDG_RUNTIME_DIR"]) if env.get("XDG_RUNTIME_DIR") else None
+        runtime_metadata = None
+        if runtime_dir is not None:
+            try:
+                runtime_metadata = runtime_dir.stat()
+            except OSError:
+                runtime_metadata = None
+        if runtime_metadata is None or not stat.S_ISDIR(runtime_metadata.st_mode) \
+                or runtime_metadata.st_uid != os.geteuid():
+            runtime_dir = None
+            env.pop("XDG_RUNTIME_DIR", None)
+            candidate = Path(f"/run/user/{os.geteuid()}")
+            try:
+                metadata = candidate.stat()
+            except OSError:
+                metadata = None
+            if metadata is not None and stat.S_ISDIR(metadata.st_mode) \
+                    and metadata.st_uid == os.geteuid():
+                runtime_dir = candidate
+                env["XDG_RUNTIME_DIR"] = str(candidate)
+        if runtime_dir is not None:
+            env["AURELIA_DAEMON_SOCKET"] = str(
+                runtime_dir / f"aurelia-{os.geteuid()}.sock")
+        else:
+            env.pop("AURELIA_DAEMON_SOCKET", None)
         # One persistent daemon is necessary to share the authenticated CM session
         # and active install registry across Acquisitiond and Sessiond calls.
         env.pop("AURELIA_NO_DAEMON", None)
@@ -129,6 +161,32 @@ class AureliaClient:
             raise AureliaError("unavailable", "Aurelia executable is unavailable", retryable=True)
         self._ensure_config_dir()
         argv = [self.executable, "--json", *map(str, args)]
+
+        async def invoke() -> Any:
+            return await self._invoke(argv, timeout)
+
+        # The first CLI request auto-spawns Aurelia's detached daemon. Serialize
+        # that one transition inside Acquisitiond: later concurrent health and
+        # discovery requests then connect to the same socket rather than racing
+        # the upstream CLI's spawn path.
+        if self._run is not None or self._daemon_ready:
+            return await invoke()
+        async with self._startup_lock:
+            if self._daemon_ready:
+                return await invoke()
+            try:
+                result = await invoke()
+            finally:
+                env = self._environment()
+                endpoint = env.get("AURELIA_DAEMON_SOCKET")
+                if endpoint:
+                    try:
+                        self._daemon_ready = stat.S_ISSOCK(Path(endpoint).stat().st_mode)
+                    except OSError:
+                        self._daemon_ready = False
+            return result
+
+    async def _invoke(self, argv: list[str], timeout: float) -> Any:
         try:
             if self._run:
                 result = self._run(argv, env=self._environment(), timeout=timeout)
@@ -235,8 +293,40 @@ class AureliaClient:
                 process.kill()
                 await process.wait()
 
-    async def cancel_install(self, app_id: str) -> None:
-        await self.command("install", "stop", app_id)
+    async def cancel_install(self, app_id: str, *, timeout: float = 30.0) -> None:
+        """Ask Aurelia to stop and wait until its daemon drops the active install.
+
+        `install stop` only sets Aurelia's abort flag and returns immediately.
+        The active registry entry remains until the install command unwinds, so
+        its disappearance is the provider-side completion acknowledgement.
+        """
+        result = await self.command("install", "stop", app_id)
+        if not isinstance(result, dict) or result.get("event") not in {"stopping", "not_found"}:
+            raise AureliaError("cancel-unconfirmed", "Aurelia did not acknowledge the install stop", retryable=True)
+
+        deadline = time.monotonic() + timeout
+        stop_acknowledged = result.get("event") == "stopping"
+        while time.monotonic() < deadline:
+            rows = await self.command("install", "list")
+            if not isinstance(rows, list):
+                raise AureliaError("malformed-output", "Aurelia install list was not an array", retryable=True)
+            active = any(isinstance(row, dict) and str(row.get("app_id")) == app_id
+                         for row in rows)
+            if not active and stop_acknowledged:
+                return
+            if not active and not stop_acknowledged:
+                installed = await self.installed_games()
+                if any(game.app_id == app_id and game.installed for game in installed):
+                    # The install completed while the stop request raced its
+                    # registration/terminal transition. The executor will
+                    # report completion instead of marking it cancelled.
+                    return
+            if active and not stop_acknowledged:
+                result = await self.command("install", "stop", app_id)
+                if isinstance(result, dict) and result.get("event") == "stopping":
+                    stop_acknowledged = True
+            await asyncio.sleep(0.2)
+        raise AureliaError("cancel-timeout", "Aurelia did not finish stopping the install", retryable=True)
 
     async def update(self, app_id: str) -> Any:
         return await self.command("update", app_id)
@@ -259,10 +349,10 @@ def map_progress(event: dict[str, Any]) -> dict[str, Any]:
     payload = event.get("payload", event)
     if not isinstance(payload, dict):
         return {}
-    downloaded = payload.get("bytes_downloaded")
+    downloaded = payload.get("bytes_downloaded", payload.get("downloaded_bytes"))
     total = payload.get("total_bytes")
     percent = payload.get("percent")
-    phase = payload.get("state") or payload.get("phase")
+    phase = payload.get("state") or payload.get("phase") or payload.get("status")
     result: dict[str, Any] = {
         "downloaded_bytes": downloaded if isinstance(downloaded, int) else None,
         "total_bytes": total if isinstance(total, int) else None,
@@ -274,6 +364,21 @@ def map_progress(event: dict[str, Any]) -> dict[str, Any]:
         "eta_seconds": payload.get("eta_seconds") if isinstance(payload.get("eta_seconds"), int) else None,
         "stage": str(phase) if phase else "provider-progress",
     }
+    return result
+
+
+def _merge_aurelia_progress(origin_metadata: dict[str, object],
+                            event: dict[str, Any]) -> dict[str, object]:
+    """Retain Aurelia's useful raw progress fields in the existing job metadata."""
+    fields = (
+        "event", "state", "phase", "app_id", "bytes_downloaded",
+        "downloaded_bytes", "total_bytes", "percent", "speed_bps",
+        "eta_seconds", "depot_id", "depot_bytes_downloaded",
+        "depot_total_bytes", "depot_percent", "file", "current_file",
+    )
+    progress = {key: event[key] for key in fields if key in event}
+    result = dict(origin_metadata)
+    result["aurelia_progress"] = progress
     return result
 
 
@@ -290,8 +395,14 @@ class AureliaAcquisitionExecutor:
         app_id = job.provider_job_id or job.content_identity.removeprefix("steam-aurelia:")
         if not app_id.isdecimal():
             raise JobExecutionError("invalid-content", "Aurelia acquisition requires a Steam AppID")
+        service_recovery = job.recovery_reason == "service-restart"
         self._active[job.job_id] = app_id
+        last_downloaded: int | None = job.downloaded_bytes
+        last_total: int | None = job.total_bytes
+        origin_metadata = dict(job.origin_metadata)
         try:
+            await reporter.metadata(provider_job_id=app_id, backend="aurelia",
+                                    provider_state="starting")
             await reporter.state(JobState.STARTING, stage="aurelia-starting")
             # Acquisitiond may recover a persisted active job as queued while
             # Aurelia's daemon is still downloading. Adopt its progress instead
@@ -308,9 +419,14 @@ class AureliaAcquisitionExecutor:
                     if row is None:
                         break
                     mapped = map_progress(row)
+                    last_downloaded = mapped["downloaded_bytes"]
+                    last_total = mapped["total_bytes"]
                     await reporter.progress(mapped["progress"],
-                                            downloaded_bytes=mapped["downloaded_bytes"],
-                                            total_bytes=mapped["total_bytes"], stage=mapped["stage"])
+                                            downloaded_bytes=last_downloaded,
+                                            total_bytes=last_total, stage=mapped["stage"])
+                    await reporter.metadata(provider_state=mapped["stage"], backend="aurelia",
+                                            provider_job_id=app_id,
+                                            origin_metadata=_merge_aurelia_progress(origin_metadata, row))
                     if mapped["download_rate"] is not None or mapped["eta_seconds"] is not None:
                         await reporter.metadata(download_rate=mapped["download_rate"],
                                                 eta_seconds=mapped["eta_seconds"])
@@ -319,10 +435,40 @@ class AureliaAcquisitionExecutor:
                 if isinstance(installed_rows, list) and any(
                         isinstance(item, dict) and str(item.get("app_id")) == app_id
                         for item in installed_rows):
+                    await self._record_installed_metadata(app_id, reporter)
                     await reporter.state(JobState.FINALIZING, stage="aurelia-recovered-finalizing")
-                    await reporter.progress(1.0, stage="aurelia-recovered-finalizing")
+                    await reporter.progress(1.0, downloaded_bytes=last_downloaded,
+                                            total_bytes=last_total,
+                                            stage="aurelia-recovered-finalizing")
                     await reporter.state(JobState.COMPLETED, stage="completed")
                     return
+                if service_recovery:
+                    raise JobExecutionError(
+                        "aurelia-recovery-unconfirmed",
+                        "Aurelia no longer reports the interrupted install and the title is not installed; refusing to resubmit automatically.",
+                        retryable=False,
+                    )
+            elif service_recovery:
+                # AcquisitionStore requeues active jobs at service startup. Only
+                # adopt work Aurelia still reports or reconcile an installation
+                # Aurelia confirms complete; never start a second install over
+                # ambiguous partial files.
+                installed = await self.client.installed_games()
+                game = next((item for item in installed
+                             if item.app_id == app_id and item.installed), None)
+                if game is not None:
+                    await self._record_installed_metadata(app_id, reporter)
+                    await reporter.state(JobState.FINALIZING, stage="aurelia-recovered-finalizing")
+                    await reporter.progress(1.0, downloaded_bytes=last_downloaded,
+                                            total_bytes=last_total,
+                                            stage="aurelia-recovered-finalizing")
+                    await reporter.state(JobState.COMPLETED, stage="completed")
+                    return
+                raise JobExecutionError(
+                    "aurelia-recovery-unconfirmed",
+                    "Aurelia no longer reports the interrupted install and the title is not installed; refusing to resubmit automatically.",
+                    retryable=False,
+                )
             async for event in self.client.install_events(app_id):
                 value = map_progress(event)
                 state = str(event.get("state", "")).lower()
@@ -332,17 +478,23 @@ class AureliaAcquisitionExecutor:
                     # its stage remains precise without illegal state regressions.
                     target = JobState.STARTING if state == "queued" else JobState.TRANSFERRING
                     await reporter.state(target, stage=value["stage"])
+                    last_downloaded = value["downloaded_bytes"]
+                    last_total = value["total_bytes"]
                     await reporter.progress(value["progress"], downloaded_bytes=value["downloaded_bytes"],
                                             total_bytes=value["total_bytes"], stage=value["stage"])
-                    if value["download_rate"] is not None or value["eta_seconds"] is not None:
-                        await reporter.metadata(download_rate=value["download_rate"],
-                                                eta_seconds=value["eta_seconds"])
+                    await reporter.metadata(provider_state=state, backend="aurelia",
+                                            provider_job_id=app_id,
+                                            download_rate=value["download_rate"],
+                                            eta_seconds=value["eta_seconds"],
+                                            origin_metadata=_merge_aurelia_progress(origin_metadata, event))
                 elif state in {"failed", "error"}:
                     raise JobExecutionError("aurelia-install-failed", "Aurelia reported install failure", retryable=True)
                 elif state == "cancelled":
                     raise JobCancelled()
             await reporter.state(JobState.FINALIZING, stage="aurelia-finalizing")
-            await reporter.progress(1.0, stage="aurelia-finalizing")
+            await self._record_installed_metadata(app_id, reporter)
+            await reporter.progress(1.0, downloaded_bytes=last_downloaded,
+                                    total_bytes=last_total, stage="aurelia-finalizing")
             await reporter.state(JobState.COMPLETED, stage="completed")
         except JobCancelled:
             raise
@@ -351,13 +503,39 @@ class AureliaAcquisitionExecutor:
         finally:
             self._active.pop(job.job_id, None)
 
-    async def cancel(self, job: DownloadJob) -> None:
+    async def _record_installed_metadata(self, app_id: str, reporter: JobReporter) -> None:
+        """Persist only an install path Aurelia itself reports after installation."""
+        metadata: dict[str, object] = {
+            "provider_job_id": app_id,
+            "backend": "aurelia",
+            "provider_state": "installed",
+        }
+        try:
+            games = await self.client.installed_games()
+        except AureliaError:
+            games = ()
+        game = next((item for item in games if item.app_id == app_id and item.installed), None)
+        if game is not None and game.install_path:
+            metadata["destination"] = game.install_path
+            metadata["completion_path"] = game.install_path
+        await reporter.metadata(**metadata)
+
+    async def cancel(self, job: DownloadJob) -> bool:
         app_id = self._active.get(job.job_id) or job.provider_job_id
         if app_id:
             try:
                 await self.client.cancel_install(str(app_id))
             except AureliaError as error:
                 raise JobExecutionError(error.code, str(error), retryable=True) from error
+            try:
+                installed = await self.client.installed_games()
+            except AureliaError as error:
+                raise JobExecutionError(error.code, str(error), retryable=True) from error
+            if any(game.app_id == str(app_id) and game.installed for game in installed):
+                # The operation completed before the stop took effect. The run
+                # task owns the durable COMPLETED transition and final metadata.
+                return False
+        return True
 
     async def discover_external(self) -> tuple[ExternalAcquisition, ...]:
         """Reconcile Aurelia's live daemon jobs after Acquisitiond restart."""

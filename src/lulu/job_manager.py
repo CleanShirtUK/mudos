@@ -30,7 +30,7 @@ class JobExecutionError(Exception):
 
 class JobExecutor(Protocol):
     async def run(self, job: DownloadJob, reporter: "JobReporter") -> None: ...
-    async def cancel(self, job: DownloadJob) -> None: ...
+    async def cancel(self, job: DownloadJob) -> bool | None: ...
 
 
 class JobReporter:
@@ -231,31 +231,34 @@ class JobManager:
                 await cleanup(job)
             return self.jobs[job_id]
         if job.state in {JobState.QUEUED, JobState.FAILED}:
-            executor = self.executors.get(job.provider)
-            cancel = getattr(executor, "cancel", None)
-            if cancel is not None:
-                await cancel(job)
+            outcome = await self._request_provider_cancel(job)
+            if outcome is False:
+                return self.jobs[job_id]
             return self._cancelled(job_id)
         if job.state == JobState.CANCELLING:
             return job
-        if job.state in {JobState.PAUSED, JobState.PAUSING, JobState.RESUMING}:
-            self.transition(job_id, JobState.CANCELLING, stage="cancelling")
-            executor = self.executors.get(job.provider)
-            cancel = getattr(executor, "cancel", None)
-            if cancel is not None:
-                await cancel(job)
+        cancellable_states = {
+            JobState.STARTING, JobState.TRANSFERRING, JobState.FINALIZING,
+            JobState.PAUSED, JobState.PAUSING, JobState.RESUMING,
+        }
+        if job.state not in cancellable_states:
+            return job
+
+        # Ask the provider to stop before changing the public job state. Some
+        # providers acknowledge cancellation asynchronously; keeping the job in
+        # its active state until that acknowledgement avoids reporting (or
+        # internally inferring) cancellation while provider work may continue.
+        outcome = await self._request_provider_cancel(job)
+        current = self.jobs[job_id]
+        if outcome is False:
             task = self._tasks.get(job_id)
             if task is not None:
-                task.cancel()
                 await asyncio.gather(task, return_exceptions=True)
-            return self._cancelled(job_id)
-        if job.state not in {JobState.STARTING, JobState.TRANSFERRING,
-                             JobState.FINALIZING}:
-            return job
+            return self.jobs[job_id]
+        if current.state in {JobState.COMPLETED, JobState.FAILED, JobState.CANCELLED}:
+            return current
+
         self.transition(job_id, JobState.CANCELLING, stage="cancelling")
-        executor = self.executors.get(job.provider)
-        if executor is not None:
-            await executor.cancel(job)
         task = self._tasks.get(job_id)
         if task is not None:
             task.cancel()
@@ -263,6 +266,13 @@ class JobManager:
         if self.jobs[job_id].state == JobState.CANCELLING:
             self._cancelled(job_id)
         return self.jobs[job_id]
+
+    async def _request_provider_cancel(self, job: DownloadJob) -> bool | None:
+        executor = self.executors.get(job.provider)
+        cancel = getattr(executor, "cancel", None)
+        if cancel is None:
+            return None
+        return await cancel(job)
 
     async def pause(self, job_id: str) -> DownloadJob:
         job = self._require(job_id)

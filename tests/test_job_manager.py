@@ -88,9 +88,12 @@ class JobDomainTests(unittest.TestCase):
 
             with tempfile.TemporaryDirectory() as directory:
                 store = AcquisitionStore(Path(directory) / "jobs.sqlite")
-                recovered = DownloadJob("job-1", "torrent", "Torrent",
-                                        content_identity="magnet:1",
-                                        cancellation_supported=True)
+                recovered = (DownloadJob("job-1", "torrent", "Torrent",
+                                         content_identity="magnet:1",
+                                         cancellation_supported=True)
+                             .transition(JobState.STARTING)
+                             .transition(JobState.PAUSING)
+                             .transition(JobState.PAUSED))
                 store.save_all([recovered])
                 manager = JobManager(store=store)
                 manager.register_executor("torrent", ControlledExecutorWithPause())
@@ -174,6 +177,52 @@ class JobDomainTests(unittest.TestCase):
             await cancel
             self.assertEqual(manager.jobs[job.job_id].state, JobState.CANCELLED)
             self.assertEqual(manager.active_download_count, 0)
+        asyncio.run(exercise())
+
+    def test_cancelling_is_not_published_until_provider_confirms_stop(self) -> None:
+        async def exercise() -> None:
+            class DelayedCancel(ControlledExecutor):
+                def __init__(self):
+                    super().__init__()
+                    self.stop_acknowledged = asyncio.Event()
+
+                async def cancel(self, job):
+                    self.cancelled.set()
+                    await self.stop_acknowledged.wait()
+
+            executor = DelayedCancel()
+            manager = JobManager()
+            manager.register_executor("fake", executor)
+            job = manager.submit("fake", "fake:delayed", "Delayed", cancellation_supported=True)
+            await asyncio.sleep(0)
+            cancellation = asyncio.create_task(manager.cancel(job.job_id))
+            await asyncio.sleep(0)
+            self.assertEqual(manager.jobs[job.job_id].state, JobState.TRANSFERRING)
+            executor.stop_acknowledged.set()
+            result = await cancellation
+            self.assertEqual(result.state, JobState.CANCELLED)
+
+        asyncio.run(exercise())
+
+    def test_failed_cancel_leaves_running_job_active(self) -> None:
+        async def exercise() -> None:
+            class FailingCancel(ControlledExecutor):
+                async def cancel(self, job):
+                    raise RuntimeError("provider stop not confirmed")
+
+            executor = FailingCancel()
+            manager = JobManager()
+            manager.register_executor("fake", executor)
+            job = manager.submit("fake", "fake:failure", "Failure", cancellation_supported=True)
+            task = manager._tasks[job.job_id]
+            await asyncio.sleep(0)
+            with self.assertRaisesRegex(RuntimeError, "not confirmed"):
+                await manager.cancel(job.job_id)
+            self.assertEqual(manager.jobs[job.job_id].state, JobState.TRANSFERRING)
+            executor.release.set()
+            await task
+            self.assertEqual(manager.jobs[job.job_id].state, JobState.COMPLETED)
+
         asyncio.run(exercise())
 
     def test_repeated_terminal_cancel_reconciles_provider_cleanup_without_mutating_row(self) -> None:
