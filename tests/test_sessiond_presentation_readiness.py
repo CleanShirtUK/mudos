@@ -4,7 +4,7 @@ import asyncio
 from pathlib import Path
 from types import SimpleNamespace
 import unittest
-from unittest.mock import Mock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 from dbus_next import DBusError
 
@@ -132,6 +132,61 @@ class SessiondPresentationReadinessTests(unittest.TestCase):
         asyncio.run(exercise())
         self.assertTrue(interface._presentation_ready)
         interface.supervisor._presentation.select_shell.assert_called_once_with(321)
+
+    def test_shell_window_selection_keeps_retrying_until_the_window_is_available(self) -> None:
+        interface = ConsoleSessionInterface.__new__(ConsoleSessionInterface)
+        interface._presentation_ready = False
+        shell_process = SimpleNamespace(returncode=None)
+        select_shell = Mock(side_effect=[RuntimeError("window not ready"), None])
+        interface.supervisor = SimpleNamespace(
+            _presentation=SimpleNamespace(select_shell=select_shell),
+            _shell_process=shell_process,
+        )
+
+        async def exercise() -> None:
+            async def run_in_thread(function, *args):
+                return function(*args)
+
+            with patch.object(Path, "read_text", return_value="321"), \
+                    patch("lulu.sessiond.asyncio.to_thread", side_effect=run_in_thread), \
+                    patch("lulu.sessiond.has_connected_presentation_output", return_value=True), \
+                    patch("lulu.sessiond.asyncio.sleep", new=AsyncMock()) as sleep:
+                await interface._select_ready_shell()
+            sleep.assert_awaited_once_with(1.0)
+
+        asyncio.run(exercise())
+        self.assertTrue(interface._presentation_ready)
+        self.assertEqual(select_shell.call_count, 2)
+
+    def test_shell_selection_waits_for_display_return_without_failing_lifecycle(self) -> None:
+        interface = ConsoleSessionInterface.__new__(ConsoleSessionInterface)
+        interface._presentation_ready = False
+        shell_process = SimpleNamespace(returncode=None)
+        select_shell = Mock()
+        interface.supervisor = SimpleNamespace(
+            _presentation=SimpleNamespace(select_shell=select_shell),
+            _shell_process=shell_process,
+        )
+        output_states = iter((False, True, True))
+
+        async def exercise() -> None:
+            async def stop_waiting(_seconds: float) -> None:
+                if not interface._presentation_ready:
+                    return
+
+            async def run_in_thread(function, *args):
+                return function(*args)
+
+            with patch.object(Path, "read_text", return_value="321"), \
+                    patch("lulu.sessiond.asyncio.to_thread", side_effect=run_in_thread), \
+                    patch("lulu.sessiond.has_connected_presentation_output",
+                          side_effect=lambda: next(output_states, True)), \
+                    patch("lulu.sessiond.asyncio.sleep", side_effect=stop_waiting):
+                await interface._select_ready_shell()
+
+        asyncio.run(exercise())
+        self.assertTrue(interface._presentation_ready)
+        select_shell.assert_called_once_with(321)
 
 
 if __name__ == "__main__":

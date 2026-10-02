@@ -405,26 +405,35 @@ class ConsoleSessionInterface(ServiceInterface):
 
     async def _select_ready_shell(self) -> None:
         marker = PATHS.runtime_root / "mudos-shell.pid"
+        last_wait_log = 0.0
         try:
-            deadline = asyncio.get_running_loop().time() + 15
-            while asyncio.get_running_loop().time() < deadline:
+            while True:
                 try:
                     pid = int(marker.read_text().strip())
                 except (FileNotFoundError, ValueError):
-                    await asyncio.sleep(0.05)
+                    await asyncio.sleep(1.0)
+                    continue
+                shell_process = getattr(self.supervisor, "_shell_process", None)
+                if (not has_connected_presentation_output() or shell_process is None
+                        or shell_process.returncode is not None):
+                    await asyncio.sleep(1.0)
                     continue
                 try:
                     await asyncio.to_thread(self.supervisor._presentation.select_shell, pid)
-                    shell_process = getattr(self.supervisor, "_shell_process", None)
                     if (has_connected_presentation_output() and shell_process is not None
                             and shell_process.returncode is None):
                         self._presentation_ready = True
                         return
-                    await asyncio.sleep(0.05)
+                    await asyncio.sleep(1.0)
                 except (OSError, RuntimeError, TimeoutError, subprocess.SubprocessError) as error:
-                    logging.getLogger("lulu.sessiond").warning("shell window selection pending: %s", error)
-                    await asyncio.sleep(0.05)
-            logging.getLogger("lulu.sessiond").error("Mudos shell readiness window was not found")
+                    now = time.monotonic()
+                    if now - last_wait_log >= 30:
+                        logging.getLogger("lulu.sessiond").warning(
+                            "shell presentation selection pending; Sessiond remains active and will retry: %s",
+                            error,
+                        )
+                        last_wait_log = now
+                    await asyncio.sleep(1.0)
         except asyncio.CancelledError:
             raise
 
