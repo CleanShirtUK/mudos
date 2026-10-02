@@ -74,6 +74,10 @@ class ConsoleSessionInterface(ServiceInterface):
         self._last_automatic_mode: InputMode | None = None
         self._input_policy_task: asyncio.Task[None] | None = None
         self._bootstrap_output = os.environ.get("LULU_OUTPUT_CONNECTOR")
+        # Shell lifecycle alone does not mean there is a usable Gamescope
+        # presentation surface. This becomes true only after bootstrap has
+        # selected the shell window in Gamescope.
+        self._presentation_ready = False
         self.supervisor = ProcessSupervisor(
             model,
             self._state_changed,
@@ -356,6 +360,7 @@ class ConsoleSessionInterface(ServiceInterface):
             await asyncio.sleep(0.25)
 
     async def bootstrap_shell(self) -> None:
+        self._presentation_ready = False
         shell = str(Path(__file__).resolve().parents[2] / "scripts" / "console-ui.sh")
         qml = "Recovery.qml" if getattr(self, "recovery_mode", False) else "ConsoleShell.qml"
         os.environ["LULU_UI_FILE"] = str(PATHS.install_root / "ui" / qml)
@@ -410,13 +415,28 @@ class ConsoleSessionInterface(ServiceInterface):
                     continue
                 try:
                     await asyncio.to_thread(self.supervisor._presentation.select_shell, pid)
-                    return
+                    shell_process = getattr(self.supervisor, "_shell_process", None)
+                    if (has_connected_presentation_output() and shell_process is not None
+                            and shell_process.returncode is None):
+                        self._presentation_ready = True
+                        return
+                    await asyncio.sleep(0.05)
                 except (OSError, RuntimeError, TimeoutError, subprocess.SubprocessError) as error:
                     logging.getLogger("lulu.sessiond").warning("shell window selection pending: %s", error)
                     await asyncio.sleep(0.05)
             logging.getLogger("lulu.sessiond").error("Mudos shell readiness window was not found")
         except asyncio.CancelledError:
             raise
+
+    def _require_game_presentation_ready(self) -> None:
+        """Fail closed until the bootstrapped Gamescope shell is selectable."""
+        if not has_connected_presentation_output():
+            raise ValueError("game launch unavailable: no connected DRM presentation output")
+        shell_process = getattr(self.supervisor, "_shell_process", None)
+        presentation = getattr(self.supervisor, "_presentation", None)
+        if (not self._presentation_ready or shell_process is None
+                or shell_process.returncode is not None or presentation is None):
+            raise ValueError("game launch unavailable: Gamescope presentation is not ready")
 
     async def stop_controller_monitor(self) -> None:
         observer = getattr(self, "_gamescope_observer", None)
@@ -845,6 +865,7 @@ class ConsoleSessionInterface(ServiceInterface):
     @method()
     def RequestSteamLaunch(self, app_id: "s", startup_timeout_ms: "u") -> "s":
         try:
+            self._require_game_presentation_ready()
             return self.supervisor.queue_steam_launch(app_id, startup_timeout_ms)
         except ValueError as error:
             raise self._error(error) from error
@@ -852,6 +873,7 @@ class ConsoleSessionInterface(ServiceInterface):
     @method()
     def RequestAureliaLaunch(self, app_id: "s", startup_timeout_ms: "u") -> "s":
         try:
+            self._require_game_presentation_ready()
             if not ProviderConfigurationService.from_environment().provider(
                     "providers.steam_aurelia").enabled:
                 raise ValueError("Steam Aurelia launch is disabled; explicitly enable the experimental provider first")

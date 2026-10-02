@@ -1054,7 +1054,10 @@ class BoundaryTests(unittest.TestCase):
         interface._select_ready_shell = AsyncMock()
 
         async def exercise() -> None:
-            await interface.bootstrap_shell()
+            with patch("lulu.sessiond.has_connected_presentation_output", return_value=True), \
+                    patch("lulu.sessiond.connected_presentation_outputs", return_value=("HDMI-A-1",)), \
+                    patch("lulu.sessiond.discover_presentation_output", return_value="HDMI-A-1"):
+                await interface.bootstrap_shell()
             await asyncio.sleep(0)
             self.assertEqual(len(interface.supervisor.commands), 1)
             self.assertFalse(interface.supervisor.commands[0][2])
