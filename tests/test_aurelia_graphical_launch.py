@@ -10,10 +10,13 @@ import sys
 import tempfile
 import time
 import unittest
+from types import SimpleNamespace
 from unittest.mock import patch
 
+from lulu.console_sessiond import SessionStateModel
 from lulu.graphical_launch_context import GRAPHICAL_ENV
 from lulu.plugins.steam.aurelia import AureliaClient
+from lulu.sessiond import ConsoleSessionInterface
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -73,6 +76,7 @@ class WrapperBoundaryTests(unittest.TestCase):
             "session_id": session,
             "shell_pid": os.getpid(),
             "shell_start_time": self._own_start_time(),
+            "launch_token": "1" * 32,
             "updated_at": time.time() if updated_at is None else updated_at,
             "presentation_ready": ready,
         }))
@@ -153,6 +157,158 @@ class WrapperBoundaryTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout.strip(), argument)
         self.assertFalse(marker.exists())
+
+
+class SessiondLaunchLeaseTests(unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.root = Path(self.temp.name)
+        self.runtime = self.root / "runtime"
+        self.runtime.mkdir()
+        self.x11_dir = self.root / "x11"
+        self.x11_dir.mkdir()
+        self.wayland = self.runtime / "wayland-test"
+        self.x11 = self.x11_dir / "X9"
+        self.sockets = []
+        for path in (self.wayland, self.x11):
+            server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            server.bind(str(path))
+            server.listen(4)
+            self.sockets.append(server)
+        self.context_path = self.root / "aurelia-graphical-launch-context.json"
+        self.environment = {
+            "DISPLAY": f"unix:{self.x11}",
+            "WAYLAND_DISPLAY": "wayland-test",
+            "XDG_RUNTIME_DIR": str(self.runtime),
+        }
+
+    def tearDown(self):
+        for server in self.sockets:
+            server.close()
+        self.temp.cleanup()
+
+    async def _accepted_launch(self):
+        model = SessionStateModel()
+        shell = SimpleNamespace(pid=os.getpid(), returncode=None)
+        supervisor = SimpleNamespace(
+            _shell_process=shell,
+            _presentation=object(),
+            _delegated_launch_environment={},
+            _aurelia_launch_task=None,
+        )
+        supervisor.finish_launch = asyncio.Event()
+
+        def set_environment(values):
+            supervisor._delegated_launch_environment = dict(values)
+
+        async def wait_for_launch_end():
+            await supervisor.finish_launch.wait()
+
+        def queue_launch(app_id, _timeout):
+            token = model.request_launch(f"steam-aurelia:{app_id}")
+            model.launch_starting(token)
+            supervisor._aurelia_launch_task = asyncio.create_task(wait_for_launch_end())
+            return token
+
+        supervisor.set_delegated_launch_environment = set_environment
+        supervisor.queue_aurelia_launch = queue_launch
+        interface = ConsoleSessionInterface.__new__(ConsoleSessionInterface)
+        interface.model = model
+        interface.supervisor = supervisor
+        interface._presentation_ready = True
+        interface._graphical_session_id = "accepted-session"
+        interface._graphical_launch_lease = None
+        interface._presentation_wait_log_at = 0.0
+        interface.controller_registry = SimpleNamespace(
+            navigation_controller_id=None, navigation_mode="all", controllers={})
+        interface._local_identity = None
+        interface._local_provider_id = ""
+        supervisor.state_details = lambda: {}
+        config = SimpleNamespace(provider=lambda _name: SimpleNamespace(enabled=True))
+        context = patch("lulu.graphical_launch_context.CONTEXT_PATH", self.context_path)
+        context.start()
+        self.addCleanup(context.stop)
+        ConsoleSessionInterface.SetDelegatedLaunchContext.__wrapped__(
+            interface, json.dumps(self.environment))
+        self.assertTrue(self.context_path.exists())
+        with patch("lulu.sessiond.has_connected_presentation_output", return_value=True), \
+                patch("lulu.sessiond.ProviderConfigurationService.from_environment",
+                      return_value=config):
+            token = ConsoleSessionInterface.RequestAureliaLaunch.__wrapped__(
+                interface, "104200", 15000)
+        self.assertEqual(model.state.lifecycle.value, "starting")
+        return interface, token
+
+    def _run_wrapper(self):
+        env = {
+            **os.environ,
+            "PYTHONPATH": str(ROOT / "src"),
+            "LULU_RUNTIME_ROOT": str(self.root),
+            "DISPLAY": ":stale",
+            "WAYLAND_DISPLAY": "stale",
+            "XDG_RUNTIME_DIR": "/stale",
+        }
+        probe = "import json,os; print(json.dumps({k:os.environ.get(k) for k in " + repr(GRAPHICAL_ENV) + "}))"
+        return subprocess.run([sys.executable, str(WRAPPER), sys.executable, "-c", probe],
+                              env=env, text=True, capture_output=True)
+
+    async def test_accepted_start_keeps_context_until_wrapper_consumes_it(self):
+        interface, token = await self._accepted_launch()
+        try:
+            with patch("lulu.sessiond.has_connected_presentation_output", return_value=True):
+                with patch.object(interface, "StateChanged", lambda *_args: None):
+                    await interface._refresh_presentation_readiness()
+            record = json.loads(self.context_path.read_text())
+            self.assertEqual(record["launch_token"], token)
+            self.assertFalse(interface._presentation_ready)
+
+            result = self._run_wrapper()
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(json.loads(result.stdout), self.environment)
+            self.assertFalse(self.context_path.exists())
+
+            with patch("lulu.sessiond.has_connected_presentation_output", return_value=True):
+                with patch.object(interface, "StateChanged", lambda *_args: None):
+                    await interface._refresh_presentation_readiness()
+            self.assertIsNone(interface._graphical_launch_lease)
+        finally:
+            interface.supervisor._aurelia_launch_task.cancel()
+            await asyncio.gather(interface.supervisor._aurelia_launch_task,
+                                 return_exceptions=True)
+
+    async def test_display_loss_during_start_invalidates_lease_before_wrapper(self):
+        interface, _token = await self._accepted_launch()
+        try:
+            with patch("lulu.sessiond.has_connected_presentation_output", return_value=False):
+                with patch.object(interface, "StateChanged", lambda *_args: None):
+                    await interface._refresh_presentation_readiness()
+            self.assertFalse(self.context_path.exists())
+            self.assertIsNone(interface._graphical_launch_lease)
+            result = self._run_wrapper()
+            self.assertEqual(result.returncode, 125)
+            self.assertIn("no current graphical launch context", result.stderr)
+        finally:
+            interface.supervisor._aurelia_launch_task.cancel()
+            await asyncio.gather(interface.supervisor._aurelia_launch_task,
+                                 return_exceptions=True)
+
+    async def test_cancelled_or_failed_start_discards_its_context_lease(self):
+        for cancel in (True, False):
+            with self.subTest(cancel=cancel):
+                interface, _token = await self._accepted_launch()
+                task = interface.supervisor._aurelia_launch_task
+                if cancel:
+                    task.cancel()
+                else:
+                    # Completing the accepted task represents a definitive launch failure.
+                    interface.model.fail(interface.model.state.launch_token, "launch failed")
+                    interface.supervisor.finish_launch.set()
+                await asyncio.gather(task, return_exceptions=True)
+                with patch("lulu.sessiond.has_connected_presentation_output", return_value=True):
+                    with patch.object(interface, "StateChanged", lambda *_args: None):
+                        await interface._refresh_presentation_readiness()
+                self.assertFalse(self.context_path.exists())
+                self.assertIsNone(interface._graphical_launch_lease)
 
 
 if __name__ == "__main__":

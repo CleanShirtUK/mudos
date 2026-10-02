@@ -198,10 +198,12 @@ class SessiondTests(unittest.TestCase):
         interface._controller_monitor_task = None
         interface._presentation_watchdog_enabled = False
         interface._presentation_watchdog_task = None
+        interface._graphical_launch_lease = None
         interface._local_identity = None
         interface.StateChanged = lambda state: None
         interface.supervisor = type("Supervisor", (), {
             "stop": AsyncMock(),
+            "set_delegated_launch_environment": lambda self, _values: None,
         })()
 
         class FakeBus:
@@ -254,6 +256,7 @@ class SessiondTests(unittest.TestCase):
                                   call[0] == "match" for call in buses[1].calls
                               ),
                           })) as notify_ready, \
+                    patch("lulu.sessiond.clear_graphical_launch_context"), \
                     patch("lulu.sessiond._wait_for_stop", new=AsyncMock()):
                 await serve()
             notify_ready.assert_called_once()

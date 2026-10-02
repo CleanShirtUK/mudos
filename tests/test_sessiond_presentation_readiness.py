@@ -19,10 +19,17 @@ def make_interface(*, ready: bool, presentation: object | None = object(),
     interface = ConsoleSessionInterface.__new__(ConsoleSessionInterface)
     interface.model = SessionStateModel()
     interface._presentation_ready = ready
+    interface._graphical_session_id = "unit-test-session"
+    interface._graphical_launch_lease = None
     interface.supervisor = SimpleNamespace(
         _presentation=presentation,
         _shell_process=shell_process if shell_process is not None
-        else SimpleNamespace(returncode=None),
+        else SimpleNamespace(pid=os.getpid(), returncode=None),
+        _delegated_launch_environment={
+            "DISPLAY": ":test", "WAYLAND_DISPLAY": "wayland-test",
+            "XDG_RUNTIME_DIR": "/tmp/test-runtime",
+        },
+        set_delegated_launch_environment=Mock(),
         queue_steam_launch=Mock(return_value="steam-token"),
         queue_aurelia_launch=Mock(return_value="aurelia-token"),
     )
@@ -36,7 +43,9 @@ class SessiondPresentationReadinessTests(unittest.TestCase):
 
         with patch("lulu.sessiond.has_connected_presentation_output", return_value=True), \
                 patch("lulu.sessiond.ProviderConfigurationService.from_environment",
-                      return_value=aurelia_config):
+                      return_value=aurelia_config), \
+                patch("lulu.sessiond.graphical_context_is_live", return_value=True), \
+                patch("lulu.sessiond.write_graphical_launch_context"):
             steam_token = ConsoleSessionInterface.RequestSteamLaunch.__wrapped__(
                 interface, "104200", 15000)
             aurelia_token = ConsoleSessionInterface.RequestAureliaLaunch.__wrapped__(
@@ -120,16 +129,21 @@ class SessiondPresentationReadinessTests(unittest.TestCase):
         interface._local_provider_id = ""
         interface._presentation_ready = False
         interface._graphical_session_id = "test-session"
+        interface._graphical_launch_lease = None
         shell_process = SimpleNamespace(pid=os.getpid(), returncode=None)
         interface.supervisor = SimpleNamespace(
             _presentation=object(),
             _shell_process=shell_process,
-            _delegated_launch_environment={},
-            set_delegated_launch_environment=Mock(),
+            _delegated_launch_environment={
+                "DISPLAY": ":test", "WAYLAND_DISPLAY": "wayland-test",
+                "XDG_RUNTIME_DIR": "/tmp/test-runtime",
+            },
             ensure_shell_presentation=Mock(return_value=321),
             queue_aurelia_launch=Mock(return_value="aurelia-token"),
             state_details=Mock(return_value={}),
         )
+        interface.supervisor.set_delegated_launch_environment = lambda values: setattr(
+            interface.supervisor, "_delegated_launch_environment", dict(values))
         aurelia_config = SimpleNamespace(provider=Mock(return_value=SimpleNamespace(enabled=True)))
 
         async def exercise() -> None:
@@ -140,6 +154,7 @@ class SessiondPresentationReadinessTests(unittest.TestCase):
                     patch("lulu.sessiond.has_connected_presentation_output", return_value=True), \
                     patch("lulu.sessiond.ProviderConfigurationService.from_environment",
                           return_value=aurelia_config), \
+                    patch("lulu.sessiond.graphical_context_is_live", return_value=True), \
                     patch("lulu.sessiond.write_graphical_launch_context"), \
                     patch.object(interface, "StateChanged", Mock()) as state_changed:
                 await interface._refresh_presentation_readiness()
@@ -164,16 +179,21 @@ class SessiondPresentationReadinessTests(unittest.TestCase):
         interface._local_provider_id = ""
         interface._presentation_ready = True
         interface._graphical_session_id = "test-session"
+        interface._graphical_launch_lease = None
         shell_process = SimpleNamespace(pid=os.getpid(), returncode=None)
         interface.supervisor = SimpleNamespace(
             _presentation=object(),
             _shell_process=shell_process,
-            _delegated_launch_environment={},
-            set_delegated_launch_environment=Mock(),
+            _delegated_launch_environment={
+                "DISPLAY": ":test", "WAYLAND_DISPLAY": "wayland-test",
+                "XDG_RUNTIME_DIR": "/tmp/test-runtime",
+            },
             ensure_shell_presentation=Mock(return_value=321),
             queue_aurelia_launch=Mock(return_value="aurelia-token"),
             state_details=Mock(return_value={}),
         )
+        interface.supervisor.set_delegated_launch_environment = lambda values: setattr(
+            interface.supervisor, "_delegated_launch_environment", dict(values))
         aurelia_config = SimpleNamespace(provider=Mock(return_value=SimpleNamespace(enabled=True)))
         output = False
 
@@ -187,6 +207,7 @@ class SessiondPresentationReadinessTests(unittest.TestCase):
                           side_effect=lambda: output), \
                     patch("lulu.sessiond.ProviderConfigurationService.from_environment",
                           return_value=aurelia_config), \
+                    patch("lulu.sessiond.graphical_context_is_live", return_value=True), \
                     patch("lulu.sessiond.write_graphical_launch_context"), \
                     patch.object(interface, "StateChanged", Mock()):
                 await interface._refresh_presentation_readiness()
@@ -199,6 +220,11 @@ class SessiondPresentationReadinessTests(unittest.TestCase):
                 output = True
                 await interface._refresh_presentation_readiness()
                 self.assertTrue(interface._presentation_ready)
+                ConsoleSessionInterface.SetDelegatedLaunchContext.__wrapped__(
+                    interface, json.dumps({
+                        "DISPLAY": ":test", "WAYLAND_DISPLAY": "wayland-test",
+                        "XDG_RUNTIME_DIR": "/tmp/test-runtime",
+                    }))
                 token = ConsoleSessionInterface.RequestAureliaLaunch.__wrapped__(
                     interface, "104200", 15000)
                 self.assertEqual(token, "aurelia-token")

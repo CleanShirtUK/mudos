@@ -17,6 +17,7 @@ from dbus_next import BusType, DBusError, MessageType
 from dbus_next.aio import MessageBus
 from dbus_next.service import ServiceInterface, method, signal
 
+from . import graphical_launch_context
 from .console_sessiond import SessionStateModel
 from .controllerd import ControllerRegistry, default_inputplumber_client
 from .inputplumber import (InputPlumberObjectDisappeared, is_service_unavailable,
@@ -34,7 +35,12 @@ from .service_readiness import wait_for_lulu_services
 from .recovery import clear_failures, record_failure, recovery_required
 from .settings import SettingsStore
 from .provider_config import ProviderConfigurationService
-from .graphical_launch_context import write_context as write_graphical_launch_context
+from .graphical_launch_context import (
+    clear_context as clear_graphical_launch_context,
+    context_was_consumed,
+    graphical_context_is_live,
+    write_context as write_graphical_launch_context,
+)
 
 
 BUS_NAME = "org.lulu.ConsoleSessiond"
@@ -81,6 +87,7 @@ class ConsoleSessionInterface(ServiceInterface):
         # selected the shell window in Gamescope.
         self._presentation_ready = False
         self._graphical_session_id = uuid.uuid4().hex
+        self._graphical_launch_lease: dict[str, object] | None = None
         self.supervisor = ProcessSupervisor(
             model,
             self._state_changed,
@@ -304,16 +311,68 @@ class ConsoleSessionInterface(ServiceInterface):
             self.StateChanged(self._state_json())
         if not self._presentation_ready:
             # Never carry display values across an unavailable/recovery interval.
-            # Callers must submit the live shell context again after readiness returns.
+            # The launch lease below is separately tied to the accepted session.
             self.supervisor.set_delegated_launch_environment({})
-        # The wrapper runs in Aurelia's daemon, not in Sessiond's process tree.
-        # Keep this private runtime snapshot current only while the presentation
-        # watchdog verifies the shell, and remove it immediately on readiness loss.
-        write_graphical_launch_context(
-            self.supervisor._delegated_launch_environment,
-            self._graphical_session_id,
-            ready=self._presentation_ready,
-            shell_pid=(self.supervisor._shell_process.pid if self._presentation_ready else None),
+        lease_active = (
+            self._refresh_graphical_launch_lease()
+            if self._graphical_launch_lease is not None else False
+        )
+        if self._presentation_ready and not lease_active:
+            # Publish the current context for a request that has not yet been
+            # accepted. RequestAureliaLaunch promotes it to a token-scoped lease.
+            write_graphical_launch_context(
+                self.supervisor._delegated_launch_environment,
+                self._graphical_session_id,
+                ready=True,
+                shell_pid=self.supervisor._shell_process.pid,
+            )
+        elif not lease_active:
+            write_graphical_launch_context({}, self._graphical_session_id, ready=False)
+
+    def _clear_graphical_launch_lease(self) -> None:
+        lease = getattr(self, "_graphical_launch_lease", None)
+        if lease is not None:
+            clear_graphical_launch_context(
+                graphical_launch_context.CONTEXT_PATH,
+                launch_token=str(lease["launch_token"]),
+            )
+        else:
+            clear_graphical_launch_context(graphical_launch_context.CONTEXT_PATH)
+        self._graphical_launch_lease = None
+
+    def _refresh_graphical_launch_lease(self) -> bool:
+        """Refresh only an accepted start while its captured display remains live."""
+        lease = self._graphical_launch_lease
+        if lease is None:
+            return False
+        token = str(lease["launch_token"])
+        task = getattr(self.supervisor, "_aurelia_launch_task", None)
+        if task is None or task.done() or self.model.state.lifecycle.value == "game":
+            self._clear_graphical_launch_lease()
+            return False
+        if context_was_consumed(graphical_launch_context.CONTEXT_PATH, token):
+            self._clear_graphical_launch_lease()
+            return False
+        shell_process = getattr(self.supervisor, "_shell_process", None)
+        values = lease["environment"]
+        if (
+            lease.get("session_id") != self._graphical_session_id
+            or shell_process is None
+            or shell_process.returncode is not None
+            or shell_process.pid != lease.get("shell_pid")
+            or not has_connected_presentation_output()
+            or not graphical_context_is_live(values)
+        ):
+            # Lost display/runtime/session invalidates this accepted attempt; never
+            # silently rebind it to a later shell or another display.
+            self._clear_graphical_launch_lease()
+            return False
+        return write_graphical_launch_context(
+            values,
+            str(lease["session_id"]),
+            ready=True,
+            shell_pid=int(lease["shell_pid"]),
+            launch_token=token,
         )
 
     def _reconcile_input_mode(
@@ -896,7 +955,30 @@ class ConsoleSessionInterface(ServiceInterface):
             if not ProviderConfigurationService.from_environment().provider(
                     "providers.steam_aurelia").enabled:
                 raise ValueError("Steam Aurelia launch is disabled; explicitly enable the experimental provider first")
-            return self.supervisor.queue_aurelia_launch(app_id, startup_timeout_ms)
+            environment = {
+                key: self.supervisor._delegated_launch_environment.get(key, "")
+                for key in ("DISPLAY", "WAYLAND_DISPLAY", "XDG_RUNTIME_DIR")
+            }
+            shell_process = self.supervisor._shell_process
+            if not graphical_context_is_live(environment):
+                raise ValueError("game launch unavailable: delegated graphical context is absent or disconnected")
+            token = self.supervisor.queue_aurelia_launch(app_id, startup_timeout_ms)
+            self._graphical_launch_lease = {
+                "launch_token": token,
+                "environment": environment,
+                "session_id": self._graphical_session_id,
+                "shell_pid": shell_process.pid,
+            }
+            # Snapshot promotion happens synchronously before the queued Aurelia
+            # task can run. The watchdog refreshes this lease during STARTING.
+            write_graphical_launch_context(
+                environment,
+                self._graphical_session_id,
+                ready=True,
+                shell_pid=shell_process.pid,
+                launch_token=token,
+            )
+            return token
         except ValueError as error:
             raise self._error(error) from error
 
@@ -1158,6 +1240,10 @@ async def serve(bus_type: BusType = BusType.SESSION, bootstrap_shell: bool = Fal
         await asyncio.gather(stable_task, return_exceptions=True)
     await interface.stop_controller_monitor()
     await interface.supervisor.stop()
+    interface._clear_graphical_launch_lease()
+    clear_delegated_context = getattr(interface.supervisor, "set_delegated_launch_environment", None)
+    if clear_delegated_context is not None:
+        clear_delegated_context({})
     LOGGER.info("session_lifecycle event=stop pid=%s", os.getpid())
     bus.disconnect()
 
