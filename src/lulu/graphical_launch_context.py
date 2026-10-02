@@ -35,9 +35,10 @@ def _process_start_time(pid: int) -> str | None:
 def write_context(
     values: Mapping[str, str], session_id: str, *, ready: bool,
     shell_pid: int | None = None, launch_token: str | None = None,
+    path: Path | None = None,
 ) -> bool:
     """Atomically publish a small, private session snapshot for the wrapper."""
-    path = CONTEXT_PATH
+    path = path or CONTEXT_PATH
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         if not ready:
@@ -75,8 +76,9 @@ def context_was_consumed(path: Path, launch_token: str) -> bool:
     return consumed_marker(path, launch_token).exists()
 
 
-def clear_context(path: Path = CONTEXT_PATH, *, launch_token: str | None = None) -> None:
+def clear_context(path: Path | None = None, *, launch_token: str | None = None) -> None:
     """Remove a snapshot and its acknowledgement without touching another lease."""
+    path = path or CONTEXT_PATH
     try:
         current_token = None
         try:
@@ -122,6 +124,39 @@ def graphical_context_is_live(environment: Mapping[str, str]) -> bool:
         return False
 
 
+def context_is_valid(
+    path: Path | None = None,
+    *,
+    session_id: str,
+    shell_pid: int,
+    now: float | None = None,
+    launch_token: str | None = None,
+) -> bool:
+    """Validate a published snapshot without consuming its launch lease."""
+    path = path or CONTEXT_PATH
+    try:
+        record = json.loads(path.read_text(encoding="utf-8"))
+        environment = record["environment"]
+        updated_at = float(record["updated_at"])
+        if (
+            record.get("presentation_ready") is not True
+            or record.get("session_id") != session_id
+            or record.get("shell_pid") != shell_pid
+            or (launch_token is None and record.get("launch_token") is not None)
+            or (launch_token is not None and record.get("launch_token") != launch_token)
+        ):
+            return False
+        current_start = _process_start_time(shell_pid)
+        if current_start is None or current_start != record.get("shell_start_time"):
+            return False
+        current_time = time.time() if now is None else now
+        if current_time < updated_at or current_time - updated_at > CONTEXT_MAX_AGE_SECONDS:
+            return False
+        return isinstance(environment, dict) and graphical_context_is_live(environment)
+    except (OSError, KeyError, TypeError, ValueError, json.JSONDecodeError):
+        return False
+
+
 def _display_socket(display: str) -> Path | None:
     # Support local X11 display names (e.g. :0, :0.0, unix/:0).
     if display.startswith("unix:/"):
@@ -138,8 +173,9 @@ def _display_socket(display: str) -> Path | None:
     return Path("/tmp/.X11-unix") / f"X{number}"
 
 
-def read_current_context(path: Path = CONTEXT_PATH, *, now: float | None = None) -> dict[str, str]:
+def read_current_context(path: Path | None = None, *, now: float | None = None) -> dict[str, str]:
     """Return approved, live session values or raise ValueError when stale."""
+    path = path or CONTEXT_PATH
     try:
         record = json.loads(path.read_text(encoding="utf-8"))
         environment = record["environment"]

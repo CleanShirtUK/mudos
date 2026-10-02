@@ -3,6 +3,9 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+from pathlib import Path
+import socket
+import tempfile
 from types import SimpleNamespace
 import unittest
 from unittest.mock import Mock, patch
@@ -12,6 +15,7 @@ from dbus_next import DBusError
 from lulu.console_sessiond import SessionStateModel
 from lulu.process_supervisor import ProcessSupervisor
 from lulu.sessiond import ConsoleSessionInterface
+from lulu.graphical_launch_context import context_is_valid
 
 
 def make_interface(*, ready: bool, presentation: object | None = object(),
@@ -21,6 +25,10 @@ def make_interface(*, ready: bool, presentation: object | None = object(),
     interface._presentation_ready = ready
     interface._graphical_session_id = "unit-test-session"
     interface._graphical_launch_lease = None
+    interface.controller_registry = SimpleNamespace(
+        navigation_controller_id=None, navigation_mode="all", controllers={})
+    interface._local_identity = None
+    interface._local_provider_id = ""
     interface.supervisor = SimpleNamespace(
         _presentation=presentation,
         _shell_process=shell_process if shell_process is not None
@@ -32,6 +40,7 @@ def make_interface(*, ready: bool, presentation: object | None = object(),
         set_delegated_launch_environment=Mock(),
         queue_steam_launch=Mock(return_value="steam-token"),
         queue_aurelia_launch=Mock(return_value="aurelia-token"),
+        state_details=Mock(return_value={}),
     )
     return interface
 
@@ -45,7 +54,9 @@ class SessiondPresentationReadinessTests(unittest.TestCase):
                 patch("lulu.sessiond.ProviderConfigurationService.from_environment",
                       return_value=aurelia_config), \
                 patch("lulu.sessiond.graphical_context_is_live", return_value=True), \
-                patch("lulu.sessiond.write_graphical_launch_context"):
+                patch("lulu.sessiond.write_graphical_launch_context", return_value=True), \
+                patch("lulu.sessiond.context_is_valid", return_value=True), \
+                patch.object(interface, "StateChanged", lambda *_args: None):
             steam_token = ConsoleSessionInterface.RequestSteamLaunch.__wrapped__(
                 interface, "104200", 15000)
             aurelia_token = ConsoleSessionInterface.RequestAureliaLaunch.__wrapped__(
@@ -83,7 +94,9 @@ class SessiondPresentationReadinessTests(unittest.TestCase):
                 aurelia_config = Mock()
                 with patch("lulu.sessiond.has_connected_presentation_output", return_value=True), \
                         patch("lulu.sessiond.ProviderConfigurationService.from_environment",
-                              aurelia_config):
+                              aurelia_config), \
+                        patch("lulu.sessiond.context_is_valid", return_value=False), \
+                        patch.object(interface, "StateChanged", lambda *_args: None):
                     with self.assertRaisesRegex(
                             DBusError, "Gamescope presentation is not ready"):
                         getattr(ConsoleSessionInterface, method_name).__wrapped__(
@@ -155,7 +168,8 @@ class SessiondPresentationReadinessTests(unittest.TestCase):
                     patch("lulu.sessiond.ProviderConfigurationService.from_environment",
                           return_value=aurelia_config), \
                     patch("lulu.sessiond.graphical_context_is_live", return_value=True), \
-                    patch("lulu.sessiond.write_graphical_launch_context"), \
+                    patch("lulu.sessiond.write_graphical_launch_context", return_value=True), \
+                    patch("lulu.sessiond.context_is_valid", return_value=True), \
                     patch.object(interface, "StateChanged", Mock()) as state_changed:
                 await interface._refresh_presentation_readiness()
                 self.assertTrue(interface._presentation_ready)
@@ -208,7 +222,8 @@ class SessiondPresentationReadinessTests(unittest.TestCase):
                     patch("lulu.sessiond.ProviderConfigurationService.from_environment",
                           return_value=aurelia_config), \
                     patch("lulu.sessiond.graphical_context_is_live", return_value=True), \
-                    patch("lulu.sessiond.write_graphical_launch_context"), \
+                    patch("lulu.sessiond.write_graphical_launch_context", return_value=True), \
+                    patch("lulu.sessiond.context_is_valid", return_value=True), \
                     patch.object(interface, "StateChanged", Mock()):
                 await interface._refresh_presentation_readiness()
                 self.assertFalse(interface._presentation_ready)
@@ -231,6 +246,110 @@ class SessiondPresentationReadinessTests(unittest.TestCase):
 
         asyncio.run(exercise())
         self.assertEqual(interface.supervisor.ensure_shell_presentation.call_count, 1)
+
+
+class GraphicalReadinessInvariantTests(unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        root = Path(self.temp.name)
+        self.runtime = root / "runtime"
+        self.runtime.mkdir()
+        x11_dir = root / "x11"
+        x11_dir.mkdir()
+        self.wayland = self.runtime / "wayland-test"
+        self.x11 = x11_dir / "X9"
+        self.servers = []
+        for path in (self.wayland, self.x11):
+            server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            server.bind(str(path))
+            server.listen(128)
+            self.servers.append(server)
+        self.context_path = root / "context.json"
+        self.environment = {
+            "DISPLAY": f"unix:{self.x11}",
+            "WAYLAND_DISPLAY": "wayland-test",
+            "XDG_RUNTIME_DIR": str(self.runtime),
+        }
+
+    def tearDown(self):
+        for server in self.servers:
+            server.close()
+        self.temp.cleanup()
+
+    def make_ready_interface(self):
+        interface = ConsoleSessionInterface.__new__(ConsoleSessionInterface)
+        interface.model = SessionStateModel()
+        interface.controller_registry = SimpleNamespace(
+            navigation_controller_id=None, navigation_mode="all", controllers={})
+        interface._local_identity = None
+        interface._local_provider_id = ""
+        interface._presentation_ready = False
+        interface._graphical_session_id = "readiness-test-session"
+        interface._graphical_launch_lease = None
+        interface._presentation_wait_log_at = 0.0
+        interface.StateChanged = lambda *_args: None
+        shell = SimpleNamespace(pid=os.getpid(), returncode=None)
+        interface.supervisor = SimpleNamespace(
+            _shell_process=shell,
+            _presentation=object(),
+            _delegated_launch_environment={},
+            ensure_shell_presentation=Mock(return_value=321),
+            shell_graphical_environment=Mock(return_value=self.environment),
+            set_delegated_launch_environment=lambda values: setattr(
+                interface.supervisor, "_delegated_launch_environment", dict(values)),
+            state_details=Mock(return_value={}),
+        )
+        return interface
+
+    async def tick(self, interface):
+        async def inline(function, *args):
+            return function(*args)
+
+        with patch("lulu.sessiond.asyncio.to_thread", side_effect=inline), \
+                patch("lulu.sessiond.has_connected_presentation_output", return_value=True):
+            await interface._refresh_presentation_readiness()
+
+    async def test_readiness_is_published_only_after_valid_context_exists(self):
+        interface = self.make_ready_interface()
+        with patch("lulu.graphical_launch_context.CONTEXT_PATH", self.context_path):
+            await self.tick(interface)
+            self.assertTrue(self.context_path.exists())
+            self.assertTrue(interface._presentation_ready)
+            self.assertTrue(context_is_valid(
+                self.context_path, session_id=interface._graphical_session_id,
+                shell_pid=os.getpid()))
+
+    async def test_snapshot_publication_failure_keeps_readiness_false(self):
+        interface = self.make_ready_interface()
+        with patch("lulu.graphical_launch_context.CONTEXT_PATH", self.context_path), \
+                patch("lulu.sessiond.write_graphical_launch_context", return_value=False):
+            await self.tick(interface)
+            self.assertFalse(interface._presentation_ready)
+            self.assertFalse(self.context_path.exists())
+
+    async def test_missing_or_invalid_snapshot_lowers_readiness_then_recovers(self):
+        interface = self.make_ready_interface()
+        with patch("lulu.graphical_launch_context.CONTEXT_PATH", self.context_path):
+            await self.tick(interface)
+            self.assertTrue(interface._presentation_ready)
+
+            self.context_path.unlink()
+            await self.tick(interface)
+            self.assertFalse(interface._presentation_ready)
+            self.assertFalse(self.context_path.exists())
+
+            await self.tick(interface)
+            self.assertTrue(interface._presentation_ready)
+            self.assertTrue(self.context_path.exists())
+
+            self.context_path.write_text("{}")
+            await self.tick(interface)
+            self.assertFalse(interface._presentation_ready)
+            self.assertFalse(self.context_path.exists())
+
+            await self.tick(interface)
+            self.assertTrue(interface._presentation_ready)
+            self.assertTrue(self.context_path.exists())
 
     def test_supervisor_only_reports_shell_ready_after_gamescope_selection_verifies(self) -> None:
         class Presentation:

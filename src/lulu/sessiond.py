@@ -38,6 +38,7 @@ from .provider_config import ProviderConfigurationService
 from .graphical_launch_context import (
     clear_context as clear_graphical_launch_context,
     context_was_consumed,
+    context_is_valid,
     graphical_context_is_live,
     write_context as write_graphical_launch_context,
 )
@@ -88,6 +89,8 @@ class ConsoleSessionInterface(ServiceInterface):
         self._presentation_ready = False
         self._graphical_session_id = uuid.uuid4().hex
         self._graphical_launch_lease: dict[str, object] | None = None
+        # A previous Sessiond instance cannot lend readiness to this one.
+        clear_graphical_launch_context(graphical_launch_context.CONTEXT_PATH)
         self.supervisor = ProcessSupervisor(
             model,
             self._state_changed,
@@ -281,35 +284,70 @@ class ConsoleSessionInterface(ServiceInterface):
             await asyncio.sleep(0.5)
 
     async def _refresh_presentation_readiness(self) -> None:
-        """Keep the readiness gate aligned with verified shell selection."""
+        """Publish readiness only after its live context snapshot is verified."""
         was_ready = self._presentation_ready
+        ready = False
         shell_process = getattr(self.supervisor, "_shell_process", None)
         presentation = getattr(self.supervisor, "_presentation", None)
-        if (self.model.state.lifecycle.value != "shell"
-                or not has_connected_presentation_output()
-                or shell_process is None or shell_process.returncode is not None
-                or presentation is None):
-            self._presentation_ready = False
-        else:
+        shell_candidate = (
+            self.model.state.lifecycle.value == "shell"
+            and has_connected_presentation_output()
+            and shell_process is not None
+            and shell_process.returncode is None
+            and presentation is not None
+        )
+        if shell_candidate and was_ready and not context_is_valid(
+            graphical_launch_context.CONTEXT_PATH,
+            session_id=self._graphical_session_id,
+            shell_pid=shell_process.pid,
+        ):
+            # A once-ready snapshot disappearing is itself a readiness loss.
+            # Recovery on the next watchdog iteration must recreate and verify
+            # the context before readiness can return.
+            shell_candidate = False
+        if shell_candidate:
             try:
                 selected_window = await asyncio.to_thread(self.supervisor.ensure_shell_presentation)
-                self._presentation_ready = bool(
+                selected = bool(
                     selected_window is not None
                     and has_connected_presentation_output()
                     and self.model.state.lifecycle.value == "shell"
                     and self.supervisor._shell_process is shell_process
                     and shell_process.returncode is None
                 )
+                if selected:
+                    environment_reader = getattr(self.supervisor, "shell_graphical_environment", None)
+                    environment = (
+                        environment_reader() if environment_reader is not None
+                        else self.supervisor._delegated_launch_environment
+                    )
+                    if graphical_context_is_live(environment):
+                        self.supervisor.set_delegated_launch_environment(dict(environment))
+                        published = write_graphical_launch_context(
+                            self.supervisor._delegated_launch_environment,
+                            self._graphical_session_id,
+                            ready=True,
+                            shell_pid=shell_process.pid,
+                        )
+                        ready = bool(
+                            published
+                            and context_is_valid(
+                                graphical_launch_context.CONTEXT_PATH,
+                                session_id=self._graphical_session_id,
+                                shell_pid=shell_process.pid,
+                            )
+                            and self.model.state.lifecycle.value == "shell"
+                            and self.supervisor._shell_process is shell_process
+                            and shell_process.returncode is None
+                        )
             except (OSError, RuntimeError, TimeoutError, subprocess.SubprocessError) as error:
-                self._presentation_ready = False
                 now = time.monotonic()
                 if now - self._presentation_wait_log_at >= 30:
-                    LOGGER.warning("shell presentation check pending; Sessiond remains active and will retry: %s",
+                    LOGGER.warning("shell presentation/context check pending; Sessiond remains active and will retry: %s",
                                    error)
                     self._presentation_wait_log_at = now
-        if was_ready != self._presentation_ready:
-            self.StateChanged(self._state_json())
-        if not self._presentation_ready:
+        self._presentation_ready = ready
+        if not ready and not self._graphical_launch_lease:
             # Never carry display values across an unavailable/recovery interval.
             # The launch lease below is separately tied to the accepted session.
             self.supervisor.set_delegated_launch_environment({})
@@ -317,17 +355,10 @@ class ConsoleSessionInterface(ServiceInterface):
             self._refresh_graphical_launch_lease()
             if self._graphical_launch_lease is not None else False
         )
-        if self._presentation_ready and not lease_active:
-            # Publish the current context for a request that has not yet been
-            # accepted. RequestAureliaLaunch promotes it to a token-scoped lease.
-            write_graphical_launch_context(
-                self.supervisor._delegated_launch_environment,
-                self._graphical_session_id,
-                ready=True,
-                shell_pid=self.supervisor._shell_process.pid,
-            )
-        elif not lease_active:
+        if not lease_active and not ready:
             write_graphical_launch_context({}, self._graphical_session_id, ready=False)
+        if was_ready != ready:
+            self.StateChanged(self._state_json())
 
     def _clear_graphical_launch_lease(self) -> None:
         lease = getattr(self, "_graphical_launch_lease", None)
@@ -463,6 +494,12 @@ class ConsoleSessionInterface(ServiceInterface):
 
     async def bootstrap_shell(self) -> None:
         self._presentation_ready = False
+        if hasattr(self, "_graphical_session_id"):
+            self._clear_graphical_launch_lease()
+            clear_graphical_launch_context(graphical_launch_context.CONTEXT_PATH)
+        clear_environment = getattr(self.supervisor, "set_delegated_launch_environment", None)
+        if clear_environment is not None:
+            clear_environment({})
         shell = str(Path(__file__).resolve().parents[2] / "scripts" / "console-ui.sh")
         qml = "Recovery.qml" if getattr(self, "recovery_mode", False) else "ConsoleShell.qml"
         os.environ["LULU_UI_FILE"] = str(PATHS.install_root / "ui" / qml)
@@ -511,7 +548,18 @@ class ConsoleSessionInterface(ServiceInterface):
         shell_process = getattr(self.supervisor, "_shell_process", None)
         presentation = getattr(self.supervisor, "_presentation", None)
         if (not self._presentation_ready or shell_process is None
-                or shell_process.returncode is not None or presentation is None):
+                or shell_process.returncode is not None or presentation is None
+                or not context_is_valid(
+                    graphical_launch_context.CONTEXT_PATH,
+                    session_id=self._graphical_session_id,
+                    shell_pid=shell_process.pid,
+                )):
+            was_ready = self._presentation_ready
+            self._presentation_ready = False
+            if was_ready:
+                clear_graphical_launch_context(graphical_launch_context.CONTEXT_PATH)
+                self.supervisor.set_delegated_launch_environment({})
+                self.StateChanged(self._state_json())
             raise ValueError("game launch unavailable: Gamescope presentation is not ready")
 
     async def stop_controller_monitor(self) -> None:
@@ -921,15 +969,31 @@ class ConsoleSessionInterface(ServiceInterface):
             value = json.loads(context_json)
             if not isinstance(value, dict):
                 raise ValueError("launch context must be an object")
-            self.supervisor.set_delegated_launch_environment({
+            environment = {
                 str(key): str(child) for key, child in value.items()
-            })
-            write_graphical_launch_context(
-                self.supervisor._delegated_launch_environment,
-                self._graphical_session_id,
-                ready=self._presentation_ready,
-                shell_pid=(self.supervisor._shell_process.pid if self._presentation_ready else None),
-            )
+            }
+            self.supervisor.set_delegated_launch_environment(environment)
+            shell_process = self.supervisor._shell_process
+            published = False
+            if (self._presentation_ready and shell_process is not None
+                    and shell_process.returncode is None
+                    and graphical_context_is_live(self.supervisor._delegated_launch_environment)):
+                published = write_graphical_launch_context(
+                    self.supervisor._delegated_launch_environment,
+                    self._graphical_session_id,
+                    ready=True,
+                    shell_pid=shell_process.pid,
+                ) and context_is_valid(
+                    graphical_launch_context.CONTEXT_PATH,
+                    session_id=self._graphical_session_id,
+                    shell_pid=shell_process.pid,
+                )
+            if self._presentation_ready and not published:
+                self._presentation_ready = False
+                clear_graphical_launch_context(graphical_launch_context.CONTEXT_PATH)
+                self.StateChanged(self._state_json())
+            elif not self._presentation_ready:
+                clear_graphical_launch_context(graphical_launch_context.CONTEXT_PATH)
         except (TypeError, ValueError, json.JSONDecodeError) as error:
             raise self._error(ValueError(str(error))) from error
 

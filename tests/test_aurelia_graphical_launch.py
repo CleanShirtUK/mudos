@@ -14,7 +14,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from lulu.console_sessiond import SessionStateModel
-from lulu.graphical_launch_context import GRAPHICAL_ENV
+from lulu.graphical_launch_context import GRAPHICAL_ENV, graphical_context_is_live
 from lulu.plugins.steam.aurelia import AureliaClient
 from lulu.sessiond import ConsoleSessionInterface
 
@@ -57,7 +57,7 @@ class WrapperBoundaryTests(unittest.TestCase):
         for path in (self.wayland, self.x11):
             server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
             server.bind(str(path))
-            server.listen(4)
+            server.listen(128)
             self.sockets.append(server)
         self.context_path = self.root / "aurelia-graphical-launch-context.json"
         self.context = {
@@ -173,7 +173,7 @@ class SessiondLaunchLeaseTests(unittest.IsolatedAsyncioTestCase):
         for path in (self.wayland, self.x11):
             server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
             server.bind(str(path))
-            server.listen(4)
+            server.listen(128)
             self.sockets.append(server)
         self.context_path = self.root / "aurelia-graphical-launch-context.json"
         self.environment = {
@@ -261,6 +261,7 @@ class SessiondLaunchLeaseTests(unittest.IsolatedAsyncioTestCase):
             record = json.loads(self.context_path.read_text())
             self.assertEqual(record["launch_token"], token)
             self.assertFalse(interface._presentation_ready)
+            self.assertTrue(graphical_context_is_live(record["environment"]), record)
 
             result = self._run_wrapper()
             self.assertEqual(result.returncode, 0, result.stderr)

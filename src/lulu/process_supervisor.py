@@ -100,6 +100,49 @@ class ProcessSupervisor:
             if key in allowed and isinstance(value, str) and value
         }
 
+    def shell_graphical_environment(self) -> dict[str, str]:
+        """Read the live graphical environment Gamescope gave its UI process.
+
+        Sessiond itself is started by systemd and does not inherit Gamescope's
+        Xwayland/Wayland variables. Gamescope's UI child is in its process
+        group, so use that process group as the authority for the initial
+        readiness snapshot rather than guessing socket names.
+        """
+        shell = self._shell_process
+        if shell is None or shell.returncode is not None:
+            return {}
+        candidates: list[tuple[int, dict[str, str]]] = []
+        try:
+            entries = os.scandir("/proc")
+        except OSError:
+            return {}
+        with entries:
+            for entry in entries:
+                if not entry.name.isdecimal():
+                    continue
+                pid = int(entry.name)
+                if pid == shell.pid:
+                    continue
+                try:
+                    if os.getpgid(pid) != shell.pid:
+                        continue
+                    raw = Path(entry.path, "environ").read_bytes().split(b"\0")
+                    environment = {}
+                    for item in raw:
+                        if b"=" not in item:
+                            continue
+                        key, value = item.split(b"=", 1)
+                        decoded_key = key.decode("ascii")
+                        if decoded_key in ("DISPLAY", "WAYLAND_DISPLAY", "XDG_RUNTIME_DIR"):
+                            environment[decoded_key] = value.decode()
+                    if set(environment) == {"DISPLAY", "WAYLAND_DISPLAY", "XDG_RUNTIME_DIR"}:
+                        candidates.append((pid, environment))
+                except (OSError, ProcessLookupError, PermissionError, UnicodeDecodeError):
+                    continue
+        # Prefer the oldest process in the Gamescope group: the UI launcher
+        # establishes the environment inherited by the actual shell surface.
+        return min(candidates, key=lambda item: item[0])[1] if candidates else {}
+
     async def _drain_output(
         self, stream: asyncio.StreamReader, role: str, pid: int, channel: str
     ) -> None:
