@@ -1,5 +1,4 @@
 import hashlib
-import stat
 import shutil
 import subprocess
 import unittest
@@ -105,19 +104,27 @@ class ProvisioningTests(unittest.TestCase):
         self.assertTrue((ROOT / "src/lulu/system_settings.py").is_file())
         self.assertTrue((ROOT / "src/lulu/bluetooth.py").is_file())
 
-    def test_runtime_bootstrap_scripts_are_present_and_executable(self) -> None:
-        for name in ("steam-session-bootstrap.sh", "steam-bootstrap.sh"):
-            path = PAYLOAD / "scripts" / name
-            self.assertTrue(path.is_file())
-            self.assertTrue(path.stat().st_mode & stat.S_IXUSR)
-        session = (PAYLOAD / "scripts/steam-session-bootstrap.sh").read_text()
-        self.assertIn("scripts/steam-bootstrap.sh", session)
+    def test_legacy_steam_bootstraps_are_not_in_the_immutable_runtime(self) -> None:
+        release_source = (ROOT / "scripts/release.py").read_text()
+        for name in ("steam-session-bootstrap.sh", "steam-bootstrap.sh", "provision-steamcmd.sh"):
+            self.assertIn(f'"{name}"', release_source)
         console_ui = (PAYLOAD / "scripts/console-ui.sh").read_text()
         self.assertNotIn("steam-session-bootstrap", console_ui)
-        bootstrap = (PAYLOAD / "scripts/steam-bootstrap.sh").read_text()
-        self.assertIn("exec /usr/bin/steam -silent", bootstrap)
-        self.assertNotIn("+open steam://open/minigameslist", bootstrap)
         self.assertIn("Restart=on-failure", (ROOT / "packaging/lulu-session@.service").read_text())
+
+    def test_clean_install_provisions_pinned_aurelia_without_authentication(self) -> None:
+        provision = (ROOT / "scripts/provision-aurelia.sh").read_text()
+        package = (ROOT / "packages/aurelia/PKGBUILD").read_text()
+        installer = (ROOT / "scripts/install_mudos.py").read_text()
+        self.assertIn("pacman -U --needed --noconfirm", provision)
+        self.assertIn("installed == 0.1.38-1", provision)
+        self.assertIn("pkgver=0.1.38", package)
+        self.assertIn("3b67cf258100d466a75095c60b3500dfe1803cf1d803e1f414f1cf53d8c80a8e", package)
+        self.assertIn('"scripts/provision-aurelia.sh"', installer)
+        self.assertIn("enable_aurelia_review_provider(target)", installer)
+        for service in ("lulu-session@.service", "lulu-consoled.service", "lulu-acquisition.service"):
+            self.assertIn("Environment=LULU_AURELIA_EXECUTABLE=/usr/bin/aurelia",
+                          (ROOT / "packaging" / service).read_text())
 
     def test_dev_refresh_releases_kms_capture_before_restarting_presentation(self) -> None:
         script = (ROOT / "scripts/dev-runtime.sh").read_text()

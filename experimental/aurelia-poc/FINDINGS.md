@@ -114,13 +114,13 @@ future-compatibility warnings were emitted.
 ## Live evidence
 
 All Aurelia invocations ran as user `lulu`, with config under
-`/tmp/opencode/aurelia-poc-live/config`, mode 0700 directory / 0600 config,
+`<private-temporary-directory>/aurelia-poc-live/config`, mode 0700 directory / 0600 config,
 and these environment values: `HOME=/home/lulu`,
-`AURELIA_CONFIG_DIR=/tmp/opencode/aurelia-poc-live/config`,
-`AURELIA_DAEMON_SOCKET=/tmp/opencode/aurelia-poc-live/daemon.sock`,
+`AURELIA_CONFIG_DIR=<private-temporary-directory>/aurelia-poc-live/config`,
+`AURELIA_DAEMON_SOCKET=<private-temporary-directory>/aurelia-poc-live/daemon.sock`,
 `AURELIA_NO_DAEMON=1`, `AURELIA_NO_SPAWN=1`. No credentials were passed.
 
-Exact safe commands (binary is the separately built `/tmp/opencode/Aurelia/target/release/aurelia`):
+Exact safe commands (binary is a separately built Aurelia executable):
 
 ```text
 aurelia --version                       -> aurelia 0.1.37 (exit 0)
@@ -176,9 +176,9 @@ Steam account ownership, launchability under Aurelia, nor entitlement parity.
 The adapter's exercised form was:
 
 ```sh
-python3 /tmp/opencode/aurelia-poc-adapter.py \
-  --binary /tmp/opencode/Aurelia/target/release/aurelia \
-  --config-dir /tmp/opencode/aurelia-poc-live/config \
+python3 ./aurelia-poc-adapter.py \
+  --binary /path/to/aurelia \
+  --config-dir /path/to/private/aurelia-config \
   snapshot --app-id 40800
 ```
 

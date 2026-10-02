@@ -4,7 +4,7 @@
 
 The authoritative checkout was clean before this work:
 
-* source: `/home/josh/src/lulu`
+* source: the canonical Mudos checkout on host `lulu`
 * branch: `audit/network-file-browser-1670797`
 * commit: `f81a652` (`Checkpoint controller-first OSK integration`)
 * rollback tag: `mudos-modularisation-baseline-20260917`
@@ -20,9 +20,9 @@ The authoritative checkout was clean before this work:
 The baseline release and tag are never mutated. Deterministic rollback is:
 
 ```sh
-sudo python3 /home/josh/src/lulu/scripts/release.py verify \
+sudo python3 scripts/release.py verify \
   --release-dir /opt/lulu/releases/f81a652-candidate-20260917003411
-sudo python3 /home/josh/src/lulu/scripts/release.py activate \
+sudo python3 scripts/release.py activate \
   --release-dir /opt/lulu/releases/f81a652-candidate-20260917003411
 ```
 

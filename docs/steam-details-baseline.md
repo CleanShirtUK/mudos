@@ -88,7 +88,7 @@ changes after the experiment. Do not remove the lifecycle implementation.
 For a source checkout session, the relevant launch command is:
 
 ```sh
-PYTHONPATH=/home/josh/src/lulu/src python -m lulu.consoled
+PYTHONPATH=src python -m lulu.consoled
 ```
 
 Use the normal Lulu session startup for the UI; no new Steam instance or

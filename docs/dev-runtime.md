@@ -2,7 +2,7 @@
 
 `/opt/lulu/current` and `/opt/lulu/releases` are immutable-release-only. For
 dirty QML/UI validation, `scripts/dev-runtime.sh refresh` copies the canonical
-checkout at `/home/josh/src/lulu` into `/opt/lulu/dev-current`, builds the
+checkout into `/opt/lulu/dev-current`, builds the
 development binaries there, writes a `NON_PROMOTABLE` provenance marker, and
 installs temporary systemd drop-ins for `lulu-session@` and `lulu-consoled`.
 
@@ -13,8 +13,8 @@ time. This runtime is never accepted by `scripts/release.py`, never becomes
 Commands (run on Lulu):
 
 ```sh
-sudo /home/josh/src/lulu/scripts/dev-runtime.sh refresh
-sudo /home/josh/src/lulu/scripts/dev-runtime.sh immutable
+sudo ./scripts/dev-runtime.sh refresh
+sudo ./scripts/dev-runtime.sh immutable
 ```
 
 `refresh` rebuilds the mutable runtime and restarts only the Mudos session and

@@ -1,7 +1,7 @@
 pkgname=aurelia
 pkgver=0.1.38
 pkgrel=1
-pkgdesc='Pinned Aurelia Steam CLI for the experimental Mudos backend'
+pkgdesc='Pinned external Aurelia Steam CLI for Mudos'
 arch=('x86_64')
 url='https://github.com/Drackrath/Aurelia'
 license=('GPL-3.0-only')

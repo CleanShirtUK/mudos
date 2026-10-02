@@ -216,7 +216,7 @@ not implied to have passed.
   does not produce working independent Player 2/3 input or the expected
   Nintendo face behaviour. No further controller-generator change is justified
   without a physically verified Eden-written donor.
-- Failing-state backup: `/tmp/opencode-eden-failing-20260920012437`.
+- Failing-state backup: temporary validation capture (original local path omitted).
 - Preserved launch command:
   `/usr/bin/eden --appimage-extract-and-run --config
   /home/lulu/.config/eden/qt-config.ini -f --fullscreen --game
@@ -1044,7 +1044,7 @@ restart may be required for InputPlumber to publish a newly created target.
 ## Controller inventory regression investigation and correction — 2026-09-21
 
 - Preserved bad-state evidence before recovery in
-  `/tmp/opencode/live-regression-20260921/`.
+  temporary live-regression capture (original local path omitted).
 - Kernel and udev saw the USB Series controller as `045e:0b12`,
   `Microsoft Xbox Series S|X Controller`, `/dev/input/event8` and `js1`, with
   12 keys and 8 absolute-axis capabilities reported by InputPlumber.
@@ -1111,7 +1111,7 @@ restart may be required for InputPlumber to publish a newly created target.
 ## Cold-boot/hotplug regression investigation — 2026-09-21
 
 - Cold-boot evidence was preserved before recovery in
-  `/tmp/opencode/cold-boot-regression-20260921-164936/`.
+  temporary cold-boot regression capture (original local path omitted).
 - Boot started at `16:46:29`. There was no USB controller, no
   `/dev/input/event8` or `js1`, no SDL physical gamepad, and no InputPlumber
   composite (`GamepadOrder=0`). The generated profile existed but was stale:
@@ -1173,7 +1173,7 @@ restart may be required for InputPlumber to publish a newly created target.
   emitted no composite parse warning. The hotplug unit remained inactive because
   the kernel never produced a qualifying input-device event.
 - Controlled evidence is preserved at
-  `/tmp/opencode/cold-boot-regression-20260921-164936/controlled-boot-20260921-170446/`.
+  temporary controlled-boot capture (original local path omitted).
 - This rules out the broken receiver as the contaminating source and confirms
   the current cold-boot failure is upstream of dynamic provisioning,
   InputPlumber, sessiond, status, settings, navigation, and emulator launch.

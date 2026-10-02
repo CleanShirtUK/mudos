@@ -19,6 +19,7 @@ class ReleaseToolTests(unittest.TestCase):
         self.assertIn("scripts/steam-auth-surface.py", release.REQUIRED_FILES)
         self.assertIn("scripts/dolphin-bluetooth-lease.py", release.REQUIRED_FILES)
         self.assertIn("scripts/aurelia-graphical-launch.py", release.REQUIRED_FILES)
+        self.assertIn("scripts/provision-aurelia-state.py", release.REQUIRED_FILES)
 
     def git_repo(self):
         root = Path(tempfile.mkdtemp())
@@ -131,6 +132,8 @@ class ReleaseToolTests(unittest.TestCase):
             self.assertTrue((payload / "bin/mudos-notification").is_file())
             self.assertFalse((payload / ".native-build").exists())
             self.assertFalse(any(path.suffix == ".moc" for path in payload.rglob("*")))
+            for excluded in release.RUNTIME_EXCLUDED_SCRIPTS:
+                self.assertFalse((payload / "scripts" / excluded).exists())
 
     def test_build_records_provenance_and_refuses_overwrite(self):
         root = self.git_repo()
@@ -159,7 +162,7 @@ class ReleaseToolTests(unittest.TestCase):
             metadata = (built / "RELEASE").read_text()
             self.assertIn(f"revision={revision}\n", metadata)
             self.assertIn("branch=main\n", metadata)
-            self.assertIn(f"source={root.resolve()}\n", metadata)
+            self.assertNotIn("source=", metadata)
             with self.assertRaises(release.ReleaseError):
                 release.build_release(info)
         finally:

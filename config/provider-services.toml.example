@@ -30,6 +30,9 @@ enabled = false
 endpoint = "https://www.protondb.com/api/v1/reports/summaries"
 timeout = 4.0
 
+[providers.steam_aurelia]
+enabled = true
+
 [providers.prowlarr]
 enabled = false
 endpoint = "http://192.168.0.197:9696/"

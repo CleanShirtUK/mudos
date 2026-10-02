@@ -1,9 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Install the pinned upstream CLI as a package-owned executable. The provider
-# remains disabled; this script does not authenticate to Steam or touch its
-# libraries/session state.
+# Install the pinned upstream CLI as a package-owned executable. This does not
+# authenticate to Steam or touch Aurelia's credentials/session state.
 script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 repo_root=$(CDPATH= cd -- "$script_dir/.." && pwd)
 build_dir=$(mktemp -d /var/tmp/lulu-aurelia-build.XXXXXX)
@@ -17,3 +16,8 @@ if [[ -z "$package" ]]; then
     exit 1
 fi
 pacman -U --needed --noconfirm "$package"
+installed=$(pacman -Q aurelia | awk '{print $2}')
+[[ $installed == 0.1.38-1 ]] || {
+    echo "Expected pinned Aurelia package 0.1.38-1, found $installed" >&2
+    exit 1
+}

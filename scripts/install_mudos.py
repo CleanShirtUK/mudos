@@ -7,6 +7,8 @@ import json
 import os
 from pathlib import Path, PurePosixPath
 import platform
+import pwd
+import re
 import shutil
 import stat
 import subprocess
@@ -119,6 +121,26 @@ def copy_if_absent(source: Path, destination: Path, *, uid: int | None = None,
     if mode is not None:
         destination.chmod(mode)
     return True
+
+
+def enable_aurelia_review_provider(path: Path) -> None:
+    """Enable the pinned Aurelia provider without replacing other settings."""
+    lines = path.read_text().splitlines() if path.exists() else []
+    target = "[providers.steam_aurelia]"
+    start = next((i for i, line in enumerate(lines) if line.strip() == target), None)
+    if start is None:
+        lines.extend(("", target, "enabled = true"))
+    else:
+        end = next((i for i in range(start + 1, len(lines))
+                    if re.match(r"\s*\[", lines[i])), len(lines))
+        enabled = next((i for i in range(start + 1, end)
+                        if re.match(r"\s*enabled\s*=", lines[i])), None)
+        if enabled is None:
+            lines.insert(end, "enabled = true")
+        else:
+            lines[enabled] = re.sub(r"(\benabled\s*=\s*).*$", r"\1true", lines[enabled])
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("\n".join(lines).rstrip() + "\n")
 
 
 def existing_release(release_root: Path, revision: str) -> Path | None:
@@ -313,6 +335,8 @@ def plan(repo: Path, manifest: dict, action: str, *, purge: bool = False) -> lis
         sha, _ = source_revision(repo)
         return [f"build and verify immutable release from {sha}", "atomically select /opt/lulu/current",
                 "install only missing shared pacman dependencies",
+                "install pinned Aurelia 0.1.38 external package and initialize provider state without authenticating",
+                "enable the steam-aurelia provider and configure its executable",
                 "install manifest-owned system integration", "initialize writable directories without overwriting state",
                 "enable/start Mudos core and Recovery services; leave OOBE incomplete"]
     if action == "update":
@@ -428,9 +452,24 @@ def install_integration(repo: Path, release: Path, manifest: dict,
     # is configured. Initialize only the Mudos-owned acquisition leaves.
     initialize_acquisition_directories(acquisition_directories(manifest))
     template = release / "config/provider-services.toml.example"
-    target = Path("/home/lulu/.config/lulu/provider-services.toml")
+    lulu_account = pwd.getpwnam("lulu")
+    lulu_home = Path(lulu_account.pw_dir)
+    target = lulu_home / ".config/lulu/provider-services.toml"
     if template.is_file():
-        copy_if_absent(template, target, uid=958, gid=958, mode=0o640)
+        copy_if_absent(template, target, uid=lulu_account.pw_uid,
+                       gid=lulu_account.pw_gid, mode=0o640)
+    enable_aurelia_review_provider(target)
+    os.chown(target, lulu_account.pw_uid, lulu_account.pw_gid)
+    target.chmod(0o640)
+    # Aurelia is a separately packaged, checksum-pinned external dependency.
+    # Provision its private config as lulu; do not authenticate or alter session state.
+    run(["bash", str(release / "scripts/provision-aurelia.sh")])
+    run(["runuser", "-u", lulu_account.pw_name, "--", "env",
+         f"HOME={lulu_home}", f"XDG_CONFIG_HOME={lulu_home / '.config'}",
+         f"XDG_DATA_HOME={lulu_home / '.local/share'}",
+         "LULU_AURELIA_EXECUTABLE=/usr/bin/aurelia",
+         "PYTHONPATH=/opt/lulu/current/lib", "LULU_INSTALL_ROOT=/opt/lulu/current",
+         "/usr/bin/python", str(release / "scripts/provision-aurelia-state.py")])
     # Install executable scripts/provider helper are in release; verify service
     # environments refer solely to the immutable current selector.
     run(["systemctl", "daemon-reload"])

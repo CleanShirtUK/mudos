@@ -3,7 +3,12 @@ set -eu
 
 # Deliberately separate from scripts/release.py: this runtime is mutable,
 # dirty-source-capable, and never a release or rollback authority.
-repo_root=/home/josh/src/lulu
+script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+repo_root=$(git -C "$script_dir" rev-parse --show-toplevel 2>/dev/null || true)
+if [ -z "$repo_root" ]; then
+    echo "dev runtime helper must run from a Mudos source checkout" >&2
+    exit 1
+fi
 runtime=/opt/lulu/dev-current
 dropin_root=/etc/systemd/system
 session_dropin="$dropin_root/lulu-session@.service.d/dev-runtime.conf"

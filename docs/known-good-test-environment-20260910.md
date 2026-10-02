@@ -191,7 +191,7 @@ verify supplied content independently.
   generated profiles.
 - `/var/lib/lulu/.local/share/lulu/catalogue.sqlite3` and artwork caches.
 - `/tmp/lulu-controller-diagnostics.log`.
-- `/home/josh/src/lulu/build/` compiled test binaries, ignored by Git.
+- The checkout's ignored `build/` directory contains compiled test binaries.
 - Live D-Bus objects, InputPlumber composites, SDL indices, evdev event
   numbers, Gamescope window IDs, and process IDs.
 - Existing duplicate or crashed test emulator processes observed during

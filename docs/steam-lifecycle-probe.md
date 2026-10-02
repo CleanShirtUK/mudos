@@ -52,8 +52,8 @@ If running from the source checkout instead of an installed image:
 
 ```sh
 sudo -u lulu env XDG_RUNTIME_DIR=/run/user/958 DISPLAY=:0 \
-  PYTHONPATH=/home/josh/src/lulu/src \
-  /home/josh/src/lulu/scripts/steam-lifecycle-probe.py --appid 268910 \
+  PYTHONPATH=src \
+  ./scripts/steam-lifecycle-probe.py --appid 268910 \
   | tee /tmp/lulu-steam-cuphead-lifecycle.log
 ```
 

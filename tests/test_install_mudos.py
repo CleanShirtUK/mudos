@@ -24,10 +24,29 @@ def test_ownership_manifest_separates_release_state_and_shared_packages():
     assert data["immutable"]["selector"] == "/opt/lulu/current"
     assert "/home/lulu/.config/lulu" in data["mutable"]["exact_paths"]
     assert all(int(entry["mode"], 8) & 0o002 == 0 for entry in data["mutable"]["initial_directories"])
-    assert "/home/josh/src/lulu" in data["protected"]
+    assert all("/home/" not in item for item in data["protected"])
     assert "packages" in data["shared_dependencies"]
     assert not any("/opt/lulu/dev-current" in path for path in data["immutable"].values()
                    if isinstance(path, str))
+
+
+def test_aurelia_review_provider_enable_preserves_other_user_configuration(tmp_path):
+    config = tmp_path / "provider-services.toml"
+    config.write_text("[providers.prowlarr]\nenabled = false\n\n"
+                      "[providers.steam_aurelia]\nenabled = false\nendpoint = 'unused'\n")
+    installer.enable_aurelia_review_provider(config)
+    text = config.read_text()
+    assert "[providers.prowlarr]\nenabled = false" in text
+    assert "[providers.steam_aurelia]\nenabled = true\nendpoint = 'unused'" in text
+    installer.enable_aurelia_review_provider(config)
+    assert config.read_text().count("[providers.steam_aurelia]") == 1
+
+
+def test_aurelia_review_provider_enable_adds_missing_section(tmp_path):
+    config = tmp_path / "provider-services.toml"
+    config.write_text("[metadata.protondb]\nenabled = false\n")
+    installer.enable_aurelia_review_provider(config)
+    assert "[providers.steam_aurelia]\nenabled = true" in config.read_text()
 
 
 def test_steam_bootstrap_data_root_precedes_owned_steamapps_child():

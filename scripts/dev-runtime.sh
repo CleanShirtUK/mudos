@@ -4,7 +4,7 @@ export PYTHONDONTWRITEBYTECODE=1
 
 # Deliberately separate from scripts/release.py: this runtime is mutable,
 # dirty-source-capable, and never a release or rollback authority.
-repo_root=/home/josh/src/lulu
+repo_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 runtime=/opt/lulu/dev-current
 dropin_root=/etc/systemd/system
 session_dropin="$dropin_root/lulu-session@.service.d/dev-runtime.conf"
@@ -21,8 +21,8 @@ transmission_config_unit="$dropin_root/lulu-transmission-config.service"
 sunshine_user_config=/home/lulu/.config/sunshine
 sunshine_user_units=/home/lulu/.config/systemd/user
 
-if [ "$(hostname)" != lulu ] || [ "$(CDPATH= cd -- "$repo_root" && pwd)" != "$repo_root" ]; then
-    echo "dev runtime must be refreshed on canonical Lulu from $repo_root" >&2
+if [ "$(hostname)" != lulu ]; then
+    echo "dev runtime must be refreshed on the canonical Lulu host from this checkout" >&2
     exit 1
 fi
 

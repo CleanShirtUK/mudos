@@ -20,6 +20,16 @@ from typing import Iterable
 
 
 PAYLOAD_DIRS = ("ui", "scripts", "config", "packaging", "packages")
+RUNTIME_EXCLUDED_SCRIPTS = (
+    "dev-runtime.sh",
+    "sessiond-dbus-probe.py",
+    "steam-lifecycle-probe.py",
+    "steam-bootstrap.sh",
+    "steam-session-bootstrap.sh",
+    "provision-steamcmd.sh",
+    "migrate-prowlarr-key.sh",
+    "usenet-acquisition-test.py",
+)
 REQUIRED_FILES = (
     "bin/lulu-shell",
     "bin/mudos-guide",
@@ -35,6 +45,7 @@ REQUIRED_FILES = (
     "scripts/console-ui.sh",
     "scripts/console-ui-bridge.py",
     "scripts/aurelia-graphical-launch.py",
+    "scripts/provision-aurelia-state.py",
     "scripts/reconcile-questarr.py",
     "scripts/provision-inputplumber-gamepads.py",
     "scripts/dolphin-bluetooth-lease.py",
@@ -140,6 +151,8 @@ def build_payload(repo_root: Path, payload: Path) -> None:
     copy_tree(source / "src", payload / "lib")
     for directory in PAYLOAD_DIRS:
         copy_tree(source / directory, payload / directory)
+    for relative in RUNTIME_EXCLUDED_SCRIPTS:
+        (payload / "scripts" / relative).unlink(missing_ok=True)
     (payload / "scripts" / "release.py").unlink(missing_ok=True)
     build_dir = payload / ".native-build"
     build_dir.mkdir()
@@ -244,7 +257,7 @@ def make_immutable(release: Path) -> None:
 def write_release_metadata(release: Path, info: ReleaseInfo) -> None:
     (release / "RELEASE").write_text(
         f"revision={info.revision}\ncommit={info.revision}\ntag={info.release_dir.name}\n"
-        f"branch={info.branch}\nsource={info.repo_root.resolve()}\n"
+        f"branch={info.branch}\n"
         f"status=clean\ncreated={datetime.now(timezone.utc).isoformat()}\nimmutable=true\n"
     )
 
@@ -296,7 +309,7 @@ def activate_release(release: Path, release_root: Path, activation: Path) -> Non
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("command", choices=("build", "verify", "activate"))
-    parser.add_argument("--repo-root", type=Path, default=Path("/home/josh/src/lulu"))
+    parser.add_argument("--repo-root", type=Path, default=Path(__file__).resolve().parents[1])
     parser.add_argument("--release-root", type=Path, default=Path("/opt/lulu/releases"))
     parser.add_argument("--release-dir", type=Path)
     parser.add_argument("--activation", type=Path, default=Path("/opt/lulu/current"))
