@@ -302,6 +302,10 @@ class ConsoleSessionInterface(ServiceInterface):
                     self._presentation_wait_log_at = now
         if was_ready != self._presentation_ready:
             self.StateChanged(self._state_json())
+        if not self._presentation_ready:
+            # Never carry display values across an unavailable/recovery interval.
+            # Callers must submit the live shell context again after readiness returns.
+            self.supervisor.set_delegated_launch_environment({})
         # The wrapper runs in Aurelia's daemon, not in Sessiond's process tree.
         # Keep this private runtime snapshot current only while the presentation
         # watchdog verifies the shell, and remove it immediately on readiness loss.
