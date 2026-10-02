@@ -82,7 +82,7 @@ class PluginFrameworkTests(unittest.TestCase):
     def test_real_plugin_manifests_declare_core_contributions(self):
         registry = PluginRegistry(Path(__file__).parents[1] / "config" / "plugins")
         registry.discover()
-        self.assertEqual({card.card_id for card in registry.store_cards()}, {"steam", "questarr", "flathub"})
+        self.assertEqual({card.card_id for card in registry.store_cards()}, {"questarr", "flathub"})
         self.assertEqual(next(card for card in registry.store_cards() if card.card_id == "flathub").glyph, "f324")
         services = {service.service_id for service in registry.services()}
         self.assertTrue({"questarr", "transmission", "nzbget"} <= services)

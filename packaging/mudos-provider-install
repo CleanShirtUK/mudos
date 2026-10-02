@@ -5,13 +5,8 @@ provider=${1:-}
 root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 case "$provider" in
     steam)
-        pacman -Si steam >/dev/null
-        pacman -Si steam-devices >/dev/null
-        pacman -S --needed --noconfirm steam steam-devices
-        # SteamCMD owns a separate cache/session and is the Mudos acquisition
-        # executor. Provision its official Valve runtime without importing
-        # GUI Steam credentials or claiming acquisition authentication.
-        exec "$root/scripts/provision-steamcmd.sh"
+        echo "The legacy Steam client and SteamCMD backend are disabled; Steam is provided by Aurelia." >&2
+        exit 64
         ;;
     epic) exec "$root/scripts/provision-legendary.sh" ;;
     gog) exec "$root/scripts/provision-gogdl.sh" ;;

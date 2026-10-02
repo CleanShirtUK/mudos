@@ -1,51 +1,17 @@
-id = "steam"
-name = "Steam"
+id = "steam-aurelia"
+name = "Aurelia Steam"
 version = "1"
 api_version = 1
 kind = "plugin"
-providers = ["steam"]
-authentication_methods = ["auth_credentials", "auth_2fa", "auth_browser"]
-description = "Steam ownership, installation, and Store access."
-types = ["catalogue", "acquisition", "store"]
+providers = ["steam-aurelia"]
+authentication_methods = []
+description = "Steam ownership, installation, and launch through Aurelia."
+types = ["catalogue", "acquisition"]
 
 [capabilities]
-providers = true
+providers = false
 installed_catalogue = true
 available_catalogue = true
 acquisition = true
-authentication = true
+authentication = false
 session = true
-
-[[store_cards]]
-id = "steam"
-label = "Steam"
-url = "https://store.steampowered.com/"
-glyph = "steam"
-browser_profile = "steam-store"
-removable = false
-
-[[secrets]]
-slot = "username"
-label = "Steam username"
-description = "The Steam account used by Mudos for SteamCMD downloads."
-required = false
-reference = "steam/username"
-
-[[secrets]]
-slot = "password"
-label = "Steam password"
-description = "Stored securely and used automatically by SteamCMD. Steam Guard codes are never stored."
-required = false
-reference = "steam/password"
-
-[configuration.fields.username]
-type = "username"
-label = "Steam username"
-description = "The Steam account used for Mudos-managed installations."
-secret = true
-
-[configuration.fields.password]
-type = "password"
-label = "Steam password"
-description = "Leave blank to keep the saved password. Steam Guard codes remain temporary."
-secret = true

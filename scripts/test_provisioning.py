@@ -70,6 +70,17 @@ class ProvisioningTests(unittest.TestCase):
         config = (PAYLOAD / "packaging/presentation.conf").read_text()
         self.assertNotIn("\nLULU_OUTPUT_CONNECTOR=HDMI-A-1\n", config)
 
+    def test_legacy_steam_provider_install_is_disabled(self) -> None:
+        installer = (ROOT / "packaging/mudos-provider-install").read_text()
+        steam_case = installer.split("    steam)", 1)[1].split("    epic)", 1)[0]
+        self.assertIn("SteamCMD backend are disabled", steam_case)
+        self.assertNotIn("pacman -S", steam_case)
+        self.assertNotIn("provision-steamcmd.sh", steam_case)
+        ownership = (ROOT / "packaging/mudos-ownership.json").read_text()
+        packages = ownership.split('"packages": [', 1)[1].split("]", 1)[0]
+        self.assertNotIn('"steam"', packages)
+        self.assertNotIn('"steam-devices"', packages)
+
 
 if __name__ == "__main__":
     unittest.main()

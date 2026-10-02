@@ -337,6 +337,29 @@ class ConsoleBridgeTests(unittest.TestCase):
 
         asyncio.run(exercise())
 
+    def test_aurelia_catalogue_identity_routes_directly_to_aurelia_session_method(self) -> None:
+        class Session:
+            async def call_request_aurelia_launch(self, appid: str, timeout: int) -> str:
+                self.request = (appid, timeout)
+                return "aurelia-token"
+
+            async def call_request_steam_launch(self, appid: str, timeout: int) -> str:
+                raise AssertionError("Aurelia catalogue identity fell back to legacy Steam")
+
+        class Consoled:
+            async def call_launch_game(self, game_id: str, timeout: int) -> str:
+                raise AssertionError("Aurelia catalogue identity was sent through Consoled")
+
+        async def exercise() -> None:
+            session = Session()
+            bridge = BRIDGE.ConsoleUiBridge(asyncio.get_running_loop(), Consoled(), session)
+            with patch.dict(BRIDGE.os.environ, {}, clear=True):
+                result = await bridge.launch_game("steam-aurelia:104200")
+            self.assertEqual(result, {"token": "aurelia-token", "navigation_only": False})
+            self.assertEqual(session.request, ("104200", 15000))
+
+        asyncio.run(exercise())
+
     def test_local_cancellation_uses_consoled_process_boundary(self) -> None:
         class Session:
             async def call_cancel_launch(self) -> None:

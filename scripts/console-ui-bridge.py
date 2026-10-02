@@ -271,9 +271,13 @@ class ConsoleUiBridge:
 
     async def launch_game(self, game_id: str) -> dict[str, object]:
         LOGGER.info("launch request game_id=%s", game_id)
-        appid = game_id.removeprefix("steam:")
+        appid = game_id.removeprefix("steam-aurelia:").removeprefix("steam:")
         self.launch_logs.note("Lulu", f"HTTP launch request started game_id={game_id}")
-        if game_id.startswith("steam:"):
+        if game_id.startswith("steam-aurelia:"):
+            token = normalize_launch_token(await self.sessiond.call_request_aurelia_launch(appid, 15000))
+            self.launch_logs.note("Steam Aurelia", f"aurelia play {appid}")
+            self.launch_logs.note("Lulu", f"session launch boundary reached game_id={game_id} appid={appid} token={token}")
+        elif game_id.startswith("steam:"):
             if os.environ.get("LULU_STEAM_LAUNCH_PROVIDER") == "steam-aurelia":
                 token = normalize_launch_token(await self.sessiond.call_request_aurelia_launch(appid, 15000))
                 self.launch_logs.note("Steam Aurelia", f"aurelia play {appid}")

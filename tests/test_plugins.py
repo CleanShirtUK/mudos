@@ -60,7 +60,7 @@ class PluginRegistryTests(unittest.TestCase):
             manifest.write_text(manifest.read_text().replace('api_version = 1', 'api_version = 1\nenabled = false'))
             registry = PluginRegistry(root)
             records = {record.manifest.plugin_id: record for record in registry.discover()}
-            self.assertEqual(records["steam"].health, "disabled")
+            self.assertEqual(records["steam-aurelia"].health, "disabled")
             providers = registry.with_capability("providers")
             self.assertFalse(any(str(path).endswith("/steam/providers") for path in providers))
             self.assertTrue(any(str(path).endswith("/gog/providers") for path in providers))

@@ -1,0 +1,20 @@
+id = "steam-aurelia"
+name = "Aurelia Steam"
+
+[capabilities]
+launch = false
+library = true
+
+[platforms]
+supported = ["pc"]
+
+[config]
+strategy = "direct"
+
+[[guide.actions]]
+id = "steam-aurelia-quit"
+label = "Quit Game"
+role = "quit"
+target = "process-group-terminate"
+contexts = ["game"]
+order = 90

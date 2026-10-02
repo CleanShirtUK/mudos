@@ -134,8 +134,9 @@ class ProvisioningTests(unittest.TestCase):
         self.assertIn('"$staging/bin/mudos-provider-install"', script)
         self.assertNotIn('"$runtime/bin/mudos-provider-install"', script)
         installer = (ROOT / "packaging/mudos-provider-install").read_text()
-        self.assertIn("pacman -S --needed --noconfirm steam steam-devices", installer)
-        self.assertIn('exec "$root/scripts/provision-steamcmd.sh"', installer)
+        self.assertIn("SteamCMD backend are disabled", installer)
+        self.assertNotIn("pacman -S --needed --noconfirm steam steam-devices", installer)
+        self.assertNotIn('exec "$root/scripts/provision-steamcmd.sh"', installer)
 
     def test_settings_validation_runtime_switch_does_not_reprovision_inputplumber_or_host_policy(self) -> None:
         script = (ROOT / "scripts/dev-runtime.sh").read_text()

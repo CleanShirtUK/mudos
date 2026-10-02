@@ -22,6 +22,30 @@ class FakeSteamProvider:
 
 
 class CatalogueTests(unittest.TestCase):
+    def test_aurelia_identity_wins_over_legacy_steam_duplicate(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = CatalogueStore(Path(directory) / "catalogue.sqlite3")
+            legacy = CatalogueGame("steam:104200", "steam", "104200", "BEEP", "Steam",
+                                   "installed", True, "/games/beep", "", 0,
+                                   catalogue_source="steam")
+            aurelia = CatalogueGame("steam-aurelia:104200", "steam-aurelia", "104200", "BEEP", "Steam",
+                                    "installed", True, "/games/beep", "", 0,
+                                    catalogue_source="steam-aurelia")
+            store.reconcile_component_apps("steam", [legacy])
+            store.reconcile_component_apps("steam-aurelia", [aurelia])
+
+            installed = store.list_games("steam")
+            self.assertEqual([game.game_id for game in installed], ["steam-aurelia:104200"])
+
+            legacy_available = replace(legacy, install_state="available", launchable=False,
+                                       install_dir="", availability_state="available")
+            aurelia_available = replace(aurelia, install_state="available", launchable=False,
+                                        install_dir="", availability_state="available")
+            store.reconcile_component_apps("steam", [legacy_available])
+            store.reconcile_component_apps("steam-aurelia", [aurelia_available])
+            available = store.list_available_games()
+            self.assertEqual([game.game_id for game in available], ["steam-aurelia:104200"])
+
     def test_simultaneous_first_open_tolerates_peer_schema_migration(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "catalogue.sqlite3"

@@ -13,19 +13,16 @@ class ProviderLaunchContractTests(unittest.TestCase):
         ])
         self.assertEqual([action.label for action in load_mudos_guide()], ["Open Downloads"])
         providers = load_providers()
-        for provider_id in ("retroarch", "steam", "dolphin", "pcsx2", "eden"):
+        for provider_id in ("retroarch", "steam-aurelia", "dolphin", "pcsx2", "eden"):
             self.assertEqual(sum(action.role == "quit" for action in providers[provider_id].guide_actions), 1)
 
     def test_provider_context_filtering_and_standalone_actions(self) -> None:
         providers = load_providers()
-        game_actions = providers.guide_actions("steam", "game")
-        self.assertEqual([action.action_id for action in game_actions],
-                         ["steam-overlay", "steam-quit"])
-        self.assertEqual(game_actions[0].target, "key:Shift+Tab")
-        self.assertEqual([a.action_id for a in providers.guide_actions("steam", "store")],
-                         ["steam-quit"])
-        self.assertEqual([a.action_id for a in providers.guide_actions("steam", "standalone")],
-                         ["steam-quit"])
+        game_actions = providers.guide_actions("steam-aurelia", "game")
+        self.assertEqual([action.action_id for action in game_actions], ["steam-aurelia-quit"])
+        self.assertEqual(game_actions[0].target, "process-group-terminate")
+        self.assertEqual(providers.guide_actions("steam-aurelia", "store"), ())
+        self.assertEqual(providers.guide_actions("steam-aurelia", "standalone"), ())
         self.assertEqual(providers.guide_actions("romm", "game"), ())
 
     def test_pcsx2_quit_targets_sessiond_owned_process(self) -> None:
@@ -138,12 +135,13 @@ class ProviderLaunchContractTests(unittest.TestCase):
             self.assertEqual(provider.standalone_launch.command, ("/usr/bin/retroarch",))
             self.assertEqual(provider.game_launch.command, ("/usr/bin/retroarch", "--game"))
 
-    def test_steam_is_a_declared_standalone_provider(self) -> None:
-        provider = load_providers()["steam"]
-        self.assertEqual(provider.standalone_launch.command,
-                         ("/usr/bin/steam", "steam://open/main"))
-        self.assertEqual(provider.standalone_launch.controller_mode, "compat")
-        self.assertEqual(provider.standalone_launch.window_class, "steam")
+    def test_aurelia_is_the_only_declared_steam_provider(self) -> None:
+        providers = load_providers()
+        self.assertNotIn("steam", [item.provider_id for _, item in providers.items()])
+        provider = providers["steam-aurelia"]
+        self.assertTrue(provider.capabilities.library)
+        self.assertFalse(provider.capabilities.launch)
+        self.assertIsNone(provider.standalone_launch)
 
 
 

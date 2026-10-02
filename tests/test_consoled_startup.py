@@ -141,11 +141,10 @@ class ConsoledStartupTests(unittest.TestCase):
 
         asyncio.run(exercise())
 
-    def test_steam_authentication_uses_shell_credential_broker(self) -> None:
+    def test_legacy_steam_credentials_and_steamcmd_backend_are_not_registered(self) -> None:
         interface = ConsoleInterface(SimpleNamespace())
-        auth = interface._plugins.for_plugin("steam", "authentication")
-        self.assertTrue(auth)
-        self.assertIs(auth[0].acquisition.credentials, interface.credentials)
+        self.assertFalse(interface._plugins.for_plugin("steam-aurelia", "authentication"))
+        self.assertFalse(interface._plugins.for_plugin("steam-aurelia", "acquisition"))
 
     def test_utilities_projection_and_launch_use_installed_non_game_flatpak(self) -> None:
         class Adapter:

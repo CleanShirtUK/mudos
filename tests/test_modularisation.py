@@ -19,7 +19,8 @@ class ModularisationTests(unittest.TestCase):
 
     def test_provider_capabilities_and_strategy_are_explicit(self):
         registry = load_providers()
-        self.assertTrue(registry["steam"].capabilities.library)
+        self.assertTrue(registry["steam-aurelia"].capabilities.library)
+        self.assertFalse(registry["steam-aurelia"].capabilities.launch)
         self.assertEqual(registry["romm"].config_strategy, ConfigStrategy.DIRECT)
         for provider in ("retroarch", "dolphin", "pcsx2", "eden"):
             self.assertEqual(registry[provider].config_strategy, ConfigStrategy.DIRECT)

@@ -1208,7 +1208,10 @@ class CatalogueStore:
 
     def list_games(self, scope: str = "all") -> list[CatalogueGame]:
         query = (f"SELECT {SELECT_COLUMNS} FROM games WHERE {self._installed_presentation_where()} "
-                 "AND (provider<>'flatpak' OR component_classification='game')")
+                 "AND (provider<>'flatpak' OR component_classification='game') "
+                 "AND NOT (provider='steam' AND EXISTS ("
+                 "SELECT 1 FROM games AS aurelia WHERE aurelia.provider='steam-aurelia' "
+                 "AND aurelia.provider_id=games.provider_id))")
         parameters: tuple[object, ...] = ()
         if scope == "pc":
             # PC Games includes native/managed PC applications from all
@@ -1267,6 +1270,9 @@ class CatalogueStore:
         query += " AND NOT (provider='romm' AND installed_game_id<>'' AND EXISTS ("
         query += "SELECT 1 FROM games AS linked_local WHERE linked_local.game_id=games.installed_game_id "
         query += "AND linked_local.catalogue_source='local' AND linked_local.install_state='installed'))"
+        query += " AND NOT (provider='steam' AND EXISTS ("
+        query += "SELECT 1 FROM games AS aurelia WHERE aurelia.provider='steam-aurelia' "
+        query += "AND aurelia.provider_id=games.provider_id))"
         return self._rows(query + " ORDER BY title COLLATE NOCASE", parameters)
 
     def get_game(self, game_id: str) -> CatalogueGame | None:

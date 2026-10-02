@@ -114,7 +114,7 @@ class OnboardingStateTests(unittest.TestCase):
                 patch("lulu.onboarding._repository_packages_available", return_value=True):
             rows = onboarding.provider_manifest(components)
         by_id = {row["id"]: row for row in rows}
-        self.assertIn("steam", by_id)
+        self.assertNotIn("steam", by_id)
         self.assertIn("epic", by_id)
         self.assertIn("gog", by_id)
         self.assertIn("flatpak", by_id)
