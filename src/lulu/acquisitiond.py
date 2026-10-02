@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+from dataclasses import asdict
 import json
 import logging
 import os
@@ -160,6 +161,36 @@ class AcquisitionInterface(ServiceInterface):
             "provider": "usenet",
             **self._usenet_startup_config,
             "executor_registered": "usenet" in self.manager.executors,
+        }, sort_keys=True)
+
+    @method()
+    async def GetAureliaBackendStatus(self) -> "s":
+        """Secret-free diagnostics for the explicitly experimental backend."""
+        executor = self.manager.executors.get("steam-aurelia")
+        if executor is None:
+            return json.dumps({"provider": "steam-aurelia", "enabled": False,
+                               "status": "disabled", "capabilities": {}}, sort_keys=True)
+        client = getattr(executor, "client", None)
+        capabilities = getattr(executor, "capabilities", None)
+        auth_status = "unavailable"
+        if client is not None and client.available:
+            try:
+                auth_status = await client.auth_status()
+            except Exception as error:
+                # Expose a normalized, secret-free status only.
+                auth_status = "unavailable"
+                LOGGER.warning("aurelia status unavailable error_type=%s", type(error).__name__)
+        return json.dumps({
+            "provider": "steam-aurelia", "enabled": True,
+            "status": "available" if client is not None and client.available else "unavailable",
+            "authentication": auth_status,
+            "session_directory": str(client.config_dir) if client is not None else None,
+            "capabilities": asdict(capabilities) if capabilities is not None else {
+                "acquisition_progress": True, "acquisition_cancel": True,
+                "updates": False, "dlc": False, "launch": False,
+                "running_state": True, "authentication_status": True,
+                "detailed_launch_progress": False,
+            },
         }, sort_keys=True)
 
     @method()

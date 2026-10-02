@@ -26,6 +26,7 @@ USER_FILENAME = "provider-services.toml"
 # No optional service is enabled by default. The structure is intentionally
 # generic so new namespaces do not require a second configuration mechanism.
 DEFAULT_CONFIG: dict[str, object] = {
+    "providers": {"steam_aurelia": {"enabled": False}},
     # ProtonDB is a public, AppID-keyed compatibility summary service.  It
     # has no credentials and is scoped by the enrichment caller to installed
     # Steam Library records.

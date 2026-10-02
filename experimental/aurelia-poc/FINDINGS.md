@@ -612,3 +612,27 @@ activation. The next gate should be implementation of the minimal opt-in
 Acquisitiond/Sessiond adapter plus review of session-key storage, followed by a
 separately approved account-authenticated content test and controlled game
 launch. Do not migrate or change the production provider until those pass.
+
+## Mudos-side adapter implementation update
+
+The experimental integration boundary was added after this assessment in
+`src/lulu/plugins/steam/aurelia.py`. It has a distinct `steam-aurelia` provider
+identity, secret-free CLI client, private Aurelia config directory, read-only
+health/library/running methods, an Acquisitiond `JobExecutor` with actual
+NDJSON progress conversion, shared-daemon cancellation, active-job discovery
+and restart adoption, plus a coarse launch controller. The current provider is
+not replaced. Registration defaults off at
+`providers.steam_aurelia.enabled=false`; only explicit provider-services
+configuration registers the executor. See `docs/aurelia-auth-storage.md` for
+session ownership, credential introduction and keyring policy.
+
+Important boundary still outstanding: Sessiond's production launch path
+continues to use its current Steam request/observe/process-owner protocol. The
+new controller is testable and provides Aurelia-side launch evidence, but has
+not yet been connected to Sessiond's authoritative lifecycle, presentation,
+Gamescope, input, cancellation and recovery transitions. `launching` versus
+`preparing` also cannot be distinguished reliably before Aurelia's running
+record appears; the adapter does not invent that event. Accordingly this work
+is enough to proceed to read-only auth health and controlled authenticated
+acquisition adapter testing after configuration/keyring review, but not to a
+controlled game launch or production backend selection.

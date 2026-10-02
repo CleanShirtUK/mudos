@@ -40,3 +40,11 @@ test fixture, not production configuration. Do not point this tool at real
 credentials/config without reviewing Aurelia's behavior first.
 
 See `FINDINGS.md` for architecture, results, risks, and recommendation.
+
+The separate Mudos-side opt-in boundary now lives in
+`src/lulu/plugins/steam/aurelia.py`. It is registered under the distinct
+`steam-aurelia` identity only when `providers.steam_aurelia.enabled = true` in
+the existing provider-services configuration. Its auth/session storage policy
+is documented in `docs/aurelia-auth-storage.md`. It is not wired into the
+production Steam launch dispatch; Sessiond launch ownership and Gamescope
+handoff remain a follow-up integration gate.
