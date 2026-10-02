@@ -1,0 +1,14 @@
+pkgname=aurelia
+pkgver=0.1.38
+pkgrel=1
+pkgdesc='Pinned Aurelia Steam CLI for the experimental Mudos backend'
+arch=('x86_64')
+url='https://github.com/Drackrath/Aurelia'
+license=('GPL-3.0-only')
+source=("aurelia::https://github.com/Drackrath/Aurelia/releases/download/v${pkgver}/aurelia_linux_x86_64")
+sha256sums=('3b67cf258100d466a75095c60b3500dfe1803cf1d803e1f414f1cf53d8c80a8e')
+options=('!strip')
+
+package() {
+    install -Dm755 "$srcdir/aurelia" "$pkgdir/usr/bin/aurelia"
+}

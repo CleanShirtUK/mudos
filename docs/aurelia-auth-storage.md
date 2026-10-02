@@ -53,12 +53,23 @@ that provider is selected. They become obsolete only after a separately
 approved migration and parity gate; this experimental backend neither reads
 nor deletes them.
 
-## Keyring policy gate
+## Experimental POC plaintext-session decision
 
-Aurelia encrypts its session with an OS keyring when available, but its upstream
-fallback is an owner-only plaintext session file. Before authentication is
-enabled in an appliance service, confirm the `lulu` user's Secret Service
-availability across reboot/headless operation and either require encryption or
-explicitly accept/document upstream's `0600` fallback. Never weaken directory
-permissions or copy the session into Mudos databases/backups. This keyring
-deployment decision remains an authentication-test prerequisite.
+Steam refresh/session tokens are sensitive authentication material. The
+experimental Aurelia backend currently accepts Aurelia's own plaintext session
+persistence as a deliberate temporary trade-off. A protected session-storage
+implementation may be introduced later, but it is not a prerequisite for
+proving Aurelia's Steam backend functionality.
+
+This exception is limited to the initial experimental POC. Keep the session
+directory private to `lulu` (mode `0700`) and `session.json` mode `0600`. Do not
+log session contents, pass tokens in command-line arguments or ordinary
+environment variables, or copy session state into Mudos databases/backups.
+Authentication state belongs only to Aurelia. Existing SteamCMD passwords and
+Steam client tokens are not read, reused, imported, migrated, or deleted; the
+production Steam provider and its separate authentication state remain intact.
+
+The session includes the Steam CM refresh token and may also include a web
+token. Do not enable Aurelia by default. This plaintext persistence decision is
+not an approval for production replacement; any later security gate may require
+a protected session-storage backend before promotion.
