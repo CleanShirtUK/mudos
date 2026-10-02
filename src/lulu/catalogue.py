@@ -355,7 +355,7 @@ def canonical_metadata_required(record: CatalogueGame, *, in_library: bool = Fal
 # user's entitlement/access.  Provider catalogue discovery is deliberately
 # not enough.  RomM is retained here because it is the user's accessible
 # catalogue, while component/Flathub discovery remains storefront-only.
-INSTALLABLE_CATALOGUE_SOURCES = frozenset({"steam", "romm", "gog", "epic", "flatpak"})
+INSTALLABLE_CATALOGUE_SOURCES = frozenset({"steam", "steam-aurelia", "romm", "gog", "epic", "flatpak"})
 
 
 # These two provider-observation fields are deliberately excluded from

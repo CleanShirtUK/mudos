@@ -53,6 +53,74 @@ class AureliaInstalledGame:
     platform: str | None
     update_available: bool | None
 
+    @property
+    def provider_id(self) -> str:
+        return self.app_id
+
+    @property
+    def install_dir(self) -> str:
+        return self.install_path or ""
+
+
+@dataclass(frozen=True, slots=True)
+class AureliaEntitlement:
+    provider_id: str
+    title: str
+    platform: str = "Steam"
+    artwork_url: str = ""
+    availability_state: str = "available"
+
+
+class AureliaEntitlementSource:
+    """Authenticated Aurelia library as the authoritative Steam ownership source."""
+
+    provider_id = PROVIDER_ID
+
+    def __init__(self, client: "AureliaClient | None" = None) -> None:
+        self.client = client or AureliaClient()
+        self.snapshot: tuple[AureliaEntitlement, ...] = ()
+        self._installed: tuple[AureliaInstalledGame, ...] = ()
+        self.last_error = ""
+        self.auth_status = "unauthenticated"
+
+    def refresh(self) -> None:
+        async def load() -> None:
+            self.auth_status = await self.client.auth_status()
+            if self.auth_status != "authenticated":
+                self.snapshot, self._installed = (), ()
+                self.last_error = self.auth_status
+                return
+            rows = await self.client.command("list")
+            if not isinstance(rows, list):
+                raise AureliaError("malformed-output", "Aurelia library was not an array")
+            entitlements = []
+            installed = []
+            for row in rows:
+                if not isinstance(row, dict) or row.get("is_owned") is not True:
+                    continue
+                app_id = str(row.get("app_id", ""))
+                if not app_id.isdecimal() or int(app_id) < 1:
+                    continue
+                name = str(row.get("name") or app_id)
+                assets = row.get("assets") if isinstance(row.get("assets"), dict) else {}
+                entitlements.append(AureliaEntitlement(
+                    app_id, name, "Steam", str(assets.get("header") or assets.get("capsule") or "")))
+                if row.get("is_installed") is True:
+                    installed.append(AureliaInstalledGame(
+                        PROVIDER_ID, app_id, name, True,
+                        row.get("install_path") if isinstance(row.get("install_path"), str) else None,
+                        row.get("platform") if isinstance(row.get("platform"), str) else None,
+                        row.get("update_available") if isinstance(row.get("update_available"), bool) else None))
+            self.snapshot, self._installed, self.last_error = tuple(entitlements), tuple(installed), ""
+        try:
+            asyncio.run(load())
+        except Exception as error:
+            self.last_error = type(error).__name__
+            raise
+
+    def installed(self) -> tuple[AureliaInstalledGame, ...]:
+        return self._installed
+
 
 class AureliaClient:
     """Secret-free CLI boundary. Credentials are never accepted as arguments."""

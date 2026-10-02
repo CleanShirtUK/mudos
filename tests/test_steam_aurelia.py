@@ -14,13 +14,67 @@ from lulu.acquisition_store import AcquisitionStore
 from lulu.job_manager import JobManager
 from lulu.plugins.steam.aurelia import (
     AureliaAcquisitionExecutor, AureliaCapabilities, AureliaClient, AureliaInstalledGame,
+    AureliaEntitlementSource,
     AureliaError, AureliaLaunchController, PROVIDER_ID, map_progress,
 )
 from lulu.paths import PATHS
 from lulu.provider_config import ProviderConfigurationService
+from lulu.catalogue import CatalogueStore
 
 
 class AureliaClientTests(unittest.IsolatedAsyncioTestCase):
+    async def test_aurelia_entitlements_reconcile_to_installable_without_installed_duplicate(self):
+        with tempfile.TemporaryDirectory() as temp:
+            store = CatalogueStore(Path(temp) / "catalogue.sqlite")
+            owned = (
+                type("Owned", (), {"provider_id": "440", "title": "Team Fortress 2",
+                                    "platform": "Steam", "artwork_url": "art"})(),
+                type("Owned", (), {"provider_id": "730", "title": "Counter-Strike 2",
+                                    "platform": "Steam", "artwork_url": ""})(),
+            )
+            installed = (AureliaInstalledGame(PROVIDER_ID, "730", "Counter-Strike 2", True,
+                                               "/games/cs2", "linux", False),)
+            games = store.reconcile_owned_provider(PROVIDER_ID, owned, installed)
+            installable = store.list_available_games()
+            self.assertEqual([game.provider_id for game in installable], ["440"])
+            self.assertEqual(installable[0].provider, "steam-aurelia")
+            self.assertEqual(installable[0].provider_id, "440")
+            installed_game = next(game for game in games if game.provider_id == "730")
+            self.assertEqual(installed_game.install_state, "installed")
+            self.assertEqual(installed_game.install_dir, "/games/cs2")
+
+    async def test_entitlement_source_filters_nonowned_and_preserves_installed_metadata(self):
+        responses = iter([
+            (0, json.dumps({"logged_in": True}), ""),
+            (0, json.dumps([
+                {"app_id": 440, "name": "Team Fortress 2", "is_owned": True,
+                 "is_installed": False, "assets": {"header": "https://art/440.jpg"}},
+                {"app_id": 730, "name": "Counter-Strike 2", "is_owned": True,
+                 "is_installed": True, "install_path": "/steam/cs2", "platform": "linux",
+                 "update_available": True},
+                {"app_id": 999, "name": "Not owned", "is_owned": False,
+                 "is_installed": False},
+            ]), ""),
+        ])
+        client = AureliaClient("fake", Path(tempfile.mkdtemp()),
+                               run=lambda *a, **kw: next(responses))
+        source = AureliaEntitlementSource(client)
+        await asyncio.to_thread(source.refresh)
+        self.assertEqual([entry.provider_id for entry in source.snapshot], ["440", "730"])
+        self.assertEqual(source.snapshot[0].artwork_url, "https://art/440.jpg")
+        self.assertEqual([entry.app_id for entry in source.installed()], ["730"])
+        self.assertEqual(source.installed()[0].install_dir, "/steam/cs2")
+        self.assertTrue(source.installed()[0].update_available)
+
+    async def test_entitlement_source_does_not_fall_back_when_unauthenticated(self):
+        client = AureliaClient("fake", Path(tempfile.mkdtemp()),
+                               run=lambda *a, **kw: (0, json.dumps({"logged_in": False}), ""))
+        source = AureliaEntitlementSource(client)
+        await asyncio.to_thread(source.refresh)
+        self.assertEqual(source.auth_status, "unauthenticated")
+        self.assertEqual(source.snapshot, ())
+        self.assertEqual(source.last_error, "unauthenticated")
+
     async def test_auth_health_states_and_secret_free_errors(self):
         for payload, expected in [
             ({"logged_in": False}, "unauthenticated"),

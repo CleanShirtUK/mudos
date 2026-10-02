@@ -2,8 +2,8 @@
 
 function categories(games) {
     var result = [{label: "All", scope: "all"}]
-    var providers = ["steam", "epic", "gog"]
-    var labels = ["Steam", "Epic", "GOG"]
+    var providers = ["steam", "steam-aurelia", "epic", "gog"]
+    var labels = ["Steam", "Steam / Aurelia", "Epic", "GOG"]
     for (var p = 0; p < providers.length; ++p)
         result.push({label: labels[p], scope: "provider:" + providers[p], provider: providers[p]})
     var seen = ({})

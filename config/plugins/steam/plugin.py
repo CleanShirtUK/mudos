@@ -14,8 +14,11 @@ def register(context):
     experimental = ProviderConfigurationService.from_environment().provider(
         "providers.steam_aurelia")
     if experimental.enabled:
-        from lulu.plugins.steam.aurelia import AureliaAcquisitionExecutor, AureliaClient
+        from lulu.plugins.steam.aurelia import (
+            AureliaAcquisitionExecutor, AureliaClient, AureliaEntitlementSource,
+        )
         aurelia = AureliaClient()
+        context.register("installed_catalogue", AureliaEntitlementSource(aurelia))
         context.register("acquisition", {
             "provider": "steam-aurelia",
             "executor": AureliaAcquisitionExecutor(aurelia),

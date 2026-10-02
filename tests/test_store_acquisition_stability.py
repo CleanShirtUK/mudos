@@ -58,7 +58,8 @@ class StoreAcquisitionStabilityTests(unittest.TestCase):
 
     def test_concurrent_provider_decoration_is_identity_keyed(self) -> None:
         self.assertIn('acquisitionJobs[String(game.game_id)]', self.store)
-        self.assertIn('"steam:" + String(game.provider_id)', self.store)
+        self.assertIn('"steam-aurelia:"', self.store)
+        self.assertIn('"steam:"', self.store)
         self.assertIn('provider === "romm"', self.store)
 
 

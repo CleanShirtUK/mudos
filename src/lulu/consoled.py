@@ -138,7 +138,7 @@ class ConsoleCatalog:
             (item for item in installed_sources if getattr(item, "provider_id", "") == "steam"), None)
         self.external_entitlements = tuple(
             item for item in installed_sources
-            if getattr(item, "provider_id", "") in {"gog", "epic"}
+            if getattr(item, "provider_id", "") in {"gog", "epic", "steam-aurelia"}
         )
         self._diagnostic_artwork_originals: dict[str, str] = {}
         self._diagnostic_timestamp_originals: dict[str, tuple[int | None, int | None]] = {}
@@ -175,7 +175,8 @@ class ConsoleCatalog:
         setup = onboarding_state()
         selected_providers = set(setup.get("selected_providers", []))
         selected_integrations = set(setup.get("selected_integrations", []))
-        stage_provider = {"steam": "steam", "gog": "gog", "epic": "epic"}
+        stage_provider = {"steam": "steam", "gog": "gog", "epic": "epic",
+                          "steam-aurelia": "steam"}
         for stage, provider_id in stage_provider.items():
             if stage in selected and provider_id not in selected_providers:
                 LOGGER.info("catalogue stage skipped name=%s reason=not-selected", stage)
@@ -253,7 +254,10 @@ class ConsoleCatalog:
                         and hasattr(self.steam_entitlements, "reload_config")
                         else getattr(self.steam_entitlements, "config", None))
         steam_auth_configured = bool(steam_config)
-        if ("steam" in selected and self.steam_entitlements is not None and self.provider is not None
+        aurelia_steam_source = next((source for source in self.external_entitlements
+                                     if getattr(source, "provider_id", "") == "steam-aurelia"), None)
+        if ("steam" in selected and aurelia_steam_source is None
+                and self.steam_entitlements is not None and self.provider is not None
                 and steam_auth_configured):
             LOGGER.info("catalogue stage started name=steam")
             self.provider_readiness.set(
@@ -284,13 +288,13 @@ class ConsoleCatalog:
                     catalogue_count=len(getattr(self.steam_entitlements, "snapshot", ())),
                 )
             LOGGER.info("catalogue stage completed name=steam sqlite_commit=complete")
-        elif "steam" in selected:
+        elif "steam" in selected and aurelia_steam_source is None:
             LOGGER.info("catalogue stage skipped name=steam reason=authentication-required")
         for source in self.external_entitlements:
             provider_id = str(getattr(source, "provider_id", ""))
-            if provider_id not in selected:
+            if provider_id not in selected and not (provider_id == "steam-aurelia" and "steam" in selected):
                 continue
-            if provider_id not in selected_providers:
+            if provider_id != "steam-aurelia" and provider_id not in selected_providers:
                 LOGGER.info("catalogue stage skipped name=%s reason=not-selected", provider_id)
                 continue
             auth_path = getattr(source, "config_path", None) or getattr(source, "auth_path", None)
@@ -308,6 +312,14 @@ class ConsoleCatalog:
                     message=f"{provider_id.title()} account catalogue reconciliation is running.",
                 )
                 source.refresh()
+                if getattr(source, "last_error", "") and provider_id == "steam-aurelia":
+                    status = getattr(source, "auth_status", "unauthenticated")
+                    self.provider_readiness.set(
+                        provider_id, "authentication_required" if status != "authenticated" else "sync_failed",
+                        message="Aurelia Steam authentication or library discovery is unavailable.",
+                    )
+                    LOGGER.info("catalogue stage skipped name=%s reason=%s", provider_id, status)
+                    continue
                 self.store.reconcile_owned_provider(provider_id, tuple(source.snapshot),
                                                     tuple(source.installed()))
                 if self.store.last_deltas:

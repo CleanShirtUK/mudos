@@ -384,6 +384,11 @@ class ConsoleUiBridge:
             asyncio.create_task(self._refresh_after_acquisition(job_id, provider))
             self.launch_logs.note("Lulu", f"{provider} installation submitted identity={content_identity} job_id={job_id}")
             return {"token": job_id}
+        elif provider == "steam-aurelia":
+            appid = str(selected.get("provider_id", ""))
+            if not appid.isdecimal() or int(appid) < 1:
+                raise ValueError("Aurelia AppID is invalid")
+            content_identity = f"steam-aurelia:{appid}"
         elif provider in {"gog", "epic"}:
             provider_id = str(selected.get("provider_id", ""))
             if not provider_id:
@@ -456,7 +461,8 @@ class ConsoleUiBridge:
                 if job is None or job.get("state") in {"failed", "cancelled"}:
                     return
                 if job.get("state") == "completed":
-                    stages = ([provider] if provider in {"steam", "gog", "epic"} else
+                    stages = (["steam"] if provider == "steam-aurelia" else
+                              [provider] if provider in {"steam", "gog", "epic"} else
                               ["components"] if provider == "flatpak" else ["local"])
                     await self.consoled.call_refresh_stages(stages)
                     return

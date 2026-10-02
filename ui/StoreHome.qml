@@ -78,8 +78,9 @@ Item {
         if (!game)
             return null
         var job = acquisitionJobs[String(game.game_id)] || null
-        if (!job && game.provider === "steam")
-            job = acquisitionJobs["steam:" + String(game.provider_id)] || null
+        if (!job && (game.provider === "steam" || game.provider === "steam-aurelia"))
+            job = acquisitionJobs[(game.provider === "steam-aurelia" ? "steam-aurelia:" : "steam:")
+                                  + String(game.provider_id)] || null
         return job
     }
 
@@ -163,11 +164,11 @@ Item {
                     "provider_id", providerId,
                     "acquisitionState", acquisitionState)
         // game.provider === "romm" remains part of the combined catalogue.
-        if ((provider === "steam" || provider === "romm" || provider === "lutris"
+        if ((provider === "steam" || provider === "steam-aurelia" || provider === "romm" || provider === "lutris"
                   || provider === "gog" || provider === "epic")
                  && ["queued", "starting", "transferring", "finalizing", "paused", "cancelling"].indexOf(acquisitionState) >= 0)
             downloadsRequested()
-        else if ((provider === "steam" || provider === "romm" || provider === "lutris"
+        else if ((provider === "steam" || provider === "steam-aurelia" || provider === "romm" || provider === "lutris"
                   || provider === "gog" || provider === "epic")
                  && ["queued", "starting", "transferring", "finalizing", "paused", "cancelling"].indexOf(acquisitionState) < 0
                   && (provider === "epic" ? providerId.length > 0
