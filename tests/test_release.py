@@ -18,6 +18,7 @@ class ReleaseToolTests(unittest.TestCase):
     def test_steam_normal_runtime_acceptance_harness_is_required_in_release(self):
         self.assertIn("scripts/steam-auth-surface.py", release.REQUIRED_FILES)
         self.assertIn("scripts/dolphin-bluetooth-lease.py", release.REQUIRED_FILES)
+        self.assertIn("scripts/aurelia-graphical-launch.py", release.REQUIRED_FILES)
 
     def git_repo(self):
         root = Path(tempfile.mkdtemp())

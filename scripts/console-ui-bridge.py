@@ -274,11 +274,19 @@ class ConsoleUiBridge:
         appid = game_id.removeprefix("steam-aurelia:").removeprefix("steam:")
         self.launch_logs.note("Lulu", f"HTTP launch request started game_id={game_id}")
         if game_id.startswith("steam-aurelia:"):
+            context = {key: os.environ[key] for key in (
+                "DISPLAY", "WAYLAND_DISPLAY", "XDG_RUNTIME_DIR",
+            ) if os.environ.get(key)}
+            await self.sessiond.call_set_delegated_launch_context(json.dumps(context, sort_keys=True))
             token = normalize_launch_token(await self.sessiond.call_request_aurelia_launch(appid, 15000))
             self.launch_logs.note("Steam Aurelia", f"aurelia play {appid}")
             self.launch_logs.note("Lulu", f"session launch boundary reached game_id={game_id} appid={appid} token={token}")
         elif game_id.startswith("steam:"):
             if os.environ.get("LULU_STEAM_LAUNCH_PROVIDER") == "steam-aurelia":
+                context = {key: os.environ[key] for key in (
+                    "DISPLAY", "WAYLAND_DISPLAY", "XDG_RUNTIME_DIR",
+                ) if os.environ.get(key)}
+                await self.sessiond.call_set_delegated_launch_context(json.dumps(context, sort_keys=True))
                 token = normalize_launch_token(await self.sessiond.call_request_aurelia_launch(appid, 15000))
                 self.launch_logs.note("Steam Aurelia", f"aurelia play {appid}")
             else:

@@ -134,6 +134,15 @@ class AureliaClientTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(env["AURELIA_DAEMON_SOCKET"],
                              f"{runtime}/aurelia-{os.geteuid()}.sock")
 
+    async def test_acquisition_environment_does_not_gain_graphical_session_values(self):
+        client = AureliaClient("fake", Path(tempfile.mkdtemp()),
+                               run=lambda *a, **kw: (0, "{}", ""))
+        with patch.dict(os.environ, {"DISPLAY": "", "WAYLAND_DISPLAY": "",
+                                     "XDG_RUNTIME_DIR": "/run/user/test"}):
+            env = client._environment()
+        self.assertFalse(env.get("DISPLAY"))
+        self.assertFalse(env.get("WAYLAND_DISPLAY"))
+
     async def test_existing_noncanonical_library_fails_closed(self):
         root = Path(tempfile.mkdtemp()) / "aurelia"
         root.mkdir(mode=0o700)

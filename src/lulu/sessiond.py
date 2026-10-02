@@ -11,6 +11,7 @@ from pathlib import Path
 import signal as os_signal
 import socket
 import time
+import uuid
 
 from dbus_next import BusType, DBusError, MessageType
 from dbus_next.aio import MessageBus
@@ -33,6 +34,7 @@ from .service_readiness import wait_for_lulu_services
 from .recovery import clear_failures, record_failure, recovery_required
 from .settings import SettingsStore
 from .provider_config import ProviderConfigurationService
+from .graphical_launch_context import write_context as write_graphical_launch_context
 
 
 BUS_NAME = "org.lulu.ConsoleSessiond"
@@ -78,6 +80,7 @@ class ConsoleSessionInterface(ServiceInterface):
         # presentation surface. This becomes true only after bootstrap has
         # selected the shell window in Gamescope.
         self._presentation_ready = False
+        self._graphical_session_id = uuid.uuid4().hex
         self.supervisor = ProcessSupervisor(
             model,
             self._state_changed,
@@ -299,6 +302,15 @@ class ConsoleSessionInterface(ServiceInterface):
                     self._presentation_wait_log_at = now
         if was_ready != self._presentation_ready:
             self.StateChanged(self._state_json())
+        # The wrapper runs in Aurelia's daemon, not in Sessiond's process tree.
+        # Keep this private runtime snapshot current only while the presentation
+        # watchdog verifies the shell, and remove it immediately on readiness loss.
+        write_graphical_launch_context(
+            self.supervisor._delegated_launch_environment,
+            self._graphical_session_id,
+            ready=self._presentation_ready,
+            shell_pid=(self.supervisor._shell_process.pid if self._presentation_ready else None),
+        )
 
     def _reconcile_input_mode(
         self,
@@ -849,6 +861,12 @@ class ConsoleSessionInterface(ServiceInterface):
             self.supervisor.set_delegated_launch_environment({
                 str(key): str(child) for key, child in value.items()
             })
+            write_graphical_launch_context(
+                self.supervisor._delegated_launch_environment,
+                self._graphical_session_id,
+                ready=self._presentation_ready,
+                shell_pid=(self.supervisor._shell_process.pid if self._presentation_ready else None),
+            )
         except (TypeError, ValueError, json.JSONDecodeError) as error:
             raise self._error(ValueError(str(error))) from error
 

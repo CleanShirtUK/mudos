@@ -34,6 +34,7 @@ REQUIRED_FILES = (
     "ui/SystemStatusStrip.qml",
     "scripts/console-ui.sh",
     "scripts/console-ui-bridge.py",
+    "scripts/aurelia-graphical-launch.py",
     "scripts/reconcile-questarr.py",
     "scripts/provision-inputplumber-gamepads.py",
     "scripts/dolphin-bluetooth-lease.py",

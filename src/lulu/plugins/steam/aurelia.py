@@ -421,8 +421,11 @@ class AureliaClient:
         if not self.available:
             raise AureliaError("unavailable", "Aurelia executable is unavailable", retryable=True)
         self._ensure_config_dir()
+        wrapper = Path(__file__).resolve().parents[4] / "scripts" / "aurelia-graphical-launch.py"
+        if not wrapper.is_file():
+            raise AureliaError("launch-wrapper-unavailable", "Mudos Aurelia graphical launch wrapper is unavailable")
         return await asyncio.create_subprocess_exec(
-            self.executable, "--json", "play", app_id, "--no-update", "--no-script",
+            self.executable, "--json", "play", app_id, "--no-update", "--script", str(wrapper),
             env=self._environment(), stdin=asyncio.subprocess.DEVNULL,
             stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL,
             start_new_session=True,

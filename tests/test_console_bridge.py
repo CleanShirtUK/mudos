@@ -316,6 +316,9 @@ class ConsoleBridgeTests(unittest.TestCase):
 
     def test_aurelia_launch_is_independently_selected(self) -> None:
         class Session:
+            async def call_set_delegated_launch_context(self, _context: str) -> None:
+                self.context_set = True
+
             async def call_request_aurelia_launch(self, appid: str, timeout: int) -> str:
                 self.request = (appid, timeout)
                 return "aurelia-token"
@@ -334,11 +337,15 @@ class ConsoleBridgeTests(unittest.TestCase):
                 result = await bridge.launch_game("steam:104200")
             self.assertEqual(result, {"token": "aurelia-token", "navigation_only": False})
             self.assertEqual(session.request, ("104200", 15000))
+            self.assertTrue(session.context_set)
 
         asyncio.run(exercise())
 
     def test_aurelia_catalogue_identity_routes_directly_to_aurelia_session_method(self) -> None:
         class Session:
+            async def call_set_delegated_launch_context(self, _context: str) -> None:
+                self.context_set = True
+
             async def call_request_aurelia_launch(self, appid: str, timeout: int) -> str:
                 self.request = (appid, timeout)
                 return "aurelia-token"
@@ -357,6 +364,7 @@ class ConsoleBridgeTests(unittest.TestCase):
                 result = await bridge.launch_game("steam-aurelia:104200")
             self.assertEqual(result, {"token": "aurelia-token", "navigation_only": False})
             self.assertEqual(session.request, ("104200", 15000))
+            self.assertTrue(session.context_set)
 
         asyncio.run(exercise())
 

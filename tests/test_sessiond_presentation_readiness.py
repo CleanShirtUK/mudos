@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 from types import SimpleNamespace
 import unittest
 from unittest.mock import Mock, patch
@@ -118,10 +119,12 @@ class SessiondPresentationReadinessTests(unittest.TestCase):
         interface._local_identity = None
         interface._local_provider_id = ""
         interface._presentation_ready = False
-        shell_process = SimpleNamespace(returncode=None)
+        interface._graphical_session_id = "test-session"
+        shell_process = SimpleNamespace(pid=os.getpid(), returncode=None)
         interface.supervisor = SimpleNamespace(
             _presentation=object(),
             _shell_process=shell_process,
+            _delegated_launch_environment={},
             ensure_shell_presentation=Mock(return_value=321),
             queue_aurelia_launch=Mock(return_value="aurelia-token"),
             state_details=Mock(return_value={}),
@@ -136,6 +139,7 @@ class SessiondPresentationReadinessTests(unittest.TestCase):
                     patch("lulu.sessiond.has_connected_presentation_output", return_value=True), \
                     patch("lulu.sessiond.ProviderConfigurationService.from_environment",
                           return_value=aurelia_config), \
+                    patch("lulu.sessiond.write_graphical_launch_context"), \
                     patch.object(interface, "StateChanged", Mock()) as state_changed:
                 await interface._refresh_presentation_readiness()
                 self.assertTrue(interface._presentation_ready)
@@ -158,10 +162,12 @@ class SessiondPresentationReadinessTests(unittest.TestCase):
         interface._local_identity = None
         interface._local_provider_id = ""
         interface._presentation_ready = True
-        shell_process = SimpleNamespace(returncode=None)
+        interface._graphical_session_id = "test-session"
+        shell_process = SimpleNamespace(pid=os.getpid(), returncode=None)
         interface.supervisor = SimpleNamespace(
             _presentation=object(),
             _shell_process=shell_process,
+            _delegated_launch_environment={},
             ensure_shell_presentation=Mock(return_value=321),
             queue_aurelia_launch=Mock(return_value="aurelia-token"),
             state_details=Mock(return_value={}),
@@ -179,6 +185,7 @@ class SessiondPresentationReadinessTests(unittest.TestCase):
                           side_effect=lambda: output), \
                     patch("lulu.sessiond.ProviderConfigurationService.from_environment",
                           return_value=aurelia_config), \
+                    patch("lulu.sessiond.write_graphical_launch_context"), \
                     patch.object(interface, "StateChanged", Mock()):
                 await interface._refresh_presentation_readiness()
                 self.assertFalse(interface._presentation_ready)
