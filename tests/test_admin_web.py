@@ -122,6 +122,35 @@ class AdminWebTests(unittest.TestCase):
         dashboard.assert_called_once_with()
         setup.assert_not_called()
 
+    def test_aurelia_auth_qr_requires_admin_session_and_is_never_cached(self):
+        from types import SimpleNamespace
+
+        handler = object.__new__(Handler)
+        handler.path = "/api/steam-aurelia/auth-qr.png"
+        handler.wfile = io.BytesIO()
+        with patch.object(Handler, "_require", return_value=None), \
+                patch.object(Handler, "send_response") as response, \
+                patch("pathlib.Path.read_bytes") as read_bytes:
+            handler.do_GET()
+        response.assert_not_called()
+        read_bytes.assert_not_called()
+
+        image = b"\x89PNG\r\n\x1a\nfixture"
+        handler.wfile = io.BytesIO()
+        headers = []
+        with patch.object(Handler, "_require", return_value="csrf"), \
+                patch("pathlib.Path.stat", return_value=SimpleNamespace(
+                    st_uid=958, st_mode=0o100600, st_size=len(image))), \
+                patch("pathlib.Path.read_bytes", return_value=image), \
+                patch.object(Handler, "send_response") as response, \
+                patch.object(Handler, "send_header", side_effect=lambda key, value: headers.append((key, value))), \
+                patch.object(Handler, "end_headers"):
+            handler.do_GET()
+        response.assert_called_once_with(200)
+        self.assertEqual(handler.wfile.getvalue(), image)
+        self.assertIn(("Cache-Control", "no-store, private"), headers)
+        self.assertIn(("X-Content-Type-Options", "nosniff"), headers)
+
     def test_persisted_store_ready_requires_current_account_authentication(self):
         app = AdminApp()
         rows = [dict(id=id, name=name, installed=True) for id, name in

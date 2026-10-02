@@ -41,6 +41,18 @@ CredentialBroker may present user challenges, but the secret value is handed
 only to Aurelia's authentication interaction and is never retained by
 Acquisitiond/Sessiond.
 
+For the controlled QR POC, the one-time QR image is held under
+`/run/user/958` and can be viewed at
+`http://mudos.local/api/steam-aurelia/auth-qr.png` only from an authenticated
+Mudos admin session. The endpoint serves only a private `lulu`-owned PNG and
+sets `Cache-Control: no-store`; the challenge URL is not included in the route
+or application logs. The image is removed when the login flow exits. The
+current `mudos.local` service uses plain HTTP, so an observer on the LAN can
+capture the live QR challenge despite admin-session authentication and
+no-cache headers. This transport risk is explicitly accepted for this initial
+POC only; do not reuse the endpoint for ordinary credentials or production
+authentication.
+
 Authentication health is secret-free: `authenticated`, `unauthenticated`,
 `authentication-required`, `authentication-expired`, or `unavailable`. Expiry
 does not trigger silent SteamCMD fallback; Mudos reports authentication needed

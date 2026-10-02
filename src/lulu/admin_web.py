@@ -1674,6 +1674,35 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 return
             self._setup_page(query.get("local", [""])[0] == "1")
             return
+        if path == "/api/steam-aurelia/auth-qr.png":
+            # The QR contains a live Steam authentication challenge. Serve it
+            # only to an authenticated Mudos admin session and never cache it.
+            if self._require() is None:
+                return
+            qr_path = Path("/run/user/958/aurelia-steam-login.png")
+            try:
+                metadata = qr_path.stat()
+                if (metadata.st_uid != pwd.getpwnam("lulu").pw_uid
+                        or stat.S_IMODE(metadata.st_mode) != 0o600
+                        or metadata.st_size <= 0 or metadata.st_size > 128 * 1024):
+                    raise OSError("QR image is not a private lulu-owned file")
+                image = qr_path.read_bytes()
+                if not image.startswith(b"\x89PNG\r\n\x1a\n"):
+                    raise OSError("QR image is not a PNG")
+            except OSError:
+                self._send(b"Aurelia sign-in QR is not currently available", 404,
+                           {"Cache-Control": "no-store, private"})
+                return
+            self.send_response(200)
+            self.send_header("Content-Type", "image/png")
+            self.send_header("Content-Length", str(len(image)))
+            self.send_header("Cache-Control", "no-store, private")
+            self.send_header("Pragma", "no-cache")
+            self.send_header("X-Content-Type-Options", "nosniff")
+            self.send_header("Referrer-Policy", "no-referrer")
+            self.end_headers()
+            self.wfile.write(image)
+            return
         if path in {"/setup/qr.png", "/recovery/qr.png"}:
             try:
                 target = "http://mudos.local/recovery" if path.startswith("/recovery/") \

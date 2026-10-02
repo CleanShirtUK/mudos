@@ -37,7 +37,7 @@ class AureliaClientTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("must-not-leak", str(caught.exception))
 
     async def test_missing_and_malformed_output(self):
-        self.assertEqual(await AureliaClient(None).auth_status(), "unavailable")
+        self.assertEqual(await AureliaClient("/nonexistent/aurelia").auth_status(), "unavailable")
         client = AureliaClient("fake", Path(tempfile.mkdtemp()), run=lambda *a, **kw: (0, "{", ""))
         with self.assertRaises(AureliaError) as caught:
             await client.command("libraries")
