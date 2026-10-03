@@ -34,6 +34,8 @@ SPEC.loader.exec_module(HELPER)
 
 class DolphinPassthroughTests(unittest.TestCase):
     def _local_wii_fixture(self, *, launch_error: Exception | None = None):
+        from lulu.paths import PATHS
+
         events = []
         tasks = []
 
@@ -61,7 +63,8 @@ class DolphinPassthroughTests(unittest.TestCase):
         interface.catalogue = SimpleNamespace(store=store)
         interface._plugins = SimpleNamespace(with_capability=lambda _capability: ())
         interface.local_runtime = SimpleNamespace(launch_intent=lambda *args, **kwargs: SimpleNamespace(
-            executable="/usr/bin/dolphin-emu", arguments=("--batch", "-f", "-e", "/fixture/game.rvz"),
+            executable="/usr/bin/dolphin-emu",
+            arguments=("--user", str(PATHS.provider_config_root("dolphin")), "--batch", "-f", "-e", "/fixture/game.rvz"),
             provider="dolphin", platform="wii",
         ))
         interface.sessiond = SimpleNamespace(
@@ -85,24 +88,38 @@ class DolphinPassthroughTests(unittest.TestCase):
         return interface, lease, process, events, tasks, spawn, inline_thread
 
     def test_wii_process_crash_reaps_session_then_restores_adapter_lease(self) -> None:
+        from lulu.paths import PATHS
+
         interface, lease, _process, events, tasks, spawn, inline_thread = self._local_wii_fixture()
+        provisioned = []
+        commands = []
+
+        def capture_profile(*args):
+            provisioned.append(args)
+            return Path("/tmp/GCPadNew.ini")
+
+        async def capture_spawn(*args, **kwargs):
+            commands.append(args)
+            return await spawn(*args, **kwargs)
 
         async def exercise_launch() -> str:
             with patch("lulu.consoled.DolphinBluetoothLease.create", return_value=lease), \
                     patch("lulu.consoled._mudos_provider_device_indices", return_value={1: 0}), \
                     patch("lulu.consoled._mudos_provider_controller_identities", return_value={}), \
-                    patch("lulu.consoled.ensure_provider_controller_config", return_value=Path("/tmp/GCPadNew.ini")), \
+                    patch("lulu.consoled.ensure_provider_controller_config", side_effect=capture_profile), \
                     patch("lulu.consoled.SettingsStore", return_value=SimpleNamespace(
                         get=lambda _key: "passthrough", connection=SimpleNamespace(close=lambda: None),
                     )), \
                     patch("lulu.consoled.asyncio.to_thread", side_effect=inline_thread), \
-                    patch("lulu.consoled.asyncio.create_subprocess_exec", side_effect=spawn), \
+                    patch("lulu.consoled.asyncio.create_subprocess_exec", side_effect=capture_spawn), \
                     patch("lulu.consoled.asyncio.create_task", side_effect=lambda coroutine: tasks.append(coroutine)), \
                     patch("lulu.consoled.os.getpgid", return_value=7721), \
                     patch("lulu.consoled.os.path.realpath", return_value="/usr/bin/dolphin-emu"):
                 return await ConsoleInterface.LaunchGame.__wrapped__(interface, "local:wii:fixture", 15000)
 
         self.assertEqual(asyncio.run(exercise_launch()), "wii-token")
+        self.assertEqual(provisioned[0][4], PATHS.provider_config_root("dolphin") / "Config")
+        self.assertEqual(commands[0][1:3], ("--user", str(PATHS.provider_config_root("dolphin"))))
         self.assertLess(events.index("lease-acquired"), events.index("dolphin-spawn-attempt"))
         self.assertLess(events.index(("dolphin-attached", 7721)), events.index("session-begun"))
         self.assertEqual(len(tasks), 1)

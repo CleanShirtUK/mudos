@@ -2739,7 +2739,7 @@ class ConsoleInterface(ServiceInterface):
                     PATHS.provider_config_root(controller_provider),
                     max(device_indices),
                     device_indices,
-                    PATHS.provider_config_root(controller_provider) / "dolphin-emu"
+                    PATHS.provider_config_root(controller_provider) / "Config"
                     if controller_provider == "dolphin" else None,
                     controller_identities,
                     dolphin_passthrough is not None,
