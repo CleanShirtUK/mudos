@@ -73,6 +73,21 @@ class DelayedPresentation:
 
 
 class SteamProviderTests(unittest.TestCase):
+    def test_auth_surface_selection_uses_provider_owned_process_evidence(self) -> None:
+        provider = SteamProvider()
+        observed = []
+
+        def select(pids, timeout, process_alive):
+            observed.append((pids(), timeout, process_alive()))
+            return 88
+
+        with patch.object(provider, "desktop_pids", return_value=[77]), \
+                patch.object(provider, "process_group_members", return_value={66}):
+            selected = provider.select_auth_surface(select, 55, 225.0, "session-token")
+
+        self.assertEqual(selected, 88)
+        self.assertEqual(observed, [([77], 225.0, True)])
+
     def test_hide_main_does_not_cold_start_an_exited_steam_client(self) -> None:
         provider = SteamProvider()
         with patch.object(provider, "_steam_client_pids", return_value=[]), \

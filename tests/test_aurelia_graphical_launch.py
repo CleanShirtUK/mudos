@@ -11,7 +11,7 @@ import tempfile
 import time
 import unittest
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from lulu.console_sessiond import SessionStateModel
 from lulu.graphical_launch_context import GRAPHICAL_ENV, graphical_context_is_live
@@ -189,17 +189,40 @@ class SessiondLaunchLeaseTests(unittest.IsolatedAsyncioTestCase):
 
     async def _accepted_launch(self):
         model = SessionStateModel()
-        shell = SimpleNamespace(pid=os.getpid(), returncode=None)
+        shell = SimpleNamespace(token="shell-token", pid=os.getpid(), running=True,
+                                presentation_available=True)
+        environment_state = {"values": {}}
+        launch_state = {"task": None}
         supervisor = SimpleNamespace(
-            _shell_process=shell,
-            _presentation=object(),
-            _delegated_launch_environment={},
-            _aurelia_launch_task=None,
+            shell_status=lambda: shell,
+            shell_is_current=lambda token: token == shell.token and shell.running,
+            launch_cancellable=False,
+            aurelia_launch_pending=False,
+            delegated_launch_environment={},
+            presentation_available=True,
+            shell_graphical_environment=lambda: dict(environment_state["values"]),
+            ensure_shell_presentation=Mock(return_value=321),
+            state_details=lambda: {},
         )
+
+        async def cancel_launch():
+            task = launch_state["task"]
+            if task is not None and not task.done():
+                task.cancel()
+                await asyncio.gather(task, return_exceptions=True)
+
+        async def wait_for_launch_completion():
+            task = launch_state["task"]
+            if task is not None:
+                await asyncio.gather(task, return_exceptions=True)
+
+        supervisor.cancel_launch = cancel_launch
+        supervisor.wait_for_launch_completion = wait_for_launch_completion
         supervisor.finish_launch = asyncio.Event()
 
         def set_environment(values):
-            supervisor._delegated_launch_environment = dict(values)
+            environment_state["values"] = dict(values)
+            supervisor.delegated_launch_environment = dict(values)
 
         async def wait_for_launch_end():
             await supervisor.finish_launch.wait()
@@ -207,7 +230,10 @@ class SessiondLaunchLeaseTests(unittest.IsolatedAsyncioTestCase):
         def queue_launch(app_id, _timeout):
             token = model.request_launch(f"steam-aurelia:{app_id}")
             model.launch_starting(token)
-            supervisor._aurelia_launch_task = asyncio.create_task(wait_for_launch_end())
+            supervisor.aurelia_launch_pending = True
+            task = asyncio.create_task(wait_for_launch_end())
+            launch_state["task"] = task
+            task.add_done_callback(lambda _task: setattr(supervisor, "aurelia_launch_pending", False))
             return token
 
         supervisor.set_delegated_launch_environment = set_environment
@@ -223,7 +249,6 @@ class SessiondLaunchLeaseTests(unittest.IsolatedAsyncioTestCase):
             navigation_controller_id=None, navigation_mode="all", controllers={})
         interface._local_identity = None
         interface._local_provider_id = ""
-        supervisor.state_details = lambda: {}
         config = SimpleNamespace(provider=lambda _name: SimpleNamespace(enabled=True))
         context = patch("lulu.graphical_launch_context.CONTEXT_PATH", self.context_path)
         context.start()
@@ -273,9 +298,7 @@ class SessiondLaunchLeaseTests(unittest.IsolatedAsyncioTestCase):
                     await interface._refresh_presentation_readiness()
             self.assertIsNone(interface._graphical_launch_lease)
         finally:
-            interface.supervisor._aurelia_launch_task.cancel()
-            await asyncio.gather(interface.supervisor._aurelia_launch_task,
-                                 return_exceptions=True)
+            await interface.supervisor.cancel_launch()
 
     async def test_display_loss_during_start_invalidates_lease_before_wrapper(self):
         interface, _token = await self._accepted_launch()
@@ -289,22 +312,19 @@ class SessiondLaunchLeaseTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(result.returncode, 125)
             self.assertIn("no current graphical launch context", result.stderr)
         finally:
-            interface.supervisor._aurelia_launch_task.cancel()
-            await asyncio.gather(interface.supervisor._aurelia_launch_task,
-                                 return_exceptions=True)
+            await interface.supervisor.cancel_launch()
 
     async def test_cancelled_or_failed_start_discards_its_context_lease(self):
         for cancel in (True, False):
             with self.subTest(cancel=cancel):
                 interface, _token = await self._accepted_launch()
-                task = interface.supervisor._aurelia_launch_task
                 if cancel:
-                    task.cancel()
+                    await interface.supervisor.cancel_launch()
                 else:
                     # Completing the accepted task represents a definitive launch failure.
                     interface.model.fail(interface.model.state.launch_token, "launch failed")
                     interface.supervisor.finish_launch.set()
-                await asyncio.gather(task, return_exceptions=True)
+                    await interface.supervisor.wait_for_launch_completion()
                 with patch("lulu.sessiond.has_connected_presentation_output", return_value=True):
                     with patch.object(interface, "StateChanged", lambda *_args: None):
                         await interface._refresh_presentation_readiness()

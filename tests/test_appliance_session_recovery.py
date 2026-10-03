@@ -2,7 +2,7 @@ import asyncio
 from pathlib import Path
 from types import SimpleNamespace
 import unittest
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 from lulu.gamescope import (PresentationOutputUnavailable, connected_presentation_outputs,
                             has_connected_presentation_output)
@@ -34,7 +34,9 @@ class ApplianceSessionRecoveryTests(unittest.TestCase):
         interface = ConsoleSessionInterface.__new__(ConsoleSessionInterface)
         interface._bootstrap_output = None
         interface.recovery_mode = False
-        interface.supervisor = SimpleNamespace(launch_shell=AsyncMock())
+        interface.supervisor = SimpleNamespace(
+            launch_shell=AsyncMock(), set_delegated_launch_environment=Mock(),
+        )
 
         async def exercise() -> None:
             with patch("lulu.sessiond.has_connected_presentation_output", side_effect=[False, False, True]) as has_output, \
