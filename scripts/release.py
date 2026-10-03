@@ -57,6 +57,8 @@ REQUIRED_FILES = (
     "scripts/usenet-readiness.py",
     "config/inputplumber/devices/lulu-composite.yaml",
     "packaging/lulu-session@.service",
+    "packaging/lulu-steam-runtime.service",
+    "scripts/steam-runtime-session.py",
     "packaging/lulu-inputplumber-hotplug.service",
     "packaging/mudos-ownership.json",
 )

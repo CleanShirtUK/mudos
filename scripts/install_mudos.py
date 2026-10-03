@@ -22,6 +22,7 @@ class InstallError(RuntimeError):
 
 SYSTEMD_UNITS = {
     "lulu.target": "lulu.target", "lulu-session@.service": "lulu-session@.service",
+    "lulu-steam-runtime.service": "lulu-steam-runtime.service",
     "lulu-consoled.service": "lulu-consoled.service", "lulu-acquisition.service": "lulu-acquisition.service",
     "lulu-admin.service": "lulu-admin.service",
     "lulu-provider-install@.service": "lulu-provider-install@.service",

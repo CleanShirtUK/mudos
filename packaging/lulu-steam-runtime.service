@@ -1,0 +1,25 @@
+[Unit]
+Description=Isolated host Steam runtime for the Mudos appliance session
+Requires=user@958.service
+After=user@958.service
+PartOf=lulu-session@2.service
+StartLimitIntervalSec=300s
+StartLimitBurst=5
+
+[Service]
+Type=notify
+NotifyAccess=main
+User=lulu
+Environment=HOME=/home/lulu
+Environment=USER=lulu
+Environment=LOGNAME=lulu
+Environment=PATH=/usr/local/bin:/usr/bin
+ExecStart=/usr/bin/python /opt/lulu/current/scripts/steam-runtime-session.py
+Restart=always
+RestartSec=5s
+TimeoutStartSec=180s
+TimeoutStopSec=30s
+KillMode=mixed
+
+[Install]
+WantedBy=lulu.target

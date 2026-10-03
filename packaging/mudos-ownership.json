@@ -9,6 +9,7 @@
   "system_integration": {
     "systemd_files": [
       "/etc/systemd/system/lulu.target", "/etc/systemd/system/lulu-session@.service",
+      "/etc/systemd/system/lulu-steam-runtime.service",
       "/etc/systemd/system/lulu-consoled.service", "/etc/systemd/system/lulu-acquisition.service",
       "/etc/systemd/system/lulu-admin.service", "/etc/systemd/system/lulu-provider-install@.service",
       "/etc/systemd/system/mudos-recovery.service", "/etc/systemd/system/mudos-recovery-guard.service",
@@ -96,7 +97,7 @@
   "shared_dependencies": {
     "package_manager": "pacman",
     "alternatives": {"gamescope": ["gamescope-git"]},
-    "packages": ["base-devel", "pkgconf", "qt6-base", "qt6-declarative", "qt6-webengine", "qt6-imageformats", "sdl3", "sdl3_ttf", "libx11", "xcb-util", "xcb-util-keysyms", "xcb-util-wm", "python", "python-dbus-next", "python-pillow", "python-xlib", "systemd", "bluez", "bluez-utils", "seatd", "inputplumber", "gamescope", "pipewire", "wireplumber", "avahi", "ufw", "git", "curl", "patch", "go", "polkit", "acl", "ffmpeg", "fontconfig", "ttf-jetbrains-mono-nerd"]
+    "packages": ["base-devel", "pkgconf", "qt6-base", "qt6-declarative", "qt6-webengine", "qt6-imageformats", "sdl3", "sdl3_ttf", "libx11", "xcb-util", "xcb-util-keysyms", "xcb-util-wm", "python", "python-dbus-next", "python-pillow", "python-xlib", "systemd", "bluez", "bluez-utils", "seatd", "inputplumber", "gamescope", "xorg-server-xvfb", "pipewire", "wireplumber", "avahi", "ufw", "git", "curl", "patch", "go", "polkit", "acl", "ffmpeg", "fontconfig", "ttf-jetbrains-mono-nerd"]
   },
   "protected": ["/opt/lulu/releases", "/opt/lulu/rollback"]
 }
