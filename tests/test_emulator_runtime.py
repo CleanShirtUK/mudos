@@ -138,7 +138,7 @@ class EmulatorRuntimeTests(unittest.TestCase):
 
         self.assertEqual(
             intent.arguments,
-            ("--batch", "-C", "Display.Fullscreen=True", "-e", "/fixture/game.rvz"),
+            ("--batch", "-C", "Main.Display.Fullscreen=True", "-e", "/fixture/game.rvz"),
         )
 
     def test_switch_intent_uses_eden_direct_launch_and_deterministic_profile(self) -> None:
