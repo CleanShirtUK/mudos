@@ -136,7 +136,10 @@ class EmulatorRuntimeTests(unittest.TestCase):
 
             intent = EmulatorRuntimeAdapter({"wii": executable}).launch_intent(game)
 
-        self.assertEqual(intent.arguments, ("--batch", "-e", "/fixture/game.rvz"))
+        self.assertEqual(
+            intent.arguments,
+            ("--batch", "-C", "Display.Fullscreen=True", "-e", "/fixture/game.rvz"),
+        )
 
     def test_switch_intent_uses_eden_direct_launch_and_deterministic_profile(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

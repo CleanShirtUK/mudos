@@ -2002,3 +2002,21 @@ restart may be required for InputPlumber to publish a newly created target.
   batch-mode UI suppression, and direct `-e` game launch remain intact. No
   Dolphin package was replaced and no physical acceptance attempt was made
   during this diagnostic/fix.
+
+### Dolphin fullscreen and Wii controller observations — 2026-10-03
+
+- During the user's post-fix test, Dolphin's game render window was observed at
+  640x480 inside a 1920x1080 Gamescope session. Dolphin 2606 no longer accepts
+  the old `-f` CLI switch, but its supported `-C` override accepts
+  `Display.Fullscreen=True`. Added this per-launch override while retaining
+  `--user`, `--batch`, and direct game launch. Physical confirmation is pending
+  the next launch; the currently running game was not interrupted.
+- The live Mudos controller state contained one assigned Xbox 360 Controller
+  at SDL index 0, and Dolphin's generated `GCPad1` profile points to
+  `SDL/0/Xbox 360 Controller`. The current title is Wii Sports + Wii Sports
+  Resort, which reads Wii Remote input rather than GameCube controller ports.
+  Dolphin is in the existing Bluetooth passthrough Wii Remote mode. No Wii
+  Remote, Compatibility Mode, or InputPlumber behavior was changed. GameCube
+  controller response needs validation with a GameCube title; supporting this
+  Wii title through the gamepad would require an explicitly authorized change
+  to its Wii Remote input mode/profile.
