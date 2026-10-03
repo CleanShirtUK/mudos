@@ -20,8 +20,8 @@ from dbus_next.service import ServiceInterface, method, signal
 from . import graphical_launch_context
 from .console_sessiond import SessionStateModel
 from .controllerd import ControllerRegistry, default_inputplumber_client
-from .inputplumber import (InputPlumberObjectDisappeared, is_service_unavailable,
-                           sdl_gamepad_inventory)
+from .inputplumber import (DEFAULT_PROFILE_PATH, InputPlumberObjectDisappeared,
+                           is_service_unavailable, sdl_gamepad_inventory)
 from .gamescope import (GamescopeInvocation, GamescopePresentation,
                         PresentationOutputUnavailable, discover_presentation_output,
                         connected_presentation_outputs, has_connected_presentation_output)
@@ -409,18 +409,90 @@ class ConsoleSessionInterface(ServiceInterface):
             del self._applied_input_modes[runtime_path]
 
         for runtime_path in sorted(connected_paths):
-            if self._applied_input_modes.get(runtime_path) is mode:
-                continue
             try:
-                if getattr(self, "_native_controller", False) and mode is not InputMode.COMPAT:
-                    self._inputplumber.ensure_default_intercept(runtime_path)
-                else:
-                    self._inputplumber.load_mode(mode, runtime_path)
+                actual = self._inputplumber.composite_profile_state(runtime_path)
             except InputPlumberObjectDisappeared:
                 # The snapshot is already stale. The next reconciliation will
                 # initialize a replacement object without failing the session.
+                self._applied_input_modes.pop(runtime_path, None)
                 continue
+            except (OSError, RuntimeError, ValueError, subprocess.SubprocessError):
+                LOGGER.exception(
+                    "InputPlumber profile readback failed path=%s identity=%s desired=%s",
+                    runtime_path, composites[runtime_path][0], mode.value,
+                )
+                raise
+
+            use_default = getattr(self, "_native_controller", False) and mode is not InputMode.COMPAT
+            expected_profile = (
+                DEFAULT_PROFILE_PATH if use_default
+                else str(self._inputplumber.profile_paths[mode])
+            )
+            expected_intercept = 1 if use_default else None
+            matches = (
+                actual.profile_path == expected_profile
+                and (expected_intercept is None or actual.intercept_mode == expected_intercept)
+            )
+            if matches:
+                self._applied_input_modes[runtime_path] = mode
+                continue
+
+            LOGGER.warning(
+                "InputPlumber profile drift path=%s identity=%s desired=%s "
+                "actual_path=%s actual_name=%s actual_intercept=%s expected_path=%s "
+                "expected_intercept=%s; correcting",
+                runtime_path, composites[runtime_path][0], mode.value,
+                actual.profile_path, actual.profile_name, actual.intercept_mode,
+                expected_profile, expected_intercept,
+            )
+            try:
+                if use_default:
+                    self._inputplumber.ensure_default_intercept(runtime_path)
+                else:
+                    self._inputplumber.load_mode(mode, runtime_path)
+                verified = self._inputplumber.composite_profile_state(runtime_path)
+            except InputPlumberObjectDisappeared:
+                self._applied_input_modes.pop(runtime_path, None)
+                LOGGER.info(
+                    "InputPlumber correction not verified because composite disappeared "
+                    "path=%s identity=%s desired=%s",
+                    runtime_path, composites[runtime_path][0], mode.value,
+                )
+                continue
+            except (OSError, RuntimeError, ValueError, subprocess.SubprocessError):
+                self._applied_input_modes.pop(runtime_path, None)
+                LOGGER.exception(
+                    "InputPlumber correction/verification failed path=%s identity=%s "
+                    "desired=%s attempted_profile=%s",
+                    runtime_path, composites[runtime_path][0], mode.value, expected_profile,
+                )
+                raise
+
+            verified_matches = (
+                verified.profile_path == expected_profile
+                and (expected_intercept is None or verified.intercept_mode == expected_intercept)
+            )
+            if not verified_matches:
+                self._applied_input_modes.pop(runtime_path, None)
+                LOGGER.error(
+                    "InputPlumber correction verification mismatch path=%s identity=%s "
+                    "desired=%s observed_path=%s observed_name=%s observed_intercept=%s "
+                    "expected_path=%s expected_intercept=%s",
+                    runtime_path, composites[runtime_path][0], mode.value,
+                    verified.profile_path, verified.profile_name, verified.intercept_mode,
+                    expected_profile, expected_intercept,
+                )
+                raise RuntimeError(
+                    f"InputPlumber profile verification failed for {runtime_path} "
+                    f"({mode.value})"
+                )
             self._applied_input_modes[runtime_path] = mode
+            LOGGER.info(
+                "InputPlumber correction verified path=%s identity=%s desired=%s "
+                "profile=%s intercept=%s",
+                runtime_path, composites[runtime_path][0], mode.value,
+                verified.profile_path, verified.intercept_mode,
+            )
 
     def _apply_input_mode(self, mode: InputMode) -> None:
         try:
@@ -450,6 +522,11 @@ class ConsoleSessionInterface(ServiceInterface):
             try:
                 composites, target_indices, sdl_devices = await asyncio.to_thread(self._controller_inventory_snapshot)
             except (OSError, RuntimeError, ValueError, subprocess.SubprocessError):
+                LOGGER.warning(
+                    "InputPlumber topology/profile reconciliation unavailable; retaining desired mode=%s and retrying",
+                    self.model.state.input_mode.value,
+                    exc_info=True,
+                )
                 continue
             self._initialized_composites = {
                 path: signature
@@ -471,6 +548,18 @@ class ConsoleSessionInterface(ServiceInterface):
                         logging.getLogger("lulu.sessiond").warning(
                             "controller initialization pending path=%s error=%s", object_path, error
                         )
+            # Topology initialization covers new/recreated composites. This
+            # readback pass also detects profile drift and InputPlumber restarts
+            # that preserve an existing object path and source signature.
+            connected = {path: composite for path, composite in composites.items()
+                         if composite[1] and not composite[0].startswith("source:")}
+            if connected:
+                try:
+                    self._reconcile_input_mode(connected, self.model.state.input_mode)
+                except (OSError, RuntimeError, ValueError, subprocess.SubprocessError):
+                    # Keep lifecycle/model authority unchanged. The next normal
+                    # topology-monitor cycle retries failed readback or repair.
+                    pass
             after = self.controller_registry.navigation_controller_id, tuple(
                 (key, value.connected, value.player, value.physical_identity,
                  value.connection_identity, value.sdl_index, value.sdl_guid,

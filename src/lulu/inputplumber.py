@@ -19,6 +19,15 @@ class InputPlumberObjectDisappeared(RuntimeError):
     """A live InputPlumber object vanished between topology and property reads."""
 
 
+@dataclass(frozen=True, slots=True)
+class CompositeProfileState:
+    """Profile and interception properties currently reported by one composite."""
+
+    profile_path: str
+    profile_name: str
+    intercept_mode: int
+
+
 def _object_disappeared(error: subprocess.CalledProcessError) -> bool:
     """Return true only for the D-Bus error used when a hotplugged object vanishes."""
     detail = "\n".join(str(value or "") for value in (error.stderr, error.stdout, error))
@@ -220,6 +229,30 @@ class InputPlumberClient:
         if execute:
             _run_object_command(command)
         return command
+
+    def composite_profile_state(
+        self, object_path: str | None = None, *, execute: bool = True
+    ) -> CompositeProfileState:
+        """Read the live profile and interception state of a composite."""
+        object_path = object_path or self.object_path
+        if not execute:
+            return CompositeProfileState("", "", -1)
+
+        properties: dict[str, str] = {}
+        for name in ("ProfilePath", "ProfileName", "InterceptMode"):
+            result = _run_object_command(
+                [self.busctl, "get-property", "org.shadowblip.InputPlumber", object_path,
+                 "org.shadowblip.Input.CompositeDevice", name],
+            )
+            properties[name] = result.stdout.strip()
+        path = re.fullmatch(r's "(.*)"', properties["ProfilePath"])
+        profile_name = re.fullmatch(r's "(.*)"', properties["ProfileName"])
+        intercept = re.fullmatch(r"u (\d+)", properties["InterceptMode"])
+        if path is None or profile_name is None or intercept is None:
+            raise ValueError(
+                f"unrecognized InputPlumber profile properties for {object_path}: {properties!r}"
+            )
+        return CompositeProfileState(path.group(1), profile_name.group(1), int(intercept.group(1)))
 
     def ensure_default_intercept(
         self, object_path: str | None = None, *, execute: bool = True

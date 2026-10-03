@@ -2,6 +2,7 @@ import unittest
 import asyncio
 import threading
 import time
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
@@ -124,10 +125,28 @@ class SessionModelTests(unittest.TestCase):
         interface.model.primary_started(token, presentation=Presentation.FOREIGN_UI,
                                         input_mode=InputMode.COMPAT)
         path = "/org/shadowblip/InputPlumber/CompositeDevice0"
+        profiles = {
+            InputMode.SHELL: "/profiles/shell.yaml",
+            InputMode.GAME: "/profiles/game.yaml",
+            InputMode.COMPAT: "/profiles/compat.yaml",
+        }
+        actual = {path: ("/usr/share/inputplumber/profiles/default.yaml", "Default", 1)}
+
+        def load_mode(mode, object_path=None):
+            actual[object_path] = (profiles[mode], f"Lulu {mode.name}", 1)
+
+        def baseline(object_path=None):
+            actual[object_path] = ("/usr/share/inputplumber/profiles/default.yaml", "Default", 1)
+
         inputplumber = SimpleNamespace(
             runtime_composite_statuses=lambda: {path: ("controller", ("/dev/input/event0",))},
-            load_mode=unittest.mock.Mock(),
-            ensure_default_intercept=unittest.mock.Mock(),
+            profile_paths={mode: Path(value) for mode, value in profiles.items()},
+            composite_profile_state=lambda object_path: SimpleNamespace(
+                profile_path=actual[object_path][0], profile_name=actual[object_path][1],
+                intercept_mode=actual[object_path][2],
+            ),
+            load_mode=unittest.mock.Mock(side_effect=load_mode),
+            ensure_default_intercept=unittest.mock.Mock(side_effect=baseline),
         )
         interface._inputplumber = inputplumber
         interface._applied_input_modes = {}
