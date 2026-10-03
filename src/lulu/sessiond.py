@@ -300,7 +300,17 @@ class ConsoleSessionInterface(ServiceInterface):
         try:
             selected, owner_pid = await asyncio.to_thread(presentation.selected_base_surface)
         except (OSError, RuntimeError, subprocess.SubprocessError):
-            # A failed read is transient; do not alter lifecycle or claim loss.
+            # A failed read is not immediate evidence of loss. Keep retrying
+            # selection, then fail closed only after the same bounded grace.
+            now = time.monotonic()
+            if self._game_surface_missing_since is None:
+                self._game_surface_missing_since = now
+            try:
+                await asyncio.to_thread(self.supervisor.reconcile_session_surface, identity, 0)
+            except (OSError, RuntimeError, TimeoutError, subprocess.SubprocessError):
+                pass
+            if now - self._game_surface_missing_since >= 5.0:
+                await self._fail_lost_game_presentation(identity)
             return
         if selected is not None and self.supervisor.session_surface_is_owned(owner_pid, identity):
             self._game_surface_missing_since = None

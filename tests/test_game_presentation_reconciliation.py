@@ -109,7 +109,15 @@ class GamePresentationReconciliationTests(unittest.IsolatedAsyncioTestCase):
         presentation.read_error = OSError("temporary X connection failure")
         await interface._reconcile_game_presentation()
         self.assertEqual(interface.model.state.lifecycle, Lifecycle.GAME)
-        interface.supervisor.reconcile_session_surface.assert_not_called()
+        interface.supervisor.reconcile_session_surface.assert_called_once()
+
+    async def test_prolonged_gamescope_read_failure_uses_bounded_return_path(self):
+        interface, _identity, presentation = self.make_interface()
+        presentation.read_error = OSError("Gamescope control read unavailable")
+        interface._game_surface_missing_since = asyncio.get_running_loop().time() - 6
+        await interface._reconcile_game_presentation()
+        self.assertEqual(interface.model.state.lifecycle, Lifecycle.RETURNING)
+        interface.supervisor.quit_active_session.assert_awaited_once()
 
     async def test_persistent_wrong_surface_fails_through_return_and_stops_owned_game(self):
         interface, identity, presentation = self.make_interface(selected=(12, 999999))
