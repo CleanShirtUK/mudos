@@ -1943,3 +1943,16 @@ restart may be required for InputPlumber to publish a newly created target.
 - Source validation: Python **856 passed + 25 subtests**, Python compilation,
   native build and CTest **1/1** passed. Full QML: **124 passed, 9 established
   baseline failures**. No immutable candidate or reinstall was performed.
+
+## Mario Kart external-content physical acceptance — 2026-10-03
+
+- User-reported physical acceptance after a full reboot: Mudos launched Mario
+  Kart with the update and DLC applied, and the expected updated game content
+  was visible in-game.
+- This accepts the Eden external-content directory fix in commit `f5d1d47`
+  (`Configure Eden external Switch content directory`). The reported root cause
+  was the long-running Consoled process predating the active external-content
+  implementation, not DLC acquisition or provisioning.
+- No changes were made to Eden provisioning, DLC handling, or content
+  installation for this acceptance record. No further physical DLC test is
+  requested unless a later merge changes runtime code.
