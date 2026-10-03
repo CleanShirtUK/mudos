@@ -197,6 +197,20 @@ class ProcessSupervisor:
             (lambda: bool(self._process_group_members(identity.pgid))) if include_related_processes else None,
         )
 
+    def reconcile_session_surface(self, identity: LaunchIdentity, timeout: float = 0) -> int | None:
+        """Re-select a surface using the launch's established live PID evidence."""
+        if self._presentation is None:
+            return None
+        pids = sorted(self.session_process_ids(identity))
+        if not pids:
+            return None
+        return self._presentation.select_pids(pids, timeout)
+
+    def session_surface_is_owned(self, owner_pid: int | None, identity: LaunchIdentity) -> bool:
+        if owner_pid is None or self._presentation is None:
+            return False
+        return self._presentation.pid_is_owned_by(owner_pid, self.session_process_ids(identity))
+
     def select_shell_presentation(self) -> int | None:
         """Restore the current supervised shell as Gamescope's selected surface."""
         status = self.shell_status()
@@ -603,7 +617,8 @@ class ProcessSupervisor:
             outcome="success" if exit_code == 0 else "failed",
             error=None if exit_code == 0 else f"process exited with status {exit_code}",
         )
-        self.model.primary_exited(identity.token, success=exit_code == 0)
+        if self.model.state.lifecycle.value == "game":
+            self.model.primary_exited(identity.token, success=exit_code == 0)
         self.model.state.delegated_surface = None
         self.model.state.controller_mode = None
         self.model.record_result(result)
@@ -619,7 +634,8 @@ class ProcessSupervisor:
                 self.model.return_failed(identity.token, f"Presentation recovery failed: {error}")
                 await self._notify()
                 return
-        self.model.return_complete(identity.token)
+        if self.model.state.lifecycle.value == "returning":
+            self.model.return_complete(identity.token)
         await self._notify()
 
     @staticmethod
@@ -1197,7 +1213,7 @@ class ProcessSupervisor:
     async def stop_aurelia_game(self) -> None:
         """Stop a verified running title through Aurelia, never by process group."""
         app_id = self._aurelia_app_id
-        if app_id is None or self.model.state.lifecycle.value != "game":
+        if app_id is None or self.model.state.lifecycle.value not in {"game", "returning"}:
             raise ValueError("no running Aurelia game is owned by this session")
         await (self._aurelia_client or AureliaClient()).stop(app_id)
         if self._watch_task is not None:

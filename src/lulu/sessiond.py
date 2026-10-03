@@ -87,6 +87,7 @@ class ConsoleSessionInterface(ServiceInterface):
         # presentation surface. This becomes true only after bootstrap has
         # selected the shell window in Gamescope.
         self._presentation_ready = False
+        self._game_surface_missing_since: float | None = None
         self._graphical_session_id = uuid.uuid4().hex
         self._graphical_launch_lease: dict[str, object] | None = None
         # A previous Sessiond instance cannot lend readiness to this one.
@@ -276,7 +277,65 @@ class ConsoleSessionInterface(ServiceInterface):
     async def _monitor_presentation(self) -> None:
         while True:
             await self._refresh_presentation_readiness()
+            await self._reconcile_game_presentation()
             await asyncio.sleep(0.5)
+
+    async def _reconcile_game_presentation(self) -> None:
+        """Keep Gamescope's selected game surface aligned with active process evidence."""
+        if self.model.state.lifecycle.value != "game":
+            self._game_surface_missing_since = None
+            return
+        identity = self._local_identity or self.supervisor.active_identity
+        if identity is None:
+            return
+        pids = self._owned_game_pids()
+        if not pids:
+            # Process observers own termination; presentation loss is not evidence
+            # that the process itself exited.
+            self._game_surface_missing_since = None
+            return
+        presentation = getattr(self.supervisor, "_presentation", None)
+        if presentation is None:
+            return
+        try:
+            selected, owner_pid = await asyncio.to_thread(presentation.selected_base_surface)
+        except (OSError, RuntimeError, subprocess.SubprocessError):
+            # A failed read is transient; do not alter lifecycle or claim loss.
+            return
+        if selected is not None and self.supervisor.session_surface_is_owned(owner_pid, identity):
+            self._game_surface_missing_since = None
+            return
+        now = time.monotonic()
+        if self._game_surface_missing_since is None:
+            self._game_surface_missing_since = now
+        # Reuse the launch-time selector and ownership evidence, but keep each
+        # recovery attempt non-blocking so the lifecycle monitor remains live.
+        try:
+            await asyncio.to_thread(self.supervisor.reconcile_session_surface, identity, 0)
+            selected, owner_pid = await asyncio.to_thread(presentation.selected_base_surface)
+            if selected is not None and self.supervisor.session_surface_is_owned(owner_pid, identity):
+                self._game_surface_missing_since = None
+                return
+        except (OSError, RuntimeError, TimeoutError, subprocess.SubprocessError):
+            pass
+        if now - self._game_surface_missing_since >= 5.0:
+            await self._fail_lost_game_presentation(identity)
+
+    async def _fail_lost_game_presentation(self, identity: LaunchIdentity) -> None:
+        if (self.model.state.lifecycle.value != "game"
+                or self.model.state.launch_token != identity.token):
+            return
+        self.model.fail(identity.token, "Gamescope game presentation could not be recovered")
+        self._game_surface_missing_since = None
+        self.StateChanged(self._state_json())
+        try:
+            if self._local_identity is identity:
+                self.supervisor.terminate_session(identity, os_signal.SIGTERM)
+            else:
+                await self.supervisor.quit_active_session()
+        except (OSError, ProcessLookupError, RuntimeError, ValueError) as error:
+            LOGGER.error("could not stop game after presentation recovery failure token=%s: %s",
+                         identity.token, error)
 
     async def _refresh_presentation_readiness(self) -> None:
         """Publish readiness only after its live context snapshot is verified."""
@@ -889,6 +948,20 @@ class ConsoleSessionInterface(ServiceInterface):
                 # lifecycle token or prevent the Mudos shell from returning.
                 LOGGER.warning("session return input-mode restore failed token=%s: %s",
                                token, error)
+            self.model.set_input_mode(InputMode.SHELL)
+            self.model.return_complete(token)
+        elif self.model.state.lifecycle is Lifecycle.RETURNING:
+            shell = self.supervisor.shell_status()
+            if shell is not None and shell.running and shell.presentation_available:
+                try:
+                    self.supervisor.select_shell_presentation()
+                except (OSError, RuntimeError, TimeoutError, subprocess.SubprocessError):
+                    LOGGER.exception("failed presentation recovery could not restore shell surface")
+                    self.model.return_failed(token, "Presentation recovery failed: shell surface unavailable")
+                    self._local_identity = None
+                    self._local_provider_id = ""
+                    self.StateChanged(self._state_json())
+                    return
             self.model.set_input_mode(InputMode.SHELL)
             self.model.return_complete(token)
         self._local_identity = None
