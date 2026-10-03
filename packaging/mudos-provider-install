@@ -24,9 +24,6 @@ case "$provider" in
         flatpak install --system --assumeyes flathub "$app_id"
         install -D -m 0755 "$root/packaging/$wrapper_source" "/usr/local/bin/$wrapper"
         flatpak override --system --filesystem=/home/lulu/Games:ro "$app_id"
-        if [[ $provider == eden ]]; then
-            flatpak override --system --filesystem=/home/lulu/.config/lulu/providers/eden/config:ro "$app_id"
-        fi
         exit 0
         ;;
     questarr) exec "$root/scripts/provision-questarr.sh" ;;

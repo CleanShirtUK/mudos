@@ -12,10 +12,13 @@ from .paths import PATHS
 # SDL's standard gamepad order. Eden's SDL backend consumes these values in
 # the serialized input parameter packages.
 _BUTTONS = {
-    "l": 9,
-    "r": 10,
-    "minus": 4,
-    "plus": 6,
+    # Match Eden's previously captured native profile for the SDL buttons
+    # exposed by Mudos: shoulders are SDL buttons 4/5 and Back/Start are 6/7.
+    # Keep this emulator-owned; do not rewrite the shared InputPlumber layout.
+    "l": 4,
+    "r": 5,
+    "minus": 6,
+    "plus": 7,
     "lstick": 7,
     "rstick": 8,
 }
@@ -61,6 +64,16 @@ class SwitchProvider:
     @property
     def active_config_path(self) -> Path:
         return self.active_config_root / "qt-config.ini"
+
+    def ensure_standalone_config(self) -> Path:
+        """Create the active Flatpak config without requiring a gamepad or ROM.
+
+        Configure Provider is an intentional native Eden UI launch. Seed only
+        first-run/data-location facts; the existing Eden settings remain owned
+        by Eden and are preserved.
+        """
+        self._update_active_config(None)
+        return self.active_config_path
 
     def ensure_controller_config(
         self,
@@ -261,7 +274,7 @@ class SwitchProvider:
                     return value.strip().strip('"')
         return None
 
-    def _update_active_config(self, profile: str) -> None:
+    def _update_active_config(self, profile: str | None) -> None:
         path = self.active_config_path
         path.parent.mkdir(parents=True, exist_ok=True)
         source = path.read_text(encoding="utf-8") if path.exists() else "[Controls]\n"
@@ -274,7 +287,8 @@ class SwitchProvider:
         # Replace the owned Controls section rather than merging it. A merge
         # leaves old keyboard/player slots active after a controller count or
         # identity change, allowing Eden to fall back to keyboard input.
-        lines[start:end] = profile.splitlines()
+        if profile is not None:
+            lines[start:end] = profile.splitlines()
         next_section = next((index for index in range(start + 1, len(lines))
                              if lines[index].startswith("[")), len(lines))
         if next_section < len(lines) and next_section > 0 and lines[next_section - 1] != "":
@@ -296,7 +310,12 @@ class SwitchProvider:
                     lines[match] = f"{key}={value}"
         else:
             lines.extend(["", "[UI]", "firstStart=false"])
-        path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        content = "\n".join(lines) + "\n"
+        if not path.is_file() or path.read_text(encoding="utf-8") != content:
+            temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+            temporary.write_text(content, encoding="utf-8")
+            temporary.replace(path)
 
     def launch_arguments(
         self,

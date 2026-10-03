@@ -1,13 +1,26 @@
 # Nintendo Switch Provider
 
-Mudos uses the maintained Linux build of [Eden](https://eden-emu.dev/) through
-`eden-cli`. Eden supports direct game paths, an alternate configuration file,
-fullscreen startup, and SDL gamepad input. Mudos writes the deterministic
-source profile to the provider-owned `lulu-switch.ini` and applies the same
-`[Controls]` section to Eden's actual native file
-`~/.config/eden/qt-config.ini` immediately before launch. The command-line
-`--config` argument is retained for launch compatibility, but Eden 0.2.x
-resolves its native configuration from that canonical path.
+Mudos uses the managed Flathub build of [Eden](https://eden-emu.dev/), ID
+`dev.eden_emu.eden`, through the release-owned `packaging/eden-flatpak` wrapper.
+Eden 0.2.1 consumes its Flatpak XDG tree at
+`~/.var/app/dev.eden_emu.eden/config/eden/qt-config.ini` and
+`~/.var/app/dev.eden_emu.eden/data/eden`; a separate Mudos provider config
+directory is not the active runtime tree.
+
+Before a ROM launch, Mudos preserves Eden-owned settings and replaces the
+provider-owned `[Controls]` section in that active config with SDL bindings
+derived from the currently assigned InputPlumber/SDL gamepads. It accepts live
+GUIDs dynamically; no manufacturer, model, transport, or GUID allowlist is
+used. The same launch reconciliation projects Mudos-owned keys into Eden's data
+tree and installs canonical firmware in its writable NAND. Configure Provider
+opens Eden through the same Flatpak wrapper without a ROM or a controller and
+marks the active config's first-run state complete so the setup wizard does not
+become part of normal game launch.
+
+The Eden-owned SDL bindings for LB, RB, Back/View, and Start/Menu use the
+values from the preserved historical native Eden profile (`4`, `5`, `6`, and
+`7`, respectively). This corrects an Eden mapping regression without changing
+InputPlumber, face buttons, sticks, triggers, or d-pad bindings.
 Each connected player is emitted as an Eden-native SDL slot (`type=0`) with a
 distinct SDL port; no unpopulated slot is left as a keyboard mapping.
 `LULU_SWITCH_SDL_GUID` is retained only as a test/developer override. Normal

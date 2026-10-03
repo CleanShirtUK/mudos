@@ -322,6 +322,21 @@ not implied to have passed.
   `Y=button:2`. This diff is identical for Players 1, 2, and 3; only the SDL
   port changes (`0`, `1`, `2`).
 
+## Eden shoulder/menu-button regression trace
+
+- Current Mudos generation incorrectly reused SDL button indices `9`, `10`,
+  `4`, and `6` for Eden `L`, `R`, `minus`, and `plus`. Runtime acceptance
+  observed LB and Back/View activating Eden Start, while RB and Start/Menu did
+  nothing.
+- The surviving historical native profile
+  `old-reference-releases.20260913/.../config/eden/input/mudos-xbox360.ini`
+  records the four intended Eden actions as `L=button:4`, `R=button:5`,
+  `minus=button:6`, and `plus=button:7`. Restore only those four values.
+- A/B/X/Y, sticks, triggers, and d-pad are intentionally unchanged; no SDL,
+  InputPlumber, device identity, or allowlist behavior is changed. Physical
+  acceptance must separately verify each of LB, RB, Back/View, and Start/Menu,
+  plus A/B/X/Y, and repeat after an Eden restart/relaunch.
+
 ## Torrent provider / Transmission
 
 - Commit: `599a68c`

@@ -170,9 +170,12 @@ class EmulatorRuntimeTests(unittest.TestCase):
             config = provider.ensure_controller_config(device_indices={1: 0, 2: 2, 3: 1})
             content = config.read_text()
 
-        self.assertIn("player_0_button_a=\"engine:sdl,port:0,guid:030000005e0400008e02000001000000,button:0\"", content)
-        self.assertIn("player_1_button_a=\"engine:sdl,port:2,guid:030000005e0400008e02000001000000,button:0\"", content)
-        self.assertIn("player_2_button_a=\"engine:sdl,port:1,guid:030000005e0400008e02000001000000,button:0\"", content)
+        for player, port in ((0, 0), (1, 2), (2, 1)):
+            for action, button in (("a", 0), ("b", 1), ("x", 2), ("y", 3)):
+                self.assertIn(
+                    f'player_{player}_button_{action}="engine:sdl,port:{port},guid:030000005e0400008e02000001000000,button:{button}"',
+                    content,
+                )
         self.assertNotIn("player_3_", content)
 
     def test_switch_three_player_profile_has_unique_gamepads_and_native_mapping(self) -> None:

@@ -9,10 +9,10 @@ supported = ["switch"]
 strategy = "direct"
 directory = "config"
 [launch.standalone]
-command = "/usr/bin/eden"
+command = "/opt/lulu/current/packaging/eden-flatpak"
 controller_mode = "compat"
 [launch.game]
-command = "/usr/bin/eden"
+command = "/opt/lulu/current/packaging/eden-flatpak"
 
 [[guide.actions]]
 id = "eden-show-ui"

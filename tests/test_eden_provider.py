@@ -42,6 +42,50 @@ class EdenManagedProvisioningTests(unittest.TestCase):
         self.assertIn('"--nosocket=wayland"', wrapper)
         self.assertIn('"--env=QT_QPA_PLATFORM=xcb"', wrapper)
 
+    def test_standalone_provider_uses_flatpak_wrapper_not_native_appimage(self) -> None:
+        from lulu.providers import load_providers
+
+        eden = load_providers()["eden"]
+        wrapper = "/opt/lulu/current/packaging/eden-flatpak"
+        self.assertEqual(eden.standalone_launch.command, (wrapper,))
+        self.assertEqual(eden.game_launch.command, (wrapper,))
+
+    def test_clean_standalone_config_is_deterministic_and_preserves_eden_settings(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            active = root / ".var/app/dev.eden_emu.eden/config/eden"
+            provider = SwitchProvider(root / "eden", root / "providers/eden/config", active,
+                                      root / ".var/app/dev.eden_emu.eden/data/eden")
+            first = provider.ensure_standalone_config()
+            initial = first.read_text()
+            second = provider.ensure_standalone_config()
+            self.assertEqual(second, first)
+            self.assertEqual(first.read_text(), initial)
+            self.assertIn("[UI]\nfirstStart=false", initial)
+            self.assertNotIn("player_0_button_a=", initial)
+            self.assertNotIn("guid:", initial)
+
+            # Eden-owned settings survive re-provisioning while first-run state
+            # stays deterministic after the user has opened the native UI.
+            first.write_text(initial.replace("firstStart=false", "firstStart=true")
+                             .replace("[UI]", "[UI]\ntheme=dark"))
+            provider.ensure_standalone_config()
+            updated = first.read_text()
+            self.assertIn("firstStart=false", updated)
+            self.assertIn("theme=dark", updated)
+
+    def test_eden_provisioning_targets_actual_xdg_tree_not_provider_shadow(self) -> None:
+        from lulu.providers import load_providers
+
+        wrapper = (Path(__file__).parents[1] / "packaging/eden-flatpak").read_text()
+        installer = (Path(__file__).parents[1] / "packaging/mudos-provider-install").read_text()
+        provider = load_providers()["eden"]
+        self.assertEqual(provider.standalone_launch.command,
+                         ("/opt/lulu/current/packaging/eden-flatpak",))
+        self.assertIn('app=dev.eden_emu.eden', wrapper)
+        self.assertIn('exec /usr/bin/flatpak run --system', wrapper)
+        self.assertNotIn(".config/lulu/providers/eden/config", installer)
+
     def test_eden_config_is_the_consumed_flatpak_file_and_preserves_unowned_settings(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -79,6 +123,25 @@ class EdenManagedProvisioningTests(unittest.TestCase):
             )
         self.assertNotIn("old-keyboard-binding", content)
         self.assertTrue(source_exists)
+
+    def test_eden_historical_shoulder_and_menu_mapping_preserves_other_controls(self) -> None:
+        pad = {"sdl_guid": "030081b85e0400008e02000001000000", "sdl_index": 0}
+        with tempfile.TemporaryDirectory() as directory:
+            provider = SwitchProvider(Path(directory) / "eden", Path(directory) / "config")
+            content = provider.ensure_controller_config(1, {1: 0}, {1: pad}).read_text()
+        prefix = "engine:sdl,port:0,guid:030000005e0400008e02000001000000"
+        # Recovered Eden-native profile records the four affected controls.
+        for action, button in (("l", 4), ("r", 5), ("minus", 6), ("plus", 7)):
+            self.assertIn(f'player_0_button_{action}="{prefix},button:{button}"', content)
+        # Face buttons, sticks, triggers, and d-pad retain their existing values.
+        for action, button in (("a", 0), ("b", 1), ("x", 2), ("y", 3),
+                               ("lstick", 7), ("rstick", 8)):
+            self.assertIn(f'player_0_button_{action}="{prefix},button:{button}"', content)
+        self.assertIn(f'player_0_button_zl="{prefix},axis:4,threshold:0.5,invert:+"', content)
+        self.assertIn(f'player_0_button_zr="{prefix},axis:5,threshold:0.5,invert:+"', content)
+        for action, direction in (("dup", "up"), ("ddown", "down"),
+                                  ("dleft", "left"), ("dright", "right")):
+            self.assertIn(f'player_0_button_{action}="{prefix},hat:0,direction:{direction}"', content)
 
     def test_keys_projected_and_firmware_installed_to_writable_nand(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
