@@ -17,6 +17,7 @@ Environment=PATH=/usr/local/bin:/usr/bin
 ExecStart=/usr/bin/python /opt/lulu/current/scripts/steam-runtime-session.py
 Restart=always
 RestartSec=5s
+RestartPreventExitStatus=78
 TimeoutStartSec=180s
 TimeoutStopSec=30s
 KillMode=mixed

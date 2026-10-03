@@ -18,6 +18,10 @@ LOGIN_LOG = Path("/home/lulu/.local/share/Steam/logs/connection_log.txt")
 stopping = False
 
 
+class AuthenticationUnavailable(RuntimeError):
+    """Steam did not restore its saved authenticated session."""
+
+
 def notify(message: str) -> None:
     address = os.environ.get("NOTIFY_SOCKET")
     if not address:
@@ -87,10 +91,10 @@ def wait_for_steam(steam: subprocess.Popen[bytes], previous_log_size: int,
             recent = ""
         if "RecvMsgClientLogOnResponse()" in recent and "'OK'" in recent and "[Logged On" in recent:
             return
-        if "[Logging Off" in recent or "[Logged Off" in recent:
-            raise RuntimeError("Steam did not restore its authenticated session")
         time.sleep(0.5)
-    raise RuntimeError("Steam did not report authenticated/online within 150 seconds")
+    raise AuthenticationUnavailable(
+        "Steam did not restore authentication within 150 seconds; manual sign-in on :99 is required"
+    )
 
 
 def steam_main_pids() -> list[int]:
@@ -170,6 +174,8 @@ def main() -> int:
         return 0
     except Exception as error:
         print(f"steam-runtime-session: {error}", file=sys.stderr, flush=True)
+        if isinstance(error, AuthenticationUnavailable):
+            return 78
         return 1
     finally:
         stop_process(steam)

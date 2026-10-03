@@ -13,6 +13,7 @@ def test_steam_unit_is_session_scoped_and_restarts_independently_of_games():
     unit = (ROOT / "packaging/lulu-steam-runtime.service").read_text()
     assert "PartOf=lulu-session@2.service" in unit
     assert "Restart=always" in unit
+    assert "RestartPreventExitStatus=78" in unit
     assert "RestartSec=5s" in unit
     assert "KillMode=mixed" in unit
     assert "ExecStart=/usr/bin/python /opt/lulu/current/scripts/steam-runtime-session.py" in unit
@@ -56,6 +57,7 @@ def test_runtime_waits_for_authentication_and_stops_steam_before_xvfb():
     assert "wait_for_steam(steam, old_size)" in source
     assert "RecvMsgClientLogOnResponse()" in source
     assert "[Logged On" in source
+    assert "AuthenticationUnavailable" in source
     assert source.index("subprocess.run([STEAM, \"-shutdown\"]") < \
         source.index("finally:\n        stop_process(steam)\n        stop_process(xvfb)")
 
