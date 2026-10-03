@@ -57,6 +57,9 @@ class PluginFrameworkTests(unittest.TestCase):
             plan = registry.resolve_selection({"consumer"})
             self.assertEqual(plan.selected, ("alternative", "base", "consumer"))
             self.assertEqual(plan.ordered[-1], "consumer")
+            components = ComponentRegistry(registry)
+            components.discover()
+            self.assertEqual(components.resolve_selection({"consumer"}), plan)
             self.assertEqual(registry.resolve_selection({"base"}).selected, ("base",))
 
     def test_missing_any_group_is_reported_without_selecting_reverse_dependents(self):
@@ -66,6 +69,9 @@ class PluginFrameworkTests(unittest.TestCase):
             registry = PluginRegistry(root)
             registry.discover()
             plan = registry.resolve_selection({"consumer"})
+            components = ComponentRegistry(registry)
+            components.discover()
+            self.assertEqual(components.resolve_selection({"consumer"}), plan)
             self.assertEqual(plan.missing_any, (("consumer", ("alternative", "missing-downloader")),))
             self.assertEqual(registry.resolve_selection({"base"}).selected, ("base",))
 

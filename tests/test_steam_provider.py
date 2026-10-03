@@ -372,6 +372,17 @@ class SteamProviderTests(unittest.TestCase):
                     provider.install(app_id)
         popen.assert_not_called()
 
+    def test_all_appid_uri_helpers_share_positive_integer_validation(self) -> None:
+        provider = SteamProvider(executable="steam")
+        with patch("lulu.plugins.steam.provider.subprocess.Popen") as popen:
+            for app_id in ("0", "-1", "268910x"):
+                with self.subTest(app_id=app_id):
+                    with self.assertRaisesRegex(ValueError, "positive integer"):
+                        provider.open_game_details(app_id)
+                    with self.assertRaisesRegex(ValueError, "positive integer"):
+                        provider.launch_gamepad_title(app_id)
+        popen.assert_not_called()
+
     def test_request_launch_rejects_existing_target_before_duplicate_submission(self) -> None:
         async def exercise() -> None:
             provider = SteamProvider(executable="steam")

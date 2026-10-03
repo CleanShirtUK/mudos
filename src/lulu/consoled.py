@@ -1761,16 +1761,16 @@ class ConsoleInterface(ServiceInterface):
                 raise ValueError("Steam client runtime adapter is unavailable")
             steam_runtime = steam_client
             steam_start_time = asyncio.get_running_loop().time()
-            before_pids = steam_client._steam_client_pids()
+            before_pids = steam_client.desktop_pids()
             LOGGER.info("steam_auth_stage stage=client-start-request provider=steam request_id=%s monotonic_s=%.6f existing_pids=%s",
                         request_id, steam_start_time, before_pids)
             await steam_client.ensure_client()
-            after_pids = steam_client._steam_client_pids()
+            after_pids = steam_client.desktop_pids()
             LOGGER.info("steam_auth_stage stage=client-ready provider=steam request_id=%s elapsed_s=%.3f disposition=%s pids=%s",
                         request_id, asyncio.get_running_loop().time() - steam_start_time,
                         "reused" if before_pids else "spawned", after_pids)
             process_tree = steam_client.process_snapshot(after_pids)
-            steam_process_pgid = (getattr(steam_client, "_owned_client_pgid", None)
+            steam_process_pgid = (steam_client.startup_process_group()
                                   or next((int(row["pgid"]) for row in process_tree), 0))
             LOGGER.info("steam_auth_stage stage=process-tree provider=steam request_id=%s process_group=%s tree=%s",
                         request_id, steam_process_pgid, process_tree)

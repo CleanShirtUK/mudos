@@ -38,10 +38,6 @@ class RuntimePlatformDefinition:
         return current_bios_root() / (self.bios_subdirectory or self.platform_id)
 
 
-# Import compatibility for the pre-registry local content adapter.
-PlatformDefinition = RuntimePlatformDefinition
-
-
 def _path(variable: str, default: str) -> Path:
     return Path(os.environ.get(variable, default)).expanduser()
 

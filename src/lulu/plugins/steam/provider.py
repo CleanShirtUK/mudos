@@ -64,8 +64,7 @@ class SteamProvider:
 
     def open_game_details(self, app_id: str) -> str:
         """Navigate the Steam client without taking lifecycle ownership."""
-        if not app_id.isdecimal() or int(app_id) < 1:
-            raise ValueError("Steam AppID must be a positive integer")
+        self._validate_app_id(app_id)
         uri = f"steam://nav/games/details/{app_id}"
         environment = os.environ.copy()
         environment.setdefault("DISPLAY", ":0")
@@ -82,8 +81,7 @@ class SteamProvider:
 
     def launch_gamepad_title(self, app_id: str) -> str:
         """Ask the Steam client to launch an AppID after navigation."""
-        if not app_id.isdecimal() or int(app_id) < 1:
-            raise ValueError("Steam AppID must be a positive integer")
+        self._validate_app_id(app_id)
         uri = f"steam://rungameid/{app_id}"
         environment = os.environ.copy()
         environment.setdefault("DISPLAY", ":0")
@@ -185,6 +183,10 @@ class SteamProvider:
             return True
         return bool(self._owned_client_pgid
                     and self._process_group_members(self._owned_client_pgid))
+
+    def startup_process_group(self) -> int | None:
+        """Return the process group owned by this adapter's Steam startup."""
+        return self._owned_client_pgid
 
     def process_snapshot(self, pids: list[int] | None = None) -> list[dict[str, object]]:
         """Return non-sensitive PID ancestry evidence for Steam diagnostics."""
@@ -487,8 +489,7 @@ class SteamProvider:
         self._owned_client_pgid = None
 
     async def request_launch(self, app_id: str) -> SteamLaunchRequest:
-        if not app_id.isdecimal() or int(app_id) < 1:
-            raise ValueError("Steam AppID must be a positive integer")
+        self._validate_app_id(app_id)
         existing = self.presentation_pids(app_id)
         if existing:
             raise ValueError(f"Steam title is already running for AppID {app_id}: {existing}")
