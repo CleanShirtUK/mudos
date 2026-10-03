@@ -33,6 +33,10 @@ from .process_supervisor import ProcessResult
 from .paths import PATHS
 from .service_readiness import wait_for_lulu_services
 from .recovery import clear_failures, record_failure, recovery_required
+from .resident_steam_runtime import (
+    ResidentSteamRuntimeStatus,
+    read_resident_steam_runtime_status,
+)
 from .settings import SettingsStore
 from .provider_config import ProviderConfigurationService
 from .graphical_launch_context import (
@@ -77,6 +81,8 @@ class ConsoleSessionInterface(ServiceInterface):
         self._inputplumber_event: asyncio.Event | None = None
         self._initialized_composites: dict[str, tuple[str, tuple[str, ...]]] = {}
         self._presentation_watchdog_task: asyncio.Task[None] | None = None
+        self._resident_steam_runtime_task: asyncio.Task[None] | None = None
+        self._resident_steam_runtime = ResidentSteamRuntimeStatus()
         self._presentation_wait_log_at = 0.0
         self._gamescope_observer: GamescopeWindowObserver | None = None
         self._observed_game_surface: tuple[int | None, int | None, bool] = (None, None, False)
@@ -119,6 +125,11 @@ class ConsoleSessionInterface(ServiceInterface):
                 "lifecycle": self.model.state.lifecycle.value,
                 "presentation": self.model.state.presentation.value,
                 "presentation_ready": getattr(self, "_presentation_ready", False),
+                # Diagnostic readback only: systemd owns runtime lifecycle and
+                # the status never changes Mudos' game lifecycle authority.
+                "resident_steam_runtime": getattr(
+                    self, "_resident_steam_runtime", ResidentSteamRuntimeStatus()
+                ).as_dict(),
                 "overlay": self.model.state.overlay.value,
                 "input_mode": self.model.state.input_mode.value,
                 "last_failure_reason": self.model.last_failure_reason,
@@ -208,6 +219,9 @@ class ConsoleSessionInterface(ServiceInterface):
         self._gamescope_observer.start()
         if self._presentation_watchdog_enabled:
             self._presentation_watchdog_task = asyncio.create_task(self._monitor_presentation())
+        self._resident_steam_runtime_task = asyncio.create_task(
+            self._monitor_resident_steam_runtime()
+        )
 
     def _controller_inventory_snapshot(
         self,
@@ -279,6 +293,15 @@ class ConsoleSessionInterface(ServiceInterface):
             await self._refresh_presentation_readiness()
             await self._reconcile_game_presentation()
             await asyncio.sleep(0.5)
+
+    async def _monitor_resident_steam_runtime(self) -> None:
+        """Publish read-only systemd state without supervising the unit."""
+        while True:
+            status = await asyncio.to_thread(read_resident_steam_runtime_status)
+            if status != self._resident_steam_runtime:
+                self._resident_steam_runtime = status
+                self.StateChanged(self._state_json())
+            await asyncio.sleep(1.0)
 
     async def _reconcile_game_presentation(self) -> None:
         """Keep Gamescope's selected game surface aligned with active process evidence."""
@@ -730,6 +753,10 @@ class ConsoleSessionInterface(ServiceInterface):
             self._presentation_watchdog_task.cancel()
             await asyncio.gather(self._presentation_watchdog_task, return_exceptions=True)
             self._presentation_watchdog_task = None
+        if self._resident_steam_runtime_task is not None:
+            self._resident_steam_runtime_task.cancel()
+            await asyncio.gather(self._resident_steam_runtime_task, return_exceptions=True)
+            self._resident_steam_runtime_task = None
 
     def _gamescope_surface_changed(self, xid: int | None, pid: int | None, focused_fullscreen: bool) -> None:
         self._observed_game_surface = (xid, pid, focused_fullscreen)
