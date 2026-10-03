@@ -1983,3 +1983,22 @@ restart may be required for InputPlumber to publish a newly created target.
   and normal game-exit restoration were not reached. Do not treat this as a
   fixed or accepted Dolphin launch. Further diagnosis needs Dolphin stderr/log
   capture or matching debug symbols before another physical attempt.
+
+### Startup exception root cause — 2026-10-03
+
+- A controlled GDB invocation used the same executable, `--user` root, game,
+  and graphical environment as Consoled. `catch throw` caught Dolphin's first
+  throw in command-line startup; stderr said `dolphin-emu: error: no such
+  option: -f`. GDB identified the thrown type as `int`; the stripped executable
+  had no source symbols for the parser frames.
+- Installed executable: `/usr/bin/dolphin-emu`, CachyOS package
+  `dolphin-emu 1:2606-3.1`, Build ID
+  `874cb23866eb8fa83ce033175487c640d5c92f08`. Its `--help` lists `--batch` and
+  `-e/--exec`, but no `-f` option.
+- `git show 10107bd` established the first divergence: that commit added `-f`
+  to the existing `--batch -e <ROM>` launch. This is the root cause of the
+  repeated abort; Gamescope's missing-window error was secondary.
+- Removed only the unsupported flag. The existing `--user` configuration root,
+  batch-mode UI suppression, and direct `-e` game launch remain intact. No
+  Dolphin package was replaced and no physical acceptance attempt was made
+  during this diagnostic/fix.
