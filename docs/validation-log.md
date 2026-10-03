@@ -1956,3 +1956,30 @@ restart may be required for InputPlumber to publish a newly created target.
 - No changes were made to Eden provisioning, DLC handling, or content
   installation for this acceptance record. No further physical DLC test is
   requested unless a later merge changes runtime code.
+
+## Dolphin launch regression investigation — 2026-10-03
+
+- Reproduced through the normal Mudos UI with the previously accepted Wii Sports
+  + Wii Sports Resort entry (`local:wii:e30c582269645e23`). Catalogue identity,
+  provider route, executable, `--user` root, batch/fullscreen launch arguments,
+  and ROM all matched the existing Dolphin adapter path.
+- The first observed divergence was in config projection: Consoled passed
+  `…/dolphin-emu/Config` to controller provisioning, while Dolphin's existing
+  `--user …/config` launch uses `…/config/Config`. Corrected the projection to
+  the active `Config` directory without changing `--user`, launch arguments,
+  controller policy, or Wii Remote mode. Regression coverage asserts the
+  generated profile tree matches the launch user root.
+- A candidate with that correction still reproduced Dolphin SIGABRT before
+  Gamescope found a window. The core shows an uncaught C++ exception ending in
+  `std::terminate`; packaged Dolphin is stripped and has no local debug symbols.
+  Gamescope's “window … was not found” is consequent to the early process exit.
+- The active config also had passthrough enabled without explicit adapter
+  VID/PID values. Restored launch-scoped VID/PID assignment to the existing
+  lease, which restores the prior values on release. This did not change mode
+  selection. A second candidate and one authorized retry still produced the
+  same pre-window SIGABRT.
+- Therefore the exact exception/root cause is **not established**, and the
+  physical acceptance criterion is **not met**: gameplay, controller response,
+  and normal game-exit restoration were not reached. Do not treat this as a
+  fixed or accepted Dolphin launch. Further diagnosis needs Dolphin stderr/log
+  capture or matching debug symbols before another physical attempt.
