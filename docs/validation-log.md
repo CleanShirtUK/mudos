@@ -2007,11 +2007,12 @@ restart may be required for InputPlumber to publish a newly created target.
 
 - During the user's post-fix test, Dolphin's game render window was observed at
   640x480 inside a 1920x1080 Gamescope session. Dolphin 2606 no longer accepts
-  the old `-f` CLI switch; `-C` requires the full system-qualified key
-  `Main.Display.Fullscreen=True`. The first override omitted `Main.`, so it did
-  not enable fullscreen. Corrected the per-launch override while retaining
-  `--user`, `--batch`, and direct game launch. Physical confirmation is pending
-  the next game launch; no running Dolphin process was interrupted.
+  the old `-f` CLI switch; `-C` requires the config system name `Dolphin`, not
+  the internal enum name `Main`. Both earlier overrides therefore had no
+  effect. Corrected the per-launch override to
+  `Dolphin.Display.Fullscreen=True`, retaining `--user`, `--batch`, and direct
+  game launch. Physical confirmation is pending the next game launch; no
+  running Dolphin process was interrupted.
 - The live Mudos controller state contained one assigned Xbox 360 Controller
   at SDL index 0, and Dolphin's generated `GCPad1` profile points to
   `SDL/0/Xbox 360 Controller`. The current title is Wii Sports + Wii Sports

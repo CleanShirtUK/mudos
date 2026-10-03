@@ -66,7 +66,7 @@ class DolphinPassthroughTests(unittest.TestCase):
             executable="/usr/bin/dolphin-emu",
             arguments=(
                 "--user", str(PATHS.provider_config_root("dolphin")), "--batch",
-                "-C", "Main.Display.Fullscreen=True", "-e", "/fixture/game.rvz",
+                "-C", "Dolphin.Display.Fullscreen=True", "-e", "/fixture/game.rvz",
             ),
             provider="dolphin", platform="wii",
         ))

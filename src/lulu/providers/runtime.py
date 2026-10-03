@@ -31,7 +31,7 @@ def launch_arguments(provider: ProviderDefinition, game: LocalContentGame,
         # Dolphin 2606 removed the former -f CLI switch. Set its supported
         # display config override instead, so the render window fills the
         # Mudos game surface while --batch keeps the normal UI hidden.
-        return (*prefix, "--batch", "-C", "Main.Display.Fullscreen=True", "-e", content)
+        return (*prefix, "--batch", "-C", "Dolphin.Display.Fullscreen=True", "-e", content)
     if provider.provider_id == "pcsx2":
         # PCSX2 honors XDG_CONFIG_HOME; consoled supplies the provider's
         # persistent config directory in the child environment.
