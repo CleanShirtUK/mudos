@@ -110,6 +110,11 @@ class DolphinBluetoothLease:
         _persist_config_lease(lease_path, self.token, self.prior_config)
         self.attempted = True
         try:
+            # When Dolphin's active config enables passthrough, it must know
+            # which USB adapter to initialize. Keep these launch-scoped values
+            # leased and restore the user's prior selection on exit.
+            config.set("BluetoothPassthrough", "VID", str(int(ADAPTER_VENDOR_ID, 16)))
+            config.set("BluetoothPassthrough", "PID", str(int(ADAPTER_PRODUCT_ID, 16)))
             config.set("BluetoothPassthrough", "Enabled", "True")
             subprocess.run(
                 ["pkexec", str(self.helper), "acquire", self.token, str(os.getpid())],
