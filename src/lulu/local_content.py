@@ -5,7 +5,7 @@ import hashlib
 from pathlib import Path
 import re
 
-from .emulation import PLATFORMS, PlatformDefinition, current_bios_root
+from .emulation import PLATFORMS, RuntimePlatformDefinition, current_bios_root
 from .metadata import clean_local_title
 from .switch_content import SwitchContentRole, parent_name, role_from_unstructured_name, title_id
 
@@ -90,7 +90,7 @@ class LocalContentProvider:
         return sorted(games, key=lambda game: game.title.casefold())
 
     def _list_switch(self, contents: list[Path], root: Path,
-                     definition: PlatformDefinition) -> list[LocalContentGame]:
+                     definition: RuntimePlatformDefinition) -> list[LocalContentGame]:
         groups: dict[str, list[Path]] = {}
         for content in contents:
             key = parent_name(content.name)
@@ -125,7 +125,7 @@ class LocalContentProvider:
             ))
         return result
 
-    def _bios_ready(self, platform: str, definition: PlatformDefinition) -> bool:
+    def _bios_ready(self, platform: str, definition: RuntimePlatformDefinition) -> bool:
         if definition.bios_subdirectory is not None:
             paths = self.bios_paths.get(platform, ())
             if paths:

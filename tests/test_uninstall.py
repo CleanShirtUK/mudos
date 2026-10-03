@@ -6,7 +6,7 @@ from types import SimpleNamespace
 
 from lulu.acquisitiond import AcquisitionInterface
 from lulu.catalogue import CatalogueGame, CatalogueStore
-from lulu.job_manager import JobManager
+from lulu.job_manager import JobExecutionError, JobManager
 from lulu.jobs import JobOperation, JobState
 from lulu.local_uninstall import LocalUninstallExecutor
 from lulu.lutris_install import LutrisInstallExecutor
@@ -181,8 +181,8 @@ class LocalUninstallTests(unittest.TestCase):
             for path in (outside, root, root / "nes"):
                 game = local_game(path)
                 store._upsert(game); store.connection.commit()
-                with self.assertRaises(Exception):
-                    LocalUninstallExecutor(store, root)._approved_path("local:test")
+                with self.assertRaises(JobExecutionError):
+                    LocalUninstallExecutor(store, root)._approved_paths("local:test")
                 store.connection.execute("DELETE FROM games WHERE game_id='local:test'")
                 store.connection.commit()
             target = base / "escape-target.nes"
@@ -191,8 +191,8 @@ class LocalUninstallTests(unittest.TestCase):
             link.parent.mkdir()
             link.symlink_to(target)
             store._upsert(local_game(link)); store.connection.commit()
-            with self.assertRaises(Exception):
-                LocalUninstallExecutor(store, root)._approved_path("local:test")
+            with self.assertRaises(JobExecutionError):
+                LocalUninstallExecutor(store, root)._approved_paths("local:test")
             self.assertTrue(target.exists())
 
     def test_missing_path_is_idempotent(self) -> None:
@@ -202,7 +202,7 @@ class LocalUninstallTests(unittest.TestCase):
             root.mkdir(); (root / "nes").mkdir()
             store = CatalogueStore(Path(directory) / "catalogue.sqlite3")
             store._upsert(local_game(path)); store.connection.commit()
-            self.assertEqual(LocalUninstallExecutor(store, root)._approved_path("local:test"), path)
+            self.assertEqual(LocalUninstallExecutor(store, root)._approved_paths("local:test"), (path,))
 
 
 if __name__ == "__main__":

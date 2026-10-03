@@ -66,13 +66,6 @@ class LocalUninstallExecutor:
             raise JobExecutionError("ambiguous-install-set", "Duplicate component path")
         return tuple(approved)
 
-    # Compatibility seam for callers/tests that validate a single legacy path.
-    def _approved_path(self, game_id: str) -> Path:
-        paths = self._approved_paths(game_id)
-        if len(paths) != 1:
-            raise JobExecutionError("ambiguous-install-set", "Game has multiple installed components")
-        return paths[0]
-
     async def run(self, job: DownloadJob, reporter: JobReporter) -> None:
         await reporter.state(JobState.STARTING, stage="removing")
         paths = await asyncio.to_thread(self._approved_paths, job.content_identity)

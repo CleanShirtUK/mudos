@@ -13,7 +13,7 @@ import importlib.util
 import logging
 from pathlib import Path
 import tomllib
-from typing import Any, Callable
+from typing import Any, Callable, Mapping
 from urllib.parse import urlsplit
 
 from ..credential import SecretStore
@@ -118,6 +118,46 @@ class DependencyPlan:
     ordered: tuple[str, ...]
     missing_any: tuple[tuple[str, tuple[str, ...]], ...] = ()
     unknown: tuple[str, ...] = ()
+
+
+def _resolve_dependency_plan(
+    dependencies: Mapping[str, DependencySpec],
+    selected: set[str] | tuple[str, ...] | list[str],
+) -> DependencyPlan:
+    """Resolve dependency declarations consistently for plugins and components."""
+    requested = {str(item).casefold() for item in selected}
+    unknown = sorted(item for item in requested if item not in dependencies)
+    selected_ids = set(requested) - set(unknown)
+    missing: list[tuple[str, tuple[str, ...]]] = []
+    visiting: set[str] = set()
+    ordered: list[str] = []
+
+    def visit(component_id: str) -> None:
+        if component_id in visiting or component_id in ordered:
+            return
+        visiting.add(component_id)
+        declaration = dependencies[component_id]
+        for dependency in declaration.requires_all:
+            if dependency not in dependencies:
+                unknown.append(dependency)
+            else:
+                selected_ids.add(dependency)
+                visit(dependency)
+        for alternatives in declaration.requires_any:
+            available = tuple(item for item in alternatives if item in dependencies)
+            if not available:
+                missing.append((component_id, alternatives))
+            else:
+                selected_ids.add(available[0])
+                visit(available[0])
+        visiting.remove(component_id)
+        ordered.append(component_id)
+
+    for component_id in sorted(tuple(selected_ids)):
+        visit(component_id)
+    return DependencyPlan(
+        tuple(sorted(selected_ids)), tuple(ordered), tuple(missing), tuple(sorted(set(unknown)))
+    )
 
 
 class PluginSecretBoundary:
@@ -440,37 +480,11 @@ class PluginRegistry:
 
     def resolve_selection(self, selected: set[str] | tuple[str, ...] | list[str]) -> DependencyPlan:
         """Resolve only outgoing dependencies of selected plugins."""
-        requested = {str(item).casefold() for item in selected}
-        unknown = sorted(item for item in requested if item not in self.records)
-        selected_ids = set(requested) - set(unknown)
-        missing: list[tuple[str, tuple[str, ...]]] = []
-        visiting: set[str] = set()
-        ordered: list[str] = []
-
-        def visit(plugin_id: str) -> None:
-            if plugin_id in visiting or plugin_id in ordered:
-                return
-            visiting.add(plugin_id)
-            manifest = self.records[plugin_id].manifest
-            for dependency in manifest.dependencies.requires_all:
-                if dependency not in self.records:
-                    unknown.append(dependency)
-                else:
-                    selected_ids.add(dependency)
-                    visit(dependency)
-            for alternatives in manifest.dependencies.requires_any:
-                available = tuple(item for item in alternatives if item in self.records)
-                if not available:
-                    missing.append((plugin_id, alternatives))
-                else:
-                    selected_ids.add(available[0])
-                    visit(available[0])
-            visiting.remove(plugin_id)
-            ordered.append(plugin_id)
-
-        for plugin_id in sorted(tuple(selected_ids)):
-            visit(plugin_id)
-        return DependencyPlan(tuple(sorted(selected_ids)), tuple(ordered), tuple(missing), tuple(sorted(set(unknown))))
+        dependencies = {
+            plugin_id: record.manifest.dependencies
+            for plugin_id, record in self.records.items()
+        }
+        return _resolve_dependency_plan(dependencies, selected)
 
 
 BUILTIN_COMPONENTS: tuple[ComponentDescriptor, ...] = (
@@ -579,34 +593,5 @@ class ComponentRegistry:
         return records
 
     def resolve_selection(self, selected: set[str] | tuple[str, ...] | list[str]) -> DependencyPlan:
-        requested = {str(item).casefold() for item in selected}
-        unknown = sorted(item for item in requested if item not in self._components)
-        selected_ids = set(requested) - set(unknown)
-        missing: list[tuple[str, tuple[str, ...]]] = []
-        visiting: set[str] = set()
-        ordered: list[str] = []
-
-        def visit(component_id: str) -> None:
-            if component_id in visiting or component_id in ordered:
-                return
-            visiting.add(component_id)
-            descriptor = self._components[component_id]
-            for dependency in descriptor.dependencies.requires_all:
-                if dependency not in self._components:
-                    unknown.append(dependency)
-                else:
-                    selected_ids.add(dependency)
-                    visit(dependency)
-            for alternatives in descriptor.dependencies.requires_any:
-                available = tuple(item for item in alternatives if item in self._components)
-                if not available:
-                    missing.append((component_id, alternatives))
-                else:
-                    selected_ids.add(available[0])
-                    visit(available[0])
-            visiting.remove(component_id)
-            ordered.append(component_id)
-
-        for component_id in sorted(tuple(selected_ids)):
-            visit(component_id)
-        return DependencyPlan(tuple(sorted(selected_ids)), tuple(ordered), tuple(missing), tuple(sorted(set(unknown))))
+        dependencies = {key: item.dependencies for key, item in self._components.items()}
+        return _resolve_dependency_plan(dependencies, selected)

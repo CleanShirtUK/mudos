@@ -23,7 +23,7 @@ class SteamAuthentication:
     verification_task: asyncio.Task[dict[str, str]] | None = None
 
     def status(self) -> dict[str, object]:
-        client_running = bool(self.provider._steam_client_pids())
+        client_running = bool(self.provider.desktop_pids())
         account = self._active_account() if client_running else None
         secrets = SecretStore()
         entitlement = SteamEntitlementConfig.from_file()

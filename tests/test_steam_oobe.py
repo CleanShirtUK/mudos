@@ -13,7 +13,7 @@ from lulu.plugins.steam.entitlements import SteamEntitlement
 
 
 class FakeSteam:
-    def _steam_client_pids(self):
+    def desktop_pids(self):
         return [1234]
 
 
@@ -58,10 +58,11 @@ class SteamOobeTests(unittest.TestCase):
             launch = SimpleNamespace(command=["steam"], controller_mode="gamepad")
             provider = SimpleNamespace(provider_id="steam", standalone_launch=launch)
             steam_runtime = SimpleNamespace(
-                ensure_client=AsyncMock(), _steam_client_pids=Mock(return_value=[1234]),
+                ensure_client=AsyncMock(), desktop_pids=Mock(return_value=[1234]),
+                startup_process_group=Mock(return_value=4321),
                 process_snapshot=Mock(return_value=[{"pid": 1234, "pgid": 1234}]), open_main=Mock(),
                 hide_main=Mock(), main_window_visibility=Mock(return_value=True),
-                desktop_pids=Mock(return_value=[1234]), main_window_focused=Mock(return_value=True))
+                main_window_focused=Mock(return_value=True))
             interface._providers = SimpleNamespace(get=lambda _provider: provider)
             interface.catalogue = SimpleNamespace(provider=steam_runtime)
             interface.sessiond = SimpleNamespace(
@@ -87,6 +88,7 @@ class SteamOobeTests(unittest.TestCase):
             args = interface.sessiond.call_begin_provider_session.await_args.args
             self.assertEqual(args[:2], ("steam", "gamepad"))
             self.assertEqual(args[2], process.pid)
+            self.assertEqual(args[-1], 4321)
             self.assertEqual(interface._local_token, "setup-token")
             self.assertEqual(len(tasks), 3)  # input-mode settle, reap, Steam surface observer
             for task in tasks:
