@@ -11,6 +11,27 @@ from lulu.sessiond import ConsoleSessionInterface, _wait_for_stop, serve
 
 
 class SessiondTests(unittest.TestCase):
+    def test_session_surface_selection_uses_owned_process_group_members(self) -> None:
+        model = SessionStateModel()
+        presentation = SimpleNamespace(select_pids=Mock(return_value=7788))
+        supervisor = ProcessSupervisor(model, presentation=presentation)
+        identity = LaunchIdentity(
+            "eden-token", 123, 123, "/usr/bin/flatpak",
+            ("/opt/lulu/current/packaging/eden-flatpak", "--game", "/fixture/game.xci"),
+        )
+        with patch.object(supervisor, "_process_group_members", return_value={123, 124}):
+            selected = supervisor.select_session_surface(
+                identity, 15.0, include_related_processes=True,
+            )
+            process_ids, timeout, process_alive = presentation.select_pids.call_args.args
+            selected_ids = process_ids()
+            group_alive = process_alive()
+
+        self.assertEqual(selected, 7788)
+        self.assertEqual(selected_ids, [123, 124])
+        self.assertEqual(timeout, 15.0)
+        self.assertTrue(group_alive)
+
     def test_process_supervisor_returns_session_evidence_not_process_internals(self) -> None:
         model = SessionStateModel()
         provider = SimpleNamespace(presentation_pids=lambda app_id: [456])

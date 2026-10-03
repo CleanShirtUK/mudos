@@ -190,7 +190,8 @@ class ProcessSupervisor:
     ) -> int | None:
         """Select a surface owned by an accepted session's process evidence."""
         process_ids = lambda: sorted(
-            self._process_ids_in_group(identity.pgid) if include_related_processes else {identity.pid}
+            self._process_group_members(identity.pgid)
+            if include_related_processes else {identity.pid}
         )
         return self._select_surface(
             process_ids, timeout,
