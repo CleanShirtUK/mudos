@@ -85,6 +85,7 @@ class AureliaSessionLaunchTests(unittest.IsolatedAsyncioTestCase):
             await self.supervisor._aurelia_launch_task
             self.assertEqual(self.model.state.lifecycle.value, "game")
             self.assertEqual(self.model.state.provider_id, "steam-aurelia")
+            self.assertEqual(aurelia.app_id, "945360")
             self.assertEqual(self.supervisor.active_identity.pid, 30002)
             self.assertNotEqual(aurelia.running_value["running"][0]["pid"], self.supervisor.active_identity.pid)
             self.assertNotEqual(cli.pid, self.supervisor.active_identity.pid)
@@ -93,6 +94,23 @@ class AureliaSessionLaunchTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(self.model.state.lifecycle.value, "game")
             await self.supervisor._watch_task
         self.assertEqual(self.model.state.lifecycle.value, "shell")
+
+    async def test_request_path_remains_aurelia_and_never_selects_steamcmd(self):
+        """Sessiond's accepted request stays on Aurelia; process monitoring is not a legacy launch."""
+        cli = FakeCLI()
+        cli.returncode = 0
+        aurelia = FakeAurelia(cli=cli, running={"running": []})
+        self.supervisor._aurelia_client = aurelia
+        self.provider._candidate_pids = lambda _app: []
+        token = self.supervisor.queue_aurelia_launch("104200", 1000)
+        with self.assertRaisesRegex(ValueError, "exited before a verified game"):
+            await self.supervisor._aurelia_launch_task
+        self.assertEqual(aurelia.app_id, "104200")
+        self.assertIsNone(self.model.state.provider_id)
+        self.assertEqual(self.model.state.lifecycle.value, "shell")
+        self.assertIsNone(self.supervisor._steam_launch)
+        self.assertEqual(self.model.last_result.token, token)
+        self.assertFalse(hasattr(aurelia, "steamcmd"))
 
     async def test_aurelia_normal_exit_restores_native_controller_shell_profile(self):
         """Native-controller mode must not suppress the supervised SHELL reset."""

@@ -412,7 +412,7 @@ class AureliaClient:
         return await self.command("dlc", app_id)
 
     async def launch(self, app_id: str) -> Any:
-        return await self.command("play", app_id, "--no-update", "--no-script", timeout=24 * 3600)
+        return await self.command("play", app_id, "--steam", "--no-update", "--no-script", timeout=24 * 3600)
 
     async def spawn_play(self, app_id: str) -> asyncio.subprocess.Process:
         """Start blocking `play` without blocking Sessiond's event loop."""
@@ -425,7 +425,7 @@ class AureliaClient:
         if not wrapper.is_file():
             raise AureliaError("launch-wrapper-unavailable", "Mudos Aurelia graphical launch wrapper is unavailable")
         return await asyncio.create_subprocess_exec(
-            self.executable, "--json", "play", app_id, "--no-update", "--script", str(wrapper),
+            self.executable, "--json", "play", app_id, "--steam", "--no-update", "--script", str(wrapper),
             env=self._environment(), stdin=asyncio.subprocess.DEVNULL,
             stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL,
             start_new_session=True,
