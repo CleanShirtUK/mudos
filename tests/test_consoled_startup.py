@@ -57,6 +57,68 @@ class ConsoledStartupTests(unittest.TestCase):
         store.mark_played.assert_called_once_with("steam-aurelia:104200")
         consoled._publish_delta.assert_called_once_with("catalogue-delta")
 
+    def test_steam_id_with_aurelia_override_uses_canonical_aurelia_route(self) -> None:
+        class Sessiond:
+            async def call_request_aurelia_launch(self, app_id, timeout_ms):
+                self.request = (app_id, timeout_ms)
+                return "aurelia-token"
+
+            async def call_request_steam_launch(self, *_args):
+                raise AssertionError("override did not select Aurelia")
+
+        game = SimpleNamespace(
+            game_id="steam:104200", provider="steam", provider_id="104200", launchable=True,
+        )
+        store = SimpleNamespace(
+            list_games=Mock(return_value=[game]),
+            mark_played=Mock(return_value="catalogue-delta"),
+        )
+        consoled = ConsoleInterface.__new__(ConsoleInterface)
+        consoled.catalogue = SimpleNamespace(store=store)
+        consoled._plugins = SimpleNamespace(with_capability=lambda _capability: ())
+        consoled.sessiond = Sessiond()
+        consoled._publish_delta = Mock()
+
+        async def exercise():
+            with patch.dict("os.environ", {"LULU_STEAM_LAUNCH_PROVIDER": "steam-aurelia"}), \
+                    patch.object(consoled, "CatalogueChanged", lambda: None):
+                result = await ConsoleInterface.LaunchGame.__wrapped__(
+                    consoled, "steam:104200", 15000)
+            self.assertEqual(result, "aurelia-token")
+
+        asyncio.run(exercise())
+        self.assertEqual(consoled.sessiond.request, ("104200", 15000))
+        store.mark_played.assert_called_once_with("steam:104200")
+
+    def test_steam_contextual_navigation_result_is_preserved(self) -> None:
+        class Provider:
+            def __init__(self):
+                self.calls = []
+
+            def open_game_details(self, app_id):
+                self.calls.append(("details", app_id))
+                return f"steam://nav/games/details/{app_id}"
+
+            def launch_gamepad_title(self, app_id):
+                self.calls.append(("launch", app_id))
+                return f"steam://rungameid/{app_id}"
+
+        game = SimpleNamespace(
+            game_id="steam:40800", provider="steam", provider_id="40800", launchable=True,
+        )
+        store = SimpleNamespace(list_games=Mock(return_value=[game]))
+        provider = Provider()
+        consoled = ConsoleInterface.__new__(ConsoleInterface)
+        consoled.catalogue = SimpleNamespace(store=store, provider=provider)
+        consoled._plugins = SimpleNamespace(with_capability=lambda _capability: ())
+        consoled.sessiond = None
+
+        result = asyncio.run(ConsoleInterface.LaunchGame.__wrapped__(
+            consoled, "steam:40800", 15000))
+
+        self.assertEqual(result, "steam://nav/games/details/40800")
+        self.assertEqual(provider.calls, [("details", "40800"), ("launch", "40800")])
+
     def test_dbus_writer_keeps_connection_alive_on_socket_backpressure(self) -> None:
         class Socket:
             def send(self, _data):

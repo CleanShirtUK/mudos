@@ -17,6 +17,7 @@ from urllib.parse import parse_qs, unquote, urlparse
 
 from lulu.onboarding import dismiss_onboarding, onboarding_state, reopen_onboarding
 from lulu.recovery import clear_failures, snapshot as recovery_snapshot
+from lulu.launch_routing import LaunchDispatch, resolve_game_launch_route
 
 
 LOGGER = logging.getLogger("lulu.console-ui-bridge")
@@ -271,34 +272,36 @@ class ConsoleUiBridge:
 
     async def launch_game(self, game_id: str) -> dict[str, object]:
         LOGGER.info("launch request game_id=%s", game_id)
-        appid = game_id.removeprefix("steam-aurelia:").removeprefix("steam:")
+        route = resolve_game_launch_route(
+            game_id,
+            steam_launch_provider=os.environ.get("LULU_STEAM_LAUNCH_PROVIDER"),
+        )
         self.launch_logs.note("Lulu", f"HTTP launch request started game_id={game_id}")
-        if game_id.startswith("steam-aurelia:"):
+        if route.dispatch is LaunchDispatch.AURELIA:
             context = {key: os.environ[key] for key in (
                 "DISPLAY", "WAYLAND_DISPLAY", "XDG_RUNTIME_DIR",
             ) if os.environ.get(key)}
             await self.sessiond.call_set_delegated_launch_context(json.dumps(context, sort_keys=True))
-            token = normalize_launch_token(await self.sessiond.call_request_aurelia_launch(appid, 15000))
-            self.launch_logs.note("Steam Aurelia", f"aurelia play {appid}")
-            self.launch_logs.note("Lulu", f"session launch boundary reached game_id={game_id} appid={appid} token={token}")
-        elif game_id.startswith("steam:"):
-            if os.environ.get("LULU_STEAM_LAUNCH_PROVIDER") == "steam-aurelia":
-                context = {key: os.environ[key] for key in (
-                    "DISPLAY", "WAYLAND_DISPLAY", "XDG_RUNTIME_DIR",
-                ) if os.environ.get(key)}
-                await self.sessiond.call_set_delegated_launch_context(json.dumps(context, sort_keys=True))
-                token = normalize_launch_token(await self.sessiond.call_request_aurelia_launch(appid, 15000))
-                self.launch_logs.note("Steam Aurelia", f"aurelia play {appid}")
-            else:
-                token = normalize_launch_token(await self.sessiond.call_request_steam_launch(appid, 15000))
-            self.launch_logs.note("Lulu", f"session launch boundary reached game_id={game_id} appid={appid} token={token}")
-            if os.environ.get("LULU_STEAM_LAUNCH_PROVIDER") != "steam-aurelia":
-                self.launch_logs.note("Steam", f"steam://rungameid/{appid}")
+            token = normalize_launch_token(await self.sessiond.call_request_aurelia_launch(
+                route.provider_game_id, 15000))
+            self.launch_logs.note("Steam Aurelia", f"aurelia play {route.provider_game_id}")
+            self.launch_logs.note(
+                "Lulu", f"session launch boundary reached game_id={game_id} "
+                f"appid={route.provider_game_id} token={token}",
+            )
+        elif route.dispatch is LaunchDispatch.STEAM:
+            token = normalize_launch_token(await self.sessiond.call_request_steam_launch(
+                route.provider_game_id, 15000))
+            self.launch_logs.note(
+                "Lulu", f"session launch boundary reached game_id={game_id} "
+                f"appid={route.provider_game_id} token={token}",
+            )
+            self.launch_logs.note("Steam", f"steam://rungameid/{route.provider_game_id}")
         else:
-            startup_timeout = 120000 if game_id.startswith("epic:") else 15000
+            startup_timeout = 120000 if route.provider_id == "epic" else 15000
             token = await self.consoled.call_launch_game(game_id, startup_timeout)
             self.local_token = token
-            self.launch_logs.note("Lulu", f"launch boundary reached game_id={game_id} appid={appid}")
+            self.launch_logs.note("Lulu", f"launch boundary reached game_id={game_id}")
         LOGGER.info("launch accepted game_id=%s token=%s", game_id, token)
         return {
             "token": token,
@@ -1226,8 +1229,12 @@ class ApiHandler(BaseHTTPRequestHandler):
             game_id = unquote(path.removeprefix("/launch/"))
             LOGGER.info("http launch game_id=%s", game_id)
             self.bridge.launch_logs.start(game_id)
-            timeout = None if game_id.startswith("steam:") else 15
-            if game_id.startswith("epic:"):
+            route = resolve_game_launch_route(
+                game_id,
+                steam_launch_provider=os.environ.get("LULU_STEAM_LAUNCH_PROVIDER"),
+            )
+            timeout = None if route.provider_id == "steam" else 15
+            if route.provider_id == "epic":
                 timeout = 125
             result = self.bridge.call(
                 self.bridge.launch_game(game_id),
