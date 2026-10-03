@@ -411,9 +411,6 @@ class AureliaClient:
     async def dlc(self, app_id: str) -> Any:
         return await self.command("dlc", app_id)
 
-    async def launch(self, app_id: str) -> Any:
-        return await self.command("play", app_id, "--steam", "--no-update", "--no-script", timeout=24 * 3600)
-
     async def spawn_play(self, app_id: str) -> asyncio.subprocess.Process:
         """Start blocking `play` without blocking Sessiond's event loop."""
         if not app_id.isdecimal() or int(app_id) < 1:
@@ -430,9 +427,6 @@ class AureliaClient:
             stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL,
             start_new_session=True,
         )
-
-    async def running(self) -> Any:
-        return await self.command("running")
 
     async def running_record(self, app_id: str) -> dict[str, Any] | None:
         """Read Aurelia's per-AppID record while its blocking play command runs.
@@ -728,125 +722,3 @@ class AureliaAcquisitionExecutor:
                 metadata={"provider": PROVIDER_ID},
             ))
         return tuple(records)
-
-
-class AureliaLaunchController:
-    """Coarse launch state relay; Sessiond remains the lifecycle authority.
-
-    A play CLI call may block until game exit. This controller observes Aurelia's
-    AppID running record independently and exposes only evidence-backed states.
-    It intentionally owns no presentation, input, or Gamescope policy.
-    """
-
-    STATES = {"requested", "preparing", "launching", "running", "exited", "failed", "cancelled"}
-
-    def __init__(self, client: AureliaClient | None = None) -> None:
-        self.client = client or AureliaClient()
-        self.state = "exited"
-        self.app_id: str | None = None
-        self.error: str | None = None
-        self._task: asyncio.Task[Any] | None = None
-        self._runner_pid: int | None = None
-        self._launch_result: Any = None
-
-    def can_launch(self, app_id: str) -> bool:
-        return bool(app_id.isdecimal() and int(app_id) > 0 and self.client.available)
-
-    async def request(self, app_id: str) -> None:
-        if not self.can_launch(app_id):
-            raise AureliaError("unavailable", "Aurelia cannot launch this AppID")
-        if self._task and not self._task.done():
-            raise AureliaError("busy", "Aurelia launch is already active")
-        self.app_id, self.error, self.state = app_id, None, "requested"
-        self.state = "preparing"
-        self._task = asyncio.create_task(self._play())
-
-    async def _play(self) -> None:
-        assert self.app_id is not None
-        try:
-            # The CLI provides no reliable pre-spawn phase signal. `preparing`
-            # remains until the AppID appears in the provider running list.
-            self.state = "preparing"
-            self._launch_result = await self.client.launch(self.app_id)
-            if self.state != "cancelled":
-                self.state = "exited"
-        except asyncio.CancelledError:
-            self.state = "cancelled"
-            raise
-        except AureliaError as error:
-            self.error = error.code
-            self.state = "failed"
-        except Exception as error:
-            self.error = type(error).__name__
-            self.state = "failed"
-
-    async def observe(self) -> str:
-        if self.state in {"requested", "preparing", "launching"} and self.app_id:
-            try:
-                value = await self.client.running()
-            except AureliaError:
-                # An unavailable observation is not evidence of exit/failure.
-                return self.state
-            rows = value.get("running", []) if isinstance(value, dict) else None
-            if not isinstance(rows, list):
-                self.error = "malformed-running-state"
-                return self.state
-            match = next((row for row in rows if isinstance(row, dict)
-                          and str(row.get("app_id")) == self.app_id), None)
-            if match is not None:
-                pid = match.get("pid")
-                if isinstance(pid, int) and pid > 1 and _process_has_app_id(pid, self.app_id):
-                    self._runner_pid = pid
-                    self.state = "running"
-        return self.state
-
-    async def stop(self) -> str:
-        if self.app_id is None:
-            return self.state
-        try:
-            await self.client.stop(self.app_id)
-            self.state = "cancelled"
-            if self._task and not self._task.done():
-                self._task.cancel()
-                await asyncio.gather(self._task, return_exceptions=True)
-        except AureliaError as error:
-            self.error = error.code
-            self.state = "failed"
-        return self.state
-
-    @property
-    def runner_pid(self) -> int | None:
-        return self._runner_pid
-
-    @property
-    def launch_task(self) -> asyncio.Task[Any] | None:
-        return self._task
-
-    async def cancel_preparing(self) -> str:
-        """Cancel only a not-yet-running play request; never imply game stop."""
-        if self.state == "running":
-            raise AureliaError("already-running", "Aurelia game is running; use the explicit stop operation")
-        if self._task and not self._task.done():
-            self._task.cancel()
-            await asyncio.gather(self._task, return_exceptions=True)
-        self.state = "cancelled"
-        return self.state
-
-    def snapshot(self) -> dict[str, object]:
-        return {"provider": PROVIDER_ID, "app_id": self.app_id,
-                "state": self.state, "error": self.error,
-                "detailed_launch_progress": False}
-
-
-def _process_has_app_id(pid: int, app_id: str) -> bool:
-    """Require kernel process evidence, rather than trusting Aurelia's PID JSON."""
-    try:
-        raw = Path(f"/proc/{pid}/environ").read_bytes()
-    except OSError:
-        return False
-    expected = {
-        f"STEAM_COMPAT_APP_ID={app_id}".encode(),
-        f"SteamAppId={app_id}".encode(),
-        f"SteamGameId={app_id}".encode(),
-    }
-    return any(value in expected for value in raw.split(b"\0"))

@@ -7,9 +7,9 @@ from pathlib import Path
 from lulu.consoled import ConsoleInterface
 from lulu.catalogue import CatalogueGame, CatalogueStore
 from lulu.romm import RommFile, RommGame
-from lulu.steam_provider import InstalledSteamGame
+from lulu.plugins.steam.provider import InstalledSteamGame
 from lulu.local_content import LocalContentProvider
-from lulu.steam_entitlements import SteamEntitlement
+from lulu.plugins.steam.entitlements import SteamEntitlement
 from lulu.metadata import MetadataMatch
 
 

@@ -76,11 +76,11 @@ class AureliaSessionLaunchTests(unittest.IsolatedAsyncioTestCase):
         aurelia = FakeAurelia(cli=cli)
         self.supervisor._aurelia_client = aurelia
         candidates = iter(([], [30002], [30002], []))
-        self.provider._candidate_pids = lambda _app: next(candidates, [])
-        self.provider._argv = lambda _pid: ("/games/example",)
+        self.provider.presentation_pids = lambda _app: next(candidates, [])
         with patch("lulu.process_supervisor.os.getpgid", return_value=30002), \
                 patch("lulu.process_supervisor.os.path.realpath", return_value="/games/example"), \
-                patch.object(self.provider, "_process_has_app_id", return_value=True):
+                patch("lulu.process_supervisor.process_has_app_id", return_value=True), \
+                patch("lulu.process_supervisor.process_argv", return_value=("/games/example",)):
             token = self.supervisor.queue_aurelia_launch("945360", 1000)
             await self.supervisor._aurelia_launch_task
             self.assertEqual(self.model.state.lifecycle.value, "game")
@@ -101,7 +101,7 @@ class AureliaSessionLaunchTests(unittest.IsolatedAsyncioTestCase):
         cli.returncode = 0
         aurelia = FakeAurelia(cli=cli, running={"running": []})
         self.supervisor._aurelia_client = aurelia
-        self.provider._candidate_pids = lambda _app: []
+        self.provider.presentation_pids = lambda _app: []
         token = self.supervisor.queue_aurelia_launch("104200", 1000)
         with self.assertRaisesRegex(ValueError, "exited before a verified game"):
             await self.supervisor._aurelia_launch_task
@@ -125,11 +125,11 @@ class AureliaSessionLaunchTests(unittest.IsolatedAsyncioTestCase):
         self.supervisor._aurelia_client = FakeAurelia(
             running={"running": [{"app_id": "40800", "pid": 30003}]})
         candidates = iter(([], [30002], [30002], []))
-        provider._candidate_pids = lambda _app: next(candidates, [])
-        provider._argv = lambda _pid: ("/games/supermeatboy",)
+        provider.presentation_pids = lambda _app: next(candidates, [])
         with patch("lulu.process_supervisor.os.getpgid", return_value=30002), \
                 patch("lulu.process_supervisor.os.path.realpath", return_value="/games/supermeatboy"), \
-                patch.object(provider, "_process_has_app_id", return_value=True):
+                patch("lulu.process_supervisor.process_has_app_id", return_value=True), \
+                patch("lulu.process_supervisor.process_argv", return_value=("/games/supermeatboy",)):
             token = self.supervisor.queue_aurelia_launch("40800", 1000)
             await self.supervisor._aurelia_launch_task
             self.assertEqual(self.model.state.lifecycle.value, "game")
@@ -146,9 +146,9 @@ class AureliaSessionLaunchTests(unittest.IsolatedAsyncioTestCase):
         aurelia = FakeAurelia(cli=cli)
         self.supervisor._aurelia_client = aurelia
         candidates = iter(([], [30002]))
-        self.provider._candidate_pids = lambda _app: next(candidates, [30002])
+        self.provider.presentation_pids = lambda _app: next(candidates, [30002])
         cli.returncode = 2
-        with patch.object(self.provider, "_process_has_app_id", return_value=False):
+        with patch("lulu.process_supervisor.process_has_app_id", return_value=False):
             token = self.supervisor.queue_aurelia_launch("945360", 1000)
             with self.assertRaisesRegex(ValueError, "exited before a verified game"):
                 await self.supervisor._aurelia_launch_task
@@ -159,7 +159,7 @@ class AureliaSessionLaunchTests(unittest.IsolatedAsyncioTestCase):
     async def test_daemon_disappearance_before_game_is_failure(self):
         aurelia = FakeAurelia(running={"running": []}, daemon_states=[True, False])
         self.supervisor._aurelia_client = aurelia
-        self.provider._candidate_pids = lambda _app: []
+        self.provider.presentation_pids = lambda _app: []
         with self.assertRaisesRegex(ValueError, "daemon disappeared"):
             await self.supervisor._launch_aurelia("945360", 10000, self.model.request_launch("steam-aurelia:945360"))
         self.assertEqual(self.model.state.lifecycle.value, "shell")
@@ -182,7 +182,7 @@ class AureliaSessionLaunchTests(unittest.IsolatedAsyncioTestCase):
     async def test_malformed_running_json_is_launch_failure(self):
         aurelia = FakeAurelia(running={"running": "bad"})
         self.supervisor._aurelia_client = aurelia
-        self.provider._candidate_pids = lambda _app: []
+        self.provider.presentation_pids = lambda _app: []
         token = self.model.request_launch("steam-aurelia:945360")
         with self.assertRaisesRegex(ValueError, "bad running record"):
             await self.supervisor._launch_aurelia("945360", 1000, token)
@@ -191,7 +191,7 @@ class AureliaSessionLaunchTests(unittest.IsolatedAsyncioTestCase):
     async def test_pre_running_cancel_terminates_only_cli_and_verifies_no_game(self):
         aurelia = FakeAurelia(running={"running": []})
         self.supervisor._aurelia_client = aurelia
-        self.provider._candidate_pids = lambda _app: []
+        self.provider.presentation_pids = lambda _app: []
         token = self.supervisor.queue_aurelia_launch("945360", 10000)
         for _ in range(50):
             if self.supervisor._aurelia_process is not None:

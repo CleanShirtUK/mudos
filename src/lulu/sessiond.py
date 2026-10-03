@@ -651,11 +651,11 @@ class ConsoleSessionInterface(ServiceInterface):
             aurelia_app_id = getattr(supervisor, "_aurelia_app_id", None)
             if aurelia_app_id is not None:
                 # Aurelia's play CLI can share a process group with its runner.
-                # Only the existing Steam AppID matcher defines Aurelia game
-                # ownership; never absorb the CLI/Steam daemon by process group.
-                provider = getattr(supervisor, "_steam_provider", None)
-                if provider is not None:
-                    owned_pids.update(provider._candidate_pids(aurelia_app_id))
+                # Use AppID-filtered title process evidence; never absorb the
+                # CLI or resident Steam daemon through process-group membership.
+                observe_app_id = getattr(supervisor, "app_id_process_pids", None)
+                if observe_app_id is not None:
+                    owned_pids.update(observe_app_id(aurelia_app_id))
                 return owned_pids
             try:
                 owned_pids.update(supervisor._process_group_members(identity.pgid))

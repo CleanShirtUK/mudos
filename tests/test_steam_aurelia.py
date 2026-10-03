@@ -15,7 +15,7 @@ from lulu.job_manager import JobManager
 from lulu.plugins.steam.aurelia import (
     AureliaAcquisitionExecutor, AureliaCapabilities, AureliaClient, AureliaInstalledGame,
     AureliaEntitlementSource,
-    AureliaError, AureliaLaunchController, PROVIDER_ID, map_progress,
+    AureliaError, PROVIDER_ID, map_progress,
 )
 from lulu.paths import PATHS
 from lulu.provider_config import ProviderConfigurationService
@@ -297,56 +297,6 @@ class AureliaLaunchTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(result["status"], "stopped")
             self.assertEqual(spawn.call_args.args[:4], ("/usr/bin/aurelia", "--json", "stop", "104200"))
             self.assertEqual(spawn.call_args.kwargs["env"]["AURELIA_NO_DAEMON"], "1")
-
-    async def test_running_pid_requires_exact_kernel_appid_evidence(self):
-        class Client:
-            available = True
-            async def launch(self, _app_id): await asyncio.Event().wait()
-            async def running(self): return {"running": [{"app_id": "40800", "pid": 999}]}
-
-        controller = AureliaLaunchController(Client())
-        await controller.request("40800")
-        with patch("lulu.plugins.steam.aurelia._process_has_app_id", return_value=False):
-            self.assertEqual(await controller.observe(), "preparing")
-        self.assertIsNone(controller.runner_pid)
-        await controller.cancel_preparing()
-        self.assertEqual(controller.state, "cancelled")
-
-    async def test_malformed_running_state_does_not_claim_game_running(self):
-        class Client:
-            available = True
-            async def launch(self, _app_id): await asyncio.Event().wait()
-            async def running(self): return {"running": "not-a-list"}
-
-        controller = AureliaLaunchController(Client())
-        await controller.request("40800")
-        self.assertEqual(await controller.observe(), "preparing")
-        self.assertEqual(controller.error, "malformed-running-state")
-        await controller.cancel_preparing()
-
-    async def test_coarse_state_and_cancel_remain_provider_operation_only(self):
-        class Client:
-            available = True
-            def __init__(self): self.started = asyncio.Event()
-            async def launch(self, _app_id):
-                self.started.set()
-                await asyncio.Event().wait()
-            async def running(self): return {"running": [{"app_id": 40800, "pid": 999}]}
-            async def stop(self, _app_id): return {}
-
-        client = Client()
-        controller = AureliaLaunchController(client)
-        self.assertTrue(controller.can_launch("40800"))
-        await controller.request("40800")
-        await client.started.wait()
-        with patch("lulu.plugins.steam.aurelia._process_has_app_id", return_value=True):
-            self.assertEqual(await controller.observe(), "running")
-        state = await controller.stop()
-        self.assertEqual(state, "cancelled")
-        snapshot = controller.snapshot()
-        self.assertEqual(snapshot["provider"], PROVIDER_ID)
-        self.assertFalse(snapshot["detailed_launch_progress"])
-
 
 class AureliaOptInTests(unittest.TestCase):
     def test_backend_disabled_by_default(self):

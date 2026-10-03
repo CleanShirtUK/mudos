@@ -14,6 +14,7 @@ from .console_sessiond import SessionStateModel
 from .contracts import InputMode, LaunchDescriptor, Presentation
 from .gamescope import GamescopePresentation
 from .launch_identity import LaunchIdentity
+from .process_observation import APP_ID_ENVIRONMENT_KEYS, process_argv, process_has_app_id
 from .plugins.steam.provider import SteamLaunch, SteamProvider, SteamLaunchRequest
 from .plugins.steam.aurelia import AureliaClient, AureliaError
 
@@ -88,6 +89,11 @@ class ProcessSupervisor:
         self._presentation_watchdog = 10.0
         self._active_launch_task: asyncio.Task[object] | None = None
         self._delegated_launch_environment: dict[str, str] = {}
+
+    def app_id_process_pids(self, app_id: str) -> list[int]:
+        """Return provider-filtered process evidence for Sessiond ownership checks."""
+        provider = self._steam_provider
+        return provider.presentation_pids(app_id) if provider is not None else []
 
     def set_delegated_launch_environment(self, values: dict[str, str]) -> None:
         """Install the explicit graphical-session handoff for the next child."""
@@ -852,7 +858,7 @@ class ProcessSupervisor:
                 await self._notify()
                 self.model.launch_starting(token)
                 await self._notify()
-                if provider._candidate_pids(app_id):
+                if provider.presentation_pids(app_id):
                     raise RuntimeError(f"AppID {app_id} already has a running Steam game process")
                 process = await client.spawn_play(app_id)
                 self._aurelia_process, self._aurelia_app_id = process, app_id
@@ -865,21 +871,24 @@ class ProcessSupervisor:
                 # its exact AppID marker, then let SteamProvider select the actual
                 # game PID from its established AppID-filtered candidate set.
                 while game is None:
-                    candidates = provider._candidate_pids(app_id)
+                    candidates = provider.presentation_pids(app_id)
                     row = await client.running_record(app_id)
                     pid = row.get("pid") if isinstance(row, dict) else None
                     if (isinstance(pid, int) and pid > 1
-                            and provider._process_has_app_id(pid, app_id) and candidates):
+                            and process_has_app_id(pid, app_id,
+                                                   environment_keys=APP_ID_ENVIRONMENT_KEYS)
+                            and candidates):
                         # The verified Aurelia record establishes that Aurelia
                         # is tracking this AppID; it is not assumed to be the
                         # window-owning game. Select the actual game PID using
                         # SteamProvider's established candidate ordering.
                         game_pid = candidates[0]
-                        if not provider._process_has_app_id(game_pid, app_id):
+                        if not process_has_app_id(game_pid, app_id,
+                                                  environment_keys=APP_ID_ENVIRONMENT_KEYS):
                             raise RuntimeError("Steam process correlation returned a PID without the exact AppID marker")
                         game = LaunchIdentity(token, game_pid, os.getpgid(game_pid),
                                               os.path.realpath(f"/proc/{game_pid}/exe"),
-                                              provider._argv(game_pid))
+                                              process_argv(game_pid))
                         break
                     if process.returncode is not None:
                         raise RuntimeError(f"Aurelia CLI exited before a verified game appeared (status {process.returncode})")
@@ -902,7 +911,7 @@ class ProcessSupervisor:
                 self.model.primary_observed(token)
                 await self._notify()
                 if self._presentation is not None:
-                    self._presentation.select_pids(lambda: provider._candidate_pids(app_id), timeout=self._presentation_watchdog)
+                    self._presentation.select_pids(lambda: provider.presentation_pids(app_id), timeout=self._presentation_watchdog)
                 self._set_input_mode(InputMode.GAME)
                 self.model.primary_started(token, presentation=Presentation.GAME, input_mode=InputMode.GAME)
                 if hasattr(self._presentation, "suspend_shell_window"):
@@ -926,7 +935,7 @@ class ProcessSupervisor:
                 deadline = asyncio.get_running_loop().time() + 2
                 appeared = False
                 while asyncio.get_running_loop().time() < deadline:
-                    if provider._candidate_pids(app_id):
+                    if provider.presentation_pids(app_id):
                         appeared = True
                         break
                     await asyncio.sleep(max(provider.poll_interval, 0.05))
@@ -937,10 +946,10 @@ class ProcessSupervisor:
                         self._logger.error("Aurelia launch raced cancellation and stop failed app_id=%s error=%s", app_id, error)
                     deadline = asyncio.get_running_loop().time() + 10
                     while asyncio.get_running_loop().time() < deadline:
-                        if not provider._candidate_pids(app_id):
+                        if not provider.presentation_pids(app_id):
                             break
                         await asyncio.sleep(max(provider.poll_interval, 0.05))
-                    if provider._candidate_pids(app_id):
+                    if provider.presentation_pids(app_id):
                         await self._adopt_aurelia_game(token, app_id, provider)
                         return token
                 raise
@@ -966,17 +975,17 @@ class ProcessSupervisor:
 
     async def _adopt_aurelia_game(self, token: str, app_id: str, provider: SteamProvider) -> None:
         """Keep Sessiond authoritative if a game wins the cancellation race."""
-        candidates = provider._candidate_pids(app_id)
+        candidates = provider.presentation_pids(app_id)
         if not candidates:
             return
         pid = candidates[0]
-        if not provider._process_has_app_id(pid, app_id):
+        if not process_has_app_id(pid, app_id, environment_keys=APP_ID_ENVIRONMENT_KEYS):
             raise RuntimeError("cannot adopt Aurelia cancellation-race process without exact AppID evidence")
         identity = LaunchIdentity(token, pid, os.getpgid(pid),
-                                  os.path.realpath(f"/proc/{pid}/exe"), provider._argv(pid))
+                                  os.path.realpath(f"/proc/{pid}/exe"), process_argv(pid))
         self.model.primary_observed(token)
         if self._presentation is not None:
-            self._presentation.select_pids(lambda: provider._candidate_pids(app_id), timeout=self._presentation_watchdog)
+            self._presentation.select_pids(lambda: provider.presentation_pids(app_id), timeout=self._presentation_watchdog)
         self._set_input_mode(InputMode.GAME)
         self.model.primary_started(token, presentation=Presentation.GAME, input_mode=InputMode.GAME)
         self.active_identity = identity
@@ -989,7 +998,7 @@ class ProcessSupervisor:
         absent_since: float | None = None
         loop = asyncio.get_running_loop()
         while absent_since is None or loop.time() - absent_since < 0.5:
-            if provider._candidate_pids(app_id):
+            if provider.presentation_pids(app_id):
                 absent_since = None
             elif absent_since is None:
                 absent_since = loop.time()

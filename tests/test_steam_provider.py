@@ -12,7 +12,7 @@ from lulu.console_sessiond import SessionStateModel
 from lulu.contracts import InputMode, Presentation
 from lulu.launch_identity import LaunchIdentity
 from lulu.process_supervisor import ProcessSupervisor
-from lulu.steam_provider import InstalledSteamGame, SteamLaunch, SteamLaunchRequest, SteamProvider
+from lulu.plugins.steam.provider import InstalledSteamGame, SteamLaunch, SteamLaunchRequest, SteamProvider
 
 
 class FakeSteamProvider:
@@ -122,7 +122,7 @@ class SteamProviderTests(unittest.TestCase):
             provider = SteamProvider(executable="steam", poll_interval=0)
             launcher = Mock(pid=1446)
             with patch.object(provider, "_steam_client_pids", side_effect=[[], [123]]) as clients:
-                with patch("lulu.steam_provider.os.getpgid", return_value=1446):
+                with patch("lulu.plugins.steam.provider.os.getpgid", return_value=1446):
                     with patch("asyncio.create_subprocess_exec", new_callable=AsyncMock, return_value=launcher) as create:
                         request = await provider.request_launch("220780")
 
@@ -144,8 +144,8 @@ class SteamProviderTests(unittest.TestCase):
             provider._owned_client_pgid = 1446
             provider._process_group_members = Mock(return_value={1446, 1563, 1794})
             provider._process_tree = Mock(side_effect=[{1446, 1563, 1697, 1794}, {1446, 1563, 1697, 1794}])
-            with patch("lulu.steam_provider.os.kill") as kill:
-                with patch("lulu.steam_provider.Path.exists", return_value=False):
+            with patch("lulu.plugins.steam.provider.os.kill") as kill:
+                with patch("lulu.plugins.steam.provider.Path.exists", return_value=False):
                     await provider.stop_owned_client()
             self.assertIn(call(1446, signal.SIGTERM), kill.call_args_list)
             self.assertIn(call(1563, signal.SIGTERM), kill.call_args_list)
@@ -169,10 +169,10 @@ class SteamProviderTests(unittest.TestCase):
             clock = Mock(time=time)
             candidates = Mock(side_effect=lambda _app_id: [] if candidates.call_count == 1 else [25878])
 
-            with patch.object(provider, "_candidate_pids", candidates):
-                with patch("lulu.steam_provider.asyncio.get_running_loop", return_value=clock):
-                    with patch("lulu.steam_provider.os.getpgid", return_value=25843):
-                        with patch("lulu.steam_provider.os.killpg") as killpg:
+            with patch.object(provider, "presentation_pids", candidates):
+                with patch("lulu.plugins.steam.provider.asyncio.get_running_loop", return_value=clock):
+                    with patch("lulu.plugins.steam.provider.os.getpgid", return_value=25843):
+                        with patch("lulu.plugins.steam.provider.os.killpg") as killpg:
                             await provider.stop_request(request)
 
             self.assertGreaterEqual(candidates.call_count, 2)
@@ -290,7 +290,7 @@ class SteamProviderTests(unittest.TestCase):
                     await provider.ensure_client()
             create.assert_not_awaited()
             self.assertEqual(provider._owned_client_pids, set())
-            with patch("lulu.steam_provider.os.kill") as kill:
+            with patch("lulu.plugins.steam.provider.os.kill") as kill:
                 await provider.stop_owned_client()
             kill.assert_not_called()
 
@@ -330,7 +330,7 @@ class SteamProviderTests(unittest.TestCase):
 
     def test_open_game_details_detaches_uri_without_waiting(self) -> None:
         provider = SteamProvider(executable="steam")
-        with patch("lulu.steam_provider.subprocess.Popen") as popen:
+        with patch("lulu.plugins.steam.provider.subprocess.Popen") as popen:
             uri = provider.open_game_details("268910")
 
         self.assertEqual(uri, "steam://nav/games/details/268910")
@@ -341,7 +341,7 @@ class SteamProviderTests(unittest.TestCase):
 
     def test_launch_gamepad_title_detaches_rungame_uri_without_waiting(self) -> None:
         provider = SteamProvider(executable="steam")
-        with patch("lulu.steam_provider.subprocess.Popen") as popen:
+        with patch("lulu.plugins.steam.provider.subprocess.Popen") as popen:
             uri = provider.launch_gamepad_title("268910")
 
         self.assertEqual(uri, "steam://rungameid/268910")
@@ -351,14 +351,14 @@ class SteamProviderTests(unittest.TestCase):
 
     def test_store_uses_standard_desktop_uri_control_without_gamepadui(self) -> None:
         provider = SteamProvider(executable="steam")
-        with patch("lulu.steam_provider.subprocess.Popen") as popen:
+        with patch("lulu.plugins.steam.provider.subprocess.Popen") as popen:
             self.assertEqual(provider.open_store(), "steam://open/store")
         self.assertEqual([call.args[0] for call in popen.call_args_list], [["steam", "steam://open/store"]])
         self.assertNotIn("gamepadui", popen.call_args.args[0])
 
     def test_install_dispatches_validated_steam_uri(self) -> None:
         provider = SteamProvider(executable="steam")
-        with patch("lulu.steam_provider.subprocess.Popen") as popen:
+        with patch("lulu.plugins.steam.provider.subprocess.Popen") as popen:
             uri = provider.install("268910")
         self.assertEqual(uri, "steam://install/268910")
         popen.assert_called_once()
@@ -366,7 +366,7 @@ class SteamProviderTests(unittest.TestCase):
 
     def test_install_rejects_invalid_app_id_before_dispatch(self) -> None:
         provider = SteamProvider(executable="steam")
-        with patch("lulu.steam_provider.subprocess.Popen") as popen:
+        with patch("lulu.plugins.steam.provider.subprocess.Popen") as popen:
             for app_id in ("", "0", "-1", "268910x", "steam://install/268910"):
                 with self.assertRaises(ValueError):
                     provider.install(app_id)
@@ -375,7 +375,7 @@ class SteamProviderTests(unittest.TestCase):
     def test_request_launch_rejects_existing_target_before_duplicate_submission(self) -> None:
         async def exercise() -> None:
             provider = SteamProvider(executable="steam")
-            with patch.object(provider, "_candidate_pids", return_value=[1234]):
+            with patch.object(provider, "presentation_pids", return_value=[1234]):
                 with patch("asyncio.create_subprocess_exec", new_callable=AsyncMock) as create:
                     with self.assertRaisesRegex(ValueError, "already running"):
                         await provider.request_launch("15700")
@@ -515,7 +515,7 @@ class SteamProviderTests(unittest.TestCase):
                            SimpleNamespace(steam_library_root=managed)), \
                         patch("pathlib.Path.home", return_value=home), \
                         patch.object(provider, "_steam_client_pids", return_value=[123]), \
-                        patch.object(provider, "_candidate_pids", return_value=[]):
+                        patch.object(provider, "presentation_pids", return_value=[]):
                     with self.assertRaisesRegex(ValueError, "Quit Steam completely"):
                         await provider.request_launch("42")
                 self.assertNotIn(str(managed), library_file.read_text())
@@ -535,10 +535,6 @@ class SteamProviderTests(unittest.TestCase):
                 '"StateFlags" "4" "installdir" "Example" }'
             )
             self.assertEqual(SteamProvider().list_installed((root,)), [])
-    def test_environment_markers_are_decoded(self) -> None:
-        with patch.object(Path, "read_bytes", return_value=b"SteamAppId=40800\0DISPLAY=:0\0"):
-            self.assertEqual(SteamProvider._environment(1), {"SteamAppId": "40800", "DISPLAY": ":0"})
-
     def test_runtime_processes_are_not_title_candidates(self) -> None:
         self.assertTrue(
             SteamProvider._is_runtime_process(

@@ -43,14 +43,6 @@ class AureliaScriptAdapterTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("steamcmd", " ".join(command).lower())
         self.assertTrue(captured["kwargs"]["start_new_session"])
 
-    async def test_unmanaged_aurelia_launch_also_enables_steam_without_changing_update_policy(self):
-        client = AureliaClient(executable="/usr/bin/aurelia", config_dir=Path(tempfile.mkdtemp()))
-        with patch.object(client, "command", return_value={}) as command:
-            await client.launch("104200")
-        command.assert_awaited_once_with("play", "104200", "--steam", "--no-update", "--no-script",
-                                         timeout=24 * 3600)
-
-
 class WrapperBoundaryTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
