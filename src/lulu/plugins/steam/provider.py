@@ -9,6 +9,8 @@ import re
 import signal
 import subprocess
 import tempfile
+import time
+from typing import Callable
 from ...launch_identity import LaunchIdentity
 from ...paths import PATHS
 from ...process_observation import (
@@ -170,6 +172,31 @@ class SteamProvider:
     def desktop_pids(self) -> list[int]:
         """Return standard desktop Steam client processes for presentation selection."""
         return self._steam_client_pids()
+
+    def select_auth_surface(
+        self,
+        select_pids: Callable[[Callable[[], list[int]], float, Callable[[], bool]], int],
+        startup_pgid: int,
+        timeout: float,
+        token: str,
+    ) -> int:
+        """Select Steam Desktop for the sentinel-backed authentication session."""
+        started_at = time.monotonic()
+
+        def process_alive() -> bool:
+            return bool(self.desktop_pids() or self.process_group_members(startup_pgid))
+
+        candidates = self.desktop_pids()
+        self._logger.info(
+            "steam_auth_stage stage=waiting-for-steam-window token=%s steam_pids=%s steam_pgid=%s timeout_s=%.1f",
+            token, candidates, startup_pgid, timeout,
+        )
+        selected = select_pids(self.desktop_pids, timeout, process_alive)
+        self._logger.info(
+            "steam_auth_stage stage=gamescope-surface-selected token=%s selection_elapsed_s=%.3f selected_window=%s steam_pids=%s",
+            token, time.monotonic() - started_at, selected, self.desktop_pids(),
+        )
+        return selected
 
     def process_group_members(self, pgid: int) -> set[int]:
         """Return live members of an observed Steam startup process group."""

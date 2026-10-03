@@ -63,7 +63,16 @@ def input_mode_interface(
     interface._local_identity = None
     interface.model = SessionStateModel()
     interface.controller_registry = ControllerRegistry()
-    interface.supervisor = type("Supervisor", (), {"state_details": lambda self: {}})()
+    interface.supervisor = type("Supervisor", (), {
+        "state_details": lambda self: {}, "launch_cancellable": False,
+        "presentation_available": False, "active_identity": None,
+        "session_process_ids": lambda self, identity=None: ({identity.pid} if identity else set()),
+        "terminate_session": lambda self, identity, signum: None,
+        "select_session_surface": lambda self, identity, timeout, include_related_processes=False: None,
+        "select_shell_presentation": lambda self: None,
+        "select_steam_session_surface": lambda self, token, pgid: None,
+        "shell_status": lambda self: None,
+    })()
     interface.StateChanged = lambda state: None
     return interface
 
@@ -121,7 +130,7 @@ class BoundaryTests(unittest.TestCase):
         interface.model.primary_started(token)
         identity = LaunchIdentity(token, 4321, 4321, "/game", ("/game",))
         interface.supervisor.active_identity = identity
-        interface.supervisor._process_group_members = lambda pgid: {4321, 4322}
+        interface.supervisor.session_process_ids = lambda identity=None: {4321, 4322}
 
         interface._observed_game_surface = (123, 9999, True)
         interface._reconcile_game_input_policy()
@@ -689,8 +698,13 @@ class BoundaryTests(unittest.TestCase):
             "select_shell": lambda self, pid: setattr(self, "selected_shell", pid),
         })()
         interface.supervisor = type("Supervisor", (), {
-            "state_details": lambda self: {}, "_presentation": presentation,
-            "_shell_process": type("Shell", (), {"pid": 99})(),
+            "state_details": lambda self: {}, "launch_cancellable": False,
+            "presentation_available": True,
+            "shell_status": lambda self: type("ShellStatus", (), {
+                "pid": 99, "running": True, "presentation_available": True,
+            })(),
+            "select_shell_presentation": lambda self: presentation.select_shell(99),
+            "session_process_ids": lambda self, identity: {identity.pid},
         })()
         token = interface.model.request_launch("local:test:game")
         interface.model.launch_starting(token)
@@ -719,8 +733,14 @@ class BoundaryTests(unittest.TestCase):
         interface = input_mode_interface(RecordingInputPlumber({}))
         presentation = Presentation()
         interface.supervisor = type("Supervisor", (), {
-            "state_details": lambda self: {}, "_presentation": presentation,
-            "_shell_process": type("Shell", (), {"pid": 99})(),
+            "state_details": lambda self: {}, "launch_cancellable": False,
+            "presentation_available": True,
+            "shell_status": lambda self: type("ShellStatus", (), {
+                "pid": 99, "running": True, "presentation_available": True,
+            })(),
+            "select_shell_presentation": lambda self: presentation.select_shell(99),
+            "select_steam_session_surface": lambda self, token, pgid: presentation.select_pids(lambda: [456], 225.0),
+            "session_process_ids": lambda self, identity: {identity.pid},
         })()
         with patch("lulu.plugins.steam.provider.SteamProvider.desktop_pids", return_value=[456]):
             interface.BeginProviderSession("steam", "compat", 123, 123,
@@ -748,8 +768,15 @@ class BoundaryTests(unittest.TestCase):
         interface = input_mode_interface(RecordingInputPlumber({}))
         presentation = Presentation()
         interface.supervisor = type("Supervisor", (), {
-            "state_details": lambda self: {}, "_presentation": presentation,
-            "_shell_process": type("Shell", (), {"pid": 99})(),
+            "state_details": lambda self: {}, "launch_cancellable": False,
+            "presentation_available": True,
+            "shell_status": lambda self: type("ShellStatus", (), {
+                "pid": 99, "running": True, "presentation_available": True,
+            })(),
+            "select_shell_presentation": lambda self: presentation.select_shell(99),
+            "select_session_surface": lambda self, identity, timeout, include_related_processes=False: presentation.select_pids(
+                [identity.pid], timeout),
+            "session_process_ids": lambda self, identity: {identity.pid},
         })()
         interface.BeginLocalSession("local:gamecube:fixture", 123, 123,
                                     "/usr/bin/dolphin-emu", ["dolphin-emu", "fixture.iso"])
@@ -770,8 +797,12 @@ class BoundaryTests(unittest.TestCase):
         interface = input_mode_interface(RecordingInputPlumber({}))
         presentation = Presentation()
         interface.supervisor = type("Supervisor", (), {
-            "state_details": lambda self: {}, "_presentation": presentation,
-            "_process_group_members": lambda self, pgid: {321, 456} if pgid == 123 else set(),
+            "state_details": lambda self: {}, "launch_cancellable": False,
+            "presentation_available": True,
+            "select_session_surface": lambda self, identity, timeout, include_related_processes=False: presentation.select_pids(
+                lambda: [321, 456] if include_related_processes else [identity.pid],
+                timeout, lambda: True),
+            "session_process_ids": lambda self, identity: {identity.pid, 321, 456},
         })()
         interface.BeginLocalSession("local:switch:game", 123, 123,
                                     "/usr/bin/bash", ["/opt/lulu/current/packaging/eden-flatpak"])
@@ -1042,6 +1073,9 @@ class BoundaryTests(unittest.TestCase):
         class ShellSupervisor:
             def __init__(self) -> None:
                 self.commands = []
+
+            def set_delegated_launch_environment(self, values):
+                self.environment = dict(values)
 
             async def launch_shell(self, command, timeout, select_shell=False):
                 self.commands.append((command, timeout, select_shell))

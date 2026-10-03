@@ -18,6 +18,36 @@ from lulu.sessiond import ConsoleSessionInterface
 from lulu.graphical_launch_context import context_is_valid
 
 
+def public_supervisor_double(*, pid: int | None, presentation: object | None,
+                              environment: dict[str, str] | None = None, **overrides):
+    state = {"environment": dict(environment or {})}
+    shell = (SimpleNamespace(token="test-shell", pid=pid, running=True,
+                             presentation_available=presentation is not None)
+             if pid is not None else None)
+    supervisor = SimpleNamespace(
+        shell_status=Mock(return_value=shell),
+        shell_is_current=Mock(return_value=shell is not None),
+        presentation_available=presentation is not None,
+        delegated_launch_environment=dict(state["environment"]),
+        launch_cancellable=False,
+        aurelia_launch_pending=False,
+        state_details=Mock(return_value={}),
+        queue_steam_launch=Mock(return_value="steam-token"),
+        queue_aurelia_launch=Mock(return_value="aurelia-token"),
+        ensure_shell_presentation=Mock(return_value=321),
+        shell_graphical_environment=Mock(return_value=dict(environment or {})),
+        set_delegated_launch_environment=lambda values: state.__setitem__("environment", dict(values)),
+    )
+    setter = supervisor.set_delegated_launch_environment
+    def set_environment(values):
+        setter(values)
+        supervisor.delegated_launch_environment = dict(values)
+    supervisor.set_delegated_launch_environment = set_environment
+    for key, value in overrides.items():
+        setattr(supervisor, key, value)
+    return supervisor
+
+
 def make_interface(*, ready: bool, presentation: object | None = object(),
                    shell_process: object | None = None) -> ConsoleSessionInterface:
     interface = ConsoleSessionInterface.__new__(ConsoleSessionInterface)
@@ -29,18 +59,13 @@ def make_interface(*, ready: bool, presentation: object | None = object(),
         navigation_controller_id=None, navigation_mode="all", controllers={})
     interface._local_identity = None
     interface._local_provider_id = ""
-    interface.supervisor = SimpleNamespace(
-        _presentation=presentation,
-        _shell_process=shell_process if shell_process is not None
-        else SimpleNamespace(pid=os.getpid(), returncode=None),
-        _delegated_launch_environment={
+    interface.supervisor = public_supervisor_double(
+        pid=(shell_process.pid if shell_process is not None else os.getpid()) if presentation is not None else None,
+        presentation=presentation,
+        environment={
             "DISPLAY": ":test", "WAYLAND_DISPLAY": "wayland-test",
             "XDG_RUNTIME_DIR": "/tmp/test-runtime",
         },
-        set_delegated_launch_environment=Mock(),
-        queue_steam_launch=Mock(return_value="steam-token"),
-        queue_aurelia_launch=Mock(return_value="aurelia-token"),
-        state_details=Mock(return_value={}),
     )
     return interface
 
@@ -112,7 +137,9 @@ class SessiondPresentationReadinessTests(unittest.TestCase):
         interface._bootstrap_output = None
         interface._presentation_ready = False
         interface.recovery_mode = False
-        interface.supervisor = SimpleNamespace(launch_shell=Mock())
+        interface.supervisor = SimpleNamespace(
+            launch_shell=Mock(), set_delegated_launch_environment=Mock(),
+        )
         sleep_calls = 0
 
         async def stop_waiting(_seconds: float) -> None:
@@ -144,19 +171,12 @@ class SessiondPresentationReadinessTests(unittest.TestCase):
         interface._graphical_session_id = "test-session"
         interface._graphical_launch_lease = None
         shell_process = SimpleNamespace(pid=os.getpid(), returncode=None)
-        interface.supervisor = SimpleNamespace(
-            _presentation=object(),
-            _shell_process=shell_process,
-            _delegated_launch_environment={
+        interface.supervisor = public_supervisor_double(
+            pid=shell_process.pid, presentation=object(), environment={
                 "DISPLAY": ":test", "WAYLAND_DISPLAY": "wayland-test",
                 "XDG_RUNTIME_DIR": "/tmp/test-runtime",
             },
-            ensure_shell_presentation=Mock(return_value=321),
-            queue_aurelia_launch=Mock(return_value="aurelia-token"),
-            state_details=Mock(return_value={}),
         )
-        interface.supervisor.set_delegated_launch_environment = lambda values: setattr(
-            interface.supervisor, "_delegated_launch_environment", dict(values))
         aurelia_config = SimpleNamespace(provider=Mock(return_value=SimpleNamespace(enabled=True)))
 
         async def exercise() -> None:
@@ -195,19 +215,12 @@ class SessiondPresentationReadinessTests(unittest.TestCase):
         interface._graphical_session_id = "test-session"
         interface._graphical_launch_lease = None
         shell_process = SimpleNamespace(pid=os.getpid(), returncode=None)
-        interface.supervisor = SimpleNamespace(
-            _presentation=object(),
-            _shell_process=shell_process,
-            _delegated_launch_environment={
+        interface.supervisor = public_supervisor_double(
+            pid=shell_process.pid, presentation=object(), environment={
                 "DISPLAY": ":test", "WAYLAND_DISPLAY": "wayland-test",
                 "XDG_RUNTIME_DIR": "/tmp/test-runtime",
             },
-            ensure_shell_presentation=Mock(return_value=321),
-            queue_aurelia_launch=Mock(return_value="aurelia-token"),
-            state_details=Mock(return_value={}),
         )
-        interface.supervisor.set_delegated_launch_environment = lambda values: setattr(
-            interface.supervisor, "_delegated_launch_environment", dict(values))
         aurelia_config = SimpleNamespace(provider=Mock(return_value=SimpleNamespace(enabled=True)))
         output = False
 
@@ -289,15 +302,11 @@ class GraphicalReadinessInvariantTests(unittest.IsolatedAsyncioTestCase):
         interface._presentation_wait_log_at = 0.0
         interface.StateChanged = lambda *_args: None
         shell = SimpleNamespace(pid=os.getpid(), returncode=None)
-        interface.supervisor = SimpleNamespace(
-            _shell_process=shell,
-            _presentation=object(),
-            _delegated_launch_environment={},
+        interface.supervisor = public_supervisor_double(
+            pid=shell.pid, presentation=object(),
+            environment={},
             ensure_shell_presentation=Mock(return_value=321),
             shell_graphical_environment=Mock(return_value=self.environment),
-            set_delegated_launch_environment=lambda values: setattr(
-                interface.supervisor, "_delegated_launch_environment", dict(values)),
-            state_details=Mock(return_value={}),
         )
         return interface
 

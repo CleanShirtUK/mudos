@@ -1,14 +1,31 @@
 import asyncio
 import unittest
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 from lulu.console_sessiond import SessionStateModel
 from lulu.controllerd import ControllerRegistry
+from lulu.launch_identity import LaunchIdentity
+from lulu.process_supervisor import ProcessSupervisor
 from lulu.sessiond import ConsoleSessionInterface, _wait_for_stop, serve
 
 
 class SessiondTests(unittest.TestCase):
+    def test_process_supervisor_returns_session_evidence_not_process_internals(self) -> None:
+        model = SessionStateModel()
+        provider = SimpleNamespace(presentation_pids=lambda app_id: [456])
+        supervisor = ProcessSupervisor(model, steam_provider=provider)
+        identity = LaunchIdentity("accepted-token", 123, 123, "/game", ("/game",))
+        supervisor.active_identity = identity
+        supervisor._aurelia_app_id = "945360"
+        with patch.object(supervisor, "_pid_is_live", return_value=True):
+            self.assertEqual(supervisor.session_process_ids(identity), {123, 456})
+
+        supervisor._aurelia_app_id = None
+        with patch.object(supervisor, "_pid_is_live", return_value=False), \
+                patch.object(supervisor, "_process_group_members", return_value={456, 789}):
+            self.assertEqual(supervisor.session_process_ids(identity), {456, 789})
+
     def test_cancel_launch_delegates_to_supervisor(self) -> None:
         interface = ConsoleSessionInterface.__new__(ConsoleSessionInterface)
 
@@ -33,19 +50,19 @@ class SessiondTests(unittest.TestCase):
         interface = ConsoleSessionInterface.__new__(ConsoleSessionInterface)
         interface._local_identity = LaunchIdentity("owned-token", 1234, 1234, "/game", ("/game",))
         interface.model = SimpleNamespace(state=SimpleNamespace(launch_token="owned-token"))
-        interface.supervisor = SimpleNamespace()
-        with patch("lulu.sessiond.os.killpg") as killpg:
-            result = asyncio.run(ConsoleSessionInterface.QuitActiveSession.__wrapped__(interface))
+        interface.supervisor = SimpleNamespace(terminate_session=Mock())
+        result = asyncio.run(ConsoleSessionInterface.QuitActiveSession.__wrapped__(interface))
         self.assertEqual(result, "quit-requested")
-        killpg.assert_called_once_with(1234, __import__("signal").SIGTERM)
+        interface.supervisor.terminate_session.assert_called_once_with(
+            interface._local_identity, __import__("signal").SIGTERM)
 
     def test_eden_quit_uses_owned_group_sigterm_without_unmapping_window_first(self) -> None:
         from types import SimpleNamespace
         from lulu.launch_identity import LaunchIdentity
 
         supervisor = SimpleNamespace(
-            _presentation=None,
-            _process_group_members=lambda pgid: set(),
+            session_process_ids=lambda identity: set(),
+            terminate_session=Mock(),
         )
         interface = ConsoleSessionInterface.__new__(ConsoleSessionInterface)
         interface._local_identity = LaunchIdentity(
@@ -55,20 +72,16 @@ class SessiondTests(unittest.TestCase):
         interface.model = SimpleNamespace(state=SimpleNamespace(launch_token="owned-token"))
         interface.supervisor = supervisor
 
-        with patch("lulu.sessiond.os.killpg") as killpg:
-            result = asyncio.run(ConsoleSessionInterface.QuitActiveSession.__wrapped__(interface))
+        result = asyncio.run(ConsoleSessionInterface.QuitActiveSession.__wrapped__(interface))
 
         self.assertEqual(result, "quit-requested")
-        killpg.assert_called_once_with(1234, __import__("signal").SIGTERM)
+        supervisor.terminate_session.assert_called_once_with(
+            interface._local_identity, __import__("signal").SIGTERM)
 
     def test_eden_quit_falls_back_to_sigkill_after_termination_timeout(self) -> None:
         from types import SimpleNamespace
         from lulu.launch_identity import LaunchIdentity
 
-        presentation = SimpleNamespace(
-            window_for_pids=lambda pids, timeout: 88,
-            request_window_close=lambda window: None,
-        )
         group_members = {1234, 1235}
         kill_sent = False
         reap_polls = 0
@@ -83,8 +96,7 @@ class SessiondTests(unittest.TestCase):
             return set(group_members)
 
         supervisor = SimpleNamespace(
-            _presentation=presentation,
-            _process_group_members=current_members,
+            session_process_ids=lambda _identity: current_members(1234),
         )
         interface = ConsoleSessionInterface.__new__(ConsoleSessionInterface)
         interface._local_identity = LaunchIdentity(
@@ -99,15 +111,15 @@ class SessiondTests(unittest.TestCase):
             if sig == __import__("signal").SIGKILL:
                 kill_sent = True
 
-        with patch("lulu.sessiond.EDEN_TERMINATE_TIMEOUT", 0), \
-                patch("lulu.sessiond.os.killpg", side_effect=signal_group) as killpg:
+        supervisor.terminate_session = Mock(side_effect=lambda _identity, sig: signal_group(1234, sig))
+        with patch("lulu.sessiond.EDEN_TERMINATE_TIMEOUT", 0):
             result = asyncio.run(ConsoleSessionInterface.QuitActiveSession.__wrapped__(interface))
 
         self.assertEqual(result, "quit-requested")
         signal = __import__("signal")
-        self.assertEqual(killpg.call_args_list, [
-            unittest.mock.call(1234, signal.SIGTERM),
-            unittest.mock.call(1234, signal.SIGKILL),
+        self.assertEqual(supervisor.terminate_session.call_args_list, [
+            unittest.mock.call(interface._local_identity, signal.SIGTERM),
+            unittest.mock.call(interface._local_identity, signal.SIGKILL),
         ])
 
     def test_local_session_return_waits_for_process_group_before_restoring_shell(self) -> None:
@@ -119,10 +131,6 @@ class SessiondTests(unittest.TestCase):
         model.primary_started(token)
         members = iter(({456}, set()))
         observed = []
-
-        class Presentation:
-            def select_shell(self, pid):
-                observed.append(("presentation", model.state.lifecycle, model.state.input_mode))
 
         interface = ConsoleSessionInterface.__new__(ConsoleSessionInterface)
         interface.model = model
@@ -136,9 +144,11 @@ class SessiondTests(unittest.TestCase):
         interface._state_json = lambda: "{}"
         interface.StateChanged = lambda state: None
         interface.supervisor = SimpleNamespace(
-            _process_group_members=lambda pgid: next(members),
-            _presentation=Presentation(),
-            _shell_process=SimpleNamespace(pid=99),
+            session_process_ids=lambda identity: next(members),
+            shell_status=lambda: SimpleNamespace(token="shell", pid=99, running=True,
+                                                 presentation_available=True),
+            select_shell_presentation=lambda: observed.append(
+                ("presentation", model.state.lifecycle, model.state.input_mode)),
         )
 
         async def exercise():

@@ -15,7 +15,9 @@ from .contracts import InputMode, LaunchDescriptor, Presentation
 from .gamescope import GamescopePresentation
 from .launch_identity import LaunchIdentity
 from .process_observation import APP_ID_ENVIRONMENT_KEYS, process_argv, process_has_app_id
-from .plugins.steam.provider import SteamLaunch, SteamProvider, SteamLaunchRequest
+from .plugins.steam.provider import (
+    STEAM_WINDOW_SELECTION_TIMEOUT, SteamLaunch, SteamProvider, SteamLaunchRequest,
+)
 from .plugins.steam.aurelia import AureliaClient, AureliaError
 
 
@@ -46,6 +48,14 @@ class ProcessResult:
         value = asdict(self)
         value["argv"] = list(_redact_argv(self.argv))
         return value
+
+
+@dataclass(frozen=True, slots=True)
+class ShellProcessStatus:
+    token: str
+    pid: int
+    running: bool
+    presentation_available: bool
 
 
 StateChanged = Callable[[], Awaitable[None] | None]
@@ -90,10 +100,120 @@ class ProcessSupervisor:
         self._active_launch_task: asyncio.Task[object] | None = None
         self._delegated_launch_environment: dict[str, str] = {}
 
-    def app_id_process_pids(self, app_id: str) -> list[int]:
-        """Return provider-filtered process evidence for Sessiond ownership checks."""
-        provider = self._steam_provider
-        return provider.presentation_pids(app_id) if provider is not None else []
+    @property
+    def launch_cancellable(self) -> bool:
+        """Whether a launch request is still in a cancellable startup phase."""
+        return any(task is not None and not task.done() for task in (
+            self._active_launch_task, self._steam_launch_task, self._aurelia_launch_task,
+        ))
+
+    @property
+    def aurelia_launch_pending(self) -> bool:
+        task = self._aurelia_launch_task
+        return task is not None and not task.done()
+
+    @property
+    def delegated_launch_environment(self) -> dict[str, str]:
+        """Return a copy of the currently accepted graphical environment."""
+        return dict(self._delegated_launch_environment)
+
+    @property
+    def presentation_available(self) -> bool:
+        return self._presentation is not None
+
+    def shell_status(self) -> ShellProcessStatus | None:
+        """Expose shell identity and liveness without exposing its asyncio process."""
+        identity = self._shell_identity
+        process = self._shell_process
+        if identity is None or process is None:
+            return None
+        return ShellProcessStatus(
+            token=identity.token,
+            pid=identity.pid,
+            running=process.returncode is None,
+            presentation_available=self.presentation_available,
+        )
+
+    def shell_is_current(self, token: str) -> bool:
+        status = self.shell_status()
+        return status is not None and status.token == token and status.running
+
+    async def wait_for_shell_exit(self) -> None:
+        """Wait for the current shell process supervision to finish."""
+        task = self._shell_watch_task
+        if task is None:
+            await asyncio.Event().wait()
+        await asyncio.shield(task)
+
+    def session_process_ids(self, identity: LaunchIdentity | None = None) -> set[int]:
+        """Return process evidence for one accepted game/session identity."""
+        identity = identity or self.active_identity
+        if identity is None:
+            return set()
+        pids = {identity.pid} if self._pid_is_live(identity.pid) else set()
+        if (self.active_identity is not None
+                and identity.token == self.active_identity.token
+                and self._aurelia_app_id is not None):
+            provider = self._steam_provider
+            if provider is not None:
+                pids.update(provider.presentation_pids(self._aurelia_app_id))
+        else:
+            pids.update(self._process_group_members(identity.pgid))
+        return pids
+
+    @staticmethod
+    def _pid_is_live(pid: int) -> bool:
+        try:
+            status = Path(f"/proc/{pid}/status").read_text()
+            state = next(line for line in status.splitlines() if line.startswith("State:"))
+            return state.split()[-1] != "Z"
+        except (OSError, ValueError):
+            return False
+
+    def terminate_session(self, identity: LaunchIdentity, signum: int) -> None:
+        """Signal the process set owned by an accepted session identity."""
+        os.killpg(identity.pgid, signum)
+
+    def _select_surface(
+        self,
+        process_ids: list[int] | Callable[[], list[int]],
+        timeout: float,
+        process_alive: Callable[[], bool] | None = None,
+    ) -> int | None:
+        """Select a Gamescope surface owned by the supplied process evidence."""
+        if self._presentation is None:
+            return None
+        return self._presentation.select_pids(process_ids, timeout, process_alive)
+
+    def select_session_surface(
+        self, identity: LaunchIdentity, timeout: float, *, include_related_processes: bool = False,
+    ) -> int | None:
+        """Select a surface owned by an accepted session's process evidence."""
+        process_ids = lambda: sorted(
+            self._process_ids_in_group(identity.pgid) if include_related_processes else {identity.pid}
+        )
+        return self._select_surface(
+            process_ids, timeout,
+            (lambda: bool(self._process_group_members(identity.pgid))) if include_related_processes else None,
+        )
+
+    def select_shell_presentation(self) -> int | None:
+        """Restore the current supervised shell as Gamescope's selected surface."""
+        status = self.shell_status()
+        if not status or not status.running or self._presentation is None:
+            return None
+        return self._presentation.select_shell(status.pid)
+
+    def select_steam_session_surface(self, token: str, startup_pgid: int) -> int | None:
+        """Select Steam Desktop's window for its provider-owned setup session."""
+        if self._presentation is None:
+            return None
+        provider = self._steam_provider or SteamProvider()
+        self._steam_provider = provider
+        return provider.select_auth_surface(
+            self._presentation.select_pids, startup_pgid,
+            STEAM_WINDOW_SELECTION_TIMEOUT, token,
+        )
 
     def set_delegated_launch_environment(self, values: dict[str, str]) -> None:
         """Install the explicit graphical-session handoff for the next child."""

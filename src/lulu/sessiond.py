@@ -113,8 +113,6 @@ class ConsoleSessionInterface(ServiceInterface):
     def _state_json(self) -> str:
         state = asdict(self.model.state)
         settings = getattr(self, "settings", None)
-        active_launch_task = getattr(self.supervisor, "_active_launch_task", None)
-        steam_launch_task = getattr(self.supervisor, "_steam_launch_task", None)
         state.update(
             {
                 "lifecycle": self.model.state.lifecycle.value,
@@ -123,12 +121,7 @@ class ConsoleSessionInterface(ServiceInterface):
                 "overlay": self.model.state.overlay.value,
                 "input_mode": self.model.state.input_mode.value,
                 "last_failure_reason": self.model.last_failure_reason,
-                "launch_cancellable": bool(
-                    (active_launch_task is not None and not active_launch_task.done())
-                    or (steam_launch_task is not None and not steam_launch_task.done())
-                    or (getattr(self.supervisor, "_aurelia_launch_task", None) is not None
-                        and not self.supervisor._aurelia_launch_task.done())
-                ),
+                "launch_cancellable": self.supervisor.launch_cancellable,
                 "controller": {
                     "navigation_controller_id": self.controller_registry.navigation_controller_id,
                     "navigation_mode": self.controller_registry.navigation_mode,
@@ -289,19 +282,18 @@ class ConsoleSessionInterface(ServiceInterface):
         """Publish readiness only after its live context snapshot is verified."""
         was_ready = self._presentation_ready
         ready = False
-        shell_process = getattr(self.supervisor, "_shell_process", None)
-        presentation = getattr(self.supervisor, "_presentation", None)
+        shell = self.supervisor.shell_status()
         shell_candidate = (
             self.model.state.lifecycle.value == "shell"
             and has_connected_presentation_output()
-            and shell_process is not None
-            and shell_process.returncode is None
-            and presentation is not None
+            and shell is not None
+            and shell.running
+            and shell.presentation_available
         )
         if shell_candidate and was_ready and not context_is_valid(
             graphical_launch_context.CONTEXT_PATH,
             session_id=self._graphical_session_id,
-            shell_pid=shell_process.pid,
+            shell_pid=shell.pid,
         ):
             # A once-ready snapshot disappearing is itself a readiness loss.
             # Recovery on the next watchdog iteration must recreate and verify
@@ -314,33 +306,28 @@ class ConsoleSessionInterface(ServiceInterface):
                     selected_window is not None
                     and has_connected_presentation_output()
                     and self.model.state.lifecycle.value == "shell"
-                    and self.supervisor._shell_process is shell_process
-                    and shell_process.returncode is None
+                    and self.supervisor.shell_is_current(shell.token)
                 )
                 if selected:
-                    environment_reader = getattr(self.supervisor, "shell_graphical_environment", None)
-                    environment = (
-                        environment_reader() if environment_reader is not None
-                        else self.supervisor._delegated_launch_environment
-                    )
+                    environment = self.supervisor.shell_graphical_environment()
                     if graphical_context_is_live(environment):
                         self.supervisor.set_delegated_launch_environment(dict(environment))
+                        environment = self.supervisor.delegated_launch_environment
                         published = write_graphical_launch_context(
-                            self.supervisor._delegated_launch_environment,
+                            environment,
                             self._graphical_session_id,
                             ready=True,
-                            shell_pid=shell_process.pid,
+                            shell_pid=shell.pid,
                         )
                         ready = bool(
                             published
                             and context_is_valid(
                                 graphical_launch_context.CONTEXT_PATH,
                                 session_id=self._graphical_session_id,
-                                shell_pid=shell_process.pid,
+                                shell_pid=shell.pid,
                             )
                             and self.model.state.lifecycle.value == "shell"
-                            and self.supervisor._shell_process is shell_process
-                            and shell_process.returncode is None
+                            and self.supervisor.shell_is_current(shell.token)
                         )
             except (OSError, RuntimeError, TimeoutError, subprocess.SubprocessError) as error:
                 now = time.monotonic()
@@ -379,20 +366,20 @@ class ConsoleSessionInterface(ServiceInterface):
         if lease is None:
             return False
         token = str(lease["launch_token"])
-        task = getattr(self.supervisor, "_aurelia_launch_task", None)
-        if task is None or task.done() or self.model.state.lifecycle.value == "game":
+        if (not self.supervisor.aurelia_launch_pending
+                or self.model.state.lifecycle.value == "game"):
             self._clear_graphical_launch_lease()
             return False
         if context_was_consumed(graphical_launch_context.CONTEXT_PATH, token):
             self._clear_graphical_launch_lease()
             return False
-        shell_process = getattr(self.supervisor, "_shell_process", None)
+        shell = self.supervisor.shell_status()
         values = lease["environment"]
         if (
             lease.get("session_id") != self._graphical_session_id
-            or shell_process is None
-            or shell_process.returncode is not None
-            or shell_process.pid != lease.get("shell_pid")
+            or shell is None
+            or not shell.running
+            or shell.pid != lease.get("shell_pid")
             or not has_connected_presentation_output()
             or not graphical_context_is_live(values)
         ):
@@ -499,9 +486,7 @@ class ConsoleSessionInterface(ServiceInterface):
         if hasattr(self, "_graphical_session_id"):
             self._clear_graphical_launch_lease()
             clear_graphical_launch_context(graphical_launch_context.CONTEXT_PATH)
-        clear_environment = getattr(self.supervisor, "set_delegated_launch_environment", None)
-        if clear_environment is not None:
-            clear_environment({})
+        self.supervisor.set_delegated_launch_environment({})
         shell = str(Path(__file__).resolve().parents[2] / "scripts" / "console-ui.sh")
         qml = "Recovery.qml" if getattr(self, "recovery_mode", False) else "ConsoleShell.qml"
         os.environ["LULU_UI_FILE"] = str(PATHS.install_root / "ui" / qml)
@@ -547,14 +532,13 @@ class ConsoleSessionInterface(ServiceInterface):
         """Fail closed until the bootstrapped Gamescope shell is selectable."""
         if not has_connected_presentation_output():
             raise ValueError("game launch unavailable: no connected DRM presentation output")
-        shell_process = getattr(self.supervisor, "_shell_process", None)
-        presentation = getattr(self.supervisor, "_presentation", None)
-        if (not self._presentation_ready or shell_process is None
-                or shell_process.returncode is not None or presentation is None
+        shell = self.supervisor.shell_status()
+        if (not self._presentation_ready or shell is None
+                or not shell.running or not shell.presentation_available
                 or not context_is_valid(
                     graphical_launch_context.CONTEXT_PATH,
                     session_id=self._graphical_session_id,
-                    shell_pid=shell_process.pid,
+                    shell_pid=shell.pid,
                 )):
             was_ready = self._presentation_ready
             self._presentation_ready = False
@@ -643,25 +627,8 @@ class ConsoleSessionInterface(ServiceInterface):
         self.model.set_input_mode(mode)
 
     def _owned_game_pids(self) -> set[int]:
-        owned_pids: set[int] = set()
-        supervisor = getattr(self, "supervisor", None)
-        identity = self._local_identity or getattr(supervisor, "active_identity", None)
-        if identity is not None:
-            owned_pids.add(identity.pid)
-            aurelia_app_id = getattr(supervisor, "_aurelia_app_id", None)
-            if aurelia_app_id is not None:
-                # Aurelia's play CLI can share a process group with its runner.
-                # Use AppID-filtered title process evidence; never absorb the
-                # CLI or resident Steam daemon through process-group membership.
-                observe_app_id = getattr(supervisor, "app_id_process_pids", None)
-                if observe_app_id is not None:
-                    owned_pids.update(observe_app_id(aurelia_app_id))
-                return owned_pids
-            try:
-                owned_pids.update(supervisor._process_group_members(identity.pgid))
-            except (AttributeError, OSError, ProcessLookupError):
-                pass
-        return owned_pids
+        identity = self._local_identity or self.supervisor.active_identity
+        return self.supervisor.session_process_ids(identity)
 
     def _handle_inputplumber_signal(self, message: object) -> None:
         if (
@@ -717,8 +684,7 @@ class ConsoleSessionInterface(ServiceInterface):
             token = self.model.request_launch(game_id)
             self.model.launch_starting(token)
             self._local_identity = LaunchIdentity(token, pid, pgid, executable, tuple(argv))
-            presentation = getattr(self.supervisor, "_presentation", None)
-            if presentation is not None:
+            if self.supervisor.presentation_available:
                 # Consoled starts local runtimes directly (rather than through
                 # ProcessSupervisor.launch); give Gamescope the same explicit
                 # window handoff for emulator and delegated game surfaces.
@@ -726,12 +692,11 @@ class ConsoleSessionInterface(ServiceInterface):
                     # Flatpak's bwrap/Eden children need not remain descendants
                     # of the short-lived launch wrapper. Match only processes
                     # in this Eden launch's owned group, not the focused window.
-                    def eden_pids() -> list[int]:
-                        return sorted(self.supervisor._process_group_members(pgid))
-
-                    presentation.select_pids(eden_pids, 15.0, lambda: bool(eden_pids()))
+                    self.supervisor.select_session_surface(
+                        self._local_identity, 15.0, include_related_processes=True,
+                    )
                 else:
-                    presentation.select_pids([pid], 15.0)
+                    self.supervisor.select_session_surface(self._local_identity, 15.0)
             self._apply_input_mode(InputMode.GAME)
             self.model.primary_started(token, input_mode=InputMode.GAME)
         except (OSError, ValueError, TimeoutError, RuntimeError, subprocess.SubprocessError) as error:
@@ -761,27 +726,13 @@ class ConsoleSessionInterface(ServiceInterface):
             if provider_id == "steam":
                 LOGGER.info("steam_auth_stage stage=session-token-created token=%s sentinel_pid=%s pgid=%s",
                             token, pid, pgid)
-            if provider_id == "steam" and self.supervisor._presentation is not None:
+            if provider_id == "steam" and self.supervisor.presentation_available:
                 # The OOBE Steam route uses a lifecycle sentinel rather than
                 # owning the Steam client process. Select the actual client
                 # window explicitly; selecting the sentinel PID leaves the
-                # shell as Gamescope's visible base layer.
-                from .plugins.steam.provider import (SteamProvider,
-                    STEAM_WINDOW_SELECTION_TIMEOUT)
-                steam = SteamProvider()
-                def process_alive() -> bool:
-                    current_pids = steam.desktop_pids()
-                    return bool(current_pids or steam.process_group_members(steam_pgid))
-
-                candidates = steam.desktop_pids()
-                selection_started = time.monotonic()
-                LOGGER.info("steam_auth_stage stage=waiting-for-steam-window token=%s steam_pids=%s steam_pgid=%s timeout_s=%.1f",
-                            token, candidates, steam_pgid, STEAM_WINDOW_SELECTION_TIMEOUT)
-                selected = self.supervisor._presentation.select_pids(
-                    steam.desktop_pids, STEAM_WINDOW_SELECTION_TIMEOUT, process_alive)
-                LOGGER.info("steam_auth_stage stage=gamescope-surface-selected token=%s selection_elapsed_s=%.3f selected_window=%s steam_pids=%s",
-                            token, time.monotonic() - selection_started, selected,
-                            steam.desktop_pids())
+                # shell as Gamescope's visible base layer. Process discovery
+                # and the matching surface selection live behind the supervisor.
+                self.supervisor.select_steam_session_surface(token, steam_pgid)
             input_mode = InputMode.COMPAT if provider_id == "steam" else InputMode.GAME
             self._apply_input_mode(input_mode)
             self.model.primary_started(token, input_mode=input_mode)
@@ -805,10 +756,9 @@ class ConsoleSessionInterface(ServiceInterface):
             return
         identity = self._local_identity
         provider_id = getattr(self, "_local_provider_id", "")
-        process_group_members = getattr(self.supervisor, "_process_group_members", lambda _pgid: set())
         previous_members: set[int] = set()
         while True:
-            members = process_group_members(identity.pgid) - {identity.pid, os.getpid()}
+            members = self.supervisor.session_process_ids(identity) - {identity.pid, os.getpid()}
             for pid in sorted(previous_members - members):
                 LOGGER.info("local session process-group member exited token=%s pgid=%s pid=%s",
                             token, identity.pgid, pid)
@@ -833,14 +783,13 @@ class ConsoleSessionInterface(ServiceInterface):
                 outcome="success" if exit_code == 0 else "failed",
                 error=None if exit_code == 0 else f"process exited with status {exit_code}",
             ))
-            presentation = getattr(self.supervisor, "_presentation", None)
-            shell_process = getattr(self.supervisor, "_shell_process", None)
-            if presentation is not None and shell_process is not None:
+            shell = self.supervisor.shell_status()
+            if shell is not None and shell.running and shell.presentation_available:
                 try:
-                    presentation.select_shell(shell_process.pid)
+                    self.supervisor.select_shell_presentation()
                     if provider_id == "steam":
                         LOGGER.info("steam_auth_stage stage=shell-restored token=%s shell_pid=%s",
-                                    token, shell_process.pid)
+                                    token, shell.pid)
                 except (OSError, RuntimeError, TimeoutError, subprocess.SubprocessError):
                     LOGGER.exception("local session return could not restore the Mudos shell surface")
             try:
@@ -873,20 +822,20 @@ class ConsoleSessionInterface(ServiceInterface):
             try:
                 LOGGER.info("local session SIGTERM requested token=%s pid=%s pgid=%s eden=%s",
                             identity.token, identity.pid, identity.pgid, eden_launch)
-                os.killpg(identity.pgid, os_signal.SIGTERM)
+                self.supervisor.terminate_session(identity, os_signal.SIGTERM)
             except ProcessLookupError:
                 return "quit-requested"
             except OSError as error:
                 raise self._error(ValueError(f"could not quit the owned local session: {error}")) from error
             if eden_launch:
                 deadline = asyncio.get_running_loop().time() + EDEN_TERMINATE_TIMEOUT
-                while self.supervisor._process_group_members(identity.pgid):
+                while self.supervisor.session_process_ids(identity):
                     remaining = deadline - asyncio.get_running_loop().time()
                     if remaining <= 0:
                         LOGGER.error("Eden process group remained after SIGTERM; sending SIGKILL pgid=%s",
                                      identity.pgid)
                         try:
-                            os.killpg(identity.pgid, os_signal.SIGKILL)
+                            self.supervisor.terminate_session(identity, os_signal.SIGKILL)
                         except ProcessLookupError:
                             pass
                         except OSError as error:
@@ -896,7 +845,7 @@ class ConsoleSessionInterface(ServiceInterface):
                         reap_deadline = asyncio.get_running_loop().time() + EDEN_KILL_REAP_TIMEOUT
                         while True:
                             remaining_members = sorted(
-                                self.supervisor._process_group_members(identity.pgid)
+                                self.supervisor.session_process_ids(identity)
                             )
                             if not remaining_members:
                                 break
@@ -975,20 +924,20 @@ class ConsoleSessionInterface(ServiceInterface):
                 str(key): str(child) for key, child in value.items()
             }
             self.supervisor.set_delegated_launch_environment(environment)
-            shell_process = self.supervisor._shell_process
+            environment = self.supervisor.delegated_launch_environment
+            shell = self.supervisor.shell_status()
             published = False
-            if (self._presentation_ready and shell_process is not None
-                    and shell_process.returncode is None
-                    and graphical_context_is_live(self.supervisor._delegated_launch_environment)):
+            if (self._presentation_ready and shell is not None and shell.running
+                    and graphical_context_is_live(environment)):
                 published = write_graphical_launch_context(
-                    self.supervisor._delegated_launch_environment,
+                    environment,
                     self._graphical_session_id,
                     ready=True,
-                    shell_pid=shell_process.pid,
+                    shell_pid=shell.pid,
                 ) and context_is_valid(
                     graphical_launch_context.CONTEXT_PATH,
                     session_id=self._graphical_session_id,
-                    shell_pid=shell_process.pid,
+                    shell_pid=shell.pid,
                 )
             if self._presentation_ready and not published:
                 self._presentation_ready = False
@@ -1022,18 +971,20 @@ class ConsoleSessionInterface(ServiceInterface):
                     "providers.steam_aurelia").enabled:
                 raise ValueError("Steam Aurelia launch is disabled; explicitly enable the experimental provider first")
             environment = {
-                key: self.supervisor._delegated_launch_environment.get(key, "")
+                key: self.supervisor.delegated_launch_environment.get(key, "")
                 for key in ("DISPLAY", "WAYLAND_DISPLAY", "XDG_RUNTIME_DIR")
             }
-            shell_process = self.supervisor._shell_process
+            shell = self.supervisor.shell_status()
             if not graphical_context_is_live(environment):
                 raise ValueError("game launch unavailable: delegated graphical context is absent or disconnected")
+            if shell is None or not shell.running:
+                raise ValueError("game launch unavailable: Gamescope shell process is not running")
             token = self.supervisor.queue_aurelia_launch(app_id, startup_timeout_ms)
             self._graphical_launch_lease = {
                 "launch_token": token,
                 "environment": environment,
                 "session_id": self._graphical_session_id,
-                "shell_pid": shell_process.pid,
+                "shell_pid": shell.pid,
             }
             # Snapshot promotion happens synchronously before the queued Aurelia
             # task can run. The watchdog refreshes this lease during STARTING.
@@ -1041,7 +992,7 @@ class ConsoleSessionInterface(ServiceInterface):
                 environment,
                 self._graphical_session_id,
                 ready=True,
-                shell_pid=shell_process.pid,
+                shell_pid=shell.pid,
                 launch_token=token,
             )
             return token
@@ -1282,12 +1233,11 @@ async def serve(bus_type: BusType = BusType.SESSION, bootstrap_shell: bool = Fal
             LOGGER.info("graphical session stable; recovery failure history cleared")
         stable_task = asyncio.create_task(clear_after_stable_session())
     while bootstrap_shell and not stop_event.is_set():
-        shell_task = getattr(interface.supervisor, "_shell_watch_task", None)
-        if shell_task is None:
-            await stop_task
-            break
+        shell_task = asyncio.create_task(interface.supervisor.wait_for_shell_exit())
         done, _ = await asyncio.wait((stop_task, shell_task), return_when=asyncio.FIRST_COMPLETED)
         if stop_task in done or stop_event.is_set():
+            shell_task.cancel()
+            await asyncio.gather(shell_task, return_exceptions=True)
             break
         if shell_task in done:
             # Gamescope can terminate when the DRM connector vanishes. That is
@@ -1307,9 +1257,7 @@ async def serve(bus_type: BusType = BusType.SESSION, bootstrap_shell: bool = Fal
     await interface.stop_controller_monitor()
     await interface.supervisor.stop()
     interface._clear_graphical_launch_lease()
-    clear_delegated_context = getattr(interface.supervisor, "set_delegated_launch_environment", None)
-    if clear_delegated_context is not None:
-        clear_delegated_context({})
+    interface.supervisor.set_delegated_launch_environment({})
     LOGGER.info("session_lifecycle event=stop pid=%s", os.getpid())
     bus.disconnect()
 
