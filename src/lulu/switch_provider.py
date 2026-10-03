@@ -51,11 +51,13 @@ class SwitchProvider:
         config_root: Path | None = None,
         active_config_root: Path | None = None,
         data_root: Path | None = None,
+        external_content_root: Path | None = None,
     ) -> None:
         self.executable = str(executable or os.environ.get("LULU_EDEN", "/usr/bin/eden"))
         self.config_root = config_root or _config_root()
         self.active_config_root = active_config_root or self.config_root
         self.data_root = data_root
+        self.external_content_root = external_content_root or PATHS.rom_root / "switch"
 
     @property
     def config_path(self) -> Path:
@@ -150,6 +152,7 @@ class SwitchProvider:
         self._update_active_config(content)
         if self.data_root is not None:
             self.ensure_managed_system_files()
+        self._ensure_external_content_directory()
         return self.active_config_path
 
     def ensure_managed_system_files(self) -> tuple[Path, ...]:
@@ -316,6 +319,65 @@ class SwitchProvider:
             temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
             temporary.write_text(content, encoding="utf-8")
             temporary.replace(path)
+
+    def _ensure_external_content_directory(self) -> None:
+        """Add Mudos' canonical Switch root to Eden's external-content paths.
+
+        Eden 0.2.1 reads this QSettings array at startup and scans it for NSP/XCI
+        updates and add-on content. Keep existing user-configured directories,
+        append the Mudos-owned root once, and leave all acquired files read-only.
+        """
+        path = self.active_config_path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        lines = path.read_text(encoding="utf-8").splitlines() if path.exists() else []
+        ui_start = next((index for index, line in enumerate(lines) if line == "[UI]"), None)
+        if ui_start is None:
+            lines.extend(["", "[UI]"])
+            ui_start = len(lines) - 1
+        ui_end = next(
+            (index for index in range(ui_start + 1, len(lines)) if lines[index].startswith("[")),
+            len(lines),
+        )
+
+        size_key = r"Paths\external_content_dirs\size"
+        size_line = next(
+            (index for index in range(ui_start + 1, ui_end)
+             if lines[index].split("=", 1)[0].strip() == size_key and "=" in lines[index]),
+            None,
+        )
+        if size_line is None:
+            lines.insert(ui_end, f"{size_key}=0")
+            size_line = ui_end
+            ui_end += 1
+        try:
+            size = int(lines[size_line].split("=", 1)[1].strip())
+        except (IndexError, ValueError) as error:
+            raise ValueError(f"invalid Eden external-content array size in {path}") from error
+
+        root = self.external_content_root.expanduser().resolve(strict=False)
+        configured: list[Path] = []
+        for index in range(1, size + 1):
+            key = rf"Paths\external_content_dirs\{index}\path"
+            value_line = next(
+                (line for line in lines[ui_start + 1:ui_end]
+                 if line.split("=", 1)[0].strip() == key and "=" in line),
+                None,
+            )
+            if value_line is None:
+                continue
+            value = value_line.split("=", 1)[1].strip().strip('"')
+            if value:
+                configured.append(Path(value).expanduser().resolve(strict=False))
+        if root in configured:
+            return
+
+        size += 1
+        lines[size_line] = f"{size_key}={size}"
+        lines.insert(ui_end, rf"Paths\external_content_dirs\{size}\path={root}")
+        content = "\n".join(lines) + "\n"
+        temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+        temporary.write_text(content, encoding="utf-8")
+        temporary.replace(path)
 
     def launch_arguments(
         self,

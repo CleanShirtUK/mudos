@@ -64,6 +64,7 @@ class EdenManagedProvisioningTests(unittest.TestCase):
             self.assertIn("[UI]\nfirstStart=false", initial)
             self.assertNotIn("player_0_button_a=", initial)
             self.assertNotIn("guid:", initial)
+            self.assertNotIn(r"Paths\external_content_dirs", initial)
 
             # Eden-owned settings survive re-provisioning while first-run state
             # stays deterministic after the user has opened the native UI.
@@ -123,6 +124,64 @@ class EdenManagedProvisioningTests(unittest.TestCase):
             )
         self.assertNotIn("old-keyboard-binding", content)
         self.assertTrue(source_exists)
+
+    def test_game_launch_adds_canonical_external_content_root_idempotently(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            active_config = root / "flatpak/config/eden"
+            active_config.mkdir(parents=True)
+            qt_config = active_config / "qt-config.ini"
+            qt_config.write_text(
+                "[UI]\n"
+                "fullscreen=false\n"
+                r"Paths\external_content_dirs\size=1" + "\n"
+                r"Paths\external_content_dirs\1\path=/mnt/shared-addons" + "\n"
+                "[Renderer]\nbackend=1\n"
+            )
+            external_root = root / "Games/ROMs/switch"
+            provider = SwitchProvider(
+                root / "eden", root / "provider-config", active_config,
+                external_content_root=external_root,
+            )
+            with patch.dict("os.environ", {"LULU_SWITCH_SDL_GUID": "030081b85e0400008e02000001000000"}):
+                provider.ensure_controller_config(1, {1: 0})
+                first = qt_config.read_text()
+                provider.ensure_controller_config(1, {1: 0})
+                second = qt_config.read_text()
+
+        self.assertEqual(second, first)
+        self.assertIn(r"Paths\external_content_dirs\size=2", first)
+        self.assertIn(r"Paths\external_content_dirs\1\path=/mnt/shared-addons", first)
+        self.assertIn(
+            rf"Paths\external_content_dirs\2\path={external_root}", first,
+        )
+        self.assertIn("fullscreen=false", first)
+        self.assertIn("[Renderer]\nbackend=1", first)
+        self.assertEqual(first.count(str(external_root)), 1)
+
+    def test_preconfigured_external_root_is_not_duplicated(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            active_config = root / "active"
+            active_config.mkdir()
+            external_root = root / "ROMs/switch"
+            qt_config = active_config / "qt-config.ini"
+            qt_config.write_text(
+                "[UI]\n"
+                r"Paths\external_content_dirs\size=1" + "\n"
+                rf"Paths\external_content_dirs\1\path={external_root}" + "\n"
+            )
+            provider = SwitchProvider(
+                root / "eden", root / "provider-config", active_config,
+                external_content_root=external_root,
+            )
+            with patch.dict("os.environ", {"LULU_SWITCH_SDL_GUID": "030081b85e0400008e02000001000000"}):
+                provider.ensure_controller_config(1, {1: 0})
+                result = qt_config.read_text()
+
+        self.assertIn(r"Paths\external_content_dirs\size=1", result)
+        self.assertIn(rf"Paths\external_content_dirs\1\path={external_root}", result)
+        self.assertEqual(result.count(str(external_root)), 1)
 
     def test_eden_historical_shoulder_and_menu_mapping_preserves_other_controls(self) -> None:
         pad = {"sdl_guid": "030081b85e0400008e02000001000000", "sdl_index": 0}
