@@ -11,6 +11,9 @@ import subprocess
 import tempfile
 from ...launch_identity import LaunchIdentity
 from ...paths import PATHS
+from ...process_observation import (
+    APP_ID_ENVIRONMENT_KEYS, process_argv, process_environment, processes_with_app_id,
+)
 
 
 STEAM_SURFACE_STARTUP_TIMEOUT = 240.0
@@ -486,7 +489,7 @@ class SteamProvider:
     async def request_launch(self, app_id: str) -> SteamLaunchRequest:
         if not app_id.isdecimal() or int(app_id) < 1:
             raise ValueError("Steam AppID must be a positive integer")
-        existing = self._candidate_pids(app_id)
+        existing = self.presentation_pids(app_id)
         if existing:
             raise ValueError(f"Steam title is already running for AppID {app_id}: {existing}")
         environment = os.environ.copy()
@@ -565,7 +568,7 @@ class SteamProvider:
                 scan_started - request.submitted_at if request.submitted_at else -1.0,
             )
             markers = self._steam_launch_markers(request.app_id)
-            candidates = self._candidate_pids(request.app_id)
+            candidates = self.presentation_pids(request.app_id)
             self._logger.info("CANCEL_SCAN_EVIDENCE request_id=%s appid=%s markers=%s candidates=%s", request_id, request.app_id, markers, candidates)
             evidence = set(markers) | set(candidates)
             for pid in evidence - seen_evidence:
@@ -597,7 +600,7 @@ class SteamProvider:
             except ProcessLookupError:
                 for pid in group_pids.get(group, {request.launcher.pid}):
                     self._logger.info("CANCEL_KILL request_id=%s pid=%s pgid=%s reason=cleanup deadline signal=SIGKILL result=gone", request_id, pid, group)
-        remaining = self._candidate_pids(request.app_id)
+        remaining = self.presentation_pids(request.app_id)
         total_elapsed = loop.time() - cancel_started
         self._logger.info("CANCEL_CLEANUP_END request_id=%s appid=%s total_elapsed=%.6f scans=%s remaining_matching_pids=%s", request_id, request.app_id, total_elapsed, iteration, remaining)
         asyncio.create_task(self._observe_cancel_aftercare(request, request_id, cancel_started, seen_evidence))
@@ -612,7 +615,7 @@ class SteamProvider:
         loop = asyncio.get_running_loop()
         deadline = loop.time() + 2.0
         while loop.time() < deadline:
-            evidence = set(self._steam_launch_markers(request.app_id)) | set(self._candidate_pids(request.app_id))
+            evidence = set(self._steam_launch_markers(request.app_id)) | set(self.presentation_pids(request.app_id))
             for pid in evidence - seen_evidence:
                 try:
                     details = self._cancel_process_details(pid)
@@ -625,12 +628,12 @@ class SteamProvider:
     def _cancel_process_details(self, pid: int) -> dict[str, object]:
         status = Path(f"/proc/{pid}/status").read_text()
         parent = re.search(r"^PPid:\s+(\d+)$", status, re.MULTILINE)
-        environment = self._environment(pid)
+        environment = process_environment(pid)
         return {
             "ppid": int(parent.group(1)) if parent else None,
             "pgid": os.getpgid(pid),
             "executable": os.path.realpath(f"/proc/{pid}/exe"),
-            "argv": self._argv(pid),
+            "argv": process_argv(pid),
             "SteamAppId": environment.get("SteamAppId"),
             "SteamGameId": environment.get("SteamGameId"),
         }
@@ -697,10 +700,10 @@ class SteamProvider:
         rejected = False
         try:
             while True:
-                for pid in self._candidate_pids(request.app_id):
+                for pid in self.presentation_pids(request.app_id):
                     try:
                         pgid = os.getpgid(pid)
-                        argv = self._argv(pid)
+                        argv = process_argv(pid)
                         executable = os.path.realpath(f"/proc/{pid}/exe")
                     except (FileNotFoundError, PermissionError, ProcessLookupError):
                         continue
@@ -722,7 +725,7 @@ class SteamProvider:
                         request.launcher.returncode,
                         self._steam_client_pids(),
                         self._steam_launch_markers(request.app_id),
-                        self._candidate_pids(request.app_id),
+                        self.presentation_pids(request.app_id),
                     )
                     raise TimeoutError(f"Steam launch became orphaned for AppID {request.app_id}")
                 await asyncio.sleep(self.poll_interval)
@@ -753,7 +756,7 @@ class SteamProvider:
             try:
                 if entry.stat().st_uid != os.getuid():
                     continue
-                argv = self._argv(int(entry.name))
+                argv = process_argv(int(entry.name))
             except (FileNotFoundError, PermissionError, OSError):
                 continue
             if "reaper" in " ".join(argv).lower() and f"appid={app_id}" in " ".join(argv).lower():
@@ -762,67 +765,21 @@ class SteamProvider:
 
     async def _find_title(self, app_id: str, token: str) -> LaunchIdentity:
         while True:
-            for pid in self._candidate_pids(app_id):
+            for pid in self.presentation_pids(app_id):
                 try:
                     pgid = os.getpgid(pid)
-                    argv = self._argv(pid)
+                    argv = process_argv(pid)
                     executable = os.path.realpath(f"/proc/{pid}/exe")
                 except (FileNotFoundError, PermissionError, ProcessLookupError):
                     continue
                 return LaunchIdentity(token, pid, pgid, executable, argv)
             await asyncio.sleep(self.poll_interval)
 
-    def _candidate_pids(self, app_id: str) -> list[int]:
-        candidates: list[int] = []
-        for entry in Path("/proc").iterdir():
-            if not entry.name.isdecimal():
-                continue
-            pid = int(entry.name)
-            try:
-                if entry.stat().st_uid != os.getuid():
-                    continue
-                env = self._environment(pid)
-                if (env.get("SteamAppId") != app_id and env.get("SteamGameId") != app_id
-                        and env.get("STEAM_COMPAT_APP_ID") != app_id):
-                    continue
-                executable = os.path.realpath(f"/proc/{pid}/exe")
-                argv = self._argv(pid)
-            except (FileNotFoundError, PermissionError, OSError):
-                continue
-            if self._is_runtime_process(executable, argv):
-                continue
-            candidates.append(pid)
-        return candidates
-
     def presentation_pids(self, app_id: str) -> list[int]:
         """Return current non-runtime AppID processes that may own its window."""
-        return self._candidate_pids(app_id)
-
-    @staticmethod
-    def _process_has_app_id(pid: int, app_id: str) -> bool:
-        try:
-            env = SteamProvider._environment(pid)
-        except (FileNotFoundError, PermissionError, OSError):
-            return False
-        return (env.get("SteamAppId") == app_id or env.get("SteamGameId") == app_id
-                or env.get("STEAM_COMPAT_APP_ID") == app_id)
-
-    @staticmethod
-    def _environment(pid: int) -> dict[str, str]:
-        return {
-            item.partition(b"=")[0].decode(errors="replace"): item.partition(b"=")[2].decode(
-                errors="replace"
-            )
-            for item in Path(f"/proc/{pid}/environ").read_bytes().split(b"\0")
-            if b"=" in item
-        }
-
-    @staticmethod
-    def _argv(pid: int) -> tuple[str, ...]:
-        return tuple(
-            item.decode(errors="replace")
-            for item in Path(f"/proc/{pid}/cmdline").read_bytes().split(b"\0")
-            if item
+        return processes_with_app_id(
+            app_id, environment_keys=APP_ID_ENVIRONMENT_KEYS,
+            exclude=self._is_runtime_process,
         )
 
     @staticmethod

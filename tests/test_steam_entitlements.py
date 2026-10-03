@@ -5,10 +5,10 @@ import unittest
 from unittest.mock import patch
 
 from lulu.catalogue import CatalogueStore
-from lulu.steam_entitlements import (
+from lulu.plugins.steam.entitlements import (
     SteamEntitlement, SteamEntitlementConfig, SteamEntitlementError, SteamEntitlementSource,
 )
-from lulu.steam_provider import InstalledSteamGame
+from lulu.plugins.steam.provider import InstalledSteamGame
 
 
 ROOT = Path(__file__).resolve().parent
