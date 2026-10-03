@@ -2013,12 +2013,20 @@ restart may be required for InputPlumber to publish a newly created target.
   `Dolphin.Display.Fullscreen=True`, retaining `--user`, `--batch`, and direct
   game launch. Physical confirmation is pending the next game launch; no
   running Dolphin process was interrupted.
-- The live Mudos controller state contained one assigned Xbox 360 Controller
-  at SDL index 0, and Dolphin's generated `GCPad1` profile points to
-  `SDL/0/Xbox 360 Controller`. The current title is Wii Sports + Wii Sports
-  Resort, which reads Wii Remote input rather than GameCube controller ports.
-  Dolphin is in the existing Bluetooth passthrough Wii Remote mode. No Wii
-  Remote, Compatibility Mode, or InputPlumber behavior was changed. GameCube
-  controller response needs validation with a GameCube title; supporting this
-  Wii title through the gamepad would require an explicitly authorized change
-  to its Wii Remote input mode/profile.
+- At this observation point the live Mudos state had one assigned Xbox 360
+  Controller at SDL index 0, and Dolphin's generated `GCPad1` profile pointed
+  to `SDL/0/Xbox 360 Controller`. The title then running was Wii Sports + Wii
+  Sports Resort, which reads Wii Remote input rather than GameCube controller
+  ports. Dolphin remained in the existing Bluetooth passthrough Wii Remote
+  mode; no Wii Remote, Compatibility Mode, or InputPlumber behavior was changed.
+
+## Dolphin fullscreen and GameCube controller physical acceptance — 2026-10-04
+
+- After correcting the Dolphin `-C` override to use the config system name
+  `Dolphin.Display.Fullscreen=True`, the user reported that the game rendered
+  correctly through the normal Mudos UI and that the Xbox 360 controller also
+  worked as a GameCube controller in Mario Kart Wii.
+- This accepts both the Dolphin render presentation and managed GameCube pad
+  path for a Wii title that supports GameCube controllers. The launch remains
+  batch/direct with the existing `--user` root. Wii Remote passthrough,
+  Compatibility Mode, and InputPlumber policy were not changed.
