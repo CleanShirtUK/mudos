@@ -906,17 +906,12 @@ class ProcessSupervisor:
                     self._logger.info("CANCEL_PROVIDER_STOP_RETURN task=%s task_id=%s request=%s token=%s", asyncio.current_task().get_name(), id(asyncio.current_task()), id(request), token)
                 raise
             except (OSError, RuntimeError, TimeoutError, ValueError) as error:
-                if launch is not None:
-                    await provider.stop(launch)
                 reason = f"Steam launch failed: {error}"
                 self._logger.warning("steam launch failed app_id=%s token=%s reason=%s", app_id, token, reason)
                 self.model.fail(token, reason)
                 self.model.record_result(ProcessResult(token, None, None, "steam", (app_id,), None, None, "start-failed", reason))
-                if self._presentation is not None and self._shell_process is not None:
-                    self._presentation.select_shell(self._shell_process.pid)
-                self._set_input_mode(InputMode.SHELL)
-                self.model.return_complete(token)
-                await self._notify()
+                cleanup = (lambda: provider.stop(launch)) if launch is not None else None
+                await self._converge_supervised_return(token, provider_cleanup=cleanup)
                 self._active_launch_task = None
                 raise ValueError(reason) from error
 
@@ -936,20 +931,9 @@ class ProcessSupervisor:
         )
         self.model.primary_exited(identity.token)
         self.model.record_result(result)
-        await provider.stop_owned_client()
-        try:
-            self._set_input_mode(InputMode.SHELL)
-            if self._presentation is not None and self._shell_process is not None:
-                self._presentation.select_shell(self._shell_process.pid)
-            self._logger.info("steam return restored shell token=%s", identity.token)
-        except Exception as error:
-            self.model.return_failed(identity.token, f"Presentation recovery failed: {error}")
-            await self._notify()
-            return
-        self.model.return_complete(identity.token)
-        self.active_identity = None
-        self._steam_launch = None
-        await self._notify()
+        await self._converge_supervised_return(
+            identity.token, provider_cleanup=provider.stop_owned_client,
+        )
 
     def queue_aurelia_launch(self, app_id: str, startup_timeout_ms: int) -> str:
         if startup_timeout_ms < 1:
@@ -1082,13 +1066,7 @@ class ProcessSupervisor:
                     game.pgid if game else None, game.executable if game else "aurelia",
                     game.argv if game else ("aurelia", "play", app_id), None, None,
                     "start-failed", str(error)))
-                self._set_input_mode(InputMode.SHELL)
-                if self._presentation is not None and self._shell_process is not None:
-                    await self._presentation_call(lambda: self._presentation.select_shell(self._shell_process.pid))
-                self.model.return_complete(token)
-                self._aurelia_app_id = None
-                self._aurelia_process = None
-                await self._notify()
+                await self._converge_supervised_return(token)
                 raise ValueError(f"Aurelia launch failed: {error}") from error
             finally:
                 self._active_launch_task = None
@@ -1126,19 +1104,100 @@ class ProcessSupervisor:
         self.model.primary_exited(identity.token)
         self.model.record_result(ProcessResult(identity.token, identity.pid, identity.pgid,
             identity.executable, identity.argv, 0, None, "success"))
+        await self._converge_supervised_return(identity.token)
+
+    async def _converge_supervised_return(
+        self,
+        token: str,
+        *,
+        provider_cleanup: Callable[[], Awaitable[object]] | None = None,
+    ) -> bool:
+        """Converge an exited/failed supervised launch on the shell.
+
+        Input and provider cleanup are deliberately independent of presentation
+        restoration. Shell selection is the return gate: never report SHELL if
+        a configured presentation controller cannot verify the selected shell.
+        A small bounded retry uses the existing Gamescope selection API rather
+        than adding another background watchdog. Calling again with the same
+        token while RETURNING retries only the unfinished return contract.
+        """
+        state = self.model.state
+        if state.lifecycle.value == "shell":
+            return state.launch_token is None
+        if state.launch_token != token:
+            return False
+        if state.lifecycle.value != "returning":
+            raise ValueError("supervised return requires the authoritative returning lifecycle")
+
+        errors: list[str] = []
+        prior_failure = self.model.last_failure_reason
+        # The primary is already known to have exited (or launch failed). Drop
+        # its session mirrors before best-effort external cleanup so a failed
+        # surface operation cannot retain a dead game's identity indefinitely.
+        if self.active_identity is not None and self.active_identity.token == token:
+            self.active_identity = None
+        if self._steam_launch is not None and self._steam_launch.title.token == token:
+            self._steam_launch = None
+        if self._aurelia_app_id is not None and state.launch_token == token:
+            self._aurelia_app_id = None
+            self._aurelia_process = None
+
+        if provider_cleanup is not None:
+            try:
+                await provider_cleanup()
+            except Exception as error:
+                errors.append(f"provider cleanup failed: {error}")
+                self._logger.exception("provider cleanup failed during supervised return token=%s", token)
+
         try:
             self._set_input_mode(InputMode.SHELL)
-            if self._presentation is not None and self._shell_process is not None:
-                await self._presentation_call(lambda: self._presentation.select_shell(self._shell_process.pid))
         except Exception as error:
-            self.model.return_failed(identity.token, f"Presentation recovery failed: {error}")
+            # Input restoration must not prevent an independent shell attempt.
+            errors.append(f"input restoration failed: {error}")
+            self._logger.exception("input restoration failed during supervised return token=%s", token)
+
+        presentation_error: Exception | None = None
+        if self._presentation is not None:
+            for attempt in range(3):
+                try:
+                    shell = self.shell_status()
+                    if shell is None or not shell.running:
+                        raise RuntimeError("Mudos shell process is not running")
+                    selected = await self._presentation_call(
+                        self._presentation.select_shell, shell.pid,
+                    )
+                    selected_window = self._presentation.selected_base_window()
+                    if (selected is None or selected_window != selected
+                            or not self._presentation.window_is_focusable(selected)):
+                        raise RuntimeError(
+                            f"shell selection verification failed: returned={selected} selected={selected_window}"
+                        )
+                    presentation_error = None
+                    break
+                except Exception as error:
+                    presentation_error = error
+                    self._logger.warning(
+                        "shell return attempt %s/3 failed token=%s: %s",
+                        attempt + 1, token, error,
+                    )
+                    if attempt < 2:
+                        await asyncio.sleep(0.1)
+
+        if presentation_error is not None:
+            errors.append(f"shell presentation restoration failed: {presentation_error}")
+            reason_parts = ([prior_failure] if prior_failure else []) + errors
+            self.model.return_failed(token, "; ".join(dict.fromkeys(reason_parts)))
             await self._notify()
-            return
-        self.model.return_complete(identity.token)
-        self.active_identity = None
-        self._aurelia_app_id = None
-        self._aurelia_process = None
+            return False
+
+        if errors:
+            # Preserve independent cleanup diagnostics without withholding a
+            # verified shell return; SessionStateModel remains lifecycle owner.
+            reason_parts = ([prior_failure] if prior_failure else []) + errors
+            self.model.last_failure_reason = "; ".join(dict.fromkeys(reason_parts))
+        self.model.return_complete(token)
         await self._notify()
+        return True
 
     async def _terminate_group(self, pgid: int) -> None:
         try:

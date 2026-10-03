@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import asyncio
 import unittest
+from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 from lulu.console_sessiond import SessionStateModel
 from lulu.contracts import InputMode
 from lulu.plugins.steam.aurelia import AureliaError
 from lulu.plugins.steam.provider import SteamProvider
+from lulu.launch_identity import LaunchIdentity
 from lulu.process_supervisor import ProcessSupervisor
 from lulu.sessiond import ConsoleSessionInterface
 
@@ -64,6 +66,33 @@ class FakeAurelia:
         return {"stopped": True}
 
 
+class ReturnPresentation:
+    def __init__(self, failures=0):
+        self.failures = failures
+        self.selected = None
+        self.attempts = 0
+
+    def select_pids(self, pids, timeout):
+        self.selected = 800
+        return 800
+
+    def suspend_shell_window(self):
+        return None
+
+    def select_shell(self, pid):
+        self.attempts += 1
+        if self.attempts <= self.failures:
+            raise RuntimeError("transient shell selection failure")
+        self.selected = 900
+        return 900
+
+    def selected_base_window(self):
+        return 900 if self.selected is not None else None
+
+    def window_is_focusable(self, window):
+        return self.selected == window
+
+
 class AureliaSessionLaunchTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.model = SessionStateModel()
@@ -102,12 +131,19 @@ class AureliaSessionLaunchTests(unittest.IsolatedAsyncioTestCase):
         aurelia = FakeAurelia(cli=cli, running={"running": []})
         self.supervisor._aurelia_client = aurelia
         self.provider.presentation_pids = lambda _app: []
+        presentation = ReturnPresentation()
+        self.supervisor._presentation = presentation
+        self.supervisor._shell_process = SimpleNamespace(pid=99, returncode=None)
+        self.supervisor._shell_identity = LaunchIdentity("shell", 99, 99, "/shell", ("shell",))
         token = self.supervisor.queue_aurelia_launch("104200", 1000)
         with self.assertRaisesRegex(ValueError, "exited before a verified game"):
             await self.supervisor._aurelia_launch_task
         self.assertEqual(aurelia.app_id, "104200")
         self.assertIsNone(self.model.state.provider_id)
         self.assertEqual(self.model.state.lifecycle.value, "shell")
+        self.assertEqual(presentation.selected, 900)
+        self.assertIsNone(self.supervisor._aurelia_app_id)
+        self.assertIsNone(self.supervisor._aurelia_process)
         self.assertIsNone(self.supervisor._steam_launch)
         self.assertEqual(self.model.last_result.token, token)
         self.assertFalse(hasattr(aurelia, "steamcmd"))
@@ -118,8 +154,12 @@ class AureliaSessionLaunchTests(unittest.IsolatedAsyncioTestCase):
         sessiond.model = self.model
         sessiond._native_controller = True
         sessiond._apply_input_mode = Mock()
+        presentation = ReturnPresentation()
         self.supervisor = ProcessSupervisor(
-            self.model, input_mode_changed=sessiond._apply_supervised_input_mode)
+            self.model, presentation=presentation,
+            input_mode_changed=sessiond._apply_supervised_input_mode)
+        self.supervisor._shell_process = SimpleNamespace(pid=99, returncode=None)
+        self.supervisor._shell_identity = LaunchIdentity("shell", 99, 99, "/shell", ("shell",))
         provider = self.provider
         self.supervisor._steam_provider = provider
         self.supervisor._aurelia_client = FakeAurelia(
@@ -139,6 +179,10 @@ class AureliaSessionLaunchTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.model.state.presentation.value, "shell")
         self.assertEqual(self.model.state.input_mode, InputMode.SHELL)
         self.assertEqual(self.model.last_result.token, token)
+        self.assertIsNone(self.supervisor.active_identity)
+        self.assertIsNone(self.supervisor._aurelia_app_id)
+        self.assertIsNone(self.supervisor._aurelia_process)
+        self.assertEqual(presentation.selected, 900)
         sessiond._apply_input_mode.assert_called_once_with(InputMode.SHELL)
 
     async def test_runner_pid_without_exact_appid_evidence_never_enters_game(self):
@@ -202,6 +246,108 @@ class AureliaSessionLaunchTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(aurelia.stopped, [])  # `stop <AppID>` is not launch cancellation.
         self.assertEqual(self.model.state.lifecycle.value, "shell")
         self.assertEqual(self.model.last_failure_reason, "launch cancelled")
+
+    def _prepare_returning(self, *, presentation=None, input_mode_changed=None):
+        model = SessionStateModel()
+        supervisor = ProcessSupervisor(
+            model, presentation=presentation,
+            input_mode_changed=input_mode_changed,
+        )
+        token = model.request_launch("steam-aurelia:945360")
+        model.launch_starting(token)
+        model.primary_observed(token)
+        model.primary_started(token)
+        identity = LaunchIdentity(token, 4100, 4100, "/game", ("/game",))
+        supervisor.active_identity = identity
+        supervisor._aurelia_app_id = "945360"
+        supervisor._aurelia_process = FakeCLI()
+        model.primary_exited(token)
+        return model, supervisor, token
+
+    async def test_return_retries_transient_shell_selection_and_clears_session_state(self):
+        presentation = ReturnPresentation(failures=1)
+        model, supervisor, token = self._prepare_returning(presentation=presentation)
+        supervisor._shell_process = SimpleNamespace(pid=99, returncode=None)
+        supervisor._shell_identity = LaunchIdentity("shell", 99, 99, "/shell", ("shell",))
+
+        self.assertTrue(await supervisor._converge_supervised_return(token))
+        self.assertEqual(presentation.attempts, 2)
+        self.assertEqual(model.state.lifecycle.value, "shell")
+        self.assertIsNone(supervisor.active_identity)
+        self.assertIsNone(supervisor._aurelia_app_id)
+        self.assertIsNone(supervisor._aurelia_process)
+        self.assertTrue(await supervisor._converge_supervised_return(token))
+
+    async def test_input_failure_does_not_block_verified_shell_return(self):
+        presentation = ReturnPresentation()
+
+        def fail_input(_mode):
+            raise OSError("InputPlumber unavailable")
+
+        model, supervisor, token = self._prepare_returning(
+            presentation=presentation, input_mode_changed=fail_input,
+        )
+        supervisor._shell_process = SimpleNamespace(pid=99, returncode=None)
+        supervisor._shell_identity = LaunchIdentity("shell", 99, 99, "/shell", ("shell",))
+
+        self.assertTrue(await supervisor._converge_supervised_return(token))
+        self.assertEqual(model.state.lifecycle.value, "shell")
+        self.assertIn("input restoration failed", model.last_failure_reason)
+        self.assertEqual(presentation.selected, 900)
+
+    async def test_shell_failure_keeps_returning_even_when_input_restore_succeeds(self):
+        presentation = ReturnPresentation(failures=99)
+        input_modes = []
+        model, supervisor, token = self._prepare_returning(
+            presentation=presentation, input_mode_changed=input_modes.append,
+        )
+        supervisor._shell_process = SimpleNamespace(pid=99, returncode=None)
+        supervisor._shell_identity = LaunchIdentity("shell", 99, 99, "/shell", ("shell",))
+
+        self.assertFalse(await supervisor._converge_supervised_return(token))
+        self.assertEqual(input_modes, [InputMode.SHELL])
+        self.assertEqual(model.state.lifecycle.value, "returning")
+        self.assertIn("shell presentation restoration failed", model.last_failure_reason)
+        self.assertIsNone(supervisor.active_identity)
+        self.assertIsNone(supervisor._aurelia_app_id)
+
+        presentation.failures = 3
+        self.assertTrue(await supervisor._converge_supervised_return(token))
+        self.assertEqual(model.state.lifecycle.value, "shell")
+
+    async def test_both_restore_failures_are_independent_and_diagnosed(self):
+        presentation = ReturnPresentation(failures=99)
+
+        def fail_input(_mode):
+            raise OSError("profile load failed")
+
+        model, supervisor, token = self._prepare_returning(
+            presentation=presentation, input_mode_changed=fail_input,
+        )
+        supervisor._shell_process = SimpleNamespace(pid=99, returncode=None)
+        supervisor._shell_identity = LaunchIdentity("shell", 99, 99, "/shell", ("shell",))
+
+        self.assertFalse(await supervisor._converge_supervised_return(token))
+        self.assertEqual(model.state.lifecycle.value, "returning")
+        self.assertIn("input restoration failed", model.last_failure_reason)
+        self.assertIn("shell presentation restoration failed", model.last_failure_reason)
+
+    async def test_launch_failure_without_primary_uses_same_return_contract(self):
+        presentation = ReturnPresentation()
+        model = SessionStateModel()
+        supervisor = ProcessSupervisor(model, presentation=presentation)
+        token = model.request_launch("steam-aurelia:945360")
+        model.launch_starting(token)
+        supervisor._aurelia_app_id = "945360"
+        supervisor._aurelia_process = FakeCLI()
+        model.fail(token, "provider did not produce a game")
+        supervisor._shell_process = SimpleNamespace(pid=99, returncode=None)
+        supervisor._shell_identity = LaunchIdentity("shell", 99, 99, "/shell", ("shell",))
+
+        self.assertTrue(await supervisor._converge_supervised_return(token))
+        self.assertEqual(model.state.lifecycle.value, "shell")
+        self.assertEqual(presentation.attempts, 1)
+        self.assertIsNone(supervisor._aurelia_app_id)
 
 
 if __name__ == "__main__":

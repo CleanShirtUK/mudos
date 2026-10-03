@@ -44,17 +44,26 @@ class FakeSteamProvider:
 class RecordingPresentation:
     def __init__(self) -> None:
         self.events: list[tuple[str, int | None]] = []
+        self.selected: int | None = None
 
     def clear_selection(self) -> None:
         self.events.append(("clear", None))
 
     def select_pid(self, pid: int) -> int:
         self.events.append(("game", pid))
+        self.selected = pid
         return pid
 
     def select_shell(self, pid: int) -> int:
         self.events.append(("shell", pid))
+        self.selected = pid
         return pid
+
+    def selected_base_window(self) -> int | None:
+        return self.selected
+
+    def window_is_focusable(self, window: int) -> bool:
+        return self.selected == window
 
 
 class DelayedPresentation:
@@ -115,6 +124,8 @@ class SteamProviderTests(unittest.TestCase):
                 steam_provider=provider,
                 presentation=presentation,
             )
+            supervisor._shell_process = SimpleNamespace(pid=99, returncode=None)
+            supervisor._shell_identity = LaunchIdentity("shell", 99, 99, "/shell", ("shell",))
             provider.started.clear()
             launch_task = asyncio.create_task(supervisor.launch_steam("40800", 1))
             await asyncio.sleep(0)
@@ -129,6 +140,9 @@ class SteamProviderTests(unittest.TestCase):
             provider.exited.set()
             await supervisor._watch_task
             self.assertEqual(session.state.lifecycle.value, "shell")
+            self.assertIsNone(supervisor.active_identity)
+            self.assertIsNone(supervisor._steam_launch)
+            self.assertEqual(presentation.selected, 99)
 
         asyncio.run(exercise())
 
@@ -612,7 +626,8 @@ class SteamProviderTests(unittest.TestCase):
                 presentation=presentation,
                 input_mode_changed=modes.append,
             )
-            supervisor._shell_process = Mock(pid=7)
+            supervisor._shell_process = SimpleNamespace(pid=7, returncode=None)
+            supervisor._shell_identity = LaunchIdentity("shell", 7, 7, "/shell", ("shell",))
             token = await supervisor.launch_steam("40800", 1000)
             self.assertEqual(session.state.lifecycle.value, "game")
             self.assertEqual(session.state.presentation, Presentation.GAME)
@@ -638,7 +653,8 @@ class SteamProviderTests(unittest.TestCase):
             provider = FakeSteamProvider()
             presentation = RecordingPresentation()
             supervisor = ProcessSupervisor(session, steam_provider=provider, presentation=presentation)
-            supervisor._shell_process = Mock(pid=7)
+            supervisor._shell_process = SimpleNamespace(pid=7, returncode=None)
+            supervisor._shell_identity = LaunchIdentity("shell", 7, 7, "/shell", ("shell",))
             token = await supervisor.launch_steam("15700", 1000)
             provider.exited.set()
             await supervisor._watch_task
