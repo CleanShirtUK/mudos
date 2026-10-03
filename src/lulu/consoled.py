@@ -57,6 +57,7 @@ from .credential import (CredentialBroker, CredentialInput, CredentialPresentati
                            CredentialStatus, SecretStore)
 from .settings import SettingsStore
 from .web_credentials import WebCredentialStore
+from .launch_routing import LaunchDispatch, resolve_game_launch_route
 
 
 DESCRIPTOR = ServiceDescriptor(
@@ -2611,38 +2612,43 @@ class ConsoleInterface(ServiceInterface):
         game = games.get(game_id)
         if game is None or not game.launchable:
             raise ValueError("game is not installed and launchable")
-        if game.provider == "steam-aurelia":
+        route = resolve_game_launch_route(
+            game_id,
+            steam_launch_provider=os.environ.get("LULU_STEAM_LAUNCH_PROVIDER"),
+            catalogue_provider=game.provider,
+            catalogue_provider_id=game.provider_id,
+        )
+        if route.dispatch is LaunchDispatch.AURELIA:
             # Aurelia is a Sessiond-owned launch backend, not a Consoled launch
             # plugin. Keep this direct library-entry boundary supported for
-            # callers that submit LaunchGame over D-Bus instead of the UI
+            # callers that submit LaunchGame over D-Bus as well as the UI
             # bridge's /launch/<game-id> endpoint.
             if self.sessiond is None:
                 raise ValueError("console session is unavailable")
-            app_id = str(game.provider_id)
-            if not app_id.isdecimal() or int(app_id) < 1:
-                raise ValueError("Steam Aurelia AppID is invalid")
+            app_id = route.provider_game_id
             LOGGER.info("Aurelia launch routed to Sessiond game_id=%s app_id=%s", game_id, app_id)
             token = await self.sessiond.call_request_aurelia_launch(app_id, timeout_ms)
             delta = self.catalogue.store.mark_played(game.game_id)
             self._publish_delta(delta)
             self.CatalogueChanged()
             return token
-        if game.provider == "flatpak":
+        if route.provider_id == "flatpak":
             adapter = next((source for source in self._plugins.with_capability("catalogue")
                             if getattr(source, "provider_id", "") == "flatpak"
                             and hasattr(source, "reconcile")), None)
             if adapter is None:
                 raise ValueError("Flatpak game classification is unavailable")
             applications = await adapter.reconcile()
-            if not any(item.application_id == game.provider_id and item.installed and item.is_game
+            if not any(item.application_id == route.provider_game_id and item.installed and item.is_game
                        for item in applications):
                 raise ValueError("Flatpak application is not currently classified as an installed game")
-        LOGGER.info("launch dispatch game_id=%s provider=%s provider_id=%s", game_id, game.provider, game.provider_id)
+        LOGGER.info("launch dispatch game_id=%s provider=%s provider_id=%s",
+                    game_id, route.provider_id, route.provider_game_id)
         for launcher in self._plugins.with_capability("launch"):
             provider_ids = tuple(getattr(launcher, "provider_ids", ()))
-            if game.provider not in provider_ids or not hasattr(launcher, "launch_command"):
+            if route.provider_id not in provider_ids or not hasattr(launcher, "launch_command"):
                 continue
-            command = launcher.launch_command(game.provider_id)
+            command = launcher.launch_command(route.provider_game_id)
             if self.sessiond is None:
                 raise ValueError("console session is unavailable")
             context = {
@@ -2657,9 +2663,9 @@ class ConsoleInterface(ServiceInterface):
             self._publish_delta(delta)
             self.CatalogueChanged()
             return token
-        if game.provider == "steam":
-            details_uri = self.catalogue.provider.open_game_details(game.provider_id)
-            launch_uri = self.catalogue.provider.launch_gamepad_title(game.provider_id)
+        if route.dispatch is LaunchDispatch.STEAM:
+            details_uri = self.catalogue.provider.open_game_details(route.provider_game_id)
+            launch_uri = self.catalogue.provider.launch_gamepad_title(route.provider_game_id)
             LOGGER.info(
                 "Steam contextual launch submitted game_id=%s details=%s launch=%s",
                 game_id,
@@ -2667,10 +2673,10 @@ class ConsoleInterface(ServiceInterface):
                 launch_uri,
             )
             return details_uri
-        if game.provider == "lutris":
+        if route.provider_id == "lutris":
             from .lutris_adapter import LutrisAdapter
-            script = PATHS.cache_home / "lutris" / f"mudos-{game.provider_id}.sh"
-            await asyncio.to_thread(LutrisAdapter().output_script, game.provider_id, script)
+            script = PATHS.cache_home / "lutris" / f"mudos-{route.provider_game_id}.sh"
+            await asyncio.to_thread(LutrisAdapter().output_script, route.provider_game_id, script)
             if self.sessiond is None:
                 raise ValueError("console session is unavailable")
             context = {

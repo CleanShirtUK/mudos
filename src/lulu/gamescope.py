@@ -176,6 +176,22 @@ class GamescopePresentation:
         values = re.findall(r"0x[0-9a-fA-F]+|(?<![A-Za-z])\d+", output.split("=", 1)[-1])
         return int(values[0], 0) if values else None
 
+    def selected_base_surface(self) -> tuple[int | None, int | None]:
+        """Read the selected base-layer XID and its Gamescope-reported PID."""
+        window = self.selected_base_window()
+        if window is None:
+            return None, None
+        pid = next((owner for candidate, _app_id, owner in self._focusable_windows()
+                    if candidate == window), None)
+        return window, pid
+
+    def pid_is_owned_by(self, window_pid: int | None, process_ids: set[int]) -> bool:
+        """Apply the same direct-PID/descendant rule used by window selection."""
+        return window_pid is not None and any(
+            window_pid == pid or self._is_descendant(window_pid, pid)
+            for pid in process_ids
+        )
+
     def window_for_pid(self, pid: int, timeout: float = 2.0) -> int:
         deadline = time.monotonic() + timeout
         while True:

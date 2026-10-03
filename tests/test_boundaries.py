@@ -15,7 +15,8 @@ from lulu.catalogue import CatalogueGame, CatalogueStore
 from lulu.metadata import MetadataCandidate
 from lulu.controllerd import BatteryKind, BatteryState, Controller, ControllerRegistry
 from lulu.controllerd import default_inputplumber_client
-from lulu.inputplumber import InputPlumberClient
+from lulu.inputplumber import (DEFAULT_PROFILE_PATH, CompositeProfileState,
+                               InputPlumberClient, InputPlumberObjectDisappeared)
 from lulu.contracts import (InputMode, LaunchDescriptor, Lifecycle, Overlay, Presentation,
                             Role, ServiceName, SessionClassification)
 from lulu.gamescope import GamescopeInvocation, GamescopePresentation, discover_presentation_output
@@ -29,6 +30,26 @@ class RecordingInputPlumber:
         self.loads: list[tuple[InputMode, str | None]] = []
         self.intercepts: list[tuple[int, str | None]] = []
         self.baselines: list[str | None] = []
+        self.profile_paths = {
+            InputMode.SHELL: Path("/profiles/shell.yaml"),
+            InputMode.GAME: Path("/profiles/game.yaml"),
+            InputMode.COMPAT: Path("/profiles/compat.yaml"),
+        }
+        self.profile_states = {
+            path: CompositeProfileState("/profiles/shell.yaml", "Lulu SHELL", 1)
+            for path in composites
+        }
+        self.reported_mutation_profile: str | None = None
+        self.disappear_on_read: set[str] = set()
+
+    def composite_profile_state(self, object_path=None, *, execute=True):
+        if object_path in self.disappear_on_read:
+            raise InputPlumberObjectDisappeared(object_path)
+        if object_path not in self.composites:
+            raise InputPlumberObjectDisappeared(object_path)
+        return self.profile_states.setdefault(
+            object_path, CompositeProfileState(DEFAULT_PROFILE_PATH, "Default", 1),
+        )
 
     def runtime_composite_statuses(self) -> dict[str, tuple[str, tuple[str, ...]]]:
         return self.composites
@@ -37,6 +58,11 @@ class RecordingInputPlumber:
         self, mode: InputMode, object_path: str | None = None, *, execute: bool = True
     ) -> list[str]:
         self.loads.append((mode, object_path))
+        if object_path in self.profile_states:
+            profile_path = self.reported_mutation_profile or str(self.profile_paths[mode])
+            self.profile_states[object_path] = CompositeProfileState(
+                profile_path, f"Lulu {mode.name}", self.profile_states[object_path].intercept_mode,
+            )
         return []
 
     def set_intercept_mode(
@@ -51,6 +77,8 @@ class RecordingInputPlumber:
     def ensure_default_intercept(self, object_path: str | None = None, *, execute: bool = True) -> list[list[str]]:
         self.baselines.append(object_path)
         self.intercepts.append((1, object_path))
+        if object_path in self.profile_states:
+            self.profile_states[object_path] = CompositeProfileState(DEFAULT_PROFILE_PATH, "Default", 1)
         return []
 
 
@@ -942,6 +970,25 @@ class BoundaryTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             client.set_intercept_mode(4, execute=False)
 
+    def test_composite_profile_readback_reads_profile_path_name_and_intercept(self) -> None:
+        client = default_inputplumber_client(Path("config/inputplumber"))
+        values = {
+            "ProfilePath": 's "config/inputplumber/profiles/game.yaml"',
+            "ProfileName": 's "Lulu GAME"',
+            "InterceptMode": "u 2",
+        }
+
+        def run(command, **_kwargs):
+            return type("Result", (), {"stdout": values[command[-1]]})()
+
+        with patch("lulu.inputplumber.subprocess.run", side_effect=run) as mocked:
+            state = client.composite_profile_state("/controller/0")
+
+        self.assertEqual(state.profile_path, "config/inputplumber/profiles/game.yaml")
+        self.assertEqual(state.profile_name, "Lulu GAME")
+        self.assertEqual(state.intercept_mode, 2)
+        self.assertEqual(mocked.call_count, 3)
+
     def test_shell_profile_load_is_optional_when_no_controller_exists(self) -> None:
         client = default_inputplumber_client(Path("config/inputplumber"))
         with patch("subprocess.run") as run:
@@ -958,7 +1005,8 @@ class BoundaryTests(unittest.TestCase):
         interface._apply_input_mode(InputMode.SHELL)
         interface._reconcile_input_mode(client.composites, InputMode.SHELL)
 
-        self.assertEqual(client.loads, [(InputMode.SHELL, path)])
+        self.assertEqual(client.loads, [])
+        self.assertEqual(interface._applied_input_modes[path], InputMode.SHELL)
 
     def test_late_composite_converges_to_active_shell_mode(self) -> None:
         path = "/org/shadowblip/InputPlumber/CompositeDevice0"
@@ -987,11 +1035,12 @@ class BoundaryTests(unittest.TestCase):
 
         interface._reconcile_input_mode(client.composites, InputMode.SHELL)
         interface._reconcile_input_mode({}, InputMode.SHELL)
+        client.profile_states.pop(path, None)
         interface._reconcile_input_mode(client.composites, InputMode.SHELL)
 
         self.assertEqual(
             client.loads,
-            [(InputMode.SHELL, path), (InputMode.SHELL, path)],
+            [(InputMode.SHELL, path)],
         )
 
     def test_converged_composite_is_not_reapplied(self) -> None:
@@ -1002,7 +1051,133 @@ class BoundaryTests(unittest.TestCase):
         interface._reconcile_input_mode(client.composites, InputMode.SHELL)
         interface._reconcile_input_mode(client.composites, InputMode.SHELL)
 
+        self.assertEqual(client.loads, [])
+        self.assertEqual(interface._applied_input_modes[path], InputMode.SHELL)
+
+    def test_readback_corrects_game_drift_from_shell_profile(self) -> None:
+        path = "/org/shadowblip/InputPlumber/CompositeDevice0"
+        client = RecordingInputPlumber({path: ("045e_0291", ("/dev/input/event13",))})
+        interface = input_mode_interface(client)
+        interface._applied_input_modes[path] = InputMode.GAME
+        client.profile_states[path] = CompositeProfileState("/profiles/shell.yaml", "Lulu SHELL", 1)
+
+        interface._reconcile_input_mode(client.composites, InputMode.GAME)
+
+        self.assertEqual(client.loads, [(InputMode.GAME, path)])
+        self.assertEqual(client.profile_states[path].profile_path, "/profiles/game.yaml")
+        self.assertEqual(interface._applied_input_modes[path], InputMode.GAME)
+
+    def test_readback_corrects_shell_drift_from_game_profile(self) -> None:
+        path = "/org/shadowblip/InputPlumber/CompositeDevice0"
+        client = RecordingInputPlumber({path: ("045e_0291", ("/dev/input/event13",))})
+        interface = input_mode_interface(client)
+        interface._applied_input_modes[path] = InputMode.SHELL
+        client.profile_states[path] = CompositeProfileState("/profiles/game.yaml", "Lulu GAME", 1)
+
+        interface._reconcile_input_mode(client.composites, InputMode.SHELL)
+
         self.assertEqual(client.loads, [(InputMode.SHELL, path)])
+        self.assertEqual(client.profile_states[path].profile_path, "/profiles/shell.yaml")
+
+    def test_matching_readback_avoids_profile_reload_even_if_cache_is_empty(self) -> None:
+        path = "/org/shadowblip/InputPlumber/CompositeDevice0"
+        client = RecordingInputPlumber({path: ("045e_0291", ("/dev/input/event13",))})
+        client.profile_states[path] = CompositeProfileState("/profiles/game.yaml", "Lulu GAME", 1)
+        interface = input_mode_interface(client)
+
+        interface._reconcile_input_mode(client.composites, InputMode.GAME)
+
+        self.assertEqual(client.loads, [])
+        self.assertEqual(interface._applied_input_modes[path], InputMode.GAME)
+
+    def test_unverified_successful_mutation_does_not_populate_applied_cache(self) -> None:
+        path = "/org/shadowblip/InputPlumber/CompositeDevice0"
+        client = RecordingInputPlumber({path: ("045e_0291", ("/dev/input/event13",))})
+        client.reported_mutation_profile = "/profiles/shell.yaml"
+        interface = input_mode_interface(client)
+        interface._applied_input_modes[path] = InputMode.SHELL
+
+        with self.assertRaisesRegex(RuntimeError, "verification failed"):
+            interface._reconcile_input_mode(client.composites, InputMode.GAME)
+
+        self.assertNotIn(path, interface._applied_input_modes)
+        self.assertEqual(client.loads, [(InputMode.GAME, path)])
+
+    def test_unchanged_topology_external_drift_is_corrected_on_next_reconcile(self) -> None:
+        path = "/org/shadowblip/InputPlumber/CompositeDevice0"
+        signature = ("045e_0291", ("/dev/input/event13",))
+        client = RecordingInputPlumber({path: signature})
+        interface = input_mode_interface(client)
+        interface.model.state.input_mode = InputMode.GAME
+        interface._reconcile_input_mode(client.composites, InputMode.GAME)
+        self.assertEqual(client.loads, [(InputMode.GAME, path)])
+
+        client.profile_states[path] = CompositeProfileState("/profiles/shell.yaml", "Lulu SHELL", 1)
+        self.assertEqual(client.composites[path], signature)
+        interface._reconcile_input_mode(client.composites, interface.model.state.input_mode)
+
+        self.assertEqual(client.loads[-1], (InputMode.GAME, path))
+        self.assertEqual(client.profile_states[path].profile_path, "/profiles/game.yaml")
+
+    def test_existing_controller_monitor_cycle_repairs_unchanged_topology_drift(self) -> None:
+        path = "/org/shadowblip/InputPlumber/CompositeDevice0"
+        signature = ("045e_0291", ("/dev/input/event13",))
+        client = RecordingInputPlumber({path: signature})
+        interface = input_mode_interface(client)
+        interface.model.state.input_mode = InputMode.GAME
+        interface._initialized_composites = {path: signature}
+        interface._inputplumber_event = asyncio.Event()
+        interface._controller_inventory_snapshot = lambda: (client.composites, {}, {})
+        client.profile_states[path] = CompositeProfileState("/profiles/shell.yaml", "Lulu SHELL", 1)
+        interface._inputplumber_event.set()
+
+        async def exercise() -> None:
+            task = asyncio.create_task(interface._monitor_controller_events())
+            try:
+                for _ in range(20):
+                    if client.loads:
+                        break
+                    await asyncio.sleep(0.01)
+                self.assertEqual(client.loads, [(InputMode.GAME, path)])
+            finally:
+                task.cancel()
+                await asyncio.gather(task, return_exceptions=True)
+
+        asyncio.run(exercise())
+        self.assertEqual(client.composites[path], signature)
+        self.assertEqual(client.profile_states[path].profile_path, "/profiles/game.yaml")
+
+    def test_service_restart_same_composite_signature_does_not_trust_cache(self) -> None:
+        path = "/org/shadowblip/InputPlumber/CompositeDevice0"
+        signature = ("045e_0291", ("/dev/input/event13",))
+        client = RecordingInputPlumber({path: signature})
+        interface = input_mode_interface(client)
+        interface.model.state.input_mode = InputMode.GAME
+        interface._reconcile_input_mode(client.composites, InputMode.GAME)
+        interface._applied_input_modes[path] = InputMode.GAME
+
+        # Simulate InputPlumber restarting and restoring its default profile
+        # while reusing the same runtime object and source signature.
+        client.profile_states[path] = CompositeProfileState(DEFAULT_PROFILE_PATH, "Default", 1)
+        interface._reconcile_input_mode(client.composites, interface.model.state.input_mode)
+
+        self.assertEqual(client.composites[path], signature)
+        self.assertEqual(client.loads[-1], (InputMode.GAME, path))
+        self.assertEqual(client.profile_states[path].profile_path, "/profiles/game.yaml")
+
+    def test_disappearing_composite_during_profile_readback_is_fail_soft(self) -> None:
+        path = "/org/shadowblip/InputPlumber/CompositeDevice0"
+        client = RecordingInputPlumber({path: ("045e_0291", ("/dev/input/event13",))})
+        interface = input_mode_interface(client)
+        interface._applied_input_modes[path] = InputMode.GAME
+        client.disappear_on_read.add(path)
+        lifecycle = interface.model.state.lifecycle
+
+        interface._reconcile_input_mode(client.composites, InputMode.GAME)
+
+        self.assertNotIn(path, interface._applied_input_modes)
+        self.assertEqual(interface.model.state.lifecycle, lifecycle)
+        self.assertEqual(client.loads, [])
 
     def test_composite_intercept_mode_is_initialized_once_per_runtime_instance(self) -> None:
         path = "/org/shadowblip/InputPlumber/CompositeDevice0"

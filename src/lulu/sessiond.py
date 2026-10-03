@@ -20,8 +20,8 @@ from dbus_next.service import ServiceInterface, method, signal
 from . import graphical_launch_context
 from .console_sessiond import SessionStateModel
 from .controllerd import ControllerRegistry, default_inputplumber_client
-from .inputplumber import (InputPlumberObjectDisappeared, is_service_unavailable,
-                           sdl_gamepad_inventory)
+from .inputplumber import (DEFAULT_PROFILE_PATH, InputPlumberObjectDisappeared,
+                           is_service_unavailable, sdl_gamepad_inventory)
 from .gamescope import (GamescopeInvocation, GamescopePresentation,
                         PresentationOutputUnavailable, discover_presentation_output,
                         connected_presentation_outputs, has_connected_presentation_output)
@@ -33,6 +33,10 @@ from .process_supervisor import ProcessResult
 from .paths import PATHS
 from .service_readiness import wait_for_lulu_services
 from .recovery import clear_failures, record_failure, recovery_required
+from .resident_steam_runtime import (
+    ResidentSteamRuntimeStatus,
+    read_resident_steam_runtime_status,
+)
 from .settings import SettingsStore
 from .provider_config import ProviderConfigurationService
 from .graphical_launch_context import (
@@ -77,6 +81,8 @@ class ConsoleSessionInterface(ServiceInterface):
         self._inputplumber_event: asyncio.Event | None = None
         self._initialized_composites: dict[str, tuple[str, tuple[str, ...]]] = {}
         self._presentation_watchdog_task: asyncio.Task[None] | None = None
+        self._resident_steam_runtime_task: asyncio.Task[None] | None = None
+        self._resident_steam_runtime = ResidentSteamRuntimeStatus()
         self._presentation_wait_log_at = 0.0
         self._gamescope_observer: GamescopeWindowObserver | None = None
         self._observed_game_surface: tuple[int | None, int | None, bool] = (None, None, False)
@@ -87,6 +93,7 @@ class ConsoleSessionInterface(ServiceInterface):
         # presentation surface. This becomes true only after bootstrap has
         # selected the shell window in Gamescope.
         self._presentation_ready = False
+        self._game_surface_missing_since: float | None = None
         self._graphical_session_id = uuid.uuid4().hex
         self._graphical_launch_lease: dict[str, object] | None = None
         # A previous Sessiond instance cannot lend readiness to this one.
@@ -118,6 +125,11 @@ class ConsoleSessionInterface(ServiceInterface):
                 "lifecycle": self.model.state.lifecycle.value,
                 "presentation": self.model.state.presentation.value,
                 "presentation_ready": getattr(self, "_presentation_ready", False),
+                # Diagnostic readback only: systemd owns runtime lifecycle and
+                # the status never changes Mudos' game lifecycle authority.
+                "resident_steam_runtime": getattr(
+                    self, "_resident_steam_runtime", ResidentSteamRuntimeStatus()
+                ).as_dict(),
                 "overlay": self.model.state.overlay.value,
                 "input_mode": self.model.state.input_mode.value,
                 "last_failure_reason": self.model.last_failure_reason,
@@ -207,6 +219,9 @@ class ConsoleSessionInterface(ServiceInterface):
         self._gamescope_observer.start()
         if self._presentation_watchdog_enabled:
             self._presentation_watchdog_task = asyncio.create_task(self._monitor_presentation())
+        self._resident_steam_runtime_task = asyncio.create_task(
+            self._monitor_resident_steam_runtime()
+        )
 
     def _controller_inventory_snapshot(
         self,
@@ -276,7 +291,84 @@ class ConsoleSessionInterface(ServiceInterface):
     async def _monitor_presentation(self) -> None:
         while True:
             await self._refresh_presentation_readiness()
+            await self._reconcile_game_presentation()
             await asyncio.sleep(0.5)
+
+    async def _monitor_resident_steam_runtime(self) -> None:
+        """Publish read-only systemd state without supervising the unit."""
+        while True:
+            status = await asyncio.to_thread(read_resident_steam_runtime_status)
+            if status != self._resident_steam_runtime:
+                self._resident_steam_runtime = status
+                self.StateChanged(self._state_json())
+            await asyncio.sleep(1.0)
+
+    async def _reconcile_game_presentation(self) -> None:
+        """Keep Gamescope's selected game surface aligned with active process evidence."""
+        if self.model.state.lifecycle.value != "game":
+            self._game_surface_missing_since = None
+            return
+        identity = self._local_identity or self.supervisor.active_identity
+        if identity is None:
+            return
+        pids = self._owned_game_pids()
+        if not pids:
+            # Process observers own termination; presentation loss is not evidence
+            # that the process itself exited.
+            self._game_surface_missing_since = None
+            return
+        presentation = getattr(self.supervisor, "_presentation", None)
+        if presentation is None:
+            return
+        try:
+            selected, owner_pid = await asyncio.to_thread(presentation.selected_base_surface)
+        except (OSError, RuntimeError, subprocess.SubprocessError):
+            # A failed read is not immediate evidence of loss. Keep retrying
+            # selection, then fail closed only after the same bounded grace.
+            now = time.monotonic()
+            if self._game_surface_missing_since is None:
+                self._game_surface_missing_since = now
+            try:
+                await asyncio.to_thread(self.supervisor.reconcile_session_surface, identity, 0)
+            except (OSError, RuntimeError, TimeoutError, subprocess.SubprocessError):
+                pass
+            if now - self._game_surface_missing_since >= 5.0:
+                await self._fail_lost_game_presentation(identity)
+            return
+        if selected is not None and self.supervisor.session_surface_is_owned(owner_pid, identity):
+            self._game_surface_missing_since = None
+            return
+        now = time.monotonic()
+        if self._game_surface_missing_since is None:
+            self._game_surface_missing_since = now
+        # Reuse the launch-time selector and ownership evidence, but keep each
+        # recovery attempt non-blocking so the lifecycle monitor remains live.
+        try:
+            await asyncio.to_thread(self.supervisor.reconcile_session_surface, identity, 0)
+            selected, owner_pid = await asyncio.to_thread(presentation.selected_base_surface)
+            if selected is not None and self.supervisor.session_surface_is_owned(owner_pid, identity):
+                self._game_surface_missing_since = None
+                return
+        except (OSError, RuntimeError, TimeoutError, subprocess.SubprocessError):
+            pass
+        if now - self._game_surface_missing_since >= 5.0:
+            await self._fail_lost_game_presentation(identity)
+
+    async def _fail_lost_game_presentation(self, identity: LaunchIdentity) -> None:
+        if (self.model.state.lifecycle.value != "game"
+                or self.model.state.launch_token != identity.token):
+            return
+        self.model.fail(identity.token, "Gamescope game presentation could not be recovered")
+        self._game_surface_missing_since = None
+        self.StateChanged(self._state_json())
+        try:
+            if self._local_identity is identity:
+                self.supervisor.terminate_session(identity, os_signal.SIGTERM)
+            else:
+                await self.supervisor.quit_active_session()
+        except (OSError, ProcessLookupError, RuntimeError, ValueError) as error:
+            LOGGER.error("could not stop game after presentation recovery failure token=%s: %s",
+                         identity.token, error)
 
     async def _refresh_presentation_readiness(self) -> None:
         """Publish readiness only after its live context snapshot is verified."""
@@ -409,18 +501,90 @@ class ConsoleSessionInterface(ServiceInterface):
             del self._applied_input_modes[runtime_path]
 
         for runtime_path in sorted(connected_paths):
-            if self._applied_input_modes.get(runtime_path) is mode:
-                continue
             try:
-                if getattr(self, "_native_controller", False) and mode is not InputMode.COMPAT:
-                    self._inputplumber.ensure_default_intercept(runtime_path)
-                else:
-                    self._inputplumber.load_mode(mode, runtime_path)
+                actual = self._inputplumber.composite_profile_state(runtime_path)
             except InputPlumberObjectDisappeared:
                 # The snapshot is already stale. The next reconciliation will
                 # initialize a replacement object without failing the session.
+                self._applied_input_modes.pop(runtime_path, None)
                 continue
+            except (OSError, RuntimeError, ValueError, subprocess.SubprocessError):
+                LOGGER.exception(
+                    "InputPlumber profile readback failed path=%s identity=%s desired=%s",
+                    runtime_path, composites[runtime_path][0], mode.value,
+                )
+                raise
+
+            use_default = getattr(self, "_native_controller", False) and mode is not InputMode.COMPAT
+            expected_profile = (
+                DEFAULT_PROFILE_PATH if use_default
+                else str(self._inputplumber.profile_paths[mode])
+            )
+            expected_intercept = 1 if use_default else None
+            matches = (
+                actual.profile_path == expected_profile
+                and (expected_intercept is None or actual.intercept_mode == expected_intercept)
+            )
+            if matches:
+                self._applied_input_modes[runtime_path] = mode
+                continue
+
+            LOGGER.warning(
+                "InputPlumber profile drift path=%s identity=%s desired=%s "
+                "actual_path=%s actual_name=%s actual_intercept=%s expected_path=%s "
+                "expected_intercept=%s; correcting",
+                runtime_path, composites[runtime_path][0], mode.value,
+                actual.profile_path, actual.profile_name, actual.intercept_mode,
+                expected_profile, expected_intercept,
+            )
+            try:
+                if use_default:
+                    self._inputplumber.ensure_default_intercept(runtime_path)
+                else:
+                    self._inputplumber.load_mode(mode, runtime_path)
+                verified = self._inputplumber.composite_profile_state(runtime_path)
+            except InputPlumberObjectDisappeared:
+                self._applied_input_modes.pop(runtime_path, None)
+                LOGGER.info(
+                    "InputPlumber correction not verified because composite disappeared "
+                    "path=%s identity=%s desired=%s",
+                    runtime_path, composites[runtime_path][0], mode.value,
+                )
+                continue
+            except (OSError, RuntimeError, ValueError, subprocess.SubprocessError):
+                self._applied_input_modes.pop(runtime_path, None)
+                LOGGER.exception(
+                    "InputPlumber correction/verification failed path=%s identity=%s "
+                    "desired=%s attempted_profile=%s",
+                    runtime_path, composites[runtime_path][0], mode.value, expected_profile,
+                )
+                raise
+
+            verified_matches = (
+                verified.profile_path == expected_profile
+                and (expected_intercept is None or verified.intercept_mode == expected_intercept)
+            )
+            if not verified_matches:
+                self._applied_input_modes.pop(runtime_path, None)
+                LOGGER.error(
+                    "InputPlumber correction verification mismatch path=%s identity=%s "
+                    "desired=%s observed_path=%s observed_name=%s observed_intercept=%s "
+                    "expected_path=%s expected_intercept=%s",
+                    runtime_path, composites[runtime_path][0], mode.value,
+                    verified.profile_path, verified.profile_name, verified.intercept_mode,
+                    expected_profile, expected_intercept,
+                )
+                raise RuntimeError(
+                    f"InputPlumber profile verification failed for {runtime_path} "
+                    f"({mode.value})"
+                )
             self._applied_input_modes[runtime_path] = mode
+            LOGGER.info(
+                "InputPlumber correction verified path=%s identity=%s desired=%s "
+                "profile=%s intercept=%s",
+                runtime_path, composites[runtime_path][0], mode.value,
+                verified.profile_path, verified.intercept_mode,
+            )
 
     def _apply_input_mode(self, mode: InputMode) -> None:
         try:
@@ -450,6 +614,11 @@ class ConsoleSessionInterface(ServiceInterface):
             try:
                 composites, target_indices, sdl_devices = await asyncio.to_thread(self._controller_inventory_snapshot)
             except (OSError, RuntimeError, ValueError, subprocess.SubprocessError):
+                LOGGER.warning(
+                    "InputPlumber topology/profile reconciliation unavailable; retaining desired mode=%s and retrying",
+                    self.model.state.input_mode.value,
+                    exc_info=True,
+                )
                 continue
             self._initialized_composites = {
                 path: signature
@@ -471,6 +640,18 @@ class ConsoleSessionInterface(ServiceInterface):
                         logging.getLogger("lulu.sessiond").warning(
                             "controller initialization pending path=%s error=%s", object_path, error
                         )
+            # Topology initialization covers new/recreated composites. This
+            # readback pass also detects profile drift and InputPlumber restarts
+            # that preserve an existing object path and source signature.
+            connected = {path: composite for path, composite in composites.items()
+                         if composite[1] and not composite[0].startswith("source:")}
+            if connected:
+                try:
+                    self._reconcile_input_mode(connected, self.model.state.input_mode)
+                except (OSError, RuntimeError, ValueError, subprocess.SubprocessError):
+                    # Keep lifecycle/model authority unchanged. The next normal
+                    # topology-monitor cycle retries failed readback or repair.
+                    pass
             after = self.controller_registry.navigation_controller_id, tuple(
                 (key, value.connected, value.player, value.physical_identity,
                  value.connection_identity, value.sdl_index, value.sdl_guid,
@@ -572,6 +753,10 @@ class ConsoleSessionInterface(ServiceInterface):
             self._presentation_watchdog_task.cancel()
             await asyncio.gather(self._presentation_watchdog_task, return_exceptions=True)
             self._presentation_watchdog_task = None
+        if self._resident_steam_runtime_task is not None:
+            self._resident_steam_runtime_task.cancel()
+            await asyncio.gather(self._resident_steam_runtime_task, return_exceptions=True)
+            self._resident_steam_runtime_task = None
 
     def _gamescope_surface_changed(self, xid: int | None, pid: int | None, focused_fullscreen: bool) -> None:
         self._observed_game_surface = (xid, pid, focused_fullscreen)
@@ -800,6 +985,20 @@ class ConsoleSessionInterface(ServiceInterface):
                 # lifecycle token or prevent the Mudos shell from returning.
                 LOGGER.warning("session return input-mode restore failed token=%s: %s",
                                token, error)
+            self.model.set_input_mode(InputMode.SHELL)
+            self.model.return_complete(token)
+        elif self.model.state.lifecycle is Lifecycle.RETURNING:
+            shell = self.supervisor.shell_status()
+            if shell is not None and shell.running and shell.presentation_available:
+                try:
+                    self.supervisor.select_shell_presentation()
+                except (OSError, RuntimeError, TimeoutError, subprocess.SubprocessError):
+                    LOGGER.exception("failed presentation recovery could not restore shell surface")
+                    self.model.return_failed(token, "Presentation recovery failed: shell surface unavailable")
+                    self._local_identity = None
+                    self._local_provider_id = ""
+                    self.StateChanged(self._state_json())
+                    return
             self.model.set_input_mode(InputMode.SHELL)
             self.model.return_complete(token)
         self._local_identity = None

@@ -3,8 +3,11 @@ import importlib.util
 import http.client
 import json
 from pathlib import Path
+from types import SimpleNamespace
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
+
+from lulu.consoled import ConsoleInterface
 
 
 ROOT = Path(__file__).parents[1]
@@ -229,8 +232,21 @@ class ConsoleBridgeTests(unittest.TestCase):
 
     def test_launch_call_has_a_provider_watchdog_timeout(self) -> None:
         source = (ROOT / "scripts" / "console-ui-bridge.py").read_text()
-        self.assertIn("timeout = None if game_id.startswith(\"steam:\") else 15", source)
+        self.assertIn("route = resolve_game_launch_route(", source)
+        self.assertIn("timeout = None if route.provider_id == \"steam\" else 15", source)
         self.assertIn("str(error) or type(error).__name__", source)
+
+    def test_malformed_steam_launch_id_is_rejected_before_session_dispatch(self) -> None:
+        class Session:
+            async def call_request_steam_launch(self, *_args):
+                raise AssertionError("malformed Steam ID reached Sessiond")
+
+        async def exercise() -> None:
+            bridge = BRIDGE.ConsoleUiBridge(asyncio.get_running_loop(), object(), Session())
+            with self.assertRaisesRegex(ValueError, "positive integer"):
+                await bridge.launch_game("steam:not-an-appid")
+
+        asyncio.run(exercise())
 
     def test_state_path_reads_authoritative_session_state(self) -> None:
         source = (ROOT / "scripts" / "console-ui-bridge.py").read_text()
@@ -367,6 +383,55 @@ class ConsoleBridgeTests(unittest.TestCase):
             self.assertTrue(session.context_set)
 
         asyncio.run(exercise())
+
+    def test_http_and_dbus_dispatch_same_canonical_aurelia_routes(self) -> None:
+        async def exercise(game_id, provider, override):
+            class Session:
+                def __init__(self):
+                    self.requests = []
+
+                async def call_set_delegated_launch_context(self, _context):
+                    return None
+
+                async def call_request_aurelia_launch(self, app_id, timeout):
+                    self.requests.append((app_id, timeout))
+                    return "same-aurelia-token"
+
+                async def call_request_steam_launch(self, *_args):
+                    raise AssertionError("Steam/Aurelia route diverged")
+
+            session = Session()
+            game = SimpleNamespace(
+                game_id=game_id, provider=provider,
+                provider_id="104200", launchable=True,
+            )
+            store = SimpleNamespace(
+                list_games=Mock(return_value=[game]),
+                mark_played=Mock(return_value="catalogue-delta"),
+            )
+            consoled = ConsoleInterface.__new__(ConsoleInterface)
+            consoled.catalogue = SimpleNamespace(store=store)
+            consoled._plugins = SimpleNamespace(with_capability=lambda _capability: ())
+            consoled.sessiond = session
+            consoled._publish_delta = Mock()
+            bridge = BRIDGE.ConsoleUiBridge(asyncio.get_running_loop(), consoled, session)
+            with patch.dict(BRIDGE.os.environ, override, clear=True), \
+                    patch.object(consoled, "CatalogueChanged", lambda: None):
+                http_result = await bridge.launch_game(game_id)
+                dbus_result = await ConsoleInterface.LaunchGame.__wrapped__(
+                    consoled, game_id, 15000)
+
+            self.assertEqual(http_result["token"], dbus_result)
+            self.assertEqual(session.requests, [("104200", 15000), ("104200", 15000)])
+
+        async def run():
+            await exercise("steam-aurelia:104200", "steam-aurelia", {})
+            await exercise(
+                "steam:104200", "steam",
+                {"LULU_STEAM_LAUNCH_PROVIDER": "steam-aurelia"},
+            )
+
+        asyncio.run(run())
 
     def test_local_cancellation_uses_consoled_process_boundary(self) -> None:
         class Session:
