@@ -276,14 +276,68 @@ def test_non_destructive_update_plan_has_no_purge_or_mutable_state_actions(monke
 
 def test_update_refreshes_only_active_mudos_runtime_units(monkeypatch):
     calls = []
-    monkeypatch.setattr(installer, "run", lambda args, **_kwargs: calls.append(args))
+    def fake_run(args, **kwargs):
+        calls.append(args)
+        if args[:2] == ["runuser", "-u"]:
+            return subprocess.CompletedProcess(args, 0, "", "")
+        return subprocess.CompletedProcess(args, 0, "active\n", "")
+    monkeypatch.setattr(installer, "run", fake_run)
+    monkeypatch.setattr(installer.time, "sleep", lambda _delay: None)
     installer._restart_update_services([
         "lulu-session@2.service", "lulu-consoled.service", "lulu-acquisition.service",
         "lulu-admin.service", "inputplumber.service", "bluetooth.service"])
-    assert calls == [["systemctl", "restart", "lulu-consoled.service"],
-                     ["systemctl", "restart", "lulu-acquisition.service"],
-                     ["systemctl", "restart", "lulu-session@2.service"],
-                     ["systemctl", "restart", "lulu-admin.service"]]
+    restarts = [call for call in calls if call[:2] == ["systemctl", "restart"]]
+    assert restarts == [["systemctl", "restart", "lulu-session@2.service"],
+                        ["systemctl", "restart", "lulu-consoled.service"],
+                        ["systemctl", "restart", "lulu-acquisition.service"],
+                        ["systemctl", "restart", "lulu-admin.service"]]
+    session_probe = next(i for i, call in enumerate(calls)
+                         if call[:2] == ["runuser", "-u"] and "org.lulu.ConsoleSessiond" in call)
+    consoled_restart = calls.index(["systemctl", "restart", "lulu-consoled.service"])
+    assert session_probe < consoled_restart
+
+
+def test_update_dbus_wait_retries_transient_unavailable_name(monkeypatch):
+    outcomes = iter([
+        subprocess.CompletedProcess([], 1, "", "The name is not activatable"),
+        subprocess.CompletedProcess([], 0, "activating\n", ""),
+        subprocess.CompletedProcess([], 0, "", ""),
+    ])
+    calls = []
+    monkeypatch.setattr(installer, "run", lambda args, **_kwargs:
+                        calls.append(args) or next(outcomes))
+    monkeypatch.setattr(installer.time, "monotonic", lambda: 0.0)
+    monkeypatch.setattr(installer.time, "sleep", lambda _delay: None)
+    installer._wait_for_update_dbus("lulu-session@2.service", *installer.UPDATE_DBUS_BOUNDARIES[
+        "lulu-session@2.service"], timeout=5)
+    assert sum(call[:2] == ["runuser", "-u"] for call in calls) == 2
+
+
+def test_update_dbus_wait_fails_immediately_for_inactive_service(monkeypatch):
+    def fake_run(args, **_kwargs):
+        if args[:2] == ["runuser", "-u"]:
+            return subprocess.CompletedProcess(args, 1, "", "NameHasNoOwner")
+        return subprocess.CompletedProcess(args, 0, "failed\n", "")
+    monkeypatch.setattr(installer, "run", fake_run)
+    with pytest.raises(installer.InstallError, match="stopped before its D-Bus API"):
+        installer._wait_for_update_dbus("lulu-consoled.service", *installer.UPDATE_DBUS_BOUNDARIES[
+            "lulu-consoled.service"], timeout=5)
+
+
+def test_update_dbus_wait_has_a_finite_deadline(monkeypatch):
+    times = iter((0.0, 0.0, 0.6))
+
+    def fake_run(args, **_kwargs):
+        if args[:2] == ["runuser", "-u"]:
+            return subprocess.CompletedProcess(args, 1, "", "NameHasNoOwner")
+        return subprocess.CompletedProcess(args, 0, "activating\n", "")
+
+    monkeypatch.setattr(installer, "run", fake_run)
+    monkeypatch.setattr(installer.time, "monotonic", lambda: next(times))
+    monkeypatch.setattr(installer.time, "sleep", lambda _delay: None)
+    with pytest.raises(installer.InstallError, match="timed out waiting"):
+        installer._wait_for_update_dbus("lulu-session@2.service", *installer.UPDATE_DBUS_BOUNDARIES[
+            "lulu-session@2.service"], timeout=0.5, interval=0.1)
 
 
 def test_systemd_release_copy_uses_only_declared_mudos_units(tmp_path):

@@ -13,6 +13,7 @@ import shutil
 import stat
 import subprocess
 import sys
+import time
 from datetime import datetime, timezone
 
 
@@ -42,6 +43,11 @@ PLYMOUTH_THEME_FILES = ("mudos.plymouth", "mudos.script", "mudos-wordmark.png")
 PLYMOUTH_THEME_ROOT = Path("/usr/share/plymouth/themes/mudos")
 LIMINE_CONFIG_PATH = Path("/boot/limine.conf")
 PLYMOUTH_CONFIG_PATH = Path("/etc/plymouth/plymouthd.conf")
+UPDATE_DBUS_BOUNDARIES = {
+    "lulu-session@2.service": ("org.lulu.ConsoleSessiond", "/org/lulu/ConsoleSession"),
+    "lulu-consoled.service": ("org.lulu.Consoled", "/org/lulu/Console"),
+    "lulu-acquisition.service": ("org.lulu.Acquisitiond", "/org/lulu/Acquisition"),
+}
 DOLPHIN_BLUETOOTH_POLKIT_RULE = Path(
     "/etc/polkit-1/rules.d/61-lulu-dolphin-bluetooth.rules"
 )
@@ -697,15 +703,52 @@ def repair_steam_bootstrap_directory(
 
 
 def _restart_update_services(active_units: list[str]) -> None:
-    # Consoled remains live across ordinary graphical-session restarts. During
-    # a release update, replace the user-session APIs explicitly before the
-    # shell restarts and waits for their D-Bus objects.
-    order = ("lulu-consoled.service", "lulu-acquisition.service",
-             "lulu-session@2.service", "lulu-admin.service", "mudos-recovery.service",
-              "lulu-file-browser.service")
+    # Restart the Type=notify Sessiond first. Its READY notification is sent
+    # only after it has requested its D-Bus name. Dependents also have systemd
+    # After= ordering, but explicit D-Bus readiness is needed because this
+    # function issues separate restart transactions.
+    order = ("lulu-session@2.service", "lulu-consoled.service",
+             "lulu-acquisition.service", "lulu-admin.service",
+             "mudos-recovery.service", "lulu-file-browser.service")
     for unit in order:
         if unit in active_units:
             run(["systemctl", "restart", unit])
+            boundary = UPDATE_DBUS_BOUNDARIES.get(unit)
+            if boundary:
+                _wait_for_update_dbus(unit, *boundary)
+
+
+def _wait_for_update_dbus(unit: str, bus_name: str, object_path: str, *,
+                          timeout: float = 30.0, interval: float = 0.2) -> None:
+    """Boundedly wait for a restarted service's real user-bus API boundary."""
+    deadline = time.monotonic() + timeout
+    last_state = "unknown"
+    last_error = "not yet introspectable"
+    while True:
+        probe = run([
+            "runuser", "-u", "lulu", "--", "env",
+            "XDG_RUNTIME_DIR=/run/user/958",
+            "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/958/bus",
+            "busctl", "--user", "introspect", bus_name, object_path,
+        ], check=False, capture=True)
+        if probe.returncode == 0:
+            return
+        last_error = (probe.stderr or probe.stdout or "D-Bus introspection failed").strip()
+        state = run(["systemctl", "show", unit, "--property=ActiveState", "--value"],
+                    check=False, capture=True)
+        last_state = state.stdout.strip()
+        if last_state not in {"active", "activating", "reloading"}:
+            raise InstallError(
+                f"{unit} stopped before its D-Bus API became ready "
+                f"(ActiveState={last_state or 'unknown'}): {last_error}"
+            )
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise InstallError(
+                f"timed out waiting for {unit} D-Bus API {bus_name}{object_path} "
+                f"(ActiveState={last_state}): {last_error}"
+            )
+        time.sleep(min(interval, remaining))
 
 
 def _verify_update_services(active_units: list[str], previous_pids: dict[str, int]) -> None:
