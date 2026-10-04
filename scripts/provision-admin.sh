@@ -18,8 +18,8 @@ if [[ ! -s "$recovery_token_file" ]]; then
     fi
 fi
 sed "s#/opt/lulu/current#$service_root#g" "$root/packaging/lulu-admin.service" > /etc/systemd/system/lulu-admin.service
-if [[ ! -x "$service_root/bin/mudos-provider-install" ]]; then
-    echo "immutable runtime is missing bin/mudos-provider-install: $service_root" >&2
+if [[ ! -x "$root/bin/mudos-provider-install" ]]; then
+    echo "provisioning source is missing bin/mudos-provider-install: $root" >&2
     exit 1
 fi
 sed "s#/opt/lulu/current#$service_root#g" "$root/packaging/lulu-provider-install@.service" \

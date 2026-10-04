@@ -169,6 +169,10 @@ class ProvisioningTests(unittest.TestCase):
         self.assertIn('install -D -m 0755 "$staging/packaging/mudos-provider-install"', script)
         self.assertIn('"$staging/bin/mudos-provider-install"', script)
         self.assertNotIn('"$runtime/bin/mudos-provider-install"', script)
+        self.assertLess(script.index('"$staging/bin/mudos-provider-install"'),
+                        script.index('"$staging/scripts/provision-appliance-services.sh"'))
+        admin = (ROOT / "scripts/provision-admin.sh").read_text()
+        self.assertIn('[[ ! -x "$root/bin/mudos-provider-install" ]]', admin)
         installer = (ROOT / "packaging/mudos-provider-install").read_text()
         self.assertIn("SteamCMD backend are disabled", installer)
         self.assertNotIn("pacman -S --needed --noconfirm steam steam-devices", installer)

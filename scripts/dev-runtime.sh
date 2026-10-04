@@ -46,6 +46,10 @@ refresh() {
     cp "$repo_root/deploy/payload/bin/verify-mudos.sh" "$staging/bin/verify-mudos.sh"
     LULU_INSTALL_ROOT="$staging" "$staging/scripts/build-lulu-shell.sh" "$staging/bin/lulu-shell"
     chmod +x "$staging/bin"/* "$staging/scripts"/*
+    # provision-admin validates the service runtime's provider entrypoint.
+    # Stage it before invoking the provisioner on a first dev-runtime refresh.
+    install -D -m 0755 "$staging/packaging/mudos-provider-install" \
+        "$staging/bin/mudos-provider-install"
     install -m 0644 "$staging/packaging/lulu-acquisition.service" "$acquisition_unit"
     install -m 0644 "$staging/packaging/lulu-session@.service" "$session_unit"
     install -m 0644 "$staging/packaging/lulu-consoled.service" "$consoled_unit"
@@ -100,8 +104,6 @@ refresh() {
         /etc/polkit-1/rules.d/59-lulu-initial-password.rules
     install -D -m 0755 "$staging/packaging/mudos-set-initial-password" \
         /usr/libexec/mudos-set-initial-password
-    install -D -m 0755 "$staging/packaging/mudos-provider-install" \
-        "$staging/bin/mudos-provider-install"
     install -D -m 0644 "$staging/packaging/avahi/mudos-http.service" \
         /etc/avahi/services/mudos-http.service
     install -D -m 0644 "$staging/ui/Onboarding.qml" "$runtime/ui/Onboarding.qml"
