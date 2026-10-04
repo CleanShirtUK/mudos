@@ -3,59 +3,115 @@ from __future__ import annotations
 from pathlib import Path
 import tempfile
 import unittest
+import hashlib
 from unittest.mock import patch
 
 from lulu.emulation import PLATFORMS
 from lulu.emulator_runtime import EmulatorRuntimeAdapter
 from lulu.paths import PATHS
+from lulu.eden_runtime import (RUNTIME_MANIFEST, RUNTIME_ROOT, is_valid_runtime,
+                               runtime_definition, runtime_path)
 from lulu.switch_provider import (
     SwitchProvider,
+    eden_native_config_root,
+    eden_native_data_root,
     eden_flatpak_config_root,
     eden_flatpak_data_root,
 )
 
 
 class EdenManagedProvisioningTests(unittest.TestCase):
-    def test_game_runtime_uses_release_wrapper_and_actual_flatpak_roots(self) -> None:
-        wrapper = PATHS.install_root / "packaging" / "eden-flatpak"
-        self.assertEqual(PLATFORMS["switch"].executable, wrapper)
+    def test_appimage_integrity_check_accepts_only_the_pinned_bytes(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
-            runtime = EmulatorRuntimeAdapter({"switch": wrapper}, config_root=Path(directory) / "providers")
-            self.assertEqual(runtime.switch_provider.config_root, Path(directory) / "providers/eden/config")
-            self.assertEqual(runtime.switch_provider.active_config_root, eden_flatpak_config_root())
-            self.assertEqual(runtime.switch_provider.data_root, eden_flatpak_data_root())
+            appimage = Path(directory) / "eden.AppImage"
+            appimage.write_bytes(b"official pinned fixture")
+            appimage.chmod(0o550)
+            spec = {"sha256": hashlib.sha256(appimage.read_bytes()).hexdigest()}
+            with patch("lulu.eden_runtime.runtime_definition", return_value=spec):
+                self.assertTrue(is_valid_runtime(appimage))
+                appimage.chmod(0o600)
+                appimage.write_bytes(b"replaced content")
+                self.assertFalse(is_valid_runtime(appimage))
 
-    def test_production_defaults_target_system_flatpak_config_and_data_roots(self) -> None:
+    def test_flatpak_migration_preserves_user_state_and_never_overwrites_native_files(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            old_config = root / "flatpak/config/eden"
+            old_data = root / "flatpak/data/eden"
+            old_config.mkdir(parents=True)
+            (old_config / "qt-config.ini").write_text(
+                "[UI]\nfirstStart=false\ntheme=old-user-theme\n")
+            (old_config / "custom").mkdir()
+            (old_config / "custom/0100.ini").write_text("legacy game configuration")
+            (old_data / "nand/user/save/user-save.dat").parent.mkdir(parents=True)
+            (old_data / "nand/user/save/user-save.dat").write_bytes(b"user save")
+            (old_data / "shader/game.cache").parent.mkdir(parents=True)
+            (old_data / "shader/game.cache").write_bytes(b"shader cache")
+
+            native_config = root / "native/config/eden"
+            native_config.mkdir(parents=True)
+            (native_config / "qt-config.ini").write_text("[UI]\nfirstStart=true\n")
+            native_data = root / "native/data/eden"
+            (native_data / "shader").mkdir(parents=True)
+            (native_data / "shader/game.cache").write_bytes(b"native cache wins")
+            provider_config = root / "providers/eden/config"
+            provider = SwitchProvider(root / "unused", provider_config, native_config, native_data)
+            provider._legacy_config_root = old_config
+            provider._legacy_data_root = old_data
+
+            provider.migrate_legacy_flatpak_state()
+            provider.migrate_legacy_flatpak_state()
+
+            self.assertIn("old-user-theme", (native_config / "qt-config.ini").read_text())
+            self.assertTrue((provider_config / "migration-backup/native-qt-config.ini").is_file())
+            self.assertEqual((native_config / "custom/0100.ini").read_text(), "legacy game configuration")
+            self.assertEqual((native_data / "nand/user/save/user-save.dat").read_bytes(), b"user save")
+            self.assertEqual((native_data / "shader/game.cache").read_bytes(), b"native cache wins")
+            self.assertEqual((old_data / "nand/user/save/user-save.dat").read_bytes(), b"user save")
+            self.assertTrue((provider_config / ".mudos-eden-migration-v1.json").is_file())
+
+    def test_game_runtime_uses_pinned_appimage_and_native_xdg_roots(self) -> None:
+        appimage = runtime_path()
+        self.assertEqual(PLATFORMS["switch"].executable, appimage)
+        with tempfile.TemporaryDirectory() as directory:
+            runtime = EmulatorRuntimeAdapter({"switch": appimage}, config_root=Path(directory) / "providers")
+            self.assertEqual(runtime.switch_provider.config_root, Path(directory) / "providers/eden/config")
+            self.assertEqual(runtime.switch_provider.active_config_root, eden_native_config_root())
+            self.assertEqual(runtime.switch_provider.data_root, eden_native_data_root())
+
+    def test_production_defaults_target_native_xdg_config_and_data_roots(self) -> None:
         home = Path("/fixture/home")
         self.assertEqual(
-            eden_flatpak_config_root(home),
-            home / ".var/app/dev.eden_emu.eden/config/eden",
+            eden_native_config_root(home), home / ".config/eden",
         )
         self.assertEqual(
-            eden_flatpak_data_root(home),
-            home / ".var/app/dev.eden_emu.eden/data/eden",
+            eden_native_data_root(home), home / ".local/share/eden",
         )
-        wrapper = (Path(__file__).parents[1] / "packaging/eden-flatpak").read_text()
-        self.assertIn('"--filesystem=$MUDOS_EDEN_KEYS_DIR:ro"', wrapper)
-        self.assertNotIn('"--filesystem=$MUDOS_EDEN_FIRMWARE_DIR:ro"', wrapper)
-        self.assertIn('"--filesystem=$MUDOS_EDEN_GAME_DIR:ro"', wrapper)
-        self.assertIn('"--nosocket=wayland"', wrapper)
-        self.assertIn('"--env=QT_QPA_PLATFORM=xcb"', wrapper)
+        spec = runtime_definition()
+        self.assertEqual(spec["version"], "nightly-2026-10-02")
+        self.assertEqual(spec["source_commit"], "d16735f5b618942136d6ab53466e3be0a382c30a")
+        self.assertEqual(spec["build"], "clang-pgo")
+        self.assertEqual(spec["url"], "https://nightly.eden-emu.dev/v1790977120.d16735f5b6/"
+                         "Eden-Linux-d16735f5b6-amd64-clang-pgo.AppImage")
+        self.assertEqual(spec["sha256"], "4683bd521f23e9c3af5c4fc04a35cf3fc726681d89abd20879896d348ddaa22d")
+        installer = (Path(__file__).parents[1] / "scripts/provision-eden.sh").read_text()
+        self.assertIn('sha256sum --check --status', installer)
+        self.assertIn('curl --fail --location --retry 3', installer)
 
-    def test_standalone_provider_uses_flatpak_wrapper_not_native_appimage(self) -> None:
+    def test_standalone_and_game_provider_launch_the_pinned_appimage_directly(self) -> None:
         from lulu.providers import load_providers
 
         eden = load_providers()["eden"]
-        wrapper = "/opt/lulu/current/packaging/eden-flatpak"
-        self.assertEqual(eden.standalone_launch.command, (wrapper,))
-        self.assertEqual(eden.game_launch.command, (wrapper,))
+        appimage = str(runtime_path())
+        self.assertEqual(eden.standalone_launch.command, (appimage,))
+        self.assertEqual(eden.game_launch.command, (appimage,))
 
     def test_clean_standalone_config_is_deterministic_and_preserves_eden_settings(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            active = root / ".var/app/dev.eden_emu.eden/config/eden"
+            active = root / "native/config/eden"
             provider = SwitchProvider(root / "eden", root / "providers/eden/config", active,
-                                      root / ".var/app/dev.eden_emu.eden/data/eden")
+                                      root / "native/data/eden")
             first = provider.ensure_standalone_config()
             initial = first.read_text()
             second = provider.ensure_standalone_config()
@@ -75,23 +131,21 @@ class EdenManagedProvisioningTests(unittest.TestCase):
             self.assertIn("firstStart=false", updated)
             self.assertIn("theme=dark", updated)
 
-    def test_eden_provisioning_targets_actual_xdg_tree_not_provider_shadow(self) -> None:
+    def test_eden_provisioning_uses_first_class_appimage_installer(self) -> None:
         from lulu.providers import load_providers
 
-        wrapper = (Path(__file__).parents[1] / "packaging/eden-flatpak").read_text()
         installer = (Path(__file__).parents[1] / "packaging/mudos-provider-install").read_text()
         provider = load_providers()["eden"]
-        self.assertEqual(provider.standalone_launch.command,
-                         ("/opt/lulu/current/packaging/eden-flatpak",))
-        self.assertIn('app=dev.eden_emu.eden', wrapper)
-        self.assertIn('exec /usr/bin/flatpak run --system', wrapper)
-        self.assertNotIn(".config/lulu/providers/eden/config", installer)
+        self.assertEqual(provider.standalone_launch.command, (str(runtime_path()),))
+        self.assertIn('eden) exec "$root/scripts/provision-eden.sh" ;;', installer)
+        self.assertNotIn('eden) app_id=', installer)
+        self.assertTrue(RUNTIME_MANIFEST.is_file())
 
     def test_eden_config_is_the_consumed_flatpak_file_and_preserves_unowned_settings(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             provider_config = root / "provider-config"
-            active_config = root / "flatpak/config/eden"
+            active_config = root / "native/config/eden"
             active_config.mkdir(parents=True)
             qt_config = active_config / "qt-config.ini"
             qt_config.write_text(
@@ -128,7 +182,7 @@ class EdenManagedProvisioningTests(unittest.TestCase):
     def test_game_launch_adds_canonical_external_content_root_idempotently(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            active_config = root / "flatpak/config/eden"
+            active_config = root / "native/config/eden"
             active_config.mkdir(parents=True)
             qt_config = active_config / "qt-config.ini"
             qt_config.write_text(
@@ -216,9 +270,9 @@ class EdenManagedProvisioningTests(unittest.TestCase):
             prod.write_bytes(b"user-provided prod key")
             title.write_bytes(b"user-provided title key")
             nca.write_bytes(b"firmware material")
-            data_root = root / "flatpak/data/eden"
+            data_root = root / "native/data/eden"
             nand = data_root / "nand"
-            active_config = root / "flatpak/config/eden"
+            active_config = root / "native/config/eden"
             active_config.mkdir(parents=True)
             (active_config / "qt-config.ini").write_text(
                 "[Data%20Storage]\nnand_directory=" + str(nand) + "\n"
@@ -314,9 +368,9 @@ class EdenManagedProvisioningTests(unittest.TestCase):
     def test_storage_target_change_repoints_only_eden_projection_links(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            data_root = root / "flatpak/data/eden"
+            data_root = root / "native/data/eden"
             provider = SwitchProvider(root / "eden", root / "provider-config",
-                                      root / "flatpak/config/eden", data_root)
+                                      root / "native/config/eden", data_root)
             first_bios = root / "disk-a/Mudos/BIOS"
             second_bios = root / "disk-b/Mudos/BIOS"
             for bios, payload in ((first_bios, b"a"), (second_bios, b"b")):

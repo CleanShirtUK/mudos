@@ -880,10 +880,10 @@ class ConsoleSessionInterface(ServiceInterface):
                 # Consoled starts local runtimes directly (rather than through
                 # ProcessSupervisor.launch); give Gamescope the same explicit
                 # window handoff for emulator and delegated game surfaces.
-                if game_id.startswith("local:switch:") and Path(argv[0]).name == "eden-flatpak":
-                    # Flatpak's bwrap/Eden children need not remain descendants
-                    # of the short-lived launch wrapper. Match only processes
-                    # in this Eden launch's owned group, not the focused window.
+                if game_id.startswith("local:switch:") and self._is_eden_appimage(argv[0]):
+                    # AppImage's extract-and-run host and its Eden child may not
+                    # retain a direct parent-child relationship. Match only
+                    # processes in this Eden launch's owned group, not focus.
                     self.supervisor.select_session_surface(
                         self._local_identity, 15.0, include_related_processes=True,
                     )
@@ -1021,10 +1021,8 @@ class ConsoleSessionInterface(ServiceInterface):
             identity = self._local_identity
             if self.model.state.launch_token != identity.token:
                 raise self._error(ValueError("local session no longer owns the launch"))
-            eden_launch = (
-                Path(identity.executable).name == "eden-flatpak"
-                or (bool(identity.argv) and Path(identity.argv[0]).name == "eden-flatpak")
-            )
+            eden_launch = self._is_eden_appimage(identity.executable) or (
+                bool(identity.argv) and self._is_eden_appimage(identity.argv[0]))
             try:
                 LOGGER.info("local session SIGTERM requested token=%s pid=%s pgid=%s eden=%s",
                             identity.token, identity.pid, identity.pgid, eden_launch)
@@ -1069,6 +1067,11 @@ class ConsoleSessionInterface(ServiceInterface):
         except (OSError, ValueError) as error:
             raise self._error(ValueError(str(error))) from error
         return "executed"
+
+    @staticmethod
+    def _is_eden_appimage(value: str) -> bool:
+        name = Path(value).name
+        return name == "Eden.AppImage" or name.startswith("Eden-Linux-") and name.endswith(".AppImage")
 
     @method()
     async def RequestLaunch(self, command: "as", startup_timeout_ms: "u") -> "s":

@@ -128,15 +128,15 @@ class OnboardingStateTests(unittest.TestCase):
         self.assertIn('libretro_directory = "/usr/lib/libretro"', installer)
         self.assertIn('libretro_info_path = "/usr/share/libretro/info"', installer)
 
-    def test_pcsx2_and_eden_have_managed_flatpak_installers(self) -> None:
+    def test_pcsx2_remains_flatpak_and_eden_uses_managed_appimage(self) -> None:
         installer = (ROOT / "packaging/mudos-provider-install").read_text()
-        self.assertIn('pcsx2) app_id=net.pcsx2.PCSX2', installer)
-        self.assertIn('eden) app_id=dev.eden_emu.eden', installer)
+        self.assertIn('app_id=net.pcsx2.PCSX2', installer)
+        self.assertIn('eden) exec "$root/scripts/provision-eden.sh" ;;', installer)
         self.assertIn('flatpak install --system --assumeyes flathub "$app_id"', installer)
         self.assertIn("lulu-provider-install@eden.service", (
             ROOT / "packaging/polkit-1/rules.d/57-lulu-provider-install.rules").read_text())
         self.assertTrue((ROOT / "packaging/pcsx2-qt-flatpak").is_file())
-        self.assertTrue((ROOT / "packaging/eden-flatpak").is_file())
+        self.assertTrue((ROOT / "scripts/provision-eden.sh").is_file())
 
     def test_integration_manifest_has_typed_credentials_and_official_help_links(self) -> None:
         rows = {row["id"]: row for row in onboarding.integration_manifest()}

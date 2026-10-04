@@ -1,0 +1,11 @@
+{
+  "schema": 1,
+  "version": "nightly-2026-10-02",
+  "source_commit": "d16735f5b618942136d6ab53466e3be0a382c30a",
+  "source_commit_short": "d16735f5b6",
+  "architecture": "x86_64",
+  "build": "clang-pgo",
+  "filename": "Eden-Linux-d16735f5b6-amd64-clang-pgo.AppImage",
+  "url": "https://nightly.eden-emu.dev/v1790977120.d16735f5b6/Eden-Linux-d16735f5b6-amd64-clang-pgo.AppImage",
+  "sha256": "4683bd521f23e9c3af5c4fc04a35cf3fc726681d89abd20879896d348ddaa22d"
+}

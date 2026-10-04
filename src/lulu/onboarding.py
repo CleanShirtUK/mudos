@@ -14,6 +14,7 @@ import time
 from typing import Any
 
 from .paths import PATHS
+from .eden_runtime import is_valid_runtime
 from .plugins import ComponentRegistry, PluginRegistry
 
 
@@ -223,7 +224,7 @@ PROVIDER_INFO = {
     "flatpak": ProviderInfo("flatpak", "Flatpak", "Linux games and apps distributed through Flatpak.", ("flatpak",), ("flatpak",)),
     "retroarch": ProviderInfo("retroarch", "RetroArch", "Classic and legacy platforms including Nintendo, Sega, Atari, NEC, PlayStation 1, arcade and handheld systems.", ("retroarch", "libretro", "libretro-core-info"), ("retroarch",)),
     "dolphin": ProviderInfo("dolphin", "Dolphin", "Nintendo GameCube and Wii.", ("dolphin-emu",), ("dolphin-emu",)),
-    "eden": ProviderInfo("eden", "Eden", "Nintendo Switch.", (), ("eden",)),
+    "eden": ProviderInfo("eden", "Eden", "Nintendo Switch.", (), ()),
     "pcsx2": ProviderInfo("pcsx2", "PCSX2", "PlayStation 2.", (), ("pcsx2-qt",)),
     "romm": ProviderInfo("romm", "RomM", "Games from your existing RomM library.", (), (), "https://docs.romm.app/latest/developers/client-api-tokens/", "plugin"),
     "torrent": ProviderInfo("torrent", "Transmission", "Mudos-managed torrent downloads.", ("transmission-cli",), ("transmission-daemon",), "", "plugin"),
@@ -232,7 +233,6 @@ PROVIDER_INFO = {
 
 FLATPAK_PROVIDER_APPS = {
     "pcsx2": "net.pcsx2.PCSX2",
-    "eden": "dev.eden_emu.eden",
 }
 
 
@@ -257,7 +257,7 @@ def provider_manifest(components: ComponentRegistry | None = None) -> list[dict[
             installed = _provider_installed(provider_id, info)
             rows.append({"id": provider_id, "name": info.name, "summary": info.summary,
                          "installed": installed,
-                          "installable": (provider_id in {"torrent", "usenet"}
+                           "installable": (provider_id in {"torrent", "usenet", "eden"}
                                          or provider_id in FLATPAK_PROVIDER_APPS
                                          and _repository_packages_available(("flatpak",))
                                          or bool(info.packages) and _repository_packages_available(info.packages)),
@@ -276,6 +276,8 @@ def provider_manifest(components: ComponentRegistry | None = None) -> list[dict[
 
 
 def _provider_installed(provider_id: str, info: ProviderInfo) -> bool:
+    if provider_id == "eden":
+        return is_valid_runtime()
     if provider_id == "romm":
         # The RomM client is part of this installed Mudos integration; URL and
         # token configuration belong to readiness, not installation state.
@@ -329,6 +331,24 @@ def _provider_installed(provider_id: str, info: ProviderInfo) -> bool:
         except (OSError, subprocess.SubprocessError):
             return False
     return all(_pacman_installed(package) for package in info.packages)
+
+
+def eden_prerequisite_state() -> tuple[bool, str]:
+    """Report the installed AppImage and Mudos-owned Switch files separately."""
+    from .eden_runtime import is_valid_runtime
+
+    if not is_valid_runtime():
+        return False, "The pinned Eden AppImage is missing or failed its SHA-256 check."
+    keys = PATHS.bios_root / "switch/keys/prod.keys"
+    firmware = PATHS.bios_root / "switch/firmware"
+    missing = []
+    if not keys.is_file():
+        missing.append("prod.keys")
+    if not firmware.is_dir() or not any(firmware.glob("*.nca")):
+        missing.append("Switch firmware")
+    if missing:
+        return False, "Add legally dumped " + " and ".join(missing) + " under Mudos BIOS/Switch."
+    return True, "Pinned Eden AppImage and Mudos-managed Switch keys/firmware are ready."
 
 
 def _pacman_installed(package: str) -> bool:

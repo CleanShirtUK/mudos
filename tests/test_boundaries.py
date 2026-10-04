@@ -833,7 +833,7 @@ class BoundaryTests(unittest.TestCase):
             "session_process_ids": lambda self, identity: {identity.pid, 321, 456},
         })()
         interface.BeginLocalSession("local:switch:game", 123, 123,
-                                    "/usr/bin/bash", ["/opt/lulu/current/packaging/eden-flatpak"])
+                                    "/usr/bin/bash", ["/var/lib/lulu/providers/eden/d16735f5b6/Eden-Linux-d16735f5b6-amd64-clang-pgo.AppImage"])
         self.assertEqual(presentation.selected, [([321, 456], 15.0, True)])
         self.assertEqual(interface.model.state.lifecycle, Lifecycle.GAME)
 

@@ -1741,7 +1741,7 @@ class ConsoleInterface(ServiceInterface):
             if self.local_runtime is None:
                 raise ValueError("Eden runtime adapter is unavailable")
             # Configure Provider is a no-ROM native UI path. Initialize Eden's
-            # actual Flatpak config tree without inventing or requiring an SDL
+            # actual Eden config tree without inventing or requiring an SDL
             # identity; game launches generate their live generic SDL slots.
             await asyncio.to_thread(self.local_runtime.switch_provider.ensure_standalone_config)
         if provider.provider_id in {"retroarch", "pcsx2"}:

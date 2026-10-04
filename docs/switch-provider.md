@@ -1,31 +1,46 @@
 # Nintendo Switch Provider
 
-Mudos uses the managed Flathub build of [Eden](https://eden-emu.dev/), ID
-`dev.eden_emu.eden`, through the release-owned `packaging/eden-flatpak` wrapper.
-Eden 0.2.1 consumes its Flatpak XDG tree at
-`~/.var/app/dev.eden_emu.eden/config/eden/qt-config.ini` and
-`~/.var/app/dev.eden_emu.eden/data/eden`; a separate Mudos provider config
-directory is not the active runtime tree.
+Mudos provisions Eden from the official pinned x86_64 Clang-PGO AppImage
+described by `config/providers/eden/runtime.json`. The current pin is Eden
+nightly `d16735f5b6` (source commit
+`d16735f5b618942136d6ab53466e3be0a382c30a`, 2026-10-02). Provisioning downloads
+only that versioned official HTTPS artifact and verifies its SHA-256 before
+installing it at `/var/lib/lulu/providers/eden/d16735f5b6/` as root-owned and
+executable by the `lulu` group.
 
-Before a ROM launch, Mudos preserves Eden-owned settings and replaces the
-provider-owned `[Controls]` section in that active config with SDL bindings
-derived from the currently assigned InputPlumber/SDL gamepads. It accepts live
-GUIDs dynamically; no manufacturer, model, transport, or GUID allowlist is
-used. The same launch reconciliation projects Mudos-owned keys into Eden's data
-tree and installs canonical firmware in its writable NAND. Configure Provider
-opens Eden through the same Flatpak wrapper without a ROM or a controller and
-marks the active config's first-run state complete so the setup wizard does not
-become part of normal game launch.
+Native Eden uses the standard XDG locations:
 
-The Eden-owned SDL bindings for LB, RB, Back/View, and Start/Menu use the
-values from the preserved historical native Eden profile (`4`, `5`, `6`, and
-`7`, respectively). This corrects an Eden mapping regression without changing
-InputPlumber, face buttons, sticks, triggers, or d-pad bindings.
-Each connected player is emitted as an Eden-native SDL slot (`type=0`) with a
-distinct SDL port; no unpopulated slot is left as a keyboard mapping.
-`LULU_SWITCH_SDL_GUID` is retained only as a test/developer override. Normal
-launches obtain each populated player's live SDL GUID from the Mudos controller
-inventory; no controller model is the default.
+```text
+~/.config/eden/qt-config.ini   # Eden preferences and Mudos-owned Controls
+~/.local/share/eden/           # NAND, keys, firmware, saves, shader/cache data
+~/.config/lulu/providers/eden/config/lulu-switch.ini  # Mudos controller source
+```
+
+Before the first direct launch, Mudos imports the previous Flatpak tree from
+`~/.var/app/dev.eden_emu.eden/{config/eden,data/eden}`. It copies only into
+missing native paths, keeps conflicting native files, backs up a native
+first-run config before replacing it with the working Flatpak config, and
+records a one-time migration marker. It does not delete the Flatpak tree or
+NAND state. The managed key links and firmware projection are reconciled again
+against Mudos' ownership manifest after migration.
+
+For each game launch Mudos updates only the Eden `[Controls]` section using
+live SDL controller identities. Mudos-owned keys are read-only projections
+from the canonical Switch BIOS keys directory. Firmware is copied, hash
+verified, and ownership-recorded in Eden's writable native NAND; the canonical
+firmware source is never writable by Eden. Conflicting or unowned target paths
+are preserved and are not silently replaced.
+
+Sessiond continues to own the Eden process group, Gamescope surface selection,
+controller mode, and return-to-shell lifecycle. The AppImage is launched
+directly with the existing `--appimage-extract-and-run`, Mudos config,
+fullscreen, and game arguments. Controller and provider-menu behavior remain
+Mudos-owned.
+
+The obsolete Mudos Flatpak wrapper/provisioner is removed. Migration revokes
+only the old Mudos-added `/home/lulu/Games:ro` Eden Flatpak override; it leaves
+the old Flatpak app and data in place for rollback/recovery. The generic
+Flatpak provider remains available.
 
 Place only legally obtained user-owned files under the Mudos Switch locations:
 
@@ -37,9 +52,8 @@ Place only legally obtained user-owned files under the Mudos Switch locations:
 ```
 
 Mudos does not download, include, or provide firmware, keys, games, or other
-copyrighted material. Eden configuration and prerequisite discovery remain
-subject to hardware validation; the provider does not claim that a package is
-launchable without the user's legally obtained prerequisites.
+copyrighted material. An installed Eden runtime is distinct from game
+readiness: Mudos reports missing required keys/firmware separately.
 
 ## Content lifecycle
 
@@ -47,10 +61,3 @@ Switch uninstall is a parent-game operation. It removes only the Mudos-owned
 canonical component files recorded for that title (base, update, and DLC),
 never Eden NAND, saves, controller configuration, shader caches, or staging
 directories. Ambiguous, external, symlinked, or unowned paths are rejected.
-
-The catalogue groups those components into one game identity. RomM source
-records are retained as provenance and are collapsed under the parent title;
-component records do not become separate Library rows. RomM content-set
-acquisition uses one parent job with component-level provider identities.
-Installation is not considered complete until required components transfer and
-the emulator-specific activation/recognition checks succeed.

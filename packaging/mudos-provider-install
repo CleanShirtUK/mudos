@@ -14,11 +14,9 @@ case "$provider" in
     flatpak) exec "$root/scripts/provision-flatpak.sh" ;;
     retroarch) packages=(retroarch); install_group=libretro ;;
     dolphin) packages=(dolphin-emu) ;;
-    pcsx2|eden)
-        case "$provider" in
-            pcsx2) app_id=net.pcsx2.PCSX2; wrapper=pcsx2-qt; wrapper_source=pcsx2-qt-flatpak ;;
-            eden) app_id=dev.eden_emu.eden; wrapper=eden; wrapper_source=eden-flatpak ;;
-        esac
+    eden) exec "$root/scripts/provision-eden.sh" ;;
+    pcsx2)
+        app_id=net.pcsx2.PCSX2; wrapper=pcsx2-qt; wrapper_source=pcsx2-qt-flatpak
         pacman -S --needed --noconfirm flatpak
         flatpak remote-add --system --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
         flatpak install --system --assumeyes flathub "$app_id"

@@ -389,6 +389,12 @@ class AdminApp:
                                           value.get("message", "Configure the RomM URL and Client API Token."))
                 row["catalogue_reconciled"] = state == "ready"
                 row["acquisition_configured"] = acquisition_configured
+            elif provider_id == "eden":
+                from .onboarding import eden_prerequisite_state
+                ready, message = eden_prerequisite_state()
+                row["configured"] = ready
+                row["status"] = "ready" if ready else "configuration_required"
+                row["status_message"] = message
             elif provider_id in {"steam", "epic", "gog"}:
                 value = readiness.get(provider_id)
                 if provider_id == "steam":

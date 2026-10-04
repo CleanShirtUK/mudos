@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 from pathlib import Path, PurePosixPath
@@ -579,6 +580,19 @@ def install_startup_integration(release: Path) -> None:
     run([sys.executable, str(release / "scripts/configure-mudos-limine.py")], check=True)
     run(["plymouth-set-default-theme", "mudos", "--rebuild-initrd"], check=True)
     verify_startup_integration(release)
+    # Eden is an optional provider; verify its pinned runtime when installed,
+    # but do not make base appliance verification require Switch emulation.
+    eden_spec_path = release / "config/providers/eden/runtime.json"
+    if eden_spec_path.is_file():
+        eden_spec = json.loads(eden_spec_path.read_text())
+        eden_runtime = (Path("/var/lib/lulu/providers/eden")
+                        / str(eden_spec.get("source_commit_short", ""))
+                        / str(eden_spec.get("filename", "")))
+        if eden_runtime.exists():
+            digest = hashlib.sha256(eden_runtime.read_bytes()).hexdigest()
+            if not eden_runtime.is_file() or digest != eden_spec.get("sha256") \
+                    or not os.access(eden_runtime, os.X_OK):
+                raise InstallError("installed Eden AppImage does not match the selected pinned runtime")
 
 
 def verify_startup_integration(release: Path, *,

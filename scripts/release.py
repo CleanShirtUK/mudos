@@ -62,6 +62,8 @@ REQUIRED_FILES = (
     "scripts/wait-startup-surface.py",
     "scripts/configure-mudos-limine.py",
     "scripts/install_mudos.py",
+    "scripts/provision-eden.sh",
+    "config/providers/eden/runtime.json",
     "packaging/pacman.d/hooks/99-mudos-limine-config.hook",
     "packaging/plymouth-quit.service.d/mudos-handoff.conf",
     "scripts/steam-runtime-session.py",

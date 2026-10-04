@@ -9,10 +9,10 @@ supported = ["switch"]
 strategy = "direct"
 directory = "config"
 [launch.standalone]
-command = "/opt/lulu/current/packaging/eden-flatpak"
+command = "/var/lib/lulu/providers/eden/d16735f5b6/Eden-Linux-d16735f5b6-amd64-clang-pgo.AppImage"
 controller_mode = "compat"
 [launch.game]
-command = "/opt/lulu/current/packaging/eden-flatpak"
+command = "/var/lib/lulu/providers/eden/d16735f5b6/Eden-Linux-d16735f5b6-amd64-clang-pgo.AppImage"
 
 [[guide.actions]]
 id = "eden-show-ui"

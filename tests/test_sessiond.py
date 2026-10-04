@@ -16,8 +16,8 @@ class SessiondTests(unittest.TestCase):
         presentation = SimpleNamespace(select_pids=Mock(return_value=7788))
         supervisor = ProcessSupervisor(model, presentation=presentation)
         identity = LaunchIdentity(
-            "eden-token", 123, 123, "/usr/bin/flatpak",
-            ("/opt/lulu/current/packaging/eden-flatpak", "--game", "/fixture/game.xci"),
+            "eden-token", 123, 123, "/var/lib/lulu/providers/eden/d16735f5b6/Eden-Linux-d16735f5b6-amd64-clang-pgo.AppImage",
+            ("/var/lib/lulu/providers/eden/d16735f5b6/Eden-Linux-d16735f5b6-amd64-clang-pgo.AppImage", "--game", "/fixture/game.xci"),
         )
         with patch.object(supervisor, "_process_group_members", return_value={123, 124}):
             selected = supervisor.select_session_surface(
@@ -88,7 +88,7 @@ class SessiondTests(unittest.TestCase):
         interface = ConsoleSessionInterface.__new__(ConsoleSessionInterface)
         interface._local_identity = LaunchIdentity(
             "owned-token", 1234, 1234, "/usr/bin/bash",
-            ("/opt/lulu/current/packaging/eden-flatpak", "--config", "/tmp/eden.ini"),
+            ("/var/lib/lulu/providers/eden/d16735f5b6/Eden-Linux-d16735f5b6-amd64-clang-pgo.AppImage", "--config", "/tmp/eden.ini"),
         )
         interface.model = SimpleNamespace(state=SimpleNamespace(launch_token="owned-token"))
         interface.supervisor = supervisor
@@ -122,7 +122,7 @@ class SessiondTests(unittest.TestCase):
         interface = ConsoleSessionInterface.__new__(ConsoleSessionInterface)
         interface._local_identity = LaunchIdentity(
             "owned-token", 1234, 1234, "/usr/bin/bash",
-            ("/opt/lulu/current/packaging/eden-flatpak", "--config", "/tmp/eden.ini"),
+            ("/var/lib/lulu/providers/eden/d16735f5b6/Eden-Linux-d16735f5b6-amd64-clang-pgo.AppImage", "--config", "/tmp/eden.ini"),
         )
         interface.model = SimpleNamespace(state=SimpleNamespace(launch_token="owned-token"))
         interface.supervisor = supervisor

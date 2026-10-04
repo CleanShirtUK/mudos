@@ -7,6 +7,7 @@ from pathlib import Path
 from .paths import PATHS
 from .platforms import load_platforms
 from .platforms.model import SetupFileRequirement
+from .eden_runtime import runtime_path
 
 
 ROM_ROOT = PATHS.rom_root
@@ -44,13 +45,11 @@ def _path(variable: str, default: str) -> Path:
 
 _RUNTIME = {
     "retroarch": ("LULU_RETROARCH", "/usr/bin/retroarch"),
-    # Run the release-owned wrapper directly so immutable release activation
-    # updates the Flatpak config/BIOS handoff without rewriting /usr/local.
+    # PCSX2 remains a release-owned Flatpak wrapper.
     "pcsx2": ("LULU_PCSX2", str(PATHS.install_root / "packaging" / "pcsx2-qt-flatpak")),
     "dolphin": ("LULU_DOLPHIN", "/usr/bin/dolphin-emu"),
-    # Release-owned wrapper supplies the configured Mudos system-file mounts
-    # to Eden's Flatpak sandbox without changing the installed Flatpak state.
-    "eden": ("LULU_EDEN", str(PATHS.install_root / "packaging" / "eden-flatpak")),
+    # Official, checksum-pinned Eden AppImage installed by the Mudos provider.
+    "eden": ("LULU_EDEN", str(runtime_path())),
 }
 _CORES = {
     "nes": ("LULU_NES_CORE", "/usr/lib/libretro/nestopia_libretro.so"),

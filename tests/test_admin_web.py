@@ -196,8 +196,13 @@ class AdminWebTests(unittest.TestCase):
                 patch("lulu.admin_web.onboarding_state", return_value={
                     "selected_providers": [row["id"] for row in rows]}):
             states = app.setup_provider_states()
-        self.assertEqual([state["status"] for state in states], ["installed"] * len(rows))
-        self.assertTrue(all("not been validated" in state["status_message"] for state in states))
+        self.assertEqual([state["status"] for state in states],
+                         ["installed", "installed", "installed", "configuration_required",
+                          "installed", "installed"])
+        self.assertTrue(all("not been validated" in state["status_message"]
+                            for state in states if state["id"] != "eden"))
+        eden = next(state for state in states if state["id"] == "eden")
+        self.assertIn("pinned Eden AppImage", eden["status_message"])
         self.assertTrue(all(state["installed"] for state in states))
 
     def test_setup_downloaders_separate_rpc_health_from_download_readiness(self):

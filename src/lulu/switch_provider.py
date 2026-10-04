@@ -24,14 +24,24 @@ _BUTTONS = {
 }
 _AXES = {"zl": 4, "zr": 5}
 _DPAD = {"dup": "up", "ddown": "down", "dleft": "left", "dright": "right"}
-EDEN_FLATPAK_ID = "dev.eden_emu.eden"
+EDEN_FLATPAK_ID = "dev.eden_emu.eden"  # Legacy import source only.
+
+
+def eden_native_config_root(home: Path | None = None) -> Path:
+    return (home / ".config" / "eden") if home is not None else PATHS.config_home / "eden"
+
+
+def eden_native_data_root(home: Path | None = None) -> Path:
+    return (home / ".local" / "share" / "eden") if home is not None else PATHS.data_home / "eden"
 
 
 def eden_flatpak_config_root(home: Path | None = None) -> Path:
+    """Read-only legacy import location retained for one-way migration."""
     return (home or PATHS.home) / ".var" / "app" / EDEN_FLATPAK_ID / "config" / "eden"
 
 
 def eden_flatpak_data_root(home: Path | None = None) -> Path:
+    """Read-only legacy import location retained for one-way migration."""
     return (home or PATHS.home) / ".var" / "app" / EDEN_FLATPAK_ID / "data" / "eden"
 
 
@@ -58,6 +68,13 @@ class SwitchProvider:
         self.active_config_root = active_config_root or self.config_root
         self.data_root = data_root
         self.external_content_root = external_content_root or PATHS.rom_root / "switch"
+        self._legacy_config_root = None
+        self._legacy_data_root = None
+        if (self.config_root == PATHS.provider_config_root("eden")
+                and self.active_config_root == eden_native_config_root()
+                and self.data_root == eden_native_data_root()):
+            self._legacy_config_root = eden_flatpak_config_root()
+            self._legacy_data_root = eden_flatpak_data_root()
 
     @property
     def config_path(self) -> Path:
@@ -68,14 +85,120 @@ class SwitchProvider:
         return self.active_config_root / "qt-config.ini"
 
     def ensure_standalone_config(self) -> Path:
-        """Create the active Flatpak config without requiring a gamepad or ROM.
+        """Create the native Eden config without requiring a gamepad or ROM.
 
         Configure Provider is an intentional native Eden UI launch. Seed only
         first-run/data-location facts; the existing Eden settings remain owned
         by Eden and are preserved.
         """
+        self.migrate_legacy_flatpak_state()
         self._update_active_config(None)
+        self._ensure_native_nand_directory()
         return self.active_config_path
+
+    def migrate_legacy_flatpak_state(self) -> None:
+        """Import Eden user state without deleting or overwriting either tree.
+
+        Config/data under the Flatpak sandbox are treated as user data. A
+        destination conflict always keeps the native file; the original tree
+        is retained as a recoverable source. The first-run native config is
+        backed up before adopting the configured Flatpak profile.
+        """
+        marker = self.config_root / ".mudos-eden-migration-v1.json"
+        if self._legacy_config_root is None or self._legacy_data_root is None:
+            return
+        if marker.is_file():
+            return
+        legacy_config = self._legacy_config_root
+        legacy_data = self._legacy_data_root
+        native_config = self.active_config_root
+        native_data = self.data_root
+        conflicts: list[str] = []
+
+        old_ini = legacy_config / "qt-config.ini"
+        new_ini = native_config / "qt-config.ini"
+        if old_ini.is_file():
+            if not new_ini.exists():
+                new_ini.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(old_ini, new_ini)
+            elif self._config_is_first_run(new_ini) and not self._config_is_first_run(old_ini):
+                backup = self.config_root / "migration-backup" / "native-qt-config.ini"
+                backup.parent.mkdir(parents=True, exist_ok=True)
+                if not backup.exists():
+                    shutil.copy2(new_ini, backup)
+                temporary = new_ini.with_name(f".{new_ini.name}.{os.getpid()}.migration")
+                shutil.copy2(old_ini, temporary)
+                temporary.replace(new_ini)
+            else:
+                conflicts.append(str(new_ini))
+
+        if legacy_config.is_dir():
+            self._copy_tree_without_overwrite(legacy_config / "custom",
+                                              native_config / "custom", conflicts)
+            for name in ("window_state.ini",):
+                source, destination = legacy_config / name, native_config / name
+                if source.is_file():
+                    self._copy_file_without_overwrite(source, destination, conflicts)
+        if legacy_data.is_dir() and native_data is not None:
+            # Import durable user/Eden state only. Logs, crash dumps, dump
+            # workspaces, and generated icons are transient or regenerable.
+            for name in ("nand", "load", "shader", "sdmc", "amiibo",
+                         "play_time", "tas", "screenshots"):
+                self._copy_tree_without_overwrite(legacy_data / name,
+                                                  native_data / name, conflicts)
+
+        marker.parent.mkdir(parents=True, exist_ok=True)
+        marker.write_text(json.dumps({"schema": 1, "legacy_state_retained": True,
+                                      "conflicts_preserved_native": conflicts},
+                                     sort_keys=True) + "\n", encoding="utf-8")
+
+    @staticmethod
+    def _config_is_first_run(path: Path) -> bool:
+        section = ""
+        for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+            value = line.strip()
+            if value.startswith("[") and value.endswith("]"):
+                section = value
+            elif section == "[UI]" and value.startswith("firstStart="):
+                return value.partition("=")[2].strip().lower() == "true"
+        return False
+
+    @classmethod
+    def _copy_file_without_overwrite(cls, source: Path, destination: Path,
+                                     conflicts: list[str]) -> None:
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        if destination.is_symlink():
+            conflicts.append(str(destination))
+            return
+        if destination.exists():
+            if source.is_file() and destination.is_file() \
+                    and cls._digest(source) == cls._digest(destination):
+                return
+            conflicts.append(str(destination))
+            return
+        temporary = destination.with_name(f".{destination.name}.{os.getpid()}.migration")
+        shutil.copy2(source, temporary, follow_symlinks=False)
+        temporary.replace(destination)
+
+    @classmethod
+    def _copy_tree_without_overwrite(cls, source: Path, destination: Path,
+                                     conflicts: list[str]) -> None:
+        if not source.is_dir():
+            return
+        destination.mkdir(parents=True, exist_ok=True)
+        for entry in sorted(source.iterdir()):
+            target = destination / entry.name
+            if entry.is_symlink():
+                if target.is_symlink() and os.readlink(target) == os.readlink(entry):
+                    continue
+                if target.exists() or target.is_symlink():
+                    conflicts.append(str(target))
+                    continue
+                target.symlink_to(os.readlink(entry))
+            elif entry.is_dir():
+                cls._copy_tree_without_overwrite(entry, target, conflicts)
+            elif entry.is_file():
+                cls._copy_file_without_overwrite(entry, target, conflicts)
 
     def ensure_controller_config(
         self,
@@ -83,6 +206,7 @@ class SwitchProvider:
         device_indices: dict[int, int] | None = None,
         controller_identities: dict[int, object] | None = None,
     ) -> Path:
+        self.migrate_legacy_flatpak_state()
         if player_count is None:
             player_count = max(device_indices, default=4) if device_indices else 4
         if player_count not in range(1, 5):
@@ -111,7 +235,7 @@ class SwitchProvider:
             indices.sort()
         for player in range(1, player_count + 1):
             config_player = player - 1
-            # Eden 0.2.x writes the SDL selector in port,guid order. The
+            # Eden's SDL selector is written in port,guid order. The
             # parser is semantically key/value based, but matching the native
             # donor avoids relying on the older serialized ordering.
             controller = (controller_identities or {}).get(player)
@@ -119,7 +243,7 @@ class SwitchProvider:
             index = getter("sdl_index")
             index = index if isinstance(index, int) else device_indices.get(player, player - 1)
             guid = getter("sdl_guid") or os.environ.get("LULU_SWITCH_SDL_GUID")
-            # Eden 0.2.1 SDL2 clears the joystick-name CRC in GUID bytes 2-3
+            # Eden's SDL2 GUID clears the joystick-name CRC in bytes 2-3
             # and assigns ports per GUID, not by global SDL joystick index.
             guid = (guid[:4] + "0000" + guid[8:]).lower()
             port = ports[guid].index(index)
@@ -150,15 +274,44 @@ class SwitchProvider:
         if not self.config_path.exists() or self.config_path.read_text(encoding="utf-8") != content:
             self.config_path.write_text(content, encoding="utf-8")
         self._update_active_config(content)
+        self._ensure_native_nand_directory()
         if self.data_root is not None:
             self.ensure_managed_system_files()
         self._ensure_external_content_directory()
         return self.active_config_path
 
+    def _ensure_native_nand_directory(self) -> None:
+        if self.data_root is None:
+            return
+        path = self.active_config_path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        lines = path.read_text(encoding="utf-8").splitlines() if path.exists() else []
+        section = "[Data%20Storage]"
+        start = next((i for i, line in enumerate(lines) if line.strip() == section), None)
+        if start is None:
+            lines.extend(["", section])
+            start = len(lines) - 1
+        end = next((i for i in range(start + 1, len(lines))
+                    if lines[i].startswith("[")), len(lines))
+        expected = str(self.data_root / "nand")
+        indices = [i for i in range(start + 1, end)
+                   if lines[i].split("=", 1)[0].strip() == "nand_directory" and "=" in lines[i]]
+        if indices:
+            lines[indices[-1]] = f"nand_directory={expected}"
+            for index in reversed(indices[:-1]):
+                del lines[index]
+        else:
+            lines.insert(end, f"nand_directory={expected}")
+        content = "\n".join(lines) + "\n"
+        if path.read_text(encoding="utf-8") != content:
+            temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+            temporary.write_text(content, encoding="utf-8")
+            temporary.replace(path)
+
     def ensure_managed_system_files(self) -> tuple[Path, ...]:
         """Project keys and install canonical firmware into Eden's writable NAND.
 
-        Eden 0.2.1's installer copies source NCAs by basename into
+        Eden's firmware installer copies source NCAs by basename into
         system/Contents/registered, then rescans its content provider. Never
         expose a writable path back to the canonical firmware dump.
         """
@@ -323,7 +476,7 @@ class SwitchProvider:
     def _ensure_external_content_directory(self) -> None:
         """Add Mudos' canonical Switch root to Eden's external-content paths.
 
-        Eden 0.2.1 reads this QSettings array at startup and scans it for NSP/XCI
+        Eden reads this QSettings array at startup and scans it for NSP/XCI
         updates and add-on content. Keep existing user-configured directories,
         append the Mudos-owned root once, and leave all acquired files read-only.
         """
