@@ -7,7 +7,7 @@ from .local_content import LocalContentGame
 from .paths import PATHS
 from .platforms import load_platforms
 from .providers import ProviderRegistry, launch_arguments, load_providers
-from .switch_provider import SwitchProvider, eden_native_config_root, eden_native_data_root
+from .switch_provider import SwitchProvider, eden_native_data_root
 
 
 @dataclass(frozen=True, slots=True)
@@ -35,7 +35,9 @@ class EmulatorRuntimeAdapter:
         self.core_paths = core_paths or {}
         self.switch_provider = switch_provider or SwitchProvider(
             config_root=(config_root / "eden" / "config") if config_root else None,
-            active_config_root=eden_native_config_root() if config_root else None,
+            # Consoled sets XDG_CONFIG_HOME to the provider config directory.
+            # Eden appends its own "eden" directory beneath that root.
+            active_config_root=(config_root / "eden" / "config" / "eden") if config_root else None,
             data_root=eden_native_data_root() if config_root else None,
         )
         self.providers = providers or load_providers()

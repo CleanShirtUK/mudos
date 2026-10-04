@@ -4,6 +4,7 @@ from pathlib import Path
 import tempfile
 import unittest
 import hashlib
+import json
 from unittest.mock import patch
 
 from lulu.emulation import PLATFORMS
@@ -70,14 +71,171 @@ class EdenManagedProvisioningTests(unittest.TestCase):
             self.assertEqual((old_data / "nand/user/save/user-save.dat").read_bytes(), b"user save")
             self.assertTrue((provider_config / ".mudos-eden-migration-v1.json").is_file())
 
+    def test_flatpak_nand_migrates_profiles_saves_and_registered_content_as_one_set(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            old_config = root / "flatpak/config/eden"
+            old_data = root / "flatpak/data/eden"
+            native_config = root / "native/config/eden"
+            native_data = root / "native/data/eden"
+            provider_config = root / "providers/eden/config"
+            old_config.mkdir(parents=True)
+            native_config.mkdir(parents=True)
+            old_nand = old_data / "nand"
+            profiles = old_nand / "system/save/8000000000000010/su/avators/profiles.dat"
+            profiles.parent.mkdir(parents=True)
+            profiles.write_bytes(b"legacy-profile-map-with-profile-uuid")
+            save = old_nand / "user/save/0000000000000000/PROFILE-UUID/0100152000022000/userdata.dat"
+            save.parent.mkdir(parents=True)
+            save.write_bytes(b"existing MK8 save")
+            installed = old_nand / "user/Contents/registered/update.cnmt.nca"
+            installed.parent.mkdir(parents=True)
+            installed.write_bytes(b"installed update metadata")
+            dlc = old_nand / "user/Contents/registered/dlc.cnmt.nca"
+            dlc.write_bytes(b"installed DLC metadata")
+            (old_config / "qt-config.ini").write_text(
+                "[Data%20Storage]\nnand_directory=" + str(old_nand) + "\n")
+            (native_config / "qt-config.ini").write_text(
+                "[Data%20Storage]\nnand_directory=" + str(native_data / "nand") + "\n")
+            provider = SwitchProvider(root / "unused", provider_config, native_config, native_data)
+            provider._legacy_config_root = old_config
+            provider._legacy_data_root = old_data
+
+            provider.migrate_legacy_flatpak_state()
+
+            new_nand = native_data / "nand"
+            self.assertEqual((new_nand / profiles.relative_to(old_nand)).read_bytes(), profiles.read_bytes())
+            self.assertEqual((new_nand / save.relative_to(old_nand)).read_bytes(), b"existing MK8 save")
+            self.assertEqual((new_nand / installed.relative_to(old_nand)).read_bytes(), b"installed update metadata")
+            self.assertEqual((new_nand / dlc.relative_to(old_nand)).read_bytes(), b"installed DLC metadata")
+            self.assertTrue(profiles.is_file())  # source remains untouched
+
+    def test_known_profile_collision_backs_up_native_then_replaces_whole_nand_once(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            old_config, native_config = root / "flatpak/config/eden", root / "native/config/eden"
+            old_data, native_data = root / "flatpak/data/eden", root / "native/data/eden"
+            provider_config = root / "providers/eden/config"
+            old_nand, native_nand = old_data / "nand", native_data / "nand"
+            old_profile = old_nand / "system/save/8000000000000010/su/avators/profiles.dat"
+            native_profile = native_nand / "system/save/8000000000000010/su/avators/profiles.dat"
+            old_profile.parent.mkdir(parents=True)
+            native_profile.parent.mkdir(parents=True)
+            old_profile.write_bytes(b"authoritative legacy profile map")
+            native_profile.write_bytes(b"default native profile map")
+            old_save = old_nand / "user/save/0000000000000000/OLD-UUID/0100152000022000/userdata.dat"
+            old_save.parent.mkdir(parents=True)
+            old_save.write_bytes(b"legacy save")
+            native_save = native_nand / "user/save/0000000000000000/NEW-UUID/0100152000022000/userdata.dat"
+            native_save.parent.mkdir(parents=True)
+            native_save.write_bytes(b"newer native save preserved")
+            old_config.mkdir(parents=True)
+            native_config.mkdir(parents=True)
+            old_nand_config = old_config / "qt-config.ini"
+            new_nand_config = native_config / "qt-config.ini"
+            old_nand_config.write_text("[Data%20Storage]\nnand_directory=" + str(old_nand) + "\n")
+            new_nand_config.write_text("[Data%20Storage]\nnand_directory=" + str(native_nand) + "\n")
+            provider_config.mkdir(parents=True)
+            (provider_config / ".mudos-eden-migration-v1.json").write_text(json.dumps({
+                "schema": 1,
+                "legacy_state_retained": True,
+                "conflicts_preserved_native": [str(native_profile)],
+            }))
+            provider = SwitchProvider(root / "unused", provider_config, native_config, native_data)
+            provider._legacy_config_root = old_config
+            provider._legacy_data_root = old_data
+
+            provider.migrate_legacy_flatpak_state()
+            marker = json.loads((provider_config / ".mudos-eden-migration-v1.json").read_text())
+            backup = Path(marker["native_nand_backup"])
+            self.assertEqual(marker["schema"], 2)
+            self.assertEqual((native_profile).read_bytes(), b"authoritative legacy profile map")
+            self.assertEqual((native_nand / old_save.relative_to(old_nand)).read_bytes(), b"legacy save")
+            self.assertFalse((native_nand / native_save.relative_to(native_nand)).exists())
+            self.assertEqual((backup / native_save.relative_to(native_nand)).read_bytes(),
+                             b"newer native save preserved")
+            self.assertTrue(Path(marker["native_displaced_path"]).is_dir())
+            before = sorted((p.relative_to(native_nand).as_posix(), p.read_bytes())
+                            for p in native_nand.rglob("*") if p.is_file())
+
+            provider.migrate_legacy_flatpak_state()
+
+            after = sorted((p.relative_to(native_nand).as_posix(), p.read_bytes())
+                           for p in native_nand.rglob("*") if p.is_file())
+            self.assertEqual(after, before)
+            self.assertEqual(marker["native_nand_backup"],
+                             json.loads((provider_config / ".mudos-eden-migration-v1.json").read_text())[
+                                 "native_nand_backup"])
+
+    def test_ambiguous_nand_collision_is_refused_without_replacing_native_state(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            old_config, native_config = root / "flatpak/config/eden", root / "native/config/eden"
+            old_data, native_data = root / "flatpak/data/eden", root / "native/data/eden"
+            old_config.mkdir(parents=True)
+            native_config.mkdir(parents=True)
+            old_nand, native_nand = old_data / "nand", native_data / "nand"
+            for nand, profile_data, save_data in (
+                (old_nand, b"old profiles", b"old save"),
+                (native_nand, b"native profiles", b"native save"),
+            ):
+                profile = nand / "system/save/8000000000000010/su/avators/profiles.dat"
+                profile.parent.mkdir(parents=True)
+                profile.write_bytes(profile_data)
+                save = nand / "user/save/PROFILE/0100152000022000/userdata.dat"
+                save.parent.mkdir(parents=True)
+                save.write_bytes(save_data)
+            (old_config / "qt-config.ini").write_text("[Data%20Storage]\nnand_directory=" + str(old_nand) + "\n")
+            (native_config / "qt-config.ini").write_text("[Data%20Storage]\nnand_directory=" + str(native_nand) + "\n")
+            provider_config = root / "providers/eden/config"
+            provider_config.mkdir(parents=True)
+            (provider_config / ".mudos-eden-migration-v1.json").write_text(json.dumps({
+                "schema": 1,
+                "conflicts_preserved_native": [str(native_nand / "unrelated-user-file")],
+            }))
+            provider = SwitchProvider(root / "unused", provider_config, native_config, native_data)
+            provider._legacy_config_root = old_config
+            provider._legacy_data_root = old_data
+
+            provider.migrate_legacy_flatpak_state()
+
+            self.assertEqual((native_nand / "system/save/8000000000000010/su/avators/profiles.dat").read_bytes(),
+                             b"native profiles")
+            self.assertEqual((native_nand / "user/save/PROFILE/0100152000022000/userdata.dat").read_bytes(),
+                             b"native save")
+            self.assertFalse((provider_config / "migration-backup").exists())
+
     def test_game_runtime_uses_pinned_appimage_and_native_xdg_roots(self) -> None:
         appimage = runtime_path()
         self.assertEqual(PLATFORMS["switch"].executable, appimage)
         with tempfile.TemporaryDirectory() as directory:
-            runtime = EmulatorRuntimeAdapter({"switch": appimage}, config_root=Path(directory) / "providers")
+            providers_root = Path(directory) / "providers"
+            runtime = EmulatorRuntimeAdapter({"switch": appimage}, config_root=providers_root)
             self.assertEqual(runtime.switch_provider.config_root, Path(directory) / "providers/eden/config")
-            self.assertEqual(runtime.switch_provider.active_config_root, eden_native_config_root())
+            self.assertEqual(
+                runtime.switch_provider.active_config_root,
+                Path(directory) / "providers/eden/config/eden",
+            )
             self.assertEqual(runtime.switch_provider.data_root, eden_native_data_root())
+            # Isolate this config-path regression test from host key/firmware
+            # state; production provisioning is covered separately.
+            runtime.switch_provider.data_root = None
+            inactive_config = eden_native_config_root() / "qt-config.ini"
+            inactive_before = inactive_config.read_bytes() if inactive_config.is_file() else None
+            active_config = runtime.switch_provider.ensure_controller_config(
+                1,
+                {1: 0},
+                {1: {"sdl_guid": "030081b85e0400008e02000001000000", "sdl_index": 0}},
+            )
+            self.assertEqual(active_config, providers_root / "eden/config/eden/qt-config.ini")
+            active_text = active_config.read_text()
+            self.assertIn(r"Paths\external_content_dirs\size=1", active_text)
+            self.assertIn(
+                rf"Paths\external_content_dirs\1\path={PATHS.rom_root / 'switch'}",
+                active_text,
+            )
+            inactive_after = inactive_config.read_bytes() if inactive_config.is_file() else None
+            self.assertEqual(inactive_after, inactive_before)
 
     def test_production_defaults_target_native_xdg_config_and_data_roots(self) -> None:
         home = Path("/fixture/home")
@@ -240,7 +398,7 @@ class EdenManagedProvisioningTests(unittest.TestCase):
         self.assertIn(rf"Paths\external_content_dirs\1\path={external_root}", result)
         self.assertEqual(result.count(str(external_root)), 1)
 
-    def test_eden_historical_shoulder_and_menu_mapping_preserves_other_controls(self) -> None:
+    def test_original_mudos_button_mapping_remains_the_launch_profile_contract(self) -> None:
         pad = {"sdl_guid": "030081b85e0400008e02000001000000", "sdl_index": 0}
         with tempfile.TemporaryDirectory() as directory:
             provider = SwitchProvider(Path(directory) / "eden", Path(directory) / "config")

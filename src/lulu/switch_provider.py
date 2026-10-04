@@ -6,6 +6,7 @@ import json
 import os
 import shutil
 import re
+import time
 
 from .paths import PATHS
 
@@ -71,7 +72,7 @@ class SwitchProvider:
         self._legacy_config_root = None
         self._legacy_data_root = None
         if (self.config_root == PATHS.provider_config_root("eden")
-                and self.active_config_root == eden_native_config_root()
+                and self.active_config_root == PATHS.provider_config_root("eden") / "eden"
                 and self.data_root == eden_native_data_root()):
             self._legacy_config_root = eden_flatpak_config_root()
             self._legacy_data_root = eden_flatpak_data_root()
@@ -107,12 +108,23 @@ class SwitchProvider:
         marker = self.config_root / ".mudos-eden-migration-v1.json"
         if self._legacy_config_root is None or self._legacy_data_root is None:
             return
-        if marker.is_file():
-            return
         legacy_config = self._legacy_config_root
         legacy_data = self._legacy_data_root
         native_config = self.active_config_root
         native_data = self.data_root
+        prior_marker: dict = {}
+        if marker.is_file():
+            try:
+                prior_marker = json.loads(marker.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                return
+            # Upgrade the original file-by-file migration only when its marker
+            # proves it skipped the legacy profile database. NAND is a logical
+            # set: profiles.dat and every save/content directory move together.
+            self._repair_skipped_nand_conflict(
+                prior_marker, legacy_config, legacy_data, native_config, native_data,
+            )
+            return
         conflicts: list[str] = []
 
         old_ini = legacy_config / "qt-config.ini"
@@ -142,15 +154,117 @@ class SwitchProvider:
         if legacy_data.is_dir() and native_data is not None:
             # Import durable user/Eden state only. Logs, crash dumps, dump
             # workspaces, and generated icons are transient or regenerable.
-            for name in ("nand", "load", "shader", "sdmc", "amiibo",
+            for name in ("load", "shader", "sdmc", "amiibo",
                          "play_time", "tas", "screenshots"):
                 self._copy_tree_without_overwrite(legacy_data / name,
                                                   native_data / name, conflicts)
+            self._migrate_nand_as_a_set(
+                legacy_config, legacy_data, native_config, native_data, conflicts,
+            )
 
         marker.parent.mkdir(parents=True, exist_ok=True)
         marker.write_text(json.dumps({"schema": 1, "legacy_state_retained": True,
                                       "conflicts_preserved_native": conflicts},
                                      sort_keys=True) + "\n", encoding="utf-8")
+
+    @staticmethod
+    def _configured_nand(config_root: Path, fallback: Path) -> Path:
+        """Read Eden's configured NAND, not an assumed XDG default."""
+        config = config_root / "qt-config.ini"
+        section = ""
+        if config.is_file():
+            for line in config.read_text(encoding="utf-8", errors="replace").splitlines():
+                value = line.strip()
+                if value.startswith("[") and value.endswith("]"):
+                    section = value
+                elif section == "[Data%20Storage]" and "=" in value:
+                    key, path = value.split("=", 1)
+                    if key.strip() == "nand_directory" and path.strip():
+                        return Path(path.strip().strip('"')).expanduser()
+        return fallback
+
+    def _migrate_nand_as_a_set(
+        self, legacy_config: Path, legacy_data: Path,
+        native_config: Path, native_data: Path, conflicts: list[str],
+    ) -> None:
+        """Copy an absent NAND as a complete set; never merge a collision."""
+        source = self._configured_nand(legacy_config, legacy_data / "nand")
+        target = self._configured_nand(native_config, native_data / "nand")
+        if not source.is_dir():
+            return
+        if target.exists() or target.is_symlink():
+            conflicts.append(f"NAND state set preserved as native: {target}")
+            return
+        target.parent.mkdir(parents=True, exist_ok=True)
+        staging = target.with_name(f".{target.name}.{os.getpid()}.migration")
+        if staging.exists():
+            raise FileExistsError(f"Eden NAND migration staging path exists: {staging}")
+        shutil.copytree(source, staging, symlinks=True, copy_function=shutil.copy2)
+        staging.replace(target)
+
+    def _repair_skipped_nand_conflict(
+        self, marker: dict, legacy_config: Path, legacy_data: Path,
+        native_config: Path, native_data: Path | None,
+    ) -> None:
+        """Replace only the known v1 profile-file collision, preserving native.
+
+        The v1 marker's exact profiles.dat conflict is proof that its old
+        migration copied save subtrees independently while declining the
+        matching profile index. For that recognized failure only, retain the
+        complete native NAND as a rollback copy, then install the legacy NAND
+        atomically as one coherent state set. Any other collision is ambiguous
+        and remains untouched.
+        """
+        if native_data is None or not isinstance(marker, dict) or marker.get("schema") != 1:
+            return
+        source = self._configured_nand(legacy_config, self._legacy_data_root / "nand")
+        target = self._configured_nand(native_config, native_data / "nand")
+        profile_relative = Path("system/save/8000000000000010/su/avators/profiles.dat")
+        source_profiles = source / profile_relative
+        target_profiles = target / profile_relative
+        skipped = marker.get("conflicts_preserved_native", [])
+        if (not isinstance(skipped, list) or str(target_profiles) not in skipped
+                or not source_profiles.is_file() or not target_profiles.is_file()
+                or not (source / "user/save").is_dir()
+                or not (target / "user/save").is_dir()):
+            return
+        # Only repair the exact roots selected by the old/native Eden configs;
+        # do not follow symlinks or replace custom NAND locations.
+        if (source != (self._legacy_data_root / "nand")
+                or target != (native_data / "nand")
+                or source.is_symlink() or target.is_symlink()):
+            return
+
+        backup_root = self.config_root / "migration-backup"
+        backup = backup_root / f"native-nand-before-coherent-import-{time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())}"
+        if backup.exists():
+            raise FileExistsError(f"Eden native NAND backup already exists: {backup}")
+        backup_root.mkdir(parents=True, exist_ok=True)
+        shutil.copytree(target, backup, symlinks=True, copy_function=shutil.copy2)
+        staging = target.with_name(f".{target.name}.{os.getpid()}.coherent-migration")
+        if staging.exists():
+            raise FileExistsError(f"Eden NAND migration staging path exists: {staging}")
+        shutil.copytree(source, staging, symlinks=True, copy_function=shutil.copy2)
+        displaced = target.with_name(f".{target.name}.{os.getpid()}.pre-migration")
+        try:
+            target.replace(displaced)
+            staging.replace(target)
+        except BaseException:
+            if not target.exists() and displaced.exists():
+                displaced.replace(target)
+            raise
+        # Keep the displaced native tree too until the snapshot/backup is
+        # verified; never delete user state as part of migration.
+        repair = {
+            **marker,
+            "schema": 2,
+            "nand_migration": "legacy-coherent-state-installed",
+            "legacy_nand": str(source),
+            "native_nand_backup": str(backup),
+            "native_displaced_path": str(displaced),
+        }
+        marker_path = self.config_root / ".mudos-eden-migration-v1.json"
+        marker_path.write_text(json.dumps(repair, sort_keys=True) + "\n", encoding="utf-8")
 
     @staticmethod
     def _config_is_first_run(path: Path) -> bool:

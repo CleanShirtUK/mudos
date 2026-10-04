@@ -8,24 +8,42 @@ only that versioned official HTTPS artifact and verifies its SHA-256 before
 installing it at `/var/lib/lulu/providers/eden/d16735f5b6/` as root-owned and
 executable by the `lulu` group.
 
-Native Eden uses the standard XDG locations:
+Mudos launches Eden with an isolated provider XDG config root. Eden appends its
+own `eden` subdirectory to that root; Mudos must update that exact config file
+because the AppImage does not consume `~/.config/eden/qt-config.ini` for a
+Mudos-owned launch:
 
 ```text
-~/.config/eden/qt-config.ini   # Eden preferences and Mudos-owned Controls
+~/.config/lulu/providers/eden/config/eden/qt-config.ini # active preferences and Controls
 ~/.local/share/eden/           # NAND, keys, firmware, saves, shader/cache data
-~/.config/lulu/providers/eden/config/lulu-switch.ini  # Mudos controller source
+~/.config/lulu/providers/eden/config/lulu-switch.ini   # Mudos controller source
 ```
 
 Before the first direct launch, Mudos imports the previous Flatpak tree from
-`~/.var/app/dev.eden_emu.eden/{config/eden,data/eden}`. It copies only into
-missing native paths, keeps conflicting native files, backs up a native
-first-run config before replacing it with the working Flatpak config, and
-records a one-time migration marker. It does not delete the Flatpak tree or
-NAND state. The managed key links and firmware projection are reconciled again
-against Mudos' ownership manifest after migration.
+`~/.var/app/dev.eden_emu.eden/{config/eden,data/eden}`. It backs up a native
+first-run config before adopting the Flatpak config and keeps conflicting
+unowned files. NAND is migrated as one coherent state set: `profiles.dat`,
+user/system saves, and registered content are never merged file-by-file. A
+native NAND collision is preserved and left alone unless the prior migration
+marker proves it skipped the legacy `profiles.dat`; that specific repair first
+backs up the complete native NAND, then installs the complete Flatpak NAND as
+the authoritative set. Ambiguous/custom NAND roots are left untouched. The
+Flatpak source is retained. Mudos' key links and firmware projection are
+reconciled against the ownership manifest after migration.
 
-For each game launch Mudos updates only the Eden `[Controls]` section using
-live SDL controller identities. Mudos-owned keys are read-only projections
+MK8 update and DLC packages can also be discovered from Eden's configured
+external-content directories. They are user-owned NSP files, not NAND contents
+or Mudos-projected files. Migration preserves Eden's configured external
+directories; Mudos appends its ROM root without replacing other configured
+locations. Do not copy or register those files into `nand/user/Contents` as a
+substitute for Eden's content scan.
+
+For each game launch Mudos updates the active Eden `[Controls]` section using
+live SDL controller identities and adds its ROM directory to Eden's active
+external-content path list. The original Mudos face-button order (A/B/X/Y =
+SDL buttons 0/1/2/3) is retained; an Eden-authored `gp1` donor is preserved for
+comparison, but its reversed ABXY order is not treated as authoritative.
+Physical button acceptance remains pending. Mudos-owned keys are read-only projections
 from the canonical Switch BIOS keys directory. Firmware is copied, hash
 verified, and ownership-recorded in Eden's writable native NAND; the canonical
 firmware source is never writable by Eden. Conflicting or unowned target paths

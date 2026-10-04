@@ -210,7 +210,7 @@ class EmulatorRuntimeTests(unittest.TestCase):
         self.assertNotIn("player_2_", content)
         self.assertNotIn("engine:keyboard", content)
 
-    def test_switch_writes_current_eden_native_config_root(self) -> None:
+    def test_switch_writes_the_config_root_used_by_mudos_eden_runtime(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             provider = SwitchProvider(
