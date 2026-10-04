@@ -4,6 +4,7 @@ After=default.target
 
 [Service]
 Type=simple
+ExecStartPre=/usr/bin/bash -c 'for attempt in {1..60}; do /usr/bin/pgrep -u lulu -x gamescope >/dev/null && exit 0; /usr/bin/sleep 1; done; echo "Gamescope presentation session did not become ready" >&2; exit 1'
 ExecStartPre=/usr/bin/sleep 10
 ExecStart=/usr/bin/sunshine
 Restart=on-failure
