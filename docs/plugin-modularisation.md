@@ -9,7 +9,7 @@ enable or configure. A **plugin** is only one possible deployment mechanism.
 `lulu.plugins.ComponentRegistry` combines:
 
 - built-in providers: `retroarch`, `dolphin`, `pcsx2`, and `eden`;
-- installable plugin components: Steam, Questarr, RomM, and Lutris;
+- installable plugin components: Steam, RomM, and Lutris;
 - service/deployment components: Transmission and NZBGet.
 
 Every descriptor has an ID, name, description, kind, enabled/installed state,
@@ -25,11 +25,9 @@ descriptor or provider interface.
 
 ## Dependency direction
 
-Dependencies are outgoing requirements only. Questarr requires Lutris and one
-of Transmission/NZBGet; selecting Questarr selects those requirements, while
-selecting Lutris does not select Questarr. The resolver is shared by all
+Dependencies are outgoing requirements only. The resolver is shared by all
 component kinds and reports unsatisfied alternatives without embedding UI
-prompts.
+prompts. Transmission and NZBGet remain independent acquisition services.
 
 ## Configuration and secrets
 
@@ -43,11 +41,9 @@ broker and are cleared rather than persisted.
 
 ## Store and service contributions
 
-Steam and Questarr declare immutable Store cards in their component manifests.
-The native shell reads normalized card contributions and StoreHome renders them
-alongside user bookmarks; StoreHome no longer contains Steam or Questarr card
-definitions. Service metadata for Questarr, Transmission, and NZBGet is also
-declared by components for future generic Admin/Services rendering.
+The native shell reads normalized Store-card contributions and StoreHome renders
+them alongside user bookmarks. Transmission and NZBGet contribute service
+metadata through the generic component registry.
 
 ## Hardcoding audit
 
@@ -57,8 +53,7 @@ declared by components for future generic Admin/Services rendering.
 | RomM API, pairing, content sets | RomM protocol and provenance | Legitimate RomM adapter; generic acquisition boundary consumes it |
 | Lutris installer/runtime | Lutris API, runner and registration semantics | Legitimate Lutris plugin adapter |
 | Transmission/NZBGet RPC | Downloader protocols | Service/plugin adapters; JobManager lifecycle is generic |
-| Questarr reconciliation | Questarr API and downloader handoff | Legitimate service adapter; component metadata is generic |
-| StoreHome Steam/Questarr cards | Product identities in core QML | Removed; declarative component cards now supply them |
+| StoreHome Steam cards | Product identity in core QML | Removed; declarative component cards supply them |
 | Component dependencies and setup fields | Previously absent/generic flags only | Unified descriptor and resolver added |
 | Core catalogue identity | Steam/RomM compatibility joins | Retained because canonical identity/provenance rules are authoritative |
 | Sessiond `RequestSteam*`, Guide targets, Admin labels | Existing public compatibility contracts | Provider-specific branches remain until generic delegated/provider APIs are proven |

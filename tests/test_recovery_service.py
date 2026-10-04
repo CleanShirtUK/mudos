@@ -62,7 +62,7 @@ class RecoveryServiceTests(unittest.TestCase):
 
     def test_missing_unit_evidence_is_unknown_not_healthy(self):
         with patch.object(recovery, "_systemd", return_value=None):
-            component = recovery._unit_component("questarr")
+            component = recovery._unit_component("transmission")
         self.assertEqual(component["state"], "unknown")
         self.assertEqual(component["freshness"], "unavailable")
 

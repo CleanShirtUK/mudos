@@ -38,7 +38,6 @@ PROVIDERS = (
     ("providers.steam", "Steam"), ("providers.romm", "RomM"),
     ("metadata.igdb", "IGDB / metadata"), ("providers.torrent", "Transmission"),
     ("providers.usenet", "NZBGet"), ("providers.usenet.server", "Usenet news server"),
-    ("providers.prowlarr", "Prowlarr"),
 )
 
 PROVIDER_META = {
@@ -48,7 +47,6 @@ PROVIDER_META = {
     "providers.torrent": ("Transmission", "Torrent downloads managed by Mudos.", "Mudos uses the same account for Transmission's Web UI and its connection to Mudos."),
     "providers.usenet": ("NZBGet", "Usenet downloads managed by Mudos.", "Mudos uses the same account for NZBGet's Web UI and its connection to Mudos."),
     "providers.usenet.server": ("Usenet provider", "The Usenet account used by NZBGet.", "Your Usenet provider supplies these connection details."),
-    "providers.prowlarr": ("Prowlarr", "Search indexers used to find downloadable games.", "Mudos sends searches to Prowlarr and keeps its API key private."),
 }
 
 FIELD_HELP = {
@@ -64,8 +62,6 @@ SERVICES = (
     ("dufs", "File Manager — DUFS", "lulu-file-browser.service", "http", 8080, "/", True),
     ("nzbget", "NZBGet", "nzbget.service", "http", 6789, "/", True),
     ("transmission", "Transmission", "lulu-transmission.service", "http", 9091, "/transmission/web/", True),
-    ("questarr", "Questarr", "lulu-questarr.service", "http", 5000, "/", True, "/api/health"),
-    ("prowlarr", "Prowlarr", "prowlarr.service", "http", 9696, "/", True),
     ("sunshine", "Sunshine", "lulu-sunshine-dev.service", "https", 47990, "/", True),
 )
 
@@ -140,9 +136,7 @@ def _service_description(key: str) -> str:
         "dufs": "Browse appliance files.",
         "nzbget": "View and manage Usenet downloads.",
         "transmission": "View and manage torrent downloads.",
-        "questarr": "Find and manage downloadable games.",
         "sunshine": "Manage remote streaming.",
-        "prowlarr": "Manage search indexers.",
     }.get(key, "Appliance service.")
 
 
@@ -273,22 +267,6 @@ class AdminApp:
 
     def test_provider(self, provider_id: str) -> tuple[bool, str]:
         config = self.config.provider(provider_id)
-        if provider_id == "providers.prowlarr":
-            try:
-                endpoint = str(config.get("endpoint", "")).rstrip("/")
-                api_key = config.secret("api_key") or ""
-                if not endpoint or not api_key:
-                    return False, "Prowlarr is not configured"
-                request = urllib.request.Request(
-                    endpoint + "/api/v1/system/status",
-                    headers={"X-Api-Key": api_key, "Accept": "application/json"},
-                )
-                with urllib.request.urlopen(request, timeout=5) as response:
-                    status = json.loads(response.read())
-                version = str(status.get("version", "unknown"))
-                return True, f"Prowlarr API healthy (version {version})"
-            except (OSError, urllib.error.URLError, ValueError, json.JSONDecodeError):
-                return False, "Prowlarr API unavailable or not authenticated"
         if provider_id == "providers.usenet":
             try:
                 import asyncio
@@ -548,7 +526,6 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     commit=commit,
                     rollback_commit=rollback_commit,
                     refresh=lambda: systemctl("restart", "lulu-acquisition.service"),
-                    reconcile=lambda: systemctl("start", "lulu-questarr-reconcile.service"),
                 )
             else:
                 APP.config.update_provider(provider_id, values, secrets_in, clears)
@@ -578,11 +555,6 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 subprocess.run(["systemctl", "restart", "lulu-acquisition.service"],
                                stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
                                stderr=subprocess.DEVNULL, check=True, timeout=10)
-            if provider_id in {"providers.torrent", "providers.usenet", "providers.prowlarr"}:
-                # The reconciler is optional on immutable installations.
-                subprocess.run(["systemctl", "start", "lulu-questarr-reconcile.service"],
-                               stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-                               stderr=subprocess.DEVNULL, check=False, timeout=10)
         except Exception as error:
             # Restore both configuration layers if materialization or the
             # required daemon restart fails; do not leave a new SecretStore

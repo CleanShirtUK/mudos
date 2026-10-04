@@ -45,7 +45,6 @@ PROVIDERS = (
     ("metadata.igdb", "IGDB / metadata"), ("metadata.steamgriddb", "SteamGridDB"),
     ("providers.torrent", "Transmission"),
     ("providers.usenet", "NZBGet"), ("providers.usenet.server", "Usenet news server"),
-    ("providers.prowlarr", "Prowlarr"),
 )
 
 PROVIDER_META = {
@@ -58,7 +57,6 @@ PROVIDER_META = {
     "providers.torrent": ("Transmission", "Torrent downloads managed by Mudos.", "Mudos uses the same account for Transmission's Web UI and its connection to Mudos."),
     "providers.usenet": ("NZBGet", "Usenet downloads managed by Mudos.", "Mudos uses the same account for NZBGet's Web UI and its connection to Mudos."),
     "providers.usenet.server": ("Usenet provider", "The Usenet account used by NZBGet.", "Your Usenet provider supplies these connection details."),
-    "providers.prowlarr": ("Prowlarr", "Search indexers used to find downloadable games.", "Mudos sends searches to Prowlarr and keeps its API key private."),
 }
 
 FIELD_HELP = {
@@ -74,8 +72,6 @@ SERVICES = (
     ("dufs", "File Manager — DUFS", "lulu-file-browser.service", "http", 8080, "/", True),
     ("nzbget", "NZBGet", "nzbget.service", "http", 6789, "/", True),
     ("transmission", "Transmission", "lulu-transmission.service", "http", 9091, "/transmission/web/", True),
-    ("questarr", "Questarr", "lulu-questarr.service", "http", 5000, "/", True, "/api/health"),
-    ("prowlarr", "Prowlarr", "prowlarr.service", "http", 9696, "/", True),
     ("sunshine", "Sunshine", "lulu-sunshine-dev.service", "https", 47990, "/", True),
 )
 
@@ -207,9 +203,7 @@ def _service_description(key: str) -> str:
         "dufs": "Browse appliance files.",
         "nzbget": "View and manage Usenet downloads.",
         "transmission": "View and manage torrent downloads.",
-        "questarr": "Find and manage downloadable games.",
         "sunshine": "Manage remote streaming.",
-        "prowlarr": "Manage search indexers.",
     }.get(key, "Appliance service.")
 
 
@@ -288,11 +282,9 @@ class AdminApp:
         integrations = []
         config_ids = {"providers.romm": "providers.romm",
                       "providers.steam": "providers.steam",
-                      "providers.prowlarr": "providers.prowlarr",
                       "providers.usenet.server": "providers.usenet.server",
                       "metadata.igdb": "metadata.igdb",
-                      "metadata.steamgriddb": "metadata.steamgriddb",
-                      "questarr": "questarr"}
+                      "metadata.steamgriddb": "metadata.steamgriddb"}
         state = onboarding_state()
         selected = set(state.get("selected_providers", []))
         selected_integrations = set(state.get("selected_integrations", []))
@@ -302,8 +294,6 @@ class AdminApp:
             visible_integrations.add("providers.romm")
         if "steam" in selected:
             visible_integrations.add("providers.steam")
-        if "questarr" in selected:
-            visible_integrations.add("providers.prowlarr")
         if "usenet" in selected:
             visible_integrations.add("providers.usenet.server")
         for item in integration_manifest():
@@ -311,12 +301,7 @@ class AdminApp:
                 continue
             provider_id = config_ids[item["id"]]
             metadata = dict(item)
-            if provider_id == "questarr":
-                metadata["enabled"] = self.service_state("lulu-questarr.service") == "active"
-                # The public account probe cannot verify authenticated
-                # downloader/indexer configuration.
-                metadata["configured"] = False
-            elif provider_id == "providers.romm":
+            if provider_id == "providers.romm":
                 from .plugins.romm import RommConfig
                 from .plugins.romm.readiness import RommReadinessStore
                 romm = RommConfig.from_file()
@@ -342,12 +327,11 @@ class AdminApp:
             from .provider_state import normalized_provider_state
             readiness_status = str((metadata.get("readiness") or {}).get("status", "")) \
                 if isinstance(metadata.get("readiness"), dict) else ""
-            service_unit = {"questarr": "lulu-questarr.service"}.get(provider_id)
-            is_running = self.service_state(service_unit) == "active" if service_unit else None
+            is_running = None
             integration_selected = item["id"] in selected_integrations
             provider_selected = {
                 "providers.romm": "romm", "providers.steam": "steam",
-                "providers.prowlarr": "questarr", "providers.usenet.server": "usenet",
+                "providers.usenet.server": "usenet",
             }.get(item["id"])
             metadata["selected"] = (provider_selected in selected if provider_selected
                                     else integration_selected)
@@ -358,9 +342,9 @@ class AdminApp:
                 catalogue_reconciled=(readiness_status == "ready") if provider_id == "providers.romm" else None,
                 acquisition_configured=(bool(metadata.get("configured"))
                     if provider_id == "providers.romm" else None),
-                running=is_running, healthy=(is_running if service_unit else None),
+                running=is_running, healthy=None,
                 skipped=bool(metadata["skipped"]),
-                degraded=bool(service_unit and is_running is False))
+                degraded=False)
             integrations.append(metadata)
         from .setup_files import file_setup_manifest
         return {"onboarding": onboarding_state(),
@@ -377,7 +361,7 @@ class AdminApp:
         readiness = ProviderReadinessStore()
         result = []
         installable_ids = {"steam", "epic", "gog", "lutris", "flatpak", "retroarch",
-                           "dolphin", "pcsx2", "eden", "questarr", "torrent", "usenet"}
+                           "dolphin", "pcsx2", "eden", "torrent", "usenet"}
         for source in provider_manifest(self.components):
             row = dict(source)
             provider_id = str(row["id"])
@@ -444,19 +428,6 @@ class AdminApp:
                     row["authentication"] = {"status": auth.get("status", "authentication_required"),
                                               "authenticated": bool(auth.get("authenticated")),
                                               "methods": auth.get("methods", [])}
-            elif provider_id == "questarr":
-                running = self.service_state("lulu-questarr.service") == "active"
-                healthy, message = self.test_provider("questarr")
-                # Health, an account, and a backend do not prove Questarr's
-                # authenticated configuration or initial reconciliation.
-                row["configured"] = None
-                row["running"] = running
-                row["healthy"] = bool(healthy)
-                row["status"] = "running" if running and healthy else "degraded"
-                row["status_message"] = (
-                    (message + " Operator-owned Questarr account/configuration is still required.")
-                    if running and healthy else
-                    (message or "Questarr service is not running; inspect its service logs."))
             elif provider_id in {"torrent", "usenet"}:
                 target = "providers.torrent" if provider_id == "torrent" else "providers.usenet"
                 ok, message = self.test_provider(target)
@@ -541,8 +512,6 @@ class AdminApp:
     def save_setup_credentials(self, provider_id: str, payload: dict[str, object]) -> dict[str, object]:
         if provider_id not in INTEGRATION_METADATA:
             raise ValueError("unsupported setup integration")
-        if provider_id == "questarr":
-            return {"configured": self.service_state("lulu-questarr.service") == "active"}
         if provider_id == "providers.steam":
             auth = self.steam_auth_status()
             steam_id = str(auth.get("steam_id", "")).strip()
@@ -606,11 +575,6 @@ class AdminApp:
                 raise ValueError("Enter the RomM Client API Token")
             return {"configured": bool(RommConfig.from_file()
                                         and self.secrets.configured("romm", "api-key"))}
-        elif provider_id == "providers.prowlarr":
-            values["endpoint"] = (_setup_service_url(payload.get("endpoint", ""), "Prowlarr")
-                                   if payload.get("endpoint") else "")
-            secrets_in["api_key"] = str(payload.get("api_key", ""))
-            references["api_key"] = "prowlarr/api-key"
         elif provider_id == "providers.usenet.server":
             values = {
                 "host": str(payload.get("host", "")).strip(),
@@ -628,7 +592,7 @@ class AdminApp:
             references.update({"username": "usenet/server-username",
                                "password": "usenet/server-password"})
         current = self.config.provider(provider_id)
-        if provider_id in {"providers.romm", "providers.prowlarr"} and not values.get("endpoint"):
+        if provider_id == "providers.romm" and not values.get("endpoint"):
             if not current.get("endpoint", ""):
                 raise ValueError("Enter the service address")
             values.pop("endpoint", None)
@@ -641,7 +605,7 @@ class AdminApp:
                            if not value and not current.secret_available(key)]
         if missing_secrets:
             label = {"metadata.igdb": "Client Secret", "metadata.steamgriddb": "API key",
-                     "providers.romm": "Client API Token", "providers.prowlarr": "API key",
+                     "providers.romm": "Client API Token",
                      "providers.usenet.server": "Usenet server credentials"}[provider_id]
             raise ValueError(f"Enter the {label}")
         usenet_acquisition_was_enabled = (
@@ -722,7 +686,7 @@ class AdminApp:
     @staticmethod
     def start_provider_install(provider_id: str) -> dict[str, str]:
         allowed = {"steam", "epic", "gog", "lutris", "flatpak", "retroarch",
-                   "dolphin", "pcsx2", "eden", "questarr", "torrent", "usenet"}
+                    "dolphin", "pcsx2", "eden", "torrent", "usenet"}
         if provider_id not in allowed:
             raise ValueError("This provider has no allowlisted installer")
         unit = f"lulu-provider-install@{provider_id}.service"
@@ -744,7 +708,7 @@ class AdminApp:
     @staticmethod
     def provider_install_status(provider_id: str) -> dict[str, str]:
         if provider_id not in {"steam", "epic", "gog", "lutris", "flatpak", "retroarch",
-                               "dolphin", "pcsx2", "eden", "questarr", "torrent", "usenet"}:
+                               "dolphin", "pcsx2", "eden", "torrent", "usenet"}:
             raise ValueError("Unknown provider installer")
         unit = f"lulu-provider-install@{provider_id}.service"
         result = subprocess.run(["systemctl", "show", unit,
@@ -1048,22 +1012,13 @@ class AdminApp:
                 dimensions["authenticated"] = bool(auth.get("authenticated"))
                 status = str(auth.get("status", "authentication_required"))
             service_unit = {"providers.torrent": "lulu-transmission.service",
-                            "providers.usenet": "nzbget.service",
-                            "providers.prowlarr": "prowlarr.service",
-                            "questarr": "lulu-questarr.service"}.get(provider_id)
+                            "providers.usenet": "nzbget.service"}.get(provider_id)
             if service_unit:
                 service_state = self.service_state(service_unit)
                 dimensions["running"] = service_state == "active"
                 dimensions["service_state"] = service_state
-                if provider_id == "questarr":
-                    readiness = self.questarr_readiness()
-                    dimensions.update(readiness)
-                    dimensions["connected"] = bool(readiness["web_reachable"])
-                    dimensions["healthy"] = readiness["overall"] == "ready"
-                    configured = readiness["overall"] == "ready"
-                    status = str(readiness["overall"])
             manifest_id = {"providers.romm": "romm", "providers.torrent": "torrent",
-                           "providers.usenet": "usenet", "providers.prowlarr": "questarr"}.get(
+                           "providers.usenet": "usenet"}.get(
                                provider_id, provider_id)
             installed = installed_manifest.get(manifest_id)
             rows.append({"id": provider_id, "name": name, "status": status,
@@ -1177,114 +1132,7 @@ class AdminApp:
             return "unhealthy"
 
     @staticmethod
-    def questarr_account_status() -> str:
-        # Upstream's public first-run status is not evidence of an authenticated
-        # API session, downloader configuration, or a completed reconciliation.
-        try:
-            with urllib.request.urlopen("http://127.0.0.1:5000/api/auth/status", timeout=2) as response:
-                value = json.loads(response.read(4096))
-            if isinstance(value, dict) and type(value.get("hasUsers")) is bool:
-                return "present" if value["hasUsers"] else "missing"
-        except (OSError, urllib.error.URLError, TimeoutError, ValueError):
-            pass
-        return "unknown"
 
-    def questarr_readiness(self) -> dict[str, object]:
-        """Report independent, evidence-based Questarr integration dimensions."""
-        import pwd
-        import xmlrpc.client
-        from .questarr_reconciler import QUESTARR_URL, QuestarrApi, QuestarrApiError
-        from .questarr_paths import questarr_post_processing_readiness
-        from .questarr_auth_proxy import QUESTARR_PAM_ACCOUNT
-
-        service_running = self.service_state("lulu-questarr.service") == "active"
-        proxy_running = self.service_state("lulu-questarr-auth-proxy.service") == "active"
-        acquisition_running = self.service_state("lulu-acquisition.service") == "active"
-        health_row = next((item for item in SERVICES if item[0] == "questarr"), None)
-        web_reachable = bool(service_running and proxy_running and health_row
-                             and self.service_health(health_row) == "healthy")
-        try:
-            pwd.getpwnam(QUESTARR_PAM_ACCOUNT)
-            pam_available = Path("/etc/pam.d/login").is_file()
-        except KeyError:
-            pam_available = False
-        internal_identity = (self.secrets.configured("web/questarr", "username")
-                             and self.secrets.configured("web/questarr", "password"))
-        authentication_configured = bool(proxy_running and pam_available and internal_identity)
-        metadata_configured = self.config.provider("metadata.igdb").configured
-        gateway_configured = False
-        try:
-            class GatewayTransport(xmlrpc.client.Transport):
-                def make_connection(self, host):
-                    connection = super().make_connection(host)
-                    connection.timeout = 1.5
-                    return connection
-            gateway_configured = xmlrpc.client.ServerProxy(
-                "http://127.0.0.1:5001/xmlrpc", allow_none=False,
-                use_builtin_types=True, transport=GatewayTransport(),
-            ).version().startswith("24.0-mudos-gateway")
-        except Exception:
-            pass
-        usenet_executor_ready = False
-        if acquisition_running:
-            try:
-                account = pwd.getpwnam("lulu")
-                environment = dict(os.environ)
-                environment.update({"HOME": account.pw_dir,
-                                    "XDG_RUNTIME_DIR": f"/run/user/{account.pw_uid}",
-                                    "DBUS_SESSION_BUS_ADDRESS": f"unix:path=/run/user/{account.pw_uid}/bus"})
-                probe = subprocess.run(
-                    ["busctl", "--user", "--timeout=3s", "call", "org.lulu.Acquisitiond",
-                     "/org/lulu/Acquisition", "org.lulu.Acquisition", "GetUsenetReadiness"],
-                    stdin=subprocess.DEVNULL, capture_output=True, text=True,
-                    timeout=4, check=False, env=environment)
-                if probe.returncode == 0:
-                    match = re.search(r'^s "((?:[^"\\]|\\.)*)"$', probe.stdout.strip())
-                    if match:
-                        payload = json.loads('"' + match.group(1) + '"')
-                        state = json.loads(payload)
-                        usenet_executor_ready = bool(state.get("executor_registered")
-                                                     and state.get("enabled")
-                                                     and state.get("configured")
-                                                     and state.get("rpc_secret_available"))
-            except (OSError, ValueError, TypeError, subprocess.SubprocessError):
-                pass
-        acquisitiond_reachable = bool(acquisition_running and gateway_configured
-                                      and usenet_executor_ready)
-        indexer_count = 0
-        try:
-            username = self.secrets.get("web/questarr", "username") or ""
-            password = self.secrets.get("web/questarr", "password") or ""
-            if username and password:
-                from urllib.request import urlopen
-                api = QuestarrApi(base_url=QUESTARR_URL,
-                                  opener=lambda request, timeout=15: urlopen(request, timeout=min(timeout, 2)))
-                api.ensure_authenticated(username, password)
-                values = api.get("/api/indexers")
-                indexer_count = len(values) if isinstance(values, list) else 0
-        except (QuestarrApiError, OSError, ValueError, TypeError):
-            indexer_count = 0
-        indexers_available = indexer_count > 0
-        post_processing_ready, post_processing_reason = questarr_post_processing_readiness()
-        dimensions = {
-            "service_running": service_running,
-            "web_reachable": web_reachable,
-            "authentication_configured": authentication_configured,
-            "metadata_configured": metadata_configured,
-            "indexers_available": indexers_available,
-            "indexer_count": indexer_count,
-            "mudos_acquisition_gateway_configured": gateway_configured,
-            "acquisitiond_reachable": acquisitiond_reachable,
-            "usenet_executor_ready": usenet_executor_ready,
-            "post_processing_ready": post_processing_ready,
-            "post_processing_state": "ready" if post_processing_ready else "degraded",
-            "post_processing_reason": post_processing_reason,
-        }
-        required = (service_running, web_reachable, authentication_configured,
-                    indexers_available, gateway_configured, acquisitiond_reachable)
-        dimensions["overall"] = "ready" if all(required) and metadata_configured and post_processing_ready else (
-            "degraded" if any(required) else "unavailable")
-        return dimensions
 
     @staticmethod
     def plugin_service_status(service: object) -> str:
@@ -1339,25 +1187,6 @@ class AdminApp:
             except Exception:
                 LOGGER.exception("Steam ownership validation/reconciliation failed")
                 return False, "Steam ownership validation or catalogue reconciliation failed"
-        if provider_id == "questarr":
-            state = self.questarr_readiness()
-            if state["overall"] == "ready":
-                return True, "Questarr is ready through appliance authentication and Mudos Acquisitiond"
-            if not state["service_running"]:
-                return False, "Questarr service is not installed or running"
-            if not state["web_reachable"]:
-                return False, "Questarr or its PAM authentication proxy is not reachable"
-            if not state["authentication_configured"]:
-                return False, "Questarr appliance-user authentication is not configured"
-            if not state["mudos_acquisition_gateway_configured"]:
-                return False, "Mudos NZB acquisition gateway is unavailable"
-            if not state["acquisitiond_reachable"]:
-                return False, "Mudos Acquisitiond or its configured NZBGet executor is unavailable"
-            if not state["indexers_available"]:
-                return False, "Questarr has no usable indexers configured"
-            if not state["metadata_configured"]:
-                return False, "Questarr is usable for requests, but Mudos IGDB credentials are not configured"
-            return False, "Questarr acquisition handoff is degraded; inspect its service readiness details"
         if provider_id == "metadata.igdb":
             try:
                 from .igdb import IGDBClient, IGDBError
@@ -1410,22 +1239,6 @@ class AdminApp:
                 return False, "RomM service unavailable or returned an unsupported response"
             except Exception:
                 return False, "RomM service unavailable or returned an unsupported response"
-        if provider_id == "providers.prowlarr":
-            try:
-                endpoint = str(config.get("endpoint", "")).rstrip("/")
-                api_key = config.secret("api_key") or ""
-                if not endpoint or not api_key:
-                    return False, "Prowlarr is not configured"
-                request = urllib.request.Request(
-                    endpoint + "/api/v1/system/status",
-                    headers={"X-Api-Key": api_key, "Accept": "application/json"},
-                )
-                with urllib.request.urlopen(request, timeout=5) as response:
-                    status = json.loads(response.read())
-                version = str(status.get("version", "unknown"))
-                return True, f"Prowlarr API healthy (version {version})"
-            except (OSError, urllib.error.URLError, ValueError, json.JSONDecodeError):
-                return False, "Prowlarr API unavailable or not authenticated"
         if provider_id == "providers.usenet.server":
             config = self.config.provider(provider_id)
             host = str(config.get("host", "")).strip()
@@ -2371,8 +2184,6 @@ load();setInterval(load,10000);
                     commit=commit,
                     rollback_commit=rollback_commit,
                     refresh=lambda: systemctl("restart", "lulu-acquisition.service"),
-                    # Questarr reconciliation is deferred until its setup
-                    # selection and persisted readiness state authorize it.
                     reconcile=lambda: None,
                 )
             else:

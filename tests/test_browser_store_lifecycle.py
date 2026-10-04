@@ -19,7 +19,7 @@ class BrowserStoreLifecycleTests(unittest.TestCase):
         self.assertIn("function homeCards()", self.store)
         self.assertIn("pluginStores", self.store)
         self.assertNotIn('id: "steam", title: "Steam"', self.store)
-        self.assertNotIn('id: "questarr", title: "Questarr"', self.store)
+        self.assertNotIn("questarr", self.store.casefold())
         self.assertNotIn('scope === "stores"', self.store)
 
     def test_browser_enters_and_restores_compatibility_surface(self) -> None:
@@ -85,8 +85,7 @@ class BrowserStoreLifecycleTests(unittest.TestCase):
         shell = (ROOT / "ui" / "ConsoleShell.qml").read_text()
         browser = (ROOT / "ui" / "MudosBrowser.qml").read_text()
         self.assertIn("openBrowser(url)", shell)
-        self.assertNotIn('"browser_profile":"questarr"',
-                         (ROOT / "config/plugins/questarr/store-card.json").read_text())
+        self.assertNotIn("questarr", self.shell.casefold())
         self.assertIn("location.origin!==origin", browser)
         self.assertIn('browserTrustProfile = trustProfile || ""', shell)
 
@@ -132,14 +131,6 @@ class BrowserStoreLifecycleTests(unittest.TestCase):
         self.assertIn("root.submitCredential(true)", shell)
         self.assertIn('keyboard: KeyEnter',
                       (ROOT / "config/inputplumber/profiles/osk.yaml").read_text())
-
-    def test_questarr_capture_does_not_blindly_trigger_reconciliation(self) -> None:
-        consoled = (ROOT / "src/lulu/consoled.py").read_text()
-        self.assertIn('self.web_credentials.save(profile_id, origin, username, password)', consoled)
-        self.assertNotIn('"lulu-questarr-reconcile.service"', consoled)
-        reconciler = (ROOT / "scripts/reconcile-questarr.py").read_text()
-        self.assertIn('"questarr" not in setup.get("selected_providers", [])', reconciler)
-        self.assertIn('readiness.get("status") != "ready"', reconciler)
 
     def test_browser_osk_cancel_and_repeated_activation_are_explicit(self) -> None:
         browser = (ROOT / "ui" / "MudosBrowser.qml").read_text()

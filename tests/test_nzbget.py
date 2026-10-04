@@ -127,9 +127,9 @@ class UsenetProviderTests(unittest.TestCase):
 
                 client = FakeClient([group])
                 provider = UsenetProvider(client, paths)
-                job = DownloadJob("job-cancelled", "usenet", "Questarr",
+                job = DownloadJob("job-cancelled", "usenet", "Acquired payload",
                                   content_identity="file:///staging/request.nzb",
-                                  state=JobState.CANCELLED, stage="cancelled", origin="questarr",
+                                  state=JobState.CANCELLED, stage="cancelled", origin="mudos",
                                   provider_job_id="4", backend="nzbget", ownership_label=dupe_key)
                 provider._record(job, 4, str(paths.usenet_complete_root))
 
@@ -155,8 +155,8 @@ class UsenetProviderTests(unittest.TestCase):
 
                 client = FakeClient()
                 provider = UsenetProvider(client, paths)
-                job = DownloadJob("job-absent", "usenet", "Questarr", state=JobState.CANCELLED,
-                                  origin="questarr", provider_job_id="4", backend="nzbget",
+                job = DownloadJob("job-absent", "usenet", "Acquired payload", state=JobState.CANCELLED,
+                                  origin="mudos", provider_job_id="4", backend="nzbget",
                                   ownership_label="mudos:job-absent")
                 provider._record(job, 4, str(paths.usenet_complete_root))
                 await provider.cleanup_cancelled(job)
@@ -181,8 +181,8 @@ class UsenetProviderTests(unittest.TestCase):
                 client = FakeClient()
                 provider = UsenetProvider(client, paths)
                 dupe_key = "mudos:job-unowned"
-                job = DownloadJob("job-unowned", "usenet", "Questarr", state=JobState.CANCELLED,
-                                  origin="questarr", provider_job_id="4", backend="nzbget",
+                job = DownloadJob("job-unowned", "usenet", "Acquired payload", state=JobState.CANCELLED,
+                                  origin="mudos", provider_job_id="4", backend="nzbget",
                                   ownership_label=dupe_key)
                 provider._record(job, 4, str(paths.usenet_complete_root))
                 await provider.cleanup_cancelled(job)

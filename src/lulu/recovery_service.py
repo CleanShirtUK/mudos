@@ -38,7 +38,6 @@ UNITS = {
     "inputplumber": ("inputplumber.service", "Controller input"),
     "network_manager": ("NetworkManager.service", "Network connection"),
     "bluetooth": ("bluetooth.service", "Bluetooth"),
-    "questarr": ("lulu-questarr.service", "Questarr"),
     "transmission": ("lulu-transmission.service", "Transmission downloads"),
     "nzbget": ("nzbget.service", "NZBGet downloads"),
 }
@@ -395,7 +394,6 @@ def collect_health() -> dict[str, Any]:
             last_error="InputPlumber D-Bus API unavailable" if not api_ok else "")
     components["network"] = _network_component()
     components["bluetooth"] = _bluetooth_component()
-    components["questarr"] = _http_service("questarr", "http://127.0.0.1:5000/api/health", "Questarr")
     # Transmission's RPC endpoint returning 409 means the daemon answered and
     # requested its normal session-id handshake; it is an API response, not a failure.
     components["transmission"] = _http_service(

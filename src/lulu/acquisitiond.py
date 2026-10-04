@@ -27,7 +27,6 @@ from .notifications import NotificationBroker, NotificationPresenter
 from .lutris_install import LutrisInstallExecutor
 from .pc_install import PcInstallSource
 from .pc_install_store import PcInstallSourceStore
-from .questarr_gateway import QuestarrGateway, serve_gateway
 
 
 BUS_NAME = "org.lulu.Acquisitiond"
@@ -488,21 +487,11 @@ async def serve(bus_type: BusType = BusType.SESSION) -> None:
                 LOGGER.exception("external acquisition reconciliation failed")
             await asyncio.sleep(3)
     asyncio.create_task(reconcile_external_loop())
-    questarr_gateway = None
-    gateway_server = None
-    try:
-        questarr_gateway = QuestarrGateway(manager, asyncio.get_running_loop())
-        gateway_server = serve_gateway(questarr_gateway)
-    except Exception as error:
-        LOGGER.error("questarr gateway unavailable error_type=%s", type(error).__name__)
     interface = AcquisitionInterface(manager, catalogue, plugins, bus=bus)
     bus.export(OBJECT_PATH, interface)
     await bus.request_name(BUS_NAME)
     interface.StateChanged(interface._snapshot())
     asyncio.create_task(_reconcile_completed_usenet_paths(manager))
-    # Keep explicit references alive for the lifetime of Acquisitiond.
-    interface._questarr_gateway = questarr_gateway
-    interface._questarr_gateway_server = gateway_server
     await asyncio.Event().wait()
 
 

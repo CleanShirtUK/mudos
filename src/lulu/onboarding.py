@@ -226,7 +226,6 @@ PROVIDER_INFO = {
     "eden": ProviderInfo("eden", "Eden", "Nintendo Switch.", (), ("eden",)),
     "pcsx2": ProviderInfo("pcsx2", "PCSX2", "PlayStation 2.", (), ("pcsx2-qt",)),
     "romm": ProviderInfo("romm", "RomM", "Games from your existing RomM library.", (), (), "https://docs.romm.app/latest/developers/client-api-tokens/", "plugin"),
-    "questarr": ProviderInfo("questarr", "Questarr", "Controller/browser storefront and acquisition integration.", (), (), "", "plugin"),
     "torrent": ProviderInfo("torrent", "Transmission", "Mudos-managed torrent downloads.", ("transmission-cli",), ("transmission-daemon",), "", "plugin"),
     "usenet": ProviderInfo("usenet", "NZBGet", "Mudos-managed Usenet downloads; configure a news server to use it.", ("nzbget",), ("nzbget",), "", "plugin"),
 }
@@ -249,7 +248,7 @@ def provider_manifest(components: ComponentRegistry | None = None) -> list[dict[
                 and "provider" not in component.capabilities
                 and not set(component.provider_ids).intersection(PROVIDER_INFO)):
             continue
-        component_ids = ((component.component_id,) if component.component_id in {"questarr", "torrent", "usenet"}
+        component_ids = ((component.component_id,) if component.component_id in {"torrent", "usenet"}
                          else component.provider_ids or (component.component_id,))
         for provider_id in component_ids:
             info = PROVIDER_INFO.get(provider_id)
@@ -258,7 +257,7 @@ def provider_manifest(components: ComponentRegistry | None = None) -> list[dict[
             installed = _provider_installed(provider_id, info)
             rows.append({"id": provider_id, "name": info.name, "summary": info.summary,
                          "installed": installed,
-                         "installable": (provider_id in {"questarr", "torrent", "usenet"}
+                          "installable": (provider_id in {"torrent", "usenet"}
                                          or provider_id in FLATPAK_PROVIDER_APPS
                                          and _repository_packages_available(("flatpak",))
                                          or bool(info.packages) and _repository_packages_available(info.packages)),
@@ -281,8 +280,6 @@ def _provider_installed(provider_id: str, info: ProviderInfo) -> bool:
         # The RomM client is part of this installed Mudos integration; URL and
         # token configuration belong to readiness, not installation state.
         return True
-    if provider_id == "questarr":
-        return _systemd_unit_loaded("lulu-questarr.service")
     if provider_id in {"torrent", "usenet"}:
         package = "transmission-cli" if provider_id == "torrent" else "nzbget"
         unit = "lulu-transmission.service" if provider_id == "torrent" else "nzbget.service"
@@ -386,10 +383,6 @@ INTEGRATION_METADATA = {
         {"name": "url", "label": "RomM server/base URL", "type": "url"},
         {"name": "api_key", "label": "Client API Token", "type": "secret"}],
         "help": "https://docs.romm.app/latest/developers/client-api-tokens/"},
-    "providers.prowlarr": {"name": "Prowlarr", "description": "Search indexer service used by supported acquisition integrations.", "fields": [
-        {"name": "endpoint", "label": "Prowlarr server/base URL", "type": "url"},
-        {"name": "api_key", "label": "API key", "type": "secret"}],
-        "help": "https://wiki.servarr.com/prowlarr/settings#general"},
     "providers.usenet.server": {"name": "Usenet server", "description": "Connection details supplied by your Usenet provider for NZBGet.", "fields": [
         {"name": "host", "label": "Server hostname", "type": "text"},
         {"name": "port", "label": "Port", "type": "number", "default": 563},

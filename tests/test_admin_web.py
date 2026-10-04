@@ -23,34 +23,12 @@ class FakeSecrets:
 
 
 class AdminWebTests(unittest.TestCase):
-    def test_questarr_readiness_parses_usenet_executor_dbus_response(self):
-        from types import SimpleNamespace
+    def test_retired_provider_is_not_exposed_or_installable(self):
+        from lulu.admin_web import AdminApp, PROVIDERS
+        self.assertNotIn("questarr", {provider_id for provider_id, _label in PROVIDERS})
+        with self.assertRaisesRegex(ValueError, "Unknown provider installer"):
+            AdminApp.provider_install_status("questarr")
 
-        app = AdminApp()
-        executor_state = {
-            "executor_registered": True,
-            "enabled": True,
-            "configured": True,
-            "rpc_secret_available": True,
-        }
-        busctl_output = 's ' + json.dumps(json.dumps(executor_state))
-        with patch.object(app, "service_state", return_value="active"), \
-                patch.object(app, "service_health", return_value="healthy"), \
-                patch.object(app.secrets, "configured", return_value=True), \
-                patch.object(app.secrets, "get", return_value="configured"), \
-                patch.object(app.config, "provider", return_value=SimpleNamespace(configured=True)), \
-                patch("lulu.admin_web.subprocess.run", return_value=SimpleNamespace(
-                    returncode=0, stdout=busctl_output)), \
-                patch("xmlrpc.client.ServerProxy") as gateway, \
-                patch("lulu.questarr_reconciler.QuestarrApi") as questarr_api, \
-                patch("lulu.questarr_paths.questarr_post_processing_readiness",
-                      return_value=(True, "ready")):
-            gateway.return_value.version.return_value = "24.0-mudos-gateway"
-            questarr_api.return_value.get.return_value = [{"id": "indexer"}]
-            result = app.questarr_readiness()
-
-        self.assertTrue(result["usenet_executor_ready"])
-        self.assertTrue(result["acquisitiond_reachable"])
 
     def test_deselected_provider_does_not_retain_stale_install_failure_status(self):
         app = AdminApp()
@@ -398,35 +376,6 @@ class AdminWebTests(unittest.TestCase):
         self.assertEqual(len(registered), 1)
         self.assertEqual(registered[0]["provider"], "usenet")
 
-    def test_questarr_account_probe_and_setup_do_not_conflate_health_with_readiness(self):
-        app = AdminApp()
-        with patch("lulu.admin_web.urllib.request.urlopen", return_value=io.BytesIO(b'{"hasUsers":false}')):
-            self.assertEqual(app.questarr_account_status(), "missing")
-        with patch("lulu.admin_web.urllib.request.urlopen", return_value=io.BytesIO(b'{"hasUsers":true}')):
-            self.assertEqual(app.questarr_account_status(), "present")
-        with patch("lulu.admin_web.urllib.request.urlopen", return_value=io.BytesIO(b'{"hasUsers":"false"}')):
-            self.assertEqual(app.questarr_account_status(), "unknown")
-        with patch("lulu.admin_web.urllib.request.urlopen", side_effect=urllib.error.URLError("offline")):
-            self.assertEqual(app.questarr_account_status(), "unknown")
-        with patch.object(app, "questarr_readiness", return_value={
-                "overall": "unavailable", "service_running": True, "web_reachable": True,
-                "authentication_configured": False, "metadata_configured": False,
-                "indexers_available": False, "mudos_acquisition_gateway_configured": False,
-                "acquisitiond_reachable": False}):
-            ok, reason = app.test_provider("questarr")
-            self.assertFalse(ok)
-            self.assertIn("authentication is not configured", reason)
-        with patch("lulu.admin_web.provider_manifest", return_value=[dict(
-                id="questarr", name="Questarr", installed=True)]), \
-                patch("lulu.admin_web.onboarding_state", return_value={"selected_providers": ["questarr"]}), \
-                patch.object(app, "service_state", return_value="active"), \
-                patch.object(app, "test_provider", return_value=(False, "Questarr appliance-user authentication is not configured")):
-            row = app.setup_provider_states()[0]
-        self.assertEqual(row["status"], "degraded")
-        self.assertTrue(row["state"]["running"])
-        self.assertFalse(row["state"]["healthy"])
-        self.assertFalse(row["state"]["configured"])
-        self.assertIn("appliance-user authentication", row["status_message"])
 
     def test_setup_integration_state_uses_provider_selection_and_persisted_skip(self):
         app = AdminApp()
@@ -1161,26 +1110,6 @@ var fetch=async function(path,options){calls.push(path);let body=options&&option
             rows = app.provider_rows()
             self.assertTrue(all(all(isinstance(value, bool) for value in row["secrets"].values()) for row in rows))
 
-    def test_questarr_provider_row_exposes_independent_readiness_dimensions(self):
-        app = AdminApp()
-        readiness = {
-            "overall": "degraded", "service_running": True, "web_reachable": True,
-            "authentication_configured": True, "metadata_configured": False,
-            "indexers_available": True, "indexer_count": 6,
-            "mudos_acquisition_gateway_configured": True, "acquisitiond_reachable": True,
-        }
-        with patch("lulu.admin_web.provider_manifest", return_value=[
-                {"id": "questarr", "installed": True}]), \
-                patch.object(app, "service_state", return_value="active"), \
-                patch.object(app, "questarr_readiness", return_value=readiness):
-            row = next(row for row in app.provider_rows() if row["id"] == "questarr")
-        self.assertTrue(row["installed"])
-        self.assertFalse(row["configured"])
-        self.assertTrue(row["running"])
-        self.assertTrue(row["connected"])
-        self.assertEqual(row["status"], "degraded")
-        self.assertFalse(row["metadata_configured"])
-        self.assertEqual(row["indexer_count"], 6)
 
     def test_nzbget_restart_readiness_waits_for_authenticated_rpc(self):
         app = AdminApp()
@@ -1219,10 +1148,6 @@ var fetch=async function(path,options){calls.push(path);let body=options&&option
         self.assertEqual(rows["providers.romm"]["status"], "configured")
         self.assertTrue(rows["providers.romm"]["configured"])
 
-    def test_provider_configuration_does_not_blindly_trigger_questarr_reconcile(self):
-        admin = (Path(__file__).parents[1] / "src/lulu/admin_web.py").read_text()
-        self.assertNotIn('if provider_id in {"providers.torrent", "providers.usenet", "providers.prowlarr"}', admin)
-        self.assertIn("Questarr reconciliation is deferred", admin)
 
     def test_transmission_admin_uses_secret_backed_username_and_preserves_blank_password(self):
         admin = (Path(__file__).parents[1] / "src/lulu/admin_web.py").read_text()

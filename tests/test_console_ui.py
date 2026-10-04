@@ -639,7 +639,7 @@ class ConsoleUiTests(unittest.TestCase):
         game_card = (ROOT / "ui" / "GameCard.qml").read_text()
         store = (ROOT / "ui" / "StoreHome.qml").read_text()
         self.assertIn("fallback: nerdGlyph(0xF420)", catalog)
-        self.assertIn("questarr: nerdGlyph(0xF0833)", catalog)
+        self.assertNotIn("questarr", catalog.casefold())
         self.assertIn("steam: nerdGlyph(0xF1B6)", catalog)
         self.assertIn("addStore: nerdGlyph(0xF055)", catalog)
         self.assertIn('MudosAssetCatalog.icon("fallback")', game_card)

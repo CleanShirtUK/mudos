@@ -272,7 +272,7 @@ Item {
                 try { sameTrustedOrigin = (new URL(url.toString())).origin === root.trustedOrigin }
                 catch (error) { sameTrustedOrigin = false }
             }
-            // Questarr changes routes with SPA history. Preserve the
+            // Single-page apps change routes with browser history. Preserve the
             // submitted candidate across same-origin route changes so the
             // success transition can still save it; navigation away clears
             // it immediately.

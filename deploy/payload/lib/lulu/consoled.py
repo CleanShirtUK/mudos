@@ -1934,15 +1934,6 @@ class ConsoleInterface(ServiceInterface):
     def SaveWebCredential(self, profile_id: "s", origin: "s", username: "s", password: "s") -> "s":
         try:
             result = self.web_credentials.save(profile_id, origin, username, password)
-            if profile_id == "questarr":
-                # Credential persistence is complete before this asynchronous
-                # trigger is submitted.  The UI does not wait for Questarr's
-                # network reconciliation.
-                subprocess.Popen(
-                    ["systemctl", "start", "lulu-questarr-reconcile.service"],
-                    stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL, close_fds=True,
-                )
             return json.dumps(result, separators=(",", ":"))
         except ValueError as error:
             raise DBusError("org.lulu.Console.Error.WebCredentialUnavailable", str(error)) from error

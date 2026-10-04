@@ -39,9 +39,9 @@ class RommReadinessTests(unittest.TestCase):
     def test_in_flight_provider_states_become_failure_after_restart(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "provider-readiness.json"
-            path.write_text('{"questarr":{"status":"syncing","catalogue_count":4}}')
+            path.write_text('{"retired-provider":{"status":"syncing","catalogue_count":4}}')
             store = ProviderReadinessStore(path)
-            state = store.get("questarr")
+            state = store.get("retired-provider")
             self.assertEqual(state["status"], "sync_failed")
             self.assertIn("interrupted", state["message"])
 

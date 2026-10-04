@@ -39,7 +39,6 @@ var iconCodepoints = {
     check: "\uf00c",
     close: "\uf00d",
     fallback: nerdGlyph(0xF420),
-    questarr: nerdGlyph(0xF0833),
     steam: nerdGlyph(0xF1B6),
     addStore: nerdGlyph(0xF055)
 }
@@ -114,8 +113,6 @@ function libraryDimensionIcon(mode) {
 function storeIcon(id, kind) {
     if (kind === "store" && String(id || "") === "steam")
         return icon("steam")
-    if (kind === "store" && String(id || "") === "questarr")
-        return icon("questarr")
     if (kind === "store" && String(id || "") === "flathub")
         return icon("flathub")
     if (kind === "add")

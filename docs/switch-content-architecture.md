@@ -4,11 +4,11 @@ Nintendo Switch base content, updates, and DLC are components of one game,
 not separate Mudos library games.  `src/lulu/switch_content.py` defines the
 provider-neutral `GameContentComponent` boundary.
 
-Each component preserves its source (`romm` or `questarr`), provider/source
-ID, parent game identity, role, title ID, version, path, and downloader job
-ID.  Questarr's structured game association is authoritative; its observed
-`downloadType` is downloader protocol, so it must not be treated as a role.
-RomM's file categories are preferred when supplied.  Release-name inference
+Each component preserves its source, provider/source ID, optional generic
+parent game identity, role, title ID, version, path, and downloader job ID.
+Provider-supplied download type is downloader protocol, so it must not be
+treated as a content role. RomM's file categories are preferred when supplied.
+Release-name inference
 is deliberately a last-resort fallback, and mixed/composite releases remain
 ambiguous until their package contents can be inspected.
 

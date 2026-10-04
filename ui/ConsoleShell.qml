@@ -1856,8 +1856,6 @@ import QtQuick.Controls
         browserLaunchName = displayName
         browserLaunchUrl = url
         browserReturnSpace = "home"
-        // Questarr login credentials are appliance PAM passwords. Do not route
-        // them through trusted-web autofill/capture or persist them in SecretStore.
         openBrowser(url)
     }
 
@@ -2408,7 +2406,7 @@ import QtQuick.Controls
         if (space !== "home" || selectedCategoryIndex !== 1 || !storeHomeLandingRef)
             return null
         var card = storeHomeLandingRef.homeCards()[storeHomeLandingRef.homeSelectedIndex]
-        return card && card.kind === "store" && card.id !== "steam" && card.id !== "questarr"
+        return card && card.kind === "store" && card.id !== "steam"
             ? card : null
     }
     function openStoreOptions() {

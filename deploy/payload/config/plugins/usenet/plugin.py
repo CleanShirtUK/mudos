@@ -13,7 +13,6 @@ def register(context):
         category=str(configuration.get("category", "mudos")),
         dupe_prefix=str(configuration.get("dupe_prefix", "mudos:")),
     ))
-    from lulu.questarr_metadata import QuestarrMetadataClient
     context.register("acquisition", {"provider": "usenet",
-                                      "executor": UsenetProvider(client, questarr_metadata=QuestarrMetadataClient()),
+                                      "executor": UsenetProvider(client),
                                       "limit": 1})

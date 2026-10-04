@@ -25,14 +25,8 @@
       "/etc/systemd/system/lulu-transmission.service", "/etc/systemd/system/lulu-transmission-config.service",
       "/etc/systemd/system/lulu-file-browser.service",
       "/etc/systemd/system/lulu-osk@.service",
-      "/etc/systemd/system/lulu-questarr.service", "/etc/systemd/system/lulu-questarr-reconcile.service",
-      "/etc/systemd/system/lulu-questarr-auth-proxy.service",
-      "/etc/systemd/system/lulu-questarr-pam-auth.service",
       "/etc/systemd/system/lulu-provider-install@.service.d/storage.conf",
-      "/etc/systemd/system/multi-user.target.wants/lulu-transmission.service",
-      "/etc/systemd/system/multi-user.target.wants/lulu-questarr.service",
-      "/etc/systemd/system/multi-user.target.wants/lulu-questarr-auth-proxy.service",
-      "/etc/systemd/system/multi-user.target.wants/lulu-questarr-pam-auth.service"
+       "/etc/systemd/system/multi-user.target.wants/lulu-transmission.service"
     ],
     "system_files": [
       "/etc/pam.d/lulu-session", "/etc/lulu/presentation.conf", "/etc/lulu/mudos-recovery-token",
@@ -44,7 +38,6 @@
       "/etc/polkit-1/rules.d/49-lulu-network.rules", "/etc/polkit-1/rules.d/50-lulu-storage.rules",
       "/etc/polkit-1/rules.d/51-lulu-nzbget.rules",
       "/etc/polkit-1/rules.d/52-lulu-acquisition.rules",
-      "/etc/polkit-1/rules.d/53-lulu-questarr-reconcile.rules",
       "/etc/polkit-1/rules.d/54-lulu-transmission.rules",
       "/etc/polkit-1/rules.d/55-lulu-transmission-config.rules",
       "/etc/polkit-1/rules.d/56-lulu-session-restart.rules", "/etc/polkit-1/rules.d/57-lulu-provider-install.rules",
@@ -54,7 +47,21 @@
       "/etc/avahi/services/mudos-http.service", "/etc/tmpfiles.d/lulu.conf",
       "/etc/systemd/system/inputplumber.service.d/lulu.conf"
     ],
-    "patterns": ["/etc/inputplumber/devices.d/lulu-gamepad-event*.yaml"]
+    "patterns": ["/etc/inputplumber/devices.d/lulu-gamepad-event*.yaml"],
+    "retired_systemd_units": [
+      "lulu-questarr.service", "lulu-questarr-reconcile.service",
+      "lulu-questarr-auth-proxy.service", "lulu-questarr-pam-auth.service"
+    ],
+    "retired_exact_paths": [
+      "/etc/systemd/system/lulu-questarr.service",
+      "/etc/systemd/system/lulu-questarr-reconcile.service",
+      "/etc/systemd/system/lulu-questarr-auth-proxy.service",
+      "/etc/systemd/system/lulu-questarr-pam-auth.service",
+      "/etc/systemd/system/multi-user.target.wants/lulu-questarr.service",
+      "/etc/systemd/system/multi-user.target.wants/lulu-questarr-auth-proxy.service",
+      "/etc/systemd/system/multi-user.target.wants/lulu-questarr-pam-auth.service",
+      "/etc/polkit-1/rules.d/53-lulu-questarr-reconcile.rules"
+    ]
   },
   "mutable": {
     "exact_paths": [
@@ -66,7 +73,7 @@
       "/home/lulu/.config/gogdl", "/home/lulu/.config/lutris", "/home/lulu/.local/share/lutris",
       "/home/lulu/.config/sunshine", "/home/lulu/.config/systemd/user/lulu-sunshine-dev.service",
       "/home/lulu/.config/systemd/user/default.target.wants/lulu-sunshine-dev.service",
-      "/var/lib/lulu", "/var/lib/lulu-questarr",
+       "/var/lib/lulu",
       "/var/lib/lulu-transmission", "/var/lib/nzbget"
     ],
     "directories": ["/home/lulu/.config/lulu", "/home/lulu/.local/share/lulu", "/home/lulu/.cache/lulu", "/var/lib/lulu"],

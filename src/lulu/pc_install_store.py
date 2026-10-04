@@ -41,13 +41,21 @@ class PcInstallSourceStore:
 
     @staticmethod
     def from_dict(value: dict[str, object]) -> PcInstallSource:
+        # Legacy Questarr rows represented an acquired payload. Preserve its
+        # durable identity as a generic acquisition ID and discard provider IDs.
+        provenance = str(value.get("provenance", "manual"))
+        legacy_download_id = value.get("questarr_download_id")
+        acquisition_id = value.get("acquisition_id")
+        if provenance == "questarr":
+            provenance = "acquisition"
+            acquisition_id = str(legacy_download_id) if legacy_download_id else None
         files = tuple(PcSourceFile(**item) for item in value.get("files", ()) if isinstance(item, dict))
         return PcInstallSource(
             canonical_game_id=str(value["canonical_game_id"]), title=str(value["title"]),
-            provenance=str(value["provenance"]), source_type=PcSourceType(str(value["source_type"])),
+            provenance=provenance, source_type=PcSourceType(str(value["source_type"])),
             completed_path=str(value["completed_path"]), files=files,
             ready_to_install=bool(value.get("ready_to_install", False)),
-            questarr_game_id=value.get("questarr_game_id"), questarr_download_id=value.get("questarr_download_id"),
+            acquisition_id=str(acquisition_id) if acquisition_id else None,
             downloader_job_id=value.get("downloader_job_id"), downloader_hash=value.get("downloader_hash"),
             lutris_slug=value.get("lutris_slug"), lutris_installer_slug=value.get("lutris_installer_slug"),
         )

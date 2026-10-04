@@ -8,5 +8,3 @@ required = false
 [providers]
 default = "dolphin"
 supported = ["dolphin"]
-[questarr]
-library_dir = "Wii"

@@ -144,8 +144,7 @@ class OnboardingStateTests(unittest.TestCase):
                          ["client_id", "client_secret"])
         self.assertEqual([field["name"] for field in rows["providers.romm"]["fields"]],
                          ["url", "api_key"])
-        self.assertEqual([field["name"] for field in rows["providers.prowlarr"]["fields"]],
-                         ["endpoint", "api_key"])
+        self.assertNotIn("providers.prowlarr", rows)
         self.assertIn("api-docs.igdb.com/#getting-started", rows["metadata.igdb"]["help"])
         self.assertIn("Client API Token", str(rows["providers.romm"]))
 

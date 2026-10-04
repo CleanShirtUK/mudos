@@ -26,7 +26,6 @@ case "$provider" in
         flatpak override --system --filesystem=/home/lulu/Games:ro "$app_id"
         exit 0
         ;;
-    questarr) exec "$root/scripts/provision-questarr.sh" ;;
     torrent|transmission) exec "$root/scripts/provision-transmission.sh" ;;
     usenet|nzbget)
         pacman -S --needed --noconfirm nzbget

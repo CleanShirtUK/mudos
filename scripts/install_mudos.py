@@ -30,10 +30,6 @@ SYSTEMD_UNITS = {
     "mudos-recovery-ui.service": "mudos-recovery-ui.service", "lulu-inputplumber-hotplug.service": "lulu-inputplumber-hotplug.service",
     "lulu-osk@.service": "lulu-osk@.service", "lulu-file-browser.service": "lulu-file-browser.service",
     "lulu-transmission-config.service": "lulu-transmission-config.service",
-    "lulu-questarr-reconcile.service": "lulu-questarr-reconcile.service",
-    "lulu-questarr.service": "lulu-questarr.service",
-    "lulu-questarr-auth-proxy.service": "lulu-questarr-auth-proxy.service",
-    "lulu-questarr-pam-auth.service": "lulu-questarr-pam-auth.service",
 }
 DOLPHIN_BLUETOOTH_POLKIT_RULE = Path(
     "/etc/polkit-1/rules.d/61-lulu-dolphin-bluetooth.rules"
@@ -52,6 +48,7 @@ def load_manifest(path: Path) -> dict:
     paths.extend([data["immutable"]["release_root"], data["immutable"]["selector"]])
     paths.extend(data["system_integration"]["systemd_files"])
     paths.extend(data["system_integration"]["system_files"])
+    paths.extend(data["system_integration"].get("retired_exact_paths", []))
     paths.extend(data["mutable"]["exact_paths"])
     paths.extend(entry["path"] for entry in data["mutable"].get("initial_directories", []))
     for raw in paths:
@@ -272,11 +269,22 @@ def provider_install_writable_paths(manifest: dict,
 
 def integration_paths(manifest: dict) -> list[Path]:
     owned = manifest["system_integration"]
-    paths = [Path(p) for p in [*owned["systemd_files"], *owned["system_files"]]]
+    paths = [Path(p) for p in [*owned["systemd_files"], *owned["system_files"],
+                               *owned.get("retired_exact_paths", [])]]
     for pattern in owned.get("patterns", []):
         path = Path(pattern)
         paths.extend(sorted(path.parent.glob(path.name)))
     return paths
+
+
+def retire_compatibility_integration(manifest: dict) -> None:
+    """Disable/unlink retired service files without touching their data."""
+    retired = manifest["system_integration"]
+    for unit in retired.get("retired_systemd_units", []):
+        run(["systemctl", "disable", "--now", unit], check=False)
+    for raw in retired.get("retired_exact_paths", []):
+        Path(raw).unlink(missing_ok=True)
+    run(["systemctl", "daemon-reload"], check=False)
 
 
 def safe_remove(path: Path, repo: Path, protected: list[str]) -> None:
@@ -372,10 +380,10 @@ def plan(repo: Path, manifest: dict, action: str, *, purge: bool = False) -> lis
 def stop_services(apply: bool, manifest: dict, *, stop_host_mounts: bool) -> None:
     units = ["lulu.target", "lulu-session@2.service", "lulu-admin.service", "lulu-consoled.service",
              "lulu-acquisition.service", "mudos-recovery.service", "mudos-recovery-ui.service",
-             "lulu-transmission.service", "lulu-questarr.service",
-             "lulu-questarr-auth-proxy.service", "lulu-questarr-pam-auth.service",
-             "lulu-questarr-reconcile.service",
+             "lulu-transmission.service",
              "nzbget.service", "lulu-file-browser.service"]
+    # Compatibility cleanup for units from the retired storefront integration.
+    units.extend(manifest["system_integration"].get("retired_systemd_units", []))
     for unit in units:
         if apply:
             run(["systemctl", "disable", "--now", unit], check=False)
@@ -398,6 +406,9 @@ def install_integration(repo: Path, release: Path, manifest: dict,
     root = Path("/")
     packaging = release / "packaging"
     _install_systemd_units(packaging)
+    # Remove only exact retired component units/policy files recorded as
+    # compatibility cleanup. No application data or acquisition state is touched.
+    retire_compatibility_integration(manifest)
     # The provider installer may write only to each active Mudos acquisition
     # subtree. Keep the target-specific exception explicit and ownership-scoped.
     storage_dropin = Path("/etc/systemd/system/lulu-provider-install@.service.d/storage.conf")
@@ -594,8 +605,7 @@ def _restart_update_services(active_units: list[str]) -> None:
     # shell restarts and waits for their D-Bus objects.
     order = ("lulu-consoled.service", "lulu-acquisition.service",
              "lulu-session@2.service", "lulu-admin.service", "mudos-recovery.service",
-             "lulu-file-browser.service", "lulu-questarr.service",
-             "lulu-questarr-pam-auth.service", "lulu-questarr-auth-proxy.service")
+              "lulu-file-browser.service")
     for unit in order:
         if unit in active_units:
             run(["systemctl", "restart", unit])
@@ -607,8 +617,7 @@ def _verify_update_services(active_units: list[str], previous_pids: dict[str, in
         if not _active(unit):
             raise InstallError(f"Mudos service did not return active after update: {unit}")
         if unit not in {"lulu-session@2.service", "lulu-admin.service", "mudos-recovery.service",
-                        "lulu-consoled.service", "lulu-acquisition.service",
-                        "lulu-questarr-auth-proxy.service", "lulu-questarr-pam-auth.service"}:
+                        "lulu-consoled.service", "lulu-acquisition.service"}:
             continue
         try:
             pid = _main_pid(unit)
@@ -653,21 +662,11 @@ def do_update(repo: Path, manifest: dict, dry_run: bool,
         raise InstallError("--update is allowed only while the Mudos shell owns the session")
     active_units = [unit for unit in ("lulu-session@2.service", "lulu-consoled.service",
                                        "lulu-acquisition.service", "lulu-admin.service",
-                                       "mudos-recovery.service", "lulu-file-browser.service",
-                                       "lulu-questarr.service", "lulu-questarr-auth-proxy.service",
-                                       "lulu-questarr-pam-auth.service")
+                                        "mudos-recovery.service", "lulu-file-browser.service")
                     if _active(unit)]
     if "lulu-session@2.service" not in active_units:
         raise InstallError("--update requires the normal Mudos graphical session to be active")
     previous_pids = {unit: _main_pid(unit) for unit in active_units}
-    questarr_proxy_needs_start = (
-        "lulu-questarr.service" in active_units
-        and "lulu-questarr-auth-proxy.service" not in active_units
-    )
-    questarr_pam_auth_needs_start = (
-        "lulu-questarr.service" in active_units
-        and "lulu-questarr-pam-auth.service" not in active_units
-    )
     release = existing_release(release_root, sha)
     if release is None:
         release = release_root / f"{sha[:7]}-candidate-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}"
@@ -735,30 +734,13 @@ def do_update(repo: Path, manifest: dict, dry_run: bool,
                 alias.symlink_to(f"current/{alias.name}")
                 created_aliases.append(alias)
         repair_steam_bootstrap_directory(steam_data_root)
-        if questarr_pam_auth_needs_start:
-            run(["systemctl", "enable", "--now", "lulu-questarr-pam-auth.service"])
-            active_units.append("lulu-questarr-pam-auth.service")
         _restart_update_services(active_units)
-        if questarr_proxy_needs_start:
-            # Questarr's private upstream is moved off the LAN-facing port in
-            # this integration release. Start its new PAM proxy on the first
-            # upgrade where Questarr was already enabled and running.
-            run(["systemctl", "enable", "--now", "lulu-questarr-auth-proxy.service"])
-            active_units.append("lulu-questarr-auth-proxy.service")
         _verify_update_services(active_units, previous_pids)
         after_state = _session_state()
         if after_state.get("lifecycle") != "shell":
             raise InstallError("updated Sessiond did not restore the normal Mudos shell")
     except Exception as error:
         print(f"update validation failed; restoring previous release {previous}: {error}", file=sys.stderr)
-        if questarr_proxy_needs_start:
-            run(["systemctl", "disable", "--now", "lulu-questarr-auth-proxy.service"], check=False)
-            if "lulu-questarr-auth-proxy.service" in active_units:
-                active_units.remove("lulu-questarr-auth-proxy.service")
-        if questarr_pam_auth_needs_start:
-            run(["systemctl", "disable", "--now", "lulu-questarr-pam-auth.service"], check=False)
-            if "lulu-questarr-pam-auth.service" in active_units:
-                active_units.remove("lulu-questarr-pam-auth.service")
         if selected_new_release:
             run([sys.executable, str(repo / "scripts/release.py"), "activate", "--release-dir", str(previous)])
         for path, old in old_units.items():
@@ -919,7 +901,6 @@ def verify(repo: Path, manifest: dict) -> None:
                       "lulu-provider-install@.service", "mudos-recovery.service",
                       "mudos-recovery-guard.service", "mudos-recovery-ui.service",
                       "lulu-inputplumber-hotplug.service", "lulu-osk@.service",
-                      "lulu-questarr-reconcile.service",
                       "lulu-file-browser.service", "lulu-transmission-config.service")
     for unit in required_units:
         installed = Path("/etc/systemd/system") / unit

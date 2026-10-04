@@ -33,13 +33,6 @@ timeout = 4.0
 [providers.steam_aurelia]
 enabled = true
 
-[providers.prowlarr]
-enabled = false
-endpoint = "http://192.168.0.197:9696/"
-
-[providers.prowlarr.secrets]
-api_key = "prowlarr/api-key"
-
 # Future services use the same namespace boundary when implemented:
 # [providers.lutris]
 # [providers.flatpak]

@@ -230,10 +230,10 @@ class JobDomainTests(unittest.TestCase):
             executor = TerminalCleanupExecutor()
             manager = JobManager()
             manager.register_executor("usenet", executor)
-            cancelled = DownloadJob("cancelled-owned", "usenet", "Questarr",
+            cancelled = DownloadJob("cancelled-owned", "usenet", "Acquired payload",
                                     content_identity="file:///private/request.nzb",
                                     state=JobState.CANCELLED, stage="cancelled",
-                                    cancellation_supported=True, origin="questarr",
+                                    cancellation_supported=True, origin="mudos",
                                     provider_job_id="4", backend="nzbget",
                                     ownership_label="mudos:cancelled-owned")
             manager.jobs[cancelled.job_id] = cancelled
@@ -247,17 +247,17 @@ class JobDomainTests(unittest.TestCase):
 
         asyncio.run(exercise())
 
-    def test_external_reconciliation_does_not_cancel_acquisitiond_owned_questarr_job(self) -> None:
+    def test_external_reconciliation_does_not_cancel_mudos_owned_acquisition_job(self) -> None:
         async def exercise() -> None:
             executor = ExternalDiscoveryExecutor()
             manager = JobManager()
             manager.register_executor("usenet", executor)
-            questarr = manager.submit("usenet", "file:///private/staging/request.nzb", "Questarr",
-                                      origin="questarr", origin_metadata={"source": "Questarr"})
+            acquired = manager.submit("usenet", "file:///private/staging/request.nzb", "Acquired payload",
+                                      origin="mudos", origin_metadata={"source": "manual"})
             await asyncio.sleep(0)
             await manager.reconcile_external()
-            self.assertEqual(manager.jobs[questarr.job_id].state, JobState.TRANSFERRING)
-            self.assertFalse(manager.jobs[questarr.job_id].retired)
+            self.assertEqual(manager.jobs[acquired.job_id].state, JobState.TRANSFERRING)
+            self.assertFalse(manager.jobs[acquired.job_id].retired)
 
             # Genuine provider-imported rows that disappear from discovery
             # still retire as before.
@@ -276,7 +276,7 @@ class JobDomainTests(unittest.TestCase):
             self.assertFalse(manager.jobs[mudos.job_id].retired)
 
             executor.release.set()
-            await manager._tasks[questarr.job_id]
+            await manager._tasks[acquired.job_id]
 
         asyncio.run(exercise())
 

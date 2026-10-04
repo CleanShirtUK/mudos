@@ -19,7 +19,6 @@ from typing import Any, Mapping
 
 from ...credential import SecretStore
 from ...jobs import DownloadJob, ExternalAcquisition, JobError, JobState
-from ...questarr_metadata import QuestarrMetadataClient
 from ...job_manager import JobCancelled, JobExecutionError, JobReporter
 from ...paths import MudosPaths, PATHS
 
@@ -234,9 +233,8 @@ class TorrentProvider:
     supports_pause = True
 
     def __init__(self, client: TransmissionClient, paths: MudosPaths = PATHS,
-                 *, label: str = "mudos", questarr_metadata: QuestarrMetadataClient | None = None) -> None:
+                 *, label: str = "mudos") -> None:
         self.client, self.paths, self.label = client, paths, label
-        self.questarr_metadata = questarr_metadata
 
     def _roots(self) -> tuple[Path, Path]:
         return self.paths.torrent_incomplete_root.resolve(strict=False), self.paths.torrent_complete_root.resolve(strict=False)
@@ -264,8 +262,7 @@ class TorrentProvider:
         for torrent in await self.client.list_all():
             if self.label in torrent.labels:
                 continue
-            origin = "questarr" if any(label.casefold() == "questarr" for label in torrent.labels) else "external"
-            provenance = "questarr" if origin == "questarr" else "external/manual"
+            origin, provenance = "external", "external/manual"
             if torrent.state == "paused":
                 state, stage = JobState.PAUSED, "paused"
             elif torrent.state == "queued":
@@ -274,13 +271,11 @@ class TorrentProvider:
                 state, stage = JobState.COMPLETED, "completed"
             else:
                 state, stage = JobState.TRANSFERRING, "transferring"
-            metadata = self.questarr_metadata.find(torrent.hash_string, "torrent") \
-                if origin == "questarr" and self.questarr_metadata else None
             records.append(ExternalAcquisition(
                 f"transmission:{torrent.hash_string.lower()}", torrent.name, origin, provenance,
                 torrent.hash_string.lower(), state, torrent.progress, torrent.downloaded_bytes,
                 torrent.total_bytes, stage, torrent.download_rate, torrent.provider_state,
-                torrent.destination, "transmission", metadata.as_dict() if metadata else {}))
+                torrent.destination, "transmission", {}))
         return tuple(records)
 
     async def add_magnet(self, magnet: str, destination: str | None = None) -> str:

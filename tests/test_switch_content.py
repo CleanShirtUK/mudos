@@ -9,9 +9,9 @@ from lulu.switch_content import (
 
 class SwitchContentModelTests(unittest.TestCase):
     def test_components_share_one_parent_identity(self) -> None:
-        identity = canonical_identity(parent_game_id="questarr:game:smash")
+        identity = canonical_identity(parent_game_id="acquisition:game:smash")
         components = [
-            GameContentComponent(identity, "switch", role, "questarr", str(i),
+            GameContentComponent(identity, "switch", role, "acquisition", str(i),
                                  title_id=f"0100152000022{i:03d}", parent_game_id=identity)
             for i, role in enumerate((SwitchContentRole.BASE, SwitchContentRole.UPDATE,
                                       SwitchContentRole.DLC), 1)
@@ -37,15 +37,15 @@ class SwitchContentModelTests(unittest.TestCase):
         self.assertNotEqual(canonical_identity(base_title_id="0100152000022000"),
                             canonical_identity(base_title_id="0100152000022800"))
 
-    def test_questarr_protocol_is_not_mistaken_for_content_role(self) -> None:
+    def test_acquisition_protocol_is_not_mistaken_for_content_role(self) -> None:
         component = component_from_provider(
-            source="questarr", source_id="download-1", parent_game_id="questarr:game:1",
+            source="acquisition", source_id="download-1", parent_game_id="acquisition:game:1",
             metadata={"downloadType": "torrent", "role": "update", "downloadHash": "hash-1",
                       "version": "13.0.2"}, filename="release.nsp")
         self.assertEqual(component.role, SwitchContentRole.UPDATE)
         self.assertEqual(component.provider_job_id, "hash-1")
         with self.assertRaises(ValueError):
-            component_from_provider(source="questarr", source_id="download-2",
-                                    parent_game_id="questarr:game:1",
+            component_from_provider(source="acquisition", source_id="download-2",
+                                    parent_game_id="acquisition:game:1",
                                     metadata={"downloadType": "torrent"},
                                     filename="NSP + Update + DLC")

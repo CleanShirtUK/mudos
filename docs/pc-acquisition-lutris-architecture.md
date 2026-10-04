@@ -2,23 +2,16 @@
 
 ## Boundary
 
-Questarr owns discovery and release selection. Transmission/NZBGet owns
-transfer. Mudos observes completed Questarr-labelled/category downloads and
-turns them into `PcInstallSource` records; completion is **Ready to Install**,
-not an installed Library game. Manual files and directories use the same
-source model with `provenance=manual`.
-
-Questarr's durable association is its parent `gameId` plus each download UUID
-and downloader hash/job. Mudos resolves that metadata through Questarr's
-read-only API, keyed by `(protocol, downloader hash)`. Release-title matching
-is only a fallback and is never the authoritative association. Questarr's
-read-only acquisition mounts remain sources; Mudos never grants Questarr write
-access to `Executables`.
+Acquisitiond, Transmission, and NZBGet provide provider-neutral download
+execution and persistence. A completed acquired payload or a manually selected
+file/directory can be represented as a `PcInstallSource`; completion is **Ready
+to Install**, not an installed Library game. Source identity is generic and
+does not require a particular acquisition frontend.
 
 ## Source inspection
 
-`PcInstallSource` records canonical identity, provenance, Questarr/download
-IDs, downloader hash/job, completed path, discovered files, source type, and
+`PcInstallSource` records canonical identity, provenance, optional generic
+acquisition identity, downloader hash/job, completed path, discovered files, source type, and
 readiness. Inspection never executes a file, mounts an image, or inspects an
 incomplete downloader path. Initial classifications are Windows EXE, MSI,
 disc image, archive, directory, multi-part media, and unknown. Unknown data

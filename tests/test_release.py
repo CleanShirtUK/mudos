@@ -115,7 +115,7 @@ class ReleaseToolTests(unittest.TestCase):
             )
             for path in (
                 "packaging/lulu-vt", "packaging/mudos-provider-install",
-                "scripts/mudos-questarr", "scripts/release.py",
+                "scripts/release.py",
                 "deploy/payload/bin/verify-mudos.sh", "src/lulu/__init__.py",
                 "ui/placeholder.qml", "config/placeholder.toml", "packages/placeholder.txt",
             ):

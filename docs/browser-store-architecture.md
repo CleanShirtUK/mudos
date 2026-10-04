@@ -8,11 +8,8 @@ cookies. Authentication state remains WebEngine-owned across browser close and
 shell restart; autofill is only a recovery path when a login form remains.
 
 Mudos-owned web credentials are separate from provider integration credentials.
-The first profile is the built-in `questarr` Store card and exact origin
-`http://127.0.0.1:5000`. Username and password are stored only in SecretStore
-as `web/questarr/username` and `web/questarr/password`. A custom Store pointing
-at the same URL does not receive this profile because trust is attached to the
-built-in Store identity.
+No Store currently opts into trusted credential capture. A custom Store URL is
+not trusted merely because it resembles a local service origin.
 
 The generic browser adapter detects ordinary username/password controls only
 while an authorised profile is active. Backend retrieval, save, replacement,

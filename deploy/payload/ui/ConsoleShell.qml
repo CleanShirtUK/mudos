@@ -1762,8 +1762,7 @@ import QtQuick.Controls
         browserLaunchName = displayName
         browserLaunchUrl = url
         browserReturnSpace = "home"
-        openBrowser(url, id === "questarr" ? "questarr" : "", id === "questarr"
-            ? "http://127.0.0.1:5000" : "")
+        openBrowser(url)
     }
 
     function closeBrowser() {
@@ -2254,7 +2253,7 @@ import QtQuick.Controls
         if (space !== "home" || selectedCategoryIndex !== 1 || !storeHomeLandingRef)
             return null
         var card = storeHomeLandingRef.homeCards()[storeHomeLandingRef.homeSelectedIndex]
-        return card && card.kind === "store" && card.id !== "steam" && card.id !== "questarr"
+        return card && card.kind === "store" && card.id !== "steam"
             ? card : null
     }
     function openStoreOptions() {

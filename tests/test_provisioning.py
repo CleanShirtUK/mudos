@@ -14,7 +14,7 @@ class ProvisioningTests(unittest.TestCase):
         units = (
             "lulu-session@.service", "lulu-consoled.service", "lulu-acquisition.service",
             "lulu-admin.service", "lulu-inputplumber-hotplug.service",
-            "lulu-questarr-reconcile.service", "lulu-osk@.service",
+            "lulu-osk@.service",
             "lulu-provider-install@.service", "mudos-recovery-guard.service",
             "mudos-recovery.service", "mudos-recovery-ui.service",
         )
@@ -30,6 +30,19 @@ class ProvisioningTests(unittest.TestCase):
     def test_shell_provisions_animated_webp_image_plugin(self) -> None:
         provisioning = (ROOT / "scripts" / "provision-appliance-services.sh").read_text()
         self.assertIn("qt6-webengine qt6-imageformats ffmpeg python-pillow", provisioning)
+
+    def test_retired_provider_is_not_shipped_or_provisioned_as_a_service(self) -> None:
+        service_units = tuple((ROOT / "packaging").glob("*.service"))
+        for unit in service_units:
+            with self.subTest(unit=unit.name):
+                text = unit.read_text().casefold()
+                self.assertNotIn("questarr", text)
+        for script in ("provision-appliance-services.sh", "provision-transmission.sh",
+                       "provision-nzbget.sh", "release.py"):
+            with self.subTest(script=script):
+                text = (ROOT / "scripts" / script).read_text().casefold()
+                self.assertNotIn("questarr", text)
+        self.assertFalse((ROOT / "config/plugins/questarr/plugin.toml").exists())
 
     def test_canonical_and_compatibility_qml_are_lintable(self) -> None:
         source = ROOT / "ui"

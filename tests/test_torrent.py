@@ -85,17 +85,17 @@ class TransmissionClientTests(unittest.TestCase):
 
 
 class TorrentSafetyTests(unittest.TestCase):
-    def test_external_discovery_uses_hash_and_preserves_questarr_origin(self):
+    def test_external_discovery_uses_hash_and_normalizes_unmanaged_labels(self):
         item = TorrentDownload("ABCDEF12", "Manual", "/downloads", (), .5, 5, 10, 2, 0,
-                               None, "transferring", "4", None, ("questarr",), False, False)
+                               None, "transferring", "4", None, ("external-import",), False, False)
         class FakeClient:
             async def list_all(self): return (item,)
         async def exercise():
             provider = TorrentProvider(FakeClient())  # type: ignore[arg-type]
             records = await provider.discover_external()
             self.assertEqual(records[0].content_identity, "transmission:abcdef12")
-            self.assertEqual(records[0].origin, "questarr")
-            self.assertEqual(records[0].provenance, "questarr")
+            self.assertEqual(records[0].origin, "external")
+            self.assertEqual(records[0].provenance, "external/manual")
         asyncio.run(exercise())
 
     def test_mudos_ownership_sidecar_records_job_identity(self):

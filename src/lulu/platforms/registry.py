@@ -48,7 +48,6 @@ def load_platforms(directory: Path | None = None) -> PlatformRegistry:
         bios = raw.get("bios", {})
         providers = raw.get("providers", {})
         setup = raw.get("setup", {})
-        questarr = raw.get("questarr", {})
         if not platform_id or not isinstance(content, dict) or not isinstance(providers, dict):
             raise ValueError(f"invalid platform definition: {path}")
         subdir = str(content.get("subdir", platform_id)).strip()
@@ -56,15 +55,6 @@ def load_platforms(directory: Path | None = None) -> PlatformRegistry:
         supported = tuple(str(item).casefold() for item in providers.get("supported", ()))
         if not subdir or not extensions or not supported:
             raise ValueError(f"incomplete platform definition: {path}")
-        if not isinstance(questarr, dict):
-            raise ValueError(f"invalid Questarr platform mapping: {path}")
-        questarr_library_dir = questarr.get("library_dir")
-        if questarr_library_dir is not None:
-            questarr_library_dir = str(questarr_library_dir).strip()
-            if (not questarr_library_dir or Path(questarr_library_dir).is_absolute()
-                    or len(Path(questarr_library_dir).parts) != 1
-                    or questarr_library_dir in {".", ".."}):
-                raise ValueError(f"invalid Questarr library directory: {path}")
         setup_files = []
         if not isinstance(setup, dict) or not isinstance(setup.get("files", []), list):
             raise ValueError(f"invalid setup file requirements: {path}")
@@ -89,6 +79,6 @@ def load_platforms(directory: Path | None = None) -> PlatformRegistry:
             ContentDefinition(subdir, extensions),
             BiosDefinition(bool(bios.get("required", False)), bios.get("subdir")),
             supported, providers.get("default"), raw.get("assets", {}).get("icon"),
-            tuple(setup_files), questarr_library_dir,
+            tuple(setup_files),
         )
     return PlatformRegistry(definitions)

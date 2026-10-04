@@ -48,7 +48,7 @@ owner API answers. No credentials are loaded for diagnostics.
 
 Initial observations cover the graphical session/Sessiond, Consoled,
 Acquisitiond, Admin, InputPlumber, NetworkManager connectivity, BlueZ,
-Questarr, Transmission, NZBGet, InputPlumber controller inventory, and basic
+Transmission, NZBGet, InputPlumber controller inventory, and basic
 free-space on system/home/game roots. Restart actions are initially limited to
 Mudos, Consoled, Acquisitiond, and Admin. Power and every restart action have
 impact metadata; power actions require explicit confirmation in the local UI

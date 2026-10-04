@@ -19,7 +19,6 @@ session_unit="$dropin_root/lulu-session@.service"
 consoled_unit="$dropin_root/lulu-consoled.service"
 target_unit="$dropin_root/lulu.target"
 osk_unit="$dropin_root/lulu-osk@.service"
-questarr_reconcile_unit="$dropin_root/lulu-questarr-reconcile.service"
 inputplumber_hotplug_unit="$dropin_root/lulu-inputplumber-hotplug.service"
 transmission_config_unit="$dropin_root/lulu-transmission-config.service"
 sunshine_user_config=/home/lulu/.config/sunshine
@@ -57,8 +56,6 @@ refresh() {
     install -m 0644 "$staging/packaging/lulu.target" "$target_unit"
     sed "s#/opt/lulu/current#/opt/lulu/dev-current#g" \
         "$staging/packaging/lulu-osk@.service" > "$osk_unit"
-    sed "s#/opt/lulu/current#/opt/lulu/dev-current#g" \
-        "$staging/packaging/lulu-questarr-reconcile.service" > "$questarr_reconcile_unit"
     install -m 0644 "$staging/packaging/udev/80-lulu-osk.rules" \
         /etc/udev/rules.d/80-lulu-osk.rules
     install -m 0644 "$staging/packaging/udev/81-lulu-gamepad-hotplug.rules" \
@@ -93,8 +90,6 @@ refresh() {
         /etc/polkit-1/rules.d/51-lulu-nzbget.rules
     install -D -m 0644 "$staging/packaging/polkit-1/rules.d/52-lulu-acquisition.rules" \
         /etc/polkit-1/rules.d/52-lulu-acquisition.rules
-    install -D -m 0644 "$staging/packaging/polkit-1/rules.d/53-lulu-questarr-reconcile.rules" \
-        /etc/polkit-1/rules.d/53-lulu-questarr-reconcile.rules
     install -D -m 0644 "$staging/packaging/polkit-1/rules.d/54-lulu-transmission.rules" \
         /etc/polkit-1/rules.d/54-lulu-transmission.rules
     install -D -m 0644 "$staging/packaging/polkit-1/rules.d/55-lulu-transmission-config.rules" \
@@ -148,7 +143,6 @@ Environment=LULU_INSTALL_ROOT=$runtime
 EOF
     systemctl daemon-reload
     systemctl disable lulu-acquisition.service lulu-consoled.service >/dev/null 2>&1 || true
-    systemctl enable lulu-questarr-reconcile.service >/dev/null
     systemctl restart lulu-admin.service
     sudo -u lulu XDG_RUNTIME_DIR=/run/user/958 \
         DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/958/bus \
@@ -165,7 +159,6 @@ EOF
     sudo -u lulu XDG_RUNTIME_DIR=/run/user/958 \
         DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/958/bus \
         systemctl --user enable --now lulu-sunshine-dev.service
-    systemctl start lulu-questarr-reconcile.service
     logger -t lulu-runtime "event=refresh-complete target=$runtime head=$head" 2>/dev/null || true
     echo "refreshed non-promotable dev runtime: $runtime"
 }

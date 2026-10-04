@@ -23,7 +23,6 @@ class WebCredentialProfile:
 
 
 TRUSTED_WEB_PROFILES = {
-    "questarr": WebCredentialProfile("questarr", "http://127.0.0.1:5000"),
 }
 
 

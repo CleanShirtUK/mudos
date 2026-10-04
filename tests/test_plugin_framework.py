@@ -88,12 +88,19 @@ class PluginFrameworkTests(unittest.TestCase):
     def test_real_plugin_manifests_declare_core_contributions(self):
         registry = PluginRegistry(Path(__file__).parents[1] / "config" / "plugins")
         registry.discover()
-        self.assertEqual({card.card_id for card in registry.store_cards()}, {"questarr", "flathub"})
+        self.assertEqual({card.card_id for card in registry.store_cards()}, {"flathub"})
         self.assertEqual(next(card for card in registry.store_cards() if card.card_id == "flathub").glyph, "f324")
         services = {service.service_id for service in registry.services()}
-        self.assertTrue({"questarr", "transmission", "nzbget"} <= services)
-        plan = registry.resolve_selection({"questarr"})
-        self.assertIn("lutris", plan.selected)
+        self.assertTrue({"transmission", "nzbget"} <= services)
+        self.assertNotIn("questarr", services)
+        components = ComponentRegistry(registry)
+        components.discover()
+        self.assertNotIn("questarr", {item.component_id for item in components.all()})
+        self.assertTrue({"transmission", "nzbget"} <= {item.service_id for item in registry.services()})
+        from lulu.onboarding import provider_manifest
+        providers = {row["id"] for row in provider_manifest(components)}
+        self.assertNotIn("questarr", providers)
+        self.assertTrue({"torrent", "usenet"} <= providers)
 
     def test_flatpak_is_a_plugin_component_without_core_store_ui_assumptions(self):
         registry = PluginRegistry(Path(__file__).parents[1] / "config" / "plugins")

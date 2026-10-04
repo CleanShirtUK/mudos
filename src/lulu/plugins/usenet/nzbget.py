@@ -16,7 +16,6 @@ from typing import Any, Mapping
 from ...jobs import DownloadJob, ExternalAcquisition, JobError, JobState
 from ...job_manager import JobCancelled, JobExecutionError, JobReporter
 from ...paths import MudosPaths, PATHS
-from ...questarr_metadata import QuestarrMetadataClient
 
 LOGGER = logging.getLogger("lulu.plugins.usenet")
 
@@ -245,9 +244,8 @@ class UsenetProvider:
     supports_pause = True
 
     def __init__(self, client: NzbGetClient, paths: MudosPaths = PATHS, *, category: str = "mudos",
-                 dupe_prefix: str = "mudos:", questarr_metadata: QuestarrMetadataClient | None = None) -> None:
+                 dupe_prefix: str = "mudos:") -> None:
         self.client, self.paths, self.category, self.dupe_prefix = client, paths, category, dupe_prefix
-        self.questarr_metadata = questarr_metadata
 
     def _dupe_key(self, job: DownloadJob) -> str:
         return f"{self.dupe_prefix}{job.job_id}"
@@ -272,8 +270,6 @@ class UsenetProvider:
         return f"nzbget:external:{digest}"
 
     def _external_origin(self, item: NzbDownload | NzbHistory) -> tuple[str, str]:
-        if item.category.casefold() == "questarr" or item.dupe_key.casefold().startswith("questarr:"):
-            return "questarr", "questarr"
         return "external", "external/manual"
 
     def _remember_external(self, key: str, item: NzbDownload | NzbHistory,
@@ -299,25 +295,21 @@ class UsenetProvider:
             origin, provenance = self._external_origin(item)
             key = self._external_key(item); self._remember_external(key, item, origin, provenance)
             state, stage = _external_state(item.status)
-            metadata = self.questarr_metadata.find(item.dupe_key, "usenet") \
-                if origin == "questarr" and self.questarr_metadata else None
             records.append(ExternalAcquisition(
                 key, item.name, origin, provenance, str(item.nzbid), state,
                 item.progress, item.downloaded_bytes, item.total_bytes, stage, item.rate,
-                item.status, item.destination, "nzbget", metadata.as_dict() if metadata else {}))
+                item.status, item.destination, "nzbget", {}))
         for item in history:
             if item.dupe_key.startswith(self.dupe_prefix):
                 continue
             origin, provenance = self._external_origin(item)
             key = self._external_key(item); self._remember_external(key, item, origin, provenance)
             state, stage = _external_state(item.status, history=True)
-            metadata = self.questarr_metadata.find(item.dupe_key, "usenet") \
-                if origin == "questarr" and self.questarr_metadata else None
             records.append(ExternalAcquisition(
                 key, item.name, origin, provenance, str(item.nzbid), state,
                 1.0 if state == JobState.COMPLETED else None, None, None, stage, None,
                 item.status, item.final_directory or item.destination, "nzbget",
-                metadata.as_dict() if metadata else {},
+                {},
                 JobError("usenet-provider-failure", _history_failure_message(item), retryable=True)
                 if state == JobState.FAILED else None))
         return tuple(records)

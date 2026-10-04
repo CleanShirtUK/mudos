@@ -30,13 +30,44 @@ def test_ownership_manifest_separates_release_state_and_shared_packages():
                    if isinstance(path, str))
 
 
+def test_retired_service_names_are_cleanup_only_and_retired_data_is_not_owned():
+    data = manifest()
+    retired = data["system_integration"]["retired_systemd_units"]
+    assert retired
+    assert not set(retired).intersection(installer.SYSTEMD_UNITS)
+    assert not any("questarr" in path for path in data["mutable"]["exact_paths"])
+    assert all(path not in data["system_integration"]["systemd_files"] for path in
+               data["system_integration"]["retired_exact_paths"])
+
+
+def test_retired_service_cleanup_preserves_component_data(tmp_path, monkeypatch):
+    unit_file = tmp_path / "old.service"
+    polkit_file = tmp_path / "old.rules"
+    application_data = tmp_path / "application-data"
+    unit_file.write_text("old unit")
+    polkit_file.write_text("old policy")
+    application_data.mkdir()
+    (application_data / "state.db").write_text("keep")
+    calls = []
+    monkeypatch.setattr(installer, "run", lambda args, **kwargs: calls.append((args, kwargs)))
+    installer.retire_compatibility_integration({"system_integration": {
+        "retired_systemd_units": ["old.service"],
+        "retired_exact_paths": [str(unit_file), str(polkit_file)],
+    }})
+    assert not unit_file.exists()
+    assert not polkit_file.exists()
+    assert (application_data / "state.db").read_text() == "keep"
+    assert calls[0][0] == ["systemctl", "disable", "--now", "old.service"]
+    assert calls[-1][0] == ["systemctl", "daemon-reload"]
+
+
 def test_aurelia_review_provider_enable_preserves_other_user_configuration(tmp_path):
     config = tmp_path / "provider-services.toml"
-    config.write_text("[providers.prowlarr]\nenabled = false\n\n"
+    config.write_text("[providers.usenet]\nenabled = false\n\n"
                       "[providers.steam_aurelia]\nenabled = false\nendpoint = 'unused'\n")
     installer.enable_aurelia_review_provider(config)
     text = config.read_text()
-    assert "[providers.prowlarr]\nenabled = false" in text
+    assert "[providers.usenet]\nenabled = false" in text
     assert "[providers.steam_aurelia]\nenabled = true\nendpoint = 'unused'" in text
     installer.enable_aurelia_review_provider(config)
     assert config.read_text().count("[providers.steam_aurelia]") == 1
@@ -175,10 +206,7 @@ def test_update_selects_verified_release_without_touching_mutable_state(tmp_path
     monkeypatch.setattr(installer, "source_revision", lambda _repo: (revision, "test"))
     monkeypatch.setattr(installer.os, "geteuid", lambda: 0)
     monkeypatch.setattr(installer, "_session_state", lambda: {"lifecycle": "shell"})
-    monkeypatch.setattr(installer, "_active",
-                        lambda unit: unit not in {"lulu-file-browser.service",
-                                                  "lulu-questarr-auth-proxy.service",
-                                                  "lulu-questarr-pam-auth.service"})
+    monkeypatch.setattr(installer, "_active", lambda unit: unit != "lulu-file-browser.service")
     monkeypatch.setattr(installer, "mutable_paths",
                         lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("mutable paths read")))
     monkeypatch.setattr(installer, "install_integration",
@@ -221,10 +249,7 @@ def test_update_selects_verified_release_without_touching_mutable_state(tmp_path
     assert not steam_data_root.exists()  # update does not initialize absent Steam state
     assert restarted == ["lulu-session@2.service", "lulu-consoled.service",
                          "lulu-acquisition.service", "lulu-admin.service",
-                         "mudos-recovery.service", "lulu-questarr.service",
-                         "lulu-questarr-pam-auth.service"]
-    assert ["systemctl", "enable", "--now", "lulu-questarr-auth-proxy.service"] in commands
-    assert ["systemctl", "enable", "--now", "lulu-questarr-pam-auth.service"] in commands
+                         "mudos-recovery.service"]
     assert not any("pacman" in " ".join(command) or "purge" in " ".join(command)
                    for command in commands)
 
@@ -565,43 +590,12 @@ def test_dufs_is_provisioned_as_a_canonical_core_service():
     assert "core DUFS file manager package is not installed" in installer_source
 
 
-def test_questarr_restart_is_rate_limited_and_has_bounded_retries():
-    unit = (ROOT / "packaging/lulu-questarr.service").read_text()
-    assert "StartLimitIntervalSec=300" in unit
-    assert "StartLimitBurst=3" in unit
 
 
-def test_questarr_uses_configured_storage_resolver_not_hardcoded_host_root():
-    unit = (ROOT / "packaging/lulu-questarr.service").read_text()
-    launcher = (ROOT / "scripts/mudos-questarr").read_text()
-    assert "mudos-questarr" in unit
-    assert "PATHS.torrent_root" in launcher and "PATHS.usenet_root" in launcher
-    assert "questarr_library_mounts()" in launcher
-    assert 'library_volumes+=(--volume "${host_paths[index]}:${host_paths[index+1]}:rw")' in launcher
-    assert "PORT=5002" in launcher and "HOST=127.0.0.1" in launcher
 
 
-def test_questarr_provisioning_installs_auth_proxy_and_restarts_private_upstream():
-    provision = (ROOT / "scripts/provision-questarr.sh").read_text()
-    assert "lulu-questarr-auth-proxy.service" in provision
-    assert "lulu-questarr-pam-auth.service" in provision
-    assert "systemctl restart lulu-questarr.service" in provision
-    assert "systemctl enable --now lulu-questarr-auth-proxy.service" in provision
-    assert "systemctl enable --now lulu-questarr-pam-auth.service" in provision
-    proxy_unit = (ROOT / "packaging/lulu-questarr-auth-proxy.service").read_text()
-    assert "Requires=lulu-questarr.service lulu-questarr-pam-auth.service" in proxy_unit
-    assert "ReadWritePaths=/home/lulu/.local/share/lulu" in proxy_unit
-    auth_unit = (ROOT / "packaging/lulu-questarr-pam-auth.service").read_text()
-    assert "User=root" in auth_unit
-    assert "ReadWritePaths=/run/lulu-questarr-pam /run/faillock" in auth_unit
 
 
-def test_release_builder_installs_questarr_launcher_at_service_exec_path():
-    builder = (ROOT / "scripts/release.py").read_text()
-    unit = (ROOT / "packaging/lulu-questarr.service").read_text()
-    assert '"bin/mudos-questarr"' in builder
-    assert 'source / "scripts" / "mudos-questarr"' in builder
-    assert "ExecStart=/opt/lulu/current/bin/mudos-questarr" in unit
 
 
 def test_production_units_do_not_reference_dev_runtime():

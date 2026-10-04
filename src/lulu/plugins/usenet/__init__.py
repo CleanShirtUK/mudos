@@ -13,8 +13,7 @@ def build_executor(configuration):
         category=str(configuration.get("category", "mudos")),
         dupe_prefix=str(configuration.get("dupe_prefix", "mudos:")),
     ))
-    from ...questarr_metadata import QuestarrMetadataClient
-    return client, UsenetProvider(client, questarr_metadata=QuestarrMetadataClient())
+    return client, UsenetProvider(client)
 
 
 __all__ = ["NzbGetClient", "NzbGetConfig", "NzbGetError", "UsenetProvider",

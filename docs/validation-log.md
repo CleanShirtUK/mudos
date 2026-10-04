@@ -2030,3 +2030,32 @@ restart may be required for InputPlumber to publish a newly created target.
   path for a Wii title that supports GameCube controllers. The launch remains
   batch/direct with the existing `--user` root. Wii Remote passthrough,
   Compatibility Mode, and InputPlumber policy were not changed.
+
+## Questarr retirement — 2026-10-04
+
+- Removed the storefront/plugin, Acquisitiond gateway, downloader metadata
+  adapters, authentication proxy/PAM services, image/build/provisioning and
+  firewall helpers, provider/OOBE/Admin/recovery registration, and related UI.
+  Acquisitiond, Transmission, NZBGet, generic acquisition jobs and persistence,
+  manual PC installation sources, and Lutris remain provider-neutral.
+- `PcInstallSourceStore` reads older persisted records by converting their
+  retired provider provenance and download UUID into generic acquisition
+  provenance/identity. Acquisition job records likewise convert the old owned
+  origin to `mudos`. Tests cover both migrations and manual Lutris source use.
+- The installer has exact-path, cleanup-only compatibility metadata for old
+  service units and one Polkit file. Update/uninstall may disable/remove those
+  integration files, but the old application data directory is deliberately
+  not owned or purged. No appliance operation was performed.
+- Validation: Python **1,145 passed**, **84 subtests passed**; native build and
+  CTest **1/1 passed**; `qmllint` completed with existing unqualified-access
+  warnings; direct QML suite **129 passed / 10 failed** in the known environment
+  and stale-layout/native-model cases (`Mudos.Poc` is not installed). Static
+  Python compilation and `git diff --check` passed. No release was built or
+  deployed.
+
+### Final retirement regression rerun — 2026-10-04
+
+- Added an explicit installer compatibility-cleanup test proving old service
+  and policy files are removed while application data is preserved. Final full
+  Python rerun: **1,146 passed**, **84 subtests passed**. Native and QML results
+  above are unchanged.

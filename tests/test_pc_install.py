@@ -6,7 +6,7 @@ from lulu.pc_install import (
     PcSourceType, RecipeFileRequirement, canonical_lutris_root,
     inspect_pc_source, match_required_files,
 )
-from lulu.questarr_metadata import QuestarrDownloadMetadata
+from lulu.pc_install_store import PcInstallSourceStore
 
 
 class PcInstallTests(unittest.TestCase):
@@ -60,12 +60,17 @@ class PcInstallTests(unittest.TestCase):
         root = canonical_lutris_root("My Game!")
         self.assertEqual(root.parts[-3:], ("Executables", "lutris", "My-Game"))
 
-    def test_questarr_metadata_is_durable_by_protocol_and_downloader_hash(self):
-        item = QuestarrDownloadMetadata("game-1", "Free Game", ("Windows",),
-                                       "download-1", "abc123", "Free.Game.Release",
-                                       "torrent", "completed", 123)
-        self.assertEqual(item.as_dict()["game_id"], "game-1")
-        self.assertEqual(item.as_dict()["download_hash"], "abc123")
+    def test_legacy_acquired_source_record_migrates_to_generic_identity(self):
+        source = PcInstallSourceStore.from_dict({
+            "canonical_game_id": "pc:test", "title": "Test", "provenance": "questarr",
+            "source_type": "directory", "completed_path": "/games/test",
+            "questarr_game_id": "game-1", "questarr_download_id": "download-1",
+            "ready_to_install": True,
+        })
+        self.assertEqual(source.provenance, "acquisition")
+        self.assertEqual(source.acquisition_id, "download-1")
+        self.assertEqual(source.source_id, "acquisition:download-1")
+        self.assertTrue(source.ready_to_install)
 
 
 if __name__ == "__main__":

@@ -30,7 +30,6 @@ RUNTIME_EXCLUDED_SCRIPTS = (
     "steam-bootstrap.sh",
     "steam-session-bootstrap.sh",
     "provision-steamcmd.sh",
-    "migrate-prowlarr-key.sh",
     "usenet-acquisition-test.py",
     "test_provisioning.py",
 )
@@ -38,7 +37,6 @@ REQUIRED_FILES = (
     "bin/lulu-shell",
     "bin/mudos-guide",
     "bin/lulu-vt",
-    "bin/mudos-questarr",
     "bin/verify-mudos.sh",
     "lib/lulu/sessiond.py",
     "lib/lulu/consoled.py",
@@ -50,7 +48,6 @@ REQUIRED_FILES = (
     "scripts/console-ui-bridge.py",
     "scripts/aurelia-graphical-launch.py",
     "scripts/provision-aurelia-state.py",
-    "scripts/reconcile-questarr.py",
     "scripts/provision-inputplumber-gamepads.py",
     "scripts/dolphin-bluetooth-lease.py",
     "scripts/steam-auth-surface.py",
@@ -173,7 +170,6 @@ def build_payload(repo_root: Path, payload: Path) -> None:
         shutil.move(str(build_dir / binary), payload / "bin" / binary)
     shutil.rmtree(build_dir)
     shutil.copy2(source / "packaging" / "lulu-vt", payload / "bin" / "lulu-vt")
-    shutil.copy2(source / "scripts" / "mudos-questarr", payload / "bin" / "mudos-questarr")
     shutil.copy2(source / "packaging" / "mudos-provider-install", payload / "bin" / "mudos-provider-install")
     shutil.copy2(source / "deploy" / "payload" / "bin" / "verify-mudos.sh", payload / "bin" / "verify-mudos.sh")
     for path in payload.joinpath("bin").iterdir():

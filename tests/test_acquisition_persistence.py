@@ -54,20 +54,37 @@ class AcquisitionPersistenceTests(unittest.TestCase):
             reopened.close()
             store.close()
 
-    def test_questarr_origin_correlation_survives_job_store_restart(self) -> None:
+    def test_provider_owned_origin_correlation_survives_job_store_restart(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "acquisition.sqlite3"
             store = AcquisitionStore(path)
-            questarr = DownloadJob(
-                "questarr-job", "usenet", "Safe NZB", content_identity="file:///safe.nzb",
-                origin="questarr", origin_metadata={"transport": "usenet", "external_client_id": 17},
+            acquired = DownloadJob(
+                "acquired-job", "usenet", "Safe NZB", content_identity="file:///safe.nzb",
+                origin="mudos", origin_metadata={"transport": "usenet", "external_client_id": 17},
             )
-            store.save_all([questarr])
+            store.save_all([acquired])
             reopened = AcquisitionStore(path)
             restored = reopened.load()[0]
-            self.assertEqual(restored.origin, "questarr")
+            self.assertEqual(restored.origin, "mudos")
             self.assertEqual(restored.origin_metadata,
                              {"transport": "usenet", "external_client_id": 17})
+            reopened.close()
+            store.close()
+
+    def test_legacy_provider_origin_migrates_to_generic_owned_origin(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "acquisition.sqlite3"
+            store = AcquisitionStore(path)
+            store.save_all([DownloadJob("legacy", "usenet", "Payload",
+                                        content_identity="file:///completed/payload.nzb")])
+            store._connection.execute(
+                "UPDATE acquisition_jobs SET origin = ? WHERE job_id = ?",
+                ("questarr", "legacy"))
+            store._connection.commit()
+            reopened = AcquisitionStore(path)
+            restored = reopened.load()[0]
+            self.assertEqual(restored.origin, "mudos")
+            self.assertEqual(restored.content_identity, "file:///completed/payload.nzb")
             reopened.close()
             store.close()
 

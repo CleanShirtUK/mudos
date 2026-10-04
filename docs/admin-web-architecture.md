@@ -27,12 +27,10 @@ rendered, but their names were exposed. Editing is now centralized under
 | Transmission | `/integration/providers.torrent` | Username, connection address, password replacement |
 | NZBGet | `/integration/providers.usenet` | Server address, Web UI username, password replacement |
 | Usenet account | `/integration/providers.usenet.server` | Server address, port, encryption, connections, username/password |
-| Prowlarr | `/integration/providers.prowlarr` | Server address, API key |
 | RomM | `/integration/providers.romm` | Server address and private credential where configured |
 | Steam / Game metadata | `/integration/providers.steam`, `/integration/metadata.igdb` | Only fields present in authoritative configuration |
-| Questarr | `/services` | Operational status and Open link; no duplicate downloader credentials |
 
-Transmission, NZBGet, and Prowlarr credentials remain SecretStore-backed.
+Transmission and NZBGet credentials remain SecretStore-backed.
 Blank secret fields preserve existing values. Existing values are never put in
 HTML. Save, Test connection, and Open Web UI use the same visual action order
 where the service has a Web UI.

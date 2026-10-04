@@ -36,13 +36,12 @@ class PcInstallSource:
 
     canonical_game_id: str
     title: str
-    provenance: str  # questarr or manual
+    provenance: str  # acquisition source or manual
     source_type: PcSourceType
     completed_path: str
     files: tuple[PcSourceFile, ...] = ()
     ready_to_install: bool = False
-    questarr_game_id: str | None = None
-    questarr_download_id: str | None = None
+    acquisition_id: str | None = None
     downloader_job_id: str | None = None
     downloader_hash: str | None = None
     lutris_slug: str | None = None
@@ -50,8 +49,8 @@ class PcInstallSource:
 
     @property
     def source_id(self) -> str:
-        if self.provenance == "questarr" and self.questarr_download_id:
-            return f"questarr-download:{self.questarr_download_id}"
+        if self.acquisition_id:
+            return f"acquisition:{self.acquisition_id}"
         return f"{self.provenance}:{self.completed_path}"
 
 
@@ -119,8 +118,7 @@ def _files(root: Path, *, limit: int = 4096) -> tuple[PcSourceFile, ...]:
 
 
 def inspect_pc_source(path: Path, *, canonical_game_id: str, title: str,
-                      provenance: str = "manual", questarr_game_id: str | None = None,
-                      questarr_download_id: str | None = None,
+                      provenance: str = "manual", acquisition_id: str | None = None,
                       downloader_job_id: str | None = None,
                       downloader_hash: str | None = None) -> PcInstallSource:
     """Inspect a completed payload without executing or mounting anything."""
@@ -149,8 +147,8 @@ def inspect_pc_source(path: Path, *, canonical_game_id: str, title: str,
     return PcInstallSource(
         canonical_game_id=canonical_game_id, title=title, provenance=provenance,
         source_type=source_type, completed_path=str(path), files=files,
-        ready_to_install=ready, questarr_game_id=questarr_game_id,
-        questarr_download_id=questarr_download_id, downloader_job_id=downloader_job_id,
+        ready_to_install=ready, acquisition_id=acquisition_id,
+        downloader_job_id=downloader_job_id,
         downloader_hash=downloader_hash,
     )
 

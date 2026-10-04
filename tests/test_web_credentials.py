@@ -27,21 +27,21 @@ class WebCredentialTests(unittest.TestCase):
                          "http://127.0.0.1.evil.example:5000")
         self.assertEqual(exact_origin("https://127.0.0.1:5000/"), "https://127.0.0.1:5000")
 
-    def test_questarr_credentials_are_not_exposed_to_the_browser(self):
+    def test_unregistered_web_profiles_are_not_exposed_to_the_browser(self):
         secrets = MemorySecrets()
         store = WebCredentialStore(secrets)
         with self.assertRaises(ValueError):
-            store.get("questarr", "http://127.0.0.1:5000/")
+            store.get("unknown-profile", "http://127.0.0.1:5000/")
         with self.assertRaises(ValueError):
-            store.save("questarr", "http://127.0.0.1:5000", "user", "password")
+            store.save("unknown-profile", "http://127.0.0.1:5000", "user", "password")
         self.assertFalse(secrets.values)
 
     def test_custom_store_and_wrong_origin_cannot_read_or_write(self):
         store = WebCredentialStore(MemorySecrets())
         for profile, origin in (("", "http://127.0.0.1:5000"),
-                                ("questarr", "http://localhost:5000"),
-                                ("questarr", "http://127.0.0.1:5001"),
-                                ("questarr", "https://127.0.0.1:5000")):
+                                ("unknown-profile", "http://localhost:5000"),
+                                ("unknown-profile", "http://127.0.0.1:5001"),
+                                ("unknown-profile", "https://127.0.0.1:5000")):
             with self.assertRaises(ValueError):
                 store.get(profile, origin)
             with self.assertRaises(ValueError):

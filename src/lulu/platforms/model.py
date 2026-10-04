@@ -39,7 +39,6 @@ class PlatformDefinition:
     default_provider: str | None = None
     icon: str | None = None
     setup_files: tuple[SetupFileRequirement, ...] = ()
-    questarr_library_dir: str | None = None
 
     @property
     def label(self) -> str:

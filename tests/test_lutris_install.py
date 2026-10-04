@@ -115,10 +115,10 @@ class LutrisInstallTests(unittest.TestCase):
         async def exercise():
             with tempfile.TemporaryDirectory() as directory:
                 root = Path(directory); payload = root / "payload.exe"; payload.write_bytes(b"fixture")
-                source = PcInstallSource("pc:free-game", "Free Game", "questarr",
+                source = PcInstallSource("pc:free-game", "Free Game", "acquisition",
                                          PcSourceType.WINDOWS_INSTALLER, str(payload),
                                          (PcSourceFile(str(payload), "payload.exe", 7, "exe"),), True,
-                                         questarr_game_id="game", questarr_download_id="download")
+                                         acquisition_id="download")
                 store = PcInstallSourceStore(root / "sources.json"); executor = LutrisInstallExecutor(store, FakeLutris(True))
                 source_id = executor.register_source(source); manager = JobManager(); manager.register_executor("lutris", executor)
                 job = manager.submit("lutris", source_id, "Free Game", operation=JobOperation.INSTALL)

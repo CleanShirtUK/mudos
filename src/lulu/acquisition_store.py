@@ -216,7 +216,11 @@ class AcquisitionStore:
         # origin/deletion_policy columns were temporarily reversed.
         if origin == "preserve-partial" and deletion_policy in {"external", "questarr", "mudos"}:
             origin, deletion_policy = deletion_policy, "preserve-partial"
-        if origin not in {"mudos", "questarr", "external"}:
+        # Older provider-owned acquisition records used a provider name as
+        # their origin. They remain Mudos-owned jobs, not external downloads.
+        if origin == "questarr":
+            origin = "mudos"
+        if origin not in {"mudos", "external"}:
             origin = "external" if content_identity.startswith("nzbget:external:") else "mudos"
         return DownloadJob(
             job_id=str(row["job_id"]), provider=str(row["provider"]),

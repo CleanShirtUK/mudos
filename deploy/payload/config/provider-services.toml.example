@@ -30,12 +30,6 @@ enabled = false
 endpoint = "https://www.protondb.com/api/v1/reports/summaries"
 timeout = 4.0
 
-[providers.prowlarr]
-enabled = false
-endpoint = "http://192.168.0.197:9696/"
-
-[providers.prowlarr.secrets]
-api_key = "prowlarr/api-key"
 
 # Future services use the same namespace boundary when implemented:
 # [providers.lutris]
