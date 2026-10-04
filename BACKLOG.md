@@ -225,7 +225,7 @@ Historical implementation logs, validation logs, defect ledgers, review notes, c
 - **Status:** \`SUPERSEDED\`
 - **Current truth:** The original requirement no longer represents the current presentation model.
 
-### EMU-001 legacy A/B and X/Y remapping requirement
+### EMU-LEGACY-001 — A/B and X/Y remapping requirement
 
 - **Status:** \`SUPERSEDED\`
 - **Current truth:** This standalone remapping feature is no longer wanted.
