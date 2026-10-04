@@ -163,6 +163,7 @@ class ProvisioningTests(unittest.TestCase):
         self.assertLess(stop, restart)
         self.assertLess(restart, start)
         self.assertNotIn("systemctl restart lulu-acquisition.service lulu-consoled.service", script)
+        self.assertIn('chown lulu:lulu "$sunshine_user_units/default.target.wants"', script)
 
     def test_dev_refresh_stages_provider_installer_inside_published_runtime(self) -> None:
         script = (ROOT / "scripts/dev-runtime.sh").read_text()

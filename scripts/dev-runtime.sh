@@ -82,6 +82,9 @@ refresh() {
         "$sunshine_user_units/lulu-sunshine-dev.service"
     mkdir -p "$sunshine_user_units/default.target.wants"
     chown -R lulu:lulu /home/lulu/.config/sunshine "$sunshine_user_units/lulu-sunshine-dev.service"
+    # mkdir above runs as root; systemctl --user must own the wants directory
+    # to restore Sunshine's default.target enablement during a refresh.
+    chown lulu:lulu "$sunshine_user_units/default.target.wants"
     install -D -m 0644 "$staging/packaging/polkit-1/rules.d/49-lulu-network.rules" \
         /etc/polkit-1/rules.d/49-lulu-network.rules
     install -D -m 0644 "$staging/packaging/polkit-1/rules.d/50-lulu-storage.rules" \
