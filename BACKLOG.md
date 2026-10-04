@@ -29,25 +29,28 @@ Historical implementation logs, validation logs, defect ledgers, review notes, c
 
 ## Current work
 
-### EDEN-001 — Complete Eden AppImage migration acceptance
+### EDEN-001 — Complete Eden AppImage migration
 
-- **Status:** `VALIDATION`
+- **Status:** `ACTIVE`
 - **Priority:** P0
 - **Area:** Eden / Switch provider / Session lifecycle
-- **Current truth:** Mudos has migrated Eden from the Flathub 0.2.1 build (`58c1e20ee5`) to a pinned official x86_64 Clang-PGO AppImage reporting v0.8.1, source commit `d16735f5b618942136d6ab53466e3be0a382c30a`. The AppImage migration, prompt return-to-shell lifecycle fix, and coherent NAND/profile migration repair are deployed to `/opt/lulu/dev-current`. `/opt/lulu/current` remains unchanged and the dev runtime is non-promotable until physical acceptance completes.
+- **Current truth:** Mudos has migrated Eden from the Flathub 0.2.1 build (`58c1e20ee5`) to a pinned official x86_64 Clang-PGO AppImage reporting v0.8.1, source commit `d16735f5b618942136d6ab53466e3be0a382c30a`. The AppImage migration, prompt return-to-shell lifecycle fix, and coherent NAND/profile migration repair are deployed to `/opt/lulu/dev-current`. `/opt/lulu/current` remains unchanged and the dev runtime is non-promotable.
+- **Latest physical acceptance result:** **FAILED**. Mario Kart 8 Deluxe still launches as **v1.4.0**, not the expected **v4.0.0 + DLC**, and controller input no longer works in Eden. Treat both as current AppImage-migration defects. Do not promote.
 - **Known repaired defects:**
   - old Eden 0.2.1 intermittent whole-scene pink/green colour cast in Mario Kart 8 Deluxe;
   - AppImage helper processes delaying return to Mudos after Eden's real Gamescope surface owner exited;
   - additive NAND migration copying legacy saves while skipping conflicting `profiles.dat`.
+- **Current defects to diagnose:**
+  - **EDEN-001A — external update/DLC discovery:** old and new Eden configs both scan `/home/lulu/Games/ROMs/switch`; the update/DLC NSPs remain there, but Eden v0.8.1 launches MK8 as v1.4.0 rather than v4.0.0 + DLC. Investigate current Eden external-content discovery/attachment semantics and config compatibility before moving files or reinstalling content.
+  - **EDEN-001B — controller regression:** controllers worked with the prior Eden runtime but do not work after the AppImage migration. Treat this as a provider/config compatibility regression. Compare v0.2.1 and v0.8.1 controller schema, SDL backend/device enumeration, generated `qt-config.ini`, and the exact runtime environment/InputPlumber devices consumed by Eden. Do not weaken the global controller architecture or add model-specific allowlists as a workaround.
 - **Acceptance gate:**
   - no orphaned-profile warning;
   - existing profile and save are present and unchanged;
-  - Mario Kart 8 Deluxe update and DLC are active;
-  - controller operation is normal;
+  - Mario Kart 8 Deluxe launches as v4.0.0 with DLC active;
+  - controller operation is normal through Mudos launch;
   - quit returns promptly to Mudos with shell input restored;
   - repeat the visual regression run and confirm no pink/green cast.
-- **Important diagnostic branch:** the old and new Eden configs both scan `/home/lulu/Games/ROMs/switch` for external content, and update/DLC NSPs remain there. If MK8 still launches as base game after the NAND repair, investigate Eden v0.8.1 external update/DLC discovery rather than treating it as missing NAND content.
-- **Promotion:** only after this physical gate passes should the Eden migration be promoted into the next immutable release.
+- **Promotion:** only after this complete physical gate passes should the Eden migration be promoted into the next immutable release.
 
 ### META-001 — Reconcile historical backlog material into this file
 
@@ -107,7 +110,7 @@ Historical implementation logs, validation logs, defect ledgers, review notes, c
 - **Status:** `CLOSED`
 - **Area:** Eden / Vulkan rendering
 - **Current truth:** the symptom occurred on Eden 0.2.1 (`58c1e20ee5`). After migration to the newer official Eden AppImage, four consecutive races completed without the bug. The hardware/cooling configuration was otherwise unchanged, strongly tying the symptom to the old Eden rendering path rather than BC-250 VRAM cooling.
-- **Note:** EDEN-001 still requires a post-NAND-repair visual recheck as part of full migration acceptance; that does not reopen this old 0.2.1 rendering defect by itself.
+- **Note:** EDEN-001 still requires a post-repair visual recheck as part of full migration acceptance; that does not reopen this old 0.2.1 rendering defect by itself.
 
 ---
 
