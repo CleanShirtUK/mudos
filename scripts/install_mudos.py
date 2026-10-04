@@ -32,6 +32,16 @@ SYSTEMD_UNITS = {
     "lulu-transmission-config.service": "lulu-transmission-config.service",
     "mudos-startup-surface.service": "mudos-startup-surface.service",
 }
+STARTUP_INTEGRATION_FILES = {
+    "packaging/plymouth-quit.service.d/mudos-handoff.conf":
+        Path("/etc/systemd/system/plymouth-quit.service.d/mudos-handoff.conf"),
+    "packaging/pacman.d/hooks/99-mudos-limine-config.hook":
+        Path("/etc/pacman.d/hooks/99-mudos-limine-config.hook"),
+}
+PLYMOUTH_THEME_FILES = ("mudos.plymouth", "mudos.script", "mudos-wordmark.png")
+PLYMOUTH_THEME_ROOT = Path("/usr/share/plymouth/themes/mudos")
+LIMINE_CONFIG_PATH = Path("/boot/limine.conf")
+PLYMOUTH_CONFIG_PATH = Path("/etc/plymouth/plymouthd.conf")
 DOLPHIN_BLUETOOTH_POLKIT_RULE = Path(
     "/etc/polkit-1/rules.d/61-lulu-dolphin-bluetooth.rules"
 )
@@ -353,8 +363,10 @@ def plan(repo: Path, manifest: dict, action: str, *, purge: bool = False) -> lis
         sha, _ = source_revision(repo)
         return [f"build and verify immutable release from {sha}",
                 "atomically switch /opt/lulu/current while preserving all mutable state",
+                "install startup systemd, Plymouth theme/handoff and Limine hook integration",
+                "configure the real Limine default and rebuild initramfs for the selected Plymouth theme",
                 "repair ownership/mode of the exact Steam bootstrap directory only; preserve its contents",
-                "refresh Mudos-owned systemd unit definitions only",
+                "refresh Mudos-owned systemd unit definitions",
                 "restart active Mudos runtime services from the selected release",
                 "verify service provenance; retain old release for rollback"]
     if action == "uninstall":
@@ -422,6 +434,7 @@ def install_integration(repo: Path, release: Path, manifest: dict,
     for raw in manifest["system_integration"]["systemd_files"]:
         if raw.endswith(("/dev-runtime.conf", "/dev-validation.conf")):
             Path(raw).unlink(missing_ok=True)
+    install_startup_integration(release)
     # Admin provisioner is authoritative for recovery token creation, admin/helper
     # files, policy rules, Avahi, and service activation. Runtime points at current.
     run(["bash", str(Path("/opt/lulu/current/scripts/provision-admin.sh"))], check=True)
@@ -436,10 +449,6 @@ def install_integration(repo: Path, release: Path, manifest: dict,
         "packaging/udev/83-lulu-standard-gamepad.rules": "/etc/udev/rules.d/83-lulu-standard-gamepad.rules",
         "config/inputplumber/devices/lulu-composite.yaml": "/etc/inputplumber/devices.d/lulu-composite.yaml",
         "packaging/inputplumber-restart.conf": "/etc/systemd/system/inputplumber.service.d/lulu.conf",
-        "packaging/plymouth-quit.service.d/mudos-handoff.conf":
-            "/etc/systemd/system/plymouth-quit.service.d/mudos-handoff.conf",
-        "packaging/pacman.d/hooks/99-mudos-limine-config.hook":
-            "/etc/pacman.d/hooks/99-mudos-limine-config.hook",
     }
     for source, target in copies.items():
         src = release / source
@@ -449,16 +458,6 @@ def install_integration(repo: Path, release: Path, manifest: dict,
         dest.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(src, dest)
         dest.chmod(0o644)
-    theme_source = packaging / "plymouth/themes/mudos"
-    theme_target = Path("/usr/share/plymouth/themes/mudos")
-    for source in sorted(theme_source.iterdir()):
-        if source.is_file():
-            destination = theme_target / source.name
-            destination.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(source, destination)
-            destination.chmod(0o644)
-    run(["python", str(release / "scripts/configure-mudos-limine.py")], check=True)
-    run(["plymouth-set-default-theme", "mudos", "--rebuild-initrd"], check=True)
     rules = packaging / "polkit-1/rules.d"
     owned_rules = {Path(raw).name for raw in manifest["system_integration"]["system_files"]
                    if "/polkit-1/rules.d/" in raw}
@@ -539,6 +538,89 @@ def install_integration(repo: Path, release: Path, manifest: dict,
     run(["systemctl", "start", "mudos-recovery.service"])
     run(["systemctl", "start", "lulu-admin.service"])
     start_runtime(session_was_active=session_was_active)
+
+
+def install_startup_integration(release: Path) -> None:
+    """Install release-owned startup assets and generate host boot config.
+
+    Release activation only changes /opt/lulu/current. This post-activation
+    step is shared by fresh installation and in-place update so required host
+    integration cannot be mistaken for immutable payload content.
+    """
+    packaging = release / "packaging"
+    required_sources = [*STARTUP_INTEGRATION_FILES,
+                       *(f"packaging/plymouth/themes/mudos/{name}"
+                         for name in PLYMOUTH_THEME_FILES),
+                       "scripts/configure-mudos-limine.py"]
+    for relative in required_sources:
+        if not (release / relative).is_file():
+            raise InstallError(f"release is missing required startup integration asset: {relative}")
+
+    for source, destination in STARTUP_INTEGRATION_FILES.items():
+        target = Path(destination)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(release / source, target)
+        target.chmod(0o644)
+
+    theme_source = packaging / "plymouth/themes/mudos"
+    PLYMOUTH_THEME_ROOT.mkdir(parents=True, exist_ok=True)
+    for name in PLYMOUTH_THEME_FILES:
+        source = theme_source / name
+        target = PLYMOUTH_THEME_ROOT / name
+        shutil.copy2(source, target)
+        target.chmod(0o644)
+
+    run([sys.executable, str(release / "scripts/configure-mudos-limine.py")], check=True)
+    run(["plymouth-set-default-theme", "mudos", "--rebuild-initrd"], check=True)
+    verify_startup_integration(release)
+
+
+def verify_startup_integration(release: Path, *,
+                               installed_files: dict[str, Path] = STARTUP_INTEGRATION_FILES,
+                               theme_root: Path = PLYMOUTH_THEME_ROOT) -> None:
+    """Fail installer verification when any required startup host asset is absent/stale."""
+    for source, destination in installed_files.items():
+        packaged = release / source
+        if not destination.is_file() or not packaged.is_file() \
+                or destination.read_bytes() != packaged.read_bytes():
+            raise InstallError(f"startup integration does not match the selected release: {destination}")
+    for name in PLYMOUTH_THEME_FILES:
+        installed = theme_root / name
+        packaged = release / "packaging/plymouth/themes/mudos" / name
+        if not installed.is_file() or not packaged.is_file() \
+                or installed.read_bytes() != packaged.read_bytes():
+            raise InstallError(f"Plymouth theme asset does not match the selected release: {installed}")
+    theme_result = run(["plymouth-set-default-theme"], capture=True)
+    if theme_result.stdout.strip() != "mudos":
+        raise InstallError("Mudos Plymouth theme is not selected")
+    helper = release / "scripts/configure-mudos-limine.py"
+    if not helper.is_file():
+        raise InstallError("selected release is missing the Limine integration validator")
+    run([sys.executable, str(helper), "--check"], check=True)
+
+
+def snapshot_startup_host_files() -> dict[Path, tuple[bytes, int] | None]:
+    paths = [Path(path) for path in STARTUP_INTEGRATION_FILES.values()]
+    paths.extend(PLYMOUTH_THEME_ROOT / name for name in PLYMOUTH_THEME_FILES)
+    paths.extend((LIMINE_CONFIG_PATH, PLYMOUTH_CONFIG_PATH))
+    return {
+        path: (path.read_bytes(), path.stat().st_mode & 0o777) if path.is_file() else None
+        for path in paths
+    }
+
+
+def restore_startup_host_files(snapshot: dict[Path, tuple[bytes, int] | None]) -> None:
+    """Restore only exact installer-owned startup files after a failed update."""
+    for path, previous in snapshot.items():
+        if previous is None:
+            path.unlink(missing_ok=True)
+            continue
+        content, mode = previous
+        path.parent.mkdir(parents=True, exist_ok=True)
+        temporary = path.with_name(f".{path.name}.mudos-restore-{os.getpid()}")
+        temporary.write_bytes(content)
+        temporary.chmod(mode)
+        temporary.replace(path)
 
 
 def start_runtime(*, session_was_active: bool) -> None:
@@ -682,6 +764,8 @@ def do_update(repo: Path, manifest: dict, dry_run: bool,
     if "lulu-session@2.service" not in active_units:
         raise InstallError("--update requires the normal Mudos graphical session to be active")
     previous_pids = {unit: _main_pid(unit) for unit in active_units}
+    previous_plymouth_theme = run(["plymouth-set-default-theme"], capture=True).stdout.strip()
+    startup_host_snapshot = snapshot_startup_host_files()
     release = existing_release(release_root, sha)
     if release is None:
         release = release_root / f"{sha[:7]}-candidate-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}"
@@ -719,6 +803,7 @@ def do_update(repo: Path, manifest: dict, dry_run: bool,
     )
     created_aliases: list[Path] = []
     selected_new_release = False
+    startup_integration_started = False
     try:
         _install_systemd_units(packaging, systemd_root)
         run(["systemctl", "daemon-reload"])
@@ -754,8 +839,21 @@ def do_update(repo: Path, manifest: dict, dry_run: bool,
         after_state = _session_state()
         if after_state.get("lifecycle") != "shell":
             raise InstallError("updated Sessiond did not restore the normal Mudos shell")
+        startup_integration_started = True
+        install_startup_integration(release)
+        run(["systemctl", "daemon-reload"])
     except Exception as error:
         print(f"update validation failed; restoring previous release {previous}: {error}", file=sys.stderr)
+        if startup_integration_started:
+            try:
+                restore_startup_host_files(startup_host_snapshot)
+                if previous_plymouth_theme:
+                    run(["plymouth-set-default-theme", previous_plymouth_theme,
+                         "--rebuild-initrd"], check=False)
+                else:
+                    run(["plymouth-set-default-theme", "--reset", "--rebuild-initrd"], check=False)
+            except OSError as rollback_error:
+                print(f"startup host integration rollback failed: {rollback_error}", file=sys.stderr)
         if selected_new_release:
             run([sys.executable, str(repo / "scripts/release.py"), "activate", "--release-dir", str(previous)])
         for path, old in old_units.items():
@@ -924,6 +1022,7 @@ def verify(repo: Path, manifest: dict) -> None:
         if not installed.is_file() or not packaged.is_file() \
                 or installed.read_bytes() != packaged.read_bytes():
             raise InstallError(f"production service does not match the selected release: {unit}")
+    verify_startup_integration(release)
     target_link = Path("/etc/systemd/system/multi-user.target.wants/lulu.target")
     if not target_link.is_symlink() or os.readlink(target_link) != "/etc/systemd/system/lulu.target":
         raise InstallError("Lulu appliance target is not enabled for boot")

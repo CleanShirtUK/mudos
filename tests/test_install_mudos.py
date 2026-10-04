@@ -88,6 +88,107 @@ def test_release_installs_a_readiness_driven_plymouth_handoff():
     assert "After=multi-user.target" not in target
 
 
+def test_update_plan_includes_post_activation_startup_host_integration(monkeypatch):
+    monkeypatch.setattr(installer, "source_revision", lambda _repo: ("a" * 40, "test"))
+    update_plan = installer.plan(ROOT, manifest(), "update")
+    assert any("systemd, Plymouth theme/handoff and Limine hook" in item for item in update_plan)
+    assert any("Limine default and rebuild initramfs" in item for item in update_plan)
+
+
+def test_startup_integration_copies_host_assets_and_runs_boot_generators(tmp_path, monkeypatch):
+    release = tmp_path / "release"
+    for relative in (*installer.STARTUP_INTEGRATION_FILES,
+                     *(f"packaging/plymouth/themes/mudos/{name}"
+                       for name in installer.PLYMOUTH_THEME_FILES),
+                     "scripts/configure-mudos-limine.py"):
+        source = release / relative
+        source.parent.mkdir(parents=True, exist_ok=True)
+        source.write_text(f"asset:{relative}\n")
+
+    destinations = {
+        source: tmp_path / "etc" / Path(target).relative_to("/")
+        for source, target in installer.STARTUP_INTEGRATION_FILES.items()
+    }
+    theme_root = tmp_path / "usr/share/plymouth/themes/mudos"
+    monkeypatch.setattr(installer, "STARTUP_INTEGRATION_FILES", destinations)
+    monkeypatch.setattr(installer, "PLYMOUTH_THEME_ROOT", theme_root)
+    calls = []
+    monkeypatch.setattr(installer, "run", lambda args, **kwargs: calls.append((args, kwargs)))
+    verified = []
+    monkeypatch.setattr(installer, "verify_startup_integration", lambda selected: verified.append(selected))
+
+    installer.install_startup_integration(release)
+
+    for source, destination in destinations.items():
+        assert destination.read_text() == f"asset:{source}\n"
+        assert destination.stat().st_mode & 0o777 == 0o644
+    for name in installer.PLYMOUTH_THEME_FILES:
+        assert (theme_root / name).read_text() == f"asset:packaging/plymouth/themes/mudos/{name}\n"
+    assert calls == [
+        ([installer.sys.executable, str(release / "scripts/configure-mudos-limine.py")],
+         {"check": True}),
+        (["plymouth-set-default-theme", "mudos", "--rebuild-initrd"], {"check": True}),
+    ]
+    assert verified == [release]
+
+
+def test_installer_verification_rejects_missing_or_stale_startup_integration(tmp_path, monkeypatch):
+    release = tmp_path / "release"
+    installed_files = {}
+    for relative in (*installer.STARTUP_INTEGRATION_FILES,
+                     *(f"packaging/plymouth/themes/mudos/{name}"
+                       for name in installer.PLYMOUTH_THEME_FILES),
+                     "scripts/configure-mudos-limine.py"):
+        source = release / relative
+        source.parent.mkdir(parents=True, exist_ok=True)
+        source.write_text(f"asset:{relative}\n")
+        if relative in installer.STARTUP_INTEGRATION_FILES:
+            installed = tmp_path / "installed" / Path(relative).name
+            installed.parent.mkdir(parents=True, exist_ok=True)
+            installed.write_bytes(source.read_bytes())
+            installed_files[relative] = installed
+    theme_root = tmp_path / "installed-theme"
+    theme_root.mkdir()
+    for name in installer.PLYMOUTH_THEME_FILES:
+        (theme_root / name).write_bytes(
+            (release / "packaging/plymouth/themes/mudos" / name).read_bytes())
+
+    commands = []
+
+    def fake_run(args, **kwargs):
+        commands.append(args)
+        return subprocess.CompletedProcess(args, 0, "mudos\n" if args == ["plymouth-set-default-theme"] else "", "")
+
+    monkeypatch.setattr(installer, "run", fake_run)
+    installer.verify_startup_integration(release, installed_files=installed_files,
+                                         theme_root=theme_root)
+    assert ["plymouth-set-default-theme"] in commands
+    assert any(args[-1] == "--check" for args in commands)
+
+    first = next(iter(installed_files.values()))
+    first.unlink()
+    with pytest.raises(installer.InstallError, match="startup integration does not match"):
+        installer.verify_startup_integration(release, installed_files=installed_files,
+                                             theme_root=theme_root)
+
+
+def test_startup_host_snapshot_restores_only_captured_paths(tmp_path):
+    existing = tmp_path / "etc/systemd/mudos-handoff.conf"
+    absent = tmp_path / "etc/pacman.d/mudos-hook"
+    existing.parent.mkdir(parents=True)
+    existing.write_text("old integration\n")
+    snapshot = {existing: (existing.read_bytes(), 0o640), absent: None}
+    existing.write_text("partially updated integration\n")
+    absent.parent.mkdir(parents=True)
+    absent.write_text("new integration\n")
+
+    installer.restore_startup_host_files(snapshot)
+
+    assert existing.read_text() == "old integration\n"
+    assert existing.stat().st_mode & 0o777 == 0o640
+    assert not absent.exists()
+
+
 def test_aurelia_review_provider_enable_preserves_other_user_configuration(tmp_path):
     config = tmp_path / "provider-services.toml"
     config.write_text("[providers.usenet]\nenabled = false\n\n"
@@ -242,6 +343,10 @@ def test_update_selects_verified_release_without_touching_mutable_state(tmp_path
     monkeypatch.setattr(installer, "_restart_update_services", lambda units: restarted.extend(units))
     monkeypatch.setattr(installer, "_main_pid", lambda unit: 1000 + len(unit))
     monkeypatch.setattr(installer, "_verify_update_services", lambda _units, _pids: None)
+    monkeypatch.setattr(installer, "snapshot_startup_host_files", lambda: {})
+    startup_integrations = []
+    monkeypatch.setattr(installer, "install_startup_integration",
+                        lambda selected: startup_integrations.append(selected))
     commands = []
 
     def fake_run(args, **_kwargs):
@@ -265,6 +370,7 @@ def test_update_selects_verified_release_without_touching_mutable_state(tmp_path
                         steam_data_root=steam_data_root)
 
     assert selector.resolve() == candidate
+    assert startup_integrations == [candidate]
     assert polkit_rule.read_text() == "updated bluetooth rule\n"
     assert udev_rule.read_text() == "updated adapter permissions\n"
     assert ["udevadm", "control", "--reload-rules"] in commands
