@@ -60,10 +60,14 @@ else
     trap - EXIT
 fi
 
-# This grant was added by the old Mudos Eden Flatpak provisioner. Revoke only
-# that exact Mudos-owned access; leave the generic Flatpak provider untouched.
+# These grants were added for the old Mudos Eden Flatpak wrapper. Revoke only
+# the two exact Mudos-owned paths; preserve unrelated Flatpak permissions and
+# keep the generic Flatpak provider untouched.
 if command -v flatpak >/dev/null 2>&1 && flatpak info --system dev.eden_emu.eden >/dev/null 2>&1; then
-    flatpak override --system --nofilesystem=/home/lulu/Games dev.eden_emu.eden
+    flatpak override --system \
+        --nofilesystem=/home/lulu/Games \
+        --nofilesystem=/home/lulu/.config/lulu/providers/eden/config \
+        dev.eden_emu.eden
 fi
 
 # Remove only the byte-identical wrapper installed by the retired Mudos

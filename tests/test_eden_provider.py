@@ -140,6 +140,9 @@ class EdenManagedProvisioningTests(unittest.TestCase):
         self.assertIn('eden) exec "$root/scripts/provision-eden.sh" ;;', installer)
         self.assertNotIn('eden) app_id=', installer)
         self.assertTrue(RUNTIME_MANIFEST.is_file())
+        provisioner = (Path(__file__).parents[1] / "scripts/provision-eden.sh").read_text()
+        self.assertIn('--nofilesystem=/home/lulu/Games', provisioner)
+        self.assertIn('--nofilesystem=/home/lulu/.config/lulu/providers/eden/config', provisioner)
 
     def test_eden_config_is_the_consumed_flatpak_file_and_preserves_unowned_settings(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
