@@ -8,23 +8,24 @@ Historical implementation logs, validation logs, defect ledgers, review notes, c
 
 ## Backlog rules
 
-1. Every engineering task must read \`BACKLOG.md\` before deciding what is outstanding.
+1. Every engineering task must read `BACKLOG.md` before deciding what is outstanding.
 2. New defects/features are added here when accepted into scope.
 3. Implementation changes must update the corresponding backlog item in the same commit/PR.
-4. Do not close an item on source/tests alone when physical acceptance is part of its gate; move it to \`VALIDATION\` instead.
-5. \`DEFERRED\` and \`PARKED\` items are intentionally not active work.
-6. Old documents under \`docs/\`, \`AURELIA_REVIEW.md\`, and historical checkpoints must not silently reopen work.
+4. Do not close an item on source/tests alone when physical acceptance is part of its gate; move it to `VALIDATION` instead.
+5. `DEFERRED` and `PARKED` items are intentionally not active work.
+6. Old documents under `docs/`, `AURELIA_REVIEW.md`, and historical checkpoints must not silently reopen work.
 7. Keep entries concise and factual. Detailed archaeology belongs in the relevant evidence document.
 8. When new evidence changes current state, update this file, not only a historical ledger.
 
 ### Status vocabulary
 
-- \`ACTIVE\` — implementation/diagnosis should proceed now.
-- \`VALIDATION\` — implementation exists; a defined acceptance gate remains.
-- \`BLOCKED\` — cannot proceed until the named dependency is resolved.
-- \`DEFERRED\` — valid future work intentionally scheduled later.
-- \`PARKED\` — investigation intentionally stopped.
-- \`CLOSED\` — resolved or superseded; retained where useful to prevent stale reopening.
+- `ACTIVE` — implementation/diagnosis should proceed now.
+- `VALIDATION` — implementation exists; a defined acceptance gate remains.
+- `BLOCKED` — cannot proceed until the named dependency is resolved.
+- `DEFERRED` — valid future work intentionally scheduled later.
+- `PARKED` — investigation intentionally stopped.
+- `CLOSED` — resolved; retained where useful to prevent stale reopening.
+- `SUPERSEDED` — replaced by a newer, narrower item or architecture; retained only to prevent stale reopening.
 
 ---
 
@@ -32,17 +33,17 @@ Historical implementation logs, validation logs, defect ledgers, review notes, c
 
 ### EDEN-001 — Complete Eden AppImage migration
 
-- **Status:** \`VALIDATION\`
+- **Status:** `VALIDATION`
 - **Priority:** P0
 - **Area:** Eden / Switch provider / Session lifecycle
-- **Current truth:** The v0.8.1 official Eden AppImage migration and subsequent external-content configuration work are deployed to \`/opt/lulu/dev-current\`; \`/opt/lulu/current\` remains unchanged. The current implementation has passed automated validation (1,169 tests, 85 subtests) and the latest external-content run produced the expected Eden AOC/update discovery evidence.
+- **Current truth:** The v0.8.1 official Eden AppImage migration and subsequent external-content configuration work are deployed to `/opt/lulu/dev-current`; `/opt/lulu/current` remains unchanged. The current implementation has passed automated validation (1,169 tests, 85 subtests) and the latest external-content run produced the expected Eden AOC/update discovery evidence.
 - **Physical acceptance:** Pending only because the display is currently unavailable. The implementation is believed ready but has not yet been physically accepted.
 - **Acceptance gate:** launch Mario Kart 8 Deluxe as v4.0.0 with DLC active; verify Wave 1 content; verify normal controller operation; verify rendering; verify prompt return to Mudos with shell input restored; repeat the visual regression check and confirm no pink/green cast.
 - **Promotion:** only after the complete physical gate passes.
 
 ### UI-001 — Complete V1 UI and presentation review
 
-- **Status:** \`VALIDATION\`
+- **Status:** `VALIDATION`
 - **Priority:** P0
 - **Area:** UI / presentation / final acceptance
 - **Current truth:** The implementation generally meets the visual brief, but Mudos has not had a deliberate end-to-end presentation review since the major Library/Installable/Settings/provider changes. Historical visual items that are functionally complete should not be reopened individually.
@@ -51,14 +52,14 @@ Historical implementation logs, validation logs, defect ledgers, review notes, c
 
 ### SET-001 — Settings UI overhaul
 
-- **Status:** \`ACTIVE\`
+- **Status:** `ACTIVE`
 - **Priority:** P1
 - **Area:** Settings
 - **Current truth:** System-settings capability is sufficient for V1 and is not an engineering blocker. The Settings UI itself needs a complete overhaul to match the current Library/Installable presentation language.
 
 ### STEAM-001 — Restore Steam provider menu/overlay in Guide
 
-- **Status:** \`ACTIVE\`
+- **Status:** `ACTIVE`
 - **Priority:** P1
 - **Area:** Steam / Guide / Aurelia
 - **Current truth:** The Aurelia migration and subsequent Steam cleanup preserved the launch path but lost the previous Steam provider-menu/overlay access from Guide.
@@ -66,7 +67,7 @@ Historical implementation logs, validation logs, defect ledgers, review notes, c
 
 ### EMU-001 — Restore functional emulator provider settings and native UI access
 
-- **Status:** \`ACTIVE\`
+- **Status:** `ACTIVE`
 - **Priority:** P1
 - **Area:** Eden / Dolphin / PCSX2
 - **Current truth:** Eden and Dolphin provider settings are still not sufficiently functional/surfaced, and PCSX2 still has the historical synthetic Escape/provider-menu regression.
@@ -74,7 +75,7 @@ Historical implementation logs, validation logs, defect ledgers, review notes, c
 
 ### OSK-001 — Restore managed OSK input and text-entry flow
 
-- **Status:** \`ACTIVE\`
+- **Status:** `ACTIVE`
 - **Priority:** P1
 - **Area:** OSK / text entry / Guide / Flathub
 - **Current truth:** Multiple OSK regressions are present:
@@ -86,7 +87,7 @@ Historical implementation logs, validation logs, defect ledgers, review notes, c
 
 ### LIB-001 — Finish Installable navigation/category behaviour
 
-- **Status:** \`ACTIVE\`
+- **Status:** `ACTIVE`
 - **Priority:** P1
 - **Area:** Library / Installable
 - **Current truth:** Basic scrolling and category navigation work, but the current Aurelia provider model requires further refinement.
@@ -95,14 +96,14 @@ Historical implementation logs, validation logs, defect ledgers, review notes, c
 
 ### HOME-001 — Define the no-installed-games empty state
 
-- **Status:** \`ACTIVE\`
+- **Status:** `ACTIVE`
 - **Priority:** P2
 - **Area:** Home / Library
 - **Current truth:** There is still no deliberately designed empty state for an appliance with no installed games.
 
 ### STORE-001 — Add external store shortcuts
 
-- **Status:** \`ACTIVE\`
+- **Status:** `ACTIVE`
 - **Priority:** P2
 - **Area:** Store
 - **Current truth:** Flathub and Installable shortcuts are correct. The missing destinations are simple external shortcuts to Steam, GOG, and Epic Games; Mudos does not provide purchasing there.
@@ -110,15 +111,15 @@ Historical implementation logs, validation logs, defect ledgers, review notes, c
 
 ### OOBE-STEAM-001 — Revalidate Steam OOBE end to end
 
-- **Status:** \`ACTIVE\`
+- **Status:** `ACTIVE`
 - **Priority:** P0
 - **Area:** OOBE / Steam / Gamescope / resident Steam runtime
-- **Current truth:** Resident host Steam is proven to authenticate and remain online on isolated \`DISPLAY=:99\`, while games remain on the Mudos Gamescope display. The runtime architecture is accepted, but Steam OOBE has changed and needs a complete end-to-end pass.
-- **Requirement:** during Steam sign-in, surface Steam through Gamescope on the main display; once authentication completes, move/return Steam to the resident \`:99\` display and leave it resident for normal runtime.
+- **Current truth:** Resident host Steam is proven to authenticate and remain online on isolated `DISPLAY=:99`, while games remain on the Mudos Gamescope display. The runtime architecture is accepted, but Steam OOBE has changed and needs a complete end-to-end pass.
+- **Requirement:** during Steam sign-in, surface Steam through Gamescope on the main display; once authentication completes, move/return Steam to the resident `:99` display and leave it resident for normal runtime.
 
 ### PACK-001 — Re-run destructive fresh-install/OOBE acceptance
 
-- **Status:** \`ACTIVE\`
+- **Status:** `ACTIVE`
 - **Priority:** P0
 - **Area:** Installer / OOBE
 - **Current truth:** The canonical installer has previously passed a destructive rehearsal, but OOBE has changed since then. A new clean-appliance acceptance is required, with particular attention to the current Aurelia and Steam OOBE paths and removal of obsolete Questarr assumptions.
@@ -126,28 +127,28 @@ Historical implementation logs, validation logs, defect ledgers, review notes, c
 
 ### UNINSTALL-001 — Complete provider-owned uninstall coverage
 
-- **Status:** \`ACTIVE\`
+- **Status:** `ACTIVE`
 - **Priority:** P1
 - **Area:** Providers / acquisition / uninstall
 - **Current truth:** Provider-owned uninstall is only partially complete. A provider-by-provider sweep is required to establish that each supported provider owns and correctly executes its uninstall path.
 
 ### PROTONDB-001 — Complete ProtonDB live/presentation validation
 
-- **Status:** \`VALIDATION\`
+- **Status:** `VALIDATION`
 - **Priority:** P2
 - **Area:** Metadata
 - **Current truth:** ProtonDB enrichment is implemented. Remaining live/presentation checks belong in the final V1 testing pass.
 
 ### ADMIN-001 — Validate Admin integration/service statuses
 
-- **Status:** \`VALIDATION\`
+- **Status:** `VALIDATION`
 - **Priority:** P2
 - **Area:** Admin
 - **Current truth:** The Admin status model is implemented; the remaining work is a complete connected/not-connected status validation sweep.
 
 ### OOBE-006 — Keep Steam username visible while typing
 
-- **Status:** \`ACTIVE\`
+- **Status:** `ACTIVE`
 - **Priority:** P2
 - **Area:** Steam OOBE / text entry
 - **Current truth:** The Steam username field is still incorrectly masked while being entered and should remain visible during entry.
@@ -158,14 +159,14 @@ Historical implementation logs, validation logs, defect ledgers, review notes, c
 
 ### ACQ-001 — Pause downloads during gameplay
 
-- **Status:** \`DEFERRED\`
+- **Status:** `DEFERRED`
 - **Area:** Acquisition / Settings
 - **Current truth:** Gameplay download pausing remains a future generic acquisition policy. It is not a V1 blocker.
 - **Trigger:** final Settings/acquisition-policy work.
 
 ### HW-BC250-001 — Add BC-250 VRAM temperature telemetry to cooling policy
 
-- **Status:** \`DEFERRED\`
+- **Status:** `DEFERRED`
 - **Area:** BC-250 hardware / fan control
 - **Current truth:** The old Mario Kart colour-cast investigation no longer points to VRAM overheating; the symptom was tied to the old Eden 0.2.1 rendering path.
 - **Reason deferred:** useful hardware enhancement, but **not a V1 blocker**.
@@ -176,58 +177,58 @@ Historical implementation logs, validation logs, defect ledgers, review notes, c
 
 ### STEAM-DBD-001 — Dead by Daylight reports Steam offline
 
-- **Status:** \`CLOSED\`
+- **Status:** `CLOSED`
 - **Current truth:** The historical Steam-offline problem was resolved by the resident isolated Steam runtime. Disney Speedstorm has also passed as a Steam-dependent physical control test.
 
 ### EDEN-MK8-001 — Mario Kart 8 Deluxe intermittent pink/green whole-scene cast
 
-- **Status:** \`CLOSED\`
+- **Status:** `CLOSED`
 - **Current truth:** This was an Eden 0.2.1 rendering-path defect. It is not a BC-250 VRAM-cooling V1 blocker.
 - **Note:** EDEN-001 still includes a final visual regression check.
 
 ### EMU-002 — Dolphin quit confirmation
 
-- **Status:** \`CLOSED\`
+- **Status:** `CLOSED`
 - **Current truth:** Dolphin quits without the old confirmation requirement.
 
 ### PROV-002 — Epic/GOG artwork and metadata
 
-- **Status:** \`CLOSED\`
+- **Status:** `CLOSED`
 - **Current truth:** The historical artwork/metadata defect is resolved.
 
 ### OOBE-002 — Epic/GOG setup presentation
 
-- **Status:** \`CLOSED\`
+- **Status:** `CLOSED`
 
 ### OOBE-003 — Individual integration API-key screens
 
-- **Status:** \`CLOSED\`
+- **Status:** `CLOSED`
 
 ### OOBE-004 — Final OOBE completion status
 
-- **Status:** \`CLOSED\`
+- **Status:** `CLOSED`
 
 ### OOBE-005 — Integration Test and Save / failure flow
 
-- **Status:** \`CLOSED\`
+- **Status:** `CLOSED`
 
 ### ADMIN-002 — Combine Integrations and Services
 
-- **Status:** \`CLOSED\`
+- **Status:** `CLOSED`
 
 ### VP-001 through VP-004, VP-006, VP-008, VP-009, VP-010, VP-012, VP-016, VP-017
 
-- **Status:** \`CLOSED\`
+- **Status:** `CLOSED`
 - **Current truth:** These historical visual defects were confirmed complete during reconciliation. Remaining presentation judgement belongs to UI-001.
 
 ### VP-015 — Metadata alignment beneath preview artwork
 
-- **Status:** \`SUPERSEDED\`
+- **Status:** `SUPERSEDED`
 - **Current truth:** The original requirement no longer represents the current presentation model.
 
 ### EMU-LEGACY-001 — A/B and X/Y remapping requirement
 
-- **Status:** \`SUPERSEDED\`
+- **Status:** `SUPERSEDED`
 - **Current truth:** This standalone remapping feature is no longer wanted.
 
 ---
@@ -263,11 +264,11 @@ Publication remains gated on the **comprehensive V1 user-testing and UI presenta
 
 The following remain useful for archaeology and evidence, but are **not authoritative backlog state**:
 
-- \`docs/visual-polish-log.md\`
-- \`docs/oobe-defect-ledger.md\`
-- \`docs/reconciliation-backlog.md\`
-- \`docs/astra-execution-log.md\`
-- \`docs/validation-log.md\`
-- \`AURELIA_REVIEW.md\`
+- `docs/visual-polish-log.md`
+- `docs/oobe-defect-ledger.md`
+- `docs/reconciliation-backlog.md`
+- `docs/astra-execution-log.md`
+- `docs/validation-log.md`
+- `AURELIA_REVIEW.md`
 
-Old \`Open\`, \`Pending\`, \`Blocked\`, or \`Not tested\` entries in those documents do not reopen work unless a new current backlog item is created.
+Old `Open`, `Pending`, `Blocked`, or `Not tested` entries in those documents do not reopen work unless a new current backlog item is created.
