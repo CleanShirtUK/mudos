@@ -153,6 +153,31 @@ Historical implementation logs, validation logs, defect ledgers, review notes, c
 - **Area:** Steam OOBE / text entry
 - **Current truth:** The Steam username field is still incorrectly masked while being entered and should remain visible during entry.
 
+
+### LUTRIS-001 — Manual user-provided Lutris installation flow
+
+- **Status:** `ACTIVE`
+- **Priority:** P1
+- **Area:** Lutris / acquisition / installation
+- **Current truth:** Mudos does not yet have a complete user-facing flow for supplying files for a manual Lutris installation.
+- **Requirement:** provide a controller-first/user-friendly flow for selecting or supplying the required installation files, handing them to the Lutris provider, and completing the installation into the canonical Mudos game layout.
+
+### QUIVER-001 — Quiver acquisition and library provider
+
+- **Status:** `ACTIVE`
+- **Priority:** P1
+- **Area:** Quiver / acquisition / library
+- **Current truth:** Quiver is intended to become a first-class Mudos acquisition and library provider.
+- **Requirement:** integrate Quiver into the provider model so its acquisition state and resulting games are represented consistently in Mudos's library and installation flows.
+
+### BOOT-001 — Restore automatic Limine default-entry selection
+
+- **Status:** `ACTIVE`
+- **Priority:** P1
+- **Area:** Boot / Limine
+- **Current truth:** Recent Limine work has left the boot menu waiting for manual selection instead of automatically selecting the Mudos default entry.
+- **Requirement:** restore automatic selection of the configured/default Mudos entry while retaining the intended Limine boot-menu behaviour.
+
 ---
 
 ## Deferred / parked
