@@ -42,10 +42,14 @@ the operator completes physical acceptance.
 **Implementation status:** The adapter now targets the provider XDG config Eden
 actually reads, registers the Switch ROM directory there, and retains the
 original Mudos button map. Runtime-path regression coverage is implemented; the
-full test suite passes (1,169 tests and 85 subtests). No dev deployment or
-physical acceptance has occurred.
+full test suite passes (1,169 tests and 85 subtests). Commit `fe840db` was
+deployed to `/opt/lulu/dev-current` on 2026-10-04. The dev tree is explicitly
+`promotable=false` and records `dirty=true` because pre-existing, uncommitted
+session/lifecycle work was included in the dev refresh. `/opt/lulu/current`
+still points to the immutable candidate release. Physical acceptance has not
+occurred.
 
-**Next:** Deploy the committed change only to `/opt/lulu/dev-current`, then
-obtain operator acceptance for MK8 v4.0.0 plus DLC, controller input, clean
-lifecycle return, rendering, and remaining requested checks. Keep EDEN-001
-ACTIVE until those checks pass.
+**Next:** Obtain operator acceptance on dev-current for MK8 v4.0.0 plus DLC,
+controller input, clean lifecycle return, rendering, and remaining requested
+checks. Keep EDEN-001 ACTIVE until those checks pass. Do not promote this dirty
+dev runtime.
