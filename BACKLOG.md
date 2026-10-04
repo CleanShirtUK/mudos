@@ -15,6 +15,7 @@ Historical implementation logs, validation logs, defect ledgers, review notes, c
 5. `DEFERRED` and `PARKED` items are intentionally not active work. They require an explicit decision or trigger before implementation resumes.
 6. Old documents under `docs/`, `AURELIA_REVIEW.md`, and historical checkpoints must not silently reopen work. Reconcile them against current source/runtime first.
 7. Keep entries concise and factual. Put detailed archaeology/evidence in the relevant engineering/validation document and link it from the item.
+8. When new evidence changes current state, update **this file**, not only a historical ledger such as `docs/reconciliation-backlog.md`.
 
 ### Status vocabulary
 
@@ -40,9 +41,10 @@ Historical implementation logs, validation logs, defect ledgers, review notes, c
   - old Eden 0.2.1 intermittent whole-scene pink/green colour cast in Mario Kart 8 Deluxe;
   - AppImage helper processes delaying return to Mudos after Eden's real Gamescope surface owner exited;
   - additive NAND migration copying legacy saves while skipping conflicting `profiles.dat`.
-- **Current defects to diagnose:**
-  - **EDEN-001A — external update/DLC discovery:** old and new Eden configs both scan `/home/lulu/Games/ROMs/switch`; the update/DLC NSPs remain there, but Eden v0.8.1 launches MK8 as v1.4.0 rather than v4.0.0 + DLC. Investigate current Eden external-content discovery/attachment semantics and config compatibility before moving files or reinstalling content.
-  - **EDEN-001B — controller regression:** controllers worked with the prior Eden runtime but do not work after the AppImage migration. Treat this as a provider/config compatibility regression. Compare v0.2.1 and v0.8.1 controller schema, SDL backend/device enumeration, generated `qt-config.ini`, and the exact runtime environment/InputPlumber devices consumed by Eden. Do not weaken the global controller architecture or add model-specific allowlists as a workaround.
+- **Current defects and latest evidence:**
+  - **EDEN-001A — external update/DLC discovery:** read-only comparison shows both the old v0.2.1 Flatpak config and current v0.8.1 native config register `/home/lulu/Games/ROMs/switch` under `Paths\\external_content_dirs`, and both have `ext_content_from_game_dirs=true`. The MK8 per-title custom INI is byte-identical between the old and new trees and contains no disabled add-ons. A simple config-key rename is therefore unlikely to explain why v0.8.1 launches MK8 as v1.4.0. Continue by tracing current v0.8.1 external-content discovery/attachment semantics, title update selection, and DLC registration before moving files or reinstalling content.
+  - **EDEN-001B — controller regression:** v0.8.1 source still uses SDL3, clears GUID bytes 2–3, and uses serialized `engine:sdl,port:...,guid:...` bindings. The live normalized controller identity observed on Lulu is `030081b85e0400008e02000001000000`. These facts do not yet prove a working v0.8.1 mapping. A v0.8.1 controller mapping authored by Eden itself has not yet been captured because the active Eden/game process was still running; replacing live config or starting a second Eden instance was intentionally avoided.
+- **Immediate next evidence gate:** end the current Eden/game session, then capture a v0.8.1-native controller mapping written by Eden itself and compare it against Mudos's generated mapping before changing controller code. For update/DLC, continue read-only tracing until the v0.8.1 discovery/attachment boundary is identified.
 - **Acceptance gate:**
   - no orphaned-profile warning;
   - existing profile and save are present and unchanged;
