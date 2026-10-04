@@ -178,6 +178,17 @@ Historical implementation logs, validation logs, defect ledgers, review notes, c
 - **Current truth:** Recent Limine work has left the boot menu waiting for manual selection instead of automatically selecting the Mudos default entry.
 - **Requirement:** restore automatic selection of the configured/default Mudos entry while retaining the intended Limine boot-menu behaviour.
 
+
+### REMOTE-001 — Restore remote display acceptance path
+
+- **Status:** `ACTIVE`
+- **Priority:** P0
+- **Area:** Acceptance testing / remote display
+- **Current truth:** The Lulu hardware is now physically downstairs, so controllers can be connected directly to Lulu. We therefore only need a remote video view on Aslik while the TV is occupied.
+- **Immediate requirement:** restore the existing development-only Sunshine host as a display-only acceptance aid. Do not rely on Sunshine for controller input; local controllers remain directly attached to Lulu.
+- **Preferred future UX:** investigate a browser-based viewer at `mudos.local` so Aslik can view the Lulu display without a native streaming client. This is a convenience layer, not a prerequisite for acceptance.
+- **Acceptance:** stream the live Mudos/Gamescope display to Aslik reliably while the TV remains in use, with no impact on the local controller path or Mudos session lifecycle.
+
 ---
 
 ## Deferred / parked
