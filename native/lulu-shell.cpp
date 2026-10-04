@@ -26,6 +26,7 @@
 #include <QImageWriter>
 #include <QBuffer>
 #include <QDateTime>
+#include <QElapsedTimer>
 #include <QSocketNotifier>
 #include <QTimer>
 #include <qnativeinterface.h>
@@ -35,11 +36,13 @@
 #include <QVariantList>
 #include <QHash>
 #include <QSet>
+#include <QFileInfo>
 #include <QCryptographicHash>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonArray>
 #include <algorithm>
+#include <memory>
 #include <QtWebEngineQuick/QtWebEngineQuick>
 
 #include <SDL3/SDL.h>
@@ -208,6 +211,45 @@ public:
             return new ArtworkImageResponse(QString(), requestedSize);
         return new ArtworkImageResponse(url, requestedSize);
     }
+};
+
+class StartupTimingBridge final : public QObject
+{
+    Q_OBJECT
+public:
+    explicit StartupTimingBridge(QObject *parent = nullptr) : QObject(parent)
+    {
+        timer_.start();
+        const QString runtime = qEnvironmentVariable(
+            "XDG_RUNTIME_DIR", QStringLiteral("/run/user/958"));
+        markerPath_ = QDir(runtime).filePath(QStringLiteral("mudos-startup-surface.ready"));
+        QFile::remove(markerPath_);
+        qInfo().noquote() << "STARTUP_TIMING event=native-process-start elapsed_ms=0";
+    }
+
+    Q_INVOKABLE void mark(const QString &event)
+    {
+        if (event.isEmpty()) return;
+        qInfo().noquote() << "STARTUP_TIMING event=" + event
+                          << "elapsed_ms=" << timer_.elapsed();
+        if (event == QStringLiteral("startup-surface-shown")) {
+            QFile marker(markerPath_);
+            if (marker.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+                marker.write(QByteArray::number(timer_.elapsed()));
+                marker.write("\n");
+                marker.close();
+                qInfo().noquote() << "STARTUP_TIMING event=startup-surface-marker-ready path="
+                                  + markerPath_;
+            } else {
+                qWarning().noquote() << "STARTUP_TIMING marker-write-failed path="
+                                     + markerPath_ << marker.errorString();
+            }
+        }
+    }
+
+private:
+    QElapsedTimer timer_;
+    QString markerPath_;
 };
 
 class StoreBookmarkBridge final : public QObject
@@ -1756,6 +1798,7 @@ int main(int argc, char **argv)
     RecentModel recentModel(&catalogueModel, &application);
     StoreBookmarkBridge storeBookmarks(&application);
     PluginStoreCardBridge pluginStoreCards(&application);
+    StartupTimingBridge startupTiming(&application);
     const QString qmlPath = qEnvironmentVariable("LULU_UI_FILE", "/opt/lulu/ui/ConsoleShell.qml");
     controller.setUiAudioAssetDirectory(QFileInfo(qmlPath).dir().filePath(QStringLiteral("sounds")));
     engine.rootContext()->setContextProperty("controllerBridge", &controller);
@@ -1766,6 +1809,7 @@ int main(int argc, char **argv)
     engine.rootContext()->setContextProperty("recentModel", &recentModel);
     engine.rootContext()->setContextProperty("bookmarkStore", &storeBookmarks);
     engine.rootContext()->setContextProperty("pluginStoreCardsBridge", &pluginStoreCards);
+    engine.rootContext()->setContextProperty("startupTimingBridge", &startupTiming);
     engine.rootContext()->setContextProperty("mudosPerfDiagnostics",
                                               qEnvironmentVariableIsSet("LULU_PERF_DIAGNOSTICS"));
     engine.load(QUrl::fromLocalFile(qmlPath));
@@ -1782,6 +1826,13 @@ int main(int argc, char **argv)
     if (!setSteamGame(window))
         return EXIT_FAILURE;
 
+    auto startupFrameObserved = std::make_shared<bool>(false);
+    QObject::connect(window, &QQuickWindow::frameSwapped, window,
+                     [&startupTiming, startupFrameObserved]() {
+        if (*startupFrameObserved) return;
+        *startupFrameObserved = true;
+        startupTiming.mark(QStringLiteral("startup-surface-shown"));
+    });
     window->show();
     return application.exec();
 }

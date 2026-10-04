@@ -398,6 +398,17 @@ import QtQuick.Controls
     property string launchLifecycle: "shell"
     property string startupLifecycle: "BOOTSTRAPPING"
     property bool startupLibraryReady: false
+    property bool startupCatalogueSnapshotLoaded: false
+    property bool startupRuntimeObserved: false
+    property bool startupControllerConnected: false
+    property string startupSteamState: "unknown"
+    readonly property bool startupSurfaceVisible: startupLifecycle === "BOOTSTRAPPING"
+        || startupLifecycle === "RECONCILING_LIBRARY"
+        || startupLifecycle === "READY_FOR_INTRO"
+    function markStartupTiming(event) {
+        if (typeof startupTimingBridge !== "undefined")
+            startupTimingBridge.mark(event)
+    }
     onStartupLibraryReadyChanged: if (startupLibraryReady) syncRecentDomain()
     property bool startupReadinessRequestInFlight: false
     property bool returnPreparationStarted: false
@@ -420,6 +431,78 @@ import QtQuick.Controls
         && launchLifecycle !== "game" && launchLifecycle !== "returning"
         || (launchOverlayEffectiveVisible && launchStatus === "failed"
             && presentationCoordinator.contentPresented)
+
+    Rectangle {
+        id: startupSurface
+        anchors.fill: parent
+        z: 100000
+        visible: root.startupSurfaceVisible
+        color: luluPalette.backdrop
+
+        Column {
+            anchors.centerIn: parent
+            width: Math.min(parent.width * 0.62, root.design(520))
+            spacing: root.design(28)
+
+            Text {
+                text: "MUDOS"
+                color: luluPalette.primaryText
+                font.family: "JetBrainsMono Nerd Font"
+                font.pixelSize: root.design(46)
+                font.letterSpacing: root.design(8)
+                font.weight: Font.DemiBold
+                anchors.horizontalCenter: parent.horizontalCenter
+            }
+            Text {
+                text: "Starting system..."
+                color: luluPalette.secondaryText
+                font.family: "JetBrainsMono Nerd Font"
+                font.pixelSize: root.design(17)
+                anchors.horizontalCenter: parent.horizontalCenter
+            }
+            Column {
+                width: parent.width
+                spacing: root.design(12)
+                Repeater {
+                    model: [
+                        {label: "Core services", state: root.startupLibraryReady ? "ready" : "starting"},
+                        {label: "Controller", state: !root.startupRuntimeObserved ? "checking"
+                            : root.startupControllerConnected ? "ready" : "unavailable"},
+                        {label: "Library", state: root.startupCatalogueSnapshotLoaded ? "ready" : "starting"},
+                        {label: "Steam", state: root.startupSteamState}
+                    ]
+                    delegate: Row {
+                        required property var modelData
+                        width: parent.width
+                        spacing: root.design(14)
+                        Text {
+                            width: root.design(22)
+                            text: modelData.state === "ready" ? "✓"
+                                : modelData.state === "unavailable" ? "—" : "•"
+                            color: modelData.state === "ready" ? luluPalette.accent : luluPalette.mutedText
+                            font.pixelSize: root.design(16)
+                            horizontalAlignment: Text.AlignHCenter
+                        }
+                        Text {
+                            width: parent.width - root.design(130)
+                            text: modelData.label
+                            color: luluPalette.primaryText
+                            font.pixelSize: root.design(15)
+                        }
+                        Text {
+                            width: root.design(90)
+                            text: modelData.state === "ready" ? "Ready"
+                                : modelData.state === "unavailable" ? "Unavailable"
+                                : modelData.state === "starting" ? "Starting" : "Checking"
+                            color: luluPalette.mutedText
+                            font.pixelSize: root.design(13)
+                            horizontalAlignment: Text.AlignRight
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     PresentationCoordinator {
         id: presentationCoordinator
@@ -445,6 +528,7 @@ import QtQuick.Controls
             root.returnPreparationStarted = false
             if (root.startupLifecycle === "PLAYING_INTRO") {
                 root.startupLifecycle = "HOME"
+                root.markStartupTiming("home-available")
                 root.traceLaunchEvent("STARTUP_INTRO_COMPLETE", {})
                 root.refreshPlatformsCatalogue()
                 root.refreshStore()
@@ -868,10 +952,12 @@ import QtQuick.Controls
             }
             startupLibraryReady = true
             startupLifecycle = "READY_FOR_INTRO"
+            markStartupTiming("startup-readiness-achieved")
             traceLaunchEvent("LIBRARY_RECONCILE_READY", {})
             // This is a local cached catalogue projection; no optional
             // metadata or storefront request is part of the startup barrier.
             refreshLibrary(function() {
+                startupCatalogueSnapshotLoaded = true
                 traceLaunchEvent("STARTUP_LIBRARY_MODEL_READY", {count: libraryGames.length})
                 root.tryBeginStartup()
             })
@@ -882,18 +968,20 @@ import QtQuick.Controls
     }
 
     function tryBeginStartup() {
-        if (onboardingCompletionPending && startupLibraryReady
+        if (onboardingCompletionPending && startupLibraryReady && startupCatalogueSnapshotLoaded
                 && startupLifecycle === "HOME")
             startupLifecycle = "READY_FOR_INTRO"
         traceLaunchEvent("STARTUP_TRY_INTRO", {
-            libraryReady: startupLibraryReady,
+            libraryReady: startupLibraryReady && startupCatalogueSnapshotLoaded,
             lifecycle: startupLifecycle,
             coordinatorReady: presentationCoordinator.ready
         })
-        if (!startupLibraryReady || startupLifecycle !== "READY_FOR_INTRO"
+        if (!startupLibraryReady || !startupCatalogueSnapshotLoaded
+                || startupLifecycle !== "READY_FOR_INTRO"
                 || !presentationCoordinator.ready)
             return
         startupLifecycle = "PLAYING_INTRO"
+        markStartupTiming("home-intro-started")
         onboardingCompletionPending = false
         traceLaunchEvent("STARTUP_INTRO_BEGIN", {})
         presentationCoordinator.beginStartup()
@@ -2909,6 +2997,7 @@ import QtQuick.Controls
     }
 
     Component.onCompleted: {
+        markStartupTiming("qml-loaded")
         inputSurface.forceActiveFocus()
         if (systemStatus)
             root.applyAcquisitionSnapshot(systemStatus.acquisitionSnapshot)
@@ -2929,6 +3018,26 @@ import QtQuick.Controls
                 inputSurface.forceActiveFocus()
             }
         }
+    }
+
+    Timer {
+        id: startupRuntimePoll
+        interval: 750
+        repeat: true
+        running: root.startupSurfaceVisible
+        onTriggered: root.request("/state", "GET", "", function(state) {
+            root.startupRuntimeObserved = true
+            var steam = state && state.resident_steam_runtime
+                ? state.resident_steam_runtime.state : "unknown"
+            root.startupSteamState = steam === "failed" || steam === "degraded"
+                ? "unavailable" : steam
+            var controllers = state && state.controller && state.controller.controllers
+                ? state.controller.controllers : {}
+            var ids = Object.keys(controllers)
+            root.startupControllerConnected = ids.some(function(id) {
+                return controllers[id] && controllers[id].connected === true
+            })
+        })
     }
 
     Timer {

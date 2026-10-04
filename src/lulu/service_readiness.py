@@ -9,6 +9,8 @@ from dbus_next.errors import DBusError
 LULU_DBUS_OBJECTS = {
     "sessiond": ("org.lulu.ConsoleSessiond", "/org/lulu/ConsoleSession"),
     "consoled": ("org.lulu.Consoled", "/org/lulu/Console"),
+}
+OPTIONAL_LULU_DBUS_OBJECTS = {
     "acquisitiond": ("org.lulu.Acquisitiond", "/org/lulu/Acquisition"),
 }
 _RETRYABLE_DBUS_ERRORS = {
@@ -18,7 +20,7 @@ _RETRYABLE_DBUS_ERRORS = {
 
 
 async def introspect_lulu_services(bus: Any) -> dict[str, Any]:
-    """Prove all required Lulu services own and export their expected objects."""
+    """Prove core shell APIs are exported; acquisition is intentionally optional."""
     result: dict[str, Any] = {}
     for key, (name, path) in LULU_DBUS_OBJECTS.items():
         result[key] = await bus.introspect(name, path)
@@ -27,7 +29,7 @@ async def introspect_lulu_services(bus: Any) -> dict[str, Any]:
 
 async def wait_for_lulu_services(bus: Any, *, timeout: float = 30.0,
                                  interval: float = 0.1) -> dict[str, Any]:
-    """Wait for all required user-bus objects, failing clearly at the deadline."""
+    """Wait for core shell APIs, failing clearly at the deadline."""
     loop = asyncio.get_running_loop()
     deadline = loop.time() + timeout
     last_error: DBusError | None = None

@@ -300,6 +300,9 @@ class ConsoleSessionInterface(ServiceInterface):
             status = await asyncio.to_thread(read_resident_steam_runtime_status)
             if status != self._resident_steam_runtime:
                 self._resident_steam_runtime = status
+                if status.state == "ready":
+                    LOGGER.info("startup_timing event=steam-runtime-ready monotonic_ns=%s",
+                                time.monotonic_ns())
                 self.StateChanged(self._state_json())
             await asyncio.sleep(1.0)
 
@@ -663,6 +666,8 @@ class ConsoleSessionInterface(ServiceInterface):
             await asyncio.sleep(0.25)
 
     async def bootstrap_shell(self) -> None:
+        LOGGER.info("startup_timing event=gamescope-bootstrap-start monotonic_ns=%s",
+                    time.monotonic_ns())
         self._presentation_ready = False
         if hasattr(self, "_graphical_session_id"):
             self._clear_graphical_launch_lease()
@@ -702,6 +707,8 @@ class ConsoleSessionInterface(ServiceInterface):
             )
             try:
                 await self.supervisor.launch_shell(invocation.argv([shell]), 15000, select_shell=False)
+                LOGGER.info("startup_timing event=gamescope-shell-launched monotonic_ns=%s",
+                            time.monotonic_ns())
                 break
             except (OSError, RuntimeError, TimeoutError, ValueError, subprocess.SubprocessError):
                 if has_connected_presentation_output():
@@ -1370,7 +1377,8 @@ async def bootstrap_after_services_ready(interface: ConsoleSessionInterface, bus
     except Exception:
         LOGGER.exception("graphical bootstrap blocked: required Lulu D-Bus services are not ready")
         raise
-    LOGGER.info("all required Lulu D-Bus services are ready; starting graphical session")
+    LOGGER.info("startup_timing event=core-dbus-ready monotonic_ns=%s", time.monotonic_ns())
+    LOGGER.info("all required core Lulu D-Bus services are ready; starting graphical session")
     await interface.bootstrap_shell()
 
 
@@ -1392,7 +1400,8 @@ async def restart_shell_after_display_loss(interface: ConsoleSessionInterface,
 
 
 async def serve(bus_type: BusType = BusType.SESSION, bootstrap_shell: bool = False) -> None:
-    LOGGER.info("session_lifecycle event=start pid=%s uid=%s", os.getpid(), os.geteuid())
+    LOGGER.info("session_lifecycle event=start pid=%s uid=%s monotonic_ns=%s",
+                os.getpid(), os.geteuid(), time.monotonic_ns())
     bus = await MessageBus(bus_type=bus_type).connect()
     model = SessionStateModel()
     interface = ConsoleSessionInterface(model)
@@ -1401,6 +1410,7 @@ async def serve(bus_type: BusType = BusType.SESSION, bootstrap_shell: bool = Fal
     await bus.request_name(BUS_NAME)
     await interface.start_controller_monitor()
     _notify_systemd_ready()
+    LOGGER.info("startup_timing event=sessiond-dbus-ready monotonic_ns=%s", time.monotonic_ns())
     LOGGER.info("Sessiond D-Bus API ready; systemd dependents may now start")
     stop_event = asyncio.Event()
     loop = asyncio.get_running_loop()

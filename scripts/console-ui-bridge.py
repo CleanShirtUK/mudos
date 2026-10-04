@@ -9,6 +9,7 @@ import json
 import os
 from pathlib import Path
 import logging
+import time
 import re
 import select
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -161,7 +162,7 @@ from dbus_next import BusType, Variant
 from dbus_next.aio import MessageBus
 
 from lulu.paths import PATHS
-from lulu.service_readiness import introspect_lulu_services
+from lulu.service_readiness import OPTIONAL_LULU_DBUS_OBJECTS, introspect_lulu_services
 from lulu.settings import SettingsStore
 
 
@@ -1251,6 +1252,8 @@ class ApiHandler(BaseHTTPRequestHandler):
 
 async def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
+    startup_started_ns = time.monotonic_ns()
+    LOGGER.info("startup_timing event=bridge-start monotonic_ns=%s", startup_started_ns)
     bus = await MessageBus(bus_type=BusType.SESSION).connect()
     try:
         introspections = await introspect_lulu_services(bus)
@@ -1266,15 +1269,25 @@ async def main() -> None:
         "org.lulu.ConsoleSessiond", "/org/lulu/ConsoleSession", introspections["sessiond"]
     )
     sessiond = session_proxy.get_interface("org.lulu.ConsoleSession")
-    acquisition_proxy = bus.get_proxy_object(
-        "org.lulu.Acquisitiond", "/org/lulu/Acquisition", introspections["acquisitiond"]
-    )
-    acquisitiond = acquisition_proxy.get_interface("org.lulu.Acquisition")
-    loop = asyncio.get_running_loop()
-    bridge = ConsoleUiBridge(loop, consoled, sessiond, acquisitiond)
+    bridge = ConsoleUiBridge(asyncio.get_running_loop(), consoled, sessiond)
     ApiHandler.bridge = bridge
     server = ThreadingHTTPServer(("127.0.0.1", 38123), ApiHandler)
     Thread(target=server.serve_forever, daemon=True).start()
+
+    async def connect_optional_acquisitiond() -> None:
+        try:
+            acquisition_name, acquisition_path = OPTIONAL_LULU_DBUS_OBJECTS["acquisitiond"]
+            acquisition_introspection = await bus.introspect(acquisition_name, acquisition_path)
+            acquisition_proxy = bus.get_proxy_object(
+                acquisition_name, acquisition_path, acquisition_introspection)
+            bridge.acquisitiond = acquisition_proxy.get_interface("org.lulu.Acquisition")
+            LOGGER.info("optional Acquisitiond boundary connected after shell bridge startup")
+        except Exception as error:
+            LOGGER.warning("optional Acquisitiond boundary unavailable during shell startup: %s",
+                           type(error).__name__)
+
+    acquisition_task = asyncio.create_task(connect_optional_acquisitiond(),
+                                            name="optional-acquisitiond-connect")
 
     environment = os.environ.copy()
     settings = SettingsStore(PATHS.config_root / "settings.sqlite3")
@@ -1284,6 +1297,9 @@ async def main() -> None:
     qml = os.environ.get("LULU_UI_FILE", "/opt/lulu/ui/ConsoleShell.qml")
     shell = os.environ.get("LULU_SHELL_EXECUTABLE", "/opt/lulu/bin/lulu-shell")
     process = await asyncio.create_subprocess_exec(shell, qml, env=environment)
+    shell_started_ns = time.monotonic_ns()
+    LOGGER.info("startup_timing event=shell-process-started pid=%s monotonic_ns=%s elapsed_ms=%.3f",
+                process.pid, shell_started_ns, (shell_started_ns - startup_started_ns) / 1_000_000)
     marker = Path(os.environ.get("LULU_SHELL_PID_FILE", "/run/user/958/mudos-shell.pid"))
     temporary_marker = marker.with_name(f".{marker.name}.{os.getpid()}")
     temporary_marker.write_text(str(process.pid))
@@ -1291,6 +1307,8 @@ async def main() -> None:
     try:
         await process.wait()
     finally:
+        acquisition_task.cancel()
+        await asyncio.gather(acquisition_task, return_exceptions=True)
         marker.unlink(missing_ok=True)
     server.shutdown()
     bus.disconnect()

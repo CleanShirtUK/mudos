@@ -44,6 +44,20 @@ class ProvisioningTests(unittest.TestCase):
                 self.assertNotIn("questarr", text)
         self.assertFalse((ROOT / "config/plugins/questarr/plugin.toml").exists())
 
+    def test_startup_handoff_and_plymouth_theme_are_release_assets(self) -> None:
+        release = (ROOT / "scripts/release.py").read_text()
+        for asset in ("packaging/mudos-startup-surface.service",
+                      "packaging/plymouth/themes/mudos/mudos.plymouth",
+                      "packaging/plymouth/themes/mudos/mudos.script",
+                      "scripts/wait-startup-surface.py",
+                      "scripts/configure-mudos-limine.py",
+                      "packaging/pacman.d/hooks/99-mudos-limine-config.hook"):
+            self.assertIn(asset, release)
+            self.assertTrue((ROOT / asset).is_file(), asset)
+        theme = ROOT / "packaging/plymouth/themes/mudos"
+        self.assertTrue((theme / "mudos-wordmark.png").is_file())
+        self.assertTrue((ROOT / "packaging/plymouth-quit.service.d/mudos-handoff.conf").is_file())
+
     def test_canonical_and_compatibility_qml_are_lintable(self) -> None:
         source = ROOT / "ui"
         shipped = PAYLOAD / "ui"

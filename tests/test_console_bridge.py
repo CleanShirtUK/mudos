@@ -18,6 +18,18 @@ SPEC.loader.exec_module(BRIDGE)
 
 
 class ConsoleBridgeTests(unittest.TestCase):
+    def test_shell_bootstrap_does_not_refresh_catalogue_and_acquisition_is_optional(self):
+        source = (ROOT / "scripts" / "console-ui-bridge.py").read_text()
+        bootstrap = source[source.index("async def main()"):
+                           source.index('if __name__ == "__main__":')]
+        self.assertNotIn("call_refresh(", bootstrap)
+        self.assertNotIn("call_refresh_stages(", bootstrap)
+        self.assertIn('OPTIONAL_LULU_DBUS_OBJECTS["acquisitiond"]', bootstrap)
+        self.assertIn("ConsoleUiBridge(asyncio.get_running_loop(), consoled, sessiond)", bootstrap)
+        self.assertIn('name="optional-acquisitiond-connect"', bootstrap)
+        self.assertIn("asyncio.create_subprocess_exec(shell, qml, env=environment)", bootstrap)
+        self.assertNotIn("await connect_optional_acquisitiond()", bootstrap)
+
     def test_launch_status_normalizes_session_lifecycle_without_fake_progress(self) -> None:
         async def exercise():
             class Sessiond:
@@ -212,7 +224,7 @@ class ConsoleBridgeTests(unittest.TestCase):
             self.assertEqual(consoled.calls, ["show", "status", "hide"])
 
         asyncio.run(exercise())
-    def test_bridge_checks_all_prerequisites_before_launch(self) -> None:
+    def test_bridge_checks_core_prerequisites_before_launch(self) -> None:
         class ReadyBus:
             def __init__(self) -> None:
                 self.calls = []
@@ -223,8 +235,8 @@ class ConsoleBridgeTests(unittest.TestCase):
 
         bus = ReadyBus()
         result = asyncio.run(BRIDGE.introspect_lulu_services(bus))
-        self.assertEqual(set(result), {"sessiond", "consoled", "acquisitiond"})
-        self.assertEqual(len(bus.calls), 3)
+        self.assertEqual(set(result), {"sessiond", "consoled"})
+        self.assertEqual(len(bus.calls), 2)
 
     def test_launch_path_decodes_qml_encoded_game_id(self) -> None:
         path = "/launch/steam%3A220780"

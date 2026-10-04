@@ -30,6 +30,7 @@ SYSTEMD_UNITS = {
     "mudos-recovery-ui.service": "mudos-recovery-ui.service", "lulu-inputplumber-hotplug.service": "lulu-inputplumber-hotplug.service",
     "lulu-osk@.service": "lulu-osk@.service", "lulu-file-browser.service": "lulu-file-browser.service",
     "lulu-transmission-config.service": "lulu-transmission-config.service",
+    "mudos-startup-surface.service": "mudos-startup-surface.service",
 }
 DOLPHIN_BLUETOOTH_POLKIT_RULE = Path(
     "/etc/polkit-1/rules.d/61-lulu-dolphin-bluetooth.rules"
@@ -435,6 +436,10 @@ def install_integration(repo: Path, release: Path, manifest: dict,
         "packaging/udev/83-lulu-standard-gamepad.rules": "/etc/udev/rules.d/83-lulu-standard-gamepad.rules",
         "config/inputplumber/devices/lulu-composite.yaml": "/etc/inputplumber/devices.d/lulu-composite.yaml",
         "packaging/inputplumber-restart.conf": "/etc/systemd/system/inputplumber.service.d/lulu.conf",
+        "packaging/plymouth-quit.service.d/mudos-handoff.conf":
+            "/etc/systemd/system/plymouth-quit.service.d/mudos-handoff.conf",
+        "packaging/pacman.d/hooks/99-mudos-limine-config.hook":
+            "/etc/pacman.d/hooks/99-mudos-limine-config.hook",
     }
     for source, target in copies.items():
         src = release / source
@@ -444,6 +449,16 @@ def install_integration(repo: Path, release: Path, manifest: dict,
         dest.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(src, dest)
         dest.chmod(0o644)
+    theme_source = packaging / "plymouth/themes/mudos"
+    theme_target = Path("/usr/share/plymouth/themes/mudos")
+    for source in sorted(theme_source.iterdir()):
+        if source.is_file():
+            destination = theme_target / source.name
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source, destination)
+            destination.chmod(0o644)
+    run(["python", str(release / "scripts/configure-mudos-limine.py")], check=True)
+    run(["plymouth-set-default-theme", "mudos", "--rebuild-initrd"], check=True)
     rules = packaging / "polkit-1/rules.d"
     owned_rules = {Path(raw).name for raw in manifest["system_integration"]["system_files"]
                    if "/polkit-1/rules.d/" in raw}
@@ -901,6 +916,7 @@ def verify(repo: Path, manifest: dict) -> None:
                       "lulu-provider-install@.service", "mudos-recovery.service",
                       "mudos-recovery-guard.service", "mudos-recovery-ui.service",
                       "lulu-inputplumber-hotplug.service", "lulu-osk@.service",
+                      "mudos-startup-surface.service",
                       "lulu-file-browser.service", "lulu-transmission-config.service")
     for unit in required_units:
         installed = Path("/etc/systemd/system") / unit

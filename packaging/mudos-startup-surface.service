@@ -1,0 +1,11 @@
+[Unit]
+Description=Wait for the first rendered Mudos startup surface
+After=lulu-session@2.service
+Wants=lulu-session@2.service
+Before=plymouth-quit.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python /opt/lulu/current/scripts/wait-startup-surface.py
+TimeoutStartSec=120s
+RemainAfterExit=yes

@@ -61,6 +61,33 @@ def test_retired_service_cleanup_preserves_component_data(tmp_path, monkeypatch)
     assert calls[-1][0] == ["systemctl", "daemon-reload"]
 
 
+def test_session_service_does_not_order_shell_after_resident_steam():
+    unit = (ROOT / "packaging/lulu-session@.service").read_text()
+    runtime = (ROOT / "packaging/lulu-steam-runtime.service").read_text()
+    after = next(line for line in unit.splitlines() if line.startswith("After="))
+    assert "lulu-steam-runtime.service" not in after
+    assert "lulu-steam-runtime.service" in next(
+        line for line in unit.splitlines() if line.startswith("Wants="))
+    assert "PartOf=lulu-session@2.service" in runtime
+    assert "Restart=always" in runtime
+    assert "TimeoutStartSec=180s" in runtime
+
+
+def test_release_installs_a_readiness_driven_plymouth_handoff():
+    unit = (ROOT / "packaging/mudos-startup-surface.service").read_text()
+    quit_dropin = (ROOT / "packaging/plymouth-quit.service.d/mudos-handoff.conf").read_text()
+    assert "TimeoutStartSec=120s" in unit
+    assert "wait-startup-surface.py" in unit
+    assert "Wants=mudos-startup-surface.service" in quit_dropin
+    assert "After=mudos-startup-surface.service" in quit_dropin
+    script = (ROOT / "scripts/wait-startup-surface.py").read_text()
+    assert "inotify_init1" in script
+    assert "time.sleep" not in script
+    target = (ROOT / "packaging/lulu.target").read_text()
+    assert "Before=multi-user.target" in target
+    assert "After=multi-user.target" not in target
+
+
 def test_aurelia_review_provider_enable_preserves_other_user_configuration(tmp_path):
     config = tmp_path / "provider-services.toml"
     config.write_text("[providers.usenet]\nenabled = false\n\n"

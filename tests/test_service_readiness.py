@@ -26,7 +26,8 @@ class ServiceReadinessTests(unittest.TestCase):
         bus = DelayedBus()
         result = asyncio.run(wait_for_lulu_services(bus, timeout=0.1, interval=0))
         self.assertEqual(set(result), set(LULU_DBUS_OBJECTS))
-        self.assertEqual(len(bus.calls), 4)
+        self.assertEqual(len(bus.calls), len(LULU_DBUS_OBJECTS) + 1)
+        self.assertNotIn("acquisitiond", result)
 
     def test_missing_prerequisite_times_out_with_object_identity(self) -> None:
         class UnavailableBus:

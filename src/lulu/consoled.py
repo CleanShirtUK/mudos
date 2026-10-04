@@ -2125,7 +2125,8 @@ class ConsoleInterface(ServiceInterface):
         if self._startup_reconciliation_ready:
             return
         self._startup_reconciliation_ready = True
-        LOGGER.info("startup library reconciliation ready")
+        LOGGER.info("startup_timing event=startup-readiness-published monotonic_ns=%s",
+                    time.monotonic_ns())
 
     @method()
     async def RefreshMetadata(self, game_id: "s", force: "b") -> "u":
@@ -2960,6 +2961,7 @@ async def serve() -> None:
     interface = ConsoleInterface(catalogue, runtime, sessiond=sessiond)
     bus.export(OBJECT_PATH, interface)
     await bus.request_name(BUS_NAME)
+    LOGGER.info("startup_timing event=consoled-dbus-ready monotonic_ns=%s", time.monotonic_ns())
 
     async def regenerate_mudos_controller_mappings() -> None:
         """Refresh only Mudos-owned mappings after a release/service restart."""
@@ -3016,6 +3018,8 @@ async def serve() -> None:
         # the graphical shell on a provider login prompt or a stalled sync;
         # reconciliation continues in this background task.
         interface.mark_startup_reconciliation_ready()
+        LOGGER.info("startup_timing event=catalogue-sync-background-start monotonic_ns=%s",
+                    time.monotonic_ns())
         while True:
             try:
                 # Startup synchronization must not launch the expensive IGDB

@@ -18,6 +18,18 @@ SHELL_PROFILE = (ROOT / "config" / "inputplumber" / "profiles" / "shell.yaml").r
 
 
 class ConsoleUiTests(unittest.TestCase):
+    def test_startup_surface_is_visible_until_existing_intro_and_never_gates_on_provider(self):
+        qml = (ROOT / "ui/ConsoleShell.qml").read_text()
+        surface = qml[qml.index("Rectangle {\n        id: startupSurface"):
+                      qml.index("PresentationCoordinator {", qml.index("Rectangle {\n        id: startupSurface"))]
+        self.assertIn('visible: root.startupSurfaceVisible', surface)
+        self.assertIn('text: "MUDOS"', surface)
+        self.assertIn('label: "Steam"', surface)
+        self.assertIn('"unavailable"', surface)
+        self.assertIn('if (!startupLibraryReady || !startupCatalogueSnapshotLoaded', qml)
+        self.assertIn("presentationCoordinator.beginStartup()", qml)
+        self.assertNotIn("startupSteamState ===", qml)
+
     def test_guide_input_mode_action_toggles_and_names_current_transition(self) -> None:
         interface = ConsoleInterface.__new__(ConsoleInterface)
         interface._base_guide = (GuideAction(

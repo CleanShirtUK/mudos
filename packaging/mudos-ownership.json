@@ -25,6 +25,8 @@
       "/etc/systemd/system/lulu-transmission.service", "/etc/systemd/system/lulu-transmission-config.service",
       "/etc/systemd/system/lulu-file-browser.service",
       "/etc/systemd/system/lulu-osk@.service",
+      "/etc/systemd/system/mudos-startup-surface.service",
+      "/etc/systemd/system/plymouth-quit.service.d/mudos-handoff.conf",
       "/etc/systemd/system/lulu-provider-install@.service.d/storage.conf",
        "/etc/systemd/system/multi-user.target.wants/lulu-transmission.service"
     ],
@@ -43,6 +45,10 @@
       "/etc/polkit-1/rules.d/56-lulu-session-restart.rules", "/etc/polkit-1/rules.d/57-lulu-provider-install.rules",
       "/etc/polkit-1/rules.d/58-lulu-recovery-power.rules", "/etc/polkit-1/rules.d/59-lulu-initial-password.rules",
       "/etc/polkit-1/rules.d/60-lulu-recovery.rules", "/etc/polkit-1/rules.d/61-lulu-dolphin-bluetooth.rules",
+      "/etc/pacman.d/hooks/99-mudos-limine-config.hook",
+      "/usr/share/plymouth/themes/mudos/mudos.plymouth",
+      "/usr/share/plymouth/themes/mudos/mudos.script",
+      "/usr/share/plymouth/themes/mudos/mudos-wordmark.png",
       "/usr/libexec/mudos-set-initial-password",
       "/etc/avahi/services/mudos-http.service", "/etc/tmpfiles.d/lulu.conf",
       "/etc/systemd/system/inputplumber.service.d/lulu.conf"
@@ -104,7 +110,7 @@
   "shared_dependencies": {
     "package_manager": "pacman",
     "alternatives": {"gamescope": ["gamescope-git"]},
-    "packages": ["base-devel", "pkgconf", "qt6-base", "qt6-declarative", "qt6-webengine", "qt6-imageformats", "sdl3", "sdl3_ttf", "libx11", "xcb-util", "xcb-util-keysyms", "xcb-util-wm", "python", "python-dbus-next", "python-pillow", "python-xlib", "systemd", "bluez", "bluez-utils", "seatd", "inputplumber", "gamescope", "xorg-server-xvfb", "pipewire", "wireplumber", "avahi", "ufw", "git", "curl", "patch", "go", "polkit", "acl", "ffmpeg", "fontconfig", "ttf-jetbrains-mono-nerd"]
+    "packages": ["base-devel", "pkgconf", "qt6-base", "qt6-declarative", "qt6-webengine", "qt6-imageformats", "sdl3", "sdl3_ttf", "libx11", "xcb-util", "xcb-util-keysyms", "xcb-util-wm", "python", "python-dbus-next", "python-pillow", "python-xlib", "systemd", "bluez", "bluez-utils", "seatd", "inputplumber", "gamescope", "xorg-server-xvfb", "pipewire", "wireplumber", "avahi", "ufw", "git", "curl", "patch", "go", "polkit", "acl", "ffmpeg", "fontconfig", "plymouth", "ttf-jetbrains-mono-nerd"]
   },
   "protected": ["/opt/lulu/releases", "/opt/lulu/rollback"]
 }

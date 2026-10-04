@@ -21,13 +21,13 @@ def test_steam_unit_is_session_scoped_and_restarts_independently_of_games():
         "WantedBy=lulu.target" in unit
 
 
-def test_graphical_session_orders_after_nonfatal_steam_runtime():
+def test_graphical_session_starts_without_waiting_for_nonfatal_steam_runtime():
     session = (ROOT / "packaging/lulu-session@.service").read_text()
     assert "Wants=" in session
     wants = next(line for line in session.splitlines() if line.startswith("Wants="))
     after = next(line for line in session.splitlines() if line.startswith("After="))
     assert "lulu-steam-runtime.service" in wants
-    assert "lulu-steam-runtime.service" in after
+    assert "lulu-steam-runtime.service" not in after
     assert "Requires=lulu-steam-runtime.service" not in session
 
 

@@ -1,0 +1,8 @@
+[Plymouth Theme]
+Name=Mudos
+Description=Minimal Mudos console startup
+ModuleName=script
+
+[script]
+ImageDir=/usr/share/plymouth/themes/mudos
+ScriptFile=/usr/share/plymouth/themes/mudos/mudos.script
