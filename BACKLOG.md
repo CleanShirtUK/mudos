@@ -33,13 +33,12 @@ Historical implementation logs, validation logs, defect ledgers, review notes, c
 
 ### EDEN-001 — Complete Eden AppImage migration
 
-- **Status:** `VALIDATION`
+- **Status:** `CLOSED`
 - **Priority:** P0
 - **Area:** Eden / Switch provider / Session lifecycle
-- **Current truth:** The v0.8.1 official Eden AppImage migration and subsequent external-content configuration work are deployed to `/opt/lulu/dev-current`; `/opt/lulu/current` remains unchanged. The current implementation has passed automated validation (1,169 tests, 85 subtests) and the latest external-content run produced the expected Eden AOC/update discovery evidence.
-- **Physical acceptance:** Pending only because the display is currently unavailable. The implementation is believed ready but has not yet been physically accepted.
-- **Acceptance gate:** launch Mario Kart 8 Deluxe as v4.0.0 with DLC active; verify Wave 1 content; verify normal controller operation; verify rendering; verify prompt return to Mudos with shell input restored; repeat the visual regression check and confirm no pink/green cast.
-- **Promotion:** only after the complete physical gate passes.
+- **Current truth:** Physically accepted on 2026-10-05. Mario Kart 8 Deluxe v4.0.0 launched through Mudos → Eden with Wave 1 DLC present and playable; direct Lulu controller input worked; rendering was clean with no recurrence of the intermittent pink/green whole-scene cast; exiting the game returned cleanly to Mudos.
+- **Acceptance:** Passed the complete physical gate.
+- **Promotion:** no further EDEN-001 acceptance work remains.
 
 ### UI-001 — Complete V1 UI and presentation review
 
