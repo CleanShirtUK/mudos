@@ -5,6 +5,23 @@ retained in `docs/reconciliation-backlog.md` and are not the status authority.
 
 ## ACTIVE
 
+### QUIVER-001 — Quiver acquisition and library provider
+
+**Status:** ACTIVE — contract/authority boundary blocked; no implementation
+claimed.
+
+- Repository and upstream investigation is recorded in
+  `docs/quiver-provider-contract.md`. This checkout has no Quiver integration.
+- The public project matching the name, Quiver Launcher, has a name-based CLI
+  (`--list`, `--download`, `--update`, `--run`, `--uninstall`) and its own
+  library/app folders, but no structured acquisition-job API. Questarr is a
+  separate, retired integration and must not be restored.
+- Before implementation, confirm whether this is the intended Quiver and
+  whether Mudos should consume a future/other Quiver API or own a separate
+  GitHub/GitLab release acquisition backend. These choices change acquisition,
+  catalogue, installation, and launch authority; do not guess or treat the
+  upstream GUI's local files as an API.
+
 ### EDEN-001 — Eden AppImage migration acceptance
 
 **Status:** ACTIVE. Do not close or promote until both regressions are fixed and
