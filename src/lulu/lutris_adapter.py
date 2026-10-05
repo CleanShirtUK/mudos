@@ -41,6 +41,110 @@ class LutrisRecipe:
 class LutrisAdapter:
     """Keep private Lutris imports out of Mudos catalogue/job code."""
 
+    def installed_games(self) -> tuple[dict[str, object], ...]:
+        """Read Lutris's supported game/config objects as one installed snapshot."""
+        try:
+            from lutris import settings
+            from lutris.database.games import get_games
+            from lutris.game import Game
+            # Headless services may be the first Lutris process after boot.
+            # Initialize Lutris's own schema through its migration API.
+            from lutris.database.schema import syncdb
+
+            Path(settings.DB_PATH).parent.mkdir(parents=True, exist_ok=True)
+            Path(settings.GAME_CONFIG_DIR).mkdir(parents=True, exist_ok=True)
+            Path(settings.RUNNERS_CONFIG_DIR).mkdir(parents=True, exist_ok=True)
+            syncdb()
+            result: list[dict[str, object]] = []
+            for row in get_games(filters={"installed": 1}):
+                try:
+                    game = Game(row["id"])
+                    config = game.config
+                    game_options = config.game_config if config else {}
+                    result.append({
+                        "lutris_id": str(row["id"]), "slug": str(game.slug or row.get("slug") or ""),
+                        "title": str(game.name or row.get("name") or ""),
+                        "runner": str(game.runner_name or row.get("runner") or ""),
+                        "platform": str(game.platform or row.get("platform") or "PC"),
+                        "directory": str(game.directory or row.get("directory") or ""),
+                        "config_id": str(game.game_config_id or row.get("configpath") or ""),
+                        "executable": str(game_options.get("exe") or ""),
+                        "arguments": str(game_options.get("args") or ""),
+                        "working_directory": str(game_options.get("working_dir") or ""),
+                        "installed": bool(game.is_installed),
+                    })
+                except Exception:
+                    # A broken individual Lutris record must not hide the rest
+                    # of the provider's installed-game snapshot.
+                    continue
+            return tuple(result)
+        except Exception as error:
+            raise LutrisAdapterError("Lutris installed-game inventory is unavailable") from error
+
+    def register_local_game(self, *, title: str, directory: Path, executable: Path,
+                            runner: str | None = None, arguments: str = "",
+                            working_directory: Path | None = None) -> dict[str, object]:
+        """Register an existing game through Lutris's own model/config save APIs."""
+        directory = directory.expanduser().resolve(strict=True)
+        executable = executable.expanduser().resolve(strict=True)
+        if not directory.is_dir() or not executable.is_file():
+            raise LutrisAdapterError("game directory or executable does not exist")
+        try:
+            executable.relative_to(directory)
+        except ValueError as error:
+            raise LutrisAdapterError("executable must be inside the selected game directory") from error
+        runner = runner or ("wine" if executable.suffix.casefold() == ".exe" else "linux")
+        if runner not in {"linux", "wine"}:
+            raise LutrisAdapterError("local registration supports native Linux and Wine games")
+        if not os.access(executable, os.X_OK) and runner == "linux":
+            raise LutrisAdapterError("native Linux executable is not executable")
+        try:
+            from lutris import settings
+            from lutris.config import LutrisConfig, make_game_config_id
+            from lutris.database.schema import syncdb
+            from lutris.game import Game
+            from lutris.util.strings import slugify
+
+            Path(settings.DB_PATH).parent.mkdir(parents=True, exist_ok=True)
+            Path(settings.GAME_CONFIG_DIR).mkdir(parents=True, exist_ok=True)
+            Path(settings.RUNNERS_CONFIG_DIR).mkdir(parents=True, exist_ok=True)
+            syncdb()
+            slug = slugify(title)
+            if not slug:
+                raise LutrisAdapterError("game title does not produce a valid Lutris identity")
+            config = LutrisConfig(runner_slug=runner, level="game")
+            config.game_config_id = make_game_config_id(slug)
+            game_config = config.game_level["game"]
+            game_config.update({
+                "exe": str(executable.relative_to(directory)),
+                "args": arguments,
+                "working_dir": str(working_directory.resolve(strict=True) if working_directory else directory),
+            })
+            game = Game()
+            game.name = title.strip()
+            game.sortname = title.strip()
+            game.slug = slug
+            game.runner_name = runner
+            game.directory = str(directory)
+            game.is_installed = True
+            game.config = config
+            game.save()
+            row = __import__("lutris.database.games", fromlist=["get_game_by_field"]).get_game_by_field(
+                str(game.id), "id")
+            if not row:
+                raise LutrisAdapterError("Lutris registration could not be read back")
+            return {
+                "lutris_id": str(game.id), "config_id": str(game.game_config_id), "slug": slug,
+                "title": game.name, "runner": runner, "platform": str(game.platform or "Linux"),
+                "directory": str(directory), "executable": str(executable.relative_to(directory)),
+                "arguments": arguments, "working_directory": str(working_directory or directory),
+                "installed": True,
+            }
+        except LutrisAdapterError:
+            raise
+        except Exception as error:
+            raise LutrisAdapterError("Lutris could not register the local game") from error
+
     def search(self, title: str) -> tuple[dict[str, Any], ...]:
         try:
             from lutris.api import search_games
@@ -366,11 +470,16 @@ class LutrisAdapter:
         try:
             import gi
             gi.require_version("Gtk", "3.0")
+            from lutris.database.games import get_game_by_field
             from lutris.game import Game
-            game = Game(int(lutris_id))
+            row = (get_game_by_field(int(lutris_id), "id") if str(lutris_id).isdecimal()
+                   else get_game_by_field(str(lutris_id), "slug"))
+            if not row:
+                raise LutrisAdapterError("Lutris game registration is unavailable")
+            game = Game(row["id"])
             directory = str(game.directory or "")
             slug = str(game.slug or "")
-            game.uninstall(delete_files=False)
+            game.uninstall(delete_files=delete_files)
             return {"directory": directory, "slug": slug}
         except Exception as error:
             raise LutrisAdapterError("Lutris uninstall failed") from error

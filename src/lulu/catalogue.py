@@ -16,7 +16,7 @@ from .plugins.romm.client import RommGame
 from .plugins.steam.provider import InstalledSteamGame, SteamProvider
 from .plugins.steam.entitlements import SteamEntitlement
 from .switch_content import parent_name
-from .pc_install import PcInstallSource
+from .pc_install import PcInstallSource, PcSourceType
 from .platforms import load_platforms
 
 
@@ -192,13 +192,14 @@ class CatalogueGame:
         slug = str(registration.get("slug") or source.canonical_game_id)
         title = str(registration.get("title") or source.title)
         return cls(
-            game_id=f"lutris:{source.lutris_slug or source.canonical_game_id}", provider="lutris", provider_id=str(registration.get("lutris_id", slug)),
+            game_id=f"lutris:{source.lutris_slug or source.canonical_game_id}", provider="lutris", provider_id=slug,
             title=title, platform="PC", install_state="installed", launchable=True,
             install_dir=str(registration.get("directory", "")), artwork_url="", last_played=0,
             runtime=str(registration.get("runner", "")), source_title=source.title,
             normalized_search_title=clean_local_title(title), availability_state="installed",
             provider_record_id=str(registration.get("config_id", "")), content_identity=source.source_id,
-            catalogue_source=source.provenance, mudos_owned=True,
+            catalogue_source=source.provenance,
+            mudos_owned=bool(registration.get("mudos_owned", True)),
         )
 
     @classmethod
@@ -1062,6 +1063,51 @@ class CatalogueStore:
         self._finish_operation(deltas)
         return game
 
+    def reconcile_lutris_snapshot(self, registrations: tuple[dict[str, object], ...]) -> list[CatalogueGame]:
+        """Reconcile installed Lutris registrations without replacing installer cards."""
+        games: list[CatalogueGame] = []
+        for registration in registrations:
+            slug = str(registration.get("slug", "")).strip()
+            title = str(registration.get("title", "")).strip()
+            if not slug or not title or not registration.get("installed"):
+                continue
+            directory = str(registration.get("directory", ""))
+            source = PcInstallSource(
+                canonical_game_id=f"lutris:{slug}", title=title, provenance="lutris-inventory",
+                source_type=PcSourceType.DIRECTORY,
+                completed_path=directory, ready_to_install=True, lutris_slug=slug,
+            )
+            game = CatalogueGame.from_lutris(
+                {**registration, "mudos_owned": bool(registration.get("mudos_owned", False))}, source)
+            games.append(game)
+        games = list({game.game_id: game for game in games}.values())
+        incoming_ids = {game.game_id for game in games}
+        deltas: list[CatalogueDelta] = []
+        self._start_operation()
+        with self.atomic():
+            existing = self._rows(
+                f"SELECT {SELECT_COLUMNS} FROM games WHERE provider='lutris' "
+                "AND catalogue_source='lutris-inventory'"
+            )
+            for current in existing:
+                if current.game_id not in incoming_ids:
+                    self._apply_existing_locked(
+                        current, replace(current, install_state="missing", launchable=False), deltas)
+            for game in games:
+                current = self.get_game(game.game_id)
+                if current is not None and current.provider == "lutris":
+                    game = replace(
+                        game,
+                        mudos_owned=current.mudos_owned,
+                        catalogue_source=(current.catalogue_source if current.mudos_owned
+                                          else game.catalogue_source),
+                        content_identity=(current.content_identity if current.mudos_owned
+                                          else game.content_identity),
+                    )
+                self._upsert_locked(game, deltas)
+        self._finish_operation(deltas)
+        return [current for game in games if (current := self.get_game(game.game_id)) is not None]
+
     def reconcile_component_apps(self, provider: str, games: list[CatalogueGame], *,
                                  flatpak_inventory: dict[str, tuple[str, bool]] | None = None) -> list[CatalogueGame]:
         """Reconcile a component-owned snapshot by stable provider identity."""
@@ -1099,9 +1145,9 @@ class CatalogueStore:
              "title": source.title, "runner": "wine" if source.source_type.value in
              {"windows-installer", "msi-installer"} else "linux",
              "lutris_id": source.source_id, "directory": ""}, source),
-                       install_state="available", launchable=False,
-                       availability_state="available", install_dir="",
-                       provider_id=source.source_id)
+                        install_state="available", launchable=False,
+                        availability_state="available", install_dir="",
+                        provider_id=str(source.lutris_slug or source.canonical_game_id.removeprefix("lutris:")))
         deltas: list[CatalogueDelta] = []
         self._start_operation()
         with self.atomic():

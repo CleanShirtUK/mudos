@@ -438,6 +438,124 @@ class ConsoleUiBridge:
         self.launch_logs.note("Lulu", f"{provider} acquisition submitted identity={content_identity} job_id={job_id}")
         return {"token": job_id}
 
+    async def register_local_lutris_game(self, payload: dict[str, object]) -> dict[str, object]:
+        if self.acquisitiond is None:
+            raise RuntimeError("acquisition service is unavailable")
+        result = json.loads(await self.acquisitiond.call_register_local_lutris_game(
+            str(payload.get("title", "")), str(payload.get("directory", "")),
+            str(payload.get("executable", "")), str(payload.get("arguments", "")),
+        ))
+        await self.consoled.call_refresh_stages(["lutris"])
+        LOGGER.info("local Lutris game registered title=%s provider_id=%s",
+                    result.get("title"), result.get("lutris_id"))
+        return result
+
+    def lutris_search(self, query: str) -> list[dict[str, object]]:
+        from lulu.lutris_adapter import LutrisAdapter
+        if not query.strip():
+            return []
+        adapter = LutrisAdapter()
+        normalized_query = re.sub(
+            r"(?<=[A-Za-z])\.(?=[A-Za-z])|(?<=[A-Za-z])\.$", "", query.strip(),
+        )
+        rows = adapter.search(query.strip())
+        # Lutris' search endpoint does not tokenize dotted abbreviations
+        # consistently (e.g. "A.I.R."), although the compact form matches.
+        if not rows and normalized_query != query.strip():
+            rows = adapter.search(normalized_query)
+        return [{key: item.get(key, "") for key in ("name", "slug", "year", "coverart", "banner_url")}
+                for item in rows if item.get("slug")]
+
+    def lutris_recipes(self, game_slug: str) -> list[dict[str, object]]:
+        from lulu.lutris_adapter import LutrisAdapter
+        return [{
+            "game_slug": recipe.game_slug, "installer_slug": recipe.installer_slug,
+            "title": recipe.title, "runner": recipe.runner,
+            "requirements": [{"file_id": item.file_id, "filename": item.filename,
+                              "label": item.label, "required": item.required, "local": item.local}
+                             for item in recipe.requirements],
+        } for recipe in LutrisAdapter().recipes(game_slug)]
+
+    @staticmethod
+    def generic_file_listing(path_value: str) -> dict[str, object]:
+        home = PATHS.home.resolve(strict=True)
+        roots = [home]
+        for candidate in (Path("/run/media") / os.environ.get("USER", "lulu"),
+                          Path("/media") / os.environ.get("USER", "lulu")):
+            if candidate.is_dir():
+                roots.append(candidate.resolve(strict=True))
+        target = Path(path_value).expanduser() if path_value else home
+        target = target.resolve(strict=True)
+        allowed_root = next((root for root in roots if target == root or root in target.parents), None)
+        if allowed_root is None or not target.is_dir():
+            raise ValueError("folder is outside the available game-file locations")
+        entries = []
+        for item in sorted(target.iterdir(), key=lambda value: (not value.is_dir(), value.name.casefold())):
+            if item.is_symlink():
+                continue
+            try:
+                resolved = item.resolve(strict=True)
+                resolved.relative_to(allowed_root)
+            except (OSError, ValueError):
+                continue
+            if item.is_dir():
+                entries.append({"name": item.name, "path": str(resolved), "directory": True})
+            elif item.is_file():
+                entries.append({"name": item.name, "path": str(resolved), "directory": False})
+            if len(entries) >= 500:
+                break
+        return {"path": str(target), "parent": str(target.parent) if target != allowed_root else "",
+                "entries": entries}
+
+    async def install_lutris_recipe(self, payload: dict[str, object]) -> dict[str, str]:
+        if self.acquisitiond is None:
+            raise RuntimeError("acquisition service is unavailable")
+        title = str(payload.get("title", "")).strip()
+        source_json = await self.acquisitiond.call_create_lutris_install_source(
+            title, str(payload.get("game_slug", "")), str(payload.get("installer_slug", "")),
+            json.dumps(payload.get("files", {}), sort_keys=True),
+        )
+        source_id = await self.acquisitiond.call_register_pc_source(source_json)
+        job_id = await self.acquisitiond.call_submit_pc_install(source_id, title)
+        asyncio.create_task(self._refresh_after_acquisition(job_id, "lutris"))
+        self.launch_logs.note("Lulu", f"Lutris recipe submitted slug={payload.get('game_slug')} job_id={job_id}")
+        return {"token": job_id}
+
+    @staticmethod
+    def lutris_local_candidates() -> list[dict[str, object]]:
+        root = (PATHS.game_install_root / "Executables" / "lutris").resolve(strict=False)
+        candidates = []
+        if not root.is_dir():
+            return candidates
+        from lulu.lutris_adapter import LutrisAdapter
+        registered_directories = {
+            str(Path(item.get("directory", "")).resolve(strict=False))
+            for item in LutrisAdapter().installed_games() if item.get("directory")
+        }
+        for directory in sorted(root.iterdir(), key=lambda item: item.name.casefold()):
+            if not directory.is_dir() or directory.is_symlink():
+                continue
+            if str(directory.resolve(strict=False)) in registered_directories:
+                continue
+            executables = []
+            for path in directory.rglob("*"):
+                if path.is_symlink() or not path.is_file() or not path.name.isprintable():
+                    continue
+                try:
+                    path.resolve(strict=True).relative_to(directory.resolve(strict=True))
+                except (OSError, ValueError):
+                    continue
+                if path.suffix.casefold() in {".desktop", ".txt", ".json", ".so"}:
+                    continue
+                if path.suffix.casefold() == ".exe" or os.access(path, os.X_OK):
+                    executables.append(str(path.resolve(strict=True)))
+                if len(executables) >= 100:
+                    break
+            if executables:
+                candidates.append({"directory": str(directory.resolve()),
+                                   "name": directory.name, "executables": executables})
+        return candidates
+
     async def uninstall_capability(self, game_id: str) -> dict[str, object]:
         if self.acquisitiond is None:
             return {"supported": False, "installed": False}
@@ -774,6 +892,33 @@ class ApiHandler(BaseHTTPRequestHandler):
                 self._respond(200, self.bridge.call(self.bridge.launch_status()))
             except Exception as error:
                 self._respond(503, {"error": str(error) or type(error).__name__})
+            return
+        if urlparse(self.path).path == "/lutris/local-candidates":
+            try:
+                self._respond(200, {"games": self.bridge.lutris_local_candidates()})
+            except Exception as error:
+                self._respond(503, {"error": str(error) or type(error).__name__})
+            return
+        if urlparse(self.path).path == "/lutris/search":
+            try:
+                query = parse_qs(urlparse(self.path).query).get("query", [""])[0]
+                self._respond(200, {"games": self.bridge.lutris_search(query)})
+            except Exception as error:
+                self._respond(503, {"error": str(error) or type(error).__name__})
+            return
+        if urlparse(self.path).path == "/lutris/recipes":
+            try:
+                slug = parse_qs(urlparse(self.path).query).get("slug", [""])[0]
+                self._respond(200, {"recipes": self.bridge.lutris_recipes(slug)})
+            except Exception as error:
+                self._respond(503, {"error": str(error) or type(error).__name__})
+            return
+        if urlparse(self.path).path == "/files":
+            try:
+                path_value = parse_qs(urlparse(self.path).query).get("path", [""])[0]
+                self._respond(200, self.bridge.generic_file_listing(path_value))
+            except Exception as error:
+                self._respond(400, {"error": str(error) or type(error).__name__})
             return
         if urlparse(self.path).path == "/acquisition":
             try:
@@ -1221,6 +1366,30 @@ class ApiHandler(BaseHTTPRequestHandler):
                 self._respond(200, result)
             except Exception as error:
                 self.bridge.launch_logs.note("Lulu", f"HTTP install failed: {error}")
+                self._respond(409, {"error": str(error) or type(error).__name__})
+            return
+        if path == "/lutris/register-local":
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+                if length < 1 or length > 64 * 1024:
+                    raise ValueError("invalid registration request size")
+                payload = json.loads(self.rfile.read(length) or b"{}")
+                self._respond(200, self.bridge.call(
+                    self.bridge.register_local_lutris_game(payload), timeout=60))
+            except Exception as error:
+                self._respond(409, {"error": str(error) or type(error).__name__})
+            return
+        if path == "/lutris/install-recipe":
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+                if length < 1 or length > 64 * 1024:
+                    raise ValueError("invalid Lutris installation request size")
+                payload = json.loads(self.rfile.read(length) or b"{}")
+                if not isinstance(payload, dict):
+                    raise ValueError("invalid Lutris installation request")
+                self._respond(200, self.bridge.call(
+                    self.bridge.install_lutris_recipe(payload), timeout=60))
+            except Exception as error:
                 self._respond(409, {"error": str(error) or type(error).__name__})
             return
         if not path.startswith("/launch/"):

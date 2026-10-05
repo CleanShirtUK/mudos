@@ -22,6 +22,32 @@ class FakeSteamProvider:
 
 
 class CatalogueTests(unittest.TestCase):
+    def test_lutris_snapshot_has_stable_identity_and_preserves_mudos_install_ownership(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = CatalogueStore(Path(directory) / "catalogue.sqlite3")
+            registration = {
+                "lutris_id": "7", "slug": "apotris", "title": "Apotris",
+                "runner": "linux", "platform": "Linux", "directory": "/games/lutris/Apotris",
+                "config_id": "apotris-123", "executable": "Apotris", "installed": True,
+                "mudos_owned": True,
+            }
+            first = store.reconcile_lutris_snapshot((registration,))[0]
+            self.assertEqual(first.game_id, "lutris:apotris")
+            self.assertEqual(first.provider_id, "apotris")
+            self.assertEqual(first.platform, "PC")
+            self.assertTrue(first.mudos_owned)
+
+            externally_read = dict(registration, lutris_id="99", mudos_owned=False)
+            second = store.reconcile_lutris_snapshot((externally_read,))[0]
+            self.assertEqual(second.game_id, first.game_id)
+            self.assertEqual(second.provider_id, "apotris")
+            self.assertTrue(second.mudos_owned)
+
+            store.reconcile_lutris_snapshot(())
+            missing = store.get_game("lutris:apotris")
+            self.assertEqual(missing.install_state, "missing")
+            self.assertFalse(missing.launchable)
+
     def test_aurelia_identity_wins_over_legacy_steam_duplicate(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             store = CatalogueStore(Path(directory) / "catalogue.sqlite3")

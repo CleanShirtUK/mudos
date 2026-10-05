@@ -51,6 +51,8 @@ class PcInstallSource:
     def source_id(self) -> str:
         if self.acquisition_id:
             return f"acquisition:{self.acquisition_id}"
+        if self.lutris_slug and self.lutris_installer_slug:
+            return f"lutris-recipe:{self.lutris_slug}:{self.lutris_installer_slug}"
         return f"{self.provenance}:{self.completed_path}"
 
 
@@ -60,6 +62,7 @@ class RecipeFileRequirement:
     filename: str
     url: str = ""
     required: bool = True
+    label: str = ""
 
     @property
     def local(self) -> bool:
@@ -162,11 +165,22 @@ def recipe_requirements(installer: dict[str, object]) -> tuple[RecipeFileRequire
         if not isinstance(item, dict):
             continue
         for file_id, metadata in item.items():
-            if not isinstance(metadata, dict):
+            if isinstance(metadata, dict):
+                url = str(metadata.get("url", ""))
+                local = url.casefold().startswith("n/a") or not url
+                filename = str(metadata.get("filename") or
+                                (file_id if local else Path(url.split("?", 1)[0]).name) or file_id)
+                label = str(metadata.get("description") or filename)
+                required = not bool(metadata.get("optional", False))
+            elif isinstance(metadata, str):
+                url = metadata
+                local = url.casefold().startswith("n/a") or not url
+                filename = str(file_id) if local else (Path(url.split("?", 1)[0]).name or str(file_id))
+                label = url.partition(":")[2].strip() if local and ":" in url else filename
+                required = True
+            else:
                 continue
-            filename = str(metadata.get("filename") or Path(str(metadata.get("url", ""))).name)
-            result.append(RecipeFileRequirement(str(file_id), filename,
-                                                str(metadata.get("url", ""))))
+            result.append(RecipeFileRequirement(str(file_id), filename, url, required, label))
     return tuple(result)
 
 
@@ -175,7 +189,7 @@ def match_required_files(source: PcInstallSource,
     """Map local Lutris requirements only when every mapping is deterministic."""
     mapping: dict[str, str] = {}
     for requirement in requirements:
-        if not requirement.local:
+        if not requirement.local or not requirement.required:
             continue
         wanted = Path(requirement.filename).name.casefold()
         matches = [item for item in source.files

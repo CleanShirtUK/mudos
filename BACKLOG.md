@@ -5,6 +5,78 @@ retained in `docs/reconciliation-backlog.md` and are not the status authority.
 
 ## ACTIVE
 
+### RECENTS-001 — Steam Recents and legacy launch behavior after Aurelia migration
+
+**Status:** OPEN — operator findings recorded; investigation and fixes deferred.
+
+- Steam games launched since the Aurelia implementation are not appearing in
+  Recents.
+- Some Steam games from before the Aurelia migration still appear in Recents,
+  including Super Meat Boy, but launching those entries does not work.
+- These are two observed symptoms; their relationship and root cause have not
+  been established. Investigate Recents population and launch routing across
+  pre-migration and Aurelia-backed Steam entries without assuming they share a
+  cause.
+
+### LUTRIS-002 — Sonic 3 A.I.R. launch leaves Mudos unresponsive
+
+**Status:** INVESTIGATING — evidence collected; preserve the current session.
+
+- After the Sonic 3 A.I.R. installation completed, launching it left Mudos
+  apparently unresponsive. The game process is still alive behind a modal
+  `zenity` error dialog; Sessiond remains in `game` lifecycle and has not
+  recorded a launch result.
+- Game logs show engine startup succeeded, then ROM discovery failed. It searched
+  Steam's Sega Classics paths for `Sonic_Knuckles_wSonic3.bin`. The selected
+  user-provided file is present in the install tree as
+  `Sonic and Knuckles & Sonic 3.bin`, so the recipe's copy location/name and the
+  game's lookup behavior need investigation.
+- Lutris's recipe metadata does not state that target filename: it declares
+  `bin: "N/A:Please select the .bin file from Steam"`. Its installer then copies
+  `bin` into the app directory without a destination filename. Lutris therefore
+  supplied no expected-name hint for Mudos to use; verify a supported target
+  location/name before adding any recipe-specific copy/rename behavior.
+- Launch diagnostics show Gamescope selected the game's X11 window and unmapped
+  the shell. The waiting Zenity process inherited the Gamescope Wayland display,
+  but has no visible X11 window. This is consistent with its error dialog being
+  outside the selected game surface; confirm the Wayland/Gamescope surface
+  behavior before treating that as proven.
+- Do not infer that the game binary itself crashed. Preserve the current state
+  and logs while tracing launch supervision, dialog visibility/input routing,
+  and how the recipe-provided ROM is expected to be located. Do not restart or
+  terminate the current game/session without operator authorization.
+
+### DOWNLOADS-001 — Downloads list rendering and clear-action stability
+
+**Status:** OPEN — operator findings recorded; investigation and fixes deferred.
+
+- In the Downloads list, a row's bottom edge can be clipped when its error text
+  wraps across too many lines.
+- Clearing a download often leads to a crash. The crash trigger and affected
+  component have not yet been established.
+- These are observations from ongoing physical testing, not confirmed root
+  causes. Do not change behavior as part of this finding until it is separately
+  taken up for investigation.
+
+### DOWNLOADS-002 — Show useful installation progress in Downloads
+
+**Status:** OPEN — operator finding recorded; implementation deferred.
+
+- During a Lutris installation, the Downloads view displays only “Downloading,”
+  including while Lutris is extracting and compiling the recipe payload. Show a
+  useful current stage and progress there so the operator can tell what the job
+  is doing and whether it is advancing.
+- Recorded during physical testing; no UI or progress-reporting changes are
+  included in this finding.
+
+### DOWNLOADS-003 — Mudos crash after Lutris install completion
+
+**Status:** OPEN — operator observation recorded; no investigation requested.
+
+- The operator reports that Mudos appeared to crash when the Sonic 3 A.I.R.
+  Lutris installation finished downloading. This is recorded as an observation
+  only; do not investigate it as part of the current launch-hang diagnosis.
+
 ### QUIVER-001 — Quiver acquisition and library provider
 
 **Status:** ABANDONED — Lutris is the selected PC installation foundation.
@@ -58,7 +130,10 @@ needs a durable fix and regression coverage.
 
 ### LUTRIS-001 — Mudos-native PC game install and add-game flows
 
-**Status:** ACTIVE — recipe flow deployed to dev-current; physical acceptance pending.
+**Status:** PASS WITH FOLLOW-UP — operator confirmed the Lutris discovery,
+required-file selection, installation, and launch-attempt flow end to end. The
+flow mostly works; listed follow-ups remain open, so this item is not closed and
+successful gameplay is not claimed.
 
 - Lutris 0.5.22's installer interpreter, game model/config save, database
   inventory, launch-script exporter, and uninstall model are integrated behind
@@ -66,7 +141,8 @@ needs a durable fix and regression coverage.
   Lutris test covers native local registration, discovery, launch export, and
   unregistering. The suite also covers recipe requirement parsing, catalogue
   identity, and the shared acquisition lifecycle.
-- Store (`X`) launches controller text entry for Lutris search. The flow
+- Installable's controller-X/BTN_WEST action launches controller text entry for
+  Lutris search through Mudos' shared contextual options action. The flow
   discovers upstream games/recipes, shows required user-file steps, uses the
   generic Mudos file picker, then calls CreateLutrisInstallSource,
   RegisterPcSource, and SubmitPcInstall. The existing Acquisitiond job and
@@ -77,9 +153,58 @@ needs a durable fix and regression coverage.
   requirement-source validation were exercised; no ROM/game data was copied
   or installed.
 - Refreshed non-promotable `/opt/lulu/dev-current`; session, Consoled,
-  Acquisitiond, and admin services are active. Physical controller use and a
-  licensed user-provided ROM are still required to prove install, launch, and
-  return. Do not mark VALIDATION or CLOSED before that operator acceptance.
+  Acquisitiond, and admin services were active for physical acceptance. The
+  operator later supplied a file and explicitly approved its use for the test.
+- Physical acceptance exposed that BTN_WEST dispatched to the generic
+  `openSelectedGameOptions()` handler while Lutris search was reachable only
+  from the Qt `Key_X` path. The shared action now dispatches Installable's
+  search flow. The operator confirmed the search window opens and the OSK is
+  controllable; the later install attempt confirms the results/recipe flow is
+  receiving the controller action.
+  Do not install copyrighted game files as part of this action-path check.
+- Follow-up OSK testing found Sessiond's profile-drift reconciler overwrote the
+  OSK bridge's temporary exclusive InputPlumber profile/intercept mode while
+  the keyboard was visible. Sessiond now yields reconciliation only while the
+  managed OSK reports visible, allowing its bridge to restore shell input on
+  hide. The operator confirmed physical OSK control now works.
+- The first physical game search remained on its loading message because the
+  new Lutris QML components sent relative XHR paths, which Qt interpreted as
+  local-file URLs rather than requests to the shell API. Route search, recipe,
+  file-picker, and local-registration XHRs through the configured `apiUrl`, and
+  show a useful error if a request fails. Lutris also returns no exact match
+  for the dotted `A.I.R.` spelling, so retry dotted abbreviations compacted.
+  Regression coverage passes and the fix is refreshed to dev-current; physically
+  verify search results and recipe selection.
+- Physical retest found native controller actions bypass the Qt key handler's
+  Lutris-modal checks: A invoked the root Installable activation and started
+  `A Difficult Game About Climbing`. That acquisition completed before it was
+  observed. Root controller handlers now delegate A/B to the visible Lutris
+  modal and suppress other actions that could affect the covered surface;
+  regression coverage passes and the fix is deployed to dev-current. Physically
+  retest confirmed A selected the Lutris item rather than the covered Installable
+  game.
+- The next Lutris install failed because `/home/lulu/Games/Executables/lutris`
+  was owned by root, preventing Acquisitiond (user `lulu`) from creating the
+  game directory. Corrected ownership on that parent directory only; preserved
+  its mode and all existing game files. The failed Sonic job created no partial
+  destination. The operator later explicitly authorized use of their provided
+  Sonic file and requested another test.
+- The retry exposed Lutris's scalar file declaration format (`{"bin":
+  "N/A:Please select the .bin file from Steam"}`), which the requirement parser
+  had skipped. It is now surfaced as a required local-file selection and mapped
+  under the recipe's `bin` ID; focused regression tests pass and the correction
+  is refreshed to dev-current. The operator selected their file in the UI.
+- Physical testing found the install action was not visible beneath the required
+  file row. It is now a dedicated visible row immediately after the file list,
+  with controller navigation and activation coverage. The operator confirmed
+  the row is now visible and requested another install test. The first retried
+  job was cancelled during compilation; its logged missing-source error
+  coincided with transaction cleanup removing the build directory, so it is
+  inconclusive. The operator reports the current test was started from the UI;
+  the install completed and the operator attempted launch. The build succeeded,
+  but ROM discovery failed and the game left a Zenity error dialog waiting while
+  the shell appeared unresponsive; see LUTRIS-002. This confirms the install and
+  launch-attempt path, not successful gameplay.
 - Full Python suite and QML checks pass. The checkout still has unrelated
   pre-existing modifications; dev runtime records `dirty=true` and must never
   be promoted.

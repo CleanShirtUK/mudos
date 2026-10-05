@@ -1,8 +1,13 @@
 import asyncio
+import importlib.util
+import os
 from pathlib import Path
+import subprocess
+import sys
 import tempfile
 import time
 import unittest
+from unittest.mock import patch
 
 from lulu.job_manager import JobManager
 from lulu.jobs import JobOperation, JobState
@@ -51,6 +56,39 @@ class InteractiveFake(FakeLutris):
 
 
 class LutrisInstallTests(unittest.TestCase):
+    @unittest.skipUnless(importlib.util.find_spec("lutris"), "installed Lutris integration unavailable")
+    def test_installed_lutris_register_discover_launch_export_and_uninstall_in_isolated_xdg(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            script = r'''
+import pathlib, sys
+from lulu.lutris_adapter import LutrisAdapter
+home = pathlib.Path.home()
+game_dir = home / "Games/Executables/lutris/Apotris"
+game_dir.mkdir(parents=True)
+exe = game_dir / "Apotris"
+exe.write_text("#!/bin/sh\nexit 0\n")
+exe.chmod(0o755)
+adapter = LutrisAdapter()
+registration = adapter.register_local_game(title="Apotris fixture", directory=game_dir, executable=exe)
+assert registration["runner"] == "linux"
+inventory = adapter.installed_games()
+assert any(item["lutris_id"] == registration["lutris_id"] for item in inventory)
+launch = home / "launch.sh"
+adapter.output_script(registration["lutris_id"], launch)
+assert launch.is_file() and "Apotris" in launch.read_text()
+removed = adapter.uninstall(registration["lutris_id"], delete_files=True)
+assert removed["directory"] == str(game_dir)
+assert not any(item["lutris_id"] == registration["lutris_id"] for item in adapter.installed_games())
+'''
+            env = dict(os.environ)
+            env.update(HOME=str(root), XDG_CONFIG_HOME=str(root / "config"),
+                       XDG_DATA_HOME=str(root / "data"), XDG_CACHE_HOME=str(root / "cache"),
+                       PYTHONPATH=str(Path(__file__).resolve().parents[1] / "src"))
+            result = subprocess.run([sys.executable, "-c", script], env=env, text=True,
+                                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=45)
+            self.assertEqual(result.returncode, 0, result.stdout)
+
     def test_recipe_classifier_is_conservative_and_does_not_mutate_upstream(self):
         source = PcInstallSource("pc:x", "X", "manual", PcSourceType.WINDOWS_INSTALLER,
                                  "/tmp/setup.exe", (PcSourceFile("/tmp/setup.exe", "setup.exe", 1, "exe"),), True)
@@ -80,10 +118,12 @@ class LutrisInstallTests(unittest.TestCase):
                 store = PcInstallSourceStore(root / "sources.json")
                 executor = LutrisInstallExecutor(store, InteractiveFake())
                 source_id = executor.register_source(source); manager = JobManager(); manager.register_executor("lutris", executor)
-                job = manager.submit("lutris", source_id, "Free Game", operation=JobOperation.INSTALL)
-                await manager._tasks[job.job_id]
+                with patch("lulu.lutris_install.canonical_lutris_root",
+                           side_effect=lambda slug: root / "installed" / slug):
+                    job = manager.submit("lutris", source_id, "Free Game", operation=JobOperation.INSTALL)
+                    await manager._tasks[job.job_id]
                 self.assertEqual(manager.jobs[job.job_id].state, JobState.COMPLETED)
-                self.assertEqual(manager.jobs[job.job_id].provider_job_id, "43")
+                self.assertEqual(manager.jobs[job.job_id].provider_job_id, "free-game")
 
         asyncio.run(exercise())
 
@@ -102,11 +142,13 @@ class LutrisInstallTests(unittest.TestCase):
                 source_id = executor.register_source(source)
                 manager = JobManager()
                 manager.register_executor("lutris", executor)
-                job = manager.submit("lutris", source_id, "Free Game", operation=JobOperation.INSTALL)
-                await manager._tasks[job.job_id]
+                with patch("lulu.lutris_install.canonical_lutris_root",
+                           side_effect=lambda slug: root / "installed" / slug):
+                    job = manager.submit("lutris", source_id, "Free Game", operation=JobOperation.INSTALL)
+                    await manager._tasks[job.job_id]
                 result = manager.jobs[job.job_id]
                 self.assertEqual(result.state, JobState.COMPLETED)
-                self.assertEqual(result.provider_job_id, "42")
+                self.assertEqual(result.provider_job_id, "free-game")
                 self.assertEqual(len(adapter.executed), 1)
 
         asyncio.run(exercise())

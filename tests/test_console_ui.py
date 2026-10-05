@@ -1052,6 +1052,74 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertIn("function openSelectedGameOptions()", QML)
         self.assertIn("openGameOptions(selectedGameForOptions)", QML)
 
+    def test_controller_west_dispatches_installable_search_through_shared_action(self) -> None:
+        native_shell = (ROOT / "native" / "lulu-shell.cpp").read_text()
+        self.assertIn('{SDL_GAMEPAD_BUTTON_WEST, "options"}', native_shell)
+        self.assertIn('{"options", "openSelectedGameOptions"}', native_shell)
+
+        action = QML.split("function openSelectedGameOptions() {", 1)[1].split(
+            "\n    function ", 1
+        )[0]
+        self.assertRegex(action, r'if \(space === "store"\)\s*\{\s*beginLutrisSearch\(\)')
+        self.assertLess(action.index('space === "store"'), action.index("selectedGameForOptions"))
+
+        key_action = QML.split("if (event.key === Qt.Key_X) {", 1)[1].split(
+            "event.accepted = true", 1
+        )[0]
+        self.assertIn("root.openSelectedGameOptions()", key_action)
+        self.assertNotIn('root.space === "store"', key_action)
+
+    def test_lutris_flows_use_shell_http_api_base_url(self) -> None:
+        recipe = (ROOT / "ui" / "LutrisRecipeInstall.qml").read_text()
+        add_game = (ROOT / "ui" / "LutrisAddGame.qml").read_text()
+        picker = (ROOT / "ui" / "MudosFilePicker.qml").read_text()
+
+        self.assertIn('apiUrl: root.apiUrl', QML)
+        self.assertIn('xhr.open("GET", root.apiUrl + path)', recipe)
+        self.assertIn('xhr.open("POST", root.apiUrl + "/lutris/install-recipe")', recipe)
+        self.assertIn('apiUrl: root.apiUrl', recipe)
+        self.assertIn('xhr.open("GET", root.apiUrl + "/lutris/local-candidates")', add_game)
+        self.assertIn('xhr.open("POST", root.apiUrl + "/lutris/register-local")', add_game)
+        self.assertIn('xhr.open("GET", root.apiUrl + "/files?path="', picker)
+        self.assertIn('requirements[index].label || requirements[index].filename', recipe)
+        self.assertIn('requirement.label || requirement.filename', recipe)
+
+    def test_lutris_install_action_is_a_dedicated_visible_row_after_required_files(self) -> None:
+        recipe = (ROOT / "ui" / "LutrisRecipeInstall.qml").read_text()
+        self.assertIn('rows = requirements.slice(0)', recipe)
+        self.assertIn('var lastIndex = flowStage === 2 ? requirements.length : rows.length - 1', recipe)
+        self.assertIn('if (selectedIndex === requirements.length) submitInstall()', recipe)
+        self.assertIn('visible: root.flowStage === 2', recipe)
+        self.assertIn('text: "Install"', recipe)
+        self.assertNotIn('rows.push({installAction:', recipe)
+
+    def test_visible_lutris_window_owns_native_controller_actions(self) -> None:
+        shell = (ROOT / "ui" / "ConsoleShell.qml").read_text()
+
+        def body(name):
+            return shell.split(f"function {name}(", 1)[1].split(
+                "\n    function ", 1
+            )[0]
+
+        activate = body("activate")
+        back = body("back")
+        options = body("openSelectedGameOptions")
+        downloads = body("openDownloadsGlobal")
+        self.assertLess(activate.index("if (lutrisRecipeInstall.visible)"),
+                        activate.index('if (space === "store")'))
+        self.assertIn("lutrisRecipeInstall.activate()", activate)
+        self.assertIn("lutrisAddGame.activate()", activate)
+        self.assertIn("lutrisRecipeInstall.back()", back)
+        self.assertIn("lutrisAddGame.back()", back)
+        self.assertIn("if (lutrisRecipeInstall.visible || lutrisAddGame.visible)", options)
+        self.assertIn("if (lutrisRecipeInstall.visible || lutrisAddGame.visible)", downloads)
+        self.assertIn("if (lutrisRecipeInstall.visible || lutrisAddGame.visible) return",
+                      body("controllerLeft"))
+        self.assertIn("if (lutrisRecipeInstall.visible || lutrisAddGame.visible) return",
+                      body("controllerRight"))
+        self.assertIn("if (lutrisRecipeInstall.visible || lutrisAddGame.visible)",
+                      body("controllerShoulder"))
+
     def test_navigation_uses_normalized_controller_target_indices(self) -> None:
         native_shell = (ROOT / "native" / "lulu-shell.cpp").read_text()
         self.assertIn('value.value(QStringLiteral("sdl_index"))', native_shell)

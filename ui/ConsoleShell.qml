@@ -686,8 +686,7 @@ import QtQuick.Controls
             var rows = parsed.jobs || []
             for (var index = 0; index < rows.length; index++) {
                 var job = rows[index]
-                if (String(job.provider || "") === "steam"
-                        || String(job.provider || "") === "romm")
+                if (String(job.content_identity || ""))
                     jobs[String(job.content_identity || "")] = job
                 if (String(job.state || "") === "completed"
                         && !acquisitionCompletionSeen[String(job.job_id || "")]) {
@@ -1023,12 +1022,18 @@ import QtQuick.Controls
     }
 
     function openSelectedGameOptions() {
+        if (lutrisRecipeInstall.visible || lutrisAddGame.visible)
+            return
         if (removeSelectedHomeStore()) {
             playAudioEvent(audioEventForAction("confirm"))
             return
         }
         if (space === "downloads" && downloadsHomeRef) {
             downloadsHomeRef.requestCancel()
+            return
+        }
+        if (space === "store") {
+            beginLutrisSearch()
             return
         }
         if (gameOptionsOpen)
@@ -1906,6 +1911,8 @@ import QtQuick.Controls
     }
 
     function openDownloadsGlobal() {
+        if (lutrisRecipeInstall.visible || lutrisAddGame.visible)
+            return
         if (space !== "downloads")
             openDownloads(space)
     }
@@ -2453,7 +2460,9 @@ import QtQuick.Controls
     }
 
     function completeCredentialTarget(target, value) {
-        if (target.kind === "romm-pair")
+        if (target.kind === "lutris-search")
+            lutrisRecipeInstall.openForQuery(value)
+        else if (target.kind === "romm-pair")
             root.request("/plugins/romm/pair", "POST", JSON.stringify({code: value}), function(result) {
                 root.message = "RomM paired"
                 root.refreshSystemSettings()
@@ -2488,6 +2497,18 @@ import QtQuick.Controls
                 root.closeStoreOptions()
             } else root.message = "Use a valid http:// or https:// URL"
         }
+    }
+
+    function beginLutrisSearch() {
+        credentialTarget = ({kind: "lutris-search"})
+        credentialValue = ""
+        credentialKeyboardShown = false
+        credentialKeyboardShowAttempted = false
+        request("/credential/begin", "POST", JSON.stringify({
+            title: "Find a Lutris game", prompt: "Game title",
+            input_type: "text", secret: false, max_length: 160,
+            presentation: "attached", multiline: false
+        }), function(data) { credentialRequest = data }, "Lutris search input unavailable")
     }
 
     function selectedHomeStore() {
@@ -2546,6 +2567,14 @@ import QtQuick.Controls
                     "selectedCategory", selectedCategoryIndex,
                     "storeReady", !!storeHomeRef,
                     "storeSelected", storeHomeRef ? storeHomeRef.selectedIndex : -1)
+        if (lutrisRecipeInstall.visible) {
+            lutrisRecipeInstall.activate()
+            return
+        }
+        if (lutrisAddGame.visible) {
+            lutrisAddGame.activate()
+            return
+        }
         if (credentialRequest.status === "requested" || credentialRequest.status === "waiting") {
             submitCredential(false)
              return
@@ -2750,6 +2779,14 @@ import QtQuick.Controls
 
     function back() {
         playAudioEvent(audioEventForAction("back"))
+        if (lutrisRecipeInstall.visible) {
+            lutrisRecipeInstall.back()
+            return
+        }
+        if (lutrisAddGame.visible) {
+            lutrisAddGame.back()
+            return
+        }
         if (browserVisible) {
             if (credentialTarget.kind === "browser"
                     && (credentialRequest.status === "requested" || credentialRequest.status === "waiting")) {
@@ -3052,6 +3089,8 @@ import QtQuick.Controls
                         "space", root.space)
             if (root.homeLaunchGated) return
             root.playAudioEvent(root.audioEventForAction("up"))
+            if (lutrisRecipeInstall.visible) { lutrisRecipeInstall.move(-1); return }
+            if (lutrisAddGame.visible) { lutrisAddGame.move(-1); return }
             if (root.onboardingOpen && !root.onboardingNetworkSettings && !root.browserVisible) {
                 onboardingPage.move(-1)
                 return
@@ -3087,6 +3126,8 @@ import QtQuick.Controls
                         "space", root.space)
             if (root.homeLaunchGated) return
             root.playAudioEvent(root.audioEventForAction("down"))
+            if (lutrisRecipeInstall.visible) { lutrisRecipeInstall.move(1); return }
+            if (lutrisAddGame.visible) { lutrisAddGame.move(1); return }
             if (root.onboardingOpen && !root.onboardingNetworkSettings && !root.browserVisible) {
                 onboardingPage.move(1)
                 return
@@ -3122,6 +3163,7 @@ import QtQuick.Controls
                         "space", root.space)
             if (root.homeLaunchGated) return
             root.playAudioEvent(root.audioEventForAction("left"))
+            if (lutrisRecipeInstall.visible || lutrisAddGame.visible) return
             if (root.onboardingOpen && !root.onboardingNetworkSettings && !root.browserVisible)
                 return
             if (root.browserVisible) { root.browserSurface.directional("left"); return }
@@ -3158,6 +3200,7 @@ import QtQuick.Controls
                         "space", root.space)
             if (root.homeLaunchGated) return
             root.playAudioEvent(root.audioEventForAction("right"))
+            if (lutrisRecipeInstall.visible || lutrisAddGame.visible) return
             if (root.onboardingOpen && !root.onboardingNetworkSettings && !root.browserVisible)
                 return
             if (root.browserVisible) { root.browserSurface.directional("right"); return }
@@ -3192,6 +3235,8 @@ import QtQuick.Controls
             }
     }
     function controllerShoulder(delta) {
+        if (lutrisRecipeInstall.visible || lutrisAddGame.visible)
+            return
         if (root.space === "library"
                 || (root.space === "system" && !root.systemLanding))
             root.playAudioEvent(root.audioEventForAction(delta < 0 ? "leftShoulder" : "rightShoulder"))
@@ -3291,19 +3336,36 @@ import QtQuick.Controls
                 event.accepted = true
                 return
             }
+            if (lutrisAddGame.visible) {
+                if (event.key === Qt.Key_Up) lutrisAddGame.move(-1)
+                else if (event.key === Qt.Key_Down) lutrisAddGame.move(1)
+                else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) lutrisAddGame.activate()
+                else if (event.key === Qt.Key_Escape || event.key === Qt.Key_Backspace) lutrisAddGame.back()
+                event.accepted = true
+                return
+            }
+            if (lutrisRecipeInstall.visible) {
+                if (event.key === Qt.Key_Up) lutrisRecipeInstall.move(-1)
+                else if (event.key === Qt.Key_Down) lutrisRecipeInstall.move(1)
+                else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) lutrisRecipeInstall.activate()
+                else if (event.key === Qt.Key_Escape || event.key === Qt.Key_Backspace) lutrisRecipeInstall.back()
+                event.accepted = true
+                return
+            }
             if (event.key === Qt.Key_X) {
                 if (root.browserVisible)
                     browserSurface.requestTextEntryForFocusedElement()
                 else if (root.selectedHomeStore())
                     root.openStoreOptions()
                 else
-                    openSelectedGameOptions()
+                    root.openSelectedGameOptions()
                 event.accepted = true
                 return
             }
             if (event.key === Qt.Key_Y) {
-                if (credentialRequest.status !== "requested" && credentialRequest.status !== "waiting"
-                        && space !== "downloads")
+                if (space === "library") lutrisAddGame.open()
+                else if (credentialRequest.status !== "requested" && credentialRequest.status !== "waiting"
+                         && space !== "downloads")
                     openDownloads(space)
                 event.accepted = true
                 return
@@ -3754,7 +3816,7 @@ import QtQuick.Controls
             opacity: 0.58
         }
 
-          LibrarySpace {
+         LibrarySpace {
              id: librarySpace
             x: 0
             width: parent.width
@@ -3780,9 +3842,37 @@ import QtQuick.Controls
              contentBottom: root.expandedContentBottom
              contentOpacity: root.libraryContentOpacity
               onLaunchRequested: root.launchGame(game)
-         }
+          }
 
-         StoreOptions {
+        LutrisAddGame {
+            id: lutrisAddGame
+            apiUrl: root.apiUrl
+            x: 0
+            y: 0
+            width: parent.width
+            height: parent.height
+            onRegistered: {
+                root.request("/refresh?stage=lutris", "POST", "", function() {
+                    root.refreshLibrary()
+                }, "Lutris library refresh failed")
+            }
+        }
+
+        LutrisRecipeInstall {
+            id: lutrisRecipeInstall
+            apiUrl: root.apiUrl
+            x: 0
+            y: 0
+            width: parent.width
+            height: parent.height
+            onSubmitted: function(jobId) {
+                root.message = "Lutris installation submitted"
+                root.refreshAcquisitionJobs()
+                root.openDownloads("store")
+            }
+        }
+
+          StoreOptions {
              id: storeOptions
              anchors.fill: parent
              store: root.storeOptionsOpen ? root.selectedHomeStore() : null

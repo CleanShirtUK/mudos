@@ -3,8 +3,8 @@ from pathlib import Path
 import unittest
 
 from lulu.pc_install import (
-    PcSourceType, RecipeFileRequirement, canonical_lutris_root,
-    inspect_pc_source, match_required_files,
+    PcInstallSource, PcSourceFile, PcSourceType, RecipeFileRequirement, canonical_lutris_root,
+    inspect_pc_source, match_required_files, recipe_requirements,
 )
 from lulu.pc_install_store import PcInstallSourceStore
 
@@ -55,6 +55,45 @@ class PcInstallTests(unittest.TestCase):
             source = inspect_pc_source(root, canonical_game_id="pc:test", title="Test")
             with self.assertRaisesRegex(ValueError, "ambiguous"):
                 match_required_files(source, (RecipeFileRequirement("installer", "setup.exe", "N/A"),))
+
+    def test_recipe_requirements_keep_file_identity_and_optional_status(self):
+        requirements = recipe_requirements({"script": {"files": [
+            {"rom": {"filename": "Sonic.bin", "url": "N/A: select ROM"}},
+            {"optional_patch": {"filename": "patch.zip", "url": "https://example.invalid/patch.zip",
+                                "optional": True}},
+        ]}})
+        self.assertEqual([(item.file_id, item.filename, item.required) for item in requirements], [
+            ("rom", "Sonic.bin", True), ("optional_patch", "patch.zip", False),
+        ])
+        with tempfile.TemporaryDirectory() as directory:
+            rom = Path(directory) / "Sonic.bin"
+            rom.write_bytes(b"rom")
+            source = inspect_pc_source(rom, canonical_game_id="pc:sonic", title="Sonic")
+            self.assertEqual(match_required_files(source, requirements), {"rom": str(rom)})
+
+    def test_lutris_string_n_a_file_entries_are_exposed_and_mapped_by_id(self):
+        requirements = recipe_requirements({"script": {"files": [
+            {"bin": "N/A:Please select the .bin file from Steam"},
+        ]}})
+        self.assertEqual(len(requirements), 1)
+        self.assertEqual(requirements[0].file_id, "bin")
+        self.assertEqual(requirements[0].filename, "bin")
+        self.assertTrue(requirements[0].local)
+        self.assertEqual(requirements[0].label, "Please select the .bin file from Steam")
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "user-provided.bin"
+            path.write_bytes(b"user-provided content")
+            # CreateLutrisInstallSource binds a specifically selected path to
+            # the recipe's file ID; the remote interpreter consumes that ID.
+            source = PcInstallSource(
+                canonical_game_id="lutris:sonic-3-air", title="Sonic 3 A.I.R",
+                provenance="lutris-recipe", source_type=PcSourceType.UNKNOWN,
+                completed_path=directory,
+                files=(PcSourceFile(str(path), "bin", path.stat().st_size, "file"),),
+                ready_to_install=True,
+            )
+            self.assertEqual(match_required_files(source, requirements), {"bin": str(path)})
 
     def test_lutris_root_is_canonical_and_slug_safe(self):
         root = canonical_lutris_root("My Game!")

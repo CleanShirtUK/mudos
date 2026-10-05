@@ -77,7 +77,8 @@ Item {
     function jobForGame(game) {
         if (!game)
             return null
-        var job = acquisitionJobs[String(game.game_id)] || null
+        var job = acquisitionJobs[String(game.game_id)]
+            || acquisitionJobs[String(game.content_identity || game.game_id)] || null
         if (!job && (game.provider === "steam" || game.provider === "steam-aurelia"))
             job = acquisitionJobs[(game.provider === "steam-aurelia" ? "steam-aurelia:" : "steam:")
                                   + String(game.provider_id)] || null
@@ -171,7 +172,8 @@ Item {
         else if ((provider === "steam" || provider === "steam-aurelia" || provider === "romm" || provider === "lutris"
                   || provider === "gog" || provider === "epic")
                  && ["queued", "starting", "transferring", "finalizing", "paused", "cancelling"].indexOf(acquisitionState) < 0
-                  && (provider === "epic" ? providerId.length > 0
+                  && (provider === "lutris" ? providerId.length > 0
+                      : provider === "epic" ? providerId.length > 0
                       : providerId.match(/^[1-9][0-9]*$/))) {
             // installGameRequested(game) preserves the existing generic Store signal boundary.
             console.log("INSTALLABLE_INSTALL_SIGNAL", "game", String(selectedGame.game_id),

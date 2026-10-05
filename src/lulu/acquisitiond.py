@@ -25,7 +25,7 @@ from .local_uninstall import LocalUninstallExecutor
 from .jobs import JobOperation
 from .notifications import NotificationBroker, NotificationPresenter
 from .lutris_install import LutrisInstallExecutor
-from .pc_install import PcInstallSource
+from .pc_install import PcInstallSource, PcSourceType
 from .pc_install_store import PcInstallSourceStore
 
 
@@ -323,6 +323,82 @@ class AcquisitionInterface(ServiceInterface):
                                        cancellation_supported=True).job_id
         except ValueError as error:
             raise DBusError("org.lulu.Acquisition.Error.Unavailable", str(error)) from error
+
+    @method()
+    def CreateLutrisInstallSource(self, title: "s", game_slug: "s", installer_slug: "s",
+                                  file_mapping_json: "s") -> "s":
+        """Validate Lutris recipe requirements and serialize a source for RegisterPcSource."""
+        try:
+            mappings = json.loads(file_mapping_json)
+            if not isinstance(mappings, dict):
+                raise ValueError("file mapping must be an object")
+            recipes = LutrisInstallExecutor().adapter.recipes(game_slug)
+            selected = [recipe for recipe in recipes if recipe.installer_slug == installer_slug]
+            if len(selected) != 1:
+                raise ValueError("selected Lutris recipe is no longer available")
+            requirements = selected[0].requirements
+            by_id = {item.file_id: item for item in requirements}
+            required_local = {item.file_id for item in requirements if item.local and item.required}
+            unknown = set(str(key) for key in mappings) - set(by_id)
+            if unknown:
+                raise ValueError("file was supplied for an unknown Lutris recipe requirement")
+            missing = required_local - set(str(key) for key in mappings)
+            if missing:
+                raise ValueError("required file selection is incomplete")
+            from .pc_install import PcSourceFile
+            files = []
+            selected_paths: list[Path] = []
+            for file_id, value in mappings.items():
+                requirement = by_id[str(file_id)]
+                path = Path(str(value)).expanduser()
+                if path.is_symlink():
+                    raise ValueError("selected files cannot be symbolic links")
+                path = path.resolve(strict=True)
+                if not path.is_file():
+                    raise ValueError("selected item is not a regular file")
+                stat = path.stat()
+                files.append(PcSourceFile(str(path), requirement.filename, stat.st_size, "file"))
+                selected_paths.append(path)
+            if not title.strip() or not game_slug or not installer_slug:
+                raise ValueError("game and installer identity are required")
+            parent = str(Path(os.path.commonpath([str(path.parent) for path in selected_paths]))) \
+                if selected_paths else ""
+            source = PcInstallSource(
+                canonical_game_id=f"lutris:{game_slug}", title=title.strip(),
+                provenance="lutris-recipe", source_type=PcSourceType.UNKNOWN,
+                completed_path=parent, files=tuple(files), ready_to_install=True,
+                lutris_slug=game_slug, lutris_installer_slug=installer_slug,
+            )
+            return json.dumps(asdict(source), sort_keys=True)
+        except Exception as error:
+            raise DBusError("org.lulu.Acquisition.Error.InvalidSource", str(error)) from error
+
+    @method()
+    def RegisterLocalLutrisGame(self, title: "s", directory: "s", executable: "s",
+                                arguments: "s") -> "s":
+        """Register a locally installed native game via Lutris's own model API."""
+        try:
+            root = (PATHS.game_install_root / "Executables" / "lutris").resolve(strict=True)
+            target = Path(directory).expanduser().resolve(strict=True)
+            target.relative_to(root)
+            exe = Path(executable).expanduser().resolve(strict=True)
+            exe.relative_to(target)
+            adapter = LutrisInstallExecutor().adapter
+            registration = adapter.register_local_game(
+                title=title, directory=target, executable=exe, arguments=arguments,
+                working_directory=target,
+            )
+            source = PcInstallSource(
+                canonical_game_id=f"lutris:{registration['slug']}", title=title.strip(),
+                provenance="mudos-local", source_type=PcSourceType.DIRECTORY,
+                completed_path=str(target), ready_to_install=True, lutris_slug=str(registration["slug"]),
+            )
+            registration["mudos_owned"] = True
+            if self.catalogue is not None:
+                self.catalogue.reconcile_lutris(registration, source)
+            return json.dumps(registration, sort_keys=True)
+        except Exception as error:
+            raise DBusError("org.lulu.Acquisition.Error.LocalRegistration", str(error)) from error
 
     def _uninstall_target(self, game_id: str) -> tuple[object, str, str, str]:
         game = self.catalogue.get_game(game_id)

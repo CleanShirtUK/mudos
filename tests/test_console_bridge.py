@@ -4,6 +4,7 @@ import http.client
 import json
 from pathlib import Path
 from types import SimpleNamespace
+import tempfile
 import unittest
 from unittest.mock import Mock, patch
 
@@ -18,6 +19,74 @@ SPEC.loader.exec_module(BRIDGE)
 
 
 class ConsoleBridgeTests(unittest.TestCase):
+    def test_lutris_search_retries_dotted_abbreviations_in_compact_form(self):
+        search = BRIDGE.ConsoleUiBridge.lutris_search.__get__(object(), BRIDGE.ConsoleUiBridge)
+        result = {"name": "Sonic 3 A.I.R", "slug": "sonic-3-air"}
+        with patch("lulu.lutris_adapter.LutrisAdapter.search", side_effect=((), (result,))) as mocked:
+            rows = search("Sonic 3 A.I.R.")
+
+        self.assertEqual([call.args[0] for call in mocked.call_args_list], [
+            "Sonic 3 A.I.R.", "Sonic 3 AIR",
+        ])
+        self.assertEqual(rows[0]["slug"], "sonic-3-air")
+
+    def test_lutris_recipe_discovery_exposes_provider_requirements(self):
+        recipe = SimpleNamespace(
+            game_slug="example-game", installer_slug="example-linux", title="Example",
+            runner="linux", requirements=(SimpleNamespace(
+                file_id="rom", filename="source.rom", label="Source ROM",
+                required=True, local=True),),
+        )
+        with patch("lulu.lutris_adapter.LutrisAdapter.search", return_value=(
+                {"name": "Example", "slug": "example-game", "year": 2000,
+                 "coverart": "art", "banner_url": "banner", "ignored": "private"},)):
+            rows = BRIDGE.ConsoleUiBridge.lutris_search.__get__(object(), BRIDGE.ConsoleUiBridge)("Example")
+        self.assertEqual(rows[0]["slug"], "example-game")
+        self.assertNotIn("ignored", rows[0])
+        with patch("lulu.lutris_adapter.LutrisAdapter.recipes", return_value=(recipe,)):
+            recipes = BRIDGE.ConsoleUiBridge.lutris_recipes.__get__(object(), BRIDGE.ConsoleUiBridge)("example-game")
+        self.assertEqual(recipes[0]["requirements"], [{
+            "file_id": "rom", "filename": "source.rom", "label": "Source ROM",
+            "required": True, "local": True,
+        }])
+
+    def test_generic_file_picker_is_bounded_and_skips_symlinks(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "Games").mkdir()
+            (root / "source.rom").write_bytes(b"rom")
+            (root / "escape").symlink_to("/etc")
+            with patch.object(BRIDGE, "PATHS", SimpleNamespace(home=root)):
+                result = BRIDGE.ConsoleUiBridge.generic_file_listing(str(root))
+                with self.assertRaisesRegex(ValueError, "outside"):
+                    BRIDGE.ConsoleUiBridge.generic_file_listing("/etc")
+            self.assertEqual({item["name"] for item in result["entries"]}, {"Games", "source.rom"})
+
+    def test_lutris_recipe_install_reuses_register_and_submit_acquisition_calls(self):
+        async def exercise():
+            class Acquisition:
+                def __init__(self): self.calls = []
+                async def call_create_lutris_install_source(self, *args):
+                    self.calls.append(("create", args)); return '{"source":"json"}'
+                async def call_register_pc_source(self, value):
+                    self.calls.append(("register", value)); return "lutris-recipe:game:recipe"
+                async def call_submit_pc_install(self, source_id, title):
+                    self.calls.append(("submit", source_id, title)); return "job-1"
+
+            acquisition = Acquisition()
+            bridge = BRIDGE.ConsoleUiBridge(asyncio.get_running_loop(), object(), object(), acquisition)
+            bridge._refresh_after_acquisition = lambda *_: asyncio.sleep(0)
+            result = await bridge.install_lutris_recipe({
+                "title": "Example", "game_slug": "game", "installer_slug": "recipe",
+                "files": {"rom": "/home/lulu/roms/source.rom"},
+            })
+            await asyncio.sleep(0)
+            self.assertEqual(result, {"token": "job-1"})
+            self.assertEqual([call[0] for call in acquisition.calls], ["create", "register", "submit"])
+            self.assertEqual(acquisition.calls[-1], ("submit", "lutris-recipe:game:recipe", "Example"))
+
+        asyncio.run(exercise())
+
     def test_shell_bootstrap_does_not_refresh_catalogue_and_acquisition_is_optional(self):
         source = (ROOT / "scripts" / "console-ui-bridge.py").read_text()
         bootstrap = source[source.index("async def main()"):
