@@ -70,6 +70,7 @@ class SessiondTests(unittest.TestCase):
 
         interface = ConsoleSessionInterface.__new__(ConsoleSessionInterface)
         interface._local_identity = LaunchIdentity("owned-token", 1234, 1234, "/game", ("/game",))
+        interface._local_provider_id = ""
         interface.model = SimpleNamespace(state=SimpleNamespace(launch_token="owned-token"))
         interface.supervisor = SimpleNamespace(terminate_session=Mock())
         result = asyncio.run(ConsoleSessionInterface.QuitActiveSession.__wrapped__(interface))
@@ -91,6 +92,7 @@ class SessiondTests(unittest.TestCase):
             ("/var/lib/lulu/providers/eden/d16735f5b6/Eden-Linux-d16735f5b6-amd64-clang-pgo.AppImage", "--config", "/tmp/eden.ini"),
         )
         interface.model = SimpleNamespace(state=SimpleNamespace(launch_token="owned-token"))
+        interface._local_provider_id = "eden"
         interface.supervisor = supervisor
 
         result = asyncio.run(ConsoleSessionInterface.QuitActiveSession.__wrapped__(interface))
@@ -99,25 +101,13 @@ class SessiondTests(unittest.TestCase):
         supervisor.terminate_session.assert_called_once_with(
             interface._local_identity, __import__("signal").SIGTERM)
 
-    def test_eden_quit_falls_back_to_sigkill_after_termination_timeout(self) -> None:
+    def test_eden_quit_does_not_wait_for_non_presenting_helpers(self) -> None:
         from types import SimpleNamespace
         from lulu.launch_identity import LaunchIdentity
 
-        group_members = {1234, 1235}
-        kill_sent = False
-        reap_polls = 0
-
-        def current_members(pgid):
-            nonlocal reap_polls
-            if kill_sent:
-                if reap_polls < 2:
-                    reap_polls += 1
-                    return set(group_members)
-                group_members.clear()
-            return set(group_members)
-
         supervisor = SimpleNamespace(
-            session_process_ids=lambda _identity: current_members(1234),
+            session_process_ids=lambda _identity: {1234, 1235},
+            terminate_session=Mock(),
         )
         interface = ConsoleSessionInterface.__new__(ConsoleSessionInterface)
         interface._local_identity = LaunchIdentity(
@@ -125,23 +115,15 @@ class SessiondTests(unittest.TestCase):
             ("/var/lib/lulu/providers/eden/d16735f5b6/Eden-Linux-d16735f5b6-amd64-clang-pgo.AppImage", "--config", "/tmp/eden.ini"),
         )
         interface.model = SimpleNamespace(state=SimpleNamespace(launch_token="owned-token"))
+        interface._local_provider_id = "eden"
         interface.supervisor = supervisor
 
-        def signal_group(pgid, sig):
-            nonlocal kill_sent
-            if sig == __import__("signal").SIGKILL:
-                kill_sent = True
-
-        supervisor.terminate_session = Mock(side_effect=lambda _identity, sig: signal_group(1234, sig))
-        with patch("lulu.sessiond.EDEN_TERMINATE_TIMEOUT", 0):
-            result = asyncio.run(ConsoleSessionInterface.QuitActiveSession.__wrapped__(interface))
+        result = asyncio.run(ConsoleSessionInterface.QuitActiveSession.__wrapped__(interface))
 
         self.assertEqual(result, "quit-requested")
         signal = __import__("signal")
-        self.assertEqual(supervisor.terminate_session.call_args_list, [
-            unittest.mock.call(interface._local_identity, signal.SIGTERM),
-            unittest.mock.call(interface._local_identity, signal.SIGKILL),
-        ])
+        supervisor.terminate_session.assert_called_once_with(
+            interface._local_identity, signal.SIGTERM)
 
     def test_local_session_return_waits_for_process_group_before_restoring_shell(self) -> None:
         from lulu.launch_identity import LaunchIdentity
@@ -156,7 +138,8 @@ class SessiondTests(unittest.TestCase):
         interface = ConsoleSessionInterface.__new__(ConsoleSessionInterface)
         interface.model = model
         interface._local_identity = LaunchIdentity(token, 123, 123, "/eden", ("eden",))
-        interface._local_provider_id = "eden"
+        interface._local_provider_id = "dolphin"
+        interface._local_surface_owner_pid = None
         interface._applied_input_modes = {}
         interface._native_controller = False
         interface._inputplumber = SimpleNamespace(runtime_composite_statuses=lambda: {})

@@ -163,7 +163,18 @@ class ProvisioningTests(unittest.TestCase):
         self.assertLess(stop, restart)
         self.assertLess(restart, start)
         self.assertNotIn("systemctl restart lulu-acquisition.service lulu-consoled.service", script)
+        self.assertIn("systemctl restart lulu-consoled.service", script)
         self.assertIn('chown lulu:lulu "$sunshine_user_units/default.target.wants"', script)
+
+    def test_dev_sunshine_is_display_only_and_waits_for_gamescope(self) -> None:
+        config = (ROOT / "packaging/sunshine-dev.conf").read_text()
+        service = (ROOT / "packaging/lulu-sunshine-dev.service").read_text()
+        self.assertIn("capture = kms", config)
+        self.assertIn("controller = disabled", config)
+        self.assertNotIn("gamepad =", config)
+        self.assertIn("stream_audio = disabled", config)
+        self.assertIn("bind_address = 192.168.0.245", config)
+        self.assertIn('pgrep -u lulu -f "^gamescope --backend drm "', service)
 
     def test_dev_refresh_stages_provider_installer_inside_published_runtime(self) -> None:
         script = (ROOT / "scripts/dev-runtime.sh").read_text()

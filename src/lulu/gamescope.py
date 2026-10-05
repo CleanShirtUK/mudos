@@ -392,6 +392,10 @@ class GamescopePresentation:
     def window_is_focusable(self, window: int) -> bool:
         return any(candidate == window for candidate, _app_id, _pid in self._focusable_windows())
 
+    def focusable_window_pids(self) -> set[int]:
+        """Return owners of Gamescope windows that are currently focusable."""
+        return {pid for _window, _app_id, pid in self._focusable_windows() if pid > 0}
+
     def select_pids(self, pids: list[int] | Callable[[], list[int]], timeout: float = 10.0,
                     process_alive: Callable[[], bool] | None = None) -> int:
         window = self.window_for_pids(pids, timeout, process_alive)

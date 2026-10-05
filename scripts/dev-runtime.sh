@@ -178,6 +178,9 @@ EOF
         systemctl --user stop lulu-sunshine-dev.service || true
     systemctl restart inputplumber.service
     systemctl restart lulu-session@2.service
+    # lulu-consoled may still be running code imported from the previous tree;
+    # a session restart alone does not replace an already-active service.
+    systemctl restart lulu-consoled.service
     sudo -u lulu XDG_RUNTIME_DIR=/run/user/958 \
         DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/958/bus \
         systemctl --user enable --now lulu-sunshine-dev.service

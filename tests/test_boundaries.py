@@ -1,6 +1,11 @@
 import unittest
 import asyncio
 import subprocess
+import signal
+import json
+import os
+import sys
+import time
 from pathlib import Path
 import tempfile
 import threading
@@ -22,6 +27,7 @@ from lulu.contracts import (InputMode, LaunchDescriptor, Lifecycle, Overlay, Pre
 from lulu.gamescope import GamescopeInvocation, GamescopePresentation, discover_presentation_output
 from lulu.launch_identity import LaunchIdentity
 from lulu.sessiond import ConsoleSessionInterface
+from lulu.process_supervisor import ProcessSupervisor
 
 
 class RecordingInputPlumber:
@@ -89,6 +95,8 @@ def input_mode_interface(
     interface._inputplumber = client
     interface._applied_input_modes = {}
     interface._local_identity = None
+    interface._local_provider_id = ""
+    interface._local_surface_owner_pid = None
     interface.model = SessionStateModel()
     interface.controller_registry = ControllerRegistry()
     interface.supervisor = type("Supervisor", (), {
@@ -97,6 +105,9 @@ def input_mode_interface(
         "session_process_ids": lambda self, identity=None: ({identity.pid} if identity else set()),
         "terminate_session": lambda self, identity, signum: None,
         "select_session_surface": lambda self, identity, timeout, include_related_processes=False: None,
+        "selected_session_surface_owner": lambda self, identity: None,
+        "session_surface_is_owned": lambda self, owner_pid, identity: owner_pid == identity.pid,
+        "session_surface_process_ids": lambda self, identity: set(),
         "select_shell_presentation": lambda self: None,
         "select_steam_session_surface": lambda self, token, pgid: None,
         "shell_status": lambda self: None,
@@ -704,7 +715,7 @@ class BoundaryTests(unittest.TestCase):
         path = "/org/shadowblip/InputPlumber/CompositeDevice0"
         client = RecordingInputPlumber({path: ("045e_0291", ("/dev/input/event13",))})
         interface = input_mode_interface(client)
-        interface.BeginLocalSession("local:wii:game", 123, 123, "/usr/bin/dolphin-emu", ["dolphin-emu", "-e", "game.rvz"])
+        interface.BeginLocalSession("local:wii:game", 123, 123, "/usr/bin/dolphin-emu", ["dolphin-emu", "-e", "game.rvz"], "dolphin")
 
         state = interface.model.state
         self.assertEqual(state.lifecycle, Lifecycle.GAME)
@@ -807,14 +818,14 @@ class BoundaryTests(unittest.TestCase):
             "session_process_ids": lambda self, identity: {identity.pid},
         })()
         interface.BeginLocalSession("local:gamecube:fixture", 123, 123,
-                                    "/usr/bin/dolphin-emu", ["dolphin-emu", "fixture.iso"])
+                                    "/usr/bin/dolphin-emu", ["dolphin-emu", "fixture.iso"], "dolphin")
         self.assertEqual(presentation.selected, [([123], 15.0)])
         asyncio.run(ConsoleSessionInterface.EndLocalSession.__wrapped__(
             interface, interface._local_identity.token, 0
         ))
         self.assertEqual(presentation.selected[-1], ("shell", 99))
 
-    def test_eden_selects_owned_flatpak_group_members_not_wrapper_descendants(self) -> None:
+    def test_eden_appimage_selection_records_owned_child_window_owner(self) -> None:
         class Presentation:
             def __init__(self):
                 self.selected = []
@@ -831,11 +842,153 @@ class BoundaryTests(unittest.TestCase):
                 lambda: [321, 456] if include_related_processes else [identity.pid],
                 timeout, lambda: True),
             "session_process_ids": lambda self, identity: {identity.pid, 321, 456},
+            "selected_session_surface_owner": lambda self, identity: 321,
+            "session_surface_is_owned": lambda self, owner_pid, identity: owner_pid in {123, 321, 456},
+            "session_surface_process_ids": lambda self, identity: {321, 456},
         })()
         interface.BeginLocalSession("local:switch:game", 123, 123,
-                                    "/usr/bin/bash", ["/var/lib/lulu/providers/eden/d16735f5b6/Eden-Linux-d16735f5b6-amd64-clang-pgo.AppImage"])
+                                    "/usr/bin/bash", ["/var/lib/lulu/providers/eden/d16735f5b6/Eden-Linux-d16735f5b6-amd64-clang-pgo.AppImage"], "eden")
         self.assertEqual(presentation.selected, [([321, 456], 15.0, True)])
         self.assertEqual(interface.model.state.lifecycle, Lifecycle.GAME)
+        self.assertEqual(interface._local_provider_id, "eden")
+        self.assertEqual(interface._local_surface_owner_pid, 321)
+
+    def test_eden_surface_exit_returns_shell_while_appimage_helper_remains(self) -> None:
+        client = RecordingInputPlumber({})
+        interface = input_mode_interface(client)
+        group = {123, 456, 789}  # AppImage entrypoint, Eden UI child, runtime helper.
+        selected = []
+        terminated = []
+        interface.supervisor = type("Supervisor", (), {
+            "state_details": lambda self: {}, "launch_cancellable": False,
+            "presentation_available": True,
+            "select_session_surface": lambda self, identity, timeout, include_related_processes=False: None,
+            "selected_session_surface_owner": lambda self, identity: 456,
+            "session_process_ids": lambda self, identity=None: set(group),
+            "session_surface_is_owned": lambda self, pid, identity: pid in {123, 456, 789},
+            # The non-presenting AppImage helper remains in the owned group,
+            # but has no Gamescope window after the Eden child exits.
+            "session_surface_process_ids": lambda self, identity: set(),
+            "terminate_session": lambda self, identity, signum: (terminated.append((identity.pgid, signum)), group.clear()),
+            "shell_status": lambda self: type("ShellStatus", (), {
+                "pid": 99, "running": True, "presentation_available": True,
+            })(),
+            "select_shell_presentation": lambda self: selected.append(("shell", 99)),
+        })()
+        transitions = []
+        interface.StateChanged = lambda _state: transitions.append(interface.model.state.lifecycle)
+        interface.BeginLocalSession(
+            "local:switch:fixture", 123, 123, "/var/lib/lulu/providers/eden/Eden.AppImage",
+            ("/var/lib/lulu/providers/eden/Eden.AppImage", "--appimage-extract-and-run", "game.xci"),
+            "eden",
+        )
+        self.assertEqual(interface._local_surface_owner_pid, 456)
+        group.remove(456)  # Eden window child has exited; entrypoint and helper remain.
+        with patch("lulu.sessiond.ProcessSupervisor._pid_is_live", return_value=False):
+            asyncio.run(interface._reconcile_eden_surface_lifecycle(interface._local_identity))
+
+        self.assertEqual(transitions[-2:], [Lifecycle.RETURNING, Lifecycle.SHELL])
+        self.assertEqual(selected, [("shell", 99)])
+        self.assertEqual(terminated, [(123, signal.SIGTERM)])
+        self.assertEqual(client.loads[-1][0], InputMode.SHELL)
+        self.assertIsNone(interface._local_identity)
+
+    def test_appimage_parent_child_tree_returns_on_ui_exit_not_helper_exit(self) -> None:
+        async def exercise() -> None:
+            parent_code = (
+                "import json,subprocess,sys,time; "
+                "ui=subprocess.Popen([sys.executable,'-c','import time; time.sleep(0.25)']); "
+                "helper=subprocess.Popen([sys.executable,'-c','import time; time.sleep(20)']); "
+                "print(json.dumps({'ui':ui.pid,'helper':helper.pid}),flush=True); "
+                "ui.wait(); time.sleep(20)"
+            )
+            parent = await asyncio.create_subprocess_exec(
+                sys.executable, "-c", parent_code,
+                stdout=asyncio.subprocess.PIPE, start_new_session=True,
+            )
+            group_id = parent.pid
+            try:
+                topology = json.loads((await parent.stdout.readline()).decode())
+                ui_pid = topology["ui"]
+                helper_pid = topology["helper"]
+
+                def parent_pid(pid: int) -> int:
+                    stat = Path(f"/proc/{pid}/stat").read_text()
+                    fields = stat[stat.rfind(")") + 1:].split()
+                    return int(fields[1])
+
+                self.assertEqual(parent_pid(ui_pid), parent.pid)
+                self.assertEqual(parent_pid(helper_pid), parent.pid)
+                self.assertEqual(os.getpgid(ui_pid), group_id)
+                self.assertEqual(os.getpgid(helper_pid), group_id)
+                self.assertEqual(os.getsid(ui_pid), parent.pid)
+
+                class Supervisor:
+                    presentation_available = True
+
+                    def __init__(self):
+                        self.selected_shell = []
+
+                    def state_details(self): return {}
+                    def select_session_surface(self, *_args, **_kwargs): pass
+                    def selected_session_surface_owner(self, _identity): return ui_pid
+                    def session_process_ids(self, identity=None):
+                        return ProcessSupervisor._process_group_members(group_id)
+                    def session_surface_is_owned(self, pid, _identity):
+                        return pid in self.session_process_ids()
+                    def session_surface_process_ids(self, _identity):
+                        return {ui_pid} if ui_pid in self.session_process_ids() else set()
+                    def terminate_session(self, identity, signum): os.killpg(identity.pgid, signum)
+                    def shell_status(self):
+                        return type("ShellStatus", (), {
+                            "pid": 99, "running": True, "presentation_available": True,
+                        })()
+                    def select_shell_presentation(self): self.selected_shell.append(99)
+
+                client = RecordingInputPlumber({})
+                interface = input_mode_interface(client)
+                interface._state_json = lambda: "{}"
+                supervisor = Supervisor()
+                interface.supervisor = supervisor
+                interface.BeginLocalSession(
+                    "local:switch:fixture", parent.pid, group_id, sys.executable,
+                    ("Eden-Linux-pinned.AppImage", "--appimage-extract-and-run", "fixture.xci"),
+                    "eden",
+                )
+                await asyncio.sleep(0.35)  # Eden child/window exited; helper and host remain.
+                self.assertIn(parent.pid, supervisor.session_process_ids())
+                self.assertIn(helper_pid, supervisor.session_process_ids())
+                started = time.monotonic()
+                await interface._reconcile_eden_surface_lifecycle(interface._local_identity)
+                elapsed = time.monotonic() - started
+                self.assertLess(elapsed, 0.5)
+                self.assertEqual(interface.model.state.lifecycle, Lifecycle.SHELL)
+                self.assertEqual(supervisor.selected_shell, [99])
+                self.assertEqual(client.loads[-1][0], InputMode.SHELL)
+                await asyncio.wait_for(parent.wait(), timeout=2)
+            finally:
+                try:
+                    os.killpg(group_id, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+                if parent.returncode is None:
+                    await parent.wait()
+
+        asyncio.run(exercise())
+
+    def test_owned_surface_discovery_excludes_non_window_and_unrelated_processes(self) -> None:
+        class Presentation:
+            def focusable_window_pids(self):
+                return {456, 999}
+
+            def pid_is_owned_by(self, pid, owned):
+                return pid in owned
+
+        supervisor = ProcessSupervisor(SessionStateModel(), presentation=Presentation())
+        identity = LaunchIdentity("appimage", 123, 123, "/runtime/Eden.AppImage",
+                                  ("Eden.AppImage", "--appimage-extract-and-run"))
+        with patch.object(supervisor, "session_process_ids", return_value={123, 456, 789}):
+            self.assertEqual(supervisor.session_surface_process_ids(identity), {456})
 
     def test_failed_local_session_does_not_leave_state_owned(self) -> None:
         class FailingInputPlumber(RecordingInputPlumber):
@@ -844,7 +997,7 @@ class BoundaryTests(unittest.TestCase):
 
         interface = input_mode_interface(FailingInputPlumber({}))
         with self.assertRaises(Exception):
-            interface.BeginLocalSession("local:wii:game", 123, 123, "/usr/bin/dolphin-emu", ["dolphin-emu"])
+            interface.BeginLocalSession("local:wii:game", 123, 123, "/usr/bin/dolphin-emu", ["dolphin-emu"], "dolphin")
         self.assertEqual(interface.model.state.lifecycle, Lifecycle.SHELL)
         self.assertIsNone(interface._local_identity)
 
@@ -1078,6 +1231,20 @@ class BoundaryTests(unittest.TestCase):
 
         self.assertEqual(client.loads, [(InputMode.SHELL, path)])
         self.assertEqual(client.profile_states[path].profile_path, "/profiles/shell.yaml")
+
+    def test_active_managed_osk_owns_temporary_intercept_mode(self) -> None:
+        path = "/org/shadowblip/InputPlumber/CompositeDevice0"
+        client = RecordingInputPlumber({path: ("045e_0291", ("/dev/input/event13",))})
+        client.profile_states[path] = CompositeProfileState(
+            "/profiles/osk.yaml", "Lulu OSK", 2,
+        )
+        interface = input_mode_interface(client)
+
+        with patch("lulu.sessiond._managed_osk_visible", return_value=True):
+            interface._reconcile_input_mode(client.composites, InputMode.SHELL)
+
+        self.assertEqual(client.loads, [])
+        self.assertNotIn(path, interface._applied_input_modes)
 
     def test_matching_readback_avoids_profile_reload_even_if_cache_is_empty(self) -> None:
         path = "/org/shadowblip/InputPlumber/CompositeDevice0"

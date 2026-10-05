@@ -8,6 +8,7 @@ does not add product proposals.
 
 | Status | Area | Gap and evidence |
 | --- | --- | --- |
+| ACTIVE | Eden AppImage migration (EDEN-001) | Physical acceptance failed: v0.8.1 runs MK8 at v1.4.0 and controller input is absent. Read-only comparison shows both the retained v0.2.1 Flatpak and native v0.8.1 configs use `Paths\\external_content_dirs` with `/home/lulu/Games/ROMs/switch`; the MK8 per-title custom INI is byte-identical and lists no disabled add-ons. v0.8.1 source still uses SDL3, clears GUID bytes 2–3, and serializes SDL bindings with `engine:sdl,port:...,guid:...`; however, no Eden-authored v0.8.1 mapping has yet been captured. Do not close either defect or promote until root causes are implemented and physical acceptance passes. | `src/lulu/switch_provider.py`, `tests/test_eden_provider.py`, `docs/switch-provider.md` |
 | PARTIAL | Lifecycle | Unify the live Steam UI/bridge launch path with sessiond ownership, or make an explicit retirement decision for the disabled supervisor. `steam-details-baseline.md`, `src/lulu/consoled.py`, `src/lulu/sessiond.py` |
 | PARTIAL | Local runtime | Integrate emulator launches with authoritative lifecycle, presentation, and recovery; validate providers beyond RetroArch. `emulation-library.md`, `non-steam-runtime-architecture-baseline.md` |
 | BLOCKED | RetroArch audio | Direct NES input/presentation/return evidence exists, but audio was unverified because the output device was not configured. `retroarch-runtime-validation-20260909.md` |

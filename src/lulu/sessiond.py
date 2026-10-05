@@ -56,6 +56,23 @@ EDEN_TERMINATE_TIMEOUT = 5.0
 EDEN_KILL_REAP_TIMEOUT = 3.0
 
 
+def _managed_osk_visible() -> bool:
+    """Return whether the OSK bridge currently owns controller input."""
+    socket_path = (
+        Path(os.environ.get("XDG_RUNTIME_DIR", "/run/user/958"))
+        / "mudos-osk-bridge.sock"
+    )
+    try:
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
+            client.settimeout(0.25)
+            client.connect(str(socket_path))
+            client.sendall(b"status\n")
+            reply = client.recv(64).decode().strip()
+    except (OSError, TimeoutError):
+        return False
+    return reply == "ok visible"
+
+
 class ConsoleSessionInterface(ServiceInterface):
     # Temporary Steam baseline: retain the implementation but do not reassert
     # Lulu's Gamescope shell selection.
@@ -74,6 +91,7 @@ class ConsoleSessionInterface(ServiceInterface):
         self._applied_input_modes: dict[str, InputMode] = {}
         self._local_identity: LaunchIdentity | None = None
         self._local_provider_id = ""
+        self._local_surface_owner_pid: int | None = None
         self._controller_monitor_task: asyncio.Task[None] | None = None
         self._inputplumber_bus: MessageBus | None = None
         self._inputplumber_proxy: object | None = None
@@ -314,6 +332,10 @@ class ConsoleSessionInterface(ServiceInterface):
         identity = self._local_identity or self.supervisor.active_identity
         if identity is None:
             return
+        if self._eden_surface_session(identity):
+            await self._reconcile_eden_surface_lifecycle(identity)
+            if self.model.state.lifecycle.value != "game":
+                return
         pids = self._owned_game_pids()
         if not pids:
             # Process observers own termination; presentation loss is not evidence
@@ -372,6 +394,51 @@ class ConsoleSessionInterface(ServiceInterface):
         except (OSError, ProcessLookupError, RuntimeError, ValueError) as error:
             LOGGER.error("could not stop game after presentation recovery failure token=%s: %s",
                          identity.token, error)
+
+    def _eden_surface_session(self, identity: LaunchIdentity) -> bool:
+        return (self._local_identity is identity and self._local_provider_id == "eden"
+                and self.model.state.session_kind != SessionClassification.UTILITY.value)
+
+    async def _reconcile_eden_surface_lifecycle(self, identity: LaunchIdentity) -> None:
+        """End Eden's presentation transaction when its real window owner exits.
+
+        AppImage extraction/runtime helpers share the Mudos-owned session group,
+        but they do not own Eden's gameplay surface. Their lifetime must not
+        hold Gamescope or shell input after the selected Eden window process is
+        gone. A replacement child that already owns a focusable session window
+        becomes the new surface owner instead.
+        """
+        owner_pid = getattr(self, "_local_surface_owner_pid", None)
+        if owner_pid is None:
+            return
+        try:
+            if owner_pid in self.supervisor.session_process_ids(identity):
+                return
+        except (OSError, RuntimeError, subprocess.SubprocessError):
+            return
+        try:
+            replacements = await asyncio.to_thread(
+                self.supervisor.session_surface_process_ids, identity,
+            )
+        except (AttributeError, OSError, RuntimeError, subprocess.SubprocessError):
+            LOGGER.exception("could not inspect Eden replacement surfaces token=%s", identity.token)
+            return
+        if replacements:
+            presentation = getattr(self.supervisor, "_presentation", None)
+            try:
+                selected, selected_pid = await asyncio.to_thread(presentation.selected_base_surface)
+            except (AttributeError, OSError, RuntimeError, subprocess.SubprocessError):
+                selected, selected_pid = None, None
+            self._local_surface_owner_pid = (
+                selected_pid if selected is not None and selected_pid in replacements
+                else min(replacements)
+            )
+            LOGGER.info("Eden surface owner handed off token=%s old_pid=%s new_pid=%s",
+                        identity.token, owner_pid, self._local_surface_owner_pid)
+            return
+        LOGGER.info("Eden gameplay surface owner exited token=%s pid=%s; returning shell",
+                    identity.token, owner_pid)
+        await self._complete_local_session(identity, 0, cleanup_group=True)
 
     async def _refresh_presentation_readiness(self) -> None:
         """Publish readiness only after its live context snapshot is verified."""
@@ -524,6 +591,13 @@ class ConsoleSessionInterface(ServiceInterface):
                 else str(self._inputplumber.profile_paths[mode])
             )
             expected_intercept = 1 if use_default else None
+            # The managed OSK temporarily owns InputPlumber's exclusive
+            # keyboard stream (profile + intercept mode 2). Do not mistake
+            # that deliberate handoff for profile drift; the OSK bridge
+            # restores the previous profile/mode when it hides.
+            if actual.intercept_mode == 2 and _managed_osk_visible():
+                self._applied_input_modes.pop(runtime_path, None)
+                continue
             matches = (
                 actual.profile_path == expected_profile
                 and (expected_intercept is None or actual.intercept_mode == expected_intercept)
@@ -767,6 +841,10 @@ class ConsoleSessionInterface(ServiceInterface):
 
     def _gamescope_surface_changed(self, xid: int | None, pid: int | None, focused_fullscreen: bool) -> None:
         self._observed_game_surface = (xid, pid, focused_fullscreen)
+        identity = self._local_identity
+        if (identity is not None and self._local_provider_id == "eden" and pid is not None
+                and self.supervisor.session_surface_is_owned(pid, identity)):
+            self._local_surface_owner_pid = pid
         self._schedule_game_input_policy()
 
     def _schedule_game_input_policy(self) -> None:
@@ -868,7 +946,8 @@ class ConsoleSessionInterface(ServiceInterface):
         return state
 
     @method()
-    def BeginLocalSession(self, game_id: "s", pid: "u", pgid: "u", executable: "s", argv: "as") -> "s":
+    def BeginLocalSession(self, game_id: "s", pid: "u", pgid: "u", executable: "s", argv: "as",
+                          provider_id: "s") -> "s":
         if self._local_identity is not None:
             raise self._error(ValueError("another local session owns the session"))
         token: str | None = None
@@ -876,24 +955,37 @@ class ConsoleSessionInterface(ServiceInterface):
             token = self.model.request_launch(game_id)
             self.model.launch_starting(token)
             self._local_identity = LaunchIdentity(token, pid, pgid, executable, tuple(argv))
+            self._local_provider_id = provider_id
+            self._local_surface_owner_pid = None
             if self.supervisor.presentation_available:
                 # Consoled starts local runtimes directly (rather than through
                 # ProcessSupervisor.launch); give Gamescope the same explicit
                 # window handoff for emulator and delegated game surfaces.
-                if game_id.startswith("local:switch:") and self._is_eden_appimage(argv[0]):
-                    # AppImage's extract-and-run host and its Eden child may not
-                    # retain a direct parent-child relationship. Match only
-                    # processes in this Eden launch's owned group, not focus.
+                if provider_id == "eden":
+                    # AppImage hosts can fork the UI process; select from the
+                    # accepted session's owned group, never global focus.
                     self.supervisor.select_session_surface(
                         self._local_identity, 15.0, include_related_processes=True,
                     )
+                    self._local_surface_owner_pid = self.supervisor.selected_session_surface_owner(
+                        self._local_identity
+                    )
                 else:
                     self.supervisor.select_session_surface(self._local_identity, 15.0)
+            try:
+                session_id = os.getsid(pid)
+            except OSError:
+                session_id = None
+            LOGGER.info("local session ownership token=%s provider=%s pid=%s pgid=%s sid=%s "
+                        "surface_owner_pid=%s executable=%s argv=%r",
+                        token, provider_id, pid, pgid, session_id,
+                        self._local_surface_owner_pid, executable, tuple(argv))
             self._apply_input_mode(InputMode.GAME)
             self.model.primary_started(token, input_mode=InputMode.GAME)
         except (OSError, ValueError, TimeoutError, RuntimeError, subprocess.SubprocessError) as error:
             self._local_identity = None
             self._local_provider_id = ""
+            self._local_surface_owner_pid = None
             if token is not None and self.model.state.lifecycle is not Lifecycle.SHELL:
                 self.model.fail(token, f"local launch failed: {error}")
                 self.model.return_complete(token)
@@ -915,6 +1007,7 @@ class ConsoleSessionInterface(ServiceInterface):
             self.model.launch_starting(token)
             self._local_identity = LaunchIdentity(token, pid, pgid, executable, tuple(argv))
             self._local_provider_id = provider_id
+            self._local_surface_owner_pid = None
             if provider_id == "steam":
                 LOGGER.info("steam_auth_stage stage=session-token-created token=%s sentinel_pid=%s pgid=%s",
                             token, pid, pgid)
@@ -934,6 +1027,7 @@ class ConsoleSessionInterface(ServiceInterface):
                                  token)
             self._local_identity = None
             self._local_provider_id = ""
+            self._local_surface_owner_pid = None
             if token is not None and self.model.state.lifecycle is not Lifecycle.SHELL:
                 self.model.fail(token, f"provider launch failed: {error}")
                 self.model.return_complete(token)
@@ -948,6 +1042,20 @@ class ConsoleSessionInterface(ServiceInterface):
             return
         identity = self._local_identity
         provider_id = getattr(self, "_local_provider_id", "")
+        if provider_id == "eden" and getattr(self, "_local_surface_owner_pid", None) is not None:
+            try:
+                replacement_surfaces = await asyncio.to_thread(
+                    self.supervisor.session_surface_process_ids, identity,
+                )
+            except (AttributeError, OSError, RuntimeError, subprocess.SubprocessError):
+                replacement_surfaces = set()
+            if (self._local_surface_owner_pid in self.supervisor.session_process_ids(identity)
+                    or replacement_surfaces):
+                LOGGER.info("Eden AppImage entrypoint exited while surface remains token=%s owner=%s",
+                            token, self._local_surface_owner_pid)
+                return
+            await self._complete_local_session(identity, exit_code, cleanup_group=True)
+            return
         previous_members: set[int] = set()
         while True:
             members = self.supervisor.session_process_ids(identity) - {identity.pid, os.getpid()}
@@ -962,6 +1070,14 @@ class ConsoleSessionInterface(ServiceInterface):
             previous_members = members
             await asyncio.sleep(0.05)
         LOGGER.info("local session process group empty token=%s pgid=%s", token, identity.pgid)
+        await self._complete_local_session(identity, exit_code)
+
+    async def _complete_local_session(self, identity: LaunchIdentity, exit_code: int,
+                                      *, cleanup_group: bool = False) -> None:
+        if self._local_identity is not identity:
+            return
+        token = identity.token
+        provider_id = self._local_provider_id
         if self.model.state.lifecycle is Lifecycle.GAME:
             self.model.primary_exited(token, success=exit_code == 0)
             self.model.record_result(ProcessResult(
@@ -975,6 +1091,49 @@ class ConsoleSessionInterface(ServiceInterface):
                 outcome="success" if exit_code == 0 else "failed",
                 error=None if exit_code == 0 else f"process exited with status {exit_code}",
             ))
+            self.StateChanged(self._state_json())
+        if cleanup_group:
+            try:
+                residual = sorted(self.supervisor.session_process_ids(identity))
+            except (OSError, RuntimeError, subprocess.SubprocessError):
+                residual = []
+            LOGGER.info("local presentation transaction ended token=%s provider=%s "
+                        "surface_owner_pid=%s residual_owned_pids=%s",
+                        token, provider_id, self._local_surface_owner_pid, residual)
+            try:
+                # Each local runtime was launched in its own session/process
+                # group. Once its actual UI owner is gone, signal only that
+                # accepted group; never discover/kill by executable name.
+                self.supervisor.terminate_session(identity, os_signal.SIGTERM)
+            except (OSError, ProcessLookupError) as error:
+                LOGGER.debug("local helper cleanup SIGTERM skipped token=%s: %s", token, error)
+            asyncio.create_task(self._reap_local_group(identity))
+        self.model.state.delegated_surface = None
+        self.model.state.controller_mode = None
+        self._restore_local_shell(identity, provider_id)
+
+    async def _reap_local_group(self, identity: LaunchIdentity) -> None:
+        """Clean provider helpers asynchronously after presentation returns."""
+        deadline = asyncio.get_running_loop().time() + EDEN_TERMINATE_TIMEOUT
+        while self.supervisor.session_process_ids(identity):
+            remaining = deadline - asyncio.get_running_loop().time()
+            if remaining <= 0:
+                LOGGER.warning("provider helper group remains after shell return; SIGKILL pgid=%s",
+                               identity.pgid)
+                try:
+                    self.supervisor.terminate_session(identity, os_signal.SIGKILL)
+                except (OSError, ProcessLookupError):
+                    return
+                reap_deadline = asyncio.get_running_loop().time() + EDEN_KILL_REAP_TIMEOUT
+                while (self.supervisor.session_process_ids(identity)
+                       and asyncio.get_running_loop().time() < reap_deadline):
+                    await asyncio.sleep(0.05)
+                return
+            await asyncio.sleep(min(0.05, remaining))
+
+    def _restore_local_shell(self, identity: LaunchIdentity, provider_id: str) -> None:
+        token = identity.token
+        if self.model.state.lifecycle is Lifecycle.GAME:
             shell = self.supervisor.shell_status()
             if shell is not None and shell.running and shell.presentation_available:
                 try:
@@ -986,7 +1145,7 @@ class ConsoleSessionInterface(ServiceInterface):
                     LOGGER.exception("local session return could not restore the Mudos shell surface")
             try:
                 self._apply_input_mode(InputMode.SHELL)
-            except (OSError, RuntimeError, subprocess.SubprocessError) as error:
+            except (OSError, RuntimeError, ValueError, subprocess.SubprocessError) as error:
                 # Input devices can disappear while an external client owns
                 # presentation. A failed profile restore must not strand the
                 # lifecycle token or prevent the Mudos shell from returning.
@@ -1004,12 +1163,19 @@ class ConsoleSessionInterface(ServiceInterface):
                     self.model.return_failed(token, "Presentation recovery failed: shell surface unavailable")
                     self._local_identity = None
                     self._local_provider_id = ""
+                    self._local_surface_owner_pid = None
                     self.StateChanged(self._state_json())
                     return
+            try:
+                self._apply_input_mode(InputMode.SHELL)
+            except (OSError, RuntimeError, ValueError, subprocess.SubprocessError) as error:
+                LOGGER.warning("session return input-mode restore failed token=%s: %s",
+                               token, error)
             self.model.set_input_mode(InputMode.SHELL)
             self.model.return_complete(token)
         self._local_identity = None
         self._local_provider_id = ""
+        self._local_surface_owner_pid = None
         if provider_id == "steam":
             LOGGER.info("steam_auth_stage stage=session-token-retired token=%s", token)
         self.StateChanged(self._state_json())
@@ -1021,57 +1187,25 @@ class ConsoleSessionInterface(ServiceInterface):
             identity = self._local_identity
             if self.model.state.launch_token != identity.token:
                 raise self._error(ValueError("local session no longer owns the launch"))
-            eden_launch = self._is_eden_appimage(identity.executable) or (
-                bool(identity.argv) and self._is_eden_appimage(identity.argv[0]))
+            provider_id = getattr(self, "_local_provider_id", "")
             try:
-                LOGGER.info("local session SIGTERM requested token=%s pid=%s pgid=%s eden=%s",
-                            identity.token, identity.pid, identity.pgid, eden_launch)
+                LOGGER.info("local session SIGTERM requested token=%s pid=%s pgid=%s provider=%s",
+                            identity.token, identity.pid, identity.pgid, provider_id)
                 self.supervisor.terminate_session(identity, os_signal.SIGTERM)
             except ProcessLookupError:
                 return "quit-requested"
             except OSError as error:
                 raise self._error(ValueError(f"could not quit the owned local session: {error}")) from error
-            if eden_launch:
-                deadline = asyncio.get_running_loop().time() + EDEN_TERMINATE_TIMEOUT
-                while self.supervisor.session_process_ids(identity):
-                    remaining = deadline - asyncio.get_running_loop().time()
-                    if remaining <= 0:
-                        LOGGER.error("Eden process group remained after SIGTERM; sending SIGKILL pgid=%s",
-                                     identity.pgid)
-                        try:
-                            self.supervisor.terminate_session(identity, os_signal.SIGKILL)
-                        except ProcessLookupError:
-                            pass
-                        except OSError as error:
-                            raise self._error(ValueError(
-                                f"could not force-stop the owned Eden session: {error}"
-                            )) from error
-                        reap_deadline = asyncio.get_running_loop().time() + EDEN_KILL_REAP_TIMEOUT
-                        while True:
-                            remaining_members = sorted(
-                                self.supervisor.session_process_ids(identity)
-                            )
-                            if not remaining_members:
-                                break
-                            remaining = reap_deadline - asyncio.get_running_loop().time()
-                            if remaining <= 0:
-                                raise self._error(ValueError(
-                                    f"Eden process group survived SIGKILL: {remaining_members}"
-                                ))
-                            await asyncio.sleep(min(0.05, remaining))
-                        break
-                    await asyncio.sleep(min(0.1, remaining))
+            if provider_id == "eden":
+                # Surface-owner observation completes the game transaction;
+                # this D-Bus request must not wait for AppImage helpers.
+                return "quit-requested"
             return "quit-requested"
         try:
             await self.supervisor.quit_active_session()
         except (OSError, ValueError) as error:
             raise self._error(ValueError(str(error))) from error
         return "executed"
-
-    @staticmethod
-    def _is_eden_appimage(value: str) -> bool:
-        name = Path(value).name
-        return name == "Eden.AppImage" or name.startswith("Eden-Linux-") and name.endswith(".AppImage")
 
     @method()
     async def RequestLaunch(self, command: "as", startup_timeout_ms: "u") -> "s":

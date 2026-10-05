@@ -212,6 +212,23 @@ class ProcessSupervisor:
             return False
         return self._presentation.pid_is_owned_by(owner_pid, self.session_process_ids(identity))
 
+    def session_surface_process_ids(self, identity: LaunchIdentity) -> set[int]:
+        """Return live window-process owners belonging to this launch only."""
+        if self._presentation is None or not hasattr(self._presentation, "focusable_window_pids"):
+            return set()
+        owned_pids = self.session_process_ids(identity)
+        return {
+            pid for pid in self._presentation.focusable_window_pids()
+            if self._presentation.pid_is_owned_by(pid, owned_pids)
+        }
+
+    def selected_session_surface_owner(self, identity: LaunchIdentity) -> int | None:
+        """Return the selected window's owner only when this launch owns it."""
+        if self._presentation is None or not hasattr(self._presentation, "selected_base_surface"):
+            return None
+        _window, owner_pid = self._presentation.selected_base_surface()
+        return owner_pid if self.session_surface_is_owned(owner_pid, identity) else None
+
     def select_shell_presentation(self) -> int | None:
         """Restore the current supervised shell as Gamescope's selected surface."""
         status = self.shell_status()

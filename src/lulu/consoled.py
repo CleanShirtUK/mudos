@@ -168,7 +168,7 @@ class ConsoleCatalog:
         )
 
     def refresh(self, stages: set[str] | None = None) -> list[dict[str, object]]:
-        all_stages = {"steam", "gog", "epic", "local", "romm", "components", "romm-artwork", "metadata", "metadata-enrichment", "protondb", "artwork"}
+        all_stages = {"steam", "gog", "epic", "local", "lutris", "romm", "components", "romm-artwork", "metadata", "metadata-enrichment", "protondb", "artwork"}
         selected = all_stages if stages is None else set(stages)
         # Optional integrations are never invoked merely because their code is
         # present. Setup selection is persisted by the admin service; local
@@ -352,6 +352,24 @@ class ConsoleCatalog:
             if self.store.last_deltas:
                 self.last_delta_batches.append(self.store.last_deltas)
             LOGGER.info("catalogue stage completed name=local sqlite_commit=complete")
+        if "lutris" in selected:
+            LOGGER.info("catalogue stage started name=lutris")
+            try:
+                from .lutris_adapter import LutrisAdapter
+                registrations = LutrisAdapter().installed_games()
+                self.store.reconcile_lutris_snapshot(tuple(registrations))
+                if self.store.last_deltas:
+                    self.last_delta_batches.append(self.store.last_deltas)
+                self.provider_readiness.set(
+                    "lutris", "ready", message="Lutris installed games were reconciled.",
+                    catalogue_count=len(registrations),
+                )
+                LOGGER.info("catalogue stage completed name=lutris games=%d", len(registrations))
+            except Exception as error:
+                self.provider_readiness.set(
+                    "lutris", "unavailable", message="Lutris installed-game inventory is unavailable."
+                )
+                LOGGER.warning("catalogue stage failed name=lutris error=%s", type(error).__name__)
         if "components" in selected:
             for source in self._plugins.with_capability("catalogue"):
                 if not hasattr(source, "reconcile") or not getattr(source, "provider_id", ""):
@@ -2850,6 +2868,7 @@ class ConsoleInterface(ServiceInterface):
                         os.getpgid(process.pid),
                         os.path.realpath(f"/proc/{process.pid}/exe"),
                         command,
+                        intent.provider,
                     )
                 self._local_process = process
             except Exception:
