@@ -133,7 +133,11 @@ class CliAcquisitionExecutor:
     """Run a provider's native install command through JobManager."""
 
     supports_pause = False
-    supports_uninstall = True
+    # Provider implementations must opt in explicitly. The shared executor
+    # can run a provider-native removal command, or a narrowly scoped managed
+    # payload deletion, but that is not valid for every provider by default.
+    supports_uninstall = False
+    uninstall_progress_supported = False
 
     def __init__(self, provider: str, executable: str, install_root: Path,
                  command_builder: Callable[[str, Path], list[str]],
@@ -165,21 +169,12 @@ class CliAcquisitionExecutor:
         return error
 
     async def run(self, job: DownloadJob, reporter: JobReporter) -> None:
-        executable = self._require()
-        if job.operation.value == "remove" and self.uninstall_builder is not None:
-            command = self.uninstall_builder(job.content_identity, self.install_root)
-        elif job.operation.value == "remove":
-            # gogdl has no uninstall command.  Its payload is deliberately
-            # kept under the provider root, so removal can be performed
-            # safely at this boundary without a second download system.
-            marker_dir = self._managed_install_directory(job.content_identity)
-            await reporter.state(JobState.STARTING, stage="removing")
-            import shutil as _shutil
-            await asyncio.to_thread(_shutil.rmtree, marker_dir, True)
-            await reporter.progress(1.0, stage="completed")
-            await reporter.state(JobState.FINALIZING, stage="completed")
-            await reporter.state(JobState.COMPLETED, stage="completed")
+        if job.operation.value == "remove" and self.uninstall_builder is None:
+            await self._remove_managed_payload(job, reporter)
             return
+        executable = self._require()
+        if job.operation.value == "remove":
+            command = self.uninstall_builder(job.content_identity, self.install_root)
         else:
             command = self.command_builder(job.content_identity, self.install_root)
         command[0] = executable
@@ -229,8 +224,12 @@ class CliAcquisitionExecutor:
             self._processes.pop(job.job_id, None)
 
     def _managed_install_directory(self, identity: str) -> Path:
+        raw_identity = identity.removeprefix(f"{self.provider}:")
+        if not raw_identity or raw_identity in {".", ".."} or not re.fullmatch(
+                r"[A-Za-z0-9._-]+", raw_identity):
+            raise JobExecutionError("unsafe-uninstall-path", "Provider game identity is invalid")
         root = self.install_root.resolve(strict=False)
-        value = self.install_root / identity.removeprefix(f"{self.provider}:")
+        value = root / raw_identity
         if value.is_symlink():
             raise JobExecutionError("unsafe-uninstall-path", "Provider install is a symlink")
         target = value.resolve(strict=False)
@@ -238,9 +237,32 @@ class CliAcquisitionExecutor:
             target.relative_to(root)
         except ValueError as error:
             raise JobExecutionError("unsafe-uninstall-path", "Provider install escaped its managed root") from error
-        if target == root or target.parent != root or not (target / ".mudos-game.json").is_file():
+        if target == root or target.parent != root:
             raise JobExecutionError("unmanaged-install", "Provider installation is not Mudos-managed")
+        if not target.exists():
+            # An interrupted removal can be safely retried after its owned
+            # direct-child payload has already disappeared.
+            return target
+        marker = target / ".mudos-game.json"
+        if marker.is_symlink():
+            raise JobExecutionError("unmanaged-install", "Provider installation marker is a symbolic link")
+        try:
+            value = json.loads(marker.read_text(encoding="utf-8"))
+        except (OSError, TypeError, ValueError, json.JSONDecodeError) as error:
+            raise JobExecutionError("unmanaged-install", "Provider installation ownership marker is invalid") from error
+        if (not isinstance(value, dict)
+                or str(value.get("provider_id", "")) != raw_identity
+                or Path(str(value.get("install_dir", ""))).resolve(strict=False) != target):
+            raise JobExecutionError("unmanaged-install", "Provider installation ownership marker does not match")
         return target
+
+    async def _remove_managed_payload(self, job: DownloadJob, reporter: JobReporter) -> None:
+        """Remove only a marked, direct-child provider payload (GOG semantics)."""
+        target = await asyncio.to_thread(self._managed_install_directory, job.content_identity)
+        await reporter.state(JobState.STARTING, stage="removing")
+        if target.exists():
+            await asyncio.to_thread(shutil.rmtree, target)
+        await reporter.state(JobState.FINALIZING, stage="reconciling")
 
     def _validate_installed_payload(self, directory: Path) -> None:
         """Require the provider's destination to contain real payload before completion."""

@@ -12,6 +12,7 @@ installed_catalogue = true
 metadata = true
 acquisition = true
 settings = true
+uninstall = false
 
 [[secrets]]
 slot = "api-key"

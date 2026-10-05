@@ -15,3 +15,4 @@ available_catalogue = true
 acquisition = true
 authentication = false
 session = true
+uninstall = false

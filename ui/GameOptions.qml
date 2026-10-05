@@ -15,6 +15,7 @@ Item {
     property string titleDraft: ""
     property bool titleOverride: false
     property bool uninstallSupported: false
+    property bool uninstallInProgress: false
     property bool mappingOverride: false
     property string uninstallDescription: "Remove installed content"
     property bool textEditing: false
@@ -39,7 +40,7 @@ Item {
             entries.push("Revert Mapping")
         entries.push("Change Artwork", "Change Title")
         if (uninstallSupported)
-            entries.push("Uninstall")
+            entries.push(uninstallInProgress ? "Uninstalling…" : "Uninstall")
         return entries
     }
     readonly property var artworkRoles: [

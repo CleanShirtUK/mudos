@@ -16,6 +16,7 @@ acquisition = true
 authentication = true
 launch = true
 settings = true
+uninstall = true
 
 [[provisioning]]
 package = "heroic-gogdl"

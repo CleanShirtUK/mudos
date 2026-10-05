@@ -558,7 +558,9 @@ class ConsoleUiBridge:
 
     async def uninstall_capability(self, game_id: str) -> dict[str, object]:
         if self.acquisitiond is None:
-            return {"supported": False, "installed": False}
+            return {"supported": False, "installed": False, "available": False,
+                    "temporarily_unavailable": True,
+                    "reason": "The acquisition service is unavailable."}
         return json.loads(await self.acquisitiond.call_can_uninstall(game_id))
 
     async def uninstall_game(self, game_id: str) -> dict[str, str]:
@@ -576,10 +578,12 @@ class ConsoleUiBridge:
                             if item.get("job_id") == job_id), None)
                 if job is None:
                     return
-                if job.get("state") == "completed":
-                    await self.consoled.call_refresh_stages(["steam", "gog", "epic", "local", "romm", "components"])
-                    return
-                if job.get("state") in {"failed", "cancelled"}:
+                if job.get("state") in {"completed", "failed", "cancelled"}:
+                    # Reconcile on failure as well as success: a provider may
+                    # have completed removal before a crash/response error, and
+                    # the catalogue must converge on provider truth.
+                    await self.consoled.call_refresh_stages(
+                        ["steam", "gog", "epic", "local", "lutris", "romm", "components"])
                     return
                 await asyncio.sleep(1)
         except Exception:

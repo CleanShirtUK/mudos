@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
@@ -12,6 +13,7 @@ from dataclasses import replace
 
 from ..paths import PATHS
 from ..job_manager import JobExecutionError
+from ..jobs import JobState
 from ..windows_runtime import WindowsRuntime
 from .external import (CliAcquisitionExecutor, CliProviderAuthentication,
                        OwnedProviderGame, SnapshotEntitlementSource,
@@ -141,6 +143,9 @@ class EpicAuthentication(CliProviderAuthentication):
 
 
 class EpicAcquisitionExecutor(CliAcquisitionExecutor):
+    supports_uninstall = True
+    uninstall_progress_supported = True
+
     def __init__(self) -> None:
         root = PATHS.epic_library_root
         config_dir = PATHS.provider_config_root("epic") / "legendary"
@@ -148,6 +153,13 @@ class EpicAcquisitionExecutor(CliAcquisitionExecutor):
         super().__init__("epic", "legendary", root, self._install_command,
                          lambda identity, destination: ["legendary", "-y", "uninstall", identity.removeprefix("epic:")])
         self.environment = {**os.environ, "LEGENDARY_CONFIG_PATH": str(config_dir)}
+
+    def _json(self, command: list[str]) -> object:
+        executable = self._require()
+        result = subprocess.run([executable, *command[1:]], check=True,
+                                capture_output=True, text=True, timeout=60,
+                                env=self.environment)
+        return json.loads(result.stdout)
 
     @staticmethod
     def _app_id(identity: str) -> str:
@@ -158,6 +170,78 @@ class EpicAcquisitionExecutor(CliAcquisitionExecutor):
 
     def _third_party_store(self, app_id: str) -> str:
         return _third_party_managed_store(self.config_dir, app_id)
+
+    def can_uninstall(self, game_id: str) -> bool:
+        try:
+            app_id = self._app_id(game_id)
+        except JobExecutionError:
+            return False
+        if self._third_party_store(app_id):
+            return False
+        root = PATHS.epic_library_root.resolve(strict=False)
+        directory = root / app_id
+        if directory.is_symlink():
+            return False
+        resolved = directory.resolve(strict=False)
+        return resolved != root and resolved.parent == root and (not resolved.exists() or resolved.is_dir())
+
+    def uninstall_capability(self, game) -> dict[str, object]:
+        if (getattr(game, "provider", "") != "epic"
+                or getattr(game, "install_state", "") != "installed"):
+            return {"supported": False, "reason": "Epic title is not installed."}
+        try:
+            app_id = self._app_id(str(game.provider_id))
+        except (AttributeError, JobExecutionError):
+            return {"supported": False, "reason": "Epic app identity is invalid."}
+        if self._third_party_store(app_id):
+            return {"supported": False,
+                    "reason": "This title is managed by another Epic provider; remove it there."}
+        root = PATHS.epic_library_root.resolve(strict=False)
+        if not EpicEntitlementSource._is_canonical_directory(str(getattr(game, "install_dir", "")),
+                                                             root, app_id):
+            return {"supported": False,
+                    "reason": "Legendary does not report a verified Mudos-managed Epic install path."}
+        return {"supported": True, "description": "Uninstall this Epic title through Legendary."}
+
+    async def run(self, job, reporter) -> None:
+        if job.operation.value != "remove":
+            await super().run(job, reporter)
+            return
+        app_id = self._app_id(job.content_identity)
+        # A service restart can replay a removal after Legendary already
+        # completed it. Query the authoritative installed inventory; a
+        # missing game is a successful idempotent removal, while provider/API
+        # errors remain failures and never trigger local recursive deletion.
+        await reporter.state(JobState.STARTING, stage="checking-installation")
+        try:
+            value = await asyncio.to_thread(self.provider_installed_record, app_id)
+        except Exception as error:
+            raise JobExecutionError("epic-inventory-unavailable",
+                                    "Legendary could not confirm the installed Epic title",
+                                    retryable=True) from error
+        if value is None:
+            await reporter.state(JobState.FINALIZING, stage="reconciling")
+            return
+        if self._third_party_store(app_id):
+            raise JobExecutionError("epic-third-party-managed",
+                                    "This title is managed by another Epic provider; remove it there.",
+                                    retryable=False)
+        if not EpicEntitlementSource._is_canonical_directory(
+                str(value.get("install_dir", "")), PATHS.epic_library_root.resolve(strict=False), app_id):
+            raise JobExecutionError("unsafe-uninstall-path",
+                                    "Legendary reports an Epic install outside Mudos' managed library",
+                                    retryable=False)
+        await super().run(job, reporter)
+
+    def provider_installed_record(self, app_id: str) -> dict[str, object] | None:
+        value = self._json(["legendary", "list-installed", "--json", "--show-dirs"])
+        rows = value if isinstance(value, list) else []
+        for item in rows:
+            game = normalize_game(item, provider_id_keys=("app_name", "appName", "id"),
+                                  title_keys=("app_title", "appTitle", "title", "name"))
+            if game is not None and game.provider_id == app_id:
+                return {"provider_id": game.provider_id, "install_dir": game.install_dir}
+        return None
 
     def _install_command(self, identity: str, destination: Path) -> list[str]:
         app_id = self._app_id(identity)

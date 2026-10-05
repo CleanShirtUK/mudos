@@ -170,7 +170,10 @@ def load_platforms(path: Path | None = None) -> dict[str, str]:
 
 class SteamCmdExecutor:
     supports_pause = False
-    supports_uninstall = True
+    # SteamCMD is not the active Steam backend (Aurelia owns current library
+    # and authentication). Keep the legacy class non-capable so callers cannot
+    # accidentally reintroduce its account/password lifecycle.
+    supports_uninstall = False
     """Execute one SteamCMD AppID operation; cancellation is unsupported."""
 
     def __init__(self, *, executable: str | None = None, account: str | None = None,

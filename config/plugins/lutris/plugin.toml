@@ -10,3 +10,4 @@ types = ["catalogue", "acquisition", "launch"]
 [capabilities]
 acquisition = true
 providers = true
+uninstall = true

@@ -267,13 +267,20 @@ class ConsoleBridgeTests(unittest.TestCase):
 
         async def exercise():
             acquisition = Acquisition()
-            bridge = BRIDGE.ConsoleUiBridge(asyncio.get_running_loop(), object(), object(), acquisition)
+            class Consoled:
+                def __init__(self): self.refreshed = []
+                async def call_refresh_stages(self, stages): self.refreshed.append(stages)
+            consoled = Consoled()
+            bridge = BRIDGE.ConsoleUiBridge(asyncio.get_running_loop(), consoled, object(), acquisition)
             capability = await bridge.uninstall_capability("steam:40800")
             result = await bridge.uninstall_game("steam:40800")
             await asyncio.sleep(0)
             self.assertEqual(capability, {"supported": True, "installed": True, "provider": "steam"})
             self.assertEqual(result, {"token": "job-1"})
             self.assertEqual(acquisition.uninstalled, ["steam:40800"])
+            self.assertEqual(consoled.refreshed, [[
+                "steam", "gog", "epic", "local", "lutris", "romm", "components",
+            ]])
 
         asyncio.run(exercise())
 

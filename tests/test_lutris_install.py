@@ -1,5 +1,6 @@
 import asyncio
 import importlib.util
+import json
 import os
 from pathlib import Path
 import subprocess
@@ -61,7 +62,7 @@ class LutrisInstallTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             script = r'''
-import pathlib, sys
+import json, pathlib, sys
 from lulu.lutris_adapter import LutrisAdapter
 home = pathlib.Path.home()
 game_dir = home / "Games/Executables/lutris/Apotris"
@@ -77,9 +78,24 @@ assert any(item["lutris_id"] == registration["lutris_id"] for item in inventory)
 launch = home / "launch.sh"
 adapter.output_script(registration["lutris_id"], launch)
 assert launch.is_file() and "Apotris" in launch.read_text()
-removed = adapter.uninstall(registration["lutris_id"], delete_files=True)
+removed = adapter.uninstall(registration["lutris_id"], delete_files=False,
+                            expected_directory=game_dir)
 assert removed["directory"] == str(game_dir)
 assert not any(item["lutris_id"] == registration["lutris_id"] for item in adapter.installed_games())
+assert exe.is_file()  # unregistering a manually added game never deletes user files
+
+owned_dir = home / "Games/Executables/lutris/owned-fixture"
+owned_dir.mkdir(parents=True)
+owned_exe = owned_dir / "owned"
+owned_exe.write_text("payload")
+owned_exe.chmod(0o755)
+owned = adapter.register_local_game(title="Owned fixture", directory=owned_dir, executable=owned_exe)
+(owned_dir / ".mudos-install-owner.json").write_text(json.dumps({
+    "schema": 1, "provider": "lutris", "slug": owned["slug"],
+    "directory": str(owned_dir.resolve()),
+}))
+adapter.uninstall(owned["slug"], delete_files=True, expected_directory=owned_dir)
+assert owned_dir.exists()  # Lutris unregisters; Mudos performs the verified payload cleanup
 '''
             env = dict(os.environ)
             env.update(HOME=str(root), XDG_CONFIG_HOME=str(root / "config"),

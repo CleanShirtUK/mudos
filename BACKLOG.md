@@ -5,6 +5,69 @@ retained in `docs/reconciliation-backlog.md` and are not the status authority.
 
 ## ACTIVE
 
+### UNINSTALL-001 — Complete provider-owned uninstall coverage
+
+**Status:** ACTIVE — generic lifecycle and provider cleanup are implemented in
+source; development deployment is deferred while the existing Sonic 3 A.I.R.
+test session remains live. Complete dev-current deployment and the finite
+physical acceptance checklist below before moving this item to VALIDATION.
+
+- Current game-producing provider matrix:
+  - **Steam / Aurelia:** installed Steam catalogue rows currently have no safe
+    per-title uninstall through the supported Aurelia API. Report uninstall as
+    unsupported; do not fall back to SteamCMD, account sign-out, library
+    deletion, or shared-runtime cleanup. Operator removal through Steam must be
+    followed by catalogue reconciliation.
+  - **Epic / Legendary:** use Legendary's per-app uninstall command only for a
+    valid app identity in Mudos' canonical Epic library; reject third-party
+    managed titles and paths outside that library. Service-restart replay
+    checks Legendary's authoritative installed list and is idempotent when the
+    title is already gone.
+  - **GOG / gogdl:** gogdl has no uninstall command. Remove only a direct-child
+    per-title directory with a matching Mudos ownership marker under the
+    canonical GOG library. Never delete a shared prefix or unmarked install.
+  - **Flatpak:** use Flatpak/libflatpak's application uninstall operation for
+    the user installation; retain Flatpak's app-data policy (no
+    `--delete-data`) and reconcile the user-installed app snapshot.
+  - **Lutris:** for Mudos recipe installs, remove the Lutris registration and
+    then remove only the exact canonical per-game directory with a matching
+    recipe ownership marker. For Mudos-registered local/manual games, remove
+    the Lutris registration only and preserve all user files. Provider-discovered
+    Lutris entries are not uninstallable through Mudos.
+  - **Local ROM/emulation content:** use the bounded local-content executor for
+    Mudos-catalogued content under its canonical platform root. ROMM is a
+    remote library source; when a ROMM title is linked to a local copy, removal
+    targets that local copy. ROMM itself has no local uninstall operation.
+  - Torrent/Usenet acquisition, launch-only runtimes, shared services, and
+    library-only entries do not create provider-owned installed-game payloads
+    and are not offered as game uninstall targets.
+- Acquisitiond returns a generic provider capability including support,
+  reason, explicit-confirmation requirement, measurable-progress state, and
+  active-operation state. The game action is backend-gated, confirms before
+  submission, and suppresses a duplicate action while a removal is active.
+  Removal remains a persisted Acquisitiond job; failed jobs preserve the
+  catalogue state and provider reconciliation runs after every terminal result.
+- Automated fixture coverage exercises successful and failed removal,
+  idempotent retries, active-request deduplication, provider identity,
+  reconciliation and path/ownership refusal. No real appliance games were
+  uninstalled for this work.
+- **Physical acceptance after dev-current deployment:** with a controller,
+  open game options for one disposable title in each currently available
+  provider; verify unsupported Steam/Aurelia and provider-discovered Lutris
+  entries have no enabled Uninstall action; verify supported actions require
+  explicit confirmation; verify Back cancels confirmation; verify an active
+  removal cannot be resubmitted; verify successful removal updates Library and
+  Recents after provider reconciliation; verify a failed provider removal
+  reports failure and leaves the installed title represented. Use only
+  disposable installs or explicitly approved test titles—never operator game
+  data as an unattended fixture. Also physically test a Lutris manual
+  registration and confirm its files remain after unregistering.
+- Do not deploy while the preserved Sonic 3 A.I.R. game/Zenity session is still
+  active: `scripts/dev-runtime.sh refresh` replaces dev-current and restarts the
+  session. Resume that development deployment only after the operator has
+  explicitly cleared the prior session or it has ended naturally. Production
+  `/opt/lulu/current` remains untouched.
+
 ### RECENTS-001 — Steam Recents and legacy launch behavior after Aurelia migration
 
 **Status:** OPEN — operator findings recorded; investigation and fixes deferred.

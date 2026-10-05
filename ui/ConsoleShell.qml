@@ -1072,8 +1072,9 @@ import QtQuick.Controls
         var gameId = String(game.game_id)
         request("/uninstall/capability/" + encodeURIComponent(gameId), "GET", "", function(data) {
             if (gameOptionsOpen && gameOptionsGameId === gameId
-                    && uninstallCapabilityKey === key)
+                    && uninstallCapabilityKey === key) {
                 uninstallCapability = data || ({supported: false, installed: false})
+            }
         }, "Uninstall capability unavailable")
     }
 
@@ -4152,6 +4153,7 @@ import QtQuick.Controls
             view: root.gameOptionsView
             selectedIndex: root.gameOptionsIndex
             uninstallSupported: root.uninstallCapability.supported === true
+            uninstallInProgress: root.uninstallCapability.in_progress === true
             uninstallDescription: String(root.uninstallCapability.description || "Remove installed content")
             artworkCandidates: root.artworkCandidates
             mappingResults: root.mappingCandidates

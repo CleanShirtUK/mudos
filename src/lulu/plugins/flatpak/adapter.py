@@ -621,6 +621,19 @@ class FlatpakAdapter:
                 "path": str(path)}
 
     async def operation(self, job: DownloadJob, reporter: JobReporter) -> None:
+        app_id = job.content_identity.removeprefix("flatpak:")
+        if not re.fullmatch(r"[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)+", app_id):
+            raise FlatpakError("invalid-application-id", "Flatpak application identity is invalid")
+        if job.operation is JobOperation.REMOVE:
+            # Treat a provider-confirmed prior removal as success. This makes
+            # persisted remove jobs restart-safe without pretending an API
+            # error means the application is absent.
+            installed_now = await self.installed(user=True)
+            if not any(item.application_id == app_id for item in installed_now):
+                await reporter.state(JobState.STARTING, stage="checking-installation")
+                await reporter.state(JobState.FINALIZING, stage="reconciling")
+                return
+
         flatpakref_install = (job.operation is JobOperation.INSTALL and job.provider_job_id
                               and Path(job.provider_job_id).suffix == ".flatpakref")
         # Use Flatpak's supported flatpakref CLI path for browser handoffs. This
@@ -629,7 +642,6 @@ class FlatpakAdapter:
         if self._gi is not None and not flatpakref_install:
             await self._native_operation(job, reporter)
             return
-        app_id = job.content_identity.removeprefix("flatpak:")
         if job.operation is JobOperation.REMOVE:
             args = ("uninstall", "--noninteractive", app_id)
         elif job.provider_job_id and Path(job.provider_job_id).suffix == ".flatpakref":
@@ -705,8 +717,11 @@ class FlatpakAdapter:
 
             transaction.connect("new-operation", new_operation)
             if job.operation is JobOperation.REMOVE:
-                ref = f"app/{app_id}/x86_64/stable"
-                transaction.add_uninstall(ref)
+                target = next((item for item in self._native_installed(user=True)
+                               if item.application_id == app_id), None)
+                if target is None:
+                    return
+                transaction.add_uninstall(f"app/{app_id}/{target.arch}/{target.branch}")
             elif job.operation is JobOperation.UPDATE:
                 installed = self._native_installed()
                 target = next((item for item in installed if item.application_id == app_id), None)
@@ -747,6 +762,17 @@ class FlatpakJobExecutor:
 
     def __init__(self, adapter: FlatpakAdapter):
         self.adapter = adapter
+
+    @property
+    def uninstall_progress_supported(self) -> bool:
+        # libflatpak provides operation progress; the CLI fallback currently
+        # reports stages only and must not claim measurable progress.
+        return self.adapter._gi is not None
+
+    @staticmethod
+    def can_uninstall(game_id: str) -> bool:
+        app_id = str(game_id).removeprefix("flatpak:")
+        return bool(re.fullmatch(r"[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)+", app_id))
 
     async def run(self, job: DownloadJob, reporter: JobReporter) -> None:
         try:

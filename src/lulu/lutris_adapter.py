@@ -8,6 +8,7 @@ import asyncio
 import copy
 import json
 import os
+import shutil
 import shlex
 import threading
 from types import MethodType
@@ -466,19 +467,64 @@ class LutrisAdapter:
         destination.chmod(destination.stat().st_mode | 0o100)
         return destination
 
-    def uninstall(self, lutris_id: str, *, delete_files: bool = False) -> dict[str, str]:
+    def uninstall(self, lutris_id: str, *, delete_files: bool = False,
+                  expected_directory: Path | None = None) -> dict[str, str]:
         try:
             import gi
             gi.require_version("Gtk", "3.0")
             from lutris.database.games import get_game_by_field
             from lutris.game import Game
-            row = (get_game_by_field(int(lutris_id), "id") if str(lutris_id).isdecimal()
-                   else get_game_by_field(str(lutris_id), "slug"))
+            # Stable Mudos provider identity is Lutris' slug. Prefer it even
+            # when the slug consists only of digits; use numeric database IDs
+            # only for legacy callers that have no matching slug.
+            row = get_game_by_field(str(lutris_id), "slug")
+            if not row and str(lutris_id).isdecimal():
+                row = get_game_by_field(int(lutris_id), "id")
             if not row:
-                raise LutrisAdapterError("Lutris game registration is unavailable")
+                if expected_directory is None:
+                    raise LutrisAdapterError("Lutris game registration is unavailable")
+                target = expected_directory.expanduser()
+                if target.is_symlink() or (delete_files and target.name != str(lutris_id)):
+                    raise LutrisAdapterError("Lutris uninstall target does not match the verified game identity")
+                if delete_files and target.exists():
+                    owner_path = target / ".mudos-install-owner.json"
+                    try:
+                        owner = json.loads(owner_path.read_text(encoding="utf-8"))
+                    except (OSError, TypeError, ValueError, json.JSONDecodeError) as error:
+                        raise LutrisAdapterError("Mudos Lutris ownership marker is missing or invalid") from error
+                    if (owner_path.is_symlink() or not isinstance(owner, dict)
+                            or owner.get("provider") != "lutris" or owner.get("slug") != lutris_id
+                            or Path(str(owner.get("directory", ""))).resolve(strict=False)
+                            != target.resolve(strict=False)):
+                        raise LutrisAdapterError("Mudos Lutris ownership marker does not match this game")
+                    shutil.rmtree(target)
+                return {"directory": str(target.resolve(strict=False)), "slug": str(lutris_id),
+                        "already_unregistered": True}
             game = Game(row["id"])
             directory = str(game.directory or "")
             slug = str(game.slug or "")
+            if not slug or slug != str(row["slug"] or slug):
+                raise LutrisAdapterError("Lutris game identity does not match its registration")
+            if expected_directory is None:
+                if delete_files:
+                    raise LutrisAdapterError("refusing to delete Lutris files without an expected directory")
+            elif Path(directory).expanduser().resolve(strict=False) != expected_directory.expanduser().resolve(strict=False):
+                raise LutrisAdapterError("Lutris registration directory changed before uninstall")
+            if delete_files:
+                target = Path(directory).expanduser()
+                owner_path = target / ".mudos-install-owner.json"
+                if (target.is_symlink() or not target.is_dir() or target.name != slug
+                        or owner_path.is_symlink()):
+                    raise LutrisAdapterError("Mudos-owned Lutris game directory is unavailable or unsafe")
+                try:
+                    owner = json.loads(owner_path.read_text(encoding="utf-8"))
+                except (OSError, TypeError, ValueError, json.JSONDecodeError) as error:
+                    raise LutrisAdapterError("Mudos Lutris ownership marker is missing or invalid") from error
+                if (not isinstance(owner, dict) or owner.get("provider") != "lutris"
+                        or owner.get("slug") != slug
+                        or Path(str(owner.get("directory", ""))).resolve(strict=False)
+                        != target.resolve(strict=False)):
+                    raise LutrisAdapterError("Mudos Lutris ownership marker does not match this game")
             game.uninstall(delete_files=delete_files)
             return {"directory": directory, "slug": slug}
         except Exception as error:

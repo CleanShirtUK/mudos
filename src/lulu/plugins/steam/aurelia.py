@@ -543,6 +543,15 @@ def _merge_aurelia_progress(origin_metadata: dict[str, object],
 class AureliaAcquisitionExecutor:
     provider_id = PROVIDER_ID
     supports_pause = False
+    # The supported Aurelia control surface currently exposes discovery and
+    # installation, but no documented per-title uninstall operation. Never
+    # substitute SteamCMD or recursive Steam-library deletion here.
+    supports_uninstall = False
+    uninstall_reason = (
+        "This Steam installation is managed by Aurelia, which currently has no "
+        "supported per-game uninstall operation. Remove it through the Steam "
+        "client; Mudos will reconcile the library afterward."
+    )
 
     def __init__(self, client: AureliaClient | None = None) -> None:
         self.client = client or AureliaClient()

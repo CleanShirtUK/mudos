@@ -16,6 +16,7 @@ class LocalUninstallExecutor:
     """Delete only an authoritative installed local game boundary."""
 
     supports_uninstall = True
+    uninstall_progress_supported = False
 
     def __init__(self, store: CatalogueStore, root: Path | None = None) -> None:
         self.store = store
@@ -27,14 +28,14 @@ class LocalUninstallExecutor:
 
     def can_uninstall(self, game_id: str) -> bool:
         try:
-            paths = self._approved_paths(game_id)
-            return bool(paths) and all(os.path.lexists(path) for path in paths)
+            return bool(self._approved_paths(game_id))
         except JobExecutionError:
             return False
 
     def _approved_paths(self, game_id: str) -> tuple[Path, ...]:
         game = self.store.get_game(game_id)
-        if game is None or game.catalogue_source != "local" or game.install_state != "installed":
+        if (game is None or game.catalogue_source != "local" or game.install_state != "installed"
+                or not game.mudos_owned):
             raise JobExecutionError("not-installed", "Local game is not installed")
         root = self.root.resolve(strict=False)
         values = (tuple(game.component_paths)

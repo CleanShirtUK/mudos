@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 from lulu.plugins.flatpak import FlatpakAdapter, FlatpakApplication
 from lulu.plugins.flatpak.adapter import _flatpak_operation_failure
-from lulu.jobs import DownloadJob, JobOperation
+from lulu.jobs import DownloadJob, JobOperation, JobState
 
 
 class FakeFlatpak(FlatpakAdapter):
@@ -191,6 +191,73 @@ class FlatpakTests(unittest.TestCase):
         # The operation command is intentionally constructed without
         # --delete-data; Flatpak owns application data retention policy.
         self.assertNotIn("--delete-data", " ".join(["flatpak", "--user", "uninstall", "--noninteractive"]))
+
+    def test_remove_uses_user_scoped_flatpak_uninstall_and_reconciles(self):
+        class AppAdapter(FlatpakAdapter):
+            def __init__(self):
+                super().__init__(command="/usr/bin/flatpak")
+                self._gi = None
+                self.present = True
+            async def installed(self, *, user=True):
+                if user and self.present:
+                    return (FlatpakApplication("org.example.Game", "Game", branch="beta",
+                                               arch="aarch64", scope="user", installed=True),)
+                return ()
+
+        class Output:
+            def __aiter__(self): return self
+            async def __anext__(self): raise StopAsyncIteration
+
+        class Process:
+            returncode = 0
+            stdout = Output()
+            def __init__(self, adapter): self.adapter = adapter
+            async def wait(self):
+                self.adapter.present = False
+                return 0
+
+        class Reporter:
+            def __init__(self): self.states = []
+            async def state(self, state, **kwargs): self.states.append((state, kwargs))
+
+        async def exercise():
+            adapter = AppAdapter()
+            adapter._require = lambda: "/usr/bin/flatpak"
+            job = DownloadJob(job_id="remove", provider="flatpak", title="Game",
+                              content_identity="flatpak:org.example.Game", operation=JobOperation.REMOVE)
+            reporter = Reporter()
+
+            async def create(*args, **kwargs):
+                self.assertEqual(args, ("/usr/bin/flatpak", "--user", "uninstall",
+                                        "--noninteractive", "org.example.Game"))
+                self.assertNotIn("--delete-data", args)
+                return Process(adapter)
+
+            with patch("lulu.plugins.flatpak.adapter.asyncio.create_subprocess_exec", create):
+                await adapter.operation(job, reporter)
+            self.assertTrue(reporter.states)
+
+        asyncio.run(exercise())
+
+    def test_remove_of_already_missing_flatpak_is_idempotent(self):
+        class MissingAdapter(FakeFlatpak):
+            async def installed(self, *, user=True): return ()
+
+        class Reporter:
+            def __init__(self): self.states = []
+            async def state(self, state, **kwargs): self.states.append(state)
+
+        async def exercise():
+            adapter = MissingAdapter()
+            job = DownloadJob(job_id="remove-missing", provider="flatpak", title="Game",
+                              content_identity="flatpak:org.example.Game", operation=JobOperation.REMOVE)
+            reporter = Reporter()
+            with patch("lulu.plugins.flatpak.adapter.asyncio.create_subprocess_exec",
+                       side_effect=AssertionError("missing apps must not invoke the provider")):
+                await adapter.operation(job, reporter)
+            self.assertEqual(reporter.states, [JobState.STARTING, JobState.FINALIZING])
+
+        asyncio.run(exercise())
 
     def test_unavailable_native_dependency_is_reported_cleanly(self):
         adapter = FlatpakAdapter(command=None)

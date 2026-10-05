@@ -138,6 +138,11 @@ class GogAuthentication(CliProviderAuthentication):
 
 
 class GogAcquisitionExecutor(CliAcquisitionExecutor):
+    # gogdl provides no uninstall command. Mudos removes only its own marked
+    # per-title payload below PATHS.gog_library_root; other GOG installations
+    # are deliberately not eligible.
+    supports_uninstall = True
+
     def __init__(self) -> None:
         root = PATHS.gog_library_root
         auth_path = PATHS.provider_config_root("gog") / "heroic/gog_store/auth.json"
@@ -149,10 +154,24 @@ class GogAcquisitionExecutor(CliAcquisitionExecutor):
 
     def can_uninstall(self, game_id: str) -> bool:
         try:
-            self._managed_install_directory(game_id)
-            return True
+            target = self._managed_install_directory(game_id)
+            return target.is_dir()
         except (JobExecutionError, OSError, ValueError):
             return False
+
+    def uninstall_capability(self, game) -> dict[str, object]:
+        if (getattr(game, "provider", "") != "gog"
+                or getattr(game, "install_state", "") != "installed"):
+            return {"supported": False, "reason": "GOG title is not installed in Mudos."}
+        try:
+            target = self._managed_install_directory(str(game.game_id))
+        except (JobExecutionError, OSError, ValueError):
+            return {"supported": False,
+                    "reason": "GOG ownership marker does not verify a Mudos-managed installation."}
+        if target.exists() and not target.is_dir():
+            return {"supported": False, "reason": "GOG install path is not a game directory."}
+        return {"supported": True,
+                "description": "Remove the marked Mudos-managed GOG game files"}
 
 
 class GogLauncher:

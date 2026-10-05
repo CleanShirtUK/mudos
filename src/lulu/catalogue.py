@@ -1161,8 +1161,13 @@ class CatalogueStore:
         if not rows:
             return None
         current = rows[0]
-        updated = replace(current, install_state="available", launchable=False, install_dir="",
-                          availability_state="available")
+        # A recipe title retains its provider/reinstall entry. A Mudos-local
+        # manual registration has no install recipe: after unregistering it,
+        # mark the catalogue row missing instead of publishing a fictional
+        # available-to-install Lutris title.
+        next_state = "missing" if current.catalogue_source == "mudos-local" else "available"
+        updated = replace(current, install_state=next_state, launchable=False, install_dir="",
+                           availability_state=next_state)
         deltas: list[CatalogueDelta] = []
         self._start_operation()
         with self.atomic():

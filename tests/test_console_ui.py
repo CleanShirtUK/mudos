@@ -1176,6 +1176,8 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertIn('"Change Mapping"', options)
         self.assertIn('"Change Title"', options)
         self.assertIn('"Uninstall"', options)
+        self.assertIn('uninstallInProgress ? "Uninstalling…" : "Uninstall"', options)
+        self.assertIn('uninstallInProgress: root.uninstallCapability.in_progress === true', QML)
         self.assertNotIn('"Restore Automatic Artwork"', options)
         self.assertNotIn("Edit Metadata", options)
         self.assertNotIn("Change Match", options)

@@ -22,7 +22,7 @@ from .plugins import PluginRegistry
 from .credential import CredentialInput
 from .catalogue import CatalogueStore
 from .local_uninstall import LocalUninstallExecutor
-from .jobs import JobOperation
+from .jobs import JobOperation, JobState
 from .notifications import NotificationBroker, NotificationPresenter
 from .lutris_install import LutrisInstallExecutor
 from .pc_install import PcInstallSource, PcSourceType
@@ -379,8 +379,12 @@ class AcquisitionInterface(ServiceInterface):
         """Register a locally installed native game via Lutris's own model API."""
         try:
             root = (PATHS.game_install_root / "Executables" / "lutris").resolve(strict=True)
-            target = Path(directory).expanduser().resolve(strict=True)
-            target.relative_to(root)
+            requested_directory = Path(directory).expanduser()
+            if requested_directory.is_symlink():
+                raise ValueError("selected game directory cannot be a symbolic link")
+            target = requested_directory.resolve(strict=True)
+            if target.parent != root:
+                raise ValueError("selected game directory must be a direct child of the Lutris game root")
             exe = Path(executable).expanduser().resolve(strict=True)
             exe.relative_to(target)
             adapter = LutrisInstallExecutor().adapter
@@ -401,6 +405,48 @@ class AcquisitionInterface(ServiceInterface):
             raise DBusError("org.lulu.Acquisition.Error.LocalRegistration", str(error)) from error
 
     def _uninstall_target(self, game_id: str) -> tuple[object, str, str, str]:
+        target, provider, identity, title, capability = self._resolve_uninstall(game_id)
+        if not capability["supported"]:
+            raise DBusError("org.lulu.Acquisition.Error.Unsupported", str(capability["reason"]))
+        return target, provider, identity, title
+
+    @staticmethod
+    def _executor_uninstall_capability(executor: object | None, game: object) -> dict[str, object]:
+        if executor is None:
+            provider = str(getattr(game, "provider", ""))
+            reason = {
+                "steam": "Steam removal is unavailable through Mudos' current Aurelia integration.",
+                "steam-aurelia": "Aurelia currently exposes no supported per-game uninstall operation.",
+                "romm": "RomM is a remote library source; only its linked local copy can be removed.",
+            }.get(provider, "No safe uninstall implementation is registered for this provider.")
+            return {"supported": False, "reason": reason}
+        if not getattr(executor, "supports_uninstall", False):
+            return {"supported": False, "reason": str(getattr(
+                executor, "uninstall_reason", "This provider does not support safe uninstall through Mudos."))}
+        describe = getattr(executor, "uninstall_capability", None)
+        if callable(describe):
+            try:
+                result = describe(game)
+            except Exception as error:
+                return {"supported": False,
+                        "reason": f"Provider ownership could not be verified ({type(error).__name__})."}
+            if isinstance(result, dict):
+                return {"supported": bool(result.get("supported", False)),
+                        "reason": str(result.get("reason", "")),
+                        "description": str(result.get("description", ""))}
+            return {"supported": bool(result), "reason": "Provider ownership could not be verified."}
+        capability_check = getattr(executor, "can_uninstall", None)
+        if callable(capability_check):
+            try:
+                if not capability_check(str(getattr(game, "game_id", ""))):
+                    return {"supported": False,
+                            "reason": "Provider ownership or installation state could not be verified."}
+            except Exception as error:
+                return {"supported": False,
+                        "reason": f"Provider ownership could not be verified ({type(error).__name__})."}
+        return {"supported": True}
+
+    def _resolve_uninstall(self, game_id: str):
         game = self.catalogue.get_game(game_id)
         if game is None:
             raise DBusError("org.lulu.Acquisition.Error.NotFound", "game was not found")
@@ -409,42 +455,60 @@ class AcquisitionInterface(ServiceInterface):
             target = self.catalogue.get_game(game.installed_game_id) or game
         if target.install_state != "installed":
             raise DBusError("org.lulu.Acquisition.Error.NotInstalled", "game is not installed")
-        # Emulator names describe the launch runtime, not ownership of the
-        # ROM file. Local catalogue content is removed through the bounded
-        # local-content executor regardless of RetroArch/Dolphin/Eden/PCSX2.
         provider = ("local" if str(getattr(target, "catalogue_source", "")) == "local"
                     or str(target.provider) == "local" else str(target.provider))
+        if provider == "steam":
+            provider = "steam-aurelia"
         identity = str(target.game_id if provider == "local" else f"{provider}:{target.provider_id}")
         executor = self.manager.executors.get(provider)
-        if executor is None or not getattr(executor, "supports_uninstall", False):
-            raise DBusError("org.lulu.Acquisition.Error.Unsupported", "uninstall is not supported")
-        capability_check = getattr(executor, "can_uninstall", None)
-        if callable(capability_check) and not capability_check(target.game_id):
-            raise DBusError("org.lulu.Acquisition.Error.Unsupported",
-                            "provider cannot safely remove this installation")
-        return target, provider, identity, str(target.title)
+        capability = self._executor_uninstall_capability(executor, target)
+        return target, provider, identity, str(target.title), capability
 
     @method()
     def CanUninstall(self, game_id: "s") -> "s":
         try:
-            target, provider, identity, title = self._uninstall_target(game_id)
-            description = ("Remove local game content only" if provider == "local"
-                           else "Remove Lutris installation" if provider == "lutris"
-                           else "Remove Steam installation" if provider == "steam"
-                           else "Uninstall Flatpak application" if provider == "flatpak"
-                           else "Uninstall Epic game" if provider == "epic"
-                           else "Remove GOG provider-managed files" if provider == "gog"
-                           else "Remove provider application")
-            return json.dumps({"supported": True, "installed": True, "provider": provider,
-                               "operation": "remove", "description": description,
-                               "target_game_id": target.game_id}, sort_keys=True)
-        except DBusError:
-            return json.dumps({"supported": False, "installed": False}, sort_keys=True)
+            target, provider, identity, _title, capability = self._resolve_uninstall(game_id)
+            active_states = {JobState.QUEUED, JobState.STARTING, JobState.TRANSFERRING,
+                             JobState.FINALIZING, JobState.AWAITING_INTERACTION,
+                             JobState.PAUSING, JobState.PAUSED, JobState.RESUMING,
+                             JobState.CANCELLING}
+            active = any(job.provider == provider and job.content_identity == identity
+                         and job.operation is JobOperation.REMOVE and job.state in active_states
+                         for job in self.manager.jobs.values())
+            executor = self.manager.executors.get(provider)
+            result = {"supported": bool(capability.get("supported")), "installed": True,
+                      "provider": provider, "operation": "remove",
+                      "available": executor is not None,
+                      "temporarily_unavailable": False,
+                      "requires_confirmation": bool(capability.get("supported")),
+                      "progress_measurable": bool(getattr(executor, "uninstall_progress_supported", False)),
+                      "in_progress": active, "target_game_id": target.game_id}
+            descriptions = {
+                "local": "Remove the local game content only; saves, BIOS, and shared runtime data are kept.",
+                "steam-aurelia": "Remove this Steam game through the Steam client; Mudos will refresh its library.",
+                "flatpak": "Uninstall the Flatpak application; Flatpak retains its normal app-data policy.",
+                "epic": "Uninstall this Epic title through Legendary.",
+                "gog": "Remove the marked Mudos-managed GOG game files.",
+            }
+            description = str(capability.get("description") or descriptions.get(provider, ""))
+            if description:
+                result["description"] = description
+            reason = str(capability.get("reason", ""))
+            if reason:
+                result["reason"] = reason
+            return json.dumps(result, sort_keys=True)
+        except DBusError as error:
+            return json.dumps({"supported": False, "installed": False,
+                               "requires_confirmation": False,
+                               "reason": str(error)}, sort_keys=True)
 
     @method()
     def UninstallGame(self, game_id: "s") -> "s":
         try:
-            target, provider, identity, title = self._uninstall_target(game_id)
+            target, provider, identity, title, capability = self._resolve_uninstall(game_id)
+            if not capability.get("supported"):
+                raise DBusError("org.lulu.Acquisition.Error.Unsupported",
+                                str(capability.get("reason") or "uninstall is not supported"))
             return self.manager.submit(provider, identity, title,
                                        operation=JobOperation.REMOVE,
                                        provider_job_id=target.provider_id,
