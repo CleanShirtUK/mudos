@@ -597,8 +597,12 @@ class ConsoleUiTests(unittest.TestCase):
         system_space = (ROOT / "ui" / "SystemSpace.qml").read_text()
         self.assertIn('property var systemCategories:', QML)
         self.assertIn('property var systemSettings:', QML)
-        self.assertIn('systemCategoryIndex = Math.max(0, systemCategoryIndex - 1)', QML)
-        self.assertIn('systemCategoryIndex = Math.min(systemCategories.length - 1, systemCategoryIndex + 1)', QML)
+        self.assertIn('function settingsCategoryIndex(target)', QML)
+        self.assertIn('function openSettingsCategory(target)', QML)
+        self.assertIn('openSettingsCategory("Network")', QML)
+        self.assertIn('systemHomeCards[systemHomeCardIndex] === "Utilities"', QML)
+        self.assertIn('settingsSpaceRef.moveCategory(-1)', QML)
+        self.assertIn('settingsSpaceRef.moveCategory(1)', QML)
         self.assertIn('request("/settings?category="', QML)
         self.assertIn('signal openRequested(int index)', system_home)
         self.assertIn('PageUp', QML)
@@ -606,7 +610,7 @@ class ConsoleUiTests(unittest.TestCase):
         settings_page = (ROOT / "ui" / "MudosSettingsPage.qml").read_text()
         self.assertIn('modelData.label', settings_page)
         self.assertIn('LibrarySpatialSurface {', settings_page)
-        self.assertIn('surfaceVisible: true', settings_page)
+        self.assertIn('surfaceVisible: !root.embedded', settings_page)
         self.assertIn('MudosCardSurface {', settings_page)
         self.assertIn('MudosSettingsPage {', system_space)
         self.assertIn('property var systemCategories: ["System", "Display", "Audio", "Network", "Bluetooth", "Controllers", "Storage", "Utilities"]', QML)
@@ -627,6 +631,48 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertIn('function ensureSelectedVisible()', settings_page)
         self.assertIn('onSelectedIndexChanged: ensureSelectedVisible()', settings_page)
         self.assertIn('transformOrigin: Item.Center', settings_page)
+
+    def test_settings_uses_unified_two_panel_host_without_category_rail(self) -> None:
+        shell = (ROOT / "ui" / "ConsoleShell.qml").read_text()
+        settings_space = (ROOT / "ui" / "SettingsSpace.qml").read_text()
+        catalog = (ROOT / "ui" / "MudosAssetCatalog.js").read_text()
+        self.assertIn('property var systemHomeCards: ["Settings", "Utilities"]', shell)
+        self.assertIn('categories: root.systemHomeCards', shell)
+        self.assertIn('MudosAssetCatalog.settingsCategories(systemCategories)', shell)
+        self.assertIn('function settingsCategories(systemCategories)', catalog)
+        self.assertIn('component: pages[label] || "systemSpace"', catalog)
+        for category in ("Network", "Bluetooth", "Display", "Audio", "Controllers", "Storage", "System"):
+            self.assertIn('"' + category + '"', catalog)
+        self.assertIn('property string activePanel: "categories"', settings_space)
+        self.assertIn('function enterContent()', settings_space)
+        self.assertIn('function enterCategories()', settings_space)
+        self.assertIn('border.width: root.activePanel === "categories"', settings_space)
+        self.assertIn('border.width: root.activePanel === "content"', settings_space)
+        self.assertIn('contentHost', shell)
+        self.assertIn('settingsPanelFocus = "categories"', shell)
+        self.assertIn('settingsPanelFocus = "content"', shell)
+        self.assertIn('parent: settingsSpace.contentHost', shell)
+        self.assertIn('embedded: true', shell)
+        self.assertIn('root.settingsCategoryModel.findIndex', shell)
+        self.assertIn('onOperationRequested: root.networkOperation(action, ssid, password)', shell)
+        self.assertIn('onOperationRequested: root.audioOperation(action, deviceId, volume, inputDevice, muted)', shell)
+        self.assertIn('onOperationRequested: root.storageOperation(action, deviceId, kind)', shell)
+        self.assertIn('onApplyRequested: root.applyDisplay(output, width, height, refresh)', shell)
+        self.assertIn('onOperationRequested: root.controllerOperation(action, controllerId, player)', shell)
+        back = shell.split("function back()", 1)[1].split("NumberAnimation {", 1)[0]
+        self.assertLess(back.index("storageSettingsRef.back()"),
+                        back.index('settingsPanelFocus === "content"'))
+        self.assertIn('settingsPanelFocus = "categories"', back)
+        self.assertIn('systemLanding = true', back)
+        # SettingsSpace intentionally has no Library category tape/rail or
+        # page-up/page-down category handlers; its list is authoritative.
+        self.assertNotIn('categoryRail', settings_space)
+        self.assertNotIn('PageUp', settings_space)
+        self.assertNotIn('PageDown', settings_space)
+        self.assertIn('y: root.expandedShellY + (root.embedded ? 12 : 110)',
+                      (ROOT / "ui" / "MudosSettingsPage.qml").read_text())
+        self.assertIn('root.embedded && rowDelegate.index === root.selectedIndex',
+                      (ROOT / "ui" / "MudosSettingsPage.qml").read_text())
 
         for page_name in (
                 "SystemSpace.qml", "InternetSettings.qml", "StorageSettings.qml",
@@ -1224,7 +1270,7 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertIn('action: "navigation"', shell)
         self.assertIn('action: "previousCollection"', shell)
         self.assertIn('action: "nextCollection"', shell)
-        self.assertIn('label: root.selectedCategoryIndex === 3 ? "Navigation"', shell)
+        self.assertIn('root.selectedCategoryIndex === 3 ? "Navigation" : "Navigate"', shell)
         self.assertIn('property bool libraryTransitioning: false', shell)
         self.assertIn('property: "libraryTransitionProgress"', shell)
         self.assertIn('duration: 500', shell)
@@ -1407,6 +1453,20 @@ class ConsoleUiTests(unittest.TestCase):
         environment["QT_QUICK_BACKEND"] = "software"
         result = subprocess.run(
             [runner, "-input", str(ROOT / "tests/qml/tst_library_projection.qml")],
+            capture_output=True, text=True, env=environment, timeout=20,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_unified_settings_space_qml_regressions(self) -> None:
+        runner = shutil.which("qmltestrunner") or "/usr/lib/qt6/bin/qmltestrunner"
+        if not Path(runner).exists():
+            self.skipTest("qmltestrunner is not installed")
+        environment = os.environ.copy()
+        environment["QT_QPA_PLATFORM"] = "offscreen"
+        environment["QT_QUICK_BACKEND"] = "software"
+        result = subprocess.run(
+            [runner, "-import", str(ROOT / "tests/qml/fakes"),
+             "-input", str(ROOT / "tests/qml/tst_settings_space.qml")],
             capture_output=True, text=True, env=environment, timeout=20,
         )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)

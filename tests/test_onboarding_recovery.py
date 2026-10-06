@@ -154,7 +154,7 @@ class OnboardingStateTests(unittest.TestCase):
         page = (ROOT / "ui/Onboarding.qml").read_text()
         self.assertIn('"online": connectivity == 4', adapter)
         self.assertIn("systemStatus.networkOnline", qml)
-        self.assertIn('openSystemCategory(systemCategories.indexOf("Network"))', qml)
+        self.assertIn('openSettingsCategory("Network")', qml)
         self.assertIn("networkAdapterAvailable", page)
         self.assertIn("Ethernet or another network interface", page)
 

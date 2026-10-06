@@ -4,6 +4,7 @@ Item {
     id: root
     property var storageData: ({available: false, devices: [], targets: {game: null, emulation: null}, error: ""})
     property int selectedIndex: 0
+    property bool embedded: false
     property real uiScale: 1
     property var typography
     property var luluPalette
@@ -18,6 +19,7 @@ Item {
     property string message: ""
     property string targetView: ""
     signal operationRequested(string action, string deviceId, string kind)
+    signal interactionRequested()
     signal backRequested()
 
     function size(value) {
@@ -52,7 +54,8 @@ Item {
                     result.push({label: "Eject " + device.name, value: "A", action: "eject", device: device})
             }
         }
-        result.push({label: "Back", value: "", action: "back"})
+        if (!root.embedded)
+            result.push({label: "Back", value: "", action: "back"})
         return result
     }
     function activate() {
@@ -89,6 +92,7 @@ Item {
         title: "STORAGE"
         rows: root.rows()
         selectedIndex: root.selectedIndex
+        embedded: root.embedded
         uiScale: root.uiScale
         typography: root.typography
         luluPalette: root.luluPalette
@@ -106,6 +110,7 @@ Item {
             : "UDisks2 unavailable"
         onRowActivated: {
             root.selectedIndex = index
+            root.interactionRequested()
             root.activate()
         }
     }

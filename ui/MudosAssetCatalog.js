@@ -152,6 +152,25 @@ function systemIcon(category) {
     return icon(systemIcons[String(category || "")] || "settings")
 }
 
+// The category model is deliberately based on the implemented System pages;
+// labels and glyphs remain tied to the existing semantic icon vocabulary.
+function settingsCategories(systemCategories) {
+    var source = Array.isArray(systemCategories) ? systemCategories : []
+    var order = ["Network", "Bluetooth", "Display", "Audio", "Controllers", "Storage", "System"]
+    var pages = {Network: "internetSettings", Bluetooth: "systemSpace",
+                 Display: "displaySettings", Audio: "audioSettings",
+                 Controllers: "controllerSettings", Storage: "storageSettings",
+                 System: "systemSpace"}
+    return order.filter(function(label) { return source.indexOf(label) >= 0 })
+        .concat(source.filter(function(label) {
+            return label !== "Utilities" && order.indexOf(label) < 0
+        }))
+        .map(function(label) {
+            return {id: label.toLowerCase(), label: label, glyph: systemIcon(label),
+                    component: pages[label] || "systemSpace", target: label}
+        })
+}
+
 function suppliedArtwork(name) {
     if (String(name || "") === "store")
         return logicalAsset("navigation", "arrow-down-to-line-svgrepo-com.svg")

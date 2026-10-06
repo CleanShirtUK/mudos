@@ -10,6 +10,7 @@ Item {
     property string password: ""
     property string message: ""
     property bool onboardingMode: false
+    property bool embedded: false
     property real uiScale: 1
     property var typography
     property var luluPalette
@@ -22,6 +23,7 @@ Item {
     property real expandedShellHeight: 0
     property real expandedShellBottom: 0
     signal operationRequested(string action, string ssid, string password)
+    signal interactionRequested()
     signal backRequested()
 
     function rows() {
@@ -33,7 +35,7 @@ Item {
                          + (network.connected ? " · Connected" : ""), action: "network", network: network})
         for (var saved of (networkData.known || []))
             result.push({label: "Forget " + saved, value: "Saved", action: "forget", ssid: saved})
-        if (!onboardingMode)
+        if (!onboardingMode && !embedded)
             result.push({label: "Back", value: "", action: "back"})
         return result
     }
@@ -87,6 +89,7 @@ Item {
         rows: root.rows()
         selectedIndex: root.selectedIndex
         rowsVisible: !root.credentialView
+        embedded: root.embedded
         uiScale: root.uiScale
         typography: root.typography
         luluPalette: root.luluPalette
@@ -103,6 +106,7 @@ Item {
                                      : root.networkData.error)
         onRowActivated: {
             root.selectedIndex = index
+            root.interactionRequested()
             root.activate()
         }
     }

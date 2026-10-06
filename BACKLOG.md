@@ -137,6 +137,25 @@ was not changed.
 
 ## ACTIVE
 
+### SET-001 — Consolidate System Settings navigation
+
+**Status:** IMPLEMENTING — unified navigation shell, preserved category hosts,
+and automated regression coverage are in place; dev-current deployment and
+physical acceptance remain.
+
+- System exposes only **Settings** and **Utilities**. Settings categories are
+  derived from the existing provider-backed pages: Network, Bluetooth, Display,
+  Audio, Controllers, Storage, and System.
+- Settings uses a two-panel category/content shell without a horizontal category
+  rail. Existing category components retain their models, refresh behavior,
+  subviews, and mutation/service boundaries.
+- Validate the controller and couch-distance presentation on dev-current:
+  category glyphs/density; no rail or reserved gap; no row-level glass cards;
+  unmistakable active-panel borders; left/right focus transitions; category and
+  control navigation; dynamic list behavior; representative safe mutations;
+  nested Back behavior; and clean return to System with no duplicate cards.
+- `/opt/lulu/current` must remain unchanged.
+
 ### LIBRARY-001 — Open the selected Library dimension
 
 **Status:** OPEN — operator-reported navigation defect; not investigated or

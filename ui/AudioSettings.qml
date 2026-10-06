@@ -5,6 +5,7 @@ Item {
     property var audioData: ({available: false, outputs: [], inputs: [], current_output: null,
                               current_input: null, error: ""})
     property int selectedIndex: 0
+    property bool embedded: false
     property real uiScale: 1
     property var typography
     property var luluPalette
@@ -17,6 +18,7 @@ Item {
     property real expandedShellHeight: 0
     property real expandedShellBottom: 0
     signal operationRequested(string action, string deviceId, int volume, bool inputDevice, bool muted)
+    signal interactionRequested()
     signal backRequested()
 
     function rows() {
@@ -33,7 +35,8 @@ Item {
         for (var input of (audioData.inputs || []))
             result.push({label: "Input: " + input.name, value: input.type + " · " + input.volume + "%"
                          + (input.active ? " · Current" : ""), action: "input", device: input})
-        result.push({label: "Back", value: "", action: "back"})
+        if (!root.embedded)
+            result.push({label: "Back", value: "", action: "back"})
         return result
     }
 
@@ -68,6 +71,7 @@ Item {
         title: "AUDIO"
         rows: root.rows()
         selectedIndex: root.selectedIndex
+        embedded: root.embedded
         uiScale: root.uiScale
         typography: root.typography
         luluPalette: root.luluPalette
@@ -84,6 +88,7 @@ Item {
             : "Audio service unavailable"
         onRowActivated: {
             root.selectedIndex = index
+            root.interactionRequested()
             root.activate()
         }
     }

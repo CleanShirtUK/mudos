@@ -21,6 +21,8 @@ Item {
     property string footerText: ""
     property string bluetoothInputValue: ""
     property bool rowsVisible: true
+    property bool embedded: false
+    property bool textInputFocusEnabled: true
     readonly property real contentInset: 44 * root.uiScale
     readonly property real horizontalScaleInset: 72 * root.uiScale
     readonly property real selectionScale: 1.01
@@ -30,9 +32,12 @@ Item {
         58 * root.uiScale * (root.selectionScale - 1) / 2
         + root.selectedBorderWidth * root.selectionScale / 2
         + root.selectedGlassEdgeSafety
-    readonly property real listWidth: (root.expandedShellWidth - 3 * root.contentInset) * 0.43
-    readonly property real nominalRowWidth: root.listWidth - root.contentInset
-        - root.horizontalScaleInset
+    readonly property real listWidth: root.embedded
+        ? root.expandedShellWidth - 2 * root.contentInset
+        : (root.expandedShellWidth - 3 * root.contentInset) * 0.43
+    readonly property real nominalRowWidth: root.embedded
+        ? root.expandedShellWidth - 2 * root.contentInset
+        : root.listWidth - root.contentInset - root.horizontalScaleInset
     property real scrollY: 0
     signal rowActivated(int index)
     signal textInputRequested()
@@ -69,13 +74,14 @@ Item {
         canonicalTexture: root.canonicalTexture
         canonicalCoordinateRoot: root.canonicalCoordinateRoot
         canonicalSize: root.canonicalSize
-        surfaceVisible: true
+        surfaceVisible: !root.embedded
         transparentOutsideMask: true
     }
 
     Text {
         x: root.expandedShellX + root.contentInset
         y: root.expandedShellY + root.contentInset
+        visible: !root.embedded
         text: root.title
         color: root.luluPalette.headingAccent
         font.family: root.typography.majorHeadingFamily
@@ -87,9 +93,10 @@ Item {
     Flickable {
         x: root.expandedShellX + root.contentInset
             - root.horizontalScaleInset
-        y: root.expandedShellY + 110 * root.uiScale
+        y: root.expandedShellY + (root.embedded ? 12 : 110) * root.uiScale
         width: root.listWidth + 2 * root.horizontalScaleInset
-        height: 7 * 58 * root.uiScale + 6 * 10 * root.uiScale
+        height: root.embedded ? Math.max(1, root.height - 24 * root.uiScale)
+            : 7 * 58 * root.uiScale + 6 * 10 * root.uiScale
         visible: root.rowsVisible
         clip: true
         contentWidth: width
@@ -126,8 +133,17 @@ Item {
                     Item {
                         id: visualRow
                         anchors.fill: parent
+                        Rectangle {
+                            anchors.fill: parent
+                            radius: 7 * root.uiScale
+                            visible: root.embedded && rowDelegate.index === root.selectedIndex
+                            color: Qt.rgba(root.luluPalette.headingAccent.r,
+                                           root.luluPalette.headingAccent.g,
+                                           root.luluPalette.headingAccent.b, 0.10)
+                        }
                         MudosCardSurface {
                             anchors.fill: parent
+                            visible: !root.embedded
                             scale: 1 + (root.selectionScale - 1)
                                 * rowDelegate.selectionProgress
                             transformOrigin: Item.Center
@@ -254,6 +270,7 @@ Item {
         width: Math.max(1, root.expandedShellWidth - 3 * root.contentInset - root.listWidth)
         height: root.expandedShellHeight - 150 * root.uiScale
         selectionProgress: 0
+        visible: !root.embedded
         uiScale: root.uiScale
         luluPalette: root.luluPalette
         canonicalTexture: root.canonicalTexture
@@ -299,17 +316,50 @@ Item {
             TextInput {
                 objectName: "bluetoothPairingInput"
                 visible: root.rows.length && root.rows[root.selectedIndex]
-                    && root.rows[root.selectedIndex].kind === "input"
+                    && root.rows[root.selectedIndex].kind === "input" && !root.embedded
                 width: parent.width
                 text: root.bluetoothInputValue
                 onTextChanged: root.bluetoothInputValue = text
-                onVisibleChanged: if (visible) { forceActiveFocus(); root.textInputRequested() }
+                onVisibleChanged: if (visible && root.textInputFocusEnabled) {
+                    forceActiveFocus(); root.textInputRequested()
+                }
+                Connections {
+                    target: root
+                    function onTextInputFocusEnabledChanged() {
+                        if (root.embedded && root.textInputFocusEnabled
+                                && root.rows.length && root.rows[root.selectedIndex]
+                                && root.rows[root.selectedIndex].kind === "input") {
+                            bluetoothPairingInputEmbedded.forceActiveFocus()
+                            root.textInputRequested()
+                        }
+                    }
+                }
                 color: root.luluPalette.primaryText
                 font.family: root.typography.interfaceFamily
                 font.pixelSize: root.typography.size("body", 20)
                 selectByMouse: false
             }
         }
+    }
+
+    TextInput {
+        id: bluetoothPairingInputEmbedded
+        objectName: "bluetoothPairingInputEmbedded"
+        visible: root.embedded && root.rows.length && root.rows[root.selectedIndex]
+            && root.rows[root.selectedIndex].kind === "input"
+        x: root.expandedShellX + root.contentInset
+        y: root.expandedShellY + root.expandedShellHeight - 70 * root.uiScale
+        width: root.expandedShellWidth - 2 * root.contentInset
+        height: 48 * root.uiScale
+        text: root.bluetoothInputValue
+        onTextChanged: root.bluetoothInputValue = text
+        onVisibleChanged: if (visible && root.textInputFocusEnabled) {
+            forceActiveFocus(); root.textInputRequested()
+        }
+        color: root.luluPalette.primaryText
+        font.family: root.typography.interfaceFamily
+        font.pixelSize: root.typography.size("body", 20)
+        selectByMouse: false
     }
 
     Text {

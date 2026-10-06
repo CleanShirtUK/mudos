@@ -17,15 +17,20 @@ Item {
     property real expandedShellHeight: 0
     property real expandedShellBottom: 0
     signal actionRequested(string key)
+    signal interactionRequested()
     signal textInputRequested()
     property alias bluetoothInputValue: settingsPage.bluetoothInputValue
     property int visibleRows: 7
+    property bool embedded: false
+    property bool textInputFocusEnabled: true
 
     MudosSettingsPage {
         id: settingsPage
         anchors.fill: parent
         title: root.category.toUpperCase()
         rows: root.settings
+        embedded: root.embedded
+        textInputFocusEnabled: root.textInputFocusEnabled
         selectedIndex: root.selectedIndex
         uiScale: root.uiScale
         typography: root.typography
@@ -38,7 +43,10 @@ Item {
         expandedShellWidth: root.expandedShellWidth
         expandedShellHeight: root.expandedShellHeight
         expandedShellBottom: root.expandedShellBottom
-        onRowActivated: root.actionRequested(root.settings[index].key)
+        onRowActivated: {
+            root.interactionRequested()
+            root.actionRequested(root.settings[index].key)
+        }
         onTextInputRequested: root.textInputRequested()
     }
 }

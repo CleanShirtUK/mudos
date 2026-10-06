@@ -280,6 +280,95 @@ EOF
     echo "refreshed isolated non-promotable Settings validation runtime: $runtime"
 }
 
+# Refresh the already-provisioned mutable dev runtime for committed UI changes.
+# This deliberately avoids reprovisioning appliance policy and restarts only the
+# session shell and Consoled, which import the refreshed UI/service code.
+settings_refresh() {
+    if [ "$(hostname)" != lulu ]; then
+        echo "dev runtime must be refreshed on the canonical Lulu host from this checkout" >&2
+        exit 1
+    fi
+    if [ "$(id -u)" -ne 0 ]; then
+        exec sudo -n "$0" settings-refresh
+    fi
+    if [ ! -d "$runtime" ] || [ -L "$runtime" ] \
+            || [ ! -f "$runtime/NON_PROMOTABLE" ] \
+            || ! grep -q '^development-runtime=true$' "$runtime/NON_PROMOTABLE"; then
+        echo "refusing to replace a missing or non-development runtime: $runtime" >&2
+        exit 1
+    fi
+    head=$(git -C "$repo_root" rev-parse HEAD)
+    branch=$(git -C "$repo_root" branch --show-current)
+    status=$(git -C "$repo_root" status --porcelain --untracked-files=all)
+    if [ -n "$status" ]; then
+        echo "settings refresh requires a clean committed checkout" >&2
+        exit 1
+    fi
+    stamp=$(date -u +%Y%m%dT%H%M%SZ)
+    staging=/opt/lulu/.dev-settings-staging-$$
+    previous=/opt/lulu/dev-previous-settings-$stamp
+    if [ -e "$staging" ] || [ -e "$previous" ]; then
+        echo "settings refresh staging/backup path already exists" >&2
+        exit 1
+    fi
+    mkdir -p "$staging/bin"
+    for directory in src ui scripts config packaging native; do
+        cp -a "$repo_root/$directory" "$staging/$directory"
+    done
+    cp -a "$repo_root/src" "$staging/lib"
+    cp "$repo_root/packaging/lulu-vt" "$staging/bin/lulu-vt"
+    cp "$repo_root/deploy/payload/bin/verify-mudos.sh" "$staging/bin/verify-mudos.sh"
+    LULU_INSTALL_ROOT="$staging" "$staging/scripts/build-lulu-shell.sh" "$staging/bin/lulu-shell"
+    chmod +x "$staging/bin"/* "$staging/scripts"/*
+    cat > "$staging/NON_PROMOTABLE" <<EOF
+development-runtime=true
+promotable=false
+source=$repo_root
+head=$head
+branch=$branch
+dirty=false
+refreshed=$stamp
+EOF
+    mv "$runtime" "$previous"
+    if ! mv "$staging" "$runtime"; then
+        mv "$previous" "$runtime"
+        echo "could not publish staged Settings runtime; restored previous dev runtime" >&2
+        exit 1
+    fi
+    mkdir -p "$(dirname "$session_dropin")" "$(dirname "$consoled_dropin")"
+    cat > "$session_dropin" <<EOF
+[Service]
+Environment=PYTHONPATH=$runtime/lib
+Environment=LULU_INSTALL_ROOT=$runtime
+EOF
+    cat > "$consoled_dropin" <<EOF
+[Service]
+Environment=PYTHONPATH=$runtime/lib
+Environment=LULU_INSTALL_ROOT=$runtime
+EOF
+    systemctl daemon-reload
+    if ! systemctl restart lulu-session@2.service; then
+        mv "$runtime" "$staging"
+        mv "$previous" "$runtime"
+        systemctl daemon-reload
+        systemctl restart lulu-session@2.service || true
+        systemctl restart lulu-consoled.service || true
+        echo "session restart failed; restored previous dev runtime" >&2
+        exit 1
+    fi
+    if ! systemctl restart lulu-consoled.service; then
+        mv "$runtime" "$staging"
+        mv "$previous" "$runtime"
+        systemctl daemon-reload
+        systemctl restart lulu-session@2.service || true
+        systemctl restart lulu-consoled.service || true
+        echo "Consoled restart failed; restored previous dev runtime" >&2
+        exit 1
+    fi
+    logger -t lulu-runtime "event=settings-refresh head=$head target=$runtime previous=$previous" 2>/dev/null || true
+    echo "refreshed non-promotable Settings runtime: $runtime (previous tree retained at $previous)"
+}
+
 # Exercise the committed, capability-based gamepad reconciler without changing
 # the immutable release or the gamepad mapping profiles. InputPlumber itself
 # remains the runtime authority and performs auto-managed composite lifecycle.
@@ -348,7 +437,8 @@ EOF
 case "${1:-}" in
     refresh) refresh ;;
     settings-validation) settings_validation ;;
+    settings-refresh) settings_refresh ;;
     controller-validation) controller_validation ;;
     immutable|restore) immutable ;;
-    *) echo "usage: $0 refresh|settings-validation|controller-validation|immutable" >&2; exit 2 ;;
+    *) echo "usage: $0 refresh|settings-validation|settings-refresh|controller-validation|immutable" >&2; exit 2 ;;
 esac

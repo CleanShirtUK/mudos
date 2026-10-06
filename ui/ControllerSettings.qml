@@ -4,6 +4,7 @@ Item {
     id: root
     property var controllerData: ({controllers: {}, navigation_controller_id: "", dolphin_wii_remote_mode: "standard"})
     property int selectedIndex: 0
+    property bool embedded: false
     property string view: "main"
     property string targetControllerId: ""
     property real uiScale: 1
@@ -18,6 +19,7 @@ Item {
     property real expandedShellHeight: 0
     property real expandedShellBottom: 0
     signal operationRequested(string action, string controllerId, int player)
+    signal interactionRequested()
     signal backRequested()
     signal refreshRequested()
 
@@ -68,7 +70,8 @@ Item {
         result.push({label: "Dolphin Wii Remote", value: controllerData.dolphin_wii_remote_mode === "passthrough" ? "Real · Bluetooth adapter" : "Standard gamepad", action: "toggle-dolphin-wii-mode"})
         result.push({label: "Navigation Controller", value: controllerData.navigation_mode === "all" ? "All" : (controllerData.navigation_controller_id ? "Assigned" : "Automatic fallback"), action: "open-navigation"})
         result.push({label: "Provider profiles", value: "Owned by providers", action: "info"})
-        result.push({label: "Back", value: "", action: "back"})
+        if (!root.embedded)
+            result.push({label: "Back", value: "", action: "back"})
         return result
     }
     function activate() {
@@ -90,6 +93,7 @@ Item {
         title: "CONTROLLERS"
         rows: root.rows()
         selectedIndex: root.selectedIndex
+        embedded: root.embedded
         uiScale: root.uiScale
         typography: root.typography
         luluPalette: root.luluPalette
@@ -106,6 +110,7 @@ Item {
             : "A: select · B: back"
         onRowActivated: {
             root.selectedIndex = index
+            root.interactionRequested()
             root.activate()
         }
     }

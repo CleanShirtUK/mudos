@@ -5,6 +5,7 @@ Item {
     property var displayData: ({available: false, displays: [], requested: {}, known_good: {}, selected: null, error: ""})
     property string view: "main"
     property int selectedIndex: 0
+    property bool embedded: false
     property real uiScale: 1
     property var typography
     property var luluPalette
@@ -19,6 +20,7 @@ Item {
     property string message: ""
     property var requested: ({})
     signal applyRequested(string output, int width, int height, real refresh)
+    signal interactionRequested()
     signal backRequested()
 
     function selectedDisplay() {
@@ -62,9 +64,10 @@ Item {
             {label: "Gameplay Display", value: display ? display.name : "Unavailable", action: "outputs"},
             {label: "Resolution", value: mode ? mode.width + " × " + mode.height : "Unavailable", action: "open-resolution"},
             {label: "Refresh Rate", value: mode ? Number(mode.refresh).toFixed(2) + " Hz" : "Unavailable", action: "open-refresh"},
-            {label: "Apply", value: "Restart session", action: "apply"},
-            {label: "Back", value: "", action: "back"}
+            {label: "Apply", value: "Restart session", action: "apply"}
         ]
+        if (!root.embedded)
+            result.push({label: "Back", value: "", action: "back"})
         return result
     }
     function activate() {
@@ -96,6 +99,7 @@ Item {
         title: "DISPLAY"
         rows: root.rows()
         selectedIndex: root.selectedIndex
+        embedded: root.embedded
         uiScale: root.uiScale
         typography: root.typography
         luluPalette: root.luluPalette
@@ -113,6 +117,7 @@ Item {
             : "No connected display"
         onRowActivated: {
             root.selectedIndex = index
+            root.interactionRequested()
             root.activate()
         }
     }
