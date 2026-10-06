@@ -1600,8 +1600,11 @@ class ConsoleUiTests(unittest.TestCase):
         handoff = QML.split("function finishHiddenHomeLaunch()", 1)[1].split(
             "function installGame", 1)[0]
         self.assertIn("returnPresentationPending", presented)
+        self.assertLess(presented.index("focusRecentForReturn()"),
+                        presented.index("recentHome.reconcilePresentation()"))
         self.assertIn("recentHome.reconcilePresentation()", presented)
         self.assertIn("returnPresentationPending = false", presented)
+        self.assertIn("function focusRecentForReturn()", QML)
         self.assertNotIn("recentHome.reconcilePresentation()", prepare)
         self.assertNotIn("recentHome.reconcilePresentation()", handoff)
         self.assertIn("returnPresentationPending = true", prepare)

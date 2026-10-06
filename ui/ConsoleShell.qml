@@ -45,6 +45,21 @@ import QtQuick.Controls
             titleRailY = selectedDomainY - 2 * homeCategoryPitch
         }
     }
+    function focusRecentForReturn() {
+        if (!recentHome || recentHome.itemCount <= 0)
+            return
+        desiredCategoryIndex = 3
+        selectedCategoryIndex = 3
+        homeCategoryFrom = 3
+        homeCategoryTarget = 3
+        homeCategoryDirection = 0
+        homeCategoryProgress = 1
+        homeCategoryTransitioning = false
+        suppressTitleRailCompletion = true
+        titleRailAnimation.stop()
+        suppressTitleRailCompletion = false
+        titleRailY = selectedDomainY - 3 * homeCategoryPitch
+    }
     property bool onboardingOpen: false
     property bool onboardingNetworkSettings: false
     property bool onboardingCompletionPending: false
@@ -525,6 +540,7 @@ import QtQuick.Controls
         function onContentPresentedReached() {
             root.traceLaunchEvent("COORDINATOR_PRESENTED", {})
             if (root.returnPresentationPending) {
+                root.focusRecentForReturn()
                 root.traceLaunchEvent("RECENT_RECONCILE_BEGIN", {})
                 recentHome.reconcilePresentation()
                 root.traceLaunchEvent("RECENT_PRESENTATION_RELEASED", {})

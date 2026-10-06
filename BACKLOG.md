@@ -254,8 +254,10 @@ projection corrected; full regression suite passed.
   existing hidden-home launch handoff (including its return watcher). Regression
   assertions cover the ordering. Failure-path trace review found that the Library
   fade-out remained at zero through return; the home layer is now restored before
-  the coordinator's entrance animation. Recheck physical launch-failure recovery
-  in dev-current. Production remains unchanged.
+  the coordinator's entrance animation. Home focuses Recents before its deferred
+  reconcile/presentation animation, avoiding per-row Library return animations.
+  Recheck physical launch-failure recovery in dev-current. Production remains
+  unchanged.
 
 ### NOTIFICATIONS-001 — Route transient status messages to Notifications
 
