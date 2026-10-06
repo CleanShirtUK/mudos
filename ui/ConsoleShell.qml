@@ -254,7 +254,6 @@ import QtQuick.Controls
     readonly property var systemHomeCards: ["Settings", "Utilities"]
     readonly property var settingsCategoryModel: MudosAssetCatalog.settingsCategories(systemCategories)
     property int systemRowIndex: 0
-    property bool systemLanding: true
     property var systemCategories: ["System", "Display", "Audio", "Network", "Bluetooth", "Controllers", "Storage", "Utilities"]
     property var systemSettings: []
     property var utilities: []
@@ -1408,7 +1407,7 @@ import QtQuick.Controls
         id: networkRefreshTimer
         interval: 2000
         repeat: true
-        running: root.space === "system" && !root.systemLanding
+        running: root.space === "system"
             && root.systemCategories[root.systemCategoryIndex] === "Network"
         onTriggered: root.refreshNetworkState()
     }
@@ -1417,7 +1416,7 @@ import QtQuick.Controls
         id: audioRefreshTimer
         interval: 1000
         repeat: true
-        running: root.space === "system" && !root.systemLanding
+        running: root.space === "system"
             && root.systemCategories[root.systemCategoryIndex] === "Audio"
         onTriggered: root.refreshAudioState()
     }
@@ -1425,7 +1424,7 @@ import QtQuick.Controls
     Timer {
         interval: 1200
         repeat: true
-        running: root.space === "system" && !root.systemLanding
+        running: root.space === "system"
             && root.systemCategories[root.systemCategoryIndex] === "Bluetooth"
         onTriggered: root.refreshSystemSettings()
     }
@@ -1595,7 +1594,7 @@ import QtQuick.Controls
         id: storageRefreshTimer
         interval: 2000
         repeat: true
-        running: root.space === "system" && !root.systemLanding
+        running: root.space === "system"
             && root.systemCategories[root.systemCategoryIndex] === "Storage"
         onTriggered: root.refreshStorageState()
     }
@@ -2601,7 +2600,7 @@ import QtQuick.Controls
         if (root.homeLaunchGated)
             return
         playAudioEvent(audioEventForAction("confirm"))
-        if (space === "system" && !systemLanding
+        if (space === "system"
                 && systemCategories[systemCategoryIndex] !== "Utilities"
                 && settingsPanelFocus === "categories") {
             settingsPanelFocus = "content"
@@ -2621,53 +2620,49 @@ import QtQuick.Controls
             return
         }
         if (space === "system") {
-            if (systemLanding) {
-                openSystemCategory(systemHomeCardIndex)
-                return
-            }
-            if (!systemLanding && systemCategories[systemCategoryIndex] === "Utilities") {
+            if (systemCategories[systemCategoryIndex] === "Utilities") {
                 if (utilitiesHomeRef)
                     utilitiesHomeRef.activateSelected()
                 return
             }
-            if (!systemLanding && systemCategories[systemCategoryIndex] === "System"
+            if (systemCategories[systemCategoryIndex] === "System"
                     && systemSettings[systemRowIndex]) {
                 var selectedKey = systemSettings[systemRowIndex].key
                 if (selectedKey.indexOf("mudos.") === 0)
                     activateMudosAction(selectedKey)
                 return
             }
-            if (!systemLanding && systemCategories[systemCategoryIndex] === "Network"
+            if (systemCategories[systemCategoryIndex] === "Network"
                     && internetSettingsRef) {
                 internetSettingsRef.activate()
                 return
             }
-            if (!systemLanding && systemCategories[systemCategoryIndex] === "Bluetooth"
+            if (systemCategories[systemCategoryIndex] === "Bluetooth"
                     && systemSettings[systemRowIndex]) {
                 activateBluetoothSetting(systemSettings[systemRowIndex].key)
                 return
             }
-            if (!systemLanding && systemCategories[systemCategoryIndex] === "Audio"
+            if (systemCategories[systemCategoryIndex] === "Audio"
                     && audioSettingsRef) {
                 audioSettingsRef.activate()
                 return
             }
-            if (!systemLanding && systemCategories[systemCategoryIndex] === "Display"
+            if (systemCategories[systemCategoryIndex] === "Display"
                     && displaySettingsRef) {
                 displaySettingsRef.activate()
                 return
             }
-            if (!systemLanding && systemCategories[systemCategoryIndex] === "Controllers"
+            if (systemCategories[systemCategoryIndex] === "Controllers"
                     && controllerSettingsRef) {
                 controllerSettingsRef.activate()
                 return
             }
-            if (!systemLanding && systemCategories[systemCategoryIndex] === "Storage"
+            if (systemCategories[systemCategoryIndex] === "Storage"
                     && storageSettingsRef) {
                 storageSettingsRef.activate()
                 return
             }
-            if (!systemLanding && systemSettings[systemRowIndex]
+            if (systemSettings[systemRowIndex]
                     && systemSettings[systemRowIndex].key === "lulu.reset")
                 resetMudos()
             return
@@ -2785,7 +2780,6 @@ import QtQuick.Controls
         systemCategoryIndex = settingsCategoryIndex(String(target || "System"))
         systemRowIndex = 0
         systemHomeCardIndex = 0
-        systemLanding = false
         space = "system"
         settingsPanelFocus = "categories"
         if (settingsSpaceRef) {
@@ -2816,7 +2810,6 @@ import QtQuick.Controls
         systemHomeCardIndex = Math.max(0, Math.min(systemHomeCards.length - 1, index))
         if (systemHomeCards[systemHomeCardIndex] === "Utilities") {
             systemCategoryIndex = systemCategories.indexOf("Utilities")
-            systemLanding = false
             space = "system"
             refreshUtilities()
         } else {
@@ -2826,7 +2819,7 @@ import QtQuick.Controls
     }
 
     function moveSystemCategory(delta) {
-        var rail = space === "home" ? systemHomeRailRef : systemLandingHome
+        var rail = systemHomeRailRef
         var oldIndex = rail.selectedIndex
         rail.moveSelection(delta)
         systemHomeCardIndex = rail.selectedIndex
@@ -2893,7 +2886,6 @@ import QtQuick.Controls
             } else if (onboardingBack === "show-onboarding") {
                 onboardingNetworkSettings = false
                 space = "home"
-                systemLanding = true
                 inputSurface.forceActiveFocus()
             }
             message = systemStatus && systemStatus.networkOnline
@@ -2931,40 +2923,28 @@ import QtQuick.Controls
             }
             return
         }
-        if (space === "system" && !systemLanding
+        if (space === "system"
                 && systemCategories[systemCategoryIndex] === "Storage" && storageSettingsRef
                 && storageSettingsRef.back())
             return
-        if (space === "system" && !systemLanding
+        if (space === "system"
                 && systemCategories[systemCategoryIndex] === "Display" && displaySettingsRef
                 && displaySettingsRef.back())
             return
-        if (space === "system" && !systemLanding
+        if (space === "system"
                 && systemCategories[systemCategoryIndex] === "Controllers" && controllerSettingsRef
                 && controllerSettingsRef.view !== "main"
                 && controllerSettingsRef.back())
             return
         if (space === "system") {
-            if (!systemLanding && systemCategories[systemCategoryIndex] === "Network"
+            if (systemCategories[systemCategoryIndex] === "Network"
                     && internetSettingsRef && internetSettingsRef.credentialView) {
                 internetSettingsRef.credentialView = false
                 request("/keyboard/hide", "POST", "", function(data) {})
                 return
             }
-            if (!systemLanding
-                    && systemCategories[systemCategoryIndex] !== "Utilities"
-                    && settingsPanelFocus === "content") {
-                settingsPanelFocus = "categories"
-                if (settingsSpaceRef) settingsSpaceRef.enterCategories()
-                return
-            }
-            if (systemLanding) {
-                space = "home"
-            } else {
-                console.log("SETTINGS_PAGE_CLOSE", "category", systemCategories[systemCategoryIndex])
-                systemLanding = true
-                systemHomeCardIndex = 0
-            }
+            console.log("SETTINGS_PAGE_CLOSE", "category", systemCategories[systemCategoryIndex])
+            space = "home"
             message = ""
         } else if (space === "library") {
             libraryTransitionState = "ACTIVATING"
@@ -3184,8 +3164,7 @@ import QtQuick.Controls
             }
             else if (root.space === "downloads") root.moveDownloads(-1)
             else if (root.space === "system") {
-                if (root.systemLanding) root.moveSystemCategory(-4)
-                else if (root.systemCategories[root.systemCategoryIndex] !== "Utilities"
+                if (root.systemCategories[root.systemCategoryIndex] !== "Utilities"
                          && root.settingsPanelFocus === "categories") {
                     if (root.settingsSpaceRef) root.settingsSpaceRef.moveCategory(-1)
                 }
@@ -3225,8 +3204,7 @@ import QtQuick.Controls
             }
             else if (root.space === "downloads") root.moveDownloads(1)
             else if (root.space === "system") {
-                if (root.systemLanding) root.moveSystemCategory(4)
-                else if (root.systemCategories[root.systemCategoryIndex] !== "Utilities"
+                if (root.systemCategories[root.systemCategoryIndex] !== "Utilities"
                          && root.settingsPanelFocus === "categories") {
                     if (root.settingsSpaceRef) root.settingsSpaceRef.moveCategory(1)
                 }
@@ -3266,8 +3244,7 @@ import QtQuick.Controls
                 if (root.browserVisible) root.browserSurface.directional("left")
                 else root.moveStoreCategory(-1)
             } else if (root.space === "system") {
-                if (root.systemLanding) root.moveSystemCategory(-1)
-                else if (root.systemCategories[root.systemCategoryIndex] !== "Utilities") {
+                if (root.systemCategories[root.systemCategoryIndex] !== "Utilities") {
                     if (root.settingsPanelFocus === "content"
                             && root.systemCategories[root.systemCategoryIndex] === "Audio"
                             && root.audioSettingsRef)
@@ -3315,8 +3292,7 @@ import QtQuick.Controls
             } else if (root.space === "downloads") {
                 root.moveDownloads(1)
             } else if (root.space === "system") {
-                if (root.systemLanding) root.moveSystemCategory(1)
-                else if (root.systemCategories[root.systemCategoryIndex] !== "Utilities") {
+                if (root.systemCategories[root.systemCategoryIndex] !== "Utilities") {
                     if (root.settingsPanelFocus === "categories") {
                         root.settingsPanelFocus = "content"
                         if (root.settingsSpaceRef) root.settingsSpaceRef.enterContent()
@@ -3563,15 +3539,7 @@ import QtQuick.Controls
                     event.accepted = true
                 }
             } else if (space === "system") {
-                if (systemLanding && event.key === Qt.Key_Left) {
-                    moveSystemCategory(-1); event.accepted = true
-                } else if (systemLanding && event.key === Qt.Key_Right) {
-                    moveSystemCategory(1); event.accepted = true
-                } else if (systemLanding && event.key === Qt.Key_Up) {
-                    moveSystemCategory(-1); event.accepted = true
-                } else if (systemLanding && event.key === Qt.Key_Down) {
-                    moveSystemCategory(1); event.accepted = true
-                } else if (event.key === Qt.Key_Up) {
+                if (event.key === Qt.Key_Up) {
                     controllerUp(); event.accepted = true
                 } else if (event.key === Qt.Key_Down) {
                     controllerDown(); event.accepted = true
@@ -3809,6 +3777,7 @@ import QtQuick.Controls
                           categoryTarget: root.homeCategoryTarget
                           categoryDirection: root.homeCategoryDirection
                           categoryMotionVelocity: root.homeCategoryPresentationVelocity(0)
+                        onOpenRequested: root.openSystemCategory(index)
                       }
                     Component.onCompleted: root.systemHomeRailRef = systemHomeRail
                 }
@@ -4047,33 +4016,13 @@ import QtQuick.Controls
             Component.onCompleted: root.downloadsHomeRef = downloadsHome
         }
 
-        SystemHome {
-            id: systemLandingHome
-            x: root.homeContentRailX
-            y: root.homeActiveContentOriginY
-            width: root.width - root.homeContentRailX - root.design(40)
-            height: root.homeFocalCardHeight
-            visible: root.space === "system" && root.systemLanding
-            categories: root.systemHomeCards
-            selectedIndex: root.systemHomeCardIndex
-            cardWidth: root.homeNavigationCardWidth
-            cardHeight: root.homeNavigationCardHeight
-            uiScale: root.uiScale
-            typography: typography
-            luluPalette: luluPalette
-            canonicalTexture: orbitTexture
-            canonicalCoordinateRoot: orbitRenderSource
-            canonicalSize: Qt.size(root.width, root.height)
-            onOpenRequested: root.openSystemCategory(index)
-        }
-
         SettingsSpace {
             id: settingsSpace
             x: root.expandedShellX
             y: root.expandedShellY + root.activeHeadingHeight + root.headingCardGap
             width: root.expandedShellWidth
             height: Math.max(1, root.expandedShellBottom - y)
-            visible: root.space === "system" && !root.systemLanding
+            visible: root.space === "system"
                 && root.systemCategories[root.systemCategoryIndex] !== "Utilities"
             categories: root.settingsCategoryModel
             selectedCategory: Math.max(0, root.settingsCategoryModel.findIndex(function(item) {
@@ -4142,7 +4091,7 @@ import QtQuick.Controls
         UtilitiesHome {
             id: utilitiesHome
             anchors.fill: parent
-            visible: root.space === "system" && !root.systemLanding
+            visible: root.space === "system"
                 && root.systemCategories[root.systemCategoryIndex] === "Utilities"
             applications: root.utilities
             uiScale: root.uiScale
@@ -4448,7 +4397,7 @@ import QtQuick.Controls
 
                 ControllerHint {
                     action: "navigation"
-                    label: root.space === "system" && !root.systemLanding
+                    label: root.space === "system"
                         && root.systemCategories[root.systemCategoryIndex] !== "Utilities"
                         ? (root.settingsPanelFocus === "categories"
                             ? "Categories · → Settings" : "Settings · ← Categories")
@@ -4459,7 +4408,7 @@ import QtQuick.Controls
                 }
                 ControllerHint {
                     action: "confirm"
-                    label: root.space === "system" && !root.systemLanding
+                    label: root.space === "system"
                             && root.systemCategories[root.systemCategoryIndex] !== "Utilities"
                         ? (root.settingsPanelFocus === "categories" ? "Enter Settings" : "Select")
                         : root.space === "store" ? "Download"
@@ -4486,7 +4435,7 @@ import QtQuick.Controls
                     luluPalette: luluPalette
                 }
                 ControllerHint {
-                    visible: root.space === "system" && !root.systemLanding
+                    visible: root.space === "system"
                     action: "back"
                     label: "Back"
                     uiScale: root.uiScale

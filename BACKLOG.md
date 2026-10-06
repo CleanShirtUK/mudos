@@ -156,7 +156,8 @@ deployment are complete; physical/presentation acceptance remains.
      contrast while focus moves between panels.
   3. With a controller, move up/down through categories; move right into content;
      navigate controls; use left (or Back where a control consumes left) to
-     return to categories. Back again to System, then Back to Home.
+     return to categories. Back from Settings must go straight to normal Home,
+     with no intermediate System card landing.
   4. Visit Network, Bluetooth, Display, Audio, Controllers, Storage, and System;
      confirm their live models populate/update and category changes do not reset
      discovered state. Check nested details/subviews and unwind each with Back.

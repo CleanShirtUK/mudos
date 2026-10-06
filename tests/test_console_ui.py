@@ -663,9 +663,8 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertIn('onOperationRequested: root.controllerOperation(action, controllerId, player)', shell)
         back = shell.split("function back()", 1)[1].split("NumberAnimation {", 1)[0]
         self.assertLess(back.index("storageSettingsRef.back()"),
-                        back.index('settingsPanelFocus === "content"'))
-        self.assertIn('settingsPanelFocus = "categories"', back)
-        self.assertIn('systemLanding = true', back)
+                        back.index('console.log("SETTINGS_PAGE_CLOSE"'))
+        self.assertIn('space = "home"', back)
         # SettingsSpace intentionally has no Library category tape/rail or
         # page-up/page-down category handlers; its list is authoritative.
         self.assertNotIn('categoryRail', settings_space)
@@ -676,16 +675,14 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertIn('root.embedded && rowDelegate.index === root.selectedIndex',
                       (ROOT / "ui" / "MudosSettingsPage.qml").read_text())
 
-    def test_system_landing_uses_home_focal_card_geometry(self) -> None:
-        system_landing = QML.split('id: systemLandingHome', 1)[1].split('SettingsSpace {', 1)[0]
-        self.assertIn('x: root.homeContentRailX', system_landing)
-        self.assertIn('y: root.homeActiveContentOriginY', system_landing)
-        self.assertIn('width: root.width - root.homeContentRailX - root.design(40)',
-                      system_landing)
-        self.assertIn('height: root.homeFocalCardHeight', system_landing)
+    def test_settings_back_returns_directly_home_without_system_landing(self) -> None:
+        self.assertNotIn('systemLandingHome', QML)
+        self.assertNotIn('property bool systemLanding', QML)
         back = QML.split('function back()', 1)[1].split('NumberAnimation {', 1)[0]
-        self.assertIn('systemLanding = true', back)
         self.assertIn('space = "home"', back)
+        settings_back = back.split('console.log("SETTINGS_PAGE_CLOSE"', 1)[1]
+        self.assertIn('space = "home"', settings_back)
+        self.assertNotIn('settingsPanelFocus === "content"', settings_back)
 
         for page_name in (
                 "SystemSpace.qml", "InternetSettings.qml", "StorageSettings.qml",
@@ -1194,10 +1191,11 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertIn("for (const QString &compositePath : controllerCompositePaths_)", native_shell)
         self.assertIn("Sessiond's connected controller inventory is authoritative", native_shell)
 
-    def test_system_landing_cards_use_home_card_dimensions(self) -> None:
-        system_landing = QML.split('id: systemLandingHome', 1)[1].split('\n        }', 1)[0]
-        self.assertIn('cardWidth: root.homeNavigationCardWidth', system_landing)
-        self.assertIn('cardHeight: root.homeNavigationCardHeight', system_landing)
+    def test_home_system_cards_use_home_card_dimensions(self) -> None:
+        home_system = QML.split('id: systemHomeRail', 1)[1].split(
+            'Component.onCompleted: root.systemHomeRailRef', 1)[0]
+        self.assertIn('cardWidth: root.homeNavigationCardWidth', home_system)
+        self.assertIn('cardHeight: root.homeNavigationCardHeight', home_system)
 
     def test_back_from_utilities_returns_to_main_home_like_other_system_pages(self) -> None:
         back = QML.split("function back() {", 1)[1].split("\n    function ", 1)[0]
