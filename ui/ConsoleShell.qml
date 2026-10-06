@@ -297,6 +297,9 @@ import QtQuick.Controls
     property bool libraryHandoffPending: false
     property var pendingLibraryLaunch: null
     property real homeContentOpacity: 1
+    property bool systemTransitioning: false
+    property bool systemTransitionEntering: true
+    property real systemTransitionProgress: 1
     property real libraryContentOpacity: 0
     property bool homeCategoryTransitioning: false
     property int homeCategoryFrom: 3
@@ -2799,10 +2802,12 @@ import QtQuick.Controls
     }
 
     function openSettingsCategory(target) {
+        var animateEntry = space === "home"
         systemCategoryIndex = settingsCategoryIndex(String(target || "System"))
         systemRowIndex = 0
         systemHomeCardIndex = 0
         space = "system"
+        if (animateEntry) beginSystemEntry()
         settingsPanelFocus = "categories"
         if (settingsSpaceRef) {
             var modelIndex = settingsCategoryModel.findIndex(function(item) {
@@ -2828,11 +2833,31 @@ import QtQuick.Controls
         console.log("SETTINGS_PAGE_OPEN", "category", systemCategories[systemCategoryIndex])
     }
 
+    function beginSystemEntry() {
+        systemTransitionEntering = true
+        systemTransitioning = true
+        systemTransitionProgress = 0
+        homeFadeOut.stop()
+        homeFadeOut.restart()
+        systemTransitionAnimation.restart()
+    }
+
+    function beginSystemExit() {
+        systemTransitionEntering = false
+        systemTransitioning = true
+        systemTransitionProgress = 1
+        homeContentOpacity = 0
+        homeFadeIn.stop()
+        homeFadeIn.restart()
+        systemTransitionAnimation.restart()
+    }
+
     function openSystemCategory(index) {
         systemHomeCardIndex = Math.max(0, Math.min(systemHomeCards.length - 1, index))
         if (systemHomeCards[systemHomeCardIndex] === "Utilities") {
             systemCategoryIndex = systemCategories.indexOf("Utilities")
             space = "system"
+            beginSystemEntry()
             refreshUtilities()
         } else {
             openSettingsCategory(systemCategories[systemCategoryIndex] === "Utilities"
@@ -2966,7 +2991,7 @@ import QtQuick.Controls
                 return
             }
             console.log("SETTINGS_PAGE_CLOSE", "category", systemCategories[systemCategoryIndex])
-            space = "home"
+            beginSystemExit()
             message = ""
         } else if (space === "library") {
             libraryTransitionState = "ACTIVATING"
@@ -2991,6 +3016,24 @@ import QtQuick.Controls
             message = ""
         } else {
             message = ""
+        }
+    }
+
+    NumberAnimation {
+        id: systemTransitionAnimation
+        target: root
+        property: "systemTransitionProgress"
+        to: root.systemTransitionEntering ? 1 : 0
+        duration: 360
+        easing.type: Easing.OutQuint
+        onStopped: {
+            if (root.systemTransitionEntering) {
+                root.systemTransitionProgress = 1
+            } else {
+                root.systemTransitionProgress = 1
+                root.space = "home"
+            }
+            root.systemTransitioning = false
         }
     }
 
@@ -4058,8 +4101,12 @@ import QtQuick.Controls
             y: root.expandedShellY + root.activeHeadingHeight + root.headingCardGap
             width: root.expandedShellWidth
             height: Math.max(1, root.expandedShellBottom - y)
-            visible: root.space === "system"
+            visible: (root.space === "system" || root.systemTransitioning)
                 && root.systemCategories[root.systemCategoryIndex] !== "Utilities"
+            opacity: root.systemTransitionProgress
+            transform: Translate {
+                y: root.design(36) * (1 - root.systemTransitionProgress)
+            }
             categories: root.settingsCategoryModel
             selectedCategory: Math.max(0, root.settingsCategoryModel.findIndex(function(item) {
                 return item.target === root.systemCategories[root.systemCategoryIndex]
@@ -4079,6 +4126,10 @@ import QtQuick.Controls
             x: root.expandedShellX + 22 * root.uiScale
             y: root.expandedShellY + 8 * root.uiScale
             visible: settingsSpace.visible
+            opacity: root.systemTransitionProgress
+            transform: Translate {
+                y: root.design(36) * (1 - root.systemTransitionProgress)
+            }
             text: "SETTINGS"
             color: luluPalette.headingAccent
             font.family: typography.majorHeadingFamily
@@ -4127,8 +4178,12 @@ import QtQuick.Controls
         UtilitiesHome {
             id: utilitiesHome
             anchors.fill: parent
-            visible: root.space === "system"
+            visible: (root.space === "system" || root.systemTransitioning)
                 && root.systemCategories[root.systemCategoryIndex] === "Utilities"
+            opacity: root.systemTransitionProgress
+            transform: Translate {
+                y: root.design(36) * (1 - root.systemTransitionProgress)
+            }
             applications: root.utilities
             uiScale: root.uiScale
             typography: typography

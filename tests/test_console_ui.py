@@ -699,8 +699,21 @@ class ConsoleUiTests(unittest.TestCase):
         back = QML.split('function back()', 1)[1].split('NumberAnimation {', 1)[0]
         self.assertIn('space = "home"', back)
         settings_back = back.split('console.log("SETTINGS_PAGE_CLOSE"', 1)[1]
-        self.assertIn('space = "home"', settings_back)
+        self.assertIn('beginSystemExit()', settings_back)
         self.assertNotIn('settingsPanelFocus === "content"', settings_back)
+        self.assertIn('root.space = "home"', QML[QML.index('id: systemTransitionAnimation'):])
+
+    def test_settings_and_utilities_have_glass_and_system_transitions(self) -> None:
+        settings = (ROOT / "ui" / "SettingsSpace.qml").read_text()
+        utilities = (ROOT / "ui" / "UtilitiesHome.qml").read_text()
+        self.assertIn('objectName: "settingsLeftGlass"', settings)
+        self.assertIn('objectName: "settingsRightGlass"', settings)
+        self.assertIn('objectName: "utilitiesGlassBacking"', utilities)
+        self.assertIn('canonicalTexture: root.canonicalTexture', utilities)
+        self.assertIn('function beginSystemEntry()', QML)
+        self.assertIn('function beginSystemExit()', QML)
+        self.assertIn('systemTransitionAnimation.restart()', QML)
+        self.assertIn('duration: 360', QML)
 
         for page_name in (
                 "SystemSpace.qml", "InternetSettings.qml", "StorageSettings.qml",

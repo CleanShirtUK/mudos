@@ -55,13 +55,24 @@ Item {
     }
     onSelectedIndexChanged: screenshotIndex = 0
 
+    MudosCardSurface {
+        objectName: "utilitiesGlassBacking"
+        anchors.fill: parent
+        anchors.margins: root.inset
+        radius: 20 * root.uiScale
+        uiScale: root.uiScale
+        luluPalette: root.luluPalette
+        canonicalTexture: root.canonicalTexture
+        canonicalCoordinateRoot: root.canonicalCoordinateRoot
+        canonicalSize: root.canonicalSize
+        mappingItem: root
+    }
+
     Rectangle {
         anchors.fill: parent
         anchors.margins: root.inset
         radius: 20 * root.uiScale
-        color: Qt.rgba(root.luluPalette.librarySurface.r,
-                       root.luluPalette.librarySurface.g,
-                       root.luluPalette.librarySurface.b, 0.48)
+        color: "transparent"
         border.color: root.luluPalette.libraryBorder
         border.width: Math.max(1, root.uiScale)
 
