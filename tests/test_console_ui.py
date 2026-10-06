@@ -1302,8 +1302,12 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertIn("libraryTransitionAnimation.restart()", activate)
         self.assertNotIn("launchGame(", activate)
         handoff = shell.split("id: handoffTimer", 1)[1].split("SequentialAnimation", 1)[0]
-        self.assertIn("root.launchGame(game, true)", handoff)
-        self.assertIn("root.startReturnWatch()", handoff)
+        self.assertIn('root.pendingHomeLaunchPhase = "exiting"', handoff)
+        self.assertIn("presentationCoordinator.beginContentExit()", handoff)
+        self.assertNotIn("root.launchGame(game, true)", handoff)
+        self.assertIn('pendingHomeLaunchPhase = "launching"', shell)
+        activation = shell.split('if (space === "library") {', 1)[1].split('if (space === "store") {', 1)[0]
+        self.assertIn("homeFadeIn.stop()", activation)
         library_host = shell.split('LibrarySpace {', 1)[1].split('StoreOptions {', 1)[0]
         self.assertNotIn('anchors.fill: parent', library_host)
         self.assertIn('height: parent.height', library_host)

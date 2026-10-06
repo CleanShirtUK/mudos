@@ -245,12 +245,15 @@ projection corrected; full regression suite passed.
 
 **Status:** FIXED IN SOURCE — dev physical confirmation pending.
 
-- The Library close animation handed the selected game to the shared launch
-  flow, but unlike the Recent launch flow, it did not start the return watcher.
-  This meant a game returning to Lulu could bypass the normal exit choreography.
-- Start the watcher immediately after the Library handoff and cover the contract
-  with a UI regression assertion. Verify the launch/return presentation
-  physically in dev-current; production remains unchanged.
+- Keep the home content faded out while the Library surface moves offscreen.
+  Once Library is hidden, run the wallpaper's `beginContentExit()` animation;
+  only after that completes should the launch overlay appear and the game launch.
+  The previous handoff faded home content in alongside the Library exit, which
+  violated the intended presentation order.
+- The UI now chains the wallpaper exit after Library has left and reuses the
+  existing hidden-home launch handoff (including its return watcher). Regression
+  assertions cover the ordering; verify the sequence physically in dev-current.
+  Production remains unchanged.
 
 ### NOTIFICATIONS-001 — Route transient status messages to Notifications
 

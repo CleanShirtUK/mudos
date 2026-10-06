@@ -2674,7 +2674,7 @@ import QtQuick.Controls
                 libraryContentFadeIn.stop()
                 libraryContentFadeOut.restart()
                 homeFadeOut.stop()
-                homeFadeIn.restart()
+                homeFadeIn.stop()
             }
             return
         }
@@ -2988,6 +2988,8 @@ import QtQuick.Controls
                 root.libraryTransitioning = false
                 root.storeTransitioning = false
                 root.libraryHandoffPending = true
+                if (!root.pendingLibraryLaunch)
+                    homeFadeIn.restart()
                 handoffTimer.restart()
             }
         }
@@ -3050,9 +3052,18 @@ import QtQuick.Controls
             if (root.pendingLibraryLaunch) {
                 var game = root.pendingLibraryLaunch
                 root.pendingLibraryLaunch = null
-                root.traceLaunchEvent("LIBRARY_EXIT_HANDOFF", {game_id: String(game.game_id)})
-                root.launchGame(game, true)
-                root.startReturnWatch()
+                root.traceLaunchEvent("LIBRARY_SURFACE_HIDDEN", {game_id: String(game.game_id)})
+                root.pendingHomeLaunch = game
+                root.pendingHomeLaunchPhase = "exiting"
+                if (presentationCoordinator.beginContentExit()) {
+                    root.traceLaunchEvent("LIBRARY_WALLPAPER_EXIT_STARTED", {
+                        game_id: String(game.game_id)
+                    })
+                } else {
+                    root.pendingHomeLaunch = null
+                    root.pendingHomeLaunchPhase = "idle"
+                    root.homeContentOpacity = 1
+                }
             }
         }
     }
