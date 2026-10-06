@@ -201,6 +201,7 @@ Item {
                 StatusGlyph {
                     glyph: MudosAssetCatalog.icon("download")
                     glyphSize: root.glyphSize
+                    uiScale: root.uiScale
                     targetPaintedHeight: root.glyphSize * 0.72
                     fontFamily: root.typography ? root.typography.iconFamily : "monospace"
                     glyphColor: root.statusColor
@@ -246,8 +247,10 @@ Item {
                     spacing: root.innerSpacing
 
                     StatusGlyph {
+                        objectName: "controllerStatusGlyph"
                         glyph: MudosAssetCatalog.icon("controller")
                         glyphSize: root.glyphSize
+                        uiScale: root.uiScale
                         targetPaintedHeight: root.glyphSize * 0.72
                         fontFamily: root.typography ? root.typography.iconFamily : "monospace"
                         glyphColor: root.statusColor
@@ -288,6 +291,7 @@ Item {
                     ? MudosAssetCatalog.icon("bluetoothOff")
                     : MudosAssetCatalog.icon("bluetoothOn")
                 glyphSize: root.glyphSize
+                uiScale: root.uiScale
                 targetPaintedHeight: root.glyphSize * 0.72
                 fontFamily: root.typography ? root.typography.iconFamily : "monospace"
                 glyphColor: root.bluetoothState === "connected" ? root.luluPalette.headingAccent
@@ -308,6 +312,7 @@ Item {
                     : root.networkConnectionType === "ethernet"
                         ? MudosAssetCatalog.icon("ethernet") : MudosAssetCatalog.icon("wifi")
                 glyphSize: root.glyphSize
+                uiScale: root.uiScale
                 targetPaintedHeight: root.glyphSize * 0.72
                 fontFamily: root.typography ? root.typography.iconFamily : "monospace"
                 glyphColor: root.networkAvailable ? root.statusColor
@@ -327,6 +332,7 @@ Item {
                 StatusGlyph {
                     glyph: MudosAssetCatalog.icon("clock")
                     glyphSize: root.glyphSize
+                    uiScale: root.uiScale
                     targetPaintedHeight: root.glyphSize * 0.72
                     fontFamily: root.typography ? root.typography.iconFamily : "monospace"
                     glyphColor: root.statusColor

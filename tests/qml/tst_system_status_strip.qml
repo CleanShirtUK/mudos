@@ -132,6 +132,24 @@ TestCase {
         compare(strip.x + strip.width, width)
     }
 
+    function test_leading_controller_glyph_painted_bounds_fit_clipped_slot() {
+        strip.controllers = [{index: 1, identity: "glyph-fit-pad", batteryKind: "unknown"}]
+        wait(260)
+        var slot = findChild(strip, "controllerSlot")
+        var glyph = findChild(strip, "controllerStatusGlyph")
+        verify(slot !== null)
+        verify(glyph !== null)
+        verify(slot.clip)
+        verify(glyph.fittedToWidth)
+
+        var bounds = glyph.paintedBounds
+        var epsilon = 0.01
+        verify(bounds.x >= glyph.safeInset - epsilon)
+        verify(bounds.y >= glyph.safeInset - epsilon)
+        verify(bounds.x + bounds.width <= glyph.width - glyph.safeInset + epsilon)
+        verify(bounds.y + bounds.height <= glyph.height - glyph.safeInset + epsilon)
+    }
+
     function test_exit_deadlines_survive_frequent_snapshots_and_staggered_removals() {
         strip.controllers = [
             {index: 1, identity: "departing-pad", batteryKind: "unknown"},
