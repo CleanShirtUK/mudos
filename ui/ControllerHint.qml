@@ -7,7 +7,7 @@ Row {
     property real uiScale: 1
     property var typography
     property var luluPalette
-    property string fontFamily: typography ? typography.interfaceFamily : "JetBrains Mono"
+    property string fontFamily: typography ? typography.interfaceFamily : "monospace"
     readonly property color hintColor: luluPalette.navigationText
     spacing: 5 * uiScale
 

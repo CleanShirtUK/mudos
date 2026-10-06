@@ -12,10 +12,10 @@ Item {
     property var canonicalTexture
     property var canonicalCoordinateRoot
     property size canonicalSize: Qt.size(1280, 720)
-    property real expandedShellX: 0
-    property real expandedShellY: 0
-    property real expandedShellWidth: width
-    property real expandedShellHeight: height
+    property real expandedContentX: 0
+    property real expandedContentY: 0
+    property real expandedContentWidth: width
+    property real expandedContentHeight: height
     property string statusMessage: ""
 
     readonly property var selectedApplication: selectedIndex >= 0
@@ -24,9 +24,19 @@ Item {
         && Array.isArray(selectedApplication.screenshots) ? selectedApplication.screenshots : []
     readonly property var selectedScreenshot: screenshots.length
         ? screenshots[screenshotIndex % screenshots.length] : null
-    readonly property real inset: 34 * uiScale
-    readonly property real gap: 22 * uiScale
-    readonly property real listWidth: Math.max(270 * uiScale, (width - 2 * inset - gap) * 0.34)
+    readonly property real gap: 18 * uiScale
+    readonly property real listWidth: Math.min(380 * uiScale,
+        Math.max(220 * uiScale, (width - 3 * gap) * 0.34))
+    readonly property var controllerHints: {
+        var hints = [{action: "navigation", label: "Applications"}]
+        if (screenshots.length > 1) {
+            hints.push({action: "previousCollection", label: "Screenshot"})
+            hints.push({action: "nextCollection", label: "Screenshot"})
+        }
+        hints.push({action: "confirm", label: "Launch"})
+        hints.push({action: "back", label: "Back"})
+        return hints
+    }
 
     signal launchRequested(string applicationRef)
 
@@ -55,11 +65,10 @@ Item {
     }
     onSelectedIndexChanged: screenshotIndex = 0
 
-    MudosCardSurface {
-        objectName: "utilitiesGlassBacking"
+    MudosPanelSurface {
+        objectName: "utilitiesGlassSubstrate"
         anchors.fill: parent
-        anchors.margins: root.inset
-        radius: 20 * root.uiScale
+        cornerRadius: 18 * root.uiScale
         uiScale: root.uiScale
         luluPalette: root.luluPalette
         canonicalTexture: root.canonicalTexture
@@ -69,223 +78,180 @@ Item {
     }
 
     Rectangle {
-        anchors.fill: parent
-        anchors.margins: root.inset
-        radius: 20 * root.uiScale
-        color: "transparent"
-        border.color: root.luluPalette.libraryBorder
-        border.width: Math.max(1, root.uiScale)
+        id: listPane
+        x: 20 * root.uiScale
+        y: 18 * root.uiScale
+        width: root.listWidth
+        height: Math.max(0, root.height - y - 20 * root.uiScale)
+        radius: 12 * root.uiScale
+        color: root.luluPalette.librarySurface
+        border.color: root.luluPalette.glassBorder
+        border.width: root.uiScale
 
-        Text {
-            id: heading
-            x: 26 * root.uiScale
-            y: 18 * root.uiScale
-            text: "UTILITIES"
-            color: root.luluPalette.headingAccent
-            font.family: root.typography.displayFamily
-            font.weight: root.typography.displayWeight
-            font.pixelSize: 28 * root.uiScale
-        }
+        ListView {
+            id: appList
+            objectName: "utilitiesApplicationRows"
+            anchors.fill: parent
+            anchors.margins: 8 * root.uiScale
+            clip: true
+            model: root.applications
+            spacing: 5 * root.uiScale
+            delegate: Rectangle {
+                required property int index
+                required property var modelData
+                width: appList.width
+                height: 72 * root.uiScale
+                radius: 9 * root.uiScale
+                color: index === root.selectedIndex
+                    ? root.luluPalette.focusedCardSurface : "transparent"
+                border.color: index === root.selectedIndex
+                    ? root.luluPalette.focusIndicator : root.luluPalette.glassBorder
+                border.width: index === root.selectedIndex ? 2 * root.uiScale : root.uiScale
 
-        Item {
-            anchors.left: parent.left
-            anchors.leftMargin: 22 * root.uiScale
-            anchors.top: heading.bottom
-            anchors.topMargin: 16 * root.uiScale
-            anchors.bottom: parent.bottom
-            anchors.bottomMargin: 24 * root.uiScale
-            width: root.listWidth
-
-            Rectangle {
-                anchors.fill: parent
-                radius: 14 * root.uiScale
-                color: Qt.rgba(root.luluPalette.librarySurface.r,
-                               root.luluPalette.librarySurface.g,
-                               root.luluPalette.librarySurface.b, 0.56)
-                border.color: root.luluPalette.libraryBorder
-            }
-
-            ListView {
-                id: appList
-                anchors.fill: parent
-                anchors.margins: 8 * root.uiScale
-                clip: true
-                model: root.applications
-                spacing: 5 * root.uiScale
-                delegate: Rectangle {
-                    required property int index
-                    required property var modelData
-                    width: appList.width
-                    height: 72 * root.uiScale
-                    radius: 10 * root.uiScale
+                Image {
+                    id: appIcon
+                    anchors.left: parent.left
+                    anchors.leftMargin: 10 * root.uiScale
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: 48 * root.uiScale
+                    height: width
+                    source: String(modelData.icon || "")
+                    fillMode: Image.PreserveAspectFit
+                    asynchronous: true
+                }
+                Text {
+                    anchors.left: appIcon.right
+                    anchors.leftMargin: 12 * root.uiScale
+                    anchors.right: parent.right
+                    anchors.rightMargin: 10 * root.uiScale
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: String(modelData.name || modelData.application_id || "Application")
                     color: index === root.selectedIndex
-                        ? Qt.rgba(root.luluPalette.focusIndicator.r,
-                                  root.luluPalette.focusIndicator.g,
-                                  root.luluPalette.focusIndicator.b, 0.20)
-                        : Qt.rgba(root.luluPalette.primaryText.r,
-                                  root.luluPalette.primaryText.g,
-                                  root.luluPalette.primaryText.b, 0.035)
-                    border.color: index === root.selectedIndex
-                        ? root.luluPalette.focusIndicator : root.luluPalette.libraryBorder
-                    border.width: index === root.selectedIndex ? 2 * root.uiScale : 1
-
-                    Image {
-                        id: appIcon
-                        anchors.left: parent.left
-                        anchors.leftMargin: 10 * root.uiScale
-                        anchors.verticalCenter: parent.verticalCenter
-                        width: 48 * root.uiScale
-                        height: width
-                        source: String(modelData.icon || "")
-                        fillMode: Image.PreserveAspectFit
-                        asynchronous: true
-                    }
-                    Text {
-                        anchors.left: appIcon.right
-                        anchors.leftMargin: 12 * root.uiScale
-                        anchors.right: parent.right
-                        anchors.rightMargin: 10 * root.uiScale
-                        anchors.verticalCenter: parent.verticalCenter
-                        text: String(modelData.name || modelData.application_id || "Application")
-                        color: index === root.selectedIndex
-                            ? root.luluPalette.selectedText : root.luluPalette.primaryText
-                        font.family: root.typography.interfaceFamily
-                        font.pixelSize: 15 * root.uiScale
-                        elide: Text.ElideRight
-                    }
-                    MouseArea {
-                        anchors.fill: parent
-                        onClicked: root.selectedIndex = index
-                    }
+                        ? root.luluPalette.selectedText : root.luluPalette.primaryText
+                    font.family: root.typography.interfaceFamily
+                    font.pixelSize: root.typography.size("body", 15)
+                    elide: Text.ElideRight
+                }
+                MouseArea {
+                    anchors.fill: parent
+                    onClicked: root.selectedIndex = index
                 }
             }
         }
+    }
 
-        Item {
-            id: detail
-            anchors.left: parent.left
-            anchors.leftMargin: 22 * root.uiScale + root.listWidth + root.gap
-            anchors.right: parent.right
-            anchors.rightMargin: 22 * root.uiScale
-            anchors.top: heading.bottom
-            anchors.topMargin: 16 * root.uiScale
-            anchors.bottom: parent.bottom
-            anchors.bottomMargin: 22 * root.uiScale
-            visible: !!root.selectedApplication
+    Rectangle {
+        id: detailPane
+        x: listPane.x + listPane.width + root.gap
+        y: listPane.y
+        width: Math.max(0, root.width - x - 20 * root.uiScale)
+        height: listPane.height
+        radius: 12 * root.uiScale
+        color: root.luluPalette.librarySurface
+        border.color: root.luluPalette.glassBorder
+        border.width: root.uiScale
+        visible: !!root.selectedApplication
 
-            Rectangle {
-                anchors.fill: parent
-                radius: 14 * root.uiScale
-                color: Qt.rgba(root.luluPalette.librarySurface.r,
-                               root.luluPalette.librarySurface.g,
-                               root.luluPalette.librarySurface.b, 0.56)
-                border.color: root.luluPalette.libraryBorder
-            }
+        readonly property real mediaAspectRatio: {
+            var image = root.selectedScreenshot
+            var imageWidth = image && Number(image.width) > 0 ? Number(image.width) : 16
+            var imageHeight = image && Number(image.height) > 0 ? Number(image.height) : 9
+            return imageWidth / imageHeight
+        }
+        readonly property real mediaHeight: Math.min(height * 0.43, 300 * root.uiScale)
 
-            Image {
-                id: screenshot
-                anchors.top: parent.top
-                anchors.left: parent.left
-                anchors.right: parent.right
-                anchors.margins: 14 * root.uiScale
-                height: Math.min(parent.height * 0.53, width * 0.52)
-                source: root.selectedScreenshot ? String(root.selectedScreenshot.url || "")
-                    : String(root.selectedApplication ? root.selectedApplication.icon || "" : "")
-                fillMode: Image.PreserveAspectFit
-                asynchronous: true
-                cache: true
-            }
-
-            Text {
-                anchors.top: screenshot.bottom
-                anchors.left: parent.left
-                anchors.right: parent.right
-                anchors.margins: 18 * root.uiScale
-                text: root.selectedApplication ? String(root.selectedApplication.name || "") : ""
-                color: root.luluPalette.primaryText
-                font.family: root.typography.displayFamily
-                font.weight: root.typography.displayWeight
-                font.pixelSize: 24 * root.uiScale
-                elide: Text.ElideRight
-            }
-
-            Text {
-                id: summary
-                anchors.top: screenshot.bottom
-                anchors.left: parent.left
-                anchors.right: parent.right
-                anchors.margins: 18 * root.uiScale
-                anchors.topMargin: 52 * root.uiScale
-                text: root.selectedApplication
-                    ? String(root.selectedApplication.summary || "Application details are not available.") : ""
-                color: root.luluPalette.secondaryText
-                font.family: root.typography.interfaceFamily
-                font.pixelSize: 14 * root.uiScale
-                wrapMode: Text.WordWrap
-                maximumLineCount: 2
-                elide: Text.ElideRight
-            }
-
-            Text {
-                id: description
-                anchors.top: summary.bottom
-                anchors.left: parent.left
-                anchors.right: parent.right
-                anchors.margins: 18 * root.uiScale
-                anchors.topMargin: 8 * root.uiScale
-                height: Math.max(0, parent.height - y - 90 * root.uiScale)
-                text: root.selectedApplication
-                    ? String(root.selectedApplication.description || "") : ""
-                color: root.luluPalette.secondaryText
-                font.family: root.typography.interfaceFamily
-                font.pixelSize: 12 * root.uiScale
-                wrapMode: Text.WordWrap
-                maximumLineCount: 5
-                elide: Text.ElideRight
-                clip: true
-            }
-
-            Text {
-                anchors.left: parent.left
-                anchors.leftMargin: 18 * root.uiScale
-                anchors.bottom: parent.bottom
-                anchors.bottomMargin: 46 * root.uiScale
-                text: root.selectedApplication
-                    ? [root.selectedApplication.developer || root.selectedApplication.publisher,
-                       root.selectedApplication.version ? "Version " + root.selectedApplication.version : "",
-                       root.selectedApplication.categories ? root.selectedApplication.categories.join(" · ") : ""]
-                        .filter(function(value) { return !!value }).join("  ·  ") : ""
-                color: root.luluPalette.mutedText
-                font.family: root.typography.interfaceFamily
-                font.pixelSize: 11 * root.uiScale
-                elide: Text.ElideRight
-                width: parent.width - 36 * root.uiScale
-            }
-
-            Text {
-                anchors.right: parent.right
-                anchors.rightMargin: 18 * root.uiScale
-                anchors.bottom: parent.bottom
-                anchors.bottomMargin: 16 * root.uiScale
-                text: root.screenshots.length > 1
-                    ? "◀  Screenshot " + (root.screenshotIndex + 1) + " / " + root.screenshots.length + "  ▶     A  Launch"
-                    : "A  Launch"
-                color: root.luluPalette.headingAccent
-                font.family: root.typography.interfaceFamily
-                font.pixelSize: 13 * root.uiScale
-            }
+        Image {
+            id: screenshot
+            objectName: "utilitiesScreenshot"
+            anchors.top: parent.top
+            anchors.topMargin: 12 * root.uiScale
+            anchors.horizontalCenter: parent.horizontalCenter
+            width: Math.min(parent.width - 28 * root.uiScale,
+                            parent.mediaHeight * parent.mediaAspectRatio)
+            height: Math.min(parent.mediaHeight, width / parent.mediaAspectRatio)
+            source: root.selectedScreenshot ? String(root.selectedScreenshot.url || "")
+                : String(root.selectedApplication ? root.selectedApplication.icon || "" : "")
+            fillMode: Image.PreserveAspectFit
+            asynchronous: true
+            cache: true
         }
 
         Text {
-            anchors.centerIn: parent
-            visible: !root.selectedApplication
-            text: root.statusMessage || "No managed Flatpak utilities are installed."
+            id: appTitle
+            anchors.top: screenshot.bottom
+            anchors.topMargin: 12 * root.uiScale
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.leftMargin: 18 * root.uiScale
+            anchors.rightMargin: 18 * root.uiScale
+            text: root.selectedApplication ? String(root.selectedApplication.name || "") : ""
+            color: root.luluPalette.primaryText
+            font.family: root.typography.displayFamily
+            font.weight: root.typography.displayWeight
+            font.pixelSize: root.typography.size("heading", 24)
+            elide: Text.ElideRight
+        }
+
+        Text {
+            id: summary
+            anchors.top: appTitle.bottom
+            anchors.topMargin: 7 * root.uiScale
+            anchors.left: appTitle.left
+            anchors.right: appTitle.right
+            text: root.selectedApplication
+                ? String(root.selectedApplication.summary || "Application details are not available.") : ""
             color: root.luluPalette.secondaryText
             font.family: root.typography.interfaceFamily
-            font.pixelSize: 16 * root.uiScale
+            font.pixelSize: root.typography.size("body", 14)
             wrapMode: Text.WordWrap
-            width: parent.width * 0.72
-            horizontalAlignment: Text.AlignHCenter
+            maximumLineCount: 2
+            elide: Text.ElideRight
         }
+
+        Text {
+            id: description
+            anchors.top: summary.bottom
+            anchors.topMargin: 8 * root.uiScale
+            anchors.left: appTitle.left
+            anchors.right: appTitle.right
+            height: Math.max(0, detailPane.height - y - 46 * root.uiScale)
+            text: root.selectedApplication
+                ? String(root.selectedApplication.description || "") : ""
+            color: root.luluPalette.secondaryText
+            font.family: root.typography.interfaceFamily
+            font.pixelSize: root.typography.size("body", 12)
+            wrapMode: Text.WordWrap
+            maximumLineCount: 6
+            elide: Text.ElideRight
+            clip: true
+        }
+
+        Text {
+            anchors.left: appTitle.left
+            anchors.right: appTitle.right
+            anchors.bottom: parent.bottom
+            anchors.bottomMargin: 12 * root.uiScale
+            text: root.selectedApplication
+                ? [root.selectedApplication.developer || root.selectedApplication.publisher,
+                   root.selectedApplication.version ? "Version " + root.selectedApplication.version : "",
+                   root.selectedApplication.categories ? root.selectedApplication.categories.join(" · ") : ""]
+                    .filter(function(value) { return !!value }).join("  ·  ") : ""
+            color: root.luluPalette.mutedText
+            font.family: root.typography.interfaceFamily
+            font.pixelSize: root.typography.size("hint", 11)
+            elide: Text.ElideRight
+        }
+    }
+
+    MudosEmptyState {
+        anchors.centerIn: parent
+        visible: !root.selectedApplication
+        iconName: "applications"
+        title: "No managed utilities"
+        detail: root.statusMessage || "No managed Flatpak utilities are installed."
+        uiScale: root.uiScale
+        typography: root.typography
+        luluPalette: root.luluPalette
+        maximumTextWidth: root.width * 0.62
     }
 }

@@ -3,6 +3,38 @@
 Current engineering work is tracked here. Historical reconciliation notes are
 retained in `docs/reconciliation-backlog.md` and are not the status authority.
 
+## VALIDATION
+
+### UI-001 — Lock the default visual baseline before theming
+
+**Status:** VALIDATION — implementation is in progress toward deployment; keep
+open for one operator visual recording/acceptance sweep on `/opt/lulu/dev-current`.
+THEME-001 remains blocked until that acceptance is recorded. `/opt/lulu/current`
+must remain untouched.
+
+- Stabilize the current accepted UI as the internal default baseline: neutral
+  charcoal structural surfaces, one glass substrate per elevation root,
+  shared expanded-shell geometry, shell-owned controller hints, and reusable
+  empty states. Do not build a theme engine in this item.
+- Preserve accepted Home/Recent composition, Settings navigation and panes,
+  Library/Store information architecture, system transitions, Guide semantics,
+  provider behavior, controller mapping, and lifecycle behavior.
+- Physical validation must cover Recent end-card clipping, status-strip
+  placement, Library/Installable rail clearance, Settings glass/focus,
+  Utilities layout/media/hints, centered Downloads glass/empty-state/hints,
+  Guide materials, and readability over bright and dark backdrop regions.
+- Operator acceptance is the closure gate. Record one sweep covering those
+  items and confirm that no content surface obscures the global hint band.
+
+### THEME-001 — Theme engine and external theme configuration
+
+**Status:** BLOCKED by UI-001 physical acceptance. Do not begin until the
+default visual baseline is explicitly accepted and frozen.
+
+- Future work: build theme selection/configuration on the accepted semantic
+  palette, typography roles, and icon authority. UI-001 must not add external
+  theme loading or SVG overrides.
+
 ## CLOSED
 
 ### UNINSTALL-001 — Complete provider-owned uninstall coverage

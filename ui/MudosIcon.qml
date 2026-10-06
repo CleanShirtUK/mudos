@@ -16,7 +16,7 @@ Item {
     TextMetrics {
         id: glyphMetrics
         text: root.glyph || MudosAssetCatalog.icon(root.name)
-        font.family: root.typography ? root.typography.iconFamily : "JetBrains Mono"
+        font.family: root.typography ? root.typography.iconFamily : "monospace"
         font.pixelSize: root.iconSize
     }
 
@@ -29,7 +29,7 @@ Item {
         height: root.height
         text: glyphMetrics.text
         color: root.semanticColor
-        font.family: root.typography ? root.typography.iconFamily : "JetBrains Mono"
+        font.family: root.typography ? root.typography.iconFamily : "monospace"
         font.pixelSize: root.iconSize
         verticalAlignment: Text.AlignVCenter
         renderType: Text.NativeRendering

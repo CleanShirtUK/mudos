@@ -1,5 +1,6 @@
 import QtQuick
 import Mudos.Poc 1.0
+import "MudosAssetCatalog.js" as MudosAssetCatalog
 
 // Shell-owned persistent status presentation. Data is intentionally supplied
 // through provider-neutral properties so controller/download services can bind
@@ -133,8 +134,8 @@ Item {
         objectName: "statusBacking"
         anchors.fill: parent
         radius: 10 * root.uiScale
-        color: root.luluPalette ? root.luluPalette.glassTint : "#1d2a49"
-        border.color: root.luluPalette ? root.luluPalette.glassBorder : "#455274"
+        color: root.luluPalette ? root.luluPalette.glassTint : Qt.rgba(0.025, 0.027, 0.032, 0.88)
+        border.color: root.luluPalette ? root.luluPalette.glassBorder : "#665f68"
         border.width: root.uiScale
 
         MudosGlassItem {
@@ -154,6 +155,13 @@ Item {
             edgeLightStrength: 0.10
             edgeLightDirection: Qt.vector2d(1, -1)
             transparentOutsideMask: true
+        }
+
+        Rectangle {
+            anchors.fill: parent
+            radius: statusBacking.radius
+            color: Qt.rgba(0.008, 0.009, 0.012, 0.30)
+            border.width: 0
         }
     }
 
@@ -191,16 +199,16 @@ Item {
                 spacing: root.innerSpacing
 
                 StatusGlyph {
-                    glyph: "\uf019" // fa-download
+                    glyph: MudosAssetCatalog.icon("download")
                     glyphSize: root.glyphSize
                     targetPaintedHeight: root.glyphSize * 0.72
-                    fontFamily: root.typography ? root.typography.iconFamily : "JetBrains Mono"
+                    fontFamily: root.typography ? root.typography.iconFamily : "monospace"
                     glyphColor: root.statusColor
                 }
                 Text {
                     text: String(root.activeDownloadCount)
                     color: root.statusColor
-                    font.family: root.typography ? root.typography.displayFamily : "JetBrains Mono"
+                    font.family: root.typography ? root.typography.displayFamily : "monospace"
                     font.weight: root.typography ? root.typography.displayWeight : Font.Black
                     font.pixelSize: root.valueSize
                     height: root.glyphSize
@@ -238,16 +246,16 @@ Item {
                     spacing: root.innerSpacing
 
                     StatusGlyph {
-                        glyph: "\uf11b" // fa-gamepad
+                        glyph: MudosAssetCatalog.icon("controller")
                         glyphSize: root.glyphSize
                         targetPaintedHeight: root.glyphSize * 0.72
-                        fontFamily: root.typography ? root.typography.iconFamily : "JetBrains Mono"
+                        fontFamily: root.typography ? root.typography.iconFamily : "monospace"
                         glyphColor: root.statusColor
                     }
                     Text {
                         text: player
                         color: root.statusColor
-                        font.family: root.typography ? root.typography.displayFamily : "JetBrains Mono"
+                        font.family: root.typography ? root.typography.displayFamily : "monospace"
                         font.weight: root.typography ? root.typography.displayWeight : Font.Black
                         font.pixelSize: root.valueSize
                         height: root.glyphSize
@@ -257,7 +265,7 @@ Item {
                         visible: batteryKind === "percent" && batteryPercentage >= 0
                         text: ": " + battery
                         color: root.statusColor
-                        font.family: root.typography ? root.typography.displayFamily : "JetBrains Mono"
+                        font.family: root.typography ? root.typography.displayFamily : "monospace"
                         font.weight: root.typography ? root.typography.displayWeight : Font.Black
                         font.pixelSize: root.valueSize
                         height: root.glyphSize
@@ -277,10 +285,11 @@ Item {
                 x: parent.contentInset
                 objectName: "bluetoothStatusIcon"
                 glyph: root.bluetoothState === "off" || root.bluetoothState === "unavailable"
-                    ? String.fromCodePoint(0xF00B0) : String.fromCodePoint(0xF00AF)
+                    ? MudosAssetCatalog.icon("bluetoothOff")
+                    : MudosAssetCatalog.icon("bluetoothOn")
                 glyphSize: root.glyphSize
                 targetPaintedHeight: root.glyphSize * 0.72
-                fontFamily: root.typography ? root.typography.iconFamily : "JetBrains Mono"
+                fontFamily: root.typography ? root.typography.iconFamily : "monospace"
                 glyphColor: root.bluetoothState === "connected" ? root.luluPalette.headingAccent
                     : root.bluetoothState === "off" ? root.luluPalette.warning
                     : root.bluetoothState === "unavailable" ? root.luluPalette.secondaryText
@@ -295,12 +304,12 @@ Item {
                 id: networkIcon
                 objectName: "networkIcon"
                 x: root.groupSpacing
-                glyph: !root.networkAvailable ? "\uf6a9"
+                glyph: !root.networkAvailable ? MudosAssetCatalog.icon("wifiOff")
                     : root.networkConnectionType === "ethernet"
-                        ? String.fromCodePoint(0xF0201) : "\uf1eb"
+                        ? MudosAssetCatalog.icon("ethernet") : MudosAssetCatalog.icon("wifi")
                 glyphSize: root.glyphSize
                 targetPaintedHeight: root.glyphSize * 0.72
-                fontFamily: root.typography ? root.typography.iconFamily : "JetBrains Mono"
+                fontFamily: root.typography ? root.typography.iconFamily : "monospace"
                 glyphColor: root.networkAvailable ? root.statusColor
                     : (root.luluPalette ? root.luluPalette.warning : "#ffd17d")
             }
@@ -316,16 +325,16 @@ Item {
                 spacing: root.innerSpacing
 
                 StatusGlyph {
-                    glyph: "\uf017" // fa-clock-o
+                    glyph: MudosAssetCatalog.icon("clock")
                     glyphSize: root.glyphSize
                     targetPaintedHeight: root.glyphSize * 0.72
-                    fontFamily: root.typography ? root.typography.iconFamily : "JetBrains Mono"
+                    fontFamily: root.typography ? root.typography.iconFamily : "monospace"
                     glyphColor: root.statusColor
                 }
                 Text {
                     text: root.currentTime
                     color: root.statusColor
-                    font.family: root.typography ? root.typography.displayFamily : "JetBrains Mono"
+                    font.family: root.typography ? root.typography.displayFamily : "monospace"
                     font.weight: root.typography ? root.typography.displayWeight : Font.Black
                     font.pixelSize: root.valueSize
                     height: root.glyphSize

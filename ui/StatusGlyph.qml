@@ -5,7 +5,7 @@ Item {
     id: root
 
     property string glyph: ""
-    property string fontFamily: "JetBrains Mono"
+    property string fontFamily: "monospace"
     property real glyphSize: 18
     property real targetPaintedHeight: glyphSize * 0.72
     property color glyphColor: "white"

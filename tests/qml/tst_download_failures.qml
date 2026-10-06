@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Window
 import QtTest
 import "../../ui" as UI
 
@@ -6,13 +7,19 @@ TestCase {
     name: "DownloadFailures"
     width: 1280
     height: 720
+    when: windowShown
     UI.LuluPalette { id: palette }
     UI.Typography { id: fonts }
-    UI.DownloadsHome {
-        id: downloads
-        anchors.fill: parent
-        luluPalette: palette
-        typography: fonts
+    Window {
+        width: 1280
+        height: 720
+        visible: true
+        UI.DownloadsHome {
+            id: downloads
+            anchors.fill: parent
+            luluPalette: palette
+            typography: fonts
+        }
     }
     SignalSpy { id: retries; target: downloads; signalName: "retryRequested" }
 
@@ -24,7 +31,6 @@ TestCase {
         verify(downloads.failureReason(failure).indexOf("No emulator maps this platform") >= 0)
         verify(downloads.failureReason(failure).indexOf("unsupported-platform") >= 0)
         compare(downloads.actionText(failure), "")
-        compare(downloads.actionLabel(failure), "")
         downloads.activateSelected()
         compare(retries.count, 0)
         failure.retryable = false
@@ -45,9 +51,11 @@ TestCase {
              error: {code: "unsupported-platform", message: "A long failure reason that must wrap across the row instead of being cut off or hidden behind the clipped left edge of Downloads.", retryable: false}},
             {job_id: "second", state: "transferring", title: "Second", retryable: true}
         ]})
-        wait(1)
+        wait(10)
         var list = findChild(downloads, "downloadJobRows")
         verify(list !== null)
+        list.forceLayout()
+        wait(20)
         var row = null
         for (var childIndex = 0; childIndex < list.contentItem.children.length; ++childIndex) {
             var child = list.contentItem.children[childIndex]
@@ -190,27 +198,26 @@ TestCase {
         compare(list.currentIndex, 1)
     }
 
-    function test_six_normal_rows_fit_without_clipping_the_last_row() {
+    function test_six_normal_rows_scroll_in_bounded_centered_panel() {
         var rows = []
         for (var i = 0; i < 6; ++i)
             rows.push({job_id: "row-" + i, state: "queued", title: "Download " + i})
         downloads.snapshot = JSON.stringify({jobs: rows})
-        wait(1)
+        wait(10)
         var list = findChild(downloads, "downloadJobRows")
         verify(list !== null)
-        verify(list.height >= list.contentHeight,
-               "the visible viewport should contain all six normal rows")
+        list.forceLayout()
+        wait(20)
+        verify(list.height < list.contentHeight,
+               "bounded centered panel should scroll longer job lists")
         verify(list.contentHeight >= 6 * 88,
                "six complete row delegates should be laid out: content="
                + list.contentHeight + " count=" + list.model.count)
-        var hints = findChild(downloads, "downloadControllerHints")
-        verify(hints !== null)
-        var listBottom = list.mapToItem(downloads, 0, list.height).y
-        var hintsTop = hints.mapToItem(downloads, 0, 0).y
-        verify(hintsTop >= listBottom,
-               "controller hints must not overlap the last visible row: hints="
-               + hintsTop + " listBottom=" + listBottom)
-        verify(hintsTop + hints.height <= downloads.height,
-               "controller hints must remain inside the Downloads surface")
+        compare(downloads.controllerHints[downloads.controllerHints.length - 1].label, "Back")
+        verify(downloads.panelWidth <= downloads.expandedContentWidth)
+        verify(downloads.panelHeight <= downloads.expandedContentBottom - downloads.expandedContentY)
+        verify(Math.abs(downloads.panelX + downloads.panelWidth / 2
+                        - downloads.expandedContentX - downloads.expandedContentWidth / 2) < 1)
+        verify(findChild(downloads, "downloadControllerHints") === null)
     }
 }

@@ -57,6 +57,7 @@ TestCase {
     }
 
     function test_two_panels_have_no_secondary_category_rail() {
+        verify(findChild(settings, "settingsGlassSubstrate") !== null)
         verify(findChild(settings, "settingsCategoryPanel") !== null)
         verify(findChild(settings, "settingsContentPanel") !== null)
         verify(findChild(settings, "settingsContentHost") !== null)

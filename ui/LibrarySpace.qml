@@ -38,6 +38,7 @@ Item {
     property rect contentBounds: Qt.rect(0, 0, width, height)
     property real contentBottom: parent ? parent.height : 0
     property real contentSideMargin: 72 * uiScale
+    property real categoryTapeRightInset: 0
     property string headingText: "LIBRARY"
     property string sectionTitle: ""
     property string emptyText: "No installed games"
@@ -70,8 +71,8 @@ Item {
     // Video previews use the Qt image plugin only. Retain the explicit false
     // switch as a guard against reintroducing in-process Qt Multimedia playback.
     readonly property bool videoPreviewsEnabled: false
-    property real internalSurfaceOpacity: 0.40
-    readonly property string libraryFontFamily: "JetBrains Mono"
+    property real internalSurfaceOpacity: 0.64
+    readonly property string libraryFontFamily: typography ? typography.displayFamily : "monospace"
     readonly property real frameMargin: 30 * uiScale
     readonly property rect contentFrameRect: Qt.rect(
         contentBounds.x + frameMargin, contentBounds.y + frameMargin,
@@ -297,8 +298,10 @@ Item {
         }
         ListView {
             id: categoryTape
+            objectName: "libraryCategoryTape"
             x: 0; y: 50 * root.uiScale
-            width: parent.width; height: 28 * root.uiScale
+            width: Math.max(0, parent.width - root.categoryTapeRightInset)
+            height: 28 * root.uiScale
             orientation: ListView.Horizontal
             spacing: 26 * root.uiScale
             clip: true; interactive: false

@@ -17,6 +17,10 @@ Item {
     property var canonicalTexture
     property var canonicalCoordinateRoot
     property size canonicalSize: Qt.size(1280, 720)
+    property real expandedContentX: 0
+    property real expandedContentY: 0
+    property real expandedContentWidth: width
+    property real expandedContentBottom: height
     property var jobs: []
 
     signal backRequested()
@@ -31,6 +35,30 @@ Item {
     readonly property var activeStates: ["starting", "transferring", "finalizing"]
     readonly property var queuedStates: ["queued", "paused"]
     readonly property var historyStates: ["completed", "cancelled"]
+    readonly property real panelWidth: Math.min(expandedContentWidth, 780 * uiScale)
+    readonly property real panelHeight: Math.min(
+        Math.max(1, expandedContentBottom - expandedContentY), 610 * uiScale)
+    readonly property real panelX: expandedContentX + (expandedContentWidth - panelWidth) / 2
+    readonly property real panelY: expandedContentY
+        + (expandedContentBottom - expandedContentY - panelHeight) / 2
+    readonly property var controllerHints: {
+        var hints = []
+        if (confirmationPending) {
+            hints.push({action: "confirm", label: "Confirm"})
+            hints.push({action: "back", label: "Back"})
+            return hints
+        }
+        var job = selectedJob()
+        var primary = job ? actionText(job) : ""
+        if (primary)
+            hints.push({action: "confirm", label: primary})
+        if (job && String(job.state) === "failed")
+            hints.push({action: "options", label: "Clear"})
+        else if (canCancel(job))
+            hints.push({action: "options", label: "Cancel"})
+        hints.push({action: "back", label: "Back"})
+        return hints
+    }
 
     // Completed and cancelled history is intentionally not rendered. Failed
     // jobs remain here as the user-facing retry surface until a new attempt
@@ -233,6 +261,11 @@ Item {
         return job && job.retryable === true && (!job.error || job.error.retryable === true)
     }
 
+    function canCancel(job) {
+        return job && ["queued", "starting", "transferring", "finalizing", "paused"]
+            .indexOf(String(job.state)) >= 0
+    }
+
     // Keep the normalized state vocabulary explicit at this presentation
     // boundary; provider adapters never appear in QML.
     function normalizedState(job) {
@@ -243,18 +276,10 @@ Item {
         return state
     }
 
-    function actionLabel(job) {
-        if (!job) return ""
-        if (String(job.state) === "paused" && job.pause_supported) return "A  RESUME"
-        if (["starting", "transferring"].indexOf(String(job.state)) >= 0
-                && job.pause_supported) return "A  PAUSE"
-        if (String(job.state) === "failed" && canRetry(job)) return "A  RETRY"
-        return ""
-    }
-
     function actionText(job) {
         if (!job) return ""
         if (String(job.state) === "failed") return canRetry(job) ? "Retry" : ""
+        if (!job.pause_supported) return ""
         return String(job.state) === "paused" ? "Resume" : "Pause"
     }
 
@@ -273,16 +298,20 @@ Item {
 
     Rectangle { anchors.fill: parent; color: root.luluPalette.overlayBackdrop }
 
-    Rectangle {
+    MudosPanelSurface {
         id: panel
-        anchors.right: parent.right
-        anchors.top: parent.top
-        anchors.bottom: parent.bottom
-        width: Math.min(parent.width * 0.48, 560 * root.uiScale)
-        color: root.luluPalette.overlaySurface
-        radius: 10 * root.uiScale
-        border.color: root.luluPalette.glassBorder
-        border.width: root.uiScale
+        objectName: "downloadsGlassPanel"
+        x: root.panelX
+        y: root.panelY
+        width: root.panelWidth
+        height: root.panelHeight
+        cornerRadius: 18 * root.uiScale
+        uiScale: root.uiScale
+        luluPalette: root.luluPalette
+        canonicalTexture: root.canonicalTexture
+        canonicalCoordinateRoot: root.canonicalCoordinateRoot
+        canonicalSize: root.canonicalSize
+        mappingItem: panel
         clip: true
 
         Column {
@@ -290,7 +319,7 @@ Item {
             anchors.leftMargin: 24 * root.uiScale
             anchors.rightMargin: 24 * root.uiScale
             anchors.topMargin: 12 * root.uiScale
-            anchors.bottomMargin: 12 * root.uiScale
+            anchors.bottomMargin: 14 * root.uiScale
             spacing: 8 * root.uiScale
 
             Text {
@@ -321,9 +350,7 @@ Item {
                 visible: root.serviceAvailable && !root.confirmationPending && root.jobs.length > 0
                 width: parent.width - 8 * root.uiScale
                 anchors.horizontalCenter: parent.horizontalCenter
-                implicitHeight: Math.min(root.jobs.length * (88 * root.uiScale + spacing),
-                    576 * root.uiScale)
-                height: implicitHeight
+                height: visible ? Math.max(0, parent.height - 112 * root.uiScale) : 0
                 spacing: 8 * root.uiScale
                 clip: true
                 topMargin: 4 * root.uiScale
@@ -383,40 +410,30 @@ Item {
                 }
             }
 
-            Text { visible: !root.confirmationPending && (!root.serviceAvailable || root.jobs.length === 0); text: root.serviceAvailable ? "No active downloads" : "Acquisition service unavailable"; color: root.luluPalette.secondaryText; font.family: root.typography.interfaceFamily; font.pixelSize: root.typography.size("body", 20); horizontalAlignment: Text.AlignHCenter; width: parent.width; topPadding: 100 * root.uiScale } // No downloads / unavailable
-            Text { visible: root.confirmationPending; text: "Cancel Download"; color: root.luluPalette.secondaryText; font.family: root.typography.interfaceFamily; font.pixelSize: root.typography.size("body", 17); width: parent.width; horizontalAlignment: Text.AlignHCenter }
-        }
-
-        Row {
-            objectName: "downloadControllerHints"
-            anchors.left: parent.left
-            anchors.leftMargin: 24 * root.uiScale
-            anchors.bottom: parent.bottom
-            anchors.bottomMargin: 12 * root.uiScale
-            spacing: 14 * root.uiScale
-            ControllerHint {
-                visible: root.confirmationPending || root.actionLabel(root.selectedJob()) !== ""
-                action: "confirm"
-                label: root.confirmationPending ? "Confirm" : (root.selectedJob() === null ? "" : root.actionText(root.selectedJob()))
-                uiScale: root.uiScale
-                typography: root.typography
-                luluPalette: root.luluPalette
+            Item {
+                visible: !root.confirmationPending
+                    && (!root.serviceAvailable || root.jobs.length === 0)
+                width: parent.width
+                height: Math.max(150 * root.uiScale, parent.height - 100 * root.uiScale)
+                MudosEmptyState {
+                    anchors.centerIn: parent
+                    iconName: root.serviceAvailable ? "download" : "warning"
+                    title: root.serviceAvailable ? "No active downloads" : "Downloads unavailable"
+                    detail: root.serviceAvailable ? "Active and failed jobs will appear here."
+                        : "The acquisition service is unavailable."
+                    uiScale: root.uiScale
+                    typography: root.typography
+                    luluPalette: root.luluPalette
+                }
             }
-            ControllerHint {
-                visible: !root.confirmationPending && root.selectedJob() !== null
-                    && String(root.selectedJob().state) !== "cancelling"
-                action: "options"
-                label: root.selectedJob() === null ? "" : (String(root.selectedJob().state) === "failed" ? "Clear" : "Cancel")
-                uiScale: root.uiScale
-                typography: root.typography
-                luluPalette: root.luluPalette
-            }
-            ControllerHint {
-                action: "back"
-                label: "Back"
-                uiScale: root.uiScale
-                typography: root.typography
-                luluPalette: root.luluPalette
+            Text {
+                visible: root.confirmationPending
+                text: "Confirm cancellation of the selected job."
+                color: root.luluPalette.secondaryText
+                font.family: root.typography.interfaceFamily
+                font.pixelSize: root.typography.size("body", 17)
+                width: parent.width
+                wrapMode: Text.Wrap
             }
         }
     }

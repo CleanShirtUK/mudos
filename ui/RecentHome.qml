@@ -336,7 +336,7 @@ Item {
         visible: !recentModel || recentRepeater.count === 0
         text: "No recent games yet"
         color: luluPalette.mutedText
-        font.family: typography ? typography.interfaceFamily : "JetBrains Mono"
+        font.family: typography ? typography.interfaceFamily : "monospace"
         font.pixelSize: typography ? typography.size("body", 24) : 24 * uiScale
     }
 

@@ -1,0 +1,69 @@
+import QtQuick
+import Mudos.Poc 1.0
+
+// Structural glass substrate. Use once per visual elevation; descendants are
+// flat controls and must not sample canonicalTexture again.
+Rectangle {
+    id: root
+
+    property var canonicalTexture
+    property var canonicalCoordinateRoot
+    property size canonicalSize: Qt.size(1280, 720)
+    property var mappingItem: root
+    property var luluPalette
+    property real uiScale: 1
+    property real cornerRadius: 18 * uiScale
+    property real tintOpacity: 0.38
+    property bool glassEnabled: true
+
+    readonly property rect mappedCanonicalRect: {
+        var sourceItem = mappingItem || root
+        var dependency = uiScale + x + y + width + height
+        var item = sourceItem
+        while (item) {
+            dependency += item.x + item.y + item.width + item.height + item.scale
+            item = item.parent
+        }
+        var topLeft = canonicalCoordinateRoot
+            ? sourceItem.mapToItem(canonicalCoordinateRoot, 0, 0) : Qt.point(0, 0)
+        var bottomRight = canonicalCoordinateRoot
+            ? sourceItem.mapToItem(canonicalCoordinateRoot, sourceItem.width, sourceItem.height)
+            : Qt.point(width, height)
+        return Qt.rect(topLeft.x + dependency - dependency,
+                       topLeft.y + dependency - dependency,
+                       bottomRight.x - topLeft.x, bottomRight.y - topLeft.y)
+    }
+
+    radius: cornerRadius
+    color: luluPalette ? luluPalette.glassTint : Qt.rgba(0.025, 0.027, 0.032, 0.88)
+    border.color: luluPalette ? luluPalette.glassBorder : "#665f68"
+    border.width: Math.max(1, uiScale)
+    clip: true
+
+    MudosGlassItem {
+        anchors.fill: parent
+        visible: root.glassEnabled && !!root.canonicalTexture
+        backdrop: root.canonicalTexture
+        canonicalSize: root.canonicalSize
+        canonicalRect: root.mappedCanonicalRect
+        cornerRadius: root.cornerRadius
+        refractionPixels: 80 * root.uiScale
+        dispersionIor: 0.0175
+        diffusionPixels: 5 * root.uiScale
+        transmission: 0.75
+        bevelWidthPx: 3 * root.uiScale
+        bulgeStrength: 100
+        sceneLightStrength: 0
+        sceneLightPixels: 24
+        edgeLightStrength: 0.10
+        edgeLightDirection: Qt.vector2d(1, -1)
+        transparentOutsideMask: true
+    }
+
+    Rectangle {
+        anchors.fill: parent
+        radius: root.cornerRadius
+        color: Qt.rgba(0.008, 0.009, 0.012, root.tintOpacity)
+        border.width: 0
+    }
+}

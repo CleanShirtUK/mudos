@@ -16,6 +16,10 @@ TestCase {
         height: 720
         luluPalette: palette
         typography: typography
+        expandedContentX: 40
+        expandedContentY: 80
+        expandedContentWidth: 1200
+        expandedContentHeight: 560
         applications: [
             {name: "Example Graphics", ref: "app/org.example.Graphics/x86_64/stable",
              screenshots: [{url: "https://example.test/one.png"},
@@ -39,6 +43,10 @@ TestCase {
         compare(utilities.selectedApplication.name, "Example Graphics")
         compare(utilities.screenshots.length, 2)
         compare(utilities.selectedScreenshot.url, "https://example.test/one.png")
+        var media = findChild(utilities, "utilitiesScreenshot")
+        verify(media !== null)
+        verify(media.width > 0 && media.height > 0)
+        verify(Math.abs(media.width / media.height - 16 / 9) < 0.02)
         utilities.moveScreenshot(1)
         compare(utilities.selectedScreenshot.url, "https://example.test/two.png")
         utilities.move(1)
@@ -56,5 +64,16 @@ TestCase {
         utilities.applications = []
         verify(utilities.selectedApplication === null)
         utilities.activateSelected()
+    }
+
+    function test_shell_geometry_and_hint_contract_are_exposed() {
+        verify(findChild(utilities, "utilitiesGlassSubstrate") !== null)
+        verify(findChild(utilities, "utilitiesApplicationRows") !== null)
+        verify(utilities.controllerHints.some(function(hint) {
+            return hint.action === "confirm" && hint.label === "Launch"
+        }))
+        verify(!utilities.controllerHints.some(function(hint) {
+            return hint.label.indexOf("A ") === 0
+        }))
     }
 }

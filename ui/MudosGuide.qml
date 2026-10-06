@@ -33,12 +33,13 @@ Window {
 
     Rectangle {
         id: panel
+        objectName: "guidePanel"
         anchors.centerIn: parent
         width: 520
         height: Math.max(250, 110 + guideModel.actions.length * 68)
-        radius: 10
-        color: luluPalette.overlaySurface
-        border.color: luluPalette.glassBorder
+        radius: 14
+        color: luluPalette.guideSurface
+        border.color: luluPalette.guideBorder
         border.width: 1
 
         Column {

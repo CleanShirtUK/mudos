@@ -15,7 +15,7 @@ class DownloadsSurfaceTests(unittest.TestCase):
 
     def test_surface_is_snapshot_driven_and_provider_neutral(self) -> None:
         for token in ("systemStatus.acquisitionSnapshot", "acquisitionSnapshotChanged",
-                      "activeStates", "queuedStates", "historyStates", "No downloads",
+                      "activeStates", "queuedStates", "historyStates", "No active downloads",
                       "retryRequested"):
             self.assertIn(token, self.qml + self.shell)
         self.assertNotIn("SteamCmd", self.qml)
@@ -42,9 +42,10 @@ class DownloadsSurfaceTests(unittest.TestCase):
         self.assertIn('"failed"]', self.qml)
         self.assertIn('String(job.state) === "failed"', self.qml)
         self.assertIn('retryRequested(String(job.job_id))', self.qml)
-        self.assertIn('return "A  RETRY"', self.qml)
+        self.assertIn('return canRetry(job) ? "Retry" : ""', self.qml)
         self.assertIn('text: root.failureReason(row.modelData)', self.qml)
-        self.assertIn('String(root.selectedJob().state) === "failed"', self.qml)
+        self.assertIn('hints.push({action: "options", label: "Clear"})', self.qml)
+        self.assertIn('hints.push({action: "options", label: "Cancel"})', self.qml)
 
     def test_snapshot_churn_keeps_a_stable_list_model_and_identity_authority(self) -> None:
         self.assertIn("model: jobsModel", self.qml)
@@ -78,6 +79,17 @@ class DownloadsSurfaceTests(unittest.TestCase):
         self.assertIn('!incoming[i].retired', self.qml)
         self.assertIn('job.pause_supported', self.qml)
         self.assertNotIn('"cancelled"', self.qml.split('readonly property var visibleStates', 1)[1].split('\n', 1)[0])
+
+    def test_centered_glass_surface_exposes_shell_owned_hints(self) -> None:
+        self.assertIn('objectName: "downloadsGlassPanel"', self.qml)
+        self.assertIn('readonly property real panelX', self.qml)
+        self.assertIn('readonly property real panelY', self.qml)
+        self.assertIn('readonly property var controllerHints', self.qml)
+        self.assertNotIn('downloadControllerHints', self.qml)
+        self.assertIn('objectName: "activeSurfaceControllerHints"', self.shell)
+        self.assertIn('root.activeSurfaceHints', self.shell)
+        self.assertIn('MudosPanelSurface {', self.qml)
+        self.assertIn('MudosEmptyState {', self.qml)
 
     def test_old_steam_download_delegation_is_absent(self) -> None:
         for path in (ROOT / "src", ROOT / "native", ROOT / "scripts", ROOT / "ui"):

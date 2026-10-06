@@ -40,24 +40,24 @@ Item {
         panelFocusRequested("categories")
     }
 
-    MudosCardSurface {
-        id: leftGlass
-        objectName: "settingsLeftGlass"
-        x: root.leftBounds.x; y: root.leftBounds.y
-        width: root.leftBounds.width; height: root.leftBounds.height
+    MudosPanelSurface {
+        objectName: "settingsGlassSubstrate"
+        x: 0; y: 0
+        width: root.width; height: root.height
+        cornerRadius: 18 * root.uiScale
         uiScale: root.uiScale
         luluPalette: root.luluPalette
         canonicalTexture: root.canonicalTexture
         canonicalCoordinateRoot: root.canonicalCoordinateRoot
         canonicalSize: root.canonicalSize
-        selectionProgress: 0
+        mappingItem: root
     }
     Rectangle {
         objectName: "settingsCategoryPanel"
         x: root.leftBounds.x; y: root.leftBounds.y
         width: root.leftBounds.width; height: root.leftBounds.height
         radius: 14 * root.uiScale
-        color: "transparent"
+        color: root.luluPalette.cardSurface
         border.width: root.activePanel === "categories" ? 3 * root.uiScale : 1 * root.uiScale
         border.color: root.activePanel === "categories"
             ? root.luluPalette.focusIndicator : root.luluPalette.glassBorder
@@ -66,24 +66,12 @@ Item {
         Behavior on border.width { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
         Behavior on opacity { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
     }
-    MudosCardSurface {
-        id: rightGlass
-        objectName: "settingsRightGlass"
-        x: root.rightBounds.x; y: root.rightBounds.y
-        width: root.rightBounds.width; height: root.rightBounds.height
-        uiScale: root.uiScale
-        luluPalette: root.luluPalette
-        canonicalTexture: root.canonicalTexture
-        canonicalCoordinateRoot: root.canonicalCoordinateRoot
-        canonicalSize: root.canonicalSize
-        selectionProgress: 0
-    }
     Rectangle {
         objectName: "settingsContentPanel"
         x: root.rightBounds.x; y: root.rightBounds.y
         width: root.rightBounds.width; height: root.rightBounds.height
         radius: 14 * root.uiScale
-        color: "transparent"
+        color: root.luluPalette.cardSurface
         border.width: root.activePanel === "content" ? 3 * root.uiScale : 1 * root.uiScale
         border.color: root.activePanel === "content"
             ? root.luluPalette.focusIndicator : root.luluPalette.glassBorder

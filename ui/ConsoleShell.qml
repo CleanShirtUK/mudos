@@ -192,6 +192,7 @@ import QtQuick.Controls
     // without following the animated title rail or its presentation offset.
     readonly property real statusStripRightMargin: homeCategoryRailX
     readonly property real statusStripTop: selectedDomainY - 3 * homeCategoryPitch
+    readonly property real expandedHeaderRightMargin: expandedShellSideMargin
     readonly property real expandedContentSideMargin: design(120)
     // Frame the actual six-card visual envelope, using the same inter-card
     // gap as the backing clearance on both sides.
@@ -216,6 +217,23 @@ import QtQuick.Controls
     readonly property real expandedShellY: expandedShellTop
     readonly property real expandedShellWidth: width - 2 * expandedShellSideMargin
     readonly property real expandedShellHeight: expandedShellBottom - expandedShellTop
+    readonly property real expandedHeaderTop: expandedShellY
+    readonly property real expandedContentX: expandedShellX
+    readonly property real expandedContentY: expandedShellY + activeHeadingHeight + headingCardGap
+    readonly property real expandedContentWidth: expandedShellWidth
+    readonly property real expandedContentHeight: Math.max(0, expandedContentBottom - expandedContentY)
+    readonly property real expandedStatusReserve: systemStatusStrip.width + design(24)
+    readonly property real libraryCategoryRightSafeInset: Math.max(0,
+        expandedShellX + expandedShellWidth - design(30)
+        - (width - expandedHeaderRightMargin - expandedStatusReserve))
+    // Keep the vertical category reveal clip, but give the captured Recent row
+    // more horizontal room than the maximum motion-blur footprint.
+    readonly property real recentHorizontalOverscan: Math.max(
+        design(72), presentationCoordinator.motionBlurMaxPixels)
+    readonly property var activeSurfaceHints: space === "downloads"
+        ? downloadsHome.controllerHints
+        : (space === "system" && systemCategories[systemCategoryIndex] === "Utilities"
+            ? utilitiesHome.controllerHints : [])
     readonly property real homeHeadingCardClearance: design(12)
     readonly property real homeCompositionOffsetY: -design(36)
     readonly property real homeHintTopY: height - design(45)
@@ -470,7 +488,7 @@ import QtQuick.Controls
             Text {
                 text: "MUDOS"
                 color: luluPalette.primaryText
-                font.family: "JetBrainsMono Nerd Font"
+                font.family: typography.displayFamily
                 font.pixelSize: root.design(46)
                 font.letterSpacing: root.design(8)
                 font.weight: Font.DemiBold
@@ -479,7 +497,7 @@ import QtQuick.Controls
             Text {
                 text: "Starting system..."
                 color: luluPalette.secondaryText
-                font.family: "JetBrainsMono Nerd Font"
+                font.family: typography.displayFamily
                 font.pixelSize: root.design(17)
                 anchors.horizontalCenter: parent.horizontalCenter
             }
@@ -3669,7 +3687,7 @@ import QtQuick.Controls
                 id: homeCardViewport
                 x: 0
                 y: root.homeActiveContentOriginY
-                width: parent.width
+                width: parent.width + root.recentHorizontalOverscan
                 height: root.homeBottomBandCenterY - root.homeActiveContentOriginY
                 clip: true
                 // The viewport is presentation-only. Children retain full card
@@ -3685,7 +3703,7 @@ import QtQuick.Controls
                     id: recentReveal
                     x: -root.homeContentRailX
                     y: root.homeCategoryOffset(3)
-                    width: root.width
+                    width: root.width + root.recentHorizontalOverscan
                     height: root.homeCategoryRevealHeight(3)
                     clip: true
                     visible: root.selectedCategoryIndex === 3
@@ -3971,7 +3989,8 @@ import QtQuick.Controls
              canonicalSize: Qt.size(root.width, root.height)
               contentBounds: Qt.rect(root.expandedShellX, root.expandedShellY,
                                      root.expandedShellWidth, root.expandedShellHeight)
-             contentSideMargin: root.expandedContentSideMargin
+              categoryTapeRightInset: root.libraryCategoryRightSafeInset
+              contentSideMargin: root.expandedContentSideMargin
              contentBottom: root.expandedContentBottom
              contentOpacity: root.libraryContentOpacity
               onLaunchRequested: root.launchGame(game)
@@ -4087,6 +4106,10 @@ import QtQuick.Controls
             canonicalTexture: orbitTexture
             canonicalCoordinateRoot: orbitRenderSource
             canonicalSize: Qt.size(root.width, root.height)
+            expandedContentX: root.expandedContentX
+            expandedContentY: root.expandedContentY
+            expandedContentWidth: root.expandedContentWidth
+            expandedContentBottom: root.expandedContentBottom
              onPauseRequested: root.pauseAcquisition(jobId)
              onResumeRequested: root.resumeAcquisition(jobId)
              onCancelRequested: root.cancelAcquisition(jobId)
@@ -4097,10 +4120,10 @@ import QtQuick.Controls
 
         SettingsSpace {
             id: settingsSpace
-            x: root.expandedShellX
-            y: root.expandedShellY + root.activeHeadingHeight + root.headingCardGap
-            width: root.expandedShellWidth
-            height: Math.max(1, root.expandedShellBottom - y)
+            x: root.expandedContentX
+            y: root.expandedContentY
+            width: root.expandedContentWidth
+            height: Math.max(1, root.expandedContentHeight)
             visible: (root.space === "system" || root.systemTransitioning)
                 && root.systemCategories[root.systemCategoryIndex] !== "Utilities"
             opacity: root.systemTransitionProgress
@@ -4136,6 +4159,25 @@ import QtQuick.Controls
             font.weight: typography.majorHeadingWeight
             font.pixelSize: typography.size("section", 30)
             font.letterSpacing: 5 * root.uiScale
+        }
+
+        Text {
+            x: root.expandedShellX + 22 * root.uiScale
+            y: root.expandedShellY + 8 * root.uiScale
+            visible: root.space === "system"
+                && root.systemCategories[root.systemCategoryIndex] === "Utilities"
+                || root.systemTransitioning
+                    && root.systemCategories[root.systemCategoryIndex] === "Utilities"
+            opacity: root.systemTransitionProgress
+            text: "UTILITIES"
+            color: luluPalette.headingAccent
+            font.family: typography.majorHeadingFamily
+            font.weight: typography.majorHeadingWeight
+            font.pixelSize: typography.size("section", 30)
+            font.letterSpacing: 5 * root.uiScale
+            transform: Translate {
+                y: root.design(36) * (1 - root.systemTransitionProgress)
+            }
         }
 
         SystemSpace {
@@ -4177,7 +4219,10 @@ import QtQuick.Controls
 
         UtilitiesHome {
             id: utilitiesHome
-            anchors.fill: parent
+            x: root.expandedContentX
+            y: root.expandedContentY
+            width: root.expandedContentWidth
+            height: Math.max(1, root.expandedContentHeight)
             visible: (root.space === "system" || root.systemTransitioning)
                 && root.systemCategories[root.systemCategoryIndex] === "Utilities"
             opacity: root.systemTransitionProgress
@@ -4191,10 +4236,10 @@ import QtQuick.Controls
             canonicalTexture: orbitTexture
             canonicalCoordinateRoot: orbitRenderSource
             canonicalSize: Qt.size(root.width, root.height)
-            expandedShellX: root.expandedShellX
-            expandedShellY: root.expandedShellY
-            expandedShellWidth: root.expandedShellWidth
-            expandedShellHeight: root.expandedShellHeight
+            expandedContentX: root.expandedContentX
+            expandedContentY: root.expandedContentY
+            expandedContentWidth: root.expandedContentWidth
+            expandedContentHeight: root.expandedContentHeight
             onLaunchRequested: function(applicationRef) { root.launchUtility(applicationRef) }
             Component.onCompleted: {
                 root.utilitiesHomeRef = utilitiesHome
@@ -4379,8 +4424,11 @@ import QtQuick.Controls
             z: 50
             anchors.top: parent.top
             anchors.right: parent.right
-            anchors.topMargin: root.statusStripTop
-            anchors.rightMargin: root.statusStripRightMargin
+            anchors.topMargin: root.space === "home" && !root.libraryTransitioning
+                && !root.storeTransitioning ? root.statusStripTop : root.expandedHeaderTop
+            anchors.rightMargin: root.space === "home" && !root.libraryTransitioning
+                && !root.storeTransitioning ? root.statusStripRightMargin
+                                             : root.expandedHeaderRightMargin
             visible: presentationCoordinator.contentState
                 !== presentationCoordinator.hiddenState
             opacity: presentationCoordinator.presentationProgress
@@ -4406,6 +4454,7 @@ import QtQuick.Controls
 
         Item {
             id: interactionRail
+            z: 95
             anchors.left: parent.left
             anchors.right: parent.right
             anchors.bottom: parent.bottom
@@ -4427,7 +4476,7 @@ import QtQuick.Controls
                 ControllerHint {
                     action: "navigation"
                     label: "Games"
-                    fontFamily: root.space === "library" ? "JetBrains Mono" : typography.interfaceFamily
+                    fontFamily: root.space === "library" ? typography.displayFamily : typography.interfaceFamily
                     uiScale: root.uiScale
                     typography: typography
                     luluPalette: luluPalette
@@ -4436,7 +4485,7 @@ import QtQuick.Controls
                     action: "previousCollection"
                     visible: root.space === "library"
                     label: root.libraryDimensionLabel(root.adjacentLibraryDimension(-1))
-                    fontFamily: root.space === "library" ? "JetBrains Mono" : typography.interfaceFamily
+                    fontFamily: root.space === "library" ? typography.displayFamily : typography.interfaceFamily
                     uiScale: root.uiScale
                     typography: typography
                     luluPalette: luluPalette
@@ -4445,7 +4494,7 @@ import QtQuick.Controls
                     action: "nextCollection"
                     visible: root.space === "library"
                     label: root.libraryDimensionLabel(root.adjacentLibraryDimension(1))
-                    fontFamily: root.space === "library" ? "JetBrains Mono" : typography.interfaceFamily
+                    fontFamily: root.space === "library" ? typography.displayFamily : typography.interfaceFamily
                     uiScale: root.uiScale
                     typography: typography
                     luluPalette: luluPalette
@@ -4453,7 +4502,7 @@ import QtQuick.Controls
                 ControllerHint {
                     action: "confirm"
                     label: root.space === "library" ? "Launch" : "Download"
-                    fontFamily: root.space === "library" ? "JetBrains Mono" : typography.interfaceFamily
+                    fontFamily: root.space === "library" ? typography.displayFamily : typography.interfaceFamily
                     uiScale: root.uiScale
                     typography: typography
                     luluPalette: luluPalette
@@ -4462,7 +4511,7 @@ import QtQuick.Controls
                     visible: root.space === "library" && root.libraryFocus === "games" && root.visibleLibraryGame !== null
                     action: "options"
                     label: "Game Options"
-                    fontFamily: "JetBrains Mono"
+                    fontFamily: typography.displayFamily
                     uiScale: root.uiScale
                     typography: typography
                     luluPalette: luluPalette
@@ -4470,10 +4519,32 @@ import QtQuick.Controls
                 ControllerHint {
                     action: "back"
                     label: "Back"
-                    fontFamily: root.space === "library" ? "JetBrains Mono" : typography.interfaceFamily
+                    fontFamily: root.space === "library" ? typography.displayFamily : typography.interfaceFamily
                     uiScale: root.uiScale
                     typography: typography
                     luluPalette: luluPalette
+                }
+            }
+
+            Row {
+                objectName: "activeSurfaceControllerHints"
+                width: implicitWidth
+                anchors.horizontalCenter: parent.horizontalCenter
+                anchors.verticalCenter: parent.verticalCenter
+                visible: presentationCoordinator.contentVisible
+                    && root.activeSurfaceHints.length > 0
+                    && !root.libraryTransitioning && !root.storeTransitioning
+                spacing: root.design(14)
+                Repeater {
+                    model: root.activeSurfaceHints
+                    ControllerHint {
+                        required property var modelData
+                        action: modelData.action
+                        label: modelData.label
+                        uiScale: root.uiScale
+                        typography: typography
+                        luluPalette: luluPalette
+                    }
                 }
             }
 
@@ -4485,6 +4556,9 @@ import QtQuick.Controls
                 anchors.verticalCenter: parent.verticalCenter
                 visible: presentationCoordinator.contentVisible
                     && root.space !== "library" && root.space !== "store"
+                    && root.space !== "downloads"
+                    && !(root.space === "system"
+                         && root.systemCategories[root.systemCategoryIndex] === "Utilities")
                     && !root.libraryTransitioning && !root.storeTransitioning
                 y: presentationCoordinator.hintsOffset()
                 opacity: root.homeContentOpacity * presentationCoordinator.hintsOpacity()
