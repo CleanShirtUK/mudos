@@ -859,6 +859,10 @@ import QtQuick.Controls
         libraryTransitioning = false
         storeTransitioning = false
         libraryTransitionState = "RESTING"
+        // A Library launch deliberately keeps the home layer faded out while
+        // its surface exits. Restore that layer before the coordinator's
+        // normal entrance so a failed launch returns to the actual home UI.
+        homeContentOpacity = 1
         if (presentationCoordinator.contentHidden) {
             traceLaunchEvent("ENTRANCE_REQUESTED", {})
             presentationCoordinator.beginStartup()

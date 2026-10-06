@@ -252,8 +252,10 @@ projection corrected; full regression suite passed.
   violated the intended presentation order.
 - The UI now chains the wallpaper exit after Library has left and reuses the
   existing hidden-home launch handoff (including its return watcher). Regression
-  assertions cover the ordering; verify the sequence physically in dev-current.
-  Production remains unchanged.
+  assertions cover the ordering. Failure-path trace review found that the Library
+  fade-out remained at zero through return; the home layer is now restored before
+  the coordinator's entrance animation. Recheck physical launch-failure recovery
+  in dev-current. Production remains unchanged.
 
 ### NOTIFICATIONS-001 — Route transient status messages to Notifications
 

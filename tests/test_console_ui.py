@@ -1605,6 +1605,9 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertNotIn("recentHome.reconcilePresentation()", prepare)
         self.assertNotIn("recentHome.reconcilePresentation()", handoff)
         self.assertIn("returnPresentationPending = true", prepare)
+        self.assertIn("homeContentOpacity = 1", prepare)
+        self.assertLess(prepare.index("homeContentOpacity = 1"),
+                        prepare.index("presentationCoordinator.beginStartup()"))
         self.assertIn('traceLaunchEvent("PRESENTATION_FREEZE"', QML)
         self.assertIn('traceLaunchEvent("RECENT_PRESENTATION_RELEASED"', QML)
         self.assertIn("returnPresentationPending", QML[QML.index("readonly property bool homeLaunchGated") :])
