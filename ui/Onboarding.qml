@@ -80,7 +80,7 @@ Item {
                 source: "http://127.0.0.1/setup/qr.png"
                 cache: false
                 fillMode: Image.PreserveAspectFit
-                Rectangle { anchors.fill: parent; z: -1; color: "white"; radius: 8 * root.uiScale }
+                Rectangle { anchors.fill: parent; z: -1; color: "white"; radius: root.luluPalette ? root.luluPalette.radius("media", 8 * root.uiScale) : 8 * root.uiScale }
             }
             Column {
                 anchors.verticalCenter: parent.verticalCenter
@@ -106,17 +106,18 @@ Item {
                         font.family: root.typography ? root.typography.interfaceFamily : "sans-serif"
                         font.pixelSize: 20 * root.uiScale
                         font.bold: true
-                        background: Rectangle {
-                            radius: 12 * root.uiScale
+                    background: Rectangle {
+                            radius: root.luluPalette ? root.luluPalette.radius("row", 12 * root.uiScale) : 12 * root.uiScale
                             color: index === root.selectedAction
-                                ? (root.luluPalette ? root.luluPalette.accent : "#8ab4ff")
+                                ? (root.luluPalette ? root.luluPalette.focusedCardSurface : "#8ab4ff")
                                 : (root.luluPalette ? root.luluPalette.cardSurface : "#242d3a")
                             border.width: index === root.selectedAction ? 3 : 1
-                            border.color: root.luluPalette ? root.luluPalette.accent : "#8ab4ff"
+                            border.color: root.luluPalette ? root.luluPalette.focusIndicator : "#8ab4ff"
+                            MudosChromeFrame { anchors.fill: parent; luluPalette: root.luluPalette; uiScale: root.uiScale; cornerRadius: parent.radius; raised: index !== root.selectedAction }
                         }
                         contentItem: Text {
                             text: parent.text
-                            color: index === root.selectedAction ? "#10131a" : "white"
+                            color: index === root.selectedAction && root.luluPalette ? root.luluPalette.selectedText : root.luluPalette ? root.luluPalette.primaryText : "white"
                             font: parent.font
                             verticalAlignment: Text.AlignVCenter
                             horizontalAlignment: Text.AlignHCenter
@@ -141,16 +142,17 @@ Item {
                     font.pixelSize: 20 * root.uiScale
                     font.bold: true
                     background: Rectangle {
-                        radius: 12 * root.uiScale
+                        radius: root.luluPalette ? root.luluPalette.radius("row", 12 * root.uiScale) : 12 * root.uiScale
                         color: index === root.selectedAction
-                            ? (root.luluPalette ? root.luluPalette.accent : "#8ab4ff")
+                            ? (root.luluPalette ? root.luluPalette.focusedCardSurface : "#8ab4ff")
                             : (root.luluPalette ? root.luluPalette.cardSurface : "#242d3a")
                         border.width: index === root.selectedAction ? 3 : 1
-                        border.color: root.luluPalette ? root.luluPalette.accent : "#8ab4ff"
+                        border.color: root.luluPalette ? root.luluPalette.focusIndicator : "#8ab4ff"
+                        MudosChromeFrame { anchors.fill: parent; luluPalette: root.luluPalette; uiScale: root.uiScale; cornerRadius: parent.radius; raised: index !== root.selectedAction }
                     }
                     contentItem: Text {
                         text: parent.text
-                        color: index === root.selectedAction ? "#10131a" : "white"
+                        color: index === root.selectedAction && root.luluPalette ? root.luluPalette.selectedText : root.luluPalette ? root.luluPalette.primaryText : "white"
                         font: parent.font
                         verticalAlignment: Text.AlignVCenter
                         horizontalAlignment: Text.AlignHCenter

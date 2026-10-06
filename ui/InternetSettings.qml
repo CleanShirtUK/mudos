@@ -116,7 +116,8 @@ Item {
         y: root.expandedShellY + 110 * root.uiScale
         width: root.expandedShellWidth - 88 * root.uiScale
         height: 220 * root.uiScale
-        color: luluPalette.cardSurface; radius: 10 * root.uiScale
+        color: luluPalette.cardSurface; radius: luluPalette.radius("overlay", 10 * root.uiScale)
+        MudosChromeFrame { anchors.fill: parent; luluPalette: root.luluPalette; uiScale: root.uiScale; cornerRadius: parent.radius }
         Text { x: 18 * root.uiScale; y: 18 * root.uiScale; text: "Password for " + root.selectedSsid
             color: luluPalette.primaryText; font.family: typography.interfaceFamily
             font.pixelSize: typography.size("body", 18) }
