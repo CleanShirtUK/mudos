@@ -56,6 +56,19 @@ Historical implementation logs, validation logs, defect ledgers, review notes, c
 - **Area:** Settings
 - **Current truth:** System-settings capability is sufficient for V1 and is not an engineering blocker. The Settings UI itself needs a complete overhaul to match the current Library/Installable presentation language.
 
+
+### THEME-001 — Add first-class Mudos theme engine
+
+- **Status:** `BLOCKED`
+- **Priority:** P1
+- **Area:** UI / theming / assets
+- **Current truth:** Mudos now has a coherent enough visual language to define a theme system, but the current/default presentation should be reviewed and locked first so the existing look becomes the reference theme rather than being reinterpreted during engine work.
+- **Dependency:** complete the current default-visual review/baseline before implementation.
+- **Requirement:** a theme is a collection of configuration files and assets. Theme configuration must explicitly declare all fonts used by Mudos and expose core visual tokens including corner radius, background/surface transparency, a global glass enable/disable control, and glass modifiers such as bevel width.
+- **Icon overrides:** every UI glyph currently sourced from Nerd Fonts must have a semantic icon identity with optional SVG override support so a theme can replace those glyphs with its own assets without changing application code. The built-in/default theme may continue to resolve those identities to Nerd Font glyphs when no SVG override is supplied.
+- **Constraint:** theming must preserve Mudos navigation, layout semantics, accessibility/readability, and functional component boundaries; it is a presentation/configuration layer, not a parallel UI implementation.
+
+
 ### STEAM-001 — Restore Steam provider menu/overlay in Guide
 
 - **Status:** `ACTIVE`
