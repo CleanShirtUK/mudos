@@ -49,7 +49,6 @@ Item {
         source: root.overrideUrl
         sourceSize: Qt.size(width * 2, height * 2)
         fillMode: Image.PreserveAspectFit
-        visible: root.overrideUrl !== ""
         visible: false
     }
     MultiEffect {

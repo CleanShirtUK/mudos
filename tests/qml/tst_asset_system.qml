@@ -5,6 +5,8 @@ import "../../ui/MudosAssetCatalog.js" as Assets
 TestCase {
     name: "AssetSystem"
     property var mudosTheme: ({
+        activeId: "mudos-default",
+        iconUrl: function(name) { return "" },
         fonts: {
             regular: Qt.resolvedUrl("../../themes/mudos-default/fonts/JetBrainsMonoNLNerdFont-Regular.ttf"),
             bold: Qt.resolvedUrl("../../themes/mudos-default/fonts/JetBrainsMonoNLNerdFont-Bold.ttf"),
@@ -21,6 +23,14 @@ TestCase {
     Loader {
         id: controllerGlyphLoader
         source: Qt.resolvedUrl("../../ui/ControllerGlyph.qml")
+    }
+    Loader {
+        id: iconLoader
+        source: Qt.resolvedUrl("../../ui/MudosIcon.qml")
+    }
+
+    function test_generic_theme_icon_component_loads() {
+        compare(iconLoader.status, Loader.Ready)
     }
 
     function test_bundled_font_loads_with_runtime_family_name() {
