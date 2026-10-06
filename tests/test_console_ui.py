@@ -652,6 +652,8 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertIn('settingsPanelFocus = "categories"', shell)
         self.assertIn('settingsPanelFocus = "content"', shell)
         self.assertIn('parent: settingsSpace.contentHost', shell)
+        self.assertIn('|| root.systemCategories[root.systemCategoryIndex] === "Bluetooth")', shell)
+        self.assertIn('root.systemCategories[root.systemCategoryIndex] === "System"', shell)
         self.assertIn('embedded: true', shell)
         self.assertIn('root.settingsCategoryModel.findIndex', shell)
         self.assertIn('onOperationRequested: root.networkOperation(action, ssid, password)', shell)

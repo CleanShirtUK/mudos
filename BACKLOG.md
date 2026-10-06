@@ -165,13 +165,17 @@ deployment are complete; physical/presentation acceptance remains.
 - `/opt/lulu/current` must remain unchanged.
 
 **Implementation status:** committed in `701069f` plus follow-up QML startup fix
-`3656eb0`. Full Python suite: 1,204 passed and 85 subtests; Settings QML suite:
-5 passed; QML lint and shell syntax checks passed. `/opt/lulu/dev-current` is a
-clean, non-promotable runtime at `3656eb0`; Sessiond and Consoled are active and
-ConsoleShell loads. Three failed starts during initial validation entered the
-existing recovery latch; after correcting the duplicate QML properties, only
-that failure history was cleared and the normal ConsoleShell was restarted.
-`/opt/lulu/current` remains on its original immutable release.
+`3656eb0`; the dev refresh was also corrected to retain the development shell,
+guide, and OSK wiring. Settings hosts are exclusive by category: System and
+Bluetooth use SystemSpace, while Network, Display, Audio, Controllers, and
+Storage use their existing dedicated components. Full Python suite: 1,204
+passed and 85 subtests; focused settings/backend suite: 111 passed; Settings
+QML suite: 5 passed; QML lint and shell syntax checks passed. The final
+`/opt/lulu/dev-current` deployment and running ConsoleShell are verified below.
+Three failed starts during initial validation entered the existing recovery
+latch; after correcting the duplicate QML properties, only that failure history
+was cleared and the normal ConsoleShell was restarted. `/opt/lulu/current`
+remains on its original immutable release.
 
 ### LIBRARY-001 — Open the selected Library dimension
 

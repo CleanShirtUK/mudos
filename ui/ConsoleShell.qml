@@ -4104,7 +4104,8 @@ import QtQuick.Controls
             parent: settingsSpace.contentHost
             anchors.fill: parent
             visible: settingsSpace.visible
-                && root.systemCategories[root.systemCategoryIndex] !== "Network"
+                && (root.systemCategories[root.systemCategoryIndex] === "System"
+                    || root.systemCategories[root.systemCategoryIndex] === "Bluetooth")
             category: root.systemCategories[root.systemCategoryIndex]
             embedded: true
             textInputFocusEnabled: root.settingsPanelFocus === "content"
