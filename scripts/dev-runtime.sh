@@ -337,14 +337,23 @@ EOF
     fi
     mkdir -p "$(dirname "$session_dropin")" "$(dirname "$consoled_dropin")"
     cat > "$session_dropin" <<EOF
+[Unit]
+Wants=lulu-osk@%i.service
+
 [Service]
 Environment=PYTHONPATH=$runtime/lib
 Environment=LULU_INSTALL_ROOT=$runtime
+Environment=LULU_SHELL_EXECUTABLE=$runtime/bin/lulu-shell
+Environment=LULU_UI_FILE=$runtime/ui/ConsoleShell.qml
+Environment=LULU_GUIDE_EXECUTABLE=$runtime/bin/mudos-guide
+Environment=LULU_GUIDE_UI_FILE=$runtime/ui/MudosGuide.qml
 EOF
     cat > "$consoled_dropin" <<EOF
 [Service]
 Environment=PYTHONPATH=$runtime/lib
 Environment=LULU_INSTALL_ROOT=$runtime
+Environment=LULU_SHELL_EXECUTABLE=$runtime/bin/lulu-shell
+Environment=LULU_UI_FILE=$runtime/ui/ConsoleShell.qml
 EOF
     systemctl daemon-reload
     if ! systemctl restart lulu-session@2.service; then
