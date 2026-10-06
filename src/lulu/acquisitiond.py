@@ -41,6 +41,24 @@ DESCRIPTOR = ServiceDescriptor(
 LOGGER = logging.getLogger("lulu.acquisitiond")
 
 
+async def _wait_for_bus_disconnect(bus: MessageBus) -> None:
+    """Fail the service if its D-Bus reader stops, rather than serving stale state.
+
+    dbus-next finalizes a bus connection when its reader encounters a protocol or
+    socket error. The process must not keep its well-known name after that: the
+    shell would otherwise continue showing its last acquisition snapshot while
+    every request to Acquisitiond hangs.
+    """
+    try:
+        await bus.wait_for_disconnect()
+    except asyncio.CancelledError:
+        raise
+    except Exception:
+        LOGGER.exception("acquisitiond_dbus event=connection-lost")
+        raise
+    raise RuntimeError("Acquisitiond D-Bus connection closed unexpectedly")
+
+
 def _completed_job_refresh_stages(provider: str) -> list[str]:
     """Return catalogue stages invalidated by a completed provider job."""
     if provider == "steam-aurelia":
@@ -630,7 +648,10 @@ async def serve(bus_type: BusType = BusType.SESSION) -> None:
     await bus.request_name(BUS_NAME)
     interface.StateChanged(interface._snapshot())
     asyncio.create_task(_reconcile_completed_usenet_paths(manager))
-    await asyncio.Event().wait()
+    try:
+        await _wait_for_bus_disconnect(bus)
+    finally:
+        store.close()
 
 
 def main() -> None:
