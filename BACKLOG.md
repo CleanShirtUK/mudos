@@ -7,10 +7,10 @@ retained in `docs/reconciliation-backlog.md` and are not the status authority.
 
 ### UI-001 — Lock the default visual baseline before theming
 
-**Status:** VALIDATION — implementation is in progress toward deployment; keep
-open for one operator visual recording/acceptance sweep on `/opt/lulu/dev-current`.
-THEME-001 remains blocked until that acceptance is recorded. `/opt/lulu/current`
-must remain untouched.
+**Status:** VALIDATION — implementation commit `e874680` is deployed to
+`/opt/lulu/dev-current`; final runtime/visual recording and operator acceptance
+remain. THEME-001 remains blocked until that acceptance is recorded.
+`/opt/lulu/current` must remain untouched.
 
 - Stabilize the current accepted UI as the internal default baseline: neutral
   charcoal structural surfaces, one glass substrate per elevation root,
@@ -25,6 +25,25 @@ must remain untouched.
   Guide materials, and readability over bright and dark backdrop regions.
 - Operator acceptance is the closure gate. Record one sweep covering those
   items and confirm that no content surface obscures the global hint band.
+- Validation: the complete Python suite passed (1,219 tests and 85 subtests);
+  focused console/download Python UI checks passed (100 tests); the native
+  development build succeeded with existing compiler warnings. The combined
+  QML run reported 135 passed and 10 failed in unrelated Installable projection,
+  native-mapping fixture, and Recent coordinator/model assertions; changed
+  Utilities, Downloads, Settings, StatusStrip, Library, and ownership cases pass.
+- Deployment marker records `head=e874680dc04f5f31bb54d5e5ca6ca2055eb120dc`,
+  `dirty=false`, and `promotable=false`. Refresh completed the dev tree swap and
+  restarted core services but exited nonzero when Sunshine timed out waiting for
+  Gamescope. Sessiond and Consoled are active; Sessiond reports no connected DRM
+  output and no Gamescope/shell process is running because both DRM connectors
+  currently report `disconnected`. Restore the physical display connection
+  before runtime/visual acceptance; do not bypass the output guard or refresh
+  again while no output is connected. `/opt/lulu/current` still resolves to
+  `/opt/lulu/releases/786aba3-candidate-20261004065549`.
+- Guide retains its existing separate native-helper/window architecture and now
+  uses the neutral panel/selection palette. It cannot sample the shell's animated
+  canonical texture from that isolated process; true backdrop-refraction there
+  remains subject to physical review without changing Guide ownership/routing.
 
 ### THEME-001 — Theme engine and external theme configuration
 
@@ -297,7 +316,8 @@ projection corrected; full regression suite passed.
 
 ### NOTIFICATIONS-001 — Route transient status messages to Notifications
 
-**Status:** OPEN.
+**Status:** ACTIVE — inventory transient-message producers, then move
+bottom-right messages into the Notifications experience.
 
 - Move transient bottom-right messages (including library refresh feedback) into
   the Notifications experience instead of displaying them in the current
