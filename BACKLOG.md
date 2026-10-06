@@ -7,10 +7,21 @@ retained in `docs/reconciliation-backlog.md` and are not the status authority.
 
 ### UNINSTALL-001 — Complete provider-owned uninstall coverage
 
-**Status:** ACTIVE — generic lifecycle and provider cleanup are implemented in
-source; development deployment is deferred while the existing Sonic 3 A.I.R.
-test session remains live. Complete dev-current deployment and the finite
-physical acceptance checklist below before moving this item to VALIDATION.
+**Status:** ACTIVE — generic lifecycle and provider cleanup are implemented,
+committed, and deployed to `/opt/lulu/dev-current`; only the finite
+operator/physical acceptance checklist below remains before moving this item to
+VALIDATION. No real game was uninstalled during deployment validation.
+
+- Deployed implementation commit: `98b4667c5fd26335f0cf1517a94f62acb4b936b0`
+  (`Complete provider-owned uninstall lifecycle`). The dev runtime reports this
+  exact HEAD, `dirty=false`, and `promotable=false`. `/opt/lulu/current` remains
+  on its existing immutable candidate release.
+- Safe live checks after refresh: Sessiond, Consoled, Acquisitiond, admin, and
+  InputPlumber are active; the shell is running from dev-current; Acquisitiond's
+  D-Bus capability method is present. Read-only capability calls reported
+  supported local, Flatpak, and Mudos-marked GOG uninstall examples, while an
+  installed Steam/Aurelia example correctly reported unsupported. No uninstall
+  request was submitted.
 
 - Current game-producing provider matrix:
   - **Steam / Aurelia:** installed Steam catalogue rows currently have no safe
@@ -62,10 +73,8 @@ physical acceptance checklist below before moving this item to VALIDATION.
   disposable installs or explicitly approved test titles—never operator game
   data as an unattended fixture. Also physically test a Lutris manual
   registration and confirm its files remain after unregistering.
-- Do not deploy while the preserved Sonic 3 A.I.R. game/Zenity session is still
-  active: `scripts/dev-runtime.sh refresh` replaces dev-current and restarts the
-  session. Resume that development deployment only after the operator has
-  explicitly cleared the prior session or it has ended naturally. Production
+- The initial development refresh was explicitly authorized and completed; it
+  restarted the development session as expected. Production
   `/opt/lulu/current` remains untouched.
 
 ### RECENTS-001 — Steam Recents and legacy launch behavior after Aurelia migration
