@@ -415,8 +415,6 @@ class AcquisitionInterface(ServiceInterface):
         if executor is None:
             provider = str(getattr(game, "provider", ""))
             reason = {
-                "steam": "Steam removal is unavailable through Mudos' current Aurelia integration.",
-                "steam-aurelia": "Aurelia currently exposes no supported per-game uninstall operation.",
                 "romm": "RomM is a remote library source; only its linked local copy can be removed.",
             }.get(provider, "No safe uninstall implementation is registered for this provider.")
             return {"supported": False, "reason": reason}
@@ -485,7 +483,7 @@ class AcquisitionInterface(ServiceInterface):
                       "in_progress": active, "target_game_id": target.game_id}
             descriptions = {
                 "local": "Remove the local game content only; saves, BIOS, and shared runtime data are kept.",
-                "steam-aurelia": "Remove this Steam game through the Steam client; Mudos will refresh its library.",
+                "steam-aurelia": "Uninstall this Steam game through Aurelia; Mudos will refresh its library.",
                 "flatpak": "Uninstall the Flatpak application; Flatpak retains its normal app-data policy.",
                 "epic": "Uninstall this Epic title through Legendary.",
                 "gog": "Remove the marked Mudos-managed GOG game files.",

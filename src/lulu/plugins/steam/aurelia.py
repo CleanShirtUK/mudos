@@ -17,7 +17,7 @@ import stat
 import time
 from typing import Any, Callable
 
-from ...jobs import DownloadJob, ExternalAcquisition, JobState
+from ...jobs import DownloadJob, ExternalAcquisition, JobOperation, JobState
 from ...job_manager import JobCancelled, JobExecutionError, JobReporter
 from ...paths import PATHS
 
@@ -543,25 +543,31 @@ def _merge_aurelia_progress(origin_metadata: dict[str, object],
 class AureliaAcquisitionExecutor:
     provider_id = PROVIDER_ID
     supports_pause = False
-    # The supported Aurelia control surface currently exposes discovery and
-    # installation, but no documented per-title uninstall operation. Never
-    # substitute SteamCMD or recursive Steam-library deletion here.
-    supports_uninstall = False
-    uninstall_reason = (
-        "This Steam installation is managed by Aurelia, which currently has no "
-        "supported per-game uninstall operation. Remove it through the Steam "
-        "client; Mudos will reconcile the library afterward."
-    )
+    # Aurelia owns both the Steam-library configuration and per-AppID removal.
+    # Never substitute SteamCMD or direct Steam-library deletion here.
+    supports_uninstall = True
+    uninstall_progress_supported = False
 
     def __init__(self, client: AureliaClient | None = None) -> None:
         self.client = client or AureliaClient()
         self.capabilities = AureliaCapabilities()
         self._active: dict[str, str] = {}
 
+    def uninstall_capability(self, game) -> dict[str, object]:
+        app_id = str(getattr(game, "provider_id", ""))
+        if not app_id.isdecimal() or int(app_id) < 1:
+            return {"supported": False,
+                    "reason": "Aurelia uninstall requires a valid Steam AppID."}
+        return {"supported": True,
+                "description": "Uninstall this Steam game through Aurelia."}
+
     async def run(self, job: DownloadJob, reporter: JobReporter) -> None:
         app_id = job.provider_job_id or job.content_identity.removeprefix("steam-aurelia:")
         if not app_id.isdecimal():
             raise JobExecutionError("invalid-content", "Aurelia acquisition requires a Steam AppID")
+        if job.operation is JobOperation.REMOVE:
+            await self._uninstall(app_id, reporter)
+            return
         service_recovery = job.recovery_reason == "service-restart"
         self._active[job.job_id] = app_id
         last_downloaded: int | None = job.downloaded_bytes
@@ -669,6 +675,29 @@ class AureliaAcquisitionExecutor:
             raise JobExecutionError(error.code, str(error), retryable=error.retryable) from error
         finally:
             self._active.pop(job.job_id, None)
+
+    async def _uninstall(self, app_id: str, reporter: JobReporter) -> None:
+        await reporter.metadata(provider_job_id=app_id, backend="aurelia",
+                                provider_state="uninstalling")
+        await reporter.state(JobState.STARTING, stage="aurelia-uninstall-starting")
+        try:
+            await self.client.command("uninstall", app_id)
+            installed = await self.client.installed_games()
+        except AureliaError as error:
+            raise JobExecutionError(
+                f"aurelia-{error.code}",
+                f"Aurelia could not uninstall this Steam game ({error.code}).",
+                retryable=error.retryable,
+            ) from error
+        if any(game.app_id == app_id and game.installed for game in installed):
+            raise JobExecutionError(
+                "aurelia-uninstall-unconfirmed",
+                "Aurelia completed the uninstall command but still reports the game installed.",
+                retryable=True,
+            )
+        await reporter.state(JobState.FINALIZING, stage="aurelia-uninstall-finalizing")
+        await reporter.progress(1.0, stage="aurelia-uninstall-complete")
+        await reporter.state(JobState.COMPLETED, stage="completed")
 
     async def _record_installed_metadata(self, app_id: str, reporter: JobReporter) -> None:
         """Persist only an install path Aurelia itself reports after installation."""

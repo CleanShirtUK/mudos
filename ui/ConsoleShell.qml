@@ -553,6 +553,18 @@ import QtQuick.Controls
         }
     }
 
+    // CatalogueModel receives Consoled's generation signal only after provider
+    // reconciliation has committed its catalogue deltas. Refresh the QML array
+    // projections at that point as well; the initial uninstall/job refresh may
+    // have raced and read the pre-removal catalogue snapshot.
+    Connections {
+        target: catalogueModel
+        function onGenerationChanged() {
+            root.refreshCatalogue()
+            root.refreshStore()
+        }
+    }
+
     function traceLaunchMutation(name, value, reason) {
         var oldValue = launchTracePrevious[name]
         console.log("LAUNCH_TRACE", JSON.stringify({event: "MUTATION", name: name, old: oldValue, new: value, generation: launchGeneration, token: launchToken, reason: reason || "property-change"}))

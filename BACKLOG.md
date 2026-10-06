@@ -3,14 +3,15 @@
 Current engineering work is tracked here. Historical reconciliation notes are
 retained in `docs/reconciliation-backlog.md` and are not the status authority.
 
-## ACTIVE
+## CLOSED
 
 ### UNINSTALL-001 — Complete provider-owned uninstall coverage
 
-**Status:** ACTIVE — generic lifecycle and provider cleanup are implemented,
-committed, and deployed to `/opt/lulu/dev-current`; only the finite
-operator/physical acceptance checklist below remains before moving this item to
-VALIDATION. No real game was uninstalled during deployment validation.
+**Status:** CLOSED — operator accepted the uninstall implementation and dev
+validation on 2026-10-06. The earlier shell crash and Aurelia transition defect
+were corrected in the dev runtime; the accepted future hide-title UX is tracked
+separately below and is not a blocker for this item's closure. `/opt/lulu/current`
+was not changed.
 
 - Deployed implementation commit: `98b4667c5fd26335f0cf1517a94f62acb4b936b0`
   (`Complete provider-owned uninstall lifecycle`). The dev runtime reports this
@@ -20,15 +21,72 @@ VALIDATION. No real game was uninstalled during deployment validation.
   InputPlumber are active; the shell is running from dev-current; Acquisitiond's
   D-Bus capability method is present. Read-only capability calls reported
   supported local, Flatpak, and Mudos-marked GOG uninstall examples, while an
-  installed Steam/Aurelia example correctly reported unsupported. No uninstall
-  request was submitted.
+  installed Steam/Aurelia example incorrectly reported unsupported. No uninstall
+  request was submitted during those checks.
+- **Operator acceptance report (2026-10-06):** the operator reported that
+  Steam and Lutris appeared not to offer uninstall, then reported that attempting
+  uninstall for an Epic title and a Wii title had the same apparent Mudos crash.
+  Read-only service checks afterwards showed Acquisitiond and Sessiond active;
+  `lulu-shell` had two `SIGSEGV` core dumps at 04:39:17 and 04:44:51, each with
+  Qt Quick frames through `QQuickFlickable::geometryChange` / `setHeight` and
+  QML binding evaluation, reached while `SystemStatusBridge` handled an
+  Acquisitiond state-snapshot update. This is strong evidence of a shell UI
+  crash associated with acquisition snapshot delivery, not evidence of separate
+  Epic and local-ROM executor crashes. The exact QML binding/corrupt state is
+  still not identified. Later job records show the Epic and Wii/local removal
+  jobs reached `completed`; the operator subsequently confirmed the shell did
+  not crash during the Aurelia test.
+- Steam's missing action was an implementation defect, not intended policy.
+  Aurelia supports per-AppID uninstall; Mudos should invoke that API and then
+  reconcile Aurelia's installed list. Use the catalogue provider ID as the AppID
+  (for example, `1245620` is illustrative, not a hard-coded target). Never
+  substitute SteamCMD or direct Steam-library deletion. Lutris uninstall is
+  available only for Mudos recipe installs and Mudos-registered
+  local/manual registrations; provider-discovered entries intentionally have
+  no Mudos uninstall action. Confirm which kind of Lutris entry the operator
+  tested before treating that report as a provider implementation defect.
+- Source now enables Aurelia uninstall jobs, validates the decimal AppID, calls
+  Aurelia's `uninstall <AppID>` command, and confirms the title is absent from
+  Aurelia's installed list before completing the job. Fixture coverage passes;
+  this correction was deployed to `/opt/lulu/dev-current` on 2026-10-06 by the
+  canonical `scripts/dev-runtime.sh refresh`. The non-promotable marker records
+  HEAD `864df05d1f66e59c02e6ad437e76e4fd35dbd586`, `dirty=true`, and
+  `promotable=false`. Session, Consoled, Acquisitiond, Admin, and InputPlumber
+  are active; the shell is running. A read-only `CanUninstall` check for
+  installed game `steam:104200` returned `supported=true` with the Aurelia
+  description. No uninstall request was submitted and no real title was
+  removed. `/opt/lulu/current` remains
+  `/opt/lulu/releases/786aba3-candidate-20261004065549`.
+- **Aurelia operator test follow-up:** two removal jobs for `Among Us`
+  (`steam-aurelia:945360`) and `Baldi's Basics Classic Remastered`
+  (`steam-aurelia:1712830`) ran the Aurelia uninstall command and observed both
+  AppIDs absent from Aurelia's installed list, but Acquisitiond marked the jobs
+  failed with `invalid job transition: starting -> completed`. This was the
+  executor's terminal-state bug, not a failure of the provider command. The
+  executor now transitions through `finalizing`; a real-JobManager fixture test
+  covers the valid lifecycle. Do not retry these AppIDs: they are already
+  absent according to the provider's post-command check.
+- Do not use real titles for further physical validation unless explicitly
+  approved. `/opt/lulu/current` was not changed.
+- Follow-up UI observation: the operator reports Steam entries disappear
+  immediately after removal, while some other providers remain visible until
+  leaving and reopening the menu. The immediate refresh on job submission or
+  job completion can race Acquisitiond's asynchronous provider reconciliation.
+  `ConsoleShell.qml` now refreshes its Library and Installable projections when
+  `CatalogueModel.generation` advances, after Consoled publishes the reconciled
+  catalogue. Structural regression coverage passes. The UI follow-up was
+  deployed to `/opt/lulu/dev-current` on 2026-10-06 at 04:05:02Z by
+  `scripts/dev-runtime.sh refresh`; the `NON_PROMOTABLE` marker records HEAD
+  `864df05d1f66e59c02e6ad437e76e4fd35dbd586`, `dirty=true`,
+  `promotable=false`. The operator accepted the dev validation and authorized
+  closure on 2026-10-06.
 
 - Current game-producing provider matrix:
-  - **Steam / Aurelia:** installed Steam catalogue rows currently have no safe
-    per-title uninstall through the supported Aurelia API. Report uninstall as
-    unsupported; do not fall back to SteamCMD, account sign-out, library
-    deletion, or shared-runtime cleanup. Operator removal through Steam must be
-    followed by catalogue reconciliation.
+  - **Steam / Aurelia:** invoke Aurelia's per-title `uninstall <AppID>` operation
+    for the installed catalogue row, then reconcile Aurelia's authoritative
+    installed list. Validate a decimal AppID and use only Aurelia's canonical
+    Mudos Steam-library configuration. Do not fall back to SteamCMD, account
+    sign-out, direct library deletion, or shared-runtime cleanup.
   - **Epic / Legendary:** use Legendary's per-app uninstall command only for a
     valid app identity in Mudos' canonical Epic library; reject third-party
     managed titles and paths outside that library. Service-restart replay
@@ -64,8 +122,8 @@ VALIDATION. No real game was uninstalled during deployment validation.
   uninstalled for this work.
 - **Physical acceptance after dev-current deployment:** with a controller,
   open game options for one disposable title in each currently available
-  provider; verify unsupported Steam/Aurelia and provider-discovered Lutris
-  entries have no enabled Uninstall action; verify supported actions require
+  provider; verify Steam/Aurelia and supported Lutris entries offer Uninstall,
+  while provider-discovered Lutris entries do not; verify supported actions require
   explicit confirmation; verify Back cancels confirmation; verify an active
   removal cannot be resubmitted; verify successful removal updates Library and
   Recents after provider reconciliation; verify a failed provider removal
@@ -76,6 +134,36 @@ VALIDATION. No real game was uninstalled during deployment validation.
 - The initial development refresh was explicitly authorized and completed; it
   restarted the development session as expected. Production
   `/opt/lulu/current` remains untouched.
+
+## ACTIVE
+
+### UNINSTALL-UX-001 — Hide titles while uninstall runs
+
+**Status:** ACCEPTED — requirements captured; implementation deferred.
+
+- Uninstall must invoke provider removal; catalogue refresh is post-removal
+  reconciliation, not the mechanism used to make the title disappear from the
+  current Library view.
+- Add a **Hide** action under Game Options and a **Show hidden titles in
+  library** setting. The setting is deliberately session-only/in-memory, is not
+  persisted, and resets to its default after any Mudos session reload. Decide
+  the persistence/lifetime policy for individual hidden-title membership
+  separately from this setting.
+- After the user confirms Uninstall, add that game ID to the same hidden-title
+  mechanism before submitting provider removal. It should leave the Library
+  view immediately while asynchronous removal runs; do not treat temporary
+  hiding as provider success or mutate installed catalogue state early.
+- After successful uninstall, refresh/reconcile Library from provider state;
+  only after that refresh completes, remove the game ID from the temporary
+  hidden set. The title then remains absent because provider reconciliation
+  removed it, not because it remains hidden.
+- Define and test failure/cancellation behavior so an installed game cannot
+  remain invisibly hidden indefinitely. Likely refresh the still-installed
+  catalogue and restore visibility after a failed or cancelled removal.
+- Turning **Show hidden titles in library** on reveals hidden entries without
+  changing their hidden membership; turning it off hides them again. Verify the
+  setting resets on session reload while membership follows its separately
+  chosen persistence policy.
 
 ### RECENTS-001 — Steam Recents and legacy launch behavior after Aurelia migration
 

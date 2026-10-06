@@ -9,9 +9,9 @@ import tempfile
 import unittest
 from unittest.mock import AsyncMock, Mock, patch
 
-from lulu.jobs import DownloadJob, JobState
+from lulu.jobs import DownloadJob, JobOperation, JobState
 from lulu.acquisition_store import AcquisitionStore
-from lulu.job_manager import JobManager
+from lulu.job_manager import JobExecutionError, JobManager, JobReporter
 from lulu.plugins.steam.aurelia import (
     AureliaAcquisitionExecutor, AureliaCapabilities, AureliaClient, AureliaInstalledGame,
     AureliaEntitlementSource,
@@ -154,6 +154,43 @@ class AureliaClientTests(unittest.IsolatedAsyncioTestCase):
 
 
 class AureliaAcquisitionTests(unittest.IsolatedAsyncioTestCase):
+    async def test_uninstall_uses_aurelia_app_id_command_and_reconciles_installed_list(self):
+        client = Mock()
+        client.command = AsyncMock(return_value={"success": True})
+        client.installed_games = AsyncMock(return_value=())
+        executor = AureliaAcquisitionExecutor(client)
+        job = DownloadJob("remove-1", PROVIDER_ID, "Fixture",
+                          content_identity="steam-aurelia:1245620",
+                          provider_job_id="1245620", operation=JobOperation.REMOVE)
+        manager = JobManager()
+        manager.jobs[job.job_id] = job
+        reporter = JobReporter(manager, job.job_id)
+
+        await executor.run(job, reporter)
+
+        client.command.assert_awaited_once_with("uninstall", "1245620")
+        client.installed_games.assert_awaited_once_with()
+        self.assertEqual(manager.jobs[job.job_id].state, JobState.COMPLETED)
+        self.assertEqual(manager.jobs[job.job_id].progress, 1.0)
+
+    async def test_uninstall_fails_if_aurelia_still_reports_app_installed(self):
+        client = Mock()
+        client.command = AsyncMock(return_value=None)
+        client.installed_games = AsyncMock(return_value=(
+            AureliaInstalledGame(PROVIDER_ID, "1245620", "Fixture", True,
+                                 None, None, None),))
+        reporter = Mock()
+        reporter.metadata = AsyncMock()
+        reporter.state = AsyncMock()
+        reporter.progress = AsyncMock()
+        executor = AureliaAcquisitionExecutor(client)
+        job = DownloadJob("remove-2", PROVIDER_ID, "Fixture",
+                          content_identity="steam-aurelia:1245620",
+                          provider_job_id="1245620", operation=JobOperation.REMOVE)
+
+        with self.assertRaisesRegex(JobExecutionError, "still reports the game installed"):
+            await executor.run(job, reporter)
+
     async def test_progress_mapping_preserves_unknown_fields(self):
         mapped = map_progress({"event": "progress", "state": "downloading",
                                "bytes_downloaded": 64, "total_bytes": 128, "percent": 50,

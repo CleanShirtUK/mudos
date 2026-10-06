@@ -42,7 +42,7 @@ class LocalUninstallTests(unittest.TestCase):
             "romm": getattr(RommExecutor, "supports_uninstall", False),
         }
         self.assertEqual(matrix, {
-            "steam-aurelia": False, "steamcmd-legacy": False,
+            "steam-aurelia": True, "steamcmd-legacy": False,
             "epic": True, "gog": True, "flatpak": True,
             "lutris": True, "local": True, "romm": False,
         })
@@ -78,7 +78,7 @@ class LocalUninstallTests(unittest.TestCase):
         with self.assertRaises(Exception):
             interface._uninstall_target("fixture")
 
-    def test_current_steam_rows_report_truthful_aurelia_uninstall_limitation(self) -> None:
+    def test_current_steam_rows_resolve_to_aurelia_uninstall(self) -> None:
         from lulu.plugins.steam.aurelia import AureliaAcquisitionExecutor
 
         game = SimpleNamespace(game_id="steam:440", provider="steam", provider_id="440",
@@ -92,8 +92,13 @@ class LocalUninstallTests(unittest.TestCase):
         target, provider, identity, _title, capability = interface._resolve_uninstall("steam:440")
         self.assertIs(target, game)
         self.assertEqual((provider, identity), ("steam-aurelia", "steam-aurelia:440"))
+        self.assertTrue(capability["supported"])
+        self.assertIn("Aurelia", capability["description"])
+
+    def test_aurelia_capability_rejects_invalid_app_id(self) -> None:
+        executor = AureliaAcquisitionExecutor()
+        capability = executor.uninstall_capability(SimpleNamespace(provider_id="../../outside"))
         self.assertFalse(capability["supported"])
-        self.assertIn("Aurelia", capability["reason"])
 
     def test_capability_reports_confirmation_progress_and_active_state(self) -> None:
         import json

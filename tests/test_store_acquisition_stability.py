@@ -50,6 +50,13 @@ class StoreAcquisitionStabilityTests(unittest.TestCase):
         self.assertIn("acquisitionJobs = jobs", self.shell)
         self.assertIn("onAcquisitionJobsChanged: applyAcquisitionJobs()", self.store)
 
+    def test_catalogue_generation_refreshes_qml_library_and_store_projections(self) -> None:
+        generation_connection = self.shell.split("target: catalogueModel", 1)[1]
+        generation_connection = generation_connection.split("Connections {", 1)[0]
+        self.assertIn("function onGenerationChanged()", generation_connection)
+        self.assertIn("root.refreshCatalogue()", generation_connection)
+        self.assertIn("root.refreshStore()", generation_connection)
+
     def test_selection_and_viewport_are_preserved_when_catalogue_rebuilds(self) -> None:
         self.assertIn("selectedIdentity", self.store)
         self.assertIn("previousFirstVisibleRow", self.store)
