@@ -12,11 +12,9 @@ SPEC.loader.exec_module(BOOT)
 
 
 class MudosBootConfigTests(unittest.TestCase):
-    def test_headless_display_uses_existing_bc250_drm_connector_without_changing_boot_selection(self):
-        config = (ROOT / "packaging/limine-entry-tool.d/60-lulu-headless-display.conf").read_text()
-        self.assertIn('KERNEL_CMDLINE[default]+=" video=DP-1:1920x1080@60e"', config)
-        self.assertNotIn("default_entry", config)
-        self.assertNotIn("BOOT_ORDER", config)
+    def test_no_forced_headless_display_kernel_override_is_packaged(self):
+        self.assertFalse(
+            (ROOT / "packaging/limine-entry-tool.d/60-lulu-headless-display.conf").exists())
 
     def test_sets_instant_timeout_and_explicit_real_kernel_entry_preserving_other_boot_data(self):
         source = """timeout: 5
