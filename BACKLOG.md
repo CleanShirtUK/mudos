@@ -170,24 +170,87 @@ VALIDATION. No real game was uninstalled during deployment validation.
 **Status:** ACTIVE — physical navigation recovered; startup/runtime cause still
 needs a durable fix and regression coverage.
 
-- After the dev-current boot, the Xbox 360 receiver and physical event node were
-  present, InputPlumber had one composite, and Sessiond registered one standard
-  gamepad. However, SDL enumerated two InputPlumber virtual gamepads for the
-  single composite. Sessiond's identity-agnostic target association correctly
-  refused to guess, leaving the controller's SDL index unset. The independent
-  InputPlumber D-Bus Guide relay could still open Guide, while normal SDL-backed
-  navigation stopped responding.
-- Restarting InputPlumber (and its dependent Mudos session) cleared the extra
-  virtual target. The live state then converged to one physical source, one
-  composite, one SDL gamepad, and a valid Sessiond SDL mapping. The operator
-  confirmed controller navigation was back. Treat this as runtime recovery,
-  not proof that the triggering race is fixed.
-- Startup logs showed hotplug reconciliation attempting to consume transient
-  stale event nodes, including a short-lived Sunshine virtual-pad node, and
-  InputPlumber tearing down/recreating composites. Sunshine's
-  `controller = disabled` setting is intentional and must remain unchanged.
-  The exact causal sequence is not yet proven; no Lutris implementation change
-  has been identified as the cause.
+- **Observed symptom:** The shell/Home screen displayed normally, but D-pad
+  navigation stopped responding. Guide still worked through its independent
+  InputPlumber D-Bus/OSK route; that did not prove the native SDL navigation
+  route was healthy. The controller was a Microsoft Xbox 360 wireless receiver.
+- In the earlier occurrence, the receiver and physical event node existed and
+  InputPlumber showed one composite, but SDL exposed two InputPlumber-marked
+  virtual gamepads for that one composite. Sessiond's identity-agnostic target
+  association correctly refused to guess and left the SDL index unset. This
+  mismatch is a confirmed failure signature, but it was not present in every
+  later snapshot of the recurrence.
+- **Known-good recovery (operator confirmed twice, most recently 2026-10-06):**
+  after stale InputPlumber event-node/composite churn has settled, restart
+  `inputplumber.service`. Its `PartOf` relationship also restarts
+  `lulu-session@2.service`; allow the session and Home startup to finish before
+  testing. On the successful recovery, the canonical native path was restored:
+  `LULU_NATIVE_CONTROLLER=1`, InputPlumber `Default` profile, intercept mode 1,
+  OSK hidden, one physical receiver source, one composite, exactly one SDL
+  InputPlumber target, and Sessiond `sdl_index=0`. The operator then confirmed
+  Home navigation worked. Restarting InputPlumber too early can first attach a
+  stale event node; if that happens, let udev/hotplug reconciliation settle and
+  repeat the restart rather than treating the transient post-restart state as
+  recovered.
+- **Detailed 2026-10-06 timeline:** The boot following removal of the forced
+  headless-display kernel argument started InputPlumber at 04:10:12 and the
+  graphical session at 04:10:13. Early InputPlumber discovery raced transient
+  event nodes (including stale Sunshine virtual-pad nodes); logs showed
+  `No such device`, failed target attachment/channel-closed errors, and
+  composite teardown/recreation. At 04:21:04, restarting InputPlumber initially
+  recreated a composite from stale `event17`; that composite failed at 04:21:27.
+  The hotplug reconciliation service ran at 04:21:30 and discovered the real
+  Xbox receiver at `/dev/input/event9`; Sessiond then corrected the profile and
+  obtained SDL association index 0. A later restart at 04:35 attached directly
+  to `event9` and remained stable.
+- **Important recovery detail:** An attempted runtime-only override
+  `LULU_NATIVE_CONTROLLER=0` plus the `Lulu SHELL` keyboard-emulation profile
+  did not restore Home navigation. It was removed. The final successful
+  recovery used the packaged/canonical `LULU_NATIVE_CONTROLLER=1` native-SDL
+  architecture and its `Default` InputPlumber profile. Do not leave the runtime
+  override in place or interpret Guide/OSK operation as proof of D-pad routing.
+- A separate probe found the OSK hidden while InputPlumber was temporarily in
+  intercept mode 2; restoring mode 1 and reloading `Lulu SHELL` alone did not
+  restore Home navigation. On final recovery, OSK was hidden and intercept mode
+  1. Record this as a potentially relevant stale-state observation, not as the
+  proven root cause. Direct `evtest` captures and broad D-Bus monitoring during
+  this incident did not provide a decisive physical D-pad event trace; the
+  source event was grabbed by InputPlumber, so absence of events in those
+  captures is not evidence that the controller itself was defective.
+- **Current evidence / open cause:** On recovery, checks showed one SDL gamepad
+  (`Xbox 360 Controller`, udev-marked InputPlumber target), one composite
+  sourced from `/dev/input/event9`, one target gamepad, one Sessiond SDL slot at
+  index 0, profile `Default`, intercept mode 1, and OSK `hidden`. Before the
+  final recovery those same counts/mappings could appear healthy while the
+  operator still reported no Home navigation. Therefore target count and SDL
+  association are necessary diagnostics but are not sufficient acceptance;
+  the root trigger and the reason a stable-looking intermediate state failed
+  remain unproven.
+- **Runbook for recurrence:** First record `date`, `systemctl status
+  inputplumber.service lulu-session@2.service lulu-osk@2.service`, and the
+  relevant boot journal before restarting anything. Check
+  `sudo inputplumber devices list`, `sudo inputplumber targets list`, and
+  `sudo inputplumber sources list`; inspect
+  `journalctl -b -u inputplumber.service -u lulu-session@2.service` for
+  `No such device`, `Gamepad order: []`, stale event numbers, composite
+  teardown/recreation, and target attach failures. Read Sessiond's `GetState`
+  and verify one connected controller with a non-null `sdl_index`; count SDL
+  gamepads as user `lulu` (not the desktop operator, whose device permissions
+  can produce a false empty inventory). Check the composite `ProfileName`,
+  `InterceptMode`, its `TargetDevices`, and the OSK bridge socket `status`
+  together. A hidden OSK with intercept mode 2 is suspicious; mode 1 is the
+  expected shell state. Preserve the controller setup's canonical
+  `LULU_NATIVE_CONTROLLER=1`; do not use the unsuccessful mode-0 runtime
+  workaround. If logs show stale-node churn, let the hotplug reconciliation
+  finish, restart InputPlumber once, wait for Home startup to complete, then
+  check the state again and ask the operator to verify D-pad navigation. Record
+  both the resulting diagnostics and physical confirmation; a healthy-looking
+  inventory alone does not close this issue.
+- Sunshine's `controller = disabled` setting is intentional and must remain
+  unchanged. No Sunshine input, controller allowlist, or synthetic/virtual
+  controller path is an acceptable workaround. No Lutris implementation change
+  has been identified as the cause. No source change was made for this recovery;
+  `/opt/lulu/current` was not changed.
 - Diagnose and fix the smallest lifecycle/reconciliation issue that permits
   stale/duplicate InputPlumber targets to outlive their composite. Keep the
   physical Xbox/InputPlumber/composite/Sessiond/native-SDL architecture,
