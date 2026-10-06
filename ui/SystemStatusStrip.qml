@@ -16,8 +16,10 @@ Item {
     property size canonicalSize: Qt.size(1280, 720)
     property real presentationProgress: 1
     property int activeDownloadCount: 0
+    onActiveDownloadCountChanged: syncControllers()
     property var controllers: []
     onControllersChanged: syncControllers()
+    property int leadingControllerIndex: -1
     property bool bluetoothAvailable: false
     property string bluetoothState: "unavailable"
     property bool networkAvailable: false
@@ -85,7 +87,20 @@ Item {
                     controllerRetire.start()
             }
         }
+        leadingControllerIndex = -1
+        if (activeDownloadCount <= 0) {
+            for (var index = 0; index < controllerPresentation.count; index++) {
+                if (controllerPresentation.get(index).present) {
+                    leadingControllerIndex = index
+                    break
+                }
+            }
+        }
     }
+
+    // statusRow already sits backingPadding inside the backing. The first
+    // visible group therefore uses no additional inset; subsequent groups
+    // retain groupSpacing between their contents.
 
     Component.onCompleted: syncControllers()
 
@@ -104,6 +119,7 @@ Item {
                     else
                         pending = true
                 }
+            root.syncControllers()
             if (!pending)
                 stop()
         }
@@ -158,9 +174,11 @@ Item {
 
         Item {
             id: downloadGroup
+            readonly property real contentInset: root.activeDownloadCount > 0
+                ? 0 : root.groupSpacing
             height: root.glyphSize
             width: root.activeDownloadCount > 0
-                ? downloadContent.implicitWidth + root.groupSpacing : 0
+                ? downloadContent.implicitWidth + contentInset : 0
             opacity: root.activeDownloadCount > 0 ? 1 : 0
             clip: true
             Behavior on width { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
@@ -168,7 +186,7 @@ Item {
 
             Row {
                 id: downloadContent
-                x: root.groupSpacing
+                x: downloadGroup.contentInset
                 height: root.glyphSize
                 spacing: root.innerSpacing
 
@@ -200,9 +218,13 @@ Item {
                 required property int batteryPercentage
                 required property string battery
                 required property bool present
+                required property int index
                 property bool appeared: false
+                readonly property real contentInset: root.activeDownloadCount > 0
+                    || index !== root.leadingControllerIndex
+                    ? root.groupSpacing : 0
                 height: root.glyphSize
-                width: present ? controllerContent.implicitWidth + root.groupSpacing : 0
+                width: present ? controllerContent.implicitWidth + contentInset : 0
                 opacity: appeared && present ? 1 : 0
                 clip: true
                 Component.onCompleted: appeared = true
@@ -211,7 +233,7 @@ Item {
 
                 Row {
                     id: controllerContent
-                    x: root.groupSpacing
+                    x: parent.contentInset
                     height: root.glyphSize
                     spacing: root.innerSpacing
 
@@ -246,11 +268,13 @@ Item {
         }
 
         Item {
-            width: root.groupSpacing + bluetoothIcon.width
+            readonly property real contentInset: root.activeDownloadCount <= 0
+                && root.leadingControllerIndex < 0 ? 0 : root.groupSpacing
+            width: contentInset + bluetoothIcon.width
             height: root.glyphSize
             StatusGlyph {
                 id: bluetoothIcon
-                x: root.groupSpacing
+                x: parent.contentInset
                 objectName: "bluetoothStatusIcon"
                 glyph: root.bluetoothState === "off" || root.bluetoothState === "unavailable"
                     ? String.fromCodePoint(0xF00B0) : String.fromCodePoint(0xF00AF)
