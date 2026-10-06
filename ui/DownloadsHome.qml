@@ -7,6 +7,7 @@ Item {
     id: root
 
     property string snapshot: "{\"jobs\":[],\"activeDownloadCount\":0}"
+    property bool serviceAvailable: true
     property int selectedIndex: 0
     property string selectedJobId: ""
     property bool confirmationPending: false
@@ -317,7 +318,7 @@ Item {
             ListView {
                 id: jobsList
                 objectName: "downloadJobRows"
-                visible: !root.confirmationPending && root.jobs.length > 0
+                visible: root.serviceAvailable && !root.confirmationPending && root.jobs.length > 0
                 width: parent.width - 8 * root.uiScale
                 anchors.horizontalCenter: parent.horizontalCenter
                 implicitHeight: Math.min(root.jobs.length * (88 * root.uiScale + spacing),
@@ -382,7 +383,7 @@ Item {
                 }
             }
 
-            Text { visible: !root.confirmationPending && root.jobs.length === 0; text: "No active downloads"; color: root.luluPalette.secondaryText; font.family: root.typography.interfaceFamily; font.pixelSize: root.typography.size("body", 20); horizontalAlignment: Text.AlignHCenter; width: parent.width; topPadding: 100 * root.uiScale } // No downloads
+            Text { visible: !root.confirmationPending && (!root.serviceAvailable || root.jobs.length === 0); text: root.serviceAvailable ? "No active downloads" : "Acquisition service unavailable"; color: root.luluPalette.secondaryText; font.family: root.typography.interfaceFamily; font.pixelSize: root.typography.size("body", 20); horizontalAlignment: Text.AlignHCenter; width: parent.width; topPadding: 100 * root.uiScale } // No downloads / unavailable
             Text { visible: root.confirmationPending; text: "Cancel Download"; color: root.luluPalette.secondaryText; font.family: root.typography.interfaceFamily; font.pixelSize: root.typography.size("body", 17); width: parent.width; horizontalAlignment: Text.AlignHCenter }
         }
 

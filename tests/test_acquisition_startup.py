@@ -1,4 +1,5 @@
 import asyncio
+from pathlib import Path
 import unittest
 from unittest.mock import patch
 
@@ -77,7 +78,7 @@ class AcquisitionStartupTests(unittest.TestCase):
             coroutine.close()
             return object()
 
-        with patch.object(acquisitiond, "MessageBus", return_value=bus), \
+        with patch.object(acquisitiond, "BackpressureSafeMessageBus", return_value=bus), \
                 patch.object(acquisitiond, "AcquisitionStore", Store), \
                 patch.object(acquisitiond, "CatalogueStore", lambda _path: object()), \
                 patch.object(acquisitiond, "PluginRegistry", Plugins), \
@@ -87,6 +88,10 @@ class AcquisitionStartupTests(unittest.TestCase):
                 asyncio.run(acquisitiond.serve())
 
         self.assertEqual(bus.exports[0][0], acquisitiond.OBJECT_PATH)
+
+    def test_acquisition_service_uses_backpressure_safe_dbus_transport(self):
+        source = Path(acquisitiond.__file__).read_text(encoding="utf-8")
+        self.assertIn("BackpressureSafeMessageBus(bus_type=bus_type).connect()", source)
 
 
 if __name__ == "__main__":

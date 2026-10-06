@@ -20,9 +20,6 @@ from collections import deque
 
 from dbus_next import BusType, Variant, DBusError
 from dbus_next.aio import MessageBus
-from dbus_next.aio.message_bus import (
-    _MessageWriter, _future_set_exception, _future_set_result,
-)
 from dbus_next.service import ServiceInterface, method, signal as dbus_signal
 
 from .catalogue import CatalogueDelta, CatalogueGame, CatalogueStore, canonical_metadata_required
@@ -50,6 +47,8 @@ from .plugins.steam.provider import (SteamProvider, STEAM_SURFACE_STARTUP_TIMEOU
 from .plugins.steam.entitlements import SteamEntitlementSource
 from .system_settings import CATEGORIES as SYSTEM_CATEGORIES, SystemSettingsProvider
 from .paths import PATHS
+from .dbus_transport import BackpressureSafeMessageBus as _BackpressureSafeMessageBus
+from .dbus_transport import BackpressureSafeMessageWriter as _BackpressureSafeMessageWriter
 from .platforms import load_platforms
 from .providers import GuideAction, NativeConfigAdapter, load_base_guide, load_mudos_guide, load_providers
 from .plugins import ComponentRegistry, PluginRegistry
@@ -1316,57 +1315,6 @@ BUS_NAME = "org.lulu.Consoled"
 OBJECT_PATH = "/org/lulu/Console"
 INTERFACE_NAME = "org.lulu.Console"
 LOGGER = logging.getLogger("lulu.consoled")
-
-
-class _BackpressureSafeMessageWriter(_MessageWriter):
-    """Treat EAGAIN from the nonblocking D-Bus socket as normal backpressure.
-
-    dbus-next's writer catches BlockingIOError in its generic fatal-error path,
-    which finalizes the bus and unregisters its reader. A writable callback may
-    still race with socket-buffer pressure, so retain the pending buffer and
-    let the event loop invoke this writer again when the fd is writable.
-    """
-
-    def write_callback(self) -> None:
-        try:
-            while True:
-                if self.buf is None:
-                    if self.messages.qsize() == 0:
-                        self.loop.remove_writer(self.fd)
-                        return
-                    buf, unix_fds, future = self.messages.get_nowait()
-                    self.unix_fds = unix_fds
-                    self.buf = memoryview(buf)
-                    self.offset = 0
-                    self.fut = future
-
-                try:
-                    if self.unix_fds and self.negotiate_unix_fd:
-                        import array
-                        import socket
-                        ancdata = [(socket.SOL_SOCKET, socket.SCM_RIGHTS,
-                                    array.array("i", self.unix_fds))]
-                        self.offset += self.sock.sendmsg([self.buf[self.offset:]], ancdata)
-                        self.unix_fds = None
-                    else:
-                        self.offset += self.sock.send(self.buf[self.offset:])
-                except BlockingIOError:
-                    return
-
-                if self.offset >= len(self.buf):
-                    self.buf = None
-                    _future_set_result(self.fut, None)
-                else:
-                    return
-        except Exception as error:
-            _future_set_exception(self.fut, error)
-            self.bus._finalize(error)
-
-
-class _BackpressureSafeMessageBus(MessageBus):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self._writer = _BackpressureSafeMessageWriter(self)
 
 
 def _keyboard_boundary(action: str) -> bool:

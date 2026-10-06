@@ -27,6 +27,7 @@ from .notifications import NotificationBroker, NotificationPresenter
 from .lutris_install import LutrisInstallExecutor
 from .pc_install import PcInstallSource, PcSourceType
 from .pc_install_store import PcInstallSourceStore
+from .dbus_transport import BackpressureSafeMessageBus
 
 
 BUS_NAME = "org.lulu.Acquisitiond"
@@ -578,7 +579,7 @@ class AcquisitionInterface(ServiceInterface):
 
 async def serve(bus_type: BusType = BusType.SESSION) -> None:
     LOGGER.info("acquisitiond_lifecycle event=start pid=%s uid=%s", os.getpid(), os.geteuid())
-    bus = await MessageBus(bus_type=bus_type).connect()
+    bus = await BackpressureSafeMessageBus(bus_type=bus_type).connect()
     database = Path(os.environ.get("LULU_ACQUISITION_DB", str(PATHS.data_root / "acquisition.sqlite3")))
     store = AcquisitionStore(database)
     plugin_root = PATHS.plugins_root

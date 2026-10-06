@@ -557,7 +557,15 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertIn('acquisitionAvailable', native)
         self.assertIn('onAcquisitionRegistered', native)
         self.assertIn('onAcquisitionUnregistered', native)
-        self.assertIn('updateAcquisitionSnapshot(QStringLiteral("{\\"jobs\\":[],\\"activeDownloadCount\\":0}"), false)', native)
+        unregistered = native[native.index('void onAcquisitionUnregistered'):
+                              native.index('\nprivate:', native.index('void onAcquisitionUnregistered'))]
+        self.assertIn('setAcquisitionAvailable(false)', unregistered)
+        self.assertNotIn('updateAcquisitionSnapshot', unregistered)
+        self.assertIn('setAcquisitionAvailable(false)', native)
+        self.assertIn('root.serviceAvailable && !root.confirmationPending',
+                      (ROOT / "ui/DownloadsHome.qml").read_text())
+        self.assertNotIn('root.applyAcquisitionSnapshot("{\\"jobs\\":[],\\"activeDownloadCount\\":0}")',
+                         shell)
         self.assertIn('refreshAcquisitionStatus()', native)
         self.assertIn('acquisitionSnapshot', shell)
         self.assertIn('interval: 30000', shell)

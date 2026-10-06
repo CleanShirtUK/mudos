@@ -552,10 +552,6 @@ import QtQuick.Controls
         function onAcquisitionSnapshotChanged() {
             root.applyAcquisitionSnapshot(systemStatus.acquisitionSnapshot)
         }
-        function onAcquisitionAvailabilityChanged() {
-            if (!systemStatus.acquisitionAvailable)
-                root.applyAcquisitionSnapshot("{\"jobs\":[],\"activeDownloadCount\":0}")
-        }
     }
 
     // CatalogueModel receives Consoled's generation signal only after provider
@@ -4002,6 +3998,7 @@ import QtQuick.Controls
             visible: root.space === "downloads"
             z: 90
             snapshot: systemStatus.acquisitionSnapshot
+            serviceAvailable: systemStatus.acquisitionAvailable
             uiScale: root.uiScale
             typography: typography
             luluPalette: luluPalette

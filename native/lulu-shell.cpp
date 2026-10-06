@@ -539,7 +539,7 @@ private slots:
 
     void onAcquisitionUnregistered(const QString &)
     {
-        updateAcquisitionSnapshot(QStringLiteral("{\"jobs\":[],\"activeDownloadCount\":0}"), false);
+        setAcquisitionAvailable(false);
     }
 
 private:
@@ -551,12 +551,12 @@ private:
                                    QDBusConnection::sessionBus());
         const QDBusMessage reply = acquisition.call(QStringLiteral("GetSnapshot"));
         if (reply.type() == QDBusMessage::ReplyMessage && !reply.arguments().isEmpty())
-            updateAcquisitionSnapshot(reply.arguments().constFirst().toString(), true);
+            updateAcquisitionSnapshot(reply.arguments().constFirst().toString());
         else
-            updateAcquisitionSnapshot(QStringLiteral("{\"jobs\":[],\"activeDownloadCount\":0}"), false);
+            setAcquisitionAvailable(false);
     }
 
-    void updateAcquisitionSnapshot(const QString &snapshot, bool available = true)
+    void updateAcquisitionSnapshot(const QString &snapshot)
     {
         const QJsonDocument document = QJsonDocument::fromJson(snapshot.toUtf8());
         if (!document.isObject())
@@ -570,10 +570,15 @@ private:
             acquisitionSnapshot_ = snapshot;
             emit acquisitionSnapshotChanged();
         }
-        if (available != acquisitionAvailable_) {
-            acquisitionAvailable_ = available;
-            emit acquisitionAvailabilityChanged();
-        }
+        setAcquisitionAvailable(true);
+    }
+
+    void setAcquisitionAvailable(bool available)
+    {
+        if (available == acquisitionAvailable_)
+            return;
+        acquisitionAvailable_ = available;
+        emit acquisitionAvailabilityChanged();
     }
 
     static bool networkStateIsConnected(uint state)

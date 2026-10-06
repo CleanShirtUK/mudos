@@ -142,6 +142,35 @@ class ConsoledStartupTests(unittest.TestCase):
         self.assertIsNone(writer.fut)
         bus._finalize.assert_not_called()
 
+    def test_dbus_writer_resumes_pending_message_after_transient_backpressure(self) -> None:
+        class Socket:
+            def __init__(self):
+                self.calls = 0
+                self.sent = bytearray()
+
+            def send(self, data):
+                self.calls += 1
+                if self.calls == 1:
+                    raise BlockingIOError(11, "Resource temporarily unavailable")
+                self.sent.extend(data)
+                return len(data)
+
+        bus = SimpleNamespace(
+            _negotiate_unix_fd=False, _sock=Socket(), _loop=SimpleNamespace(
+                remove_writer=lambda _fd: None), _fd=10, _finalize=Mock(),
+        )
+        writer = _BackpressureSafeMessageWriter(bus)
+        writer.buf = memoryview(b"pending D-Bus message")
+
+        writer.write_callback()
+        self.assertEqual(writer.offset, 0)
+        self.assertEqual(bytes(writer.buf), b"pending D-Bus message")
+        writer.write_callback()
+
+        self.assertEqual(bytes(bus._sock.sent), b"pending D-Bus message")
+        self.assertIsNone(writer.buf)
+        bus._finalize.assert_not_called()
+
     def test_empty_dbus_provider_means_combined_installable_catalogue(self) -> None:
         store = Mock()
         store.list_available_games.return_value = []
