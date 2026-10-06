@@ -137,6 +137,20 @@ was not changed.
 
 ## ACTIVE
 
+### LIBRARY-001 — Open the selected Library dimension
+
+**Status:** OPEN — operator-reported navigation defect; not investigated or
+fixed.
+
+- On the Library home, selecting a Provider or Platform card and opening it
+  always enters the Provider view, regardless of which card was selected.
+- Once the Library view has opened, switching categories within the view works
+  normally. Preserve that working behavior while tracing the initial
+  card-selection/open transition.
+- Acceptance: opening each Provider/Platform card enters its corresponding
+  dimension and selected category; in-view category switching continues to
+  work in both dimensions.
+
 ### UNINSTALL-UX-001 — Hide titles while uninstall runs
 
 **Status:** ACCEPTED — requirements captured; implementation deferred.
