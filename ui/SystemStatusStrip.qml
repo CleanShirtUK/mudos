@@ -1,4 +1,5 @@
 import QtQuick
+import Mudos.Poc 1.0
 
 // Shell-owned persistent status presentation. Data is intentionally supplied
 // through provider-neutral properties so controller/download services can bind
@@ -10,6 +11,10 @@ Item {
     property real uiScale: 1
     property var typography
     property var luluPalette
+    property var canonicalTexture
+    property var canonicalCoordinateRoot
+    property size canonicalSize: Qt.size(1280, 720)
+    property real presentationProgress: 1
     property int activeDownloadCount: 0
     property var controllers: []
     onControllersChanged: syncControllers()
@@ -27,6 +32,15 @@ Item {
     readonly property real backingPadding: 10 * uiScale * presentationScale
     readonly property color statusColor: luluPalette ? luluPalette.primaryText : "white"
     readonly property int presentedControllerCount: controllerPresentation.count
+    readonly property rect backingCanonicalRect: {
+        var presentationDependency = presentationProgress + x + y + width + height
+            + uiScale + (canonicalCoordinateRoot ? canonicalCoordinateRoot.width : 0)
+        var topLeft = canonicalCoordinateRoot
+            ? root.mapToItem(canonicalCoordinateRoot, 0, 0) : Qt.point(0, 0)
+        return Qt.rect(topLeft.x + presentationDependency - presentationDependency,
+                       topLeft.y + presentationDependency - presentationDependency,
+                       width, height)
+    }
 
     function controllerKey(controller) {
         return String(controller.identity || "player:" + controller.index)
@@ -104,9 +118,27 @@ Item {
         anchors.fill: parent
         radius: 10 * root.uiScale
         color: root.luluPalette ? root.luluPalette.glassTint : "#1d2a49"
-        opacity: 0.76
         border.color: root.luluPalette ? root.luluPalette.glassBorder : "#455274"
         border.width: root.uiScale
+
+        MudosGlassItem {
+            anchors.fill: parent
+            backdrop: root.canonicalTexture
+            canonicalSize: root.canonicalSize
+            canonicalRect: root.backingCanonicalRect
+            cornerRadius: statusBacking.radius
+            refractionPixels: 80 * root.uiScale
+            dispersionIor: 0.0175
+            diffusionPixels: 5 * root.uiScale
+            transmission: 0.75
+            bevelWidthPx: 3 * root.uiScale
+            bulgeStrength: 100
+            sceneLightStrength: 0
+            sceneLightPixels: 24
+            edgeLightStrength: 0.10
+            edgeLightDirection: Qt.vector2d(1, -1)
+            transparentOutsideMask: true
+        }
     }
 
     Timer {

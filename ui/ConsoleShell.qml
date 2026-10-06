@@ -4335,6 +4335,10 @@ import QtQuick.Controls
             }
             compact: false
             uiScale: root.uiScale
+            canonicalTexture: orbitTexture
+            canonicalCoordinateRoot: orbitRenderSource
+            canonicalSize: Qt.size(root.width, root.height)
+            presentationProgress: presentationCoordinator.presentationProgress
             typography: typography
             luluPalette: luluPalette
             activeDownloadCount: systemStatus ? systemStatus.activeDownloadCount : 0
