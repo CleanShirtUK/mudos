@@ -257,8 +257,11 @@ projection corrected; full regression suite passed.
   the coordinator's entrance animation. Focus moves to Recents immediately before
   the launch overlay appears; the existing deferred reconcile/presentation
   animation then runs on return, avoiding per-row Library return animations.
-  Recheck physical launch-failure recovery in dev-current. Production remains
-  unchanged.
+- For the launch-only Library exit, hold the glass backing at expanded dimensions
+  and appearance while translating it vertically offscreen with the Library
+  surface. Ordinary Back navigation retains the existing scale-to-card transition.
+  Regression coverage checks the launch-only geometry; physically verify the
+  launch/return choreography in dev-current. Production remains unchanged.
 
 ### NOTIFICATIONS-001 — Route transient status messages to Notifications
 

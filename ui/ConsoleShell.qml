@@ -3593,6 +3593,7 @@ import QtQuick.Controls
                          canonicalCoordinateRoot: orbitRenderSource
                          canonicalSize: Qt.size(root.width, root.height)
              progress: root.libraryTransitionProgress
+             launchExitActive: root.pendingLibraryLaunch !== null
             homeX: root.homeContentRailX
             homeY: root.homeActiveContentOriginY
              homeWidth: root.homeNavigationCardWidth

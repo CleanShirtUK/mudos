@@ -543,7 +543,7 @@ class ConsoleUiTests(unittest.TestCase):
         spatial = (ROOT / "ui/LibrarySpatialSurface.qml").read_text()
         self.assertEqual(library_space.count('border.color: root.luluPalette.libraryBorder'), 2)
         self.assertIn('panelSurfaceColor: luluPalette.librarySurface', shell)
-        self.assertIn('opacity: root.panelSurfaceOpacity * root.progress', spatial)
+        self.assertIn('opacity: root.panelSurfaceOpacity * root.surfacePresentationProgress', spatial)
         self.assertIn('kind === "catalogue"', store_home)
         self.assertIn('root.selectedCategoryIndex === 3 ? "Navigation" : "Navigate"', shell)
         self.assertNotIn('"Navigate / Games"', shell)
@@ -1281,6 +1281,7 @@ class ConsoleUiTests(unittest.TestCase):
     def test_library_navigation_separates_grid_and_collection_controls(self) -> None:
         shell = (ROOT / "ui" / "ConsoleShell.qml").read_text()
         library_space = (ROOT / "ui" / "LibrarySpace.qml").read_text()
+        spatial_surface = (ROOT / "ui" / "LibrarySpatialSurface.qml").read_text()
         self.assertIn("function moveLibraryVertical(delta)", shell)
         self.assertIn("function moveLibraryCategory(delta)", shell)
         self.assertIn("librarySpace.moveCategory(delta)", shell)
@@ -1308,6 +1309,11 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertIn('pendingHomeLaunchPhase = "launching"', shell)
         activation = shell.split('if (space === "library") {', 1)[1].split('if (space === "store") {', 1)[0]
         self.assertIn("homeFadeIn.stop()", activation)
+        self.assertIn("launchExitActive: root.pendingLibraryLaunch !== null", shell)
+        self.assertIn("surfaceWidth: launchExitActive ? fullscreenWidth", spatial_surface)
+        self.assertIn("surfaceHeight: launchExitActive ? fullscreenHeight", spatial_surface)
+        self.assertIn("surfacePresentationProgress: launchExitActive ? 1 : progress", spatial_surface)
+        self.assertIn("parent.height : surfaceHeight) * (1 - progress)", spatial_surface)
         library_host = shell.split('LibrarySpace {', 1)[1].split('StoreOptions {', 1)[0]
         self.assertNotIn('anchors.fill: parent', library_host)
         self.assertIn('height: parent.height', library_host)

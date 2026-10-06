@@ -17,18 +17,25 @@ Item {
     property real fullscreenHeight: 0
     property real uiScale: 1
     property real verticalOffset: 0
+    property bool launchExitActive: false
     property bool surfaceVisible: false
     property bool transparentOutsideMask: true
     property color panelSurfaceColor: "transparent"
     property real panelSurfaceOpacity: 0.40
 
-    readonly property real surfaceX: homeX + (fullscreenX - homeX) * progress
-    readonly property real surfaceY: homeY + (fullscreenY - homeY) * progress
-    readonly property real surfaceWidth: homeWidth + (fullscreenWidth - homeWidth) * progress
-    readonly property real surfaceHeight: homeHeight + (fullscreenHeight - homeHeight) * progress
+    readonly property real surfaceX: launchExitActive ? fullscreenX
+        : homeX + (fullscreenX - homeX) * progress
+    readonly property real surfaceY: launchExitActive ? fullscreenY
+        : homeY + (fullscreenY - homeY) * progress
+    readonly property real surfaceWidth: launchExitActive ? fullscreenWidth
+        : homeWidth + (fullscreenWidth - homeWidth) * progress
+    readonly property real surfaceHeight: launchExitActive ? fullscreenHeight
+        : homeHeight + (fullscreenHeight - homeHeight) * progress
+    readonly property real surfacePresentationProgress: launchExitActive ? 1 : progress
 
     x: surfaceX
-    y: surfaceY + verticalOffset
+    y: surfaceY + verticalOffset + (launchExitActive
+        ? (parent ? parent.height : surfaceHeight) * (1 - progress) : 0)
     width: surfaceWidth
     height: surfaceHeight
     visible: surfaceVisible
@@ -65,8 +72,8 @@ Item {
          canonicalCoordinateRoot: root.canonicalCoordinateRoot
          canonicalRect: root.canonicalRect
          transparentOutsideMask: root.transparentOutsideMask
-         cornerRadius: 16 * root.uiScale + 12 * root.uiScale * root.progress
-         bevelWidthPx: 3 * root.uiScale + 3 * root.uiScale * root.progress
+          cornerRadius: 16 * root.uiScale + 12 * root.uiScale * root.surfacePresentationProgress
+          bevelWidthPx: 3 * root.uiScale + 3 * root.uiScale * root.surfacePresentationProgress
     }
 
     // Match the list/detail surface tint only as this shared backing expands;
@@ -75,6 +82,6 @@ Item {
         anchors.fill: parent
         radius: spatialSurface.cornerRadius
         color: root.panelSurfaceColor
-        opacity: root.panelSurfaceOpacity * root.progress
+        opacity: root.panelSurfaceOpacity * root.surfacePresentationProgress
     }
 }
