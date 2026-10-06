@@ -421,6 +421,31 @@ class CatalogueTests(unittest.TestCase):
 
         self.assertEqual([record.game_id for record in recent], ["steam:40800"])
 
+    def test_recent_migrates_legacy_steam_history_to_launchable_aurelia_identity(self) -> None:
+        legacy = CatalogueGame(
+            game_id="steam:40800", provider="steam", provider_id="40800",
+            title="Super Meat Boy", platform="PC", install_state="installed",
+            launchable=True, install_dir="/steam/Super Meat Boy", artwork_url="",
+            last_played=123, catalogue_source="steam",
+        )
+        aurelia = CatalogueGame(
+            game_id="steam-aurelia:40800", provider="steam-aurelia", provider_id="40800",
+            title="Super Meat Boy", platform="PC", install_state="installed",
+            launchable=True, install_dir="/aurelia/Super Meat Boy", artwork_url="",
+            last_played=0, catalogue_source="steam-aurelia",
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            store = CatalogueStore(Path(directory) / "catalogue.sqlite3")
+            store._upsert(legacy)
+            store._upsert(aurelia)
+            store.connection.commit()
+
+            recent = store.list_recent()
+
+        self.assertEqual([game.game_id for game in recent], ["steam-aurelia:40800"])
+        self.assertEqual(recent[0].last_played, 123)
+        self.assertTrue(recent[0].launchable)
+
     def test_unchanged_steam_reconcile_has_no_write_or_delta(self) -> None:
         game = InstalledSteamGame("40800", "Super Meat Boy", "/games/Super Meat Boy", "/games", 123, 0)
         with tempfile.TemporaryDirectory() as directory:

@@ -409,12 +409,17 @@ class ConsoleBridgeTests(unittest.TestCase):
             async def call_launch_game(self, game_id: str, timeout: int) -> str:
                 raise AssertionError("Steam launch bypassed sessiond")
 
+            async def call_mark_played(self, game_id: str) -> None:
+                self.played = game_id
+
         async def exercise() -> None:
-            bridge = BRIDGE.ConsoleUiBridge(asyncio.get_running_loop(), Consoled(), Session())
+            consoled = Consoled()
+            bridge = BRIDGE.ConsoleUiBridge(asyncio.get_running_loop(), consoled, Session())
             result = await bridge.launch_game("steam:40800")
             self.assertIsInstance(result["token"], str)
             self.assertEqual(json.loads(json.dumps(result))["token"], "transaction-token")
             self.assertEqual(result, {"token": "transaction-token", "navigation_only": False})
+            self.assertEqual(consoled.played, "steam:40800")
 
         asyncio.run(exercise())
 
@@ -434,14 +439,19 @@ class ConsoleBridgeTests(unittest.TestCase):
             async def call_launch_game(self, game_id: str, timeout: int) -> str:
                 raise AssertionError("Steam launch bypassed sessiond")
 
+            async def call_mark_played(self, game_id: str) -> None:
+                self.played = game_id
+
         async def exercise() -> None:
             session = Session()
-            bridge = BRIDGE.ConsoleUiBridge(asyncio.get_running_loop(), Consoled(), session)
+            consoled = Consoled()
+            bridge = BRIDGE.ConsoleUiBridge(asyncio.get_running_loop(), consoled, session)
             with patch.dict(BRIDGE.os.environ, {"LULU_STEAM_LAUNCH_PROVIDER": "steam-aurelia"}):
                 result = await bridge.launch_game("steam:104200")
             self.assertEqual(result, {"token": "aurelia-token", "navigation_only": False})
             self.assertEqual(session.request, ("104200", 15000))
             self.assertTrue(session.context_set)
+            self.assertEqual(consoled.played, "steam:104200")
 
         asyncio.run(exercise())
 
@@ -461,14 +471,19 @@ class ConsoleBridgeTests(unittest.TestCase):
             async def call_launch_game(self, game_id: str, timeout: int) -> str:
                 raise AssertionError("Aurelia catalogue identity was sent through Consoled")
 
+            async def call_mark_played(self, game_id: str) -> None:
+                self.played = game_id
+
         async def exercise() -> None:
             session = Session()
-            bridge = BRIDGE.ConsoleUiBridge(asyncio.get_running_loop(), Consoled(), session)
+            consoled = Consoled()
+            bridge = BRIDGE.ConsoleUiBridge(asyncio.get_running_loop(), consoled, session)
             with patch.dict(BRIDGE.os.environ, {}, clear=True):
                 result = await bridge.launch_game("steam-aurelia:104200")
             self.assertEqual(result, {"token": "aurelia-token", "navigation_only": False})
             self.assertEqual(session.request, ("104200", 15000))
             self.assertTrue(session.context_set)
+            self.assertEqual(consoled.played, "steam-aurelia:104200")
 
         asyncio.run(exercise())
 
@@ -502,6 +517,12 @@ class ConsoleBridgeTests(unittest.TestCase):
             consoled._plugins = SimpleNamespace(with_capability=lambda _capability: ())
             consoled.sessiond = session
             consoled._publish_delta = Mock()
+            marked = []
+
+            async def mark_played(identity):
+                marked.append(identity)
+
+            consoled.call_mark_played = mark_played
             bridge = BRIDGE.ConsoleUiBridge(asyncio.get_running_loop(), consoled, session)
             with patch.dict(BRIDGE.os.environ, override, clear=True), \
                     patch.object(consoled, "CatalogueChanged", lambda: None):
@@ -511,6 +532,7 @@ class ConsoleBridgeTests(unittest.TestCase):
 
             self.assertEqual(http_result["token"], dbus_result)
             self.assertEqual(session.requests, [("104200", 15000), ("104200", 15000)])
+            self.assertEqual(marked, [game_id])
 
         async def run():
             await exercise("steam-aurelia:104200", "steam-aurelia", {})

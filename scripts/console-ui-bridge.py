@@ -285,6 +285,7 @@ class ConsoleUiBridge:
             await self.sessiond.call_set_delegated_launch_context(json.dumps(context, sort_keys=True))
             token = normalize_launch_token(await self.sessiond.call_request_aurelia_launch(
                 route.provider_game_id, 15000))
+            await self._record_played(game_id)
             self.launch_logs.note("Steam Aurelia", f"aurelia play {route.provider_game_id}")
             self.launch_logs.note(
                 "Lulu", f"session launch boundary reached game_id={game_id} "
@@ -293,6 +294,7 @@ class ConsoleUiBridge:
         elif route.dispatch is LaunchDispatch.STEAM:
             token = normalize_launch_token(await self.sessiond.call_request_steam_launch(
                 route.provider_game_id, 15000))
+            await self._record_played(game_id)
             self.launch_logs.note(
                 "Lulu", f"session launch boundary reached game_id={game_id} "
                 f"appid={route.provider_game_id} token={token}",
@@ -308,6 +310,15 @@ class ConsoleUiBridge:
             "token": token,
             "navigation_only": token.startswith("steam://nav/games/details/"),
         }
+
+    async def _record_played(self, game_id: str) -> None:
+        """Persist Recents after Sessiond accepts a direct Steam-family launch."""
+        try:
+            await self.consoled.call_mark_played(game_id)
+        except Exception:
+            # Do not report a successfully accepted game launch as failed just
+            # because the optional Recents update could not be committed.
+            LOGGER.exception("launch accepted but Recents update failed game_id=%s", game_id)
 
     async def state(self) -> dict[str, object]:
         return json.loads(await self.sessiond.call_get_state())

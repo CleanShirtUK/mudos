@@ -2876,6 +2876,17 @@ class ConsoleInterface(ServiceInterface):
         return token
 
     @method()
+    def MarkPlayed(self, game_id: "s") -> "":
+        """Record a launch accepted by Sessiond's direct Steam/Aurelia route."""
+        game = next((item for item in self.catalogue.store.list_games()
+                     if item.game_id == game_id and item.launchable), None)
+        if game is None:
+            raise ValueError("game is not installed and launchable")
+        delta = self.catalogue.store.mark_played(game.game_id)
+        self._publish_delta(delta)
+        self.CatalogueChanged()
+
+    @method()
     async def CancelLocalLaunch(self) -> "":
         process = self._local_process
         if process is None:

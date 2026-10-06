@@ -226,16 +226,20 @@ fixed.
 
 ### RECENTS-001 — Steam Recents and legacy launch behavior after Aurelia migration
 
-**Status:** OPEN — operator findings recorded; investigation and fixes deferred.
+**Status:** FIXED — direct Steam-family launch recents and legacy Aurelia identity
+projection corrected; full regression suite passed.
 
-- Steam games launched since the Aurelia implementation are not appearing in
-  Recents.
-- Some Steam games from before the Aurelia migration still appear in Recents,
-  including Super Meat Boy, but launching those entries does not work.
-- These are two observed symptoms; their relationship and root cause have not
-  been established. Investigate Recents population and launch routing across
-  pre-migration and Aurelia-backed Steam entries without assuming they share a
-  cause.
+- Root causes were separate: direct Steam/Aurelia launches through the UI bridge
+  bypassed Consoled's `mark_played` path, while legacy `steam:<AppID>` recents
+  remained in the recent query after Library had switched to the Aurelia row.
+  The latter recent identity was not launchable through the current Library
+  projection when its Aurelia counterpart existed.
+- After a Sessiond-accepted Steam or Aurelia launch, the bridge now records the
+  launch through Consoled. Legacy play timestamps are projected onto the
+  matching installed `steam-aurelia:<AppID>` row; stale entries whose Aurelia
+  counterpart is not installed are not exposed as launchable recents.
+- Regression coverage verifies both direct-launch recents updates and migration
+  of legacy Steam history to the Aurelia identity. Production was not changed.
 
 ### LUTRIS-002 — Sonic 3 A.I.R. launch leaves Mudos unresponsive
 

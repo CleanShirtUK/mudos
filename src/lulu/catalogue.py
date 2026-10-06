@@ -1291,11 +1291,29 @@ class CatalogueStore:
         return self._rows(f"SELECT {SELECT_COLUMNS} FROM games ORDER BY title COLLATE NOCASE")
 
     def list_recent(self) -> list[CatalogueGame]:
-        return self._rows(
+        rows = self._rows(
             f"SELECT {SELECT_COLUMNS} FROM games WHERE {self._installed_presentation_where()} "
             "AND (provider<>'flatpak' OR component_classification='game') "
             "AND last_played>0 ORDER BY last_played DESC"
         )
+        # Steam rows can survive the Aurelia migration as the older identity
+        # even after Library presentation has switched to steam-aurelia:<AppID>.
+        # Project their historical play time onto the launchable Aurelia row so
+        # Recents neither shows an unlaunchable duplicate nor loses history.
+        recent: dict[str, CatalogueGame] = {}
+        for game in rows:
+            if game.provider == "steam":
+                aurelia = self.get_game_by_provider_id("steam-aurelia", game.provider_id)
+                if aurelia is not None:
+                    if aurelia.install_state != "installed" or not aurelia.launchable:
+                        continue
+                    aurelia = replace(aurelia, last_played=max(game.last_played, aurelia.last_played))
+                    existing = recent.get(aurelia.game_id)
+                    if existing is None or aurelia.last_played > existing.last_played:
+                        recent[aurelia.game_id] = aurelia
+                    continue
+            recent[game.game_id] = game
+        return sorted(recent.values(), key=lambda game: (-game.last_played, game.title.casefold()))
 
     def list_available_games(self, provider: str | None = None) -> list[CatalogueGame]:
         # Installable is an entitlement/access surface, not provider
