@@ -53,7 +53,10 @@ blocked until that acceptance is recorded. `/opt/lulu/current` remains untouched
   status-strip-derived safe-width reserve is removed. Focused geometry, Library,
   Utilities QML tests pass; the focused Console UI Python tests pass. Native
   build and `git diff --check` pass. `qmllint` reports only existing warnings in
-  nested delegates and StoreHome. Deployment of this correction is pending.
+  nested delegates and StoreHome. Commit `206b7a7` is deployed to
+  `/opt/lulu/dev-current`; Sessiond, Consoled, and Acquisitiond are active from
+  that runtime. `/opt/lulu/current` is unchanged. Physical visual acceptance
+  remains outstanding.
 - Physical validation must cover Recent end-card clipping, status-strip
   placement, Library/Installable rail clearance, Settings glass/focus,
   Utilities layout/media/hints, centered Downloads glass/empty-state/hints,
