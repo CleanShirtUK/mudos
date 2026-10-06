@@ -139,9 +139,8 @@ was not changed.
 
 ### SET-001 — Consolidate System Settings navigation
 
-**Status:** IMPLEMENTING — unified navigation shell, preserved category hosts,
-and automated regression coverage are in place; dev-current deployment and
-physical acceptance remain.
+**Status:** VALIDATION — implementation, automated tests, and dev-current
+deployment are complete; physical/presentation acceptance remains.
 
 - System exposes only **Settings** and **Utilities**. Settings categories are
   derived from the existing provider-backed pages: Network, Bluetooth, Display,
@@ -149,12 +148,30 @@ physical acceptance remain.
 - Settings uses a two-panel category/content shell without a horizontal category
   rail. Existing category components retain their models, refresh behavior,
   subviews, and mutation/service boundaries.
-- Validate the controller and couch-distance presentation on dev-current:
-  category glyphs/density; no rail or reserved gap; no row-level glass cards;
-  unmistakable active-panel borders; left/right focus transitions; category and
-  control navigation; dynamic list behavior; representative safe mutations;
-  nested Back behavior; and clean return to System with no duplicate cards.
+- Physical/presentation acceptance checklist:
+  1. Open System and confirm only **Settings** and **Utilities** are present.
+  2. Open Settings; confirm title directly precedes the two panels, with no
+     horizontal category rail or reserved gap. Check list density/glyphs,
+     panel-level glass, plain setting rows, couch readability, and active border
+     contrast while focus moves between panels.
+  3. With a controller, move up/down through categories; move right into content;
+     navigate controls; use left (or Back where a control consumes left) to
+     return to categories. Back again to System, then Back to Home.
+  4. Visit Network, Bluetooth, Display, Audio, Controllers, Storage, and System;
+     confirm their live models populate/update and category changes do not reset
+     discovered state. Check nested details/subviews and unwind each with Back.
+  5. Confirm Utilities still opens and works. Do not apply display modes, eject
+     storage, pair/connect devices, or change network settings during this pass.
 - `/opt/lulu/current` must remain unchanged.
+
+**Implementation status:** committed in `701069f` plus follow-up QML startup fix
+`3656eb0`. Full Python suite: 1,204 passed and 85 subtests; Settings QML suite:
+5 passed; QML lint and shell syntax checks passed. `/opt/lulu/dev-current` is a
+clean, non-promotable runtime at `3656eb0`; Sessiond and Consoled are active and
+ConsoleShell loads. Three failed starts during initial validation entered the
+existing recovery latch; after correcting the duplicate QML properties, only
+that failure history was cleared and the normal ConsoleShell was restarted.
+`/opt/lulu/current` remains on its original immutable release.
 
 ### LIBRARY-001 — Open the selected Library dimension
 
