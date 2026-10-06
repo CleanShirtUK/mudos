@@ -39,10 +39,10 @@ Item {
     // so the frame remains expressed in root coordinates for both Library and
     // StoreHome's Installable projection.
     property rect surfaceBounds: Qt.rect(0, 0, width, height)
+    property rect contentBounds: surfaceBounds
     property real innerInset: 20 * uiScale
     property real contentBottom: parent ? parent.height : 0
     property real contentSideMargin: 72 * uiScale
-    property real categoryTapeRightInset: 0
     property string headingText: "LIBRARY"
     property string sectionTitle: ""
     property string emptyText: "No installed games"
@@ -80,9 +80,9 @@ Item {
     property real internalSurfaceOpacity: 0.34
     readonly property string libraryFontFamily: typography ? typography.displayFamily : "monospace"
     readonly property rect contentFrameRect: Qt.rect(
-        surfaceBounds.x + innerInset, surfaceBounds.y + innerInset,
-        Math.max(0, surfaceBounds.width - 2 * innerInset),
-        Math.max(0, surfaceBounds.height - 2 * innerInset))
+        contentBounds.x + innerInset, contentBounds.y + innerInset,
+        Math.max(0, contentBounds.width - 2 * innerInset),
+        Math.max(0, contentBounds.height - 2 * innerInset))
     readonly property real panelGap: 22 * uiScale
     readonly property real categoryRailHeight: 28 * uiScale
     readonly property real categoryRailGap: 14 * uiScale
@@ -286,7 +286,7 @@ Item {
         objectName: "libraryTitle"
         x: root.titleX
         y: root.titleY
-        width: Math.max(0, root.width - x - root.categoryTapeRightInset)
+        width: Math.max(0, root.width - x)
         height: 42 * root.uiScale
         opacity: root.contentOpacity
         text: root.browsingExternalCategories ? root.headingText
@@ -314,7 +314,7 @@ Item {
             id: categoryTape
             objectName: "libraryCategoryTape"
             x: 0; y: 0
-            width: Math.max(0, parent.width - root.categoryTapeRightInset)
+            width: parent.width
             height: root.categoryRailHeight
             orientation: ListView.Horizontal
             spacing: 26 * root.uiScale

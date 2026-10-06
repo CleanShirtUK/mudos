@@ -26,6 +26,7 @@ Item {
     property real contentBottom: parent ? parent.height : 0
     property real contentSideMargin: 120 * uiScale
     property rect surfaceBounds: Qt.rect(0, 0, width, height)
+    property rect contentBounds: surfaceBounds
     property real innerInset: 20 * uiScale
     property real titleX: 0
     property real titleY: 0
@@ -287,6 +288,7 @@ Item {
         anchors.fill: parent
         visible: root.cardWidth === 0
         surfaceBounds: root.surfaceBounds
+        contentBounds: root.contentBounds
         canonicalGames: root.displayGames
         acquisitionJobs: root.acquisitionJobs
         selectedIndex: root.selectedIndex

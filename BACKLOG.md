@@ -47,6 +47,13 @@ blocked until that acceptance is recorded. `/opt/lulu/current` remains untouched
   with that runtime configured. `/opt/lulu/current` remains unchanged. Operator
   visual acceptance is still required; UI-001 remains VALIDATION and THEME-001
   remains BLOCKED.
+- Final geometry correction: extend only the common substrate upward by
+  `design(8)` while retaining the prior content Y/bottom bounds. The Library and
+  Installable category rail now spans its actual symmetric inner frame; the
+  status-strip-derived safe-width reserve is removed. Focused geometry, Library,
+  Utilities QML tests pass; the focused Console UI Python tests pass. Native
+  build and `git diff --check` pass. `qmllint` reports only existing warnings in
+  nested delegates and StoreHome. Deployment of this correction is pending.
 - Physical validation must cover Recent end-card clipping, status-strip
   placement, Library/Installable rail clearance, Settings glass/focus,
   Utilities layout/media/hints, centered Downloads glass/empty-state/hints,

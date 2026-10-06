@@ -191,7 +191,6 @@ import QtQuick.Controls
     // safe inset on every Mudos destination; never follow Home's title rail.
     readonly property real statusStripRightMargin: expandedShellSideMargin
     readonly property real statusStripTop: expandedShellTop
-    readonly property real expandedHeaderRightMargin: expandedShellSideMargin
     readonly property real expandedContentSideMargin: design(120)
     // Frame the actual six-card visual envelope, using the same inter-card
     // gap as the backing clearance on both sides.
@@ -220,6 +219,7 @@ import QtQuick.Controls
     readonly property real expandedTitleX: expandedTitleBounds.x
     readonly property real expandedTitleY: expandedTitleBounds.y
     readonly property rect expandedSurfaceBounds: expandedGeometry.surfaceBounds
+    readonly property rect expandedContentBounds: expandedGeometry.contentBounds
     readonly property real expandedSurfaceX: expandedSurfaceBounds.x
     readonly property real expandedSurfaceY: expandedSurfaceBounds.y
     readonly property real expandedSurfaceWidth: expandedSurfaceBounds.width
@@ -230,13 +230,9 @@ import QtQuick.Controls
     readonly property real expandedHintBandTop: expandedHintRowTop
     readonly property real expandedHeaderTop: expandedSurfaceY
     readonly property real expandedContentX: expandedShellX
-    readonly property real expandedContentY: expandedSurfaceY
-    readonly property real expandedContentWidth: expandedShellWidth
-    readonly property real expandedContentHeight: Math.max(0, expandedSurfaceBottom - expandedContentY)
-    readonly property real expandedStatusReserve: systemStatusStrip.width + design(24)
-    readonly property real libraryCategoryRightSafeInset: Math.max(0,
-        expandedShellX + expandedShellWidth - design(30)
-        - (width - expandedHeaderRightMargin - expandedStatusReserve))
+    readonly property real expandedContentY: expandedContentBounds.y
+    readonly property real expandedContentWidth: expandedContentBounds.width
+    readonly property real expandedContentHeight: expandedContentBounds.height
     // Keep the vertical category reveal clip, but give the captured Recent row
     // more horizontal room than the maximum motion-blur footprint.
     readonly property real recentHorizontalOverscan: Math.max(
@@ -4012,7 +4008,7 @@ import QtQuick.Controls
              canonicalCoordinateRoot: orbitRenderSource
              canonicalSize: Qt.size(root.width, root.height)
               surfaceBounds: root.expandedSurfaceBounds
-               categoryTapeRightInset: root.libraryCategoryRightSafeInset
+              contentBounds: root.expandedContentBounds
               titleX: root.expandedTitleX
               titleY: root.expandedTitleY
               innerInset: root.expandedInnerInset
@@ -4081,7 +4077,8 @@ import QtQuick.Controls
             canonicalCoordinateRoot: orbitRenderSource
             canonicalSize: Qt.size(root.width, root.height)
               surfaceBounds: root.expandedSurfaceBounds
-             contentBottom: root.expandedContentBottom
+              contentBounds: root.expandedContentBounds
+              contentBottom: root.expandedContentBottom
              titleX: root.expandedTitleX
              titleY: root.expandedTitleY
              innerInset: root.expandedInnerInset
@@ -4148,11 +4145,12 @@ import QtQuick.Controls
 
         SettingsSpace {
             id: settingsSpace
-            x: root.expandedSurfaceBounds.x
-            y: root.expandedSurfaceBounds.y
-            width: root.expandedSurfaceBounds.width
-            height: root.expandedSurfaceBounds.height
+            x: root.expandedContentBounds.x
+            y: root.expandedContentBounds.y
+            width: root.expandedContentBounds.width
+            height: root.expandedContentBounds.height
             innerInset: root.expandedInnerInset
+            surfaceTopExtension: root.expandedGeometry.surfaceTopExtension
             visible: (root.space === "system" || root.systemTransitioning)
                 && root.systemCategories[root.systemCategoryIndex] !== "Utilities"
             opacity: root.systemTransitionProgress
@@ -4248,11 +4246,12 @@ import QtQuick.Controls
 
         UtilitiesHome {
             id: utilitiesHome
-            x: root.expandedSurfaceBounds.x
-            y: root.expandedSurfaceBounds.y
-            width: root.expandedSurfaceBounds.width
-            height: root.expandedSurfaceBounds.height
+            x: root.expandedContentBounds.x
+            y: root.expandedContentBounds.y
+            width: root.expandedContentBounds.width
+            height: root.expandedContentBounds.height
             innerInset: root.expandedInnerInset
+            surfaceTopExtension: root.expandedGeometry.surfaceTopExtension
             visible: (root.space === "system" || root.systemTransitioning)
                 && root.systemCategories[root.systemCategoryIndex] === "Utilities"
             opacity: root.systemTransitionProgress

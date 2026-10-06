@@ -16,6 +16,7 @@ QtObject {
     property real titleHeight: 37 * uiScale
     property real titleToSurfaceGap: 21 * uiScale
     property real surfaceLead: 16 * uiScale
+    property real surfaceTopExtension: 8 * uiScale
     property real hintBandTop: 648
     property real surfaceToHintGap: 8 * uiScale
     property real innerInset: 20 * uiScale
@@ -27,7 +28,7 @@ QtObject {
             - titleLeftInset * uiScale), titleHeight)
     readonly property real surfaceX: shellSideInset
     readonly property real surfaceY: shellTop + titleHeight
-        + titleToSurfaceGap + surfaceLead
+        + titleToSurfaceGap + surfaceLead - surfaceTopExtension
     readonly property real surfaceWidth: Math.max(0,
         screenWidth - 2 * shellSideInset)
     readonly property real surfaceBottom: hintBandTop - surfaceToHintGap
@@ -35,8 +36,11 @@ QtObject {
         surfaceBottom - surfaceY)
     readonly property rect surfaceBounds: Qt.rect(surfaceX, surfaceY,
         surfaceWidth, surfaceHeight)
+    readonly property real contentY: surfaceY + surfaceTopExtension
+    readonly property rect contentBounds: Qt.rect(surfaceX, contentY,
+        surfaceWidth, Math.max(0, surfaceBottom - contentY))
     readonly property rect innerBounds: Qt.rect(
-        surfaceX + innerInset, surfaceY + innerInset,
+        surfaceX + innerInset, contentY + innerInset,
         Math.max(0, surfaceWidth - 2 * innerInset),
-        Math.max(0, surfaceHeight - 2 * innerInset))
+        Math.max(0, contentBounds.height - 2 * innerInset))
 }

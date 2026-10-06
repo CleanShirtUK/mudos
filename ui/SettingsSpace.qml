@@ -17,6 +17,7 @@ Item {
     property real leftWidth: Math.max(280 * uiScale, width * 0.29)
     readonly property real panelGap: 18 * uiScale
     property real innerInset: 20 * uiScale
+    property real surfaceTopExtension: 8 * uiScale
     readonly property real panelInset: innerInset
     readonly property rect internalFrameBounds: Qt.rect(innerInset, innerInset,
         Math.max(0, width - 2 * innerInset),
@@ -48,9 +49,8 @@ Item {
 
     MudosPanelSurface {
         objectName: "settingsGlassSubstrate"
-        anchors.fill: parent
-        x: 0; y: 0
-        width: root.width; height: root.height
+        x: 0; y: -root.surfaceTopExtension
+        width: root.width; height: root.height + root.surfaceTopExtension
         cornerRadius: 18 * root.uiScale
         uiScale: root.uiScale
         luluPalette: root.luluPalette

@@ -17,6 +17,7 @@ Item {
     property real expandedContentWidth: width
     property real expandedContentHeight: height
     property real innerInset: 20 * uiScale
+    property real surfaceTopExtension: 8 * uiScale
     property real titleX: 0
     property real titleY: 0
     readonly property rect internalFrameBounds: Qt.rect(innerInset, innerInset,
@@ -73,7 +74,8 @@ Item {
 
     MudosPanelSurface {
         objectName: "utilitiesGlassSubstrate"
-        anchors.fill: parent
+        x: 0; y: -root.surfaceTopExtension
+        width: root.width; height: root.height + root.surfaceTopExtension
         cornerRadius: 18 * root.uiScale
         uiScale: root.uiScale
         luluPalette: root.luluPalette
