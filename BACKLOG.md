@@ -42,8 +42,11 @@ blocked until that acceptance is recorded. `/opt/lulu/current` remains untouched
   subtests), and the native development build passes with existing compiler
   warnings. Expanded geometry, Settings, Utilities, Library list/spatial QML
   tests pass. Installable projection retains the known provider/platform
-  expectation failure. A fresh dev-current deployment remains pending for this
-  follow-up.
+  expectation failure (`2` observed, `3` expected). Commit `9332a86` is deployed
+  to `/opt/lulu/dev-current`; Sessiond, Consoled, and Acquisitiond are active
+  with that runtime configured. `/opt/lulu/current` remains unchanged. Operator
+  visual acceptance is still required; UI-001 remains VALIDATION and THEME-001
+  remains BLOCKED.
 - Physical validation must cover Recent end-card clipping, status-strip
   placement, Library/Installable rail clearance, Settings glass/focus,
   Utilities layout/media/hints, centered Downloads glass/empty-state/hints,
