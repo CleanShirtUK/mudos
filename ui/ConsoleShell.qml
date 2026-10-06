@@ -3693,6 +3693,7 @@ import QtQuick.Controls
                          id: librarySpatialSurface
                          canonicalTexture: orbitTexture
                          canonicalCoordinateRoot: orbitRenderSource
+                         luluPalette: luluPalette
                          canonicalSize: Qt.size(root.width, root.height)
              progress: root.libraryTransitionProgress
              launchExitActive: root.pendingLibraryLaunch !== null
@@ -4036,6 +4037,8 @@ import QtQuick.Controls
         LutrisAddGame {
             id: lutrisAddGame
             apiUrl: root.apiUrl
+            luluPalette: luluPalette
+            typography: typography
             x: 0
             y: 0
             width: parent.width
@@ -4050,6 +4053,8 @@ import QtQuick.Controls
         LutrisRecipeInstall {
             id: lutrisRecipeInstall
             apiUrl: root.apiUrl
+            luluPalette: luluPalette
+            typography: typography
             x: 0
             y: 0
             width: parent.width
@@ -4747,7 +4752,7 @@ import QtQuick.Controls
                         width: root.width * 0.74
                         text: modelData
                         color: luluPalette.secondaryText
-                        font.family: "monospace"
+                        font.family: typography.interfaceFamily
                         font.pixelSize: typography.size("secondary", 11)
                         horizontalAlignment: Text.AlignHCenter
                         wrapMode: Text.Wrap

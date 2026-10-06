@@ -10,8 +10,8 @@ retained in `docs/reconciliation-backlog.md` and are not the status authority.
 **Status:** INITIAL VISUAL PASS — the accepted baseline and final controller-glyph
 micro-fix are deployed to `/opt/lulu/dev-current`. A post-deploy Gamescope
 physical capture confirms the leftmost status-strip gamepad glyph is fully
-visible. `/opt/lulu/current` remains untouched. THEME-001 is implementation-ready;
-theme-engine implementation has not begun.
+visible. `/opt/lulu/current` remains untouched. THEME-001 is now in progress as
+the Modern/95 end-to-end proof-of-concept described below.
 
 - Stabilize the accepted default UI baseline: neutral charcoal structural
   surfaces, one glass substrate per elevation root, shared expanded framing,
@@ -99,40 +99,46 @@ theme-engine implementation has not begun.
 
 ### THEME-001 — Theme engine and external theme configuration
 
-**Status:** VALIDATION — partial core implementation is committed and its theme
-assets are deployed to `/opt/lulu/dev-current`; end-to-end runtime acceptance is
-blocked and this item is not complete. UI-001's accepted baseline remains the
-default reference. `/opt/lulu/current` is unchanged.
+**Status:** VALIDATION — THEME-001 proof-of-concept implementation is in progress.
+Modern + 95 are implemented in source; live physical review and final deployment
+checks remain. Do not close automatically. UI-001's accepted baseline remains
+the Modern reference. `/opt/lulu/current` is unchanged.
 
 - A theme directory owns `theme.json`, declared font assets, optional semantic
   SVG overrides, and its wallpaper QSB. Discovery uses the immutable runtime's
   `themes/` plus user XDG data `mudos/themes/`; selection persists in
   `Mudos/lulu` QSettings at `appearance/theme`.
 - ThemeManager is shared by the shell, Guide, and notification processes. It
-  validates IDs/schema, required semantic color roles, opacity/radius/optics
-  ranges, font presence, QSB presence, SVG extension, and canonical path
-  containment; missing selections fall back to `mudos-default`.
+  validates complete metadata, required semantic colors/font roles, opacity,
+  radius/optics ranges, font/QSB/SVG assets, SVG XML safety, and canonical path
+  containment before both discovery and selection; invalid themes are omitted
+  from Settings. Missing selections fall back to `modern`. Persisted
+  `mudos-default` IDs migrate to `modern` and are rewritten on load.
 - The default bundle copies the accepted JetBrains Mono regular/bold/ExtraBold
   and Config-Glyphs faces, and the existing Orbit QSB. Palette, Typography,
   wallpaper entry points, generic/status icons, metadata identities, and the
   Settings System menu now resolve through the active theme authority. Glass
   off preserves tint/border substrates while suppressing the native glass item.
-- Release and dev runtime packaging include `themes/`. Python inventory,
-  focused QML status/font/Settings tests and native build pass. Full physical
-  shell/Guide/notification/theme-switch review is still open. The dev runtime
-   published and the shell subsequently started; the earlier report that Lulu
-   D-Bus services prevented startup was not supported by the post-reboot service
-   checks. A later power cut damaged the branch ref and index metadata; the branch
-   ref has since been restored to the last verified commit. The missing semantic
-   status glyph was traced to `StatusGlyph.qml` measuring `resolvedGlyph` while
-   rendering the empty raw `glyph` property; a tested source fix is pending
-   deployment. Loaded-font/wallpaper/Guide/notification runtime checks and visual
-   equivalence are not claimed. Remaining implementation includes
-  valid/invalid manager fixtures (including path/symlink cases), end-to-end SVG
-  tint/fallback tests, comprehensive raw-icon and presentation-literal migration,
-  full glass profile binding coverage, and confirmation that selected user
-  themes are listed only after complete validation. Do not close THEME-001 until
-  these are implemented and the runtime/visual acceptance sweep passes.
+- Release and dev-runtime payload logic includes both `themes/modern` and
+  `themes/95`. Modern's theme data and bundled assets are a directory/identity
+  migration only. 95 provides the teal QSB wallpaper, square radii, disabled
+  glass, Liberation Sans, original monochrome SVG overrides and generic bevel
+  chrome. The UI now consumes theme tokens across core surfaces, Settings,
+  Library, Downloads, Utilities, Guide, notifications, Game Options, browser
+  chrome and provider dialogs. Shell screens contain no theme-ID conditionals or
+  direct JetBrains Mono normal-text declarations. Validation completed: all
+  1,225 Python tests and 85 subtests pass; native shell/Guide/notification build
+  and the ThemeManager Qt test pass; focused asset, Settings, status-strip and
+  Downloads QML suites pass. The status-strip test uses the theme's bundled
+  Modern font assets to retain its painted-bounds regression assertion.
+- Still open: end-to-end SVG tint/fallback rendering coverage; complete glass
+  optics binding coverage; inspection of all actual screens under both themes;
+  live Settings selection and persistence across shell restart; Guide and
+  notification visual checks; and operator visual/controller acceptance. No
+  physical theme-switch sweep or deployment of this POC is claimed yet. The dev
+  session currently has Sunshine and Gamescope running; refresh/restart is
+  deferred to avoid interrupting a possible active stream. Do not close
+  THEME-001 until dev-current deployment and runtime/operator acceptance finish.
 
 ## CLOSED
 

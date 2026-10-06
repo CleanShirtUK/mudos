@@ -17,24 +17,39 @@ Window {
         y: 54
         width: 620
         height: 132
-        radius: 12
+        radius: luluPalette.radius("overlay", 12)
         visible: notificationModel.visible
         opacity: 1
         color: luluPalette.overlaySurface
         border.color: luluPalette.glassBorder
         border.width: 1
 
+        MudosChromeFrame {
+            anchors.fill: parent
+            luluPalette: luluPalette
+            cornerRadius: parent.radius
+        }
+
         Row {
             anchors.fill: parent
             anchors.margins: 20
             spacing: 16
 
+            MudosIcon {
+                visible: notificationModel.iconName !== ""
+                width: 42
+                height: 42
+                name: notificationModel.iconName
+                typography: typography
+                semanticColor: luluPalette.headingAccent
+                iconSize: 30
+            }
             Text {
-                visible: notificationModel.glyph !== ""
+                visible: notificationModel.glyph !== "" && notificationModel.iconName === ""
                 width: 42
                 text: notificationModel.glyph
                 color: luluPalette.headingAccent
-                font.family: typography.interfaceFamily
+                font.family: typography.iconFamily
                 font.pixelSize: 30
                 verticalAlignment: Text.AlignVCenter
             }

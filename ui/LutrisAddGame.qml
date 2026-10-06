@@ -6,6 +6,8 @@ Item {
     visible: false
     z: 500
     property string apiUrl: ""
+    property var luluPalette
+    property var typography
     property var games: []
     property int gameIndex: 0
     property int executableIndex: 0
@@ -94,16 +96,17 @@ Item {
 
     Rectangle {
         anchors.fill: parent
-        color: "#ee090d12"
+        color: root.luluPalette ? root.luluPalette.overlayBackdrop : "#ee090d12"
     }
     Rectangle {
         anchors.centerIn: parent
         width: Math.min(parent.width * 0.78, 900)
         height: Math.min(parent.height * 0.78, 620)
-        radius: 14
-        color: "#f018202b"
-        border.color: "#9bb9d9"
+        radius: root.luluPalette ? root.luluPalette.radius("overlay", 14) : 14
+        color: root.luluPalette ? root.luluPalette.overlaySurface : "#f018202b"
+        border.color: root.luluPalette ? root.luluPalette.glassBorder : "#9bb9d9"
         border.width: 2
+        MudosChromeFrame { anchors.fill: parent; luluPalette: root.luluPalette; cornerRadius: parent.radius }
         Column {
             anchors.fill: parent
             anchors.margins: 30
@@ -111,7 +114,8 @@ Item {
             Text {
                 width: parent.width
                 text: "ADD A LOCAL LUTRIS GAME"
-                color: "white"
+                color: root.luluPalette ? root.luluPalette.headingAccent : "white"
+                font.family: root.typography ? root.typography.majorHeadingFamily : "sans-serif"
                 font.pixelSize: 28
                 font.bold: true
                 wrapMode: Text.Wrap
@@ -119,7 +123,8 @@ Item {
             Text {
                 width: parent.width
                 text: root.message
-                color: "#d9e3ef"
+                color: root.luluPalette ? root.luluPalette.secondaryText : "#d9e3ef"
+                font.family: root.typography ? root.typography.interfaceFamily : "sans-serif"
                 font.pixelSize: 19
                 wrapMode: Text.Wrap
             }
@@ -135,16 +140,17 @@ Item {
                     required property int index
                     width: choices.width
                     height: 52
-                    radius: 6
+                    radius: root.luluPalette ? root.luluPalette.radius("row", 6) : 6
                     color: index === (root.step === 0 ? root.gameIndex : root.executableIndex)
-                           ? "#385e84" : "transparent"
+                           ? (root.luluPalette ? root.luluPalette.selectionSurface : "#385e84") : "transparent"
                     Text {
                         anchors.fill: parent
                         anchors.leftMargin: 14
                         verticalAlignment: Text.AlignVCenter
                         elide: Text.ElideMiddle
                         text: root.step === 0 ? String(modelData.name || "") : String(modelData)
-                        color: "white"
+                        color: index === (root.step === 0 ? root.gameIndex : root.executableIndex) && root.luluPalette ? root.luluPalette.selectedText : root.luluPalette ? root.luluPalette.primaryText : "white"
+                        font.family: root.typography ? root.typography.interfaceFamily : "sans-serif"
                         font.pixelSize: 17
                     }
                 }
@@ -152,7 +158,8 @@ Item {
             Text {
                 width: parent.width
                 text: "A: Select   B: Back   ↑/↓: Choose"
-                color: "#aebdce"
+                color: root.luluPalette ? root.luluPalette.secondaryText : "#aebdce"
+                font.family: root.typography ? root.typography.interfaceFamily : "sans-serif"
                 font.pixelSize: 15
             }
         }

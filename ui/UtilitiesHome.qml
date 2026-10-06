@@ -76,7 +76,7 @@ Item {
         objectName: "utilitiesGlassSubstrate"
         x: 0; y: -root.surfaceTopExtension
         width: root.width; height: root.height + root.surfaceTopExtension
-        cornerRadius: 18 * root.uiScale
+        cornerRadius: root.luluPalette.radius("panel", 18) * root.uiScale
         uiScale: root.uiScale
         luluPalette: root.luluPalette
         canonicalTexture: root.canonicalTexture
@@ -92,10 +92,11 @@ Item {
         y: root.innerInset
         width: root.listWidth
         height: Math.max(0, root.height - y - root.innerInset)
-        radius: 12 * root.uiScale
+        radius: root.luluPalette.radius("panel", 12) * root.uiScale
         color: root.luluPalette.librarySurface
         border.color: root.luluPalette.glassBorder
         border.width: root.uiScale
+        MudosChromeFrame { anchors.fill: parent; luluPalette: root.luluPalette; uiScale: root.uiScale; cornerRadius: parent.radius }
 
         ListView {
             id: appList
@@ -110,12 +111,13 @@ Item {
                 required property var modelData
                 width: appList.width
                 height: 72 * root.uiScale
-                radius: 9 * root.uiScale
+                radius: root.luluPalette.radius("row", 9) * root.uiScale
                 color: index === root.selectedIndex
                     ? root.luluPalette.selectionSurface : "transparent"
                 border.color: index === root.selectedIndex
                     ? root.luluPalette.focusIndicator : root.luluPalette.glassBorder
                 border.width: index === root.selectedIndex ? 2 * root.uiScale : root.uiScale
+                MudosChromeFrame { anchors.fill: parent; luluPalette: root.luluPalette; uiScale: root.uiScale; cornerRadius: parent.radius; raised: index !== root.selectedIndex }
 
                 Image {
                     id: appIcon
@@ -155,10 +157,11 @@ Item {
         y: listPane.y
         width: Math.max(0, root.width - x - 20 * root.uiScale)
         height: listPane.height
-        radius: 12 * root.uiScale
+        radius: root.luluPalette.radius("panel", 12) * root.uiScale
         color: root.luluPalette.librarySurface
         border.color: root.luluPalette.glassBorder
         border.width: root.uiScale
+        MudosChromeFrame { anchors.fill: parent; luluPalette: root.luluPalette; uiScale: root.uiScale; cornerRadius: parent.radius }
         visible: !!root.selectedApplication
 
         readonly property real mediaAspectRatio: {

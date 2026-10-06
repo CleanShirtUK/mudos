@@ -78,7 +78,7 @@ Item {
     // switch as a guard against reintroducing in-process Qt Multimedia playback.
     readonly property bool videoPreviewsEnabled: false
     property real internalSurfaceOpacity: 0.34
-    readonly property string libraryFontFamily: typography ? typography.displayFamily : "monospace"
+    readonly property string libraryFontFamily: typography ? typography.displayFamily : "sans-serif"
     readonly property rect contentFrameRect: Qt.rect(
         contentBounds.x + innerInset, contentBounds.y + innerInset,
         Math.max(0, contentBounds.width - 2 * innerInset),
@@ -363,7 +363,7 @@ Item {
             x: 0; y: root.panelTop
             width: Math.min(root.listWidth, parent.width * 0.42)
             height: Math.max(0, parent.height - y - root.panelBottomMargin)
-            radius: 10 * root.uiScale
+            radius: root.luluPalette.radius("panel", 10 * root.uiScale)
             color: Qt.rgba(root.luluPalette.librarySurface.r,
                            root.luluPalette.librarySurface.g,
                            root.luluPalette.librarySurface.b,
@@ -392,7 +392,7 @@ Item {
                         anchors.fill: parent
                         anchors.leftMargin: 2 * root.uiScale
                         anchors.rightMargin: 2 * root.uiScale
-                        radius: 6 * root.uiScale
+                        radius: root.luluPalette.radius("row", 6 * root.uiScale)
                         color: root.selectedIndex === gameRow.index
                             ? Qt.rgba(root.luluPalette.focusIndicator.r,
                                       root.luluPalette.focusIndicator.g,
@@ -403,7 +403,7 @@ Item {
                         x: 10 * root.uiScale
                         width: 34 * root.uiScale; height: width
                         anchors.verticalCenter: parent.verticalCenter
-                        radius: 4 * root.uiScale
+                        radius: root.luluPalette.radius("media", 4 * root.uiScale)
                         color: Qt.rgba(root.luluPalette.primaryText.r,
                                        root.luluPalette.primaryText.g,
                                        root.luluPalette.primaryText.b, 0.08)
@@ -474,7 +474,7 @@ Item {
             y: root.panelTop
             width: Math.max(0, parent.width - x)
             height: Math.max(0, parent.height - y - root.panelBottomMargin)
-            radius: 10 * root.uiScale
+            radius: root.luluPalette.radius("panel", 10 * root.uiScale)
             color: Qt.rgba(root.luluPalette.librarySurface.r,
                            root.luluPalette.librarySurface.g,
                            root.luluPalette.librarySurface.b,
@@ -632,7 +632,7 @@ Item {
                             required property var modelData
                             width: detailMetadataColumn.width
                             height: implicitHeight
-                            iconName: modelData.glyph
+                            iconName: modelData.iconName
                             text: modelData.text
                             fontFamily: root.libraryFontFamily
                             iconFamily: root.typography ? root.typography.iconFamily : root.libraryFontFamily

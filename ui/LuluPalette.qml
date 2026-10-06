@@ -2,6 +2,20 @@ import QtQuick
 
 QtObject {
     readonly property var themeColors: typeof mudosTheme !== "undefined" ? mudosTheme.colors : ({})
+    readonly property var themeRadii: typeof mudosTheme !== "undefined" ? mudosTheme.radii : ({})
+    readonly property var themeChrome: typeof mudosTheme !== "undefined" ? mudosTheme.chrome : ({})
+    function radius(role, fallback) {
+        // Existing controls have component-specific Modern metrics. A zero
+        // radius is the opt-in semantic override needed by flat/square themes;
+        // otherwise keep each accepted baseline's existing local metric.
+        return themeRadii[role] === 0 ? 0 : fallback
+    }
+    readonly property color chromeHighlight: themeChrome.highlight || "#ffffff"
+    readonly property color chromeLight: themeChrome.light || "#ffffff"
+    readonly property color chromeShadow: themeChrome.shadow || glassBorder
+    readonly property color chromeDarkShadow: themeChrome.darkShadow || "#000000"
+    readonly property real chromeWidth: themeChrome.width || 1
+    readonly property bool bevelChrome: themeChrome.style === "bevel"
     function role(name, fallback) { return themeColors[name] || fallback }
     readonly property color primaryText: role("primaryText", headingAccent)
     readonly property color secondaryText: role("secondaryText", "#cec9d1")

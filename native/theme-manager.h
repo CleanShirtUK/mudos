@@ -4,6 +4,9 @@
 #include <QVariantMap>
 #include <QVariantList>
 
+class QFileSystemWatcher;
+class QTimer;
+
 class ThemeManager final : public QObject
 {
     Q_OBJECT
@@ -14,6 +17,7 @@ class ThemeManager final : public QObject
     Q_PROPERTY(QVariantMap opacity READ opacity NOTIFY themeChanged)
     Q_PROPERTY(QVariantMap radii READ radii NOTIFY themeChanged)
     Q_PROPERTY(QVariantMap glass READ glass NOTIFY themeChanged)
+    Q_PROPERTY(QVariantMap chrome READ chrome NOTIFY themeChanged)
     Q_PROPERTY(QVariantMap fonts READ fonts NOTIFY themeChanged)
     Q_PROPERTY(QVariantMap icons READ icons NOTIFY themeChanged)
     Q_PROPERTY(QString wallpaperShader READ wallpaperShader NOTIFY themeChanged)
@@ -28,6 +32,7 @@ public:
     QVariantMap opacity() const { return m_opacity; }
     QVariantMap radii() const { return m_radii; }
     QVariantMap glass() const { return m_glass; }
+    QVariantMap chrome() const { return m_chrome; }
     QVariantMap fonts() const { return m_fonts; }
     QVariantMap icons() const { return m_icons; }
     QString wallpaperShader() const { return m_wallpaper; }
@@ -40,10 +45,14 @@ signals:
     void themesChanged();
 private:
     bool load(const QString &id, bool persist);
-    bool loadAt(const QString &root, const QString &id, bool persist);
+    bool inspectAt(const QString &root, const QString &id, QVariantMap *resolved) const;
+    bool apply(const QVariantMap &resolved, bool persist);
+    void watchSettings();
     QStringList roots() const;
     QString m_id, m_name, m_root, m_wallpaper;
-    QVariantMap m_colors, m_opacity, m_radii, m_glass, m_fonts, m_icons;
+    QVariantMap m_colors, m_opacity, m_radii, m_glass, m_chrome, m_fonts, m_icons;
     QVariantMap m_wallpaperValues;
     QVariantList m_themes;
+    QFileSystemWatcher *m_settingsWatcher = nullptr;
+    QTimer *m_settingsReload = nullptr;
 };

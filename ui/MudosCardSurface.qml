@@ -9,6 +9,7 @@ Rectangle {
     property size canonicalSize: Qt.size(1280, 720)
     property real uiScale: 1
     property real selectionProgress: 0
+    property string radiusRole: "card"
     property var luluPalette
     property var mappingItem: root
     readonly property var themeGlass: typeof mudosTheme !== "undefined" ? mudosTheme.glass : ({})
@@ -37,7 +38,8 @@ Rectangle {
     }
 
     readonly property var themeRadii: typeof mudosTheme !== "undefined" ? mudosTheme.radii : ({})
-    radius: (themeRadii.card === undefined ? 10 : themeRadii.card) * root.uiScale
+    radius: themeRadii[root.radiusRole] === 0 ? 0
+        : (themeRadii.card === undefined ? 10 : themeRadii.card) * root.uiScale
     color: Qt.rgba(
         luluPalette.cardSurface.r
             + (luluPalette.focusedCardSurface.r - luluPalette.cardSurface.r)
@@ -87,5 +89,13 @@ Rectangle {
         cornerRadius: root.radius
         edgeLightDirection: root.themeOptics.edgeLightDirection ? Qt.vector2d(root.themeOptics.edgeLightDirection[0], root.themeOptics.edgeLightDirection[1]) : Qt.vector2d(1, -1)
         transparentOutsideMask: true
+    }
+
+    MudosChromeFrame {
+        anchors.fill: parent
+        luluPalette: root.luluPalette
+        uiScale: root.uiScale
+        cornerRadius: root.radius
+        raised: root.selectionProgress < 0.5
     }
 }

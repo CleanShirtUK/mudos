@@ -11,6 +11,17 @@ function glyph(name) {
     return glyphs[name] || "info"
 }
 
+function semanticIcon(name) {
+    var icons = {
+        genres: "genre", lastPlayed: "clock", clock: "clock",
+        gameModes: "gameMode", localMultiplayer: "gameMode",
+        onlineMultiplayer: "wifi", protondb: "info",
+        platform: "platform", provider: "plug", release: "clock",
+        developer: "info", publisher: "info"
+    }
+    return icons[name] || "info"
+}
+
 function formatPlaytime(value) {
     var minutes = Math.max(0, Math.floor(Number(value) || 0))
     var hours = Math.floor(minutes / 60)
@@ -62,7 +73,7 @@ function rows(game, dateLabel) {
     function add(text, glyphName) {
         var value = String(text || "").trim()
         if (value)
-            result.push({text: value, glyph: glyph(glyphName)})
+            result.push({text: value, glyph: glyph(glyphName), iconName: semanticIcon(glyphName)})
     }
     var genres = game.genres || []
     if (genres.length)

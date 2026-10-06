@@ -4,23 +4,25 @@ import unittest
 
 
 ROOT = Path(__file__).resolve().parents[1]
-THEME = ROOT / "themes" / "mudos-default"
+THEMES = ROOT / "themes"
 
 
 class DefaultThemeInventoryTests(unittest.TestCase):
     def test_default_theme_declares_current_theme_owned_assets(self):
-        config = json.loads((THEME / "theme.json").read_text())
+        theme = THEMES / "modern"
+        config = json.loads((theme / "theme.json").read_text())
         self.assertEqual(config["schema_version"], 1)
-        self.assertEqual(config["id"], "mudos-default")
+        self.assertEqual(config["id"], "modern")
+        self.assertEqual(config["name"], "Modern")
         self.assertTrue(config["glass"]["enabled"])
-        self.assertTrue((THEME / config["wallpaper"]["shader"]).is_file())
+        self.assertTrue((theme / config["wallpaper"]["shader"]).is_file())
         for face in config["fonts"]["faces"].values():
             path = Path(face["file"])
             self.assertFalse(path.is_absolute())
             self.assertNotIn("..", path.parts)
-            self.assertTrue((THEME / path).is_file(), str(path))
+            self.assertTrue((theme / path).is_file(), str(path))
         for path in config["icons"].values():
-            self.assertTrue((THEME / path).is_file())
+            self.assertTrue((theme / path).is_file())
         for value in config["colors"].values():
             self.assertTrue(value.startswith("#"))
         for value in config["opacity"].values():
@@ -37,6 +39,23 @@ class DefaultThemeInventoryTests(unittest.TestCase):
         self.assertNotIn('source: "fonts/', typography)
         self.assertNotIn('source: "fonts/', controller)
         self.assertIn("mudosTheme.wallpaperShader", wallpaper)
+
+    def test_95_is_a_self_contained_flat_square_theme(self):
+        theme = THEMES / "95"
+        config = json.loads((theme / "theme.json").read_text())
+        self.assertEqual((config["id"], config["name"]), ("95", "95"))
+        self.assertFalse(config["glass"]["enabled"])
+        self.assertEqual(set(config["radii"].values()), {0})
+        self.assertTrue((theme / config["wallpaper"]["shader"]).is_file())
+        self.assertTrue((theme / "wallpaper/wallpaper.frag").is_file())
+        self.assertEqual(len(config["icons"]), 12)
+        self.assertEqual(set(config["fonts"]["faces"]),
+                         {"regular", "bold", "heavy", "icons", "controller"})
+        self.assertTrue((theme / "fonts/LIBERATION-FONTS-LICENSE.txt").is_file())
+        for face in config["fonts"]["faces"].values():
+            self.assertTrue((theme / face["file"]).is_file())
+        for icon in config["icons"].values():
+            self.assertTrue((theme / icon).is_file())
 
 
 if __name__ == "__main__":

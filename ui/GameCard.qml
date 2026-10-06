@@ -7,6 +7,8 @@ import Mudos.Poc 1.0
 
 Rectangle {
     id: card
+    readonly property var themeRadii: typeof mudosTheme !== "undefined" ? mudosTheme.radii : ({})
+    readonly property var themeGlass: typeof mudosTheme !== "undefined" ? mudosTheme.glass : ({})
 
     property var game: null
     property bool focused: false
@@ -222,7 +224,8 @@ Rectangle {
 
     implicitWidth: recentFocal ? 1100 * uiScale : (compact ? 260 : 210) * uiScale
     implicitHeight: recentFocal ? 560 * uiScale : (compact ? 430 : 330) * uiScale
-    radius: recentFocal ? 28 * focalScale * uiScale : (compact ? 16 : 18) * uiScale
+    radius: themeRadii.card === 0 ? 0
+        : recentFocal ? 28 * focalScale * uiScale : (compact ? 16 : 18) * uiScale
     color: card.librarySurfaceMaterial ? luluPalette.transparent
         : (recentFocal ? luluPalette.glassTint
            : Qt.rgba(luluPalette.cardSurface.r
@@ -248,7 +251,8 @@ Rectangle {
     MudosGlassItem {
         id: nativeGlassSurface
         anchors.fill: parent
-        visible: (card.homeCard || card.catalogueCard) && card.glassVisible
+        visible: card.themeGlass.enabled !== false
+            && (card.homeCard || card.catalogueCard) && card.glassVisible
         backdrop: card.canonicalTexture
         canonicalSize: card.canonicalSize
         canonicalRect: card.nativeRecentCanonicalRect
@@ -273,8 +277,8 @@ Rectangle {
         y: card.mix(compactMargin, focalMargin, card.presentationProgress)
         width: card.mix(compactArtworkWidth, artworkWidth, card.presentationProgress)
         height: card.mix(compactArtworkHeight, artworkHeight, card.presentationProgress)
-        property real artworkRadius: card.mix(10 * uiScale, 18 * focalScale * uiScale,
-                                              card.presentationProgress)
+        property real artworkRadius: card.themeRadii.media === 0 ? 0
+            : card.mix(10 * uiScale, 18 * focalScale * uiScale, card.presentationProgress)
         property real artworkBorderAlpha: 0.15
         radius: artworkRadius
         z: 2
@@ -373,7 +377,7 @@ Rectangle {
                 Rectangle {
                     width: parent.width
                     height: 6 * card.uiScale
-                    radius: height / 2
+                    radius: card.themeRadii.row === 0 ? 0 : height / 2
                     color: card.luluPalette.glassBorder
                     visible: card.acquisitionState !== "failed"
 
@@ -431,7 +435,7 @@ Rectangle {
                            card.luluPalette.primaryText.g * card.focusBrightness,
                            card.luluPalette.primaryText.b * card.focusBrightness,
                            card.luluPalette.primaryText.a)
-            font.family: card.typography ? card.typography.displayFamily : "JetBrains Mono"
+            font.family: card.typography ? card.typography.displayFamily : "sans-serif"
             font.weight: card.typography ? card.typography.displayWeight : Font.Black
             font.pixelSize: card.typography ? card.typography.size("display", 34 * focalScale) : 34 * focalScale * card.uiScale
             wrapMode: Text.WordWrap
@@ -471,10 +475,10 @@ Rectangle {
                         id: metadataRow
                         width: parent.width
                         height: implicitHeight
-                        iconName: modelData.glyph
+                        iconName: modelData.iconName
                         text: modelData.text
-                        fontFamily: card.typography ? card.typography.interfaceFamily : "JetBrains Mono"
-                        iconFamily: card.typography ? card.typography.iconFamily : "JetBrains Mono"
+                        fontFamily: card.typography ? card.typography.interfaceFamily : "sans-serif"
+                        iconFamily: card.typography ? card.typography.iconFamily : "sans-serif"
                         textColor: card.focusedColor(card.luluPalette.secondaryText)
                         uiScale: focalScale * card.uiScale
                         glyphSize: 18 * focalScale * card.uiScale
@@ -494,7 +498,7 @@ Rectangle {
             anchors.bottom: parent.bottom
             height: 82 * focalScale * card.uiScale
             scale: card.playButtonScale
-            radius: 20 * focalScale * card.uiScale
+            radius: card.themeRadii.media === 0 ? 0 : 20 * focalScale * card.uiScale
             color: card.presentationProgress > 0 && card.presentationProgress < 1
                 ? card.luluPalette.transparent : card.luluPalette.actionSurface
             border.color: card.luluPalette.focusIndicator
@@ -503,7 +507,8 @@ Rectangle {
             MudosGlassItem {
                 id: nativePlayGlassSurface
                 anchors.fill: parent
-                visible: card.focalChromeOpacity > 0
+                visible: card.themeGlass.enabled !== false
+                    && card.focalChromeOpacity > 0
                     && card.homeCard
                 backdrop: card.canonicalTexture
                 canonicalSize: card.canonicalSize
@@ -542,7 +547,7 @@ Rectangle {
                     id: playLabel
                     text: card.actionLabel || "Play"
                     color: card.focusedColor(card.luluPalette.actionText)
-                    font.family: card.typography ? card.typography.interfaceFamily : "JetBrains Mono"
+                    font.family: card.typography ? card.typography.interfaceFamily : "sans-serif"
                     font.pixelSize: card.typography ? card.typography.size("control", 28 * focalScale) : 28 * focalScale * card.uiScale
                     verticalAlignment: Text.AlignVCenter
                 }
@@ -565,7 +570,7 @@ Rectangle {
             text: card.displayTitle || (card.game
                 ? (card.game.display_title_override || card.game.canonical_title || card.game.title) : "")
             color: card.focusedColor(card.luluPalette.primaryText)
-            font.family: card.typography ? card.typography.interfaceFamily : "JetBrains Mono"
+            font.family: card.typography ? card.typography.interfaceFamily : "sans-serif"
             font.weight: card.compact || card.compactEndpointWidth > 0 ? Font.Bold : Font.Normal
             layer.enabled: card.librarySurfaceMaterial
             layer.effect: MultiEffect {
@@ -587,6 +592,14 @@ Rectangle {
             verticalAlignment: Text.AlignVCenter
             height: parent.height
         }
+    }
+
+    MudosChromeFrame {
+        anchors.fill: parent
+        luluPalette: card.luluPalette
+        uiScale: card.uiScale
+        cornerRadius: card.radius
+        raised: card.selectionProgress < 0.5
     }
 
 }

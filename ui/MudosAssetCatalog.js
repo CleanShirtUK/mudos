@@ -154,8 +154,12 @@ var systemIcons = {
     Lulu: "settings"
 }
 
+function systemIconName(category) {
+    return systemIcons[String(category || "")] || "settings"
+}
+
 function systemIcon(category) {
-    return icon(systemIcons[String(category || "")] || "settings")
+    return icon(systemIconName(category))
 }
 
 // The category model is deliberately based on the implemented System pages;
@@ -172,7 +176,8 @@ function settingsCategories(systemCategories) {
             return label !== "Utilities" && order.indexOf(label) < 0
         }))
         .map(function(label) {
-            return {id: label.toLowerCase(), label: label, glyph: systemIcon(label),
+            return {id: label.toLowerCase(), label: label, iconName: systemIconName(label),
+                    glyph: systemIcon(label),
                     component: pages[label] || "systemSpace", target: label}
         })
 }

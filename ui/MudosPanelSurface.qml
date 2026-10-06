@@ -44,6 +44,7 @@ Rectangle {
     clip: true
 
     MudosGlassItem {
+        objectName: "mudosPanelGlassItem"
         anchors.fill: parent
         visible: root.glassEnabled && !!root.canonicalTexture
         backdrop: root.canonicalTexture
@@ -70,5 +71,13 @@ Rectangle {
         radius: root.cornerRadius
         color: Qt.rgba(0.008, 0.009, 0.012, root.tintOpacity)
         border.width: 0
+        visible: root.glassEnabled
+    }
+
+    MudosChromeFrame {
+        anchors.fill: parent
+        luluPalette: root.luluPalette
+        uiScale: root.uiScale
+        cornerRadius: root.cornerRadius
     }
 }

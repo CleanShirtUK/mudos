@@ -16,7 +16,7 @@ Item {
             anchors.horizontalCenter: parent.horizontalCenter
             text: title.toUpperCase()
             color: luluPalette.headingAccent
-            font.family: typography ? typography.majorHeadingFamily : "JetBrains Mono"
+            font.family: typography ? typography.majorHeadingFamily : "sans-serif"
             font.weight: typography ? typography.majorHeadingWeight : Font.Black
             font.pixelSize: typography ? typography.size("section", 26) : 26 * uiScale
             font.letterSpacing: 4 * uiScale
@@ -26,7 +26,7 @@ Item {
             anchors.horizontalCenter: parent.horizontalCenter
             text: description
             color: luluPalette.mutedText
-            font.family: typography ? typography.interfaceFamily : "JetBrains Mono"
+            font.family: typography ? typography.interfaceFamily : "sans-serif"
             font.pixelSize: typography ? typography.size("secondary", 22) : 22 * uiScale
         }
     }

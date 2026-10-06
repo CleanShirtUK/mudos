@@ -1,18 +1,60 @@
 #include "theme-manager.h"
 
+#include <QColor>
+#include <QDebug>
 #include <QDir>
+#include <QFile>
 #include <QFileInfo>
+#include <QFileSystemWatcher>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QSettings>
-#include <QColor>
-#include <QDebug>
 #include <QStandardPaths>
-#include <QFile>
+#include <QTimer>
+#include <QXmlStreamReader>
+#include <QtEndian>
 #include <QUrl>
+#include <algorithm>
 #include <cmath>
 
 namespace {
+bool validSvg(const QString &path)
+{
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly) || file.size() > 512 * 1024) return false;
+    QXmlStreamReader xml(&file);
+    bool sawRoot = false;
+    while (!xml.atEnd()) {
+        xml.readNext();
+        if (xml.isDTD()) return false;
+        if (xml.isStartElement()) {
+            if (!sawRoot) {
+                if (xml.name() != QLatin1String("svg")) return false;
+                sawRoot = true;
+            }
+            if (xml.name() == QLatin1String("script")
+                || xml.name() == QLatin1String("foreignObject")) return false;
+            for (const auto &attribute : xml.attributes())
+                if (attribute.name() == QLatin1String("href")) return false;
+        }
+    }
+    return sawRoot && !xml.hasError();
+}
+
+bool validQsb(const QString &path)
+{
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly) || file.size() > 32 * 1024 * 1024) return false;
+    const QByteArray serialized = file.readAll();
+    if (serialized.size() < 8) return false;
+    const quint32 expectedSize = qFromBigEndian<quint32>(
+        reinterpret_cast<const uchar *>(serialized.constData()));
+    if (expectedSize == 0 || expectedSize > 64 * 1024 * 1024) return false;
+    const QByteArray payload = qUncompress(serialized);
+    return !payload.isEmpty()
+        && static_cast<quint32>(payload.size()) == expectedSize;
+}
+
 QString contained(const QString &base, const QString &relative)
 {
     if (relative.isEmpty() || QDir::isAbsolutePath(relative) || relative.contains("://")) return {};
@@ -26,20 +68,57 @@ QString contained(const QString &base, const QString &relative)
 
 ThemeManager::ThemeManager(QObject *parent) : QObject(parent)
 {
-    load(QString(), false);
+    // Discover and activate through the same complete validator. Discovery
+    // must never advertise a theme that select() cannot load.
     for (const QString &base : roots()) {
         QDir dir(base);
-        for (const QString &id : dir.entryList(QDir::Dirs | QDir::NoDotAndDotDot)) {
-            const QString config = contained(QDir(base).filePath(id), "theme.json");
-            if (config.isEmpty()) continue;
-            QFile file(config);
-            if (!file.open(QIODevice::ReadOnly)) continue;
-            const auto json = QJsonDocument::fromJson(file.readAll()).object();
-            if (json.value("id").toString() == id && json.value("schema_version").toInt() == 1)
-                m_themes.append(QVariantMap{{"id", id}, {"name", json.value("name").toString(id)}});
+        for (const QString &entry : dir.entryList(QDir::Dirs | QDir::NoDotAndDotDot)) {
+            if (entry == "mudos-default") continue; // compatibility alias, not a theme
+            QVariantMap validated;
+            if (!inspectAt(QDir(base).filePath(entry), entry, &validated)) continue;
+            bool duplicate = false;
+            for (const QVariant &theme : m_themes)
+                if (theme.toMap().value("id").toString() == entry) duplicate = true;
+            if (!duplicate)
+                m_themes.append(QVariantMap{{"id", entry}, {"name", validated.value("name")}});
         }
     }
+    std::stable_sort(m_themes.begin(), m_themes.end(), [](const QVariant &a, const QVariant &b) {
+        const QString left = a.toMap().value("id").toString();
+        const QString right = b.toMap().value("id").toString();
+        if (left == "modern") return right != "modern";
+        if (right == "modern") return false;
+        if (left == "95") return right != "95";
+        if (right == "95") return false;
+        return left < right;
+    });
     emit themesChanged();
+    load(QString(), false);
+    watchSettings();
+}
+
+void ThemeManager::watchSettings()
+{
+    QSettings settings(QSettings::IniFormat, QSettings::UserScope, "Mudos", "lulu");
+    const QString fileName = settings.fileName();
+    const QString directory = QFileInfo(fileName).absolutePath();
+    m_settingsWatcher = new QFileSystemWatcher(this);
+    m_settingsReload = new QTimer(this);
+    m_settingsReload->setSingleShot(true);
+    m_settingsReload->setInterval(80);
+    connect(m_settingsReload, &QTimer::timeout, this, [this, fileName, directory]() {
+        if (QFileInfo::exists(fileName) && !m_settingsWatcher->files().contains(fileName))
+            m_settingsWatcher->addPath(fileName);
+        if (!m_settingsWatcher->directories().contains(directory))
+            m_settingsWatcher->addPath(directory);
+        load(QString(), false);
+    });
+    connect(m_settingsWatcher, &QFileSystemWatcher::fileChanged,
+            m_settingsReload, qOverload<>(&QTimer::start));
+    connect(m_settingsWatcher, &QFileSystemWatcher::directoryChanged,
+            m_settingsReload, qOverload<>(&QTimer::start));
+    if (QFileInfo::exists(fileName)) m_settingsWatcher->addPath(fileName);
+    if (QFileInfo::exists(directory)) m_settingsWatcher->addPath(directory);
 }
 
 QStringList ThemeManager::roots() const
@@ -61,69 +140,145 @@ bool ThemeManager::load(const QString &requested, bool persist)
     QString id = requested;
     if (id.isEmpty()) {
         QSettings settings(QSettings::IniFormat, QSettings::UserScope, "Mudos", "lulu");
-        id = settings.value("appearance/theme", "mudos-default").toString();
+        id = settings.value("appearance/theme", "modern").toString();
     }
-    for (const QString &base : roots())
-        if (loadAt(QDir(base).filePath(id), id, persist)) return true;
-    if (id != "mudos-default") {
-        qWarning() << "Theme invalid or unavailable; falling back to mudos-default:" << id;
-        for (const QString &base : roots())
-            if (loadAt(QDir(base).filePath("mudos-default"), "mudos-default", persist)) return true;
+    const bool legacyAlias = id == "mudos-default";
+    if (legacyAlias) id = "modern";
+    for (const QString &base : roots()) {
+        QVariantMap validated;
+        if (inspectAt(QDir(base).filePath(id), id, &validated)) return apply(validated, persist || legacyAlias);
+    }
+    if (id != "modern") {
+        qWarning() << "Theme invalid or unavailable; falling back to modern:" << id;
+        for (const QString &base : roots()) {
+            QVariantMap validated;
+            if (inspectAt(QDir(base).filePath("modern"), "modern", &validated)) return apply(validated, true);
+        }
     }
     return false;
 }
 
-bool ThemeManager::loadAt(const QString &directory, const QString &expectedId, bool persist)
+bool ThemeManager::inspectAt(const QString &directory, const QString &expectedId,
+                             QVariantMap *resolved) const
 {
+    if (!resolved || expectedId.isEmpty() || expectedId == "mudos-default") return false;
     const QString configPath = contained(directory, "theme.json");
     QFile config(configPath);
     if (configPath.isEmpty() || !config.open(QIODevice::ReadOnly)) return false;
     QJsonParseError error;
     const QJsonDocument doc = QJsonDocument::fromJson(config.readAll(), &error);
+    if (error.error != QJsonParseError::NoError || !doc.isObject()) return false;
     const QJsonObject data = doc.object();
-    if (error.error != QJsonParseError::NoError || !doc.isObject()
-        || data.value("schema_version").toInt() != 1 || data.value("id").toString() != expectedId) return false;
+    if (data.value("schema_version").toInt() != 1 || data.value("id").toString() != expectedId) return false;
+    if (data.value("name").toString().trimmed().isEmpty()) return false;
     const QJsonObject c = data.value("colors").toObject();
     const QJsonObject o = data.value("opacity").toObject();
     const QJsonObject r = data.value("radii").toObject();
     const QJsonObject g = data.value("glass").toObject();
+    const QJsonObject chrome = data.value("chrome").toObject();
     const QJsonObject f = data.value("fonts").toObject();
     const QJsonObject faces = f.value("faces").toObject();
     const QJsonObject icons = data.value("icons").toObject();
-    auto requiredColor = [&](const char *key) { const QString value = c.value(QLatin1String(key)).toString(); return value.startsWith(QLatin1Char('#')) && QColor(value).isValid(); };
-    for (const char *key : {"primaryText", "secondaryText", "mutedText", "selectedText", "accent", "focusIndicator", "warning", "backdrop", "surface", "surfaceElevated", "surfaceInternal", "cardSurface", "focusedCardSurface", "actionSurface", "actionText", "artworkSurface", "border", "focusBorder", "overlayBackdrop", "overlaySurface", "launchOverlaySurface", "guideSurface", "guideBorder", "guideItemSurface", "guideSelectedText", "scrollFadeStart", "scrollFadeEnd"}) if (!requiredColor(key)) return false;
+    auto requiredColor = [&](const char *key) {
+        const QString value = c.value(QLatin1String(key)).toString();
+        return value.startsWith(QLatin1Char('#')) && QColor(value).isValid();
+    };
+    for (const char *key : {"primaryText", "secondaryText", "mutedText", "selectedText", "accent", "focusIndicator", "warning", "backdrop", "surface", "surfaceElevated", "surfaceInternal", "cardSurface", "focusedCardSurface", "actionSurface", "actionText", "artworkSurface", "border", "focusBorder", "overlayBackdrop", "overlaySurface", "launchOverlaySurface", "guideSurface", "guideBorder", "guideItemSurface", "guideSelectedText", "scrollFadeStart", "scrollFadeEnd", "navigationText", "headingAccent", "selectionSurface", "librarySurface", "libraryCardSurface", "libraryBorder", "overlay"})
+        if (!requiredColor(key)) return false;
+
     auto asset = [&](const QString &path) { return contained(directory, path); };
     QVariantMap fontPaths;
+    for (const char *key : {"regular", "bold", "heavy", "icons", "controller"}) {
+        const QJsonValue faceValue = faces.value(QLatin1String(key));
+        if (!faceValue.isObject()) return false;
+        const QString path = asset(faceValue.toObject().value("file").toString());
+        if (path.isEmpty() || !QFileInfo(path).isFile()) return false;
+        fontPaths.insert(QLatin1String(key), QUrl::fromLocalFile(path).toString());
+    }
     for (auto it = faces.begin(); it != faces.end(); ++it) {
         const QString path = asset(it.value().toObject().value("file").toString());
         if (path.isEmpty() || !QFileInfo(path).isFile()) return false;
         fontPaths.insert(it.key(), QUrl::fromLocalFile(path).toString());
     }
+    const QJsonObject roleMap = f.value("roles").toObject();
+    for (const char *role : {"interface", "display", "majorHeading", "icon", "controller"}) {
+        const QString face = roleMap.value(QLatin1String(role)).toString();
+        if (face.isEmpty() || !faces.contains(face)) return false;
+    }
     const QString wallpaper = asset(data.value("wallpaper").toObject().value("shader").toString());
-    if (wallpaper.isEmpty() || !QFileInfo(wallpaper).isFile()) return false;
+    if (wallpaper.isEmpty() || !QFileInfo(wallpaper).isFile()
+        || !wallpaper.endsWith(".qsb") || !validQsb(wallpaper)) return false;
+    const QJsonObject wallpaperObject = data.value("wallpaper").toObject();
+    for (const char *key : {"primary", "secondary", "surface", "error"}) {
+        const QString value = wallpaperObject.value(QLatin1String(key)).toString();
+        if (!value.startsWith('#') || !QColor(value).isValid()) return false;
+    }
     QVariantMap iconPaths;
     for (auto it = icons.begin(); it != icons.end(); ++it) {
         const QString path = asset(it.value().toString());
-        if (path.isEmpty() || !QFileInfo(path).isFile()) return false;
+        if (path.isEmpty() || !QFileInfo(path).isFile()
+            || !it.value().toString().endsWith(".svg", Qt::CaseInsensitive)
+            || !validSvg(path)) return false;
         iconPaths.insert(it.key(), QUrl::fromLocalFile(path).toString());
     }
-    for (const char *key : {"structuralSurface", "internalSurface", "card", "focusedCard", "selection", "statusBacking", "overlayBackdrop", "overlaySurface"}) if (!o.value(QLatin1String(key)).isDouble()) return false;
-    for (auto it = o.begin(); it != o.end(); ++it) if (!it.value().isDouble() || !std::isfinite(it.value().toDouble()) || it.value().toDouble() < 0 || it.value().toDouble() > 1) return false;
-    for (const char *key : {"panel", "card", "row", "media", "status", "overlay"}) if (!r.value(QLatin1String(key)).isDouble()) return false;
-    for (auto it = r.begin(); it != r.end(); ++it) if (!it.value().isDouble() || !std::isfinite(it.value().toDouble()) || it.value().toDouble() < 0 || it.value().toDouble() > 128) return false;
+    for (const char *key : {"structuralSurface", "internalSurface", "card", "focusedCard", "selection", "statusBacking", "overlayBackdrop", "overlaySurface"})
+        if (!o.value(QLatin1String(key)).isDouble()) return false;
+    for (auto it = o.begin(); it != o.end(); ++it)
+        if (!it.value().isDouble() || !std::isfinite(it.value().toDouble()) || it.value().toDouble() < 0 || it.value().toDouble() > 1) return false;
+    for (const char *key : {"panel", "card", "row", "media", "status", "overlay"})
+        if (!r.value(QLatin1String(key)).isDouble()) return false;
+    for (auto it = r.begin(); it != r.end(); ++it)
+        if (!it.value().isDouble() || !std::isfinite(it.value().toDouble()) || it.value().toDouble() < 0 || it.value().toDouble() > 128) return false;
     for (const char *key : {"ior", "depth", "refractionPixels", "dispersionIor", "diffusionPixels", "transmission", "bevelWidth", "bulgeStrength", "sceneLightStrength", "sceneLightPixels", "edgeLightStrength"}) {
         const QJsonValue value = g.value(QLatin1String(key));
         if (!value.isDouble() || !std::isfinite(value.toDouble()) || value.toDouble() < 0 || value.toDouble() > 1000) return false;
     }
     if (!g.value("ior").toDouble() || g.value("ior").toDouble() > 3
         || g.value("transmission").toDouble() > 1 || g.value("dispersionIor").toDouble() > 1) return false;
-    for (const char *key : {"regular", "bold", "heavy", "icons", "controller"}) if (!faces.contains(QLatin1String(key))) return false;
-    for (auto it = icons.begin(); it != icons.end(); ++it) if (!it.value().toString().endsWith(".svg", Qt::CaseInsensitive)) return false;
-    m_id = expectedId; m_name = data.value("name").toString(expectedId); m_root = QFileInfo(directory).canonicalFilePath();
-    m_colors = c.toVariantMap(); m_opacity = o.toVariantMap(); m_radii = r.toVariantMap(); m_glass = g.toVariantMap();
-    m_fonts = fontPaths; m_icons = iconPaths; m_wallpaper = QUrl::fromLocalFile(wallpaper).toString();
-    m_wallpaperValues = data.value("wallpaper").toObject().toVariantMap();
-    if (persist) { QSettings s(QSettings::IniFormat, QSettings::UserScope, "Mudos", "lulu"); s.setValue("appearance/theme", m_id); }
+    const QString chromeStyle = chrome.value("style").toString("flat");
+    if (chromeStyle != "flat" && chromeStyle != "bevel") return false;
+    if (chromeStyle == "bevel") {
+        for (const char *key : {"highlight", "light", "shadow", "darkShadow"}) {
+            const QString value = chrome.value(QLatin1String(key)).toString();
+            if (!value.startsWith('#') || !QColor(value).isValid()) return false;
+        }
+        if (!chrome.value("width").isDouble() || chrome.value("width").toDouble() < 1
+            || chrome.value("width").toDouble() > 8) return false;
+    }
+    const QVariantMap wallpaperValues = data.value("wallpaper").toObject().toVariantMap();
+    QVariantMap values;
+    values.insert("id", expectedId);
+    values.insert("name", data.value("name").toString(expectedId));
+    values.insert("root", QFileInfo(directory).canonicalFilePath());
+    values.insert("colors", c.toVariantMap()); values.insert("opacity", o.toVariantMap());
+    values.insert("radii", r.toVariantMap()); values.insert("glass", g.toVariantMap());
+    values.insert("chrome", chrome.toVariantMap()); values.insert("fonts", fontPaths);
+    QVariantMap resolvedRoles;
+    for (auto it = roleMap.begin(); it != roleMap.end(); ++it) {
+        if (!faces.contains(it.value().toString()) || !fontPaths.contains(it.value().toString())) return false;
+        resolvedRoles.insert(it.key(), it.value().toString());
+    }
+    values.insert("icons", iconPaths); values.insert("wallpaper", QUrl::fromLocalFile(wallpaper).toString());
+    values.insert("wallpaperValues", wallpaperValues);
+    QVariantMap resolvedFonts = fontPaths;
+    resolvedFonts.insert("roles", resolvedRoles);
+    values.insert("fonts", resolvedFonts);
+    *resolved = values;
+    return true;
+}
+
+bool ThemeManager::apply(const QVariantMap &theme, bool persist)
+{
+    m_id = theme.value("id").toString(); m_name = theme.value("name").toString();
+    m_root = theme.value("root").toString(); m_wallpaper = theme.value("wallpaper").toString();
+    m_colors = theme.value("colors").toMap(); m_opacity = theme.value("opacity").toMap();
+    m_radii = theme.value("radii").toMap(); m_glass = theme.value("glass").toMap();
+    m_chrome = theme.value("chrome").toMap(); m_fonts = theme.value("fonts").toMap();
+    m_icons = theme.value("icons").toMap(); m_wallpaperValues = theme.value("wallpaperValues").toMap();
+    if (persist) {
+        QSettings settings(QSettings::IniFormat, QSettings::UserScope, "Mudos", "lulu");
+        settings.setValue("appearance/theme", m_id);
+    }
     emit themeChanged();
     return true;
 }

@@ -28,6 +28,13 @@ TestCase {
         property color focusedCardSurface: "#404040"
         property color cardSurface: "#303030"
         property color focusIndicator: "#ffffff"
+        property color chromeHighlight: "#ffffff"
+        property color chromeLight: "#dfdfdf"
+        property color chromeShadow: "#808080"
+        property color chromeDarkShadow: "#000000"
+        property real chromeWidth: 1
+        property bool bevelChrome: false
+        function radius(_role, fallback) { return fallback }
     }
 
     Item {

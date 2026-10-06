@@ -305,7 +305,7 @@ Item {
         y: root.panelY
         width: root.panelWidth
         height: root.panelHeight
-        cornerRadius: 18 * root.uiScale
+        cornerRadius: root.luluPalette.radius("panel", 18) * root.uiScale
         uiScale: root.uiScale
         luluPalette: root.luluPalette
         canonicalTexture: root.canonicalTexture
@@ -385,7 +385,7 @@ Item {
                     height: String(modelData.state) === "failed"
                         ? Math.max(88 * root.uiScale, failureText.y + failureText.implicitHeight + 14 * root.uiScale)
                         : 88 * root.uiScale
-                    radius: 8 * root.uiScale
+                    radius: root.luluPalette.radius("row", 8 * root.uiScale)
                     property real selectionProgress: rowFrame.index === root.selectedIndex ? 1 : 0
                     scale: 1 + 0.01 * selectionProgress
                     transformOrigin: Item.Center
@@ -399,12 +399,13 @@ Item {
                     color: surfaceColor
                     border.color: borderColor
                     border.width: root.uiScale
+                    MudosChromeFrame { anchors.fill: parent; luluPalette: root.luluPalette; uiScale: root.uiScale; cornerRadius: parent.radius; raised: row.selectionProgress < 0.5 }
 
                     Text { x: 18 * root.uiScale; y: 10 * root.uiScale; width: parent.width * 0.58; text: row.modelData.title || "Untitled acquisition"; color: row.textColor; font.family: root.typography.interfaceFamily; font.pixelSize: root.typography.size("body", 18); font.bold: true; elide: Text.ElideRight }
                      Text { x: 18 * root.uiScale; y: 37 * root.uiScale; text: String(row.modelData.provider || "provider").toUpperCase() + "  ·  " + (String(row.modelData.state) === "failed" ? "Failed" : root.stateLabel(row.modelData)); color: root.luluPalette.secondaryText; font.family: root.typography.interfaceFamily; font.pixelSize: root.typography.size("hint", 12) }
                      Text { id: failureText; visible: String(row.modelData.state) === "failed"; x: 18 * root.uiScale; y: 57 * root.uiScale; text: root.failureReason(row.modelData); color: root.luluPalette.secondaryText; font.family: root.typography.interfaceFamily; font.pixelSize: root.typography.size("hint", 11); wrapMode: Text.Wrap; width: parent.width - 36 * root.uiScale }
                     Text { anchors.right: parent.right; anchors.rightMargin: 18 * root.uiScale; y: 10 * root.uiScale; text: row.modelData.progress !== null && row.modelData.progress !== undefined ? Math.round(Number(row.modelData.progress) * 100) + "%" : root.stateLabel(row.modelData); color: root.luluPalette.accent; font.family: root.typography.interfaceFamily; font.pixelSize: root.typography.size("hint", 13) }
-                     Rectangle { visible: String(row.modelData.state) !== "failed"; x: 18 * root.uiScale; y: 61 * root.uiScale; width: parent.width - 36 * root.uiScale; height: 5 * root.uiScale; radius: height / 2; color: root.luluPalette.glassBorder; Rectangle { width: row.modelData.progress !== null && row.modelData.progress !== undefined ? parent.width * Math.max(0, Math.min(1, Number(row.modelData.progress))) : 0; height: parent.height; radius: parent.radius; color: root.luluPalette.accent } }
+                     Rectangle { visible: String(row.modelData.state) !== "failed"; x: 18 * root.uiScale; y: 61 * root.uiScale; width: parent.width - 36 * root.uiScale; height: 5 * root.uiScale; radius: typeof mudosTheme !== "undefined" && mudosTheme.radii.row === 0 ? 0 : height / 2; color: root.luluPalette.glassBorder; Rectangle { width: row.modelData.progress !== null && row.modelData.progress !== undefined ? parent.width * Math.max(0, Math.min(1, Number(row.modelData.progress))) : 0; height: parent.height; radius: parent.radius; color: root.luluPalette.accent } }
                      Text { visible: String(row.modelData.state) !== "failed"; anchors.right: parent.right; anchors.rightMargin: 18 * root.uiScale; y: 70 * root.uiScale; text: row.modelData.downloaded_bytes !== null && row.modelData.total_bytes !== null ? root.formatBytes(row.modelData.downloaded_bytes) + " / " + root.formatBytes(row.modelData.total_bytes) : ""; color: root.luluPalette.secondaryText; font.family: root.typography.interfaceFamily; font.pixelSize: root.typography.size("hint", 11) }
                     }
                 }

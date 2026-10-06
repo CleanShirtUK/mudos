@@ -17,6 +17,8 @@ Item {
     // One consistent Mudos browser scale; WebEngine rerenders page layout,
     // unlike a QML view transform which would leave text physically small.
     property real pageZoom: 1.25
+    LuluPalette { id: luluPalette }
+    Typography { id: typography }
     signal closed()
     signal editableFocused(var field)
     signal editableTargetUnavailable()
@@ -210,12 +212,12 @@ Item {
         persistentCookiesPolicy: WebEngineProfile.ForcePersistentCookies
     }
 
-    Rectangle { anchors.fill: parent; color: "#101216" }
+    Rectangle { anchors.fill: parent; color: luluPalette.backdrop }
     Rectangle {
         id: toolbar
         anchors.left: parent.left; anchors.right: parent.right; anchors.top: parent.top
         height: 64
-        color: "#1c2028"
+        color: luluPalette.glassTint
         Row {
             anchors.fill: parent; anchors.margins: 8; spacing: 8
             Button { text: "Back"; onClicked: root.goBackOrClose() }
@@ -223,7 +225,7 @@ Item {
             Button { text: "Reload"; onClicked: root.reloadPage() }
             TextInput {
                 id: addressInput; width: parent.width - 310; height: 48
-                text: root.address; color: "white"; font.pixelSize: 20
+                text: root.address; color: luluPalette.primaryText; font.family: typography.interfaceFamily; font.pixelSize: 20
                 onAccepted: { view.url = text; view.forceActiveFocus() }
             }
         }
@@ -233,8 +235,8 @@ Item {
             anchors.verticalCenter: parent.verticalCenter
             width: Math.min(parent.width * 0.32, 520)
             height: 44
-            radius: 6
-            color: "#202734"
+            radius: luluPalette.radius("row", 6)
+            color: luluPalette.cardSurface
             visible: root.externalActionMessage !== ""
             z: 3
             Text {
@@ -242,7 +244,8 @@ Item {
                 anchors.leftMargin: 12
                 anchors.rightMargin: 12
                 text: root.externalActionMessage
-                color: "white"
+                color: luluPalette.primaryText
+                font.family: typography.interfaceFamily
                 font.pixelSize: 18
                 verticalAlignment: Text.AlignVCenter
                 horizontalAlignment: Text.AlignHCenter
@@ -315,23 +318,24 @@ Item {
     }
     Rectangle {
         anchors.centerIn: view; visible: root.errorMessage !== ""
-        color: "#d02028"; radius: 4; width: Math.min(parent.width - 80, 900); height: 70
-        Text { anchors.centerIn: parent; text: root.errorMessage; color: "white"; font.pixelSize: 18 }
+        color: luluPalette.warning; radius: luluPalette.radius("row", 4); width: Math.min(parent.width - 80, 900); height: 70
+        Text { anchors.centerIn: parent; text: root.errorMessage; color: luluPalette.selectedText; font.family: typography.interfaceFamily; font.pixelSize: 18 }
     }
     Rectangle {
         anchors.horizontalCenter: view.horizontalCenter
         anchors.bottom: view.bottom
         anchors.bottomMargin: 36
         visible: root.externalActionMessage !== ""
-        color: "#202734ee"
-        radius: 8
+        color: luluPalette.overlaySurface
+        radius: luluPalette.radius("row", 8)
         width: Math.min(view.width - 80, 720)
         height: 58
         z: 4
         Text {
             anchors.centerIn: parent
             text: root.externalActionMessage
-            color: "white"
+            color: luluPalette.primaryText
+            font.family: typography.interfaceFamily
             font.pixelSize: 20
         }
     }

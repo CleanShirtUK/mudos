@@ -10,7 +10,8 @@ Item {
     property rect canonicalRect: Qt.rect(0, 0, width, height)
     property var canonicalMappingDependency
     property real uiScale: 1
-    property real cornerRadius: 16 * uiScale
+    readonly property var themeRadii: typeof mudosTheme !== "undefined" ? mudosTheme.radii : ({})
+    property real cornerRadius: (themeRadii.card === 0 ? 0 : 16) * uiScale
     property real refractionPixels: 80 * uiScale
     property real dispersionIor: 0.0175
     property real diffusionPixels: 5 * uiScale
@@ -23,6 +24,7 @@ Item {
     readonly property var themeGlass: typeof mudosTheme !== "undefined" ? mudosTheme.glass : ({})
     readonly property var themeOptics: themeGlass.navigation || themeGlass.card || themeGlass
     readonly property var themeColors: typeof mudosTheme !== "undefined" ? mudosTheme.colors : ({})
+    property var luluPalette
 
     Rectangle {
         anchors.fill: parent
@@ -53,6 +55,14 @@ Item {
         edgeLightStrength: root.themeOptics.edgeLightStrength === undefined ? root.edgeLightStrength : root.themeOptics.edgeLightStrength
         edgeLightDirection: root.themeOptics.edgeLightDirection ? Qt.vector2d(root.themeOptics.edgeLightDirection[0], root.themeOptics.edgeLightDirection[1]) : root.edgeLightDirection
         transparentOutsideMask: root.transparentOutsideMask
+    }
+
+    MudosChromeFrame {
+        anchors.fill: parent
+        luluPalette: root.luluPalette
+        uiScale: root.uiScale
+        cornerRadius: root.cornerRadius
+        raised: true
     }
 
 }

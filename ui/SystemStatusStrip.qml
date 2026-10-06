@@ -135,7 +135,7 @@ Item {
         id: statusBacking
         objectName: "statusBacking"
         anchors.fill: parent
-        radius: 10 * root.uiScale
+        radius: root.luluPalette ? root.luluPalette.radius("status", 10) * root.uiScale : 10 * root.uiScale
         color: root.luluPalette ? root.luluPalette.glassTint : Qt.rgba(0.025, 0.027, 0.032, 0.88)
         border.color: root.luluPalette ? root.luluPalette.glassBorder : "#665f68"
         border.width: root.uiScale
@@ -167,6 +167,13 @@ Item {
             radius: statusBacking.radius
             color: Qt.rgba(0.008, 0.009, 0.012, 0.30)
             border.width: 0
+            visible: root.themeGlass.enabled !== false
+        }
+        MudosChromeFrame {
+            anchors.fill: parent
+            luluPalette: root.luluPalette
+            uiScale: root.uiScale
+            cornerRadius: statusBacking.radius
         }
     }
 

@@ -18,6 +18,11 @@ enable_testing()
 add_executable(catalogue-model-test catalogue-model-test.cpp catalogue-model.cpp recent-model.cpp)
 target_link_libraries(catalogue-model-test PRIVATE Qt6::DBus Qt6::Core Qt6::Test)
 add_test(NAME catalogue-model-test COMMAND catalogue-model-test)
+add_executable(theme-manager-test theme-manager-test.cpp theme-manager.cpp)
+target_compile_definitions(theme-manager-test PRIVATE
+    THEME_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../themes")
+target_link_libraries(theme-manager-test PRIVATE Qt6::Core Qt6::Gui Qt6::Test)
+add_test(NAME theme-manager-test COMMAND theme-manager-test)
 
 add_executable(mudos-guide mudos-guide.cpp)
 target_link_libraries(mudos-guide PRIVATE Qt6::DBus Qt6::Gui Qt6::Qml Qt6::Quick PkgConfig::XCB PkgConfig::XCB_XTEST PkgConfig::XCB_KEYSYMS)

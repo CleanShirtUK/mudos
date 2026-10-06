@@ -7,6 +7,20 @@ TestCase {
     width: 1280
     height: 720
     when: windowShown
+    property var mudosTheme: ({
+        activeId: "modern",
+        iconUrl: function(name) { return "" },
+        colors: ({}),
+        radii: {panel: 18, card: 10, row: 7, media: 14, status: 12, overlay: 14},
+        glass: {enabled: true},
+        fonts: {
+            regular: Qt.resolvedUrl("../../themes/modern/fonts/JetBrainsMonoNLNerdFont-Regular.ttf"),
+            bold: Qt.resolvedUrl("../../themes/modern/fonts/JetBrainsMonoNLNerdFont-Bold.ttf"),
+            heavy: Qt.resolvedUrl("../../themes/modern/fonts/JetBrainsMonoNLNerdFont-ExtraBold.ttf"),
+            icons: Qt.resolvedUrl("../../themes/modern/fonts/JetBrainsMonoNLNerdFont-Regular.ttf"),
+            roles: {interface: "regular", display: "heavy", majorHeading: "heavy", icon: "icons"}
+        }
+    })
 
     UI.LuluPalette { id: palette }
     UI.Typography { id: typography }

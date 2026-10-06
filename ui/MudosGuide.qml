@@ -37,10 +37,16 @@ Window {
         anchors.centerIn: parent
         width: 520
         height: Math.max(250, 110 + guideModel.actions.length * 68)
-        radius: 14
+        radius: luluPalette.radius("panel", 14)
         color: luluPalette.guideSurface
         border.color: luluPalette.guideBorder
         border.width: 1
+
+        MudosChromeFrame {
+            anchors.fill: parent
+            luluPalette: luluPalette
+            cornerRadius: panel.radius
+        }
 
         Column {
             anchors.fill: parent
@@ -101,10 +107,17 @@ Window {
                         anchors.fill: parent
                         scale: 1 + 0.01 * parent.selectionProgress
                         transformOrigin: Item.Center
-                        radius: 8
+                        radius: luluPalette.radius("row", 8)
                         color: parent.surfaceColor
                         border.color: parent.borderColor
                         border.width: 1
+
+                        MudosChromeFrame {
+                            anchors.fill: parent
+                            luluPalette: luluPalette
+                            raised: rowDelegate.selectionProgress < 0.5
+                            cornerRadius: parent.radius
+                        }
 
                         Text {
                             anchors.fill: parent

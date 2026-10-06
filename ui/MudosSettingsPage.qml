@@ -74,6 +74,7 @@ Item {
         canonicalTexture: root.canonicalTexture
         canonicalCoordinateRoot: root.canonicalCoordinateRoot
         canonicalSize: root.canonicalSize
+        luluPalette: root.luluPalette
         surfaceVisible: !root.embedded
         transparentOutsideMask: true
     }
@@ -135,11 +136,18 @@ Item {
                         anchors.fill: parent
                         Rectangle {
                             anchors.fill: parent
-                            radius: 7 * root.uiScale
+                            radius: root.luluPalette.radius("row", 7) * root.uiScale
                             visible: root.embedded && rowDelegate.index === root.selectedIndex
                             color: root.luluPalette.selectionSurface
                             border.color: root.luluPalette.focusIndicator
                             border.width: 2 * root.uiScale
+                            MudosChromeFrame {
+                                anchors.fill: parent
+                                luluPalette: root.luluPalette
+                                uiScale: root.uiScale
+                                cornerRadius: parent.radius
+                                raised: false
+                            }
                         }
                         MudosCardSurface {
                             anchors.fill: parent
@@ -148,6 +156,7 @@ Item {
                                 * rowDelegate.selectionProgress
                             transformOrigin: Item.Center
                             selectionProgress: rowDelegate.selectionProgress
+                            radiusRole: "row"
                             uiScale: root.uiScale
                             luluPalette: root.luluPalette
                             canonicalTexture: root.canonicalTexture

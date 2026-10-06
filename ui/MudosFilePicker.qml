@@ -5,6 +5,8 @@ Item {
     visible: false
     z: 20
     property string apiUrl: ""
+    property var luluPalette
+    property var typography
     property string prompt: "Select a file"
     property string folder: ""
     property string parentFolder: ""
@@ -70,15 +72,16 @@ Item {
         }
     }
 
-    Rectangle { anchors.fill: parent; color: "#ee090d12" }
+    Rectangle { anchors.fill: parent; color: root.luluPalette ? root.luluPalette.overlayBackdrop : "#ee090d12" }
     Rectangle {
         anchors.centerIn: parent
         width: Math.min(parent.width * 0.82, 980)
         height: Math.min(parent.height * 0.82, 660)
-        radius: 14
-        color: "#f018202b"
-        border.color: "#9bb9d9"
+        radius: root.luluPalette ? root.luluPalette.radius("overlay", 14) : 14
+        color: root.luluPalette ? root.luluPalette.overlaySurface : "#f018202b"
+        border.color: root.luluPalette ? root.luluPalette.glassBorder : "#9bb9d9"
         border.width: 2
+        MudosChromeFrame { anchors.fill: parent; luluPalette: root.luluPalette; cornerRadius: parent.radius }
         Column {
             anchors.fill: parent
             anchors.margins: 28
@@ -86,12 +89,12 @@ Item {
             Text {
                 width: parent.width
                 text: root.prompt
-                color: "white"; font.pixelSize: 27; font.bold: true; elide: Text.ElideRight
+                color: root.luluPalette ? root.luluPalette.headingAccent : "white"; font.family: root.typography ? root.typography.majorHeadingFamily : "sans-serif"; font.pixelSize: 27; font.bold: true; elide: Text.ElideRight
             }
             Text {
                 width: parent.width
                 text: root.folder + (root.folder ? "\n" : "") + root.message
-                color: "#d9e3ef"; font.pixelSize: 16; wrapMode: Text.Wrap; elide: Text.ElideMiddle
+                color: root.luluPalette ? root.luluPalette.secondaryText : "#d9e3ef"; font.family: root.typography ? root.typography.interfaceFamily : "sans-serif"; font.pixelSize: 16; wrapMode: Text.Wrap; elide: Text.ElideMiddle
             }
             ListView {
                 id: fileRows
@@ -105,12 +108,12 @@ Item {
                     required property int index
                     width: fileRows.width
                     height: 48
-                    radius: 5
-                    color: index === root.selectedIndex ? "#385e84" : "transparent"
+                    radius: root.luluPalette ? root.luluPalette.radius("row", 5) : 5
+                    color: index === root.selectedIndex && root.luluPalette ? root.luluPalette.selectionSurface : "transparent"
                     Text {
                         anchors.fill: parent; anchors.leftMargin: 12
                         verticalAlignment: Text.AlignVCenter
-                        color: "white"; font.pixelSize: 16; elide: Text.ElideMiddle
+                        color: index === root.selectedIndex && root.luluPalette ? root.luluPalette.selectedText : root.luluPalette ? root.luluPalette.primaryText : "white"; font.family: root.typography ? root.typography.interfaceFamily : "sans-serif"; font.pixelSize: 16; elide: Text.ElideMiddle
                         text: (modelData.directory ? "Folder  " : "File  ") + String(modelData.name || "")
                     }
                 }
@@ -118,7 +121,7 @@ Item {
             Text {
                 width: parent.width
                 text: "A: Open/select   B: Back   ↑/↓: Choose"
-                color: "#aebdce"; font.pixelSize: 15
+                color: root.luluPalette ? root.luluPalette.secondaryText : "#aebdce"; font.family: root.typography ? root.typography.interfaceFamily : "sans-serif"; font.pixelSize: 15
             }
         }
     }

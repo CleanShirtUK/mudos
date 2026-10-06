@@ -5,6 +5,7 @@ Item {
 
     property var canonicalTexture
     property var canonicalCoordinateRoot
+    property var luluPalette
     property size canonicalSize: Qt.size(1280, 720)
     property real progress: 0
     property real homeX: 0
@@ -64,15 +65,17 @@ Item {
                        bottomRight.y - topLeft.y)
     }
 
-    NavigationCardSurface {
+     NavigationCardSurface {
         id: spatialSurface
         anchors.fill: parent
          canonicalTexture: root.canonicalTexture
          canonicalSize: root.canonicalSize
          canonicalCoordinateRoot: root.canonicalCoordinateRoot
          canonicalRect: root.canonicalRect
-         transparentOutsideMask: root.transparentOutsideMask
-          cornerRadius: 16 * root.uiScale + 12 * root.uiScale * root.surfacePresentationProgress
+          transparentOutsideMask: root.transparentOutsideMask
+           luluPalette: root.luluPalette
+           cornerRadius: (typeof mudosTheme !== "undefined" && mudosTheme.radii.card === 0)
+               ? 0 : 16 * root.uiScale + 12 * root.uiScale * root.surfacePresentationProgress
           bevelWidthPx: 3 * root.uiScale + 3 * root.uiScale * root.surfacePresentationProgress
     }
 

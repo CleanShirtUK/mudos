@@ -73,6 +73,7 @@ Item {
             canonicalMappingDependency: root.canonicalMappingDependency
             transparentOutsideMask: root.transparentOutsideMask
             uiScale: root.uiScale
+            luluPalette: root.luluPalette
         }
 
         GameCard {

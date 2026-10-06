@@ -7,7 +7,7 @@ under `${XDG_DATA_HOME:-$HOME/.local/share}/mudos/themes/<id>`. The optional
 Theme selection is persisted in the user-scoped `Mudos/lulu` QSettings key
 `appearance/theme`. No theme may provide QML or JavaScript.
 
-The built-in `themes/mudos-default` owns the accepted baseline's JetBrains Mono
+The built-in `themes/modern` owns the accepted baseline's JetBrains Mono
 regular, bold and ExtraBold faces, Nerd Font icon face, Config-Glyphs controller
 face, and the `wallpaper/wallpaper.frag.qsb` scene shader. License/provenance
 notices accompany the font assets. Optional `icons/<semantic-name>.svg` assets
@@ -19,6 +19,15 @@ platform, provider, gameMode, genre, play, search, refresh, back, check, close,
 collection, flathub, applications, empty, wrench, activity, steam and addStore.
 Game metadata uses genre, clock, gameMode, wifi, info, platform, plug, developer,
 publisher and release. Missing SVGs use the built-in semantic Nerd Font glyph.
+
+The POC includes exactly two built-in themes: `Modern` (`modern`) and `95`.
+Modern's existing palette, glass profile, radii, fonts and Orbit wallpaper are
+kept as the accepted UI-001 baseline. `themes/95` is an original classic desktop
+interpretation: teal wallpaper; gray surfaces; navy selection; black/white text;
+square radii; glass disabled; generic bevel chrome; Liberation Sans with its
+redistribution license; and original monochrome semantic SVGs. Its controller
+face is retained for controller-hint compatibility. No theme includes QML or
+JavaScript.
 
 `theme.json` v1 provides `colors` (semantic color roles), `opacity` (0..1),
 `radii` (0..128 logical pixels), `glass` (enabled and optical settings),
@@ -37,19 +46,27 @@ canonical scene, which remains the source for the visible backdrop and glass.
 For authoring, compile a GLSL fragment with Qt's `qsb --qt6 --batchable -o
 wallpaper.frag.qsb wallpaper.frag`; production does not compile themes at boot.
 
+Discovery fully validates theme metadata, all required font roles, all declared
+assets, semantic SVG paths, wallpaper QSB, colors, opacity, radii, glass values,
+and chrome before exposing a theme in Settings. Selection consumes the same
+validated manifest; invalid themes are never listed. `chrome.style` may be
+`flat` or `bevel`; bevel themes declare highlight/light/shadow/darkShadow and a
+1..8 pixel edge width. Shared shell surfaces consume that semantic treatment.
+
 All declared assets must be relative paths under the theme directory. Absolute,
 network and traversal paths, including symlinks escaping the theme root, are
-rejected. Invalid selected themes fall back to `mudos-default`; missing or
+rejected. Invalid selected themes fall back to `modern`; a persisted legacy ID
+`mudos-default` is loaded as `modern` and rewritten to `modern`. Missing or
 invalid themes are logged, and missing wallpaper must be handled by the engine's
 backdrop color. The built-in theme is mandatory for a valid runtime.
 
-Minimal shape (the production default contains the full required role set):
+Illustrative shape only (incomplete themes are rejected by discovery):
 
 ```json
 {
   "schema_version": 1,
-  "id": "mudos-default",
-  "name": "Mudos Default",
+  "id": "modern",
+  "name": "Modern",
   "version": "1",
   "author": "Mudos",
   "colors": { "primaryText": "#eadcff", "backdrop": "#060607" },

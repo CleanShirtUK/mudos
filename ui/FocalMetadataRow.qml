@@ -5,7 +5,7 @@ Item {
     property string glyph: ""
     property string iconName: ""
     property string text: ""
-    property string fontFamily: "JetBrains Mono"
+    property string fontFamily: "sans-serif"
     property string iconFamily: fontFamily
     property color textColor: "white"
     property real uiScale: 1

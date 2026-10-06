@@ -51,7 +51,7 @@ Item {
         objectName: "settingsGlassSubstrate"
         x: 0; y: -root.surfaceTopExtension
         width: root.width; height: root.height + root.surfaceTopExtension
-        cornerRadius: 18 * root.uiScale
+        cornerRadius: root.luluPalette.radius("panel", 18) * root.uiScale
         uiScale: root.uiScale
         luluPalette: root.luluPalette
         canonicalTexture: root.canonicalTexture
@@ -63,12 +63,19 @@ Item {
         objectName: "settingsCategoryPanel"
         x: root.leftBounds.x; y: root.leftBounds.y
         width: root.leftBounds.width; height: root.leftBounds.height
-        radius: 14 * root.uiScale
+        radius: root.luluPalette.radius("panel", 14) * root.uiScale
         color: root.luluPalette.cardSurface
         border.width: root.activePanel === "categories" ? 3 * root.uiScale : 1 * root.uiScale
         border.color: root.activePanel === "categories"
             ? root.luluPalette.focusIndicator : root.luluPalette.glassBorder
         opacity: root.activePanel === "categories" ? 1 : 0.72
+        MudosChromeFrame {
+            anchors.fill: parent
+            luluPalette: root.luluPalette
+            uiScale: root.uiScale
+            cornerRadius: parent.radius
+            raised: root.activePanel === "categories"
+        }
         Behavior on border.color { ColorAnimation { duration: 180; easing.type: Easing.OutCubic } }
         Behavior on border.width { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
         Behavior on opacity { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
@@ -77,12 +84,19 @@ Item {
         objectName: "settingsContentPanel"
         x: root.rightBounds.x; y: root.rightBounds.y
         width: root.rightBounds.width; height: root.rightBounds.height
-        radius: 14 * root.uiScale
+        radius: root.luluPalette.radius("panel", 14) * root.uiScale
         color: root.luluPalette.cardSurface
         border.width: root.activePanel === "content" ? 3 * root.uiScale : 1 * root.uiScale
         border.color: root.activePanel === "content"
             ? root.luluPalette.focusIndicator : root.luluPalette.glassBorder
         opacity: root.activePanel === "content" ? 1 : 0.72
+        MudosChromeFrame {
+            anchors.fill: parent
+            luluPalette: root.luluPalette
+            uiScale: root.uiScale
+            cornerRadius: parent.radius
+            raised: root.activePanel === "content"
+        }
         Behavior on border.color { ColorAnimation { duration: 180; easing.type: Easing.OutCubic } }
         Behavior on border.width { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
         Behavior on opacity { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
@@ -106,7 +120,7 @@ Item {
                     anchors.fill: parent
                     anchors.leftMargin: 2 * root.uiScale
                     anchors.rightMargin: 2 * root.uiScale
-                    radius: 8 * root.uiScale
+                    radius: root.luluPalette.radius("row", 8) * root.uiScale
                     color: categoryRow.index === root.selectedCategory
                         ? root.luluPalette.selectionSurface
                         : "transparent"
@@ -115,15 +129,15 @@ Item {
                     border.width: categoryRow.index === root.selectedCategory
                         ? 2 * root.uiScale : 0
                 }
-                Text {
+                MudosIcon {
                     x: 14 * root.uiScale; width: 30 * root.uiScale
                     height: parent.height
-                    text: String(categoryRow.modelData.glyph || "")
-                    color: categoryRow.index === root.selectedCategory
+                    name: String(categoryRow.modelData.iconName || "settings")
+                    glyph: String(categoryRow.modelData.glyph || "")
+                    typography: root.typography
+                    iconSize: 24 * root.uiScale
+                    semanticColor: categoryRow.index === root.selectedCategory
                         ? root.luluPalette.headingAccent : root.luluPalette.navigationText
-                    font.family: root.typography.displayFamily
-                    font.pixelSize: root.typography.size("body", 24)
-                    verticalAlignment: Text.AlignVCenter
                 }
                 Text {
                     x: 56 * root.uiScale

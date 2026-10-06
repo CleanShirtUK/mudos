@@ -1,0 +1,58 @@
+{
+  "schema_version": 1,
+  "id": "95",
+  "name": "95",
+  "version": "1",
+  "author": "Mudos",
+  "colors": {
+    "primaryText": "#000000", "secondaryText": "#000000", "mutedText": "#404040",
+    "selectedText": "#FFFFFF", "accent": "#000080", "focusIndicator": "#000080",
+    "warning": "#800000", "backdrop": "#008080", "surface": "#C0C0C0",
+    "surfaceElevated": "#C0C0C0", "surfaceInternal": "#C0C0C0",
+    "cardSurface": "#C0C0C0", "focusedCardSurface": "#000080",
+    "actionSurface": "#C0C0C0", "actionText": "#000000",
+    "artworkSurface": "#DFDFDF", "border": "#808080", "focusBorder": "#000080",
+    "overlayBackdrop": "#80008080", "overlaySurface": "#C0C0C0",
+    "launchOverlaySurface": "#C0C0C0", "guideSurface": "#C0C0C0",
+    "guideBorder": "#808080", "guideItemSurface": "#C0C0C0",
+    "guideSelectedText": "#FFFFFF", "scrollFadeStart": "#00C0C0C0", "scrollFadeEnd": "#FFC0C0C0",
+    "navigationText": "#000000", "headingAccent": "#000080", "selectionSurface": "#000080",
+    "librarySurface": "#C0C0C0", "libraryCardSurface": "#C0C0C0", "libraryBorder": "#808080",
+    "overlay": "#C0C0C0"
+  },
+  "opacity": {
+    "structuralSurface": 1.0, "internalSurface": 1.0, "card": 1.0,
+    "focusedCard": 1.0, "selection": 1.0, "statusBacking": 1.0,
+    "overlayBackdrop": 0.55, "overlaySurface": 1.0
+  },
+  "radii": {"panel": 0, "card": 0, "row": 0, "media": 0, "status": 0, "overlay": 0},
+  "glass": {
+    "enabled": false, "ior": 1.0, "depth": 0, "refractionPixels": 0,
+    "dispersionIor": 0, "diffusionPixels": 0, "transmission": 1,
+    "bevelWidth": 0, "bulgeStrength": 0, "sceneLightStrength": 0,
+    "sceneLightPixels": 0, "edgeLightStrength": 0
+  },
+  "chrome": {
+    "style": "bevel", "highlight": "#FFFFFF", "light": "#DFDFDF",
+    "shadow": "#808080", "darkShadow": "#000000", "width": 2
+  },
+  "fonts": {
+    "faces": {
+      "regular": {"file": "fonts/LiberationSans-Regular.ttf", "weight": 400},
+      "bold": {"file": "fonts/LiberationSans-Bold.ttf", "weight": 700},
+      "heavy": {"file": "fonts/LiberationSans-Bold.ttf", "weight": 900},
+      "icons": {"file": "fonts/JetBrainsMonoNLNerdFont-Regular.ttf"},
+      "controller": {"file": "fonts/Config-Glyphs.otf"}
+    },
+    "roles": {"interface": "regular", "display": "bold", "majorHeading": "bold", "icon": "icons", "controller": "controller"}
+  },
+  "wallpaper": {"shader": "wallpaper/wallpaper.frag.qsb", "primary": "#008080", "secondary": "#008080", "surface": "#008080", "error": "#008080"},
+  "icons": {
+    "settings": "icons/settings.svg", "controller": "icons/controller.svg",
+    "wifi": "icons/wifi.svg", "bluetooth": "icons/bluetooth.svg",
+    "volume": "icons/volume.svg", "storage": "icons/storage.svg",
+    "download": "icons/download.svg", "clock": "icons/clock.svg",
+    "warning": "icons/warning.svg", "play": "icons/play.svg",
+    "platform": "icons/platform.svg", "provider": "icons/provider.svg"
+  }
+}
