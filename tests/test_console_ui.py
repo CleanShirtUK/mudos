@@ -1303,6 +1303,7 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertNotIn("launchGame(", activate)
         handoff = shell.split("id: handoffTimer", 1)[1].split("SequentialAnimation", 1)[0]
         self.assertIn("root.launchGame(game, true)", handoff)
+        self.assertIn("root.startReturnWatch()", handoff)
         library_host = shell.split('LibrarySpace {', 1)[1].split('StoreOptions {', 1)[0]
         self.assertNotIn('anchors.fill: parent', library_host)
         self.assertIn('height: parent.height', library_host)

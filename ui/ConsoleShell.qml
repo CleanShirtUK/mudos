@@ -3052,6 +3052,7 @@ import QtQuick.Controls
                 root.pendingLibraryLaunch = null
                 root.traceLaunchEvent("LIBRARY_EXIT_HANDOFF", {game_id: String(game.game_id)})
                 root.launchGame(game, true)
+                root.startReturnWatch()
             }
         }
     }

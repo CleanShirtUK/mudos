@@ -241,6 +241,27 @@ projection corrected; full regression suite passed.
 - Regression coverage verifies both direct-launch recents updates and migration
   of legacy Steam history to the Aurelia identity. Production was not changed.
 
+### LIBRARY-LAUNCH-001 — Preserve launch return choreography from Library
+
+**Status:** FIXED IN SOURCE — dev physical confirmation pending.
+
+- The Library close animation handed the selected game to the shared launch
+  flow, but unlike the Recent launch flow, it did not start the return watcher.
+  This meant a game returning to Lulu could bypass the normal exit choreography.
+- Start the watcher immediately after the Library handoff and cover the contract
+  with a UI regression assertion. Verify the launch/return presentation
+  physically in dev-current; production remains unchanged.
+
+### NOTIFICATIONS-001 — Route transient status messages to Notifications
+
+**Status:** OPEN.
+
+- Move transient bottom-right messages (including library refresh feedback) into
+  the Notifications experience instead of displaying them in the current
+  bottom-right message location. Preserve useful feedback and make it available
+  through Notifications; inventory the current message producers and define
+  notification severity, lifetime, and dismissal behavior during implementation.
+
 ### LUTRIS-002 — Sonic 3 A.I.R. launch leaves Mudos unresponsive
 
 **Status:** INVESTIGATING — evidence collected; preserve the current session.
