@@ -13,7 +13,7 @@ Rectangle {
     property var luluPalette
     property real uiScale: 1
     property real cornerRadius: 18 * uiScale
-    property real tintOpacity: 0.38
+    property real tintOpacity: 0.12
     property bool glassEnabled: true
 
     readonly property rect mappedCanonicalRect: {
@@ -35,7 +35,7 @@ Rectangle {
     }
 
     radius: cornerRadius
-    color: luluPalette ? luluPalette.glassTint : Qt.rgba(0.025, 0.027, 0.032, 0.88)
+    color: luluPalette ? luluPalette.glassTint : Qt.rgba(0.025, 0.027, 0.032, 0.42)
     border.color: luluPalette ? luluPalette.glassBorder : "#665f68"
     border.width: Math.max(1, uiScale)
     clip: true
@@ -50,7 +50,7 @@ Rectangle {
         refractionPixels: 80 * root.uiScale
         dispersionIor: 0.0175
         diffusionPixels: 5 * root.uiScale
-        transmission: 0.75
+        transmission: 0.94
         bevelWidthPx: 3 * root.uiScale
         bulgeStrength: 100
         sceneLightStrength: 0

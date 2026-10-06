@@ -103,7 +103,7 @@ Item {
                 height: 72 * root.uiScale
                 radius: 9 * root.uiScale
                 color: index === root.selectedIndex
-                    ? root.luluPalette.focusedCardSurface : "transparent"
+                    ? root.luluPalette.selectionSurface : "transparent"
                 border.color: index === root.selectedIndex
                     ? root.luluPalette.focusIndicator : root.luluPalette.glassBorder
                 border.width: index === root.selectedIndex ? 2 * root.uiScale : root.uiScale

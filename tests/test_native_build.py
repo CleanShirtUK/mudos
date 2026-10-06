@@ -96,7 +96,8 @@ class NativeBuildTests(unittest.TestCase):
         root = Path(__file__).parents[1]
         recent = (root / "ui" / "RecentHome.qml").read_text()
         effect = (root / "ui" / "DirectionalMotionBlur.qml").read_text()
-        self.assertIn("sourceRect: Qt.rect(recentHome.rowLeftEdge - recentHome.motionBlurPadding", recent)
+        self.assertIn("sourceRect: Qt.rect(recentHome.captureRowLeftEdge - recentHome.motionBlurPadding", recent)
+        self.assertIn("RecentCaptureEnvelope.union(", recent)
         self.assertIn("property rect sourceRect", effect)
         self.assertIn("sourceRect: root.sourceRect", effect)
         self.assertIn("hideSource: root.active", effect)

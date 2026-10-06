@@ -101,11 +101,12 @@ Item {
                     anchors.rightMargin: 2 * root.uiScale
                     radius: 8 * root.uiScale
                     color: categoryRow.index === root.selectedCategory
-                        ? Qt.rgba(root.luluPalette.focusIndicator.r,
-                                  root.luluPalette.focusIndicator.g,
-                                  root.luluPalette.focusIndicator.b, 0.18)
+                        ? root.luluPalette.selectionSurface
                         : "transparent"
-                    opacity: categoryRow.index === root.selectedCategory ? 0.9 : 0
+                    border.color: categoryRow.index === root.selectedCategory
+                        ? root.luluPalette.focusIndicator : "transparent"
+                    border.width: categoryRow.index === root.selectedCategory
+                        ? 2 * root.uiScale : 0
                 }
                 Text {
                     x: 14 * root.uiScale; width: 30 * root.uiScale

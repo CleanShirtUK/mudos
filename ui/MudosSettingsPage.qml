@@ -137,9 +137,9 @@ Item {
                             anchors.fill: parent
                             radius: 7 * root.uiScale
                             visible: root.embedded && rowDelegate.index === root.selectedIndex
-                            color: Qt.rgba(root.luluPalette.headingAccent.r,
-                                           root.luluPalette.headingAccent.g,
-                                           root.luluPalette.headingAccent.b, 0.10)
+                            color: root.luluPalette.selectionSurface
+                            border.color: root.luluPalette.focusIndicator
+                            border.width: 2 * root.uiScale
                         }
                         MudosCardSurface {
                             anchors.fill: parent

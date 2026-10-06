@@ -21,7 +21,7 @@ Item {
     property bool surfaceVisible: false
     property bool transparentOutsideMask: true
     property color panelSurfaceColor: "transparent"
-    property real panelSurfaceOpacity: 0.40
+    property real panelSurfaceOpacity: 0.18
 
     readonly property real surfaceX: launchExitActive ? fullscreenX
         : homeX + (fullscreenX - homeX) * progress

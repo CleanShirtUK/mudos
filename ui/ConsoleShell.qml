@@ -187,11 +187,10 @@ import QtQuick.Controls
     readonly property real homeCategoryFontSize: typography.size("display", 48)
     readonly property real homeCategoryGap: design(25)
     readonly property real homeCategoryPitch: homeCategoryFontSize + homeCategoryGap
-    // Persistent status chrome is positioned in root screen space. These
-    // values match the settled Recent composition's System-title reference,
-    // without following the animated title rail or its presentation offset.
-    readonly property real statusStripRightMargin: homeCategoryRailX
-    readonly property real statusStripTop: selectedDomainY - 3 * homeCategoryPitch
+    // Fixed root-space shell chrome. Match the established expanded/Utilities
+    // safe inset on every Mudos destination; never follow Home's title rail.
+    readonly property real statusStripRightMargin: expandedShellSideMargin
+    readonly property real statusStripTop: expandedShellTop
     readonly property real expandedHeaderRightMargin: expandedShellSideMargin
     readonly property real expandedContentSideMargin: design(120)
     // Frame the actual six-card visual envelope, using the same inter-card
@@ -217,11 +216,19 @@ import QtQuick.Controls
     readonly property real expandedShellY: expandedShellTop
     readonly property real expandedShellWidth: width - 2 * expandedShellSideMargin
     readonly property real expandedShellHeight: expandedShellBottom - expandedShellTop
-    readonly property real expandedHeaderTop: expandedShellY
+    readonly property real expandedTitleX: expandedShellX + 22 * uiScale
+    readonly property real expandedTitleY: expandedShellY + 8 * uiScale
+    readonly property real expandedSurfaceX: expandedShellX
+    readonly property real expandedSurfaceY: expandedShellY + activeHeadingHeight
+        + headingCardGap + design(16)
+    readonly property real expandedSurfaceWidth: expandedShellWidth
+    readonly property real expandedSurfaceBottom: expandedShellBottom
+    readonly property real expandedHintBandTop: expandedHintRowTop
+    readonly property real expandedHeaderTop: expandedSurfaceY
     readonly property real expandedContentX: expandedShellX
-    readonly property real expandedContentY: expandedShellY + activeHeadingHeight + headingCardGap
+    readonly property real expandedContentY: expandedSurfaceY
     readonly property real expandedContentWidth: expandedShellWidth
-    readonly property real expandedContentHeight: Math.max(0, expandedContentBottom - expandedContentY)
+    readonly property real expandedContentHeight: Math.max(0, expandedSurfaceBottom - expandedContentY)
     readonly property real expandedStatusReserve: systemStatusStrip.width + design(24)
     readonly property real libraryCategoryRightSafeInset: Math.max(0,
         expandedShellX + expandedShellWidth - design(30)
@@ -3666,9 +3673,9 @@ import QtQuick.Controls
              homeWidth: root.homeNavigationCardWidth
             homeHeight: root.libraryHomePresentationHeight
             fullscreenX: root.expandedShellX
-            fullscreenY: root.expandedShellY
+             fullscreenY: root.expandedSurfaceY
             fullscreenWidth: root.expandedShellWidth
-            fullscreenHeight: root.expandedShellHeight
+             fullscreenHeight: root.expandedSurfaceBottom - root.expandedSurfaceY
              uiScale: root.uiScale
              panelSurfaceColor: luluPalette.librarySurface
              verticalOffset: root.homeCategoryOffset(2)
@@ -3989,7 +3996,9 @@ import QtQuick.Controls
              canonicalSize: Qt.size(root.width, root.height)
               contentBounds: Qt.rect(root.expandedShellX, root.expandedShellY,
                                      root.expandedShellWidth, root.expandedShellHeight)
-              categoryTapeRightInset: root.libraryCategoryRightSafeInset
+               categoryTapeRightInset: root.libraryCategoryRightSafeInset
+              titleX: root.expandedTitleX
+              titleY: root.expandedTitleY
               contentSideMargin: root.expandedContentSideMargin
              contentBottom: root.expandedContentBottom
              contentOpacity: root.libraryContentOpacity
@@ -4146,8 +4155,8 @@ import QtQuick.Controls
             Component.onCompleted: root.settingsSpaceRef = settingsSpace
         }
         Text {
-            x: root.expandedShellX + 22 * root.uiScale
-            y: root.expandedShellY + 8 * root.uiScale
+            x: root.expandedTitleX
+            y: root.expandedTitleY
             visible: settingsSpace.visible
             opacity: root.systemTransitionProgress
             transform: Translate {
@@ -4162,8 +4171,8 @@ import QtQuick.Controls
         }
 
         Text {
-            x: root.expandedShellX + 22 * root.uiScale
-            y: root.expandedShellY + 8 * root.uiScale
+            x: root.expandedTitleX
+            y: root.expandedTitleY
             visible: root.space === "system"
                 && root.systemCategories[root.systemCategoryIndex] === "Utilities"
                 || root.systemTransitioning
@@ -4421,21 +4430,16 @@ import QtQuick.Controls
 
         SystemStatusStrip {
             id: systemStatusStrip
+            objectName: "shellStatusChrome"
+            parent: root.contentItem
             z: 50
             anchors.top: parent.top
             anchors.right: parent.right
-            anchors.topMargin: root.space === "home" && !root.libraryTransitioning
-                && !root.storeTransitioning ? root.statusStripTop : root.expandedHeaderTop
-            anchors.rightMargin: root.space === "home" && !root.libraryTransitioning
-                && !root.storeTransitioning ? root.statusStripRightMargin
-                                             : root.expandedHeaderRightMargin
+            anchors.topMargin: root.statusStripTop
+            anchors.rightMargin: root.statusStripRightMargin
             visible: presentationCoordinator.contentState
                 !== presentationCoordinator.hiddenState
             opacity: presentationCoordinator.presentationProgress
-            transform: Translate {
-                y: -systemStatusStrip.height
-                    * (1 - presentationCoordinator.presentationProgress)
-            }
             compact: false
             uiScale: root.uiScale
             canonicalTexture: orbitTexture

@@ -1,4 +1,5 @@
 import QtQuick
+import "RecentCaptureEnvelope.js" as RecentCaptureEnvelope
 
 Item {
     id: recentHome
@@ -60,6 +61,35 @@ Item {
         }
         return leftEdge
     }
+    // Startup/choreography retains rowLeftEdge/rowRightEdge. The live capture
+    // envelope is separate: retargeted delegates can still occupy their old
+    // interpolated positions after the logical rail has moved to its target.
+    readonly property var liveCaptureBounds: {
+        var bounds = []
+        var dependency = transitionProgress + selectedIndex + categoryPresentationOffset
+        for (var index = 0; index < recentRepeater.count; index++) {
+            var card = recentRepeater.itemAt(index)
+            if (!card || !card.visible)
+                continue
+            dependency += card.x + card.y + card.width + card.height
+                + card.scale + card.rotation
+            var topLeft = card.mapToItem(recentRow, 0, 0)
+            var topRight = card.mapToItem(recentRow, card.width, 0)
+            var bottomLeft = card.mapToItem(recentRow, 0, card.height)
+            var bottomRight = card.mapToItem(recentRow, card.width, card.height)
+            var liveLeft = Math.min(topLeft.x, topRight.x, bottomLeft.x, bottomRight.x)
+            var liveRight = Math.max(topLeft.x, topRight.x, bottomLeft.x, bottomRight.x)
+            bounds.push({
+                x: liveLeft + dependency - dependency,
+                width: liveRight - liveLeft + dependency - dependency
+            })
+        }
+        return bounds
+    }
+    readonly property var captureRowEnvelope: RecentCaptureEnvelope.union(
+        rowLeftEdge, rowRightEdge, liveCaptureBounds)
+    readonly property real captureRowLeftEdge: captureRowEnvelope.left
+    readonly property real captureRowRightEdge: captureRowEnvelope.right
     readonly property real motionBlurPadding: presentationCoordinator
         ? presentationCoordinator.motionBlurMaxPixels : 64
     readonly property real recentRowStartupX: presentationCoordinator
@@ -391,19 +421,20 @@ Item {
     // hierarchy and retains ownership of presentationX and delegate geometry.
     DirectionalMotionBlur {
         id: recentMotionBlur
-        x: recentHome.presentationX + recentHome.rowLeftEdge
+        objectName: "recentMotionBlurCapture"
+        x: recentHome.presentationX + recentHome.captureRowLeftEdge
             - recentHome.motionBlurPadding
         y: -recentHome.motionBlurPadding
-        width: recentHome.rowRightEdge - recentHome.rowLeftEdge
+        width: recentHome.captureRowRightEdge - recentHome.captureRowLeftEdge
             + 2 * recentHome.motionBlurPadding
         height: recentHome.height + 2 * recentHome.motionBlurPadding
         visible: recentModel && recentRepeater.count > 0
          active: recentHome.selectionMotionActive
              && recentHome.selectionBlurAllowed
         sourceItem: recentRow
-        sourceRect: Qt.rect(recentHome.rowLeftEdge - recentHome.motionBlurPadding,
+        sourceRect: Qt.rect(recentHome.captureRowLeftEdge - recentHome.motionBlurPadding,
                             -recentHome.motionBlurPadding,
-                            recentHome.rowRightEdge - recentHome.rowLeftEdge
+                            recentHome.captureRowRightEdge - recentHome.captureRowLeftEdge
                                 + 2 * recentHome.motionBlurPadding,
                             recentHome.height + 2 * recentHome.motionBlurPadding)
         blurPixels: presentationCoordinator

@@ -8,18 +8,21 @@ QtObject {
     readonly property color accent: "#e0c5ff"
     readonly property color focusIndicator: "#e0c5ff"
     readonly property color warning: "#e0c5ff"
-    readonly property color glassTint: Qt.rgba(0.025, 0.027, 0.032, 0.88)
+    // Structural glass transmits most of the animated backdrop; modal overlays
+    // use separate, deliberately stronger dimming roles below.
+    readonly property color glassTint: Qt.rgba(0.025, 0.027, 0.032, 0.42)
     readonly property color glassBorder: "#665f68"
     readonly property color backdrop: "#060607"
     readonly property color navigationText: "#aaa5ad"
     readonly property color headingAccent: "#eadcff"
-    readonly property color cardSurface: Qt.rgba(0.055, 0.057, 0.064, 0.94)
-    readonly property color focusedCardSurface: Qt.rgba(0.12, 0.105, 0.14, 0.96)
+    readonly property color cardSurface: Qt.rgba(0.055, 0.057, 0.064, 0.48)
+    readonly property color focusedCardSurface: Qt.rgba(0.12, 0.105, 0.14, 0.62)
+    readonly property color selectionSurface: Qt.rgba(0.13, 0.105, 0.16, 0.32)
     readonly property color actionSurface: Qt.rgba(0.16, 0.135, 0.18, 0.96)
     readonly property color actionText: "#f1e7ff"
-    readonly property color artworkSurface: Qt.rgba(0.018, 0.019, 0.022, 0.96)
-    readonly property color librarySurface: Qt.rgba(0.025, 0.027, 0.032, 0.86)
-    readonly property color libraryCardSurface: Qt.rgba(0.055, 0.057, 0.064, 0.94)
+    readonly property color artworkSurface: Qt.rgba(0.018, 0.019, 0.022, 0.80)
+    readonly property color librarySurface: Qt.rgba(0.025, 0.027, 0.032, 0.46)
+    readonly property color libraryCardSurface: Qt.rgba(0.055, 0.057, 0.064, 0.48)
     readonly property color libraryBorder: "#665f68"
     readonly property color libraryHighlight: focusIndicator
     readonly property color guideSurface: Qt.rgba(0.018, 0.019, 0.022, 0.84)

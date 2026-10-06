@@ -42,6 +42,8 @@ Item {
     property string headingText: "LIBRARY"
     property string sectionTitle: ""
     property string emptyText: "No installed games"
+    property real titleX: contentFrameRect.x
+    property real titleY: contentFrameRect.y
     property string actionLabel: "Play"
     readonly property string navigationObject: "library"
     readonly property real rowHeight: 54 * uiScale
@@ -71,7 +73,7 @@ Item {
     // Video previews use the Qt image plugin only. Retain the explicit false
     // switch as a guard against reintroducing in-process Qt Multimedia playback.
     readonly property bool videoPreviewsEnabled: false
-    property real internalSurfaceOpacity: 0.64
+    property real internalSurfaceOpacity: 0.34
     readonly property string libraryFontFamily: typography ? typography.displayFamily : "monospace"
     readonly property real frameMargin: 30 * uiScale
     readonly property rect contentFrameRect: Qt.rect(
@@ -272,6 +274,25 @@ Item {
         }
     }
 
+    Text {
+        id: libraryTitle
+        objectName: "libraryTitle"
+        x: root.titleX
+        y: root.titleY
+        width: Math.max(0, root.width - x - root.categoryTapeRightInset)
+        height: 42 * root.uiScale
+        opacity: root.contentOpacity
+        text: root.browsingExternalCategories ? root.headingText
+            : root.headingText + ": " + String(root.categoryMode).replace(/_/g, " ").toUpperCase()
+        color: root.luluPalette.headingAccent
+        font.family: root.libraryFontFamily
+        font.pixelSize: root.typography ? root.typography.size("section", 27) : 27 * root.uiScale
+        font.bold: true
+        font.letterSpacing: 2 * root.uiScale
+        elide: Text.ElideRight
+        verticalAlignment: Text.AlignVCenter
+    }
+
     Item {
         id: contentFrame
         x: root.contentFrameRect.x
@@ -281,21 +302,6 @@ Item {
         clip: true
         opacity: root.contentOpacity
 
-        Text {
-            id: libraryTitle
-            x: 0; y: 0
-            width: Math.max(0, categoryTape.x + categoryTape.width - x)
-            height: 42 * root.uiScale
-            text: root.browsingExternalCategories ? root.headingText
-                : root.headingText + ": " + String(root.categoryMode).replace(/_/g, " ").toUpperCase()
-            color: root.luluPalette.headingAccent
-            font.family: root.libraryFontFamily
-            font.pixelSize: root.typography ? root.typography.size("section", 27) : 27 * root.uiScale
-            font.bold: true
-            font.letterSpacing: 2 * root.uiScale
-            elide: Text.ElideRight
-            verticalAlignment: Text.AlignVCenter
-        }
         ListView {
             id: categoryTape
             objectName: "libraryCategoryTape"
