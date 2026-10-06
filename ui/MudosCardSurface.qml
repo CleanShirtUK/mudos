@@ -11,6 +11,8 @@ Rectangle {
     property real selectionProgress: 0
     property var luluPalette
     property var mappingItem: root
+    readonly property var themeGlass: typeof mudosTheme !== "undefined" ? mudosTheme.glass : ({})
+    readonly property var themeOptics: themeGlass.card || themeGlass
 
     readonly property rect mappedCanonicalRect: {
         var sourceItem = mappingItem || root
@@ -34,7 +36,8 @@ Rectangle {
                        bottomRight.y - topLeft.y)
     }
 
-    radius: 10 * root.uiScale
+    readonly property var themeRadii: typeof mudosTheme !== "undefined" ? mudosTheme.radii : ({})
+    radius: (themeRadii.card === undefined ? 10 : themeRadii.card) * root.uiScale
     color: Qt.rgba(
         luluPalette.cardSurface.r
             + (luluPalette.focusedCardSurface.r - luluPalette.cardSurface.r)
@@ -67,19 +70,22 @@ Rectangle {
     MudosGlassItem {
         anchors.fill: parent
         backdrop: root.canonicalTexture
+        visible: root.themeGlass.enabled !== false && !!root.canonicalTexture
         canonicalSize: root.canonicalSize
         canonicalRect: root.mappedCanonicalRect
+        ior: root.themeOptics.ior || 1.08
+        glassDepth: root.themeOptics.depth || 0.32
+        refractionPixels: root.themeOptics.refractionPixels || 80
+        dispersionIor: root.themeOptics.dispersionIor || 0.0175
+        diffusionPixels: root.themeOptics.diffusionPixels || 5
+        transmission: root.themeOptics.transmission === undefined ? 0.75 : root.themeOptics.transmission
+        bevelWidthPx: root.themeOptics.bevelWidth || 3
+        bulgeStrength: root.themeOptics.bulgeStrength || 100
+        sceneLightStrength: root.themeOptics.sceneLightStrength || 0
+        sceneLightPixels: root.themeOptics.sceneLightPixels || 24
+        edgeLightStrength: root.themeOptics.edgeLightStrength === undefined ? 0.1 : root.themeOptics.edgeLightStrength
         cornerRadius: root.radius
-        refractionPixels: 80 * root.uiScale
-        dispersionIor: 0.0175
-        diffusionPixels: 5 * root.uiScale
-        transmission: 0.75
-        bevelWidthPx: 3 * root.uiScale
-        bulgeStrength: 100
-        sceneLightStrength: 0
-        sceneLightPixels: 24
-        edgeLightStrength: 0.10
-        edgeLightDirection: Qt.vector2d(1, -1)
+        edgeLightDirection: root.themeOptics.edgeLightDirection ? Qt.vector2d(root.themeOptics.edgeLightDirection[0], root.themeOptics.edgeLightDirection[1]) : Qt.vector2d(1, -1)
         transparentOutsideMask: true
     }
 }

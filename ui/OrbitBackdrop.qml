@@ -12,6 +12,8 @@ Item {
     property vector3d surfaceColor: Qt.vector3d(0.141, 0.165, 0.231)
     property vector3d errorColor: Qt.vector3d(0.969, 0.463, 0.557)
     property bool shaderAvailable: orbitShader.status === ShaderEffect.Compiled
+    readonly property string themeShader: typeof mudosTheme !== "undefined" ? mudosTheme.wallpaperShader : ""
+    readonly property var themeWallpaper: typeof mudosTheme !== "undefined" ? mudosTheme.wallpaper : ({})
 
     LuluPalette {
         id: luluPalette
@@ -26,17 +28,17 @@ Item {
     ShaderEffect {
         id: orbitShader
         anchors.fill: parent
-        fragmentShader: "shaders/orbit-wave.frag.qsb"
+        fragmentShader: root.themeShader
         property vector2d u_resolution: Qt.vector2d(width, height)
         property vector2d u_origin: root.shaderOrigin
         property vector2d u_canvas: root.shaderCanvas
         property real u_time: root.shaderTime
         property real u_brightness: 1.0
         property real u_visibility: 1.0
-        property vector3d u_primary: root.primaryColor
-        property vector3d u_secondary: root.secondaryColor
-        property vector3d u_surface: root.surfaceColor
-        property vector3d u_error: root.errorColor
+        property vector3d u_primary: root.themeWallpaper.primary ? Qt.vector3d(Qt.color(root.themeWallpaper.primary).r, Qt.color(root.themeWallpaper.primary).g, Qt.color(root.themeWallpaper.primary).b) : root.primaryColor
+        property vector3d u_secondary: root.themeWallpaper.secondary ? Qt.vector3d(Qt.color(root.themeWallpaper.secondary).r, Qt.color(root.themeWallpaper.secondary).g, Qt.color(root.themeWallpaper.secondary).b) : root.secondaryColor
+        property vector3d u_surface: root.themeWallpaper.surface ? Qt.vector3d(Qt.color(root.themeWallpaper.surface).r, Qt.color(root.themeWallpaper.surface).g, Qt.color(root.themeWallpaper.surface).b) : root.surfaceColor
+        property vector3d u_error: root.themeWallpaper.error ? Qt.vector3d(Qt.color(root.themeWallpaper.error).r, Qt.color(root.themeWallpaper.error).g, Qt.color(root.themeWallpaper.error).b) : root.errorColor
 
     }
 

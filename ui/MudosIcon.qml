@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Effects
 import "MudosAssetCatalog.js" as MudosAssetCatalog
 
 Item {
@@ -9,6 +10,11 @@ Item {
     property var typography
     property color semanticColor: "white"
     property real iconSize: 20
+    readonly property string overrideUrl: {
+        if (typeof mudosTheme === "undefined") return ""
+        var themeRevision = mudosTheme.activeId
+        return mudosTheme.iconUrl(root.name)
+    }
 
     implicitWidth: glyphMetrics.advanceWidth
     implicitHeight: root.iconSize
@@ -33,5 +39,24 @@ Item {
         font.pixelSize: root.iconSize
         verticalAlignment: Text.AlignVCenter
         renderType: Text.NativeRendering
+        visible: !root.overrideUrl
+    }
+    Image {
+        id: overrideImage
+        anchors.centerIn: parent
+        width: root.iconSize
+        height: root.iconSize
+        source: root.overrideUrl
+        sourceSize: Qt.size(width * 2, height * 2)
+        fillMode: Image.PreserveAspectFit
+        visible: root.overrideUrl !== ""
+        visible: false
+    }
+    MultiEffect {
+        anchors.fill: overrideImage
+        source: overrideImage
+        colorization: 1
+        colorizationColor: root.semanticColor
+        visible: root.overrideUrl !== ""
     }
 }

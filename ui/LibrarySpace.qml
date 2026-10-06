@@ -421,7 +421,7 @@ Item {
                         MudosIcon {
                             anchors.centerIn: parent
                             visible: !gameIcon.source || gameRow.iconFailed
-                            glyph: MudosAssetCatalog.icon("fallback")
+                            name: "fallback"
                             iconSize: 21 * root.uiScale
                             typography: root.typography
                             semanticColor: root.luluPalette.secondaryText
@@ -584,7 +584,7 @@ Item {
                             visible: !root.previewAnimationReady
                                 && root.previewAnimationSource === ""
                                 && (!landscapeImage.source || landscapeImage.status === Image.Error)
-                            glyph: MudosAssetCatalog.icon("fallback")
+                            name: "fallback"
                             iconSize: 52 * root.uiScale
                             typography: root.typography
                             semanticColor: root.luluPalette.secondaryText
@@ -632,7 +632,7 @@ Item {
                             required property var modelData
                             width: detailMetadataColumn.width
                             height: implicitHeight
-                            glyph: modelData.glyph
+                            iconName: modelData.glyph
                             text: modelData.text
                             fontFamily: root.libraryFontFamily
                             iconFamily: root.typography ? root.typography.iconFamily : root.libraryFontFamily

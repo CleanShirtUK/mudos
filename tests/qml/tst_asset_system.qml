@@ -4,6 +4,14 @@ import "../../ui/MudosAssetCatalog.js" as Assets
 
 TestCase {
     name: "AssetSystem"
+    property var mudosTheme: ({
+        fonts: {
+            regular: Qt.resolvedUrl("../../themes/mudos-default/fonts/JetBrainsMonoNLNerdFont-Regular.ttf"),
+            bold: Qt.resolvedUrl("../../themes/mudos-default/fonts/JetBrainsMonoNLNerdFont-Bold.ttf"),
+            heavy: Qt.resolvedUrl("../../themes/mudos-default/fonts/JetBrainsMonoNLNerdFont-ExtraBold.ttf"),
+            controller: Qt.resolvedUrl("../../themes/mudos-default/fonts/Config-Glyphs.otf")
+        }
+    })
 
     Loader {
         id: typographyLoader

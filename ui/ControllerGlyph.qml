@@ -10,7 +10,7 @@ Item {
     property var typography
     property color semanticColor: luluPalette ? luluPalette.primaryText : "white"
     property FontLoader controllerFont: FontLoader {
-        source: "fonts/Config-Glyphs.otf"
+        source: typeof mudosTheme !== "undefined" ? mudosTheme.fonts.controller : ""
     }
     readonly property string glyphText: ControllerProfiles.glyph(
         controllerProfile, action)

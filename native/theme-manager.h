@@ -1,0 +1,49 @@
+#pragma once
+
+#include <QObject>
+#include <QVariantMap>
+#include <QVariantList>
+
+class ThemeManager final : public QObject
+{
+    Q_OBJECT
+    Q_PROPERTY(QString activeId READ activeId NOTIFY themeChanged)
+    Q_PROPERTY(QString activeName READ activeName NOTIFY themeChanged)
+    Q_PROPERTY(QString themeRoot READ themeRoot NOTIFY themeChanged)
+    Q_PROPERTY(QVariantMap colors READ colors NOTIFY themeChanged)
+    Q_PROPERTY(QVariantMap opacity READ opacity NOTIFY themeChanged)
+    Q_PROPERTY(QVariantMap radii READ radii NOTIFY themeChanged)
+    Q_PROPERTY(QVariantMap glass READ glass NOTIFY themeChanged)
+    Q_PROPERTY(QVariantMap fonts READ fonts NOTIFY themeChanged)
+    Q_PROPERTY(QVariantMap icons READ icons NOTIFY themeChanged)
+    Q_PROPERTY(QString wallpaperShader READ wallpaperShader NOTIFY themeChanged)
+    Q_PROPERTY(QVariantMap wallpaper READ wallpaper NOTIFY themeChanged)
+    Q_PROPERTY(QVariantList themes READ themes NOTIFY themesChanged)
+public:
+    explicit ThemeManager(QObject *parent = nullptr);
+    QString activeId() const { return m_id; }
+    QString activeName() const { return m_name; }
+    QString themeRoot() const { return m_root; }
+    QVariantMap colors() const { return m_colors; }
+    QVariantMap opacity() const { return m_opacity; }
+    QVariantMap radii() const { return m_radii; }
+    QVariantMap glass() const { return m_glass; }
+    QVariantMap fonts() const { return m_fonts; }
+    QVariantMap icons() const { return m_icons; }
+    QString wallpaperShader() const { return m_wallpaper; }
+    QVariantMap wallpaper() const { return m_wallpaperValues; }
+    QVariantList themes() const { return m_themes; }
+    Q_INVOKABLE bool select(const QString &id);
+    Q_INVOKABLE QString iconUrl(const QString &name) const;
+signals:
+    void themeChanged();
+    void themesChanged();
+private:
+    bool load(const QString &id, bool persist);
+    bool loadAt(const QString &root, const QString &id, bool persist);
+    QStringList roots() const;
+    QString m_id, m_name, m_root, m_wallpaper;
+    QVariantMap m_colors, m_opacity, m_radii, m_glass, m_fonts, m_icons;
+    QVariantMap m_wallpaperValues;
+    QVariantList m_themes;
+};

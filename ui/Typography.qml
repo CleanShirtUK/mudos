@@ -2,15 +2,16 @@ import QtQuick
 
 QtObject {
     property real uiScale: 1
+    readonly property var themeFonts: typeof mudosTheme !== "undefined" ? mudosTheme.fonts : ({})
 
     property FontLoader regularFont: FontLoader {
-        source: "fonts/JetBrainsMonoNLNerdFont-Regular.ttf"
+        source: themeFonts.regular || ""
     }
     property FontLoader boldFont: FontLoader {
-        source: "fonts/JetBrainsMonoNLNerdFont-Bold.ttf"
+        source: themeFonts.bold || ""
     }
     property FontLoader extraBoldFont: FontLoader {
-        source: "fonts/JetBrainsMonoNLNerdFont-ExtraBold.ttf"
+        source: themeFonts.heavy || ""
     }
 
     readonly property string bundledFamily: regularFont.status === FontLoader.Ready

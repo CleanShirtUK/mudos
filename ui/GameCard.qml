@@ -331,7 +331,9 @@ Rectangle {
         MudosIcon {
             anchors.fill: parent
             visible: !!card.displayedSymbolicArtwork
-            glyph: card.displayedSymbolicArtwork
+            name: "fallback"
+            glyph: card.displayedSymbolicArtwork === MudosAssetCatalog.icon("fallback")
+                ? "" : card.displayedSymbolicArtwork
             semanticColor: card.focusedColor(card.luluPalette.primaryText)
             typography: card.typography
             iconSize: card.typography.size("display", 88)
@@ -469,7 +471,7 @@ Rectangle {
                         id: metadataRow
                         width: parent.width
                         height: implicitHeight
-                        glyph: modelData.glyph
+                        iconName: modelData.glyph
                         text: modelData.text
                         fontFamily: card.typography ? card.typography.interfaceFamily : "JetBrains Mono"
                         iconFamily: card.typography ? card.typography.iconFamily : "JetBrains Mono"
@@ -524,17 +526,16 @@ Rectangle {
                 anchors.centerIn: parent
                 spacing: 8 * card.uiScale
 
-                Text {
+                MudosIcon {
                     visible: !card.actionLabel || card.actionLabel === "Play"
-                    width: visible ? implicitWidth : 0
-                    height: playLabel.implicitHeight
-                    text: String.fromCodePoint(0xF04B)
-                    color: card.focusedColor(card.luluPalette.actionText)
-                    font.family: card.typography ? card.typography.iconFamily : "JetBrains Mono"
-                    font.pixelSize: card.typography
+                    width: visible ? iconSize : 0
+                    height: iconSize
+                    name: "play"
+                    typography: card.typography
+                    iconSize: card.typography
                         ? card.typography.size("control", 24 * focalScale)
                         : 24 * focalScale * card.uiScale
-                    verticalAlignment: Text.AlignVCenter
+                    semanticColor: card.focusedColor(card.luluPalette.actionText)
                 }
 
                 Text {

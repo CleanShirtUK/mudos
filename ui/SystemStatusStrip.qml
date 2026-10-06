@@ -26,6 +26,8 @@ Item {
     property bool networkAvailable: false
     property string networkConnectionType: ""
     property string currentTime: Qt.formatTime(new Date(), "HH:mm")
+    readonly property var themeGlass: typeof mudosTheme !== "undefined" ? mudosTheme.glass : ({})
+    readonly property var themeOptics: themeGlass.status || themeGlass.panel || themeGlass
 
     readonly property real presentationScale: compact ? 0.72 : 1.35
     readonly property real glyphSize: (compact ? 15 : 19) * uiScale * presentationScale
@@ -140,20 +142,23 @@ Item {
 
         MudosGlassItem {
             anchors.fill: parent
+            visible: root.themeGlass.enabled !== false && !!root.canonicalTexture
             backdrop: root.canonicalTexture
             canonicalSize: root.canonicalSize
             canonicalRect: root.backingCanonicalRect
             cornerRadius: statusBacking.radius
-            refractionPixels: 80 * root.uiScale
-            dispersionIor: 0.0175
-            diffusionPixels: 5 * root.uiScale
-            transmission: 0.75
-            bevelWidthPx: 3 * root.uiScale
-            bulgeStrength: 100
-            sceneLightStrength: 0
-            sceneLightPixels: 24
-            edgeLightStrength: 0.10
-            edgeLightDirection: Qt.vector2d(1, -1)
+            ior: root.themeOptics.ior || 1.08
+            glassDepth: root.themeOptics.depth || 0.32
+            refractionPixels: (root.themeOptics.refractionPixels || 80) * root.uiScale
+            dispersionIor: root.themeOptics.dispersionIor || 0.0175
+            diffusionPixels: (root.themeOptics.diffusionPixels || 5) * root.uiScale
+            transmission: root.themeOptics.transmission === undefined ? 0.75 : root.themeOptics.transmission
+            bevelWidthPx: (root.themeOptics.bevelWidth || 3) * root.uiScale
+            bulgeStrength: root.themeOptics.bulgeStrength === undefined ? 100 : root.themeOptics.bulgeStrength
+            sceneLightStrength: root.themeOptics.sceneLightStrength || 0
+            sceneLightPixels: root.themeOptics.sceneLightPixels || 24
+            edgeLightStrength: root.themeOptics.edgeLightStrength === undefined ? 0.10 : root.themeOptics.edgeLightStrength
+            edgeLightDirection: root.themeOptics.edgeLightDirection ? Qt.vector2d(root.themeOptics.edgeLightDirection[0], root.themeOptics.edgeLightDirection[1]) : Qt.vector2d(1, -1)
             transparentOutsideMask: true
         }
 
@@ -199,7 +204,7 @@ Item {
                 spacing: root.innerSpacing
 
                 StatusGlyph {
-                    glyph: MudosAssetCatalog.icon("download")
+                    iconName: "download"
                     glyphSize: root.glyphSize
                     uiScale: root.uiScale
                     targetPaintedHeight: root.glyphSize * 0.72
@@ -248,7 +253,7 @@ Item {
 
                     StatusGlyph {
                         objectName: "controllerStatusGlyph"
-                        glyph: MudosAssetCatalog.icon("controller")
+                        iconName: "controller"
                         glyphSize: root.glyphSize
                         uiScale: root.uiScale
                         targetPaintedHeight: root.glyphSize * 0.72
@@ -287,9 +292,8 @@ Item {
                 id: bluetoothIcon
                 x: parent.contentInset
                 objectName: "bluetoothStatusIcon"
-                glyph: root.bluetoothState === "off" || root.bluetoothState === "unavailable"
-                    ? MudosAssetCatalog.icon("bluetoothOff")
-                    : MudosAssetCatalog.icon("bluetoothOn")
+                iconName: root.bluetoothState === "off" || root.bluetoothState === "unavailable"
+                    ? "bluetoothOff" : "bluetoothOn"
                 glyphSize: root.glyphSize
                 uiScale: root.uiScale
                 targetPaintedHeight: root.glyphSize * 0.72
@@ -308,9 +312,9 @@ Item {
                 id: networkIcon
                 objectName: "networkIcon"
                 x: root.groupSpacing
-                glyph: !root.networkAvailable ? MudosAssetCatalog.icon("wifiOff")
+                iconName: !root.networkAvailable ? "wifiOff"
                     : root.networkConnectionType === "ethernet"
-                        ? MudosAssetCatalog.icon("ethernet") : MudosAssetCatalog.icon("wifi")
+                        ? "ethernet" : "wifi"
                 glyphSize: root.glyphSize
                 uiScale: root.uiScale
                 targetPaintedHeight: root.glyphSize * 0.72
@@ -330,7 +334,7 @@ Item {
                 spacing: root.innerSpacing
 
                 StatusGlyph {
-                    glyph: MudosAssetCatalog.icon("clock")
+                    iconName: "clock"
                     glyphSize: root.glyphSize
                     uiScale: root.uiScale
                     targetPaintedHeight: root.glyphSize * 0.72

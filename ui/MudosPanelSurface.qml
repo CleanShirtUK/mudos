@@ -12,9 +12,12 @@ Rectangle {
     property var mappingItem: root
     property var luluPalette
     property real uiScale: 1
-    property real cornerRadius: 18 * uiScale
+    readonly property var themeRadii: typeof mudosTheme !== "undefined" ? mudosTheme.radii : ({})
+    property real cornerRadius: (themeRadii.panel === undefined ? 18 : themeRadii.panel) * uiScale
     property real tintOpacity: 0.12
-    property bool glassEnabled: true
+    readonly property var themeGlass: typeof mudosTheme !== "undefined" ? mudosTheme.glass : ({})
+    readonly property var themeOptics: themeGlass.panel || themeGlass
+    property bool glassEnabled: themeGlass.enabled !== false
 
     readonly property rect mappedCanonicalRect: {
         var sourceItem = mappingItem || root
@@ -47,16 +50,18 @@ Rectangle {
         canonicalSize: root.canonicalSize
         canonicalRect: root.mappedCanonicalRect
         cornerRadius: root.cornerRadius
-        refractionPixels: 80 * root.uiScale
-        dispersionIor: 0.0175
-        diffusionPixels: 5 * root.uiScale
-        transmission: 0.94
-        bevelWidthPx: 3 * root.uiScale
-        bulgeStrength: 100
-        sceneLightStrength: 0
-        sceneLightPixels: 24
-        edgeLightStrength: 0.10
-        edgeLightDirection: Qt.vector2d(1, -1)
+        ior: root.themeOptics.ior || 1.08
+        glassDepth: root.themeOptics.depth || 0.32
+        refractionPixels: (root.themeOptics.refractionPixels || 80) * root.uiScale
+        dispersionIor: root.themeOptics.dispersionIor || 0
+        diffusionPixels: (root.themeOptics.diffusionPixels || 0) * root.uiScale
+        transmission: root.themeOptics.transmission === undefined ? 0.94 : root.themeOptics.transmission
+        bevelWidthPx: (root.themeOptics.bevelWidth || 3) * root.uiScale
+        bulgeStrength: root.themeOptics.bulgeStrength || 0
+        sceneLightStrength: root.themeOptics.sceneLightStrength || 0
+        sceneLightPixels: root.themeOptics.sceneLightPixels || 24
+        edgeLightStrength: root.themeOptics.edgeLightStrength || 0
+        edgeLightDirection: root.themeOptics.edgeLightDirection ? Qt.vector2d(root.themeOptics.edgeLightDirection[0], root.themeOptics.edgeLightDirection[1]) : Qt.vector2d(1, -1)
         transparentOutsideMask: true
     }
 

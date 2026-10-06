@@ -27,7 +27,6 @@ var iconCodepoints = {
     bluetoothOff: nerdGlyph(0xF00B0),
     ethernet: nerdGlyph(0xF0201),
     storage: "\uf0a0",
-    plug: "\uf1e6",
     display: "\uf108",
     wrench: "\uf0ad",
     power: "\uf011",
@@ -45,7 +44,9 @@ var iconCodepoints = {
     close: "\uf00d",
     fallback: nerdGlyph(0xF420),
     steam: nerdGlyph(0xF1B6),
-    addStore: nerdGlyph(0xF055)
+    addStore: nerdGlyph(0xF055),
+    plug: "\uf1e6", onlineMultiplayer: "\uf0ac", release: "\uf073",
+    developer: "\uf19c", publisher: "\uf1ad", protondb: "\ue27f"
 }
 
 // Logical asset IDs are the presentation-side counterpart of the Python
@@ -183,5 +184,5 @@ function suppliedArtwork(name) {
 }
 
 function metadataGlyph(name) {
-    return logicalAsset("glyphs/metadata", String(name || "") + ".svg")
+    return icon(name)
 }

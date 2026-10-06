@@ -15,26 +15,31 @@ repo_build=$(dirname -- "$output")
 /usr/lib/qt6/moc "$repo_root/native/mudos-glass-item.h" -o "$repo_build/mudos-glass-item_moc.cpp"
 /usr/lib/qt6/moc "$repo_root/native/catalogue-model.h" -o "$repo_build/catalogue-model_moc.cpp"
 /usr/lib/qt6/moc "$repo_root/native/recent-model.h" -o "$repo_build/recent-model_moc.cpp"
+/usr/lib/qt6/moc "$repo_root/native/theme-manager.h" -o "$repo_build/theme-manager_moc.cpp"
 g++ -std=c++17 -O2 -fPIC -Wall -Wextra -I"$repo_build" \
     "$repo_root/native/lulu-shell.cpp" \
     "$repo_root/native/catalogue-model.cpp" \
     "$repo_root/native/recent-model.cpp" \
     "$repo_root/native/mudos-glass-item.cpp" \
+    "$repo_root/native/theme-manager.cpp" \
     "$repo_build/catalogue-model_moc.cpp" \
     "$repo_build/recent-model_moc.cpp" \
     "$repo_build/mudos-glass-item_moc.cpp" \
+    "$repo_build/theme-manager_moc.cpp" \
     -o "$output" \
     $(pkg-config --cflags --libs Qt6DBus Qt6Gui Qt6Network Qt6Qml Qt6Quick Qt6WebEngineQuick xcb xcb-keysyms sdl3) \
     -no-pie
 
 g++ -std=c++17 -O2 -fPIC -Wall -Wextra \
     "$repo_root/native/mudos-guide.cpp" \
+    "$repo_root/native/theme-manager.cpp" "$repo_build/theme-manager_moc.cpp" \
     -o "$repo_build/mudos-guide" \
     $(pkg-config --cflags --libs Qt6DBus Qt6Gui Qt6Qml Qt6Quick xcb xcb-xtest xcb-keysyms) \
     -no-pie
 
 g++ -std=c++17 -O2 -fPIC -Wall -Wextra \
     "$repo_root/native/mudos-notification.cpp" \
+    "$repo_root/native/theme-manager.cpp" "$repo_build/theme-manager_moc.cpp" \
     -o "$repo_build/mudos-notification" \
     $(pkg-config --cflags --libs Qt6Gui Qt6Qml Qt6Quick xcb) \
     -no-pie

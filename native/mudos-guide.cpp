@@ -1,6 +1,7 @@
 #include <QGuiApplication>
 #include <QDebug>
 #include <QQmlApplicationEngine>
+#include "theme-manager.h"
 #include <QQmlContext>
 #include <QQmlPropertyMap>
 #include <QQuickWindow>
@@ -472,6 +473,8 @@ int main(int argc, char **argv)
     viewModel.insert("sessionClassification", sessionClassification);
     viewModel.insert("sessionTitle", sessionTitle);
     QQmlApplicationEngine engine;
+    ThemeManager mudosTheme(&application);
+    engine.rootContext()->setContextProperty("mudosTheme", &mudosTheme);
     engine.rootContext()->setContextProperty("guideModel", &viewModel);
     engine.load(QUrl::fromLocalFile(qEnvironmentVariable("LULU_GUIDE_UI_FILE",
                                                          "/opt/lulu/ui/MudosGuide.qml")));

@@ -3,6 +3,7 @@
 #include <QJsonObject>
 #include <qnativeinterface.h>
 #include <QQmlApplicationEngine>
+#include "theme-manager.h"
 #include <QQmlContext>
 #include <QQmlPropertyMap>
 #include <QQuickWindow>
@@ -114,6 +115,8 @@ int main(int argc, char **argv)
     model.insert("glyph", QString());
 
     QQmlApplicationEngine engine;
+    ThemeManager mudosTheme(&application);
+    engine.rootContext()->setContextProperty("mudosTheme", &mudosTheme);
     engine.rootContext()->setContextProperty("notificationModel", &model);
     engine.load(QUrl::fromLocalFile(qEnvironmentVariable(
         "LULU_NOTIFICATION_UI_FILE", "/opt/lulu/ui/MudosNotification.qml")));

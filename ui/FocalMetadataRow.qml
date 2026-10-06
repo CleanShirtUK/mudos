@@ -3,6 +3,7 @@ import QtQuick
 Item {
     id: root
     property string glyph: ""
+    property string iconName: ""
     property string text: ""
     property string fontFamily: "JetBrains Mono"
     property string iconFamily: fontFamily
@@ -25,6 +26,7 @@ Item {
         anchors.top: root.wrapText ? parent.top : undefined
         anchors.verticalCenter: root.wrapText ? undefined : parent.verticalCenter
         glyph: root.glyph
+        iconName: root.iconName
         fontFamily: root.iconFamily
         glyphSize: root.glyphSize
         glyphColor: root.textColor

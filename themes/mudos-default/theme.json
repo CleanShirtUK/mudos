@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "id": "mudos-default",
+  "name": "Mudos Default",
+  "version": "1",
+  "author": "Mudos",
+  "colors": {
+    "primaryText": "#eadcff", "secondaryText": "#cec9d1", "mutedText": "#9b969f",
+    "selectedText": "#eadcff", "accent": "#e0c5ff", "focusIndicator": "#e0c5ff",
+    "warning": "#e0c5ff", "backdrop": "#060607", "surface": "#6b070809",
+    "surfaceElevated": "#7a0e0c10", "surfaceInternal": "#d60c0d10",
+    "cardSurface": "#7a0e0e10", "focusedCardSurface": "#9e1f1b24",
+    "actionSurface": "#f529222e", "actionText": "#f1e7ff",
+    "artworkSurface": "#cc050507", "border": "#665f68", "focusBorder": "#e0c5ff",
+    "overlayBackdrop": "#b8000002", "overlaySurface": "#f7050506",
+    "launchOverlaySurface": "#f5050506", "guideSurface": "#d6050506",
+    "guideBorder": "#665f68", "guideItemSurface": "#f0050506",
+    "guideSelectedText": "#ff0b1018", "scrollFadeStart": "#0008090b", "scrollFadeEnd": "#e6090a0c",
+    "navigationText": "#aaa5ad", "headingAccent": "#eadcff", "selectionSurface": "#521f1a29",
+    "librarySurface": "#75070809", "libraryCardSurface": "#7a0e0e10", "libraryBorder": "#665f68",
+    "overlay": "#f7050506"
+  },
+  "opacity": {"structuralSurface": 0.42, "internalSurface": 0.84, "card": 0.48, "focusedCard": 0.62, "selection": 0.32, "statusBacking": 0.46, "overlayBackdrop": 0.72, "overlaySurface": 0.97},
+  "radii": {"panel": 18, "card": 10, "row": 7, "media": 14, "status": 12, "overlay": 14},
+  "glass": {
+    "enabled": true, "ior": 1.08, "depth": 0.32, "refractionPixels": 80,
+    "dispersionIor": 0.0175, "diffusionPixels": 5, "transmission": 0.75,
+    "bevelWidth": 3, "bulgeStrength": 100, "sceneLightStrength": 0,
+    "sceneLightPixels": 24, "edgeLightStrength": 0.1, "edgeLightDirection": [1, -1],
+    "panel": {"ior": 1.08, "depth": 0.32, "refractionPixels": 80, "dispersionIor": 0.0175, "diffusionPixels": 5, "transmission": 0.94, "bevelWidth": 3, "bulgeStrength": 100, "sceneLightStrength": 0, "sceneLightPixels": 24, "edgeLightStrength": 0.1, "edgeLightDirection": [1, -1]},
+    "card": {"ior": 1.08, "depth": 0.32, "refractionPixels": 80, "dispersionIor": 0.0175, "diffusionPixels": 5, "transmission": 0.75, "bevelWidth": 3, "bulgeStrength": 100, "sceneLightStrength": 0, "sceneLightPixels": 24, "edgeLightStrength": 0.1, "edgeLightDirection": [1, -1]},
+    "status": {"ior": 1.08, "depth": 0.32, "refractionPixels": 80, "dispersionIor": 0.0175, "diffusionPixels": 5, "transmission": 0.75, "bevelWidth": 3, "bulgeStrength": 100, "sceneLightStrength": 0, "sceneLightPixels": 24, "edgeLightStrength": 0.1, "edgeLightDirection": [1, -1]},
+    "navigation": {"ior": 1.08, "depth": 0.32, "refractionPixels": 80, "dispersionIor": 0.0175, "diffusionPixels": 5, "transmission": 1, "bevelWidth": 3, "bulgeStrength": 100, "sceneLightStrength": 0, "sceneLightPixels": 24, "edgeLightStrength": 0.1, "edgeLightDirection": [1, -1]}
+  },
+  "fonts": {
+    "faces": {
+      "regular": {"file": "fonts/JetBrainsMonoNLNerdFont-Regular.ttf", "weight": 400},
+      "bold": {"file": "fonts/JetBrainsMonoNLNerdFont-Bold.ttf", "weight": 700},
+      "heavy": {"file": "fonts/JetBrainsMonoNLNerdFont-ExtraBold.ttf", "weight": 900},
+      "icons": {"file": "fonts/JetBrainsMonoNLNerdFont-Regular.ttf"},
+      "controller": {"file": "fonts/Config-Glyphs.otf"}
+    },
+    "roles": {"interface": "regular", "display": "heavy", "majorHeading": "heavy", "icon": "icons", "controller": "controller"}
+  },
+  "wallpaper": {"shader": "wallpaper/wallpaper.frag.qsb", "primary": "#7aa2f7", "secondary": "#bb9af7", "surface": "#242a3b", "error": "#f7788b"},
+  "icons": {}
+}

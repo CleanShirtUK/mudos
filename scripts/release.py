@@ -19,7 +19,7 @@ import tempfile
 from typing import Iterable
 
 
-PAYLOAD_DIRS = ("ui", "scripts", "config", "packaging", "packages")
+PAYLOAD_DIRS = ("ui", "scripts", "config", "packaging", "packages", "themes")
 RUNTIME_EXCLUDED_SCRIPTS = (
     "dev-runtime.sh",
     "configure-dev-sunshine-firewall.sh",
@@ -42,6 +42,8 @@ REQUIRED_FILES = (
     "lib/lulu/consoled.py",
     "lib/lulu/bluetooth.py",
     "ui/ConsoleShell.qml",
+    "themes/mudos-default/theme.json",
+    "themes/mudos-default/wallpaper/wallpaper.frag.qsb",
     "ui/MudosSettingsPage.qml",
     "ui/SystemStatusStrip.qml",
     "scripts/console-ui.sh",

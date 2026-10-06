@@ -1,4 +1,6 @@
 import QtQuick
+import QtQuick.Effects
+import "MudosAssetCatalog.js" as MudosAssetCatalog
 
 // Fixed-slot Nerd Font glyph with optical centering based on painted bounds.
 Item {
@@ -11,6 +13,14 @@ Item {
     property real uiScale: 1
     property real safeInset: Math.min(1.5 * uiScale, glyphSize * 0.1)
     property color glyphColor: "white"
+    property string iconName: ""
+    readonly property string overrideUrl: {
+        if (iconName === "" || typeof mudosTheme === "undefined") return ""
+        var themeRevision = mudosTheme.activeId
+        return mudosTheme.iconUrl(iconName)
+    }
+    readonly property string resolvedGlyph: iconName !== ""
+        ? MudosAssetCatalog.icon(iconName) : glyph
 
     width: glyphSize
     height: glyphSize
@@ -20,7 +30,7 @@ Item {
 
     TextMetrics {
         id: baseMetrics
-        text: root.glyph
+        text: root.resolvedGlyph
         font.family: root.fontFamily
         font.pixelSize: root.glyphSize
     }
@@ -35,7 +45,7 @@ Item {
 
     TextMetrics {
         id: metrics
-        text: root.glyph
+        text: root.resolvedGlyph
         font.family: root.fontFamily
         font.pixelSize: root.normalizedGlyphSize
     }
@@ -61,5 +71,23 @@ Item {
         horizontalAlignment: Text.AlignLeft
         verticalAlignment: Text.AlignTop
         renderType: Text.NativeRendering
+        visible: !root.overrideUrl
+    }
+    Image {
+        id: iconImage
+        anchors.centerIn: parent
+        width: root.availablePaintedSize
+        height: root.availablePaintedSize
+        source: root.overrideUrl
+        sourceSize: Qt.size(width * 2, height * 2)
+        fillMode: Image.PreserveAspectFit
+        visible: false
+    }
+    MultiEffect {
+        anchors.fill: iconImage
+        source: iconImage
+        colorization: 1
+        colorizationColor: root.glyphColor
+        visible: root.overrideUrl !== ""
     }
 }

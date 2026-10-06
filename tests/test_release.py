@@ -105,9 +105,10 @@ class ReleaseToolTests(unittest.TestCase):
             repo = Path(directory) / "source-repo"
             repo.mkdir()
             subprocess.run(["git", "init", "-q", "-b", "main"], cwd=repo, check=True)
-            for name in ("src/lulu", "ui", "scripts", "config", "packaging", "packages",
+            for name in ("src/lulu", "ui", "scripts", "config", "packaging", "packages", "themes",
                          "deploy/payload/bin"):
                 (repo / name).mkdir(parents=True, exist_ok=True)
+            (repo / "themes/mudos-default").mkdir(parents=True, exist_ok=True)
             build_script = repo / "scripts/build-lulu-shell.sh"
             build_script.write_text(
                 "#!/bin/sh\nset -eu\nout=$1\ndir=$(dirname \"$out\")\n"
@@ -120,6 +121,7 @@ class ReleaseToolTests(unittest.TestCase):
                 "ui/placeholder.qml", "config/placeholder.toml", "packages/placeholder.txt",
             ):
                 (repo / path).write_text("fixture\n")
+            (repo / "themes/mudos-default/theme.json").write_text("{}\n")
             subprocess.run(["git", "add", "."], cwd=repo, check=True)
             subprocess.run([
                 "git", "-c", "user.name=Test", "-c", "user.email=test@example.invalid",

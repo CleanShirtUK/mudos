@@ -38,7 +38,7 @@ refresh() {
     staging=/opt/lulu/.dev-staging-$$
     rm -rf "$staging"
     mkdir -p "$staging/bin"
-    for directory in src ui scripts config packaging native; do
+    for directory in src ui scripts config packaging native themes; do
         cp -a "$repo_root/$directory" "$staging/$directory"
     done
     cp -a "$repo_root/src" "$staging/lib"
@@ -245,7 +245,7 @@ settings_validation() {
     stamp=$(date -u +%Y%m%dT%H%M%SZ)
     staging=/opt/lulu/.dev-settings-staging-$$
     mkdir -p "$staging/bin"
-    for directory in src ui scripts config packaging native; do
+    for directory in src ui scripts config packaging native themes; do
         cp -a "$repo_root/$directory" "$staging/$directory"
     done
     cp -a "$repo_root/src" "$staging/lib"
@@ -312,7 +312,7 @@ settings_refresh() {
         exit 1
     fi
     mkdir -p "$staging/bin"
-    for directory in src ui scripts config packaging native; do
+    for directory in src ui scripts config packaging native themes; do
         cp -a "$repo_root/$directory" "$staging/$directory"
     done
     cp -a "$repo_root/src" "$staging/lib"
@@ -396,7 +396,7 @@ controller_validation() {
     staging=/opt/lulu/.dev-controller-staging-$$
     backup=/opt/lulu/.dev-controller-previous-$$
     mkdir -p "$staging/bin"
-    for directory in src ui scripts config packaging native; do
+    for directory in src ui scripts config packaging native themes; do
         cp -a "$repo_root/$directory" "$staging/$directory"
     done
     cp -a "$repo_root/src" "$staging/lib"

@@ -99,12 +99,28 @@ theme-engine implementation has not begun.
 
 ### THEME-001 — Theme engine and external theme configuration
 
-**Status:** READY — UI-001 initial visual PASS is recorded and the default
-baseline is frozen. Theme-engine implementation has not begun in this patch.
+**Status:** VALIDATION — the first core implementation is committed and deployed
+to `/opt/lulu/dev-current`; operator visual acceptance remains open. UI-001's
+accepted baseline remains the default reference. `/opt/lulu/current` is unchanged.
 
-- Future work: build theme selection/configuration on the accepted semantic
-  palette, typography roles, and icon authority. UI-001 must not add external
-  theme loading or SVG overrides.
+- A theme directory owns `theme.json`, declared font assets, optional semantic
+  SVG overrides, and its wallpaper QSB. Discovery uses the immutable runtime's
+  `themes/` plus user XDG data `mudos/themes/`; selection persists in
+  `Mudos/lulu` QSettings at `appearance/theme`.
+- ThemeManager is shared by the shell, Guide, and notification processes. It
+  validates IDs/schema, required semantic color roles, opacity/radius/optics
+  ranges, font presence, QSB presence, SVG extension, and canonical path
+  containment; missing selections fall back to `mudos-default`.
+- The default bundle copies the accepted JetBrains Mono regular/bold/ExtraBold
+  and Config-Glyphs faces, and the existing Orbit QSB. Palette, Typography,
+  wallpaper entry points, generic/status icons, metadata identities, and the
+  Settings System menu now resolve through the active theme authority. Glass
+  off preserves tint/border substrates while suppressing the native glass item.
+- Release and dev runtime packaging include `themes/`. Python inventory,
+  focused QML status/font/Settings tests and native build pass. Full physical
+  shell/Guide/notification/theme-switch review is still an operator acceptance
+  gate; the current pass does not claim complete optical migration of every
+  direct glass consumer or every presentation literal.
 
 ## CLOSED
 

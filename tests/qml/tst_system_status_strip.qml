@@ -59,18 +59,18 @@ TestCase {
     function test_disconnected_network_has_explicit_warning_glyph_without_geometry_shift() {
         var icon = findChild(strip, "networkIcon")
         verify(icon !== null)
-        var disconnectedGlyph = icon.glyph
+        var disconnectedGlyph = icon.resolvedGlyph
         var disconnectedWidth = strip.width
         verify(disconnectedGlyph !== String.fromCodePoint(0xf1eb))
         compare(icon.glyphColor, palette.warning)
         strip.networkAvailable = true
         wait(220)
-        compare(icon.glyph, String.fromCodePoint(0xf1eb))
+        compare(icon.resolvedGlyph, String.fromCodePoint(0xf1eb))
         compare(icon.glyphColor, strip.statusColor)
         compare(strip.x + strip.width, width)
         strip.networkAvailable = false
         wait(220)
-        compare(icon.glyph, disconnectedGlyph)
+        compare(icon.resolvedGlyph, disconnectedGlyph)
         compare(icon.glyphColor, palette.warning)
         compare(strip.x + strip.width, width)
         verify(disconnectedWidth > 0)
@@ -80,13 +80,13 @@ TestCase {
         var icon = findChild(strip, "bluetoothStatusIcon")
         verify(icon !== null)
         strip.bluetoothState = "unavailable"
-        var offGlyph = icon.glyph
+        var offGlyph = icon.resolvedGlyph
         compare(icon.glyphColor, palette.secondaryText)
         strip.bluetoothState = "off"
-        compare(icon.glyph, offGlyph)
+        compare(icon.resolvedGlyph, offGlyph)
         compare(icon.glyphColor, palette.warning)
         strip.bluetoothState = "powered"
-        verify(icon.glyph !== offGlyph)
+        verify(icon.resolvedGlyph !== offGlyph)
         compare(icon.glyphColor, strip.statusColor)
         strip.bluetoothState = "connected"
         compare(icon.glyphColor, palette.headingAccent)

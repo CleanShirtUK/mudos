@@ -2467,6 +2467,7 @@ import QtQuick.Controls
     function refreshMudosMenu() {
         root.request("/mudos-menu", "GET", "", function(providers) {
             var rows = [
+                {key: "mudos.theme", label: "Theme", kind: "choice", value: mudosTheme.activeName, writable: true},
                 {key: "mudos.reset", label: "Reset Mudos", kind: "action", value: "", writable: true},
                 {key: "mudos.metadata", label: "Refresh Metadata", kind: "action", value: "", writable: true},
                 {key: "mudos.library", label: "Refresh Library Catalogue", kind: "action", value: "", writable: true},
@@ -2499,6 +2500,20 @@ import QtQuick.Controls
     }
 
     function activateMudosAction(key) {
+        if (key === "mudos.theme") {
+            var availableThemes = mudosTheme.themes
+            if (!availableThemes || availableThemes.length < 2) return
+            var current = -1
+            for (var ti = 0; ti < availableThemes.length; ti++)
+                if (availableThemes[ti].id === mudosTheme.activeId) current = ti
+            var next = availableThemes[(current + 1 + availableThemes.length) % availableThemes.length]
+            if (mudosTheme.select(next.id)) {
+                var themeRow = root.systemSettings[root.systemRowIndex]
+                themeRow.value = next.name
+                root.systemSettings = root.systemSettings.slice()
+            }
+            return
+        }
         var destructive = (key === "mudos.reset" || key === "mudos.reboot" || key === "mudos.shutdown")
         if (destructive && root.pendingMudosAction !== key) {
             root.pendingMudosAction = key

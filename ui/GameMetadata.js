@@ -2,13 +2,13 @@
 
 function glyph(name) {
     var glyphs = {
-        genres: "\uf02c", lastPlayed: "\uf1da", clock: "\uf017",
-        gameModes: "\uf0c0", localMultiplayer: "\uf0c0",
-        onlineMultiplayer: "\uf0ac", protondb: "\ue27f",
-        platform: "\uf11b", provider: "\uf1e6", release: "\uf073",
-        developer: "\uf19c", publisher: "\uf1ad"
+        genres: "genre", lastPlayed: "clock", clock: "clock",
+        gameModes: "gameMode", localMultiplayer: "gameMode",
+        onlineMultiplayer: "wifi", protondb: "info",
+        platform: "platform", provider: "plug", release: "clock",
+        developer: "info", publisher: "info"
     }
-    return glyphs[name] || ""
+    return glyphs[name] || "info"
 }
 
 function formatPlaytime(value) {

@@ -7,6 +7,8 @@ Item {
     property size canonicalSize
     property rect canonicalRect
     property real cornerRadius: 0
+    property real ior: 1.08
+    property real glassDepth: 0.32
     property real refractionPixels: 0
     property real dispersionIor: 0
     property real diffusionPixels: 0

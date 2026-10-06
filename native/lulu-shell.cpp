@@ -58,6 +58,7 @@
 #include "catalogue-model.h"
 #include "recent-model.h"
 #include "mudos-glass-item.h"
+#include "theme-manager.h"
 
 namespace {
 
@@ -1796,6 +1797,8 @@ int main(int argc, char **argv)
     QGuiApplication application(argc, argv);
     qmlRegisterType<MudosGlassItem>("Mudos.Poc", 1, 0, "MudosGlassItem");
     QQmlApplicationEngine engine;
+    ThemeManager mudosTheme(&application);
+    engine.rootContext()->setContextProperty("mudosTheme", &mudosTheme);
     engine.addImageProvider(QStringLiteral("mudos-artwork"), new ArtworkImageProvider());
     ControllerBridge controller(nullptr, &application);
     SystemStatusBridge systemStatus(&application);
