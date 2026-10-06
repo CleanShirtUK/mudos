@@ -216,13 +216,17 @@ import QtQuick.Controls
     readonly property real expandedShellY: expandedShellTop
     readonly property real expandedShellWidth: width - 2 * expandedShellSideMargin
     readonly property real expandedShellHeight: expandedShellBottom - expandedShellTop
-    readonly property real expandedTitleX: expandedShellX + 22 * uiScale
-    readonly property real expandedTitleY: expandedShellY + 8 * uiScale
-    readonly property real expandedSurfaceX: expandedShellX
-    readonly property real expandedSurfaceY: expandedShellY + activeHeadingHeight
-        + headingCardGap + design(16)
-    readonly property real expandedSurfaceWidth: expandedShellWidth
-    readonly property real expandedSurfaceBottom: expandedShellBottom
+    readonly property rect expandedTitleBounds: expandedGeometry.titleBounds
+    readonly property real expandedTitleX: expandedTitleBounds.x
+    readonly property real expandedTitleY: expandedTitleBounds.y
+    readonly property rect expandedSurfaceBounds: expandedGeometry.surfaceBounds
+    readonly property real expandedSurfaceX: expandedSurfaceBounds.x
+    readonly property real expandedSurfaceY: expandedSurfaceBounds.y
+    readonly property real expandedSurfaceWidth: expandedSurfaceBounds.width
+    readonly property real expandedSurfaceHeight: expandedSurfaceBounds.height
+    readonly property real expandedSurfaceBottom: expandedSurfaceBounds.y
+        + expandedSurfaceBounds.height
+    readonly property real expandedInnerInset: expandedGeometry.innerInset
     readonly property real expandedHintBandTop: expandedHintRowTop
     readonly property real expandedHeaderTop: expandedSurfaceY
     readonly property real expandedContentX: expandedShellX
@@ -3661,6 +3665,19 @@ import QtQuick.Controls
             }
         }
 
+        ExpandedSurfaceGeometry {
+            id: expandedGeometry
+            screenWidth: root.width
+            screenHeight: root.height
+            uiScale: root.uiScale
+            shellSideInset: root.expandedShellSideMargin
+            shellTop: root.expandedShellTop
+            titleHeight: root.activeHeadingHeight
+            titleToSurfaceGap: root.headingCardGap
+            hintBandTop: root.expandedHintRowTop
+            surfaceToHintGap: root.expandedSurfaceChromeGap
+        }
+
         LibrarySpatialSurface {
                          id: librarySpatialSurface
                          canonicalTexture: orbitTexture
@@ -3675,7 +3692,7 @@ import QtQuick.Controls
             fullscreenX: root.expandedShellX
              fullscreenY: root.expandedSurfaceY
             fullscreenWidth: root.expandedShellWidth
-             fullscreenHeight: root.expandedSurfaceBottom - root.expandedSurfaceY
+             fullscreenHeight: root.expandedSurfaceHeight
              uiScale: root.uiScale
              panelSurfaceColor: luluPalette.librarySurface
              verticalOffset: root.homeCategoryOffset(2)
@@ -3994,11 +4011,11 @@ import QtQuick.Controls
              canonicalTexture: orbitTexture
              canonicalCoordinateRoot: orbitRenderSource
              canonicalSize: Qt.size(root.width, root.height)
-              contentBounds: Qt.rect(root.expandedShellX, root.expandedShellY,
-                                     root.expandedShellWidth, root.expandedShellHeight)
+              surfaceBounds: root.expandedSurfaceBounds
                categoryTapeRightInset: root.libraryCategoryRightSafeInset
               titleX: root.expandedTitleX
               titleY: root.expandedTitleY
+              innerInset: root.expandedInnerInset
               contentSideMargin: root.expandedContentSideMargin
              contentBottom: root.expandedContentBottom
              contentOpacity: root.libraryContentOpacity
@@ -4063,9 +4080,11 @@ import QtQuick.Controls
             canonicalTexture: orbitTexture
             canonicalCoordinateRoot: orbitRenderSource
             canonicalSize: Qt.size(root.width, root.height)
-              contentBounds: Qt.rect(root.expandedShellX, root.expandedShellY,
-                                     root.expandedShellWidth, root.expandedShellHeight)
+              surfaceBounds: root.expandedSurfaceBounds
              contentBottom: root.expandedContentBottom
+             titleX: root.expandedTitleX
+             titleY: root.expandedTitleY
+             innerInset: root.expandedInnerInset
             errorMessage: root.storeError
             contentOpacity: root.libraryContentOpacity
              onSteamStoreRequested: root.openSteamStore()
@@ -4129,10 +4148,11 @@ import QtQuick.Controls
 
         SettingsSpace {
             id: settingsSpace
-            x: root.expandedContentX
-            y: root.expandedContentY
-            width: root.expandedContentWidth
-            height: Math.max(1, root.expandedContentHeight)
+            x: root.expandedSurfaceBounds.x
+            y: root.expandedSurfaceBounds.y
+            width: root.expandedSurfaceBounds.width
+            height: root.expandedSurfaceBounds.height
+            innerInset: root.expandedInnerInset
             visible: (root.space === "system" || root.systemTransitioning)
                 && root.systemCategories[root.systemCategoryIndex] !== "Utilities"
             opacity: root.systemTransitionProgress
@@ -4228,10 +4248,11 @@ import QtQuick.Controls
 
         UtilitiesHome {
             id: utilitiesHome
-            x: root.expandedContentX
-            y: root.expandedContentY
-            width: root.expandedContentWidth
-            height: Math.max(1, root.expandedContentHeight)
+            x: root.expandedSurfaceBounds.x
+            y: root.expandedSurfaceBounds.y
+            width: root.expandedSurfaceBounds.width
+            height: root.expandedSurfaceBounds.height
+            innerInset: root.expandedInnerInset
             visible: (root.space === "system" || root.systemTransitioning)
                 && root.systemCategories[root.systemCategoryIndex] === "Utilities"
             opacity: root.systemTransitionProgress

@@ -30,6 +30,20 @@ blocked until that acceptance is recorded. `/opt/lulu/current` remains untouched
   reduced and glass transmission increased; modal overlay dimming roles remain
   separate and unchanged. Recents capture now unions live delegate bounds with
   settled layout bounds while preserving stable coordinator inputs.
+- Expanded-frame convergence follow-up: `ConsoleShell.qml` now owns the common
+  title, substrate and hint-band coordinates through `ExpandedSurfaceGeometry`.
+  Settings, Utilities, Library and Installable receive the same surface bounds
+  and 20-design-pixel inner inset. Library's duplicate 30-pixel `frameMargin`
+  has been removed; its category rail remains inside the inset and list/detail
+  panes now end at the shared inner bottom boundary. At 1280x720, the common
+  title is `(42,28)`, substrate origin/width are `(20,94,1240)`, and the inner
+  frame origin/right edge are `(40,114,1240)`; bottom coordinates follow the
+  shell's live hint-band top. The full Python suite passes (1,221 tests and 85
+  subtests), and the native development build passes with existing compiler
+  warnings. Expanded geometry, Settings, Utilities, Library list/spatial QML
+  tests pass. Installable projection retains the known provider/platform
+  expectation failure. A fresh dev-current deployment remains pending for this
+  follow-up.
 - Physical validation must cover Recent end-card clipping, status-strip
   placement, Library/Installable rail clearance, Settings glass/focus,
   Utilities layout/media/hints, centered Downloads glass/empty-state/hints,

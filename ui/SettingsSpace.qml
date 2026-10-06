@@ -16,11 +16,17 @@ Item {
     property size canonicalSize: Qt.size(1280, 720)
     property real leftWidth: Math.max(280 * uiScale, width * 0.29)
     readonly property real panelGap: 18 * uiScale
-    readonly property real panelInset: 20 * uiScale
-    readonly property rect leftBounds: Qt.rect(panelInset, 0,
-        leftWidth - panelGap / 2 - panelInset, height)
-    readonly property rect rightBounds: Qt.rect(leftWidth + panelGap / 2, 0,
-        width - leftWidth - panelGap / 2 - panelInset, height)
+    property real innerInset: 20 * uiScale
+    readonly property real panelInset: innerInset
+    readonly property rect internalFrameBounds: Qt.rect(innerInset, innerInset,
+        Math.max(0, width - 2 * innerInset),
+        Math.max(0, height - 2 * innerInset))
+    readonly property rect leftBounds: Qt.rect(panelInset, panelInset,
+        leftWidth - panelGap / 2 - panelInset,
+        Math.max(0, height - 2 * panelInset))
+    readonly property rect rightBounds: Qt.rect(leftWidth + panelGap / 2, panelInset,
+        width - leftWidth - panelGap / 2 - panelInset,
+        Math.max(0, height - 2 * panelInset))
     property alias contentHost: host
     signal categoryChanged(int index)
     signal panelFocusRequested(string panel)
@@ -42,6 +48,7 @@ Item {
 
     MudosPanelSurface {
         objectName: "settingsGlassSubstrate"
+        anchors.fill: parent
         x: 0; y: 0
         width: root.width; height: root.height
         cornerRadius: 18 * root.uiScale

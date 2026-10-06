@@ -25,7 +25,10 @@ Item {
     property size canonicalSize: Qt.size(1280, 720)
     property real contentBottom: parent ? parent.height : 0
     property real contentSideMargin: 120 * uiScale
-    property rect contentBounds: Qt.rect(0, 0, width, height)
+    property rect surfaceBounds: Qt.rect(0, 0, width, height)
+    property real innerInset: 20 * uiScale
+    property real titleX: 0
+    property real titleY: 0
     property var presentationCoordinator
     property real categoryProgress: 1
     property bool categoryTransitioning: false
@@ -283,13 +286,16 @@ Item {
     LibrarySpace {
         anchors.fill: parent
         visible: root.cardWidth === 0
-        contentBounds: root.contentBounds
+        surfaceBounds: root.surfaceBounds
         canonicalGames: root.displayGames
         acquisitionJobs: root.acquisitionJobs
         selectedIndex: root.selectedIndex
         browseCategories: root.categories
         browseCategoryIndex: root.categoryIndex
         contentBottom: root.contentBottom
+        innerInset: root.innerInset
+        titleX: root.titleX
+        titleY: root.titleY
         contentSideMargin: root.contentSideMargin
         headingText: "INSTALLABLE"
         emptyText: root.errorMessage !== "" ? root.errorMessage : "No games ready to install"

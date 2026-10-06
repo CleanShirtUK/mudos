@@ -35,15 +35,19 @@ Item {
     property var canonicalTexture
     property var canonicalCoordinateRoot
     property size canonicalSize: Qt.size(1280, 720)
-    property rect contentBounds: Qt.rect(0, 0, width, height)
+    // Shell-space outer substrate bounds. This item normally spans the screen,
+    // so the frame remains expressed in root coordinates for both Library and
+    // StoreHome's Installable projection.
+    property rect surfaceBounds: Qt.rect(0, 0, width, height)
+    property real innerInset: 20 * uiScale
     property real contentBottom: parent ? parent.height : 0
     property real contentSideMargin: 72 * uiScale
     property real categoryTapeRightInset: 0
     property string headingText: "LIBRARY"
     property string sectionTitle: ""
     property string emptyText: "No installed games"
-    property real titleX: contentFrameRect.x
-    property real titleY: contentFrameRect.y
+    property real titleX: 0
+    property real titleY: 0
     property string actionLabel: "Play"
     readonly property string navigationObject: "library"
     readonly property real rowHeight: 54 * uiScale
@@ -75,14 +79,15 @@ Item {
     readonly property bool videoPreviewsEnabled: false
     property real internalSurfaceOpacity: 0.34
     readonly property string libraryFontFamily: typography ? typography.displayFamily : "monospace"
-    readonly property real frameMargin: 30 * uiScale
     readonly property rect contentFrameRect: Qt.rect(
-        contentBounds.x + frameMargin, contentBounds.y + frameMargin,
-        Math.max(0, contentBounds.width - 2 * frameMargin),
-        Math.max(0, contentBounds.height - 2 * frameMargin))
+        surfaceBounds.x + innerInset, surfaceBounds.y + innerInset,
+        Math.max(0, surfaceBounds.width - 2 * innerInset),
+        Math.max(0, surfaceBounds.height - 2 * innerInset))
     readonly property real panelGap: 22 * uiScale
-    readonly property real panelTop: 92 * uiScale
-    readonly property real panelBottomMargin: 2 * uiScale
+    readonly property real categoryRailHeight: 28 * uiScale
+    readonly property real categoryRailGap: 14 * uiScale
+    readonly property real panelTop: categoryRailHeight + categoryRailGap
+    readonly property real panelBottomMargin: 0
     readonly property real detailInset: 18 * uiScale
     readonly property real detailGutter: 16 * uiScale
     readonly property real detailRightColumnRatio: 0.46
@@ -95,6 +100,8 @@ Item {
     property bool descriptionNeedsElide: false
     readonly property real listWidth: Math.max(250 * uiScale,
         (contentFrameRect.width - panelGap) * 0.40)
+    readonly property real internalFrameRight: contentFrameRect.x + contentFrameRect.width
+    readonly property real internalFrameBottom: contentFrameRect.y + contentFrameRect.height
     signal launchRequested(var game, var acquisitionJob)
     signal specialActivated(var game)
     signal browseCategoryRequested(int index)
@@ -295,6 +302,7 @@ Item {
 
     Item {
         id: contentFrame
+        objectName: "libraryInternalFrame"
         x: root.contentFrameRect.x
         y: root.contentFrameRect.y
         width: root.contentFrameRect.width
@@ -305,9 +313,9 @@ Item {
         ListView {
             id: categoryTape
             objectName: "libraryCategoryTape"
-            x: 0; y: 50 * root.uiScale
+            x: 0; y: 0
             width: Math.max(0, parent.width - root.categoryTapeRightInset)
-            height: 28 * root.uiScale
+            height: root.categoryRailHeight
             orientation: ListView.Horizontal
             spacing: 26 * root.uiScale
             clip: true; interactive: false

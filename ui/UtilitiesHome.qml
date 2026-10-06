@@ -16,6 +16,12 @@ Item {
     property real expandedContentY: 0
     property real expandedContentWidth: width
     property real expandedContentHeight: height
+    property real innerInset: 20 * uiScale
+    property real titleX: 0
+    property real titleY: 0
+    readonly property rect internalFrameBounds: Qt.rect(innerInset, innerInset,
+        Math.max(0, width - 2 * innerInset),
+        Math.max(0, height - 2 * innerInset))
     property string statusMessage: ""
 
     readonly property var selectedApplication: selectedIndex >= 0
@@ -79,10 +85,11 @@ Item {
 
     Rectangle {
         id: listPane
-        x: 20 * root.uiScale
-        y: 18 * root.uiScale
+        objectName: "utilitiesInternalFrame"
+        x: root.innerInset
+        y: root.innerInset
         width: root.listWidth
-        height: Math.max(0, root.height - y - 20 * root.uiScale)
+        height: Math.max(0, root.height - y - root.innerInset)
         radius: 12 * root.uiScale
         color: root.luluPalette.librarySurface
         border.color: root.luluPalette.glassBorder
