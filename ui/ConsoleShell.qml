@@ -540,7 +540,6 @@ import QtQuick.Controls
         function onContentPresentedReached() {
             root.traceLaunchEvent("COORDINATOR_PRESENTED", {})
             if (root.returnPresentationPending) {
-                root.focusRecentForReturn()
                 root.traceLaunchEvent("RECENT_RECONCILE_BEGIN", {})
                 recentHome.reconcilePresentation()
                 root.traceLaunchEvent("RECENT_PRESENTATION_RELEASED", {})
@@ -2192,6 +2191,7 @@ import QtQuick.Controls
         launchTitle = game.title
         launchGameId = String(game.game_id)
         launchToken = ""
+        focusRecentForReturn()
         launchOverlayVisible = true
         traceLaunchEvent("OVERLAY_SHOWN", {game_id: launchGameId})
         launchOverlayRetired = false

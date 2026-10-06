@@ -1600,8 +1600,6 @@ class ConsoleUiTests(unittest.TestCase):
         handoff = QML.split("function finishHiddenHomeLaunch()", 1)[1].split(
             "function installGame", 1)[0]
         self.assertIn("returnPresentationPending", presented)
-        self.assertLess(presented.index("focusRecentForReturn()"),
-                        presented.index("recentHome.reconcilePresentation()"))
         self.assertIn("recentHome.reconcilePresentation()", presented)
         self.assertIn("returnPresentationPending = false", presented)
         self.assertIn("function focusRecentForReturn()", QML)
@@ -1614,6 +1612,12 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertIn('traceLaunchEvent("PRESENTATION_FREEZE"', QML)
         self.assertIn('traceLaunchEvent("RECENT_PRESENTATION_RELEASED"', QML)
         self.assertIn("returnPresentationPending", QML[QML.index("readonly property bool homeLaunchGated") :])
+
+    def test_launch_focuses_recent_before_showing_overlay(self) -> None:
+        launch = QML.split("function launchGame(game, choreographyComplete)", 1)[1].split(
+            "function launchProviderMenu", 1)[0]
+        self.assertLess(launch.index("focusRecentForReturn()"),
+                        launch.index("launchOverlayVisible = true"))
 
     def test_presented_reconcile_happens_before_input_unlock(self) -> None:
         presented = QML.split("function onContentPresentedReached()", 1)[1].split(
