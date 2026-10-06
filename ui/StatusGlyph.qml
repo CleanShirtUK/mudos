@@ -64,7 +64,10 @@ Item {
             - baselineOffset - metrics.tightBoundingRect.y
         width: metrics.advanceWidth
         height: parent.height
-        text: root.glyph
+        // Semantic IDs resolve to the bundled Nerd Font glyph unless the
+        // active theme supplies an SVG override. Keep the Text item bound to
+        // the same fallback glyph used by TextMetrics and optical fitting.
+        text: root.resolvedGlyph
         color: root.glyphColor
         font.family: root.fontFamily
         font.pixelSize: root.normalizedGlyphSize

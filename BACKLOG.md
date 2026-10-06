@@ -99,9 +99,10 @@ theme-engine implementation has not begun.
 
 ### THEME-001 — Theme engine and external theme configuration
 
-**Status:** VALIDATION — the first core implementation is committed and deployed
-to `/opt/lulu/dev-current`; operator visual acceptance remains open. UI-001's
-accepted baseline remains the default reference. `/opt/lulu/current` is unchanged.
+**Status:** VALIDATION — partial core implementation is committed and its theme
+assets are deployed to `/opt/lulu/dev-current`; end-to-end runtime acceptance is
+blocked and this item is not complete. UI-001's accepted baseline remains the
+default reference. `/opt/lulu/current` is unchanged.
 
 - A theme directory owns `theme.json`, declared font assets, optional semantic
   SVG overrides, and its wallpaper QSB. Discovery uses the immutable runtime's
@@ -118,9 +119,20 @@ accepted baseline remains the default reference. `/opt/lulu/current` is unchange
   off preserves tint/border substrates while suppressing the native glass item.
 - Release and dev runtime packaging include `themes/`. Python inventory,
   focused QML status/font/Settings tests and native build pass. Full physical
-  shell/Guide/notification/theme-switch review is still an operator acceptance
-  gate; the current pass does not claim complete optical migration of every
-  direct glass consumer or every presentation literal.
+  shell/Guide/notification/theme-switch review is still open. The dev runtime
+   published and the shell subsequently started; the earlier report that Lulu
+   D-Bus services prevented startup was not supported by the post-reboot service
+   checks. A later power cut damaged the branch ref and index metadata; the branch
+   ref has since been restored to the last verified commit. The missing semantic
+   status glyph was traced to `StatusGlyph.qml` measuring `resolvedGlyph` while
+   rendering the empty raw `glyph` property; a tested source fix is pending
+   deployment. Loaded-font/wallpaper/Guide/notification runtime checks and visual
+   equivalence are not claimed. Remaining implementation includes
+  valid/invalid manager fixtures (including path/symlink cases), end-to-end SVG
+  tint/fallback tests, comprehensive raw-icon and presentation-literal migration,
+  full glass profile binding coverage, and confirmation that selected user
+  themes are listed only after complete validation. Do not close THEME-001 until
+  these are implemented and the runtime/visual acceptance sweep passes.
 
 ## CLOSED
 
@@ -579,6 +591,17 @@ needs a durable fix and regression coverage.
   Add automated coverage for the discovered runtime mismatch/recovery. Do not
   resume LUTRIS-001 physical acceptance until controller navigation remains
   reliable through the required Home → Installable → Lutris flow.
+- **Power-cut recurrence (2026-10-06):** after reboot, Sessiond showed one
+  connected Xbox 360 receiver controller sourced from `/dev/input/event17`, but
+  `sdl_index` was null. InputPlumber had one `Default`/intercept-mode-1 composite,
+  while SDL exposed two InputPlumber-marked virtual Xbox targets (`event16` and
+  `event19`). This reproduced the known duplicate-target mismatch. Following
+  the runbook, the pre-restart state was recorded and InputPlumber was restarted
+  once after the receiver node was present. It recreated one composite; SDL then
+  exposed one marked target (`event10`) and Sessiond mapped it to `sdl_index=0`.
+  InputPlumber and Sessiond are active, and intercept mode remains 1. Physical
+  D-pad/A/B/Start confirmation is still required; do not count the state readback
+  alone as operator acceptance.
 
 ### LUTRIS-001 — Mudos-native PC game install and add-game flows
 

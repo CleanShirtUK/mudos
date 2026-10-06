@@ -59,6 +59,10 @@ TestCase {
     function test_disconnected_network_has_explicit_warning_glyph_without_geometry_shift() {
         var icon = findChild(strip, "networkIcon")
         verify(icon !== null)
+        var glyphText = findChild(icon, "statusGlyphText")
+        verify(glyphText !== null)
+        compare(glyphText.text, icon.resolvedGlyph)
+        verify(glyphText.text.length > 0)
         var disconnectedGlyph = icon.resolvedGlyph
         var disconnectedWidth = strip.width
         verify(disconnectedGlyph !== String.fromCodePoint(0xf1eb))
@@ -66,6 +70,7 @@ TestCase {
         strip.networkAvailable = true
         wait(220)
         compare(icon.resolvedGlyph, String.fromCodePoint(0xf1eb))
+        compare(glyphText.text, icon.resolvedGlyph)
         compare(icon.glyphColor, strip.statusColor)
         compare(strip.x + strip.width, width)
         strip.networkAvailable = false
