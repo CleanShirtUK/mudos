@@ -7,39 +7,52 @@ retained in `docs/reconciliation-backlog.md` and are not the status authority.
 
 ### UI-001 — Lock the default visual baseline before theming
 
-**Status:** VALIDATION — implementation commit `e874680` is deployed to
-`/opt/lulu/dev-current`; final runtime/visual recording and operator acceptance
-remain. THEME-001 remains blocked until that acceptance is recorded.
-`/opt/lulu/current` must remain untouched.
+**Status:** VALIDATION — corrective implementation commit `9a3f8ed` is deployed
+to `/opt/lulu/dev-current` and the development shell is running it. The required
+physical recording and operator visual acceptance remain. THEME-001 remains
+blocked until that acceptance is recorded. `/opt/lulu/current` remains untouched.
 
-- Stabilize the current accepted UI as the internal default baseline: neutral
-  charcoal structural surfaces, one glass substrate per elevation root,
-  shared expanded-shell geometry, shell-owned controller hints, and reusable
-  empty states. Do not build a theme engine in this item.
+- Stabilize the accepted default UI baseline: neutral charcoal structural
+  surfaces, one glass substrate per elevation root, shared expanded framing,
+  fixed root-space status chrome, shared row-selection semantics, shell-owned
+  controller hints, and reusable empty states. Do not build a theme engine.
 - Preserve accepted Home/Recent composition, Settings navigation and panes,
   Library/Store information architecture, system transitions, Guide semantics,
   provider behavior, controller mapping, and lifecycle behavior.
+- Corrective pass: status chrome now uses one root-space safe inset
+  (`top=expandedShellTop`, `right=expandedShellSideMargin`) without navigation-
+  dependent coordinates or a translate. Settings, Utilities, Library, and
+  Installable consume shared expanded-surface X/Y/width/bottom roles. Library
+  titles sit outside the glass and its substrate starts at the shared surface
+  line just above the existing category rail; the list/detail layout and rail
+  behavior remain intact. Settings and Utilities rows share selection fill and
+  focus-border palette roles. Structural tint/internal pane darkness were
+  reduced and glass transmission increased; modal overlay dimming roles remain
+  separate and unchanged. Recents capture now unions live delegate bounds with
+  settled layout bounds while preserving stable coordinator inputs.
 - Physical validation must cover Recent end-card clipping, status-strip
   placement, Library/Installable rail clearance, Settings glass/focus,
   Utilities layout/media/hints, centered Downloads glass/empty-state/hints,
   Guide materials, and readability over bright and dark backdrop regions.
 - Operator acceptance is the closure gate. Record one sweep covering those
   items and confirm that no content surface obscures the global hint band.
-- Validation: the complete Python suite passed (1,219 tests and 85 subtests);
-  focused console/download Python UI checks passed (100 tests); the native
-  development build succeeded with existing compiler warnings. The combined
-  QML run reported 135 passed and 10 failed in unrelated Installable projection,
-  native-mapping fixture, and Recent coordinator/model assertions; changed
-  Utilities, Downloads, Settings, StatusStrip, Library, and ownership cases pass.
-- Deployment marker records `head=e874680dc04f5f31bb54d5e5ca6ca2055eb120dc`,
-  `dirty=false`, and `promotable=false`. Refresh completed the dev tree swap and
-  restarted core services but exited nonzero when Sunshine timed out waiting for
-  Gamescope. Sessiond and Consoled are active; Sessiond reports no connected DRM
-  output and no Gamescope/shell process is running because both DRM connectors
-  currently report `disconnected`. Restore the physical display connection
-  before runtime/visual acceptance; do not bypass the output guard or refresh
-  again while no output is connected. `/opt/lulu/current` still resolves to
-  `/opt/lulu/releases/786aba3-candidate-20261004065549`.
+- Validation: Python suite passes (1,221 tests and 85 subtests); focused
+  console/download UI checks and native development build pass with existing
+  compiler warnings. Recent capture-envelope, SettingsSpace, and Utilities QML
+  tests pass. The all-QML run reports 138 passed and 10 failures in the known
+  Installable projection, native-mapping fixture, and Recent coordinator/model
+  groups; no starting-revision comparison isolates those failures.
+- Dev runtime refresh succeeded with DP-1 connected. Sessiond, Consoled, and
+  Acquisitiond are active; Gamescope and `lulu-shell` run from
+  `/opt/lulu/dev-current`. `NON_PROMOTABLE` marks the runtime non-promotable;
+  `/opt/lulu/current` still resolves to
+  `/opt/lulu/releases/786aba3-candidate-20261004065549` and was not changed.
+- Operator recording/acceptance remains the only closure gate. Sweep the Recent
+  rightmost-card transition, fixed status backing, aligned Library/Installable/
+  Settings/Utilities framing, wave visibility/readability, Settings focus and
+  row selection, Library rail clearance, Utilities media/hints, Downloads and
+  Guide overlays, and unobscured global hint band. Guide continues to use its
+  separate native helper and does not sample the shell's canonical backdrop.
 - Guide retains its existing separate native-helper/window architecture and now
   uses the neutral panel/selection palette. It cannot sample the shell's animated
   canonical texture from that isolated process; true backdrop-refraction there
