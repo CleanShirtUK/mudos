@@ -3988,9 +3988,6 @@ import QtQuick.Controls
             canonicalTexture: orbitTexture
             canonicalCoordinateRoot: orbitRenderSource
             canonicalSize: Qt.size(root.width, root.height)
-             canonicalTexture: orbitTexture
-             canonicalCoordinateRoot: orbitRenderSource
-             canonicalSize: Qt.size(root.width, root.height)
               contentBounds: Qt.rect(root.expandedShellX, root.expandedShellY,
                                      root.expandedShellWidth, root.expandedShellHeight)
              contentBottom: root.expandedContentBottom
