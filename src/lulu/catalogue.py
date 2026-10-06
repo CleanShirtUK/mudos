@@ -380,7 +380,7 @@ IDENTITY_COLUMNS = (
 )
 TEMPORARY_METADATA_RETRY_SECONDS = 15 * 60
 NORMAL_METADATA_RETRY_SECONDS = 24 * 60 * 60
-METADATA_RESOLVER_VERSION = 3
+METADATA_RESOLVER_VERSION = 4
 SELECT_COLUMNS = (
     "game_id, provider, provider_id, title, platform, install_state, launchable, install_dir, "
     "artwork_url, last_played, runtime, platform_label, " + ", ".join(IDENTITY_COLUMNS)
@@ -1347,11 +1347,15 @@ class CatalogueStore:
         ).fetchone()
         if row is None or row[0]:
             return False
-        # Existing native Steam matches predate the RomM AppID handoff and
-        # must be migrated even though they have a metadata provider ID.
-        appid_migration = row[5] == "romm" and row[6] == "Steam" and (
-            row[3] != "steam-appid" or row[7] != METADATA_RESOLVER_VERSION
+        # Existing Steam and Aurelia-backed Steam records must use the exact
+        # Steam AppID association rather than an ambiguous title-only match.
+        appid_migration = (
+            (row[5] == "romm" and row[6] == "Steam"
+             and (row[3] != "steam-appid" or row[7] != METADATA_RESOLVER_VERSION))
+            or (row[5] == "steam-aurelia" and row[7] != METADATA_RESOLVER_VERSION)
         )
+        if row[5] == "steam-aurelia" and appid_migration:
+            return True
         if appid_migration and row[3] == "steam-appid":
             return True
         if row[1] and not appid_migration and (
@@ -1376,7 +1380,8 @@ class CatalogueStore:
             after = replace(existing, normalized_search_title=match.normalized_search_title,
                             match_status=match.status, match_method=match.method,
                             match_confidence=match.confidence,
-                            metadata_checked_at=int(time.time()))
+                            metadata_checked_at=int(time.time()),
+                            metadata_resolver_version=METADATA_RESOLVER_VERSION)
             with self.atomic():
                 self._start_operation()
                 delta = self._apply_existing_locked(existing, after)

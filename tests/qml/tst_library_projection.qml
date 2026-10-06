@@ -24,7 +24,8 @@ TestCase {
     function test_first_dimension_change_rebuilds_provider_projection() {
         var canonical = catalog()
         var initialized = LibraryProjection.build(canonical, "platform", "", "", "", ({}))
-        compare(initialized.categories[0].label, "NES")
+        compare(initialized.categories[0].label, "PC")
+        compare(initialized.categories.map(function(category) { return category.label }), ["PC", "NES"])
 
         // One transition from the freshly initialized Platform projection.
         var provider = LibraryProjection.build(canonical, "provider", "", "", "", ({}))
@@ -38,8 +39,8 @@ TestCase {
         var reverseProvider = LibraryProjection.build(canonical, "provider", "steam", "", "", ({}))
         var reversePlatform = LibraryProjection.build(canonical, "platform", "", "", "", ({}))
         compare(reverseProvider.games.map(function(game) { return game.provider }), ["steam", "steam"])
-        compare(reversePlatform.categories[reversePlatform.categoryIndex].label, "NES")
-        compare(reversePlatform.games.map(function(game) { return game.game_id }), ["nes-1"])
+        compare(reversePlatform.categories[reversePlatform.categoryIndex].label, "PC")
+        compare(reversePlatform.games.map(function(game) { return game.game_id }), ["steam-1", "steam-2", "epic-1"])
 
         var steam = LibraryProjection.build(canonical, "provider", "steam", "", "", ({}))
         compare(steam.categoryKey, "steam")

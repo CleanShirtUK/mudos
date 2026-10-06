@@ -46,6 +46,10 @@ function build(canonicalGames, mode, requestedCategoryKey, requestedGameId, save
     }
     var categories = Object.keys(groups).map(function(key) { return groups[key] })
     categories.sort(function(a, b) {
+        if (mode === "platform") {
+            if (a.key === "pc") return -1
+            if (b.key === "pc") return 1
+        }
         if (mode === "provider") {
             if (a.key === "steam-aurelia") return -1
             if (b.key === "steam-aurelia") return 1

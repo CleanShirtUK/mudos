@@ -590,6 +590,53 @@ class MetadataProviderTests(unittest.TestCase):
             self.assertEqual(igdb.calls, [("appid", "10"), ("cached", "99")])
             self.assertEqual(store.get_game(game.game_id).summary, "from cache")
 
+    def test_aurelia_steam_uses_exact_appid_igdb_association(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = CatalogueStore(Path(directory) / "catalogue.sqlite3")
+            game = CatalogueGame.from_owned_provider("steam-aurelia", OwnedProviderGame(
+                provider_id="1356240", title="Who Wants To Be A Millionaire?",
+                availability_state="available"))
+            store._upsert(game)
+            store.connection.commit()
+
+            class IGDB:
+                configured = True
+                def __init__(self): self.calls = []
+                def by_steam_appid(self, app_id):
+                    self.calls.append(app_id)
+                    return {"id": 139936, "name": "Who Wants to Be a Millionaire"}
+                def reload_configuration(self): pass
+
+            igdb = IGDB()
+            service = MetadataEnrichmentService(store, igdb,
+                type("Proton", (), {"enabled": False})())
+            match = service.canonical_match(game)
+            self.assertEqual((match.status, match.game_id, match.method),
+                             ("matched", "139936", "steam-appid"))
+            self.assertEqual(igdb.calls, ["1356240"])
+            store.apply_metadata_match(game.game_id, match)
+            self.assertEqual(store.get_game(game.game_id).igdb_id, "139936")
+
+    def test_aurelia_metadata_resolver_migration_retries_ambiguous_rows_once(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = CatalogueStore(Path(directory) / "catalogue.sqlite3")
+            now = 1_800_000_000
+            game = CatalogueGame.from_owned_provider("steam-aurelia", OwnedProviderGame(
+                provider_id="1356240", title="Who Wants To Be A Millionaire?",
+                availability_state="available"))
+            game = replace(game, match_status="ambiguous",
+                           match_method="title-platform-ambiguous",
+                           metadata_checked_at=now,
+                           metadata_resolver_version=3)
+            store._upsert(game)
+            store.connection.commit()
+
+            self.assertTrue(store.needs_metadata_match(game.game_id, now=now))
+            store.apply_metadata_match(game.game_id, MetadataMatch(
+                "unmatched", normalized_search_title=game.title,
+                method="no-exact-match"))
+            self.assertFalse(store.needs_metadata_match(game.game_id))
+
     def test_protondb_stage_targets_installed_steam_and_reuses_ttl(self):
         with tempfile.TemporaryDirectory() as directory:
             store = CatalogueStore(Path(directory) / "catalogue.sqlite3")

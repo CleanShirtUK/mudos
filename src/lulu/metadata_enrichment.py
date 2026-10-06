@@ -18,6 +18,7 @@ PROTONDB_TTL = 24 * 60 * 60
 PRESENTATION_MEDIA_GENERATION = 1
 PRESENTATION_MEDIA_RETRY_SECONDS = 24 * 60 * 60
 PRESENTATION_MEDIA_BATCH_SIZE = 8
+STEAM_CATALOGUE_PROVIDERS = frozenset({"steam", "steam-aurelia"})
 PLATFORM_IDS = {"nes": 18, "gb": 33, "gbc": 22, "gba": 24, "nds": 20,
                 "genesis": 29, "gamecube": 21, "ngc": 21, "wii": 5, "switch": 130,
                 "ps1": 7, "psx": 7, "ps2": 8, "ps3": 9, "snes": 19,
@@ -151,7 +152,7 @@ class MetadataEnrichmentService:
         reload_config = getattr(self.igdb, "reload_configuration", None)
         if callable(reload_config):
             reload_config()
-        query = clean_local_title(game.title if game.provider == "steam" else
+        query = clean_local_title(game.title if game.provider in STEAM_CATALOGUE_PROVIDERS else
                                   (game.source_title or game.title))
         if not self.igdb.configured:
             return MetadataMatch("unmatched", normalized_search_title=query, method="igdb-unconfigured")
@@ -159,7 +160,7 @@ class MetadataEnrichmentService:
             value = None
             method = ""
             confidence = 0.0
-            if game.provider == "steam" and game.provider_id.isdecimal():
+            if game.provider in STEAM_CATALOGUE_PROVIDERS and game.provider_id.isdecimal():
                 value = self.igdb.by_steam_appid(game.provider_id)
                 method, confidence = "steam-appid", 1.0
                 if value is None:
@@ -220,7 +221,7 @@ class MetadataEnrichmentService:
     def enrich_game(self, game: CatalogueGame, *, force: bool = False,
                     force_igdb: bool = False) -> list[CatalogueDelta]:
         deltas: list[CatalogueDelta] = []
-        if game.provider == "steam" and game.provider_id.isdecimal():
+        if game.provider in STEAM_CATALOGUE_PROVIDERS and game.provider_id.isdecimal():
             if self.igdb.configured and (force or force_igdb
                                          or not self.store.enrichment_is_fresh("igdb", game.game_id, IGDB_TTL)):
                 try:

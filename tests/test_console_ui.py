@@ -1341,6 +1341,8 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertIn('label: platformLabel', projection)
         self.assertIn('label: providerLabel(provider)', projection)
         self.assertIn('"steam-aurelia": "Steam"', projection)
+        self.assertIn('if (mode === "platform")', projection)
+        self.assertIn('if (a.key === "pc") return -1', projection)
         self.assertIn('if (mode === "provider")', projection)
         self.assertIn('platform.toLowerCase() === "pc"', projection)
         self.assertIn('game.genres && game.genres.length ? game.genres : ["Other"]', projection)

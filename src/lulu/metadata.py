@@ -314,7 +314,7 @@ class MetadataMatcher:
     def match_game(self, game: object) -> MetadataMatch:
         provider = str(getattr(game, "provider", ""))
         app_id = str(getattr(game, "provider_id", ""))
-        if provider == "steam" and app_id.isdecimal():
+        if provider in {"steam", "steam-aurelia"} and app_id.isdecimal():
             candidate = self.provider.search_steam_app(app_id)
             if candidate is not None and candidate.game_id and candidate.title:
                 return MetadataMatch(
