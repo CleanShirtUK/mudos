@@ -124,14 +124,15 @@ the Modern reference. `/opt/lulu/current` is unchanged.
   migration only. 95 provides the teal QSB wallpaper, square radii, disabled
   glass, Liberation Sans, original monochrome SVG overrides and generic bevel
   chrome. The UI now consumes theme tokens across core surfaces, Settings,
-  Library, Downloads, Utilities, Guide, notifications, Game Options, onboarding,
-  network credential entry, browser chrome and provider dialogs. Shell screens
-  contain no theme-ID conditionals or direct JetBrains Mono normal-text
-  declarations. Validation completed: all
+  Library, Downloads, Utilities, Guide, notifications, Game Options, Recovery,
+  onboarding, network credential entry, launch actions, browser chrome and
+  provider dialogs. Shell screens contain no theme-ID conditionals or direct
+  JetBrains Mono normal-text declarations. Validation completed: all
   1,225 Python tests and 85 subtests pass; native shell/Guide/notification build
-  and the ThemeManager Qt test pass; focused asset, Settings, status-strip and
-  Downloads QML suites pass. The status-strip test uses the theme's bundled
-  Modern font assets to retain its painted-bounds regression assertion.
+  and the ThemeManager Qt test pass; focused asset, Settings, status-strip,
+  Downloads and onboarding QML suites pass, plus Recovery and Browser component-
+  load smoke tests. The status-strip test uses the theme's bundled Modern font
+  assets to retain its painted-bounds regression assertion.
 - Still open: end-to-end SVG tint/fallback rendering coverage; complete glass
   optics binding coverage; inspection of all actual screens under both themes;
   live Settings selection and persistence across shell restart; Guide and

@@ -6,8 +6,11 @@ Window {
     id: root
     visible: true
     visibility: Window.FullScreen
-    color: "#10131a"
+    color: luluPalette.backdrop
     flags: Qt.FramelessWindowHint
+
+    LuluPalette { id: luluPalette }
+    Typography { id: typography }
 
     property var snapshot: ({})
     property var actions: []
@@ -122,7 +125,7 @@ Window {
 
     Rectangle {
         anchors.fill: parent
-        color: "#10131a"
+        color: luluPalette.backdrop
     }
 
     Column {
@@ -147,16 +150,17 @@ Window {
             Column {
                 width: parent.width - 250
                 spacing: 8
-                Text { text: "MUDOS RECOVERY"; color: "#91b5ff"; font.pixelSize: 17; font.bold: true; font.letterSpacing: 3 }
+                Text { text: "MUDOS RECOVERY"; color: luluPalette.headingAccent; font.family: typography.majorHeadingFamily; font.pixelSize: 17; font.bold: true; font.letterSpacing: 3 }
                 Text {
                     text: root.detailsOpen ? "System status" : "What needs attention?"
-                    color: "white"; font.pixelSize: 38; font.bold: true
+                    color: luluPalette.primaryText; font.family: typography.displayFamily; font.pixelSize: 38; font.bold: true
                 }
                 Text {
                     text: root.snapshot.overall_state
                           ? "Overall state: " + root.snapshot.overall_state.replaceAll("_", " ")
                           : "Independent recovery is starting"
-                    color: root.snapshot.overall_state === "healthy" ? "#8de0b2" : "#ffd17d"
+                    color: root.snapshot.overall_state === "healthy" ? luluPalette.accent : luluPalette.warning
+                    font.family: typography.interfaceFamily
                     font.pixelSize: 19
                 }
             }
@@ -164,7 +168,8 @@ Window {
                 width: 230
                 text: controllerBridge.controllerConnected
                       ? "Controller connected" : "Reconnect your controller to navigate"
-                color: controllerBridge.controllerConnected ? "#8de0b2" : "#bac3d2"
+                color: controllerBridge.controllerConnected ? luluPalette.accent : luluPalette.secondaryText
+                font.family: typography.interfaceFamily
                 font.pixelSize: 15
                 horizontalAlignment: Text.AlignRight
                 wrapMode: Text.WordWrap
@@ -173,7 +178,8 @@ Window {
 
         Text {
             text: root.message
-            color: "#cbd2df"
+            color: luluPalette.secondaryText
+            font.family: typography.interfaceFamily
             font.pixelSize: 16
             wrapMode: Text.WordWrap
             width: parent.width
@@ -202,14 +208,16 @@ Window {
                         activeFocusOnTab: true
                         highlighted: root.selected === index
                         background: Rectangle {
-                            radius: 8
-                            color: root.selected === index ? "#283b5a" : "#1a1f29"
+                            radius: luluPalette.radius("row", 8)
+                            color: root.selected === index ? luluPalette.selectionSurface : luluPalette.cardSurface
                             border.width: root.selected === index ? 3 : 1
-                            border.color: root.selected === index ? "#91b5ff" : "#343b49"
+                            border.color: root.selected === index ? luluPalette.focusIndicator : luluPalette.glassBorder
+                            MudosChromeFrame { anchors.fill: parent; luluPalette: root.luluPalette; cornerRadius: parent.radius; raised: root.selected !== index }
                         }
                         contentItem: Text {
                             text: recoveryActionButton.text
-                            color: "white"
+                            color: root.selected === index ? luluPalette.selectedText : luluPalette.primaryText
+                            font.family: typography.interfaceFamily
                             font.pixelSize: 17
                             font.bold: root.selected === index
                             horizontalAlignment: Text.AlignHCenter
@@ -228,14 +236,16 @@ Window {
                     activeFocusOnTab: true
                     highlighted: root.selected === root.actions.length
                     background: Rectangle {
-                        radius: 8
-                        color: root.selected === root.actions.length ? "#283b5a" : "#1a1f29"
+                        radius: luluPalette.radius("row", 8)
+                        color: root.selected === root.actions.length ? luluPalette.selectionSurface : luluPalette.cardSurface
                         border.width: root.selected === root.actions.length ? 3 : 1
-                        border.color: root.selected === root.actions.length ? "#91b5ff" : "#343b49"
+                        border.color: root.selected === root.actions.length ? luluPalette.focusIndicator : luluPalette.glassBorder
+                        MudosChromeFrame { anchors.fill: parent; luluPalette: root.luluPalette; cornerRadius: parent.radius; raised: root.selected !== root.actions.length }
                     }
                     contentItem: Text {
                         text: recoveryDetailsButton.text
-                        color: "white"
+                        color: root.selected === root.actions.length ? luluPalette.selectedText : luluPalette.primaryText
+                        font.family: typography.interfaceFamily
                         font.pixelSize: 16
                         font.bold: root.selected === root.actions.length
                         horizontalAlignment: Text.AlignHCenter
@@ -262,9 +272,10 @@ Window {
                             property var item: root.snapshot.components[modelData] || ({})
                             width: parent.width
                             height: summaryText.implicitHeight + 26
-                            radius: 12
-                            color: "#1a1f29"
-                            border.color: item.state === "failed" ? "#e47777" : "#343b49"
+                            radius: luluPalette.radius("panel", 12)
+                            color: luluPalette.cardSurface
+                            border.color: item.state === "failed" ? luluPalette.warning : luluPalette.glassBorder
+                            MudosChromeFrame { anchors.fill: parent; luluPalette: root.luluPalette; cornerRadius: parent.radius }
                             Column {
                                 id: summaryText
                                 anchors.fill: parent
@@ -272,17 +283,17 @@ Window {
                                 spacing: 4
                                 Text {
                                     text: modelData.replaceAll("_", " ").toUpperCase()
-                                    color: "#91b5ff"; font.pixelSize: 12; font.bold: true
+                                    color: luluPalette.headingAccent; font.family: typography.interfaceFamily; font.pixelSize: 12; font.bold: true
                                 }
                                 Text {
                                     text: item.summary || "Evidence unavailable"
-                                    color: "white"; font.pixelSize: 15; wrapMode: Text.WordWrap
+                                    color: luluPalette.primaryText; font.family: typography.interfaceFamily; font.pixelSize: 15; wrapMode: Text.WordWrap
                                     width: parent.width
                                 }
                                 Text {
                                     text: (item.state || "unknown").replaceAll("_", " ")
                                           + " · " + (item.freshness || "unknown")
-                                    color: "#bac3d2"; font.pixelSize: 12
+                                    color: luluPalette.secondaryText; font.family: typography.interfaceFamily; font.pixelSize: 12
                                 }
                             }
                         }
@@ -309,19 +320,20 @@ Window {
                         property var item: root.snapshot.components[modelData] || ({})
                         width: detailsColumn.width
                         height: detailsText.implicitHeight + 28
-                        radius: 10
-                        color: "#1a1f29"
-                        border.color: "#343b49"
+                        radius: luluPalette.radius("panel", 10)
+                        color: luluPalette.cardSurface
+                        border.color: luluPalette.glassBorder
+                        MudosChromeFrame { anchors.fill: parent; luluPalette: root.luluPalette; cornerRadius: parent.radius }
                         Column {
                             id: detailsText
                             anchors.fill: parent
                             anchors.margins: 14
                             spacing: 6
-                            Text { text: modelData.replaceAll("_", " ").toUpperCase() + " · " + (item.state || "unknown").replaceAll("_", " "); color: "#91b5ff"; font.bold: true; font.pixelSize: 14 }
-                            Text { text: item.summary || "Evidence unavailable"; color: "white"; wrapMode: Text.WordWrap; width: parent.width }
-                            Text { text: "Checked: " + (item.checked_at || "unavailable") + " · evidence: " + (item.freshness || "unknown"); color: "#bac3d2"; font.pixelSize: 12; wrapMode: Text.WordWrap; width: parent.width }
-                            Text { visible: !!item.last_error; text: "Detail: " + (item.last_error || ""); color: "#ffd17d"; wrapMode: Text.WordWrap; width: parent.width }
-                            Text { text: "Evidence: " + JSON.stringify(item.evidence || ({})); color: "#9ea8b8"; font.pixelSize: 11; wrapMode: Text.WrapAnywhere; width: parent.width }
+                            Text { text: modelData.replaceAll("_", " ").toUpperCase() + " · " + (item.state || "unknown").replaceAll("_", " "); color: luluPalette.headingAccent; font.family: typography.interfaceFamily; font.bold: true; font.pixelSize: 14 }
+                            Text { text: item.summary || "Evidence unavailable"; color: luluPalette.primaryText; font.family: typography.interfaceFamily; wrapMode: Text.WordWrap; width: parent.width }
+                            Text { text: "Checked: " + (item.checked_at || "unavailable") + " · evidence: " + (item.freshness || "unknown"); color: luluPalette.secondaryText; font.family: typography.interfaceFamily; font.pixelSize: 12; wrapMode: Text.WordWrap; width: parent.width }
+                            Text { visible: !!item.last_error; text: "Detail: " + (item.last_error || ""); color: luluPalette.warning; font.family: typography.interfaceFamily; wrapMode: Text.WordWrap; width: parent.width }
+                            Text { text: "Evidence: " + JSON.stringify(item.evidence || ({})); color: luluPalette.mutedText; font.family: typography.interfaceFamily; font.pixelSize: 11; wrapMode: Text.WrapAnywhere; width: parent.width }
                         }
                     }
                 }
@@ -331,7 +343,8 @@ Window {
         Text {
             width: parent.width
             text: "D-pad / arrows: move   A / Enter: select   B / Esc: back   ·   Status refreshes automatically"
-            color: "#9ea8b8"
+            color: luluPalette.mutedText
+            font.family: typography.interfaceFamily
             font.pixelSize: 13
         }
     }
@@ -339,28 +352,29 @@ Window {
     Rectangle {
         visible: root.confirmOpen
         anchors.fill: parent
-        color: "#c9000000"
+            color: luluPalette.overlayBackdrop
         MouseArea { anchors.fill: parent }
         Rectangle {
             anchors.centerIn: parent
             width: Math.min(parent.width - 48, 700)
             height: Math.min(parent.height - 48, confirmColumn.implicitHeight + 56)
-            radius: 18
-            color: "#202633"
-            border.color: "#65718a"
+            radius: luluPalette.radius("overlay", 18)
+            color: luluPalette.overlaySurface
+            border.color: luluPalette.glassBorder
+            MudosChromeFrame { anchors.fill: parent; luluPalette: root.luluPalette; cornerRadius: parent.radius }
             Column {
                 id: confirmColumn
                 anchors.fill: parent
                 anchors.margins: 26
                 spacing: 14
-                Text { text: "Confirm action"; color: "white"; font.pixelSize: 27; font.bold: true }
-                Text { text: root.pendingAction ? root.pendingAction.label : "Recovery action"; color: "#91b5ff"; font.pixelSize: 19; font.bold: true }
+                Text { text: "Confirm action"; color: luluPalette.primaryText; font.family: typography.majorHeadingFamily; font.pixelSize: 27; font.bold: true }
+                Text { text: root.pendingAction ? root.pendingAction.label : "Recovery action"; color: luluPalette.headingAccent; font.family: typography.interfaceFamily; font.pixelSize: 19; font.bold: true }
                 Repeater {
                     model: root.pendingAction ? root.pendingAction.impact : []
                     delegate: Text {
                         required property string modelData
                         text: "• " + modelData
-                        color: "#cbd2df"; font.pixelSize: 15; wrapMode: Text.WordWrap
+                        color: luluPalette.secondaryText; font.family: typography.interfaceFamily; font.pixelSize: 15; wrapMode: Text.WordWrap
                         width: confirmColumn.width
                     }
                 }
@@ -371,6 +385,19 @@ Window {
                         focus: root.confirmChoice === 0
                         activeFocusOnTab: true
                         highlighted: root.confirmChoice === 0
+                        background: Rectangle {
+                            radius: luluPalette.radius("row", 8)
+                            color: root.confirmChoice === 0 ? luluPalette.selectionSurface : luluPalette.actionSurface
+                            border.color: root.confirmChoice === 0 ? luluPalette.focusIndicator : luluPalette.glassBorder
+                            MudosChromeFrame { anchors.fill: parent; luluPalette: root.luluPalette; cornerRadius: parent.radius; raised: root.confirmChoice !== 0 }
+                        }
+                        contentItem: Text {
+                            text: parent.text
+                            color: root.confirmChoice === 0 ? luluPalette.selectedText : luluPalette.actionText
+                            font.family: typography.interfaceFamily
+                            horizontalAlignment: Text.AlignHCenter
+                            verticalAlignment: Text.AlignVCenter
+                        }
                         onClicked: { root.confirmChoice = 0; root.activate() }
                     }
                     Button {
@@ -378,6 +405,19 @@ Window {
                         focus: root.confirmChoice === 1
                         activeFocusOnTab: true
                         highlighted: root.confirmChoice === 1
+                        background: Rectangle {
+                            radius: luluPalette.radius("row", 8)
+                            color: root.confirmChoice === 1 ? luluPalette.selectionSurface : luluPalette.actionSurface
+                            border.color: root.confirmChoice === 1 ? luluPalette.focusIndicator : luluPalette.glassBorder
+                            MudosChromeFrame { anchors.fill: parent; luluPalette: root.luluPalette; cornerRadius: parent.radius; raised: root.confirmChoice !== 1 }
+                        }
+                        contentItem: Text {
+                            text: parent.text
+                            color: root.confirmChoice === 1 ? luluPalette.selectedText : luluPalette.actionText
+                            font.family: typography.interfaceFamily
+                            horizontalAlignment: Text.AlignHCenter
+                            verticalAlignment: Text.AlignVCenter
+                        }
                         onClicked: root.confirmOpen = false
                     }
                 }

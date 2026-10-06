@@ -220,9 +220,48 @@ Item {
         color: luluPalette.glassTint
         Row {
             anchors.fill: parent; anchors.margins: 8; spacing: 8
-            Button { text: "Back"; onClicked: root.goBackOrClose() }
-            Button { text: "Forward"; onClicked: root.goForward() }
-            Button { text: "Reload"; onClicked: root.reloadPage() }
+            Button {
+                text: "Back"
+                font.family: typography.interfaceFamily
+                palette.button: luluPalette.actionSurface
+                palette.buttonText: luluPalette.actionText
+                background: Rectangle {
+                    radius: luluPalette.radius("row", 6)
+                    color: parent.down ? luluPalette.selectionSurface : luluPalette.actionSurface
+                    border.color: parent.activeFocus ? luluPalette.focusIndicator : luluPalette.glassBorder
+                    MudosChromeFrame { anchors.fill: parent; luluPalette: root.luluPalette; cornerRadius: parent.radius; raised: !parent.down }
+                }
+                contentItem: Text { text: parent.text; color: parent.down ? luluPalette.selectedText : luluPalette.actionText; font: parent.font; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                onClicked: root.goBackOrClose()
+            }
+            Button {
+                text: "Forward"
+                font.family: typography.interfaceFamily
+                palette.button: luluPalette.actionSurface
+                palette.buttonText: luluPalette.actionText
+                background: Rectangle {
+                    radius: luluPalette.radius("row", 6)
+                    color: parent.down ? luluPalette.selectionSurface : luluPalette.actionSurface
+                    border.color: parent.activeFocus ? luluPalette.focusIndicator : luluPalette.glassBorder
+                    MudosChromeFrame { anchors.fill: parent; luluPalette: root.luluPalette; cornerRadius: parent.radius; raised: !parent.down }
+                }
+                contentItem: Text { text: parent.text; color: parent.down ? luluPalette.selectedText : luluPalette.actionText; font: parent.font; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                onClicked: root.goForward()
+            }
+            Button {
+                text: "Reload"
+                font.family: typography.interfaceFamily
+                palette.button: luluPalette.actionSurface
+                palette.buttonText: luluPalette.actionText
+                background: Rectangle {
+                    radius: luluPalette.radius("row", 6)
+                    color: parent.down ? luluPalette.selectionSurface : luluPalette.actionSurface
+                    border.color: parent.activeFocus ? luluPalette.focusIndicator : luluPalette.glassBorder
+                    MudosChromeFrame { anchors.fill: parent; luluPalette: root.luluPalette; cornerRadius: parent.radius; raised: !parent.down }
+                }
+                contentItem: Text { text: parent.text; color: parent.down ? luluPalette.selectedText : luluPalette.actionText; font: parent.font; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                onClicked: root.reloadPage()
+            }
             TextInput {
                 id: addressInput; width: parent.width - 310; height: 48
                 text: root.address; color: luluPalette.primaryText; font.family: typography.interfaceFamily; font.pixelSize: 20

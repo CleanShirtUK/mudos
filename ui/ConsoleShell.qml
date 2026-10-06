@@ -4769,6 +4769,16 @@ import QtQuick.Controls
                 enabled: visible
                 text: "Cancel Launch"
                 focus: launchScreen.visible && visible
+                font.family: typography.interfaceFamily
+                palette.button: luluPalette.actionSurface
+                palette.buttonText: luluPalette.actionText
+                background: Rectangle {
+                    radius: luluPalette.radius("row", 8 * root.uiScale)
+                    color: cancelLaunchButton.activeFocus ? luluPalette.selectionSurface : luluPalette.actionSurface
+                    border.color: cancelLaunchButton.activeFocus ? luluPalette.focusIndicator : luluPalette.glassBorder
+                    MudosChromeFrame { anchors.fill: parent; luluPalette: root.luluPalette; uiScale: root.uiScale; cornerRadius: parent.radius; raised: !cancelLaunchButton.activeFocus }
+                }
+                contentItem: Text { text: parent.text; color: cancelLaunchButton.activeFocus ? luluPalette.selectedText : luluPalette.actionText; font: parent.font; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
                 onClicked: root.cancelLaunch()
                 Accessible.name: "Cancel game launch"
             }
@@ -4777,6 +4787,16 @@ import QtQuick.Controls
                 visible: root.launchStatus === "failed"
                 text: "Return to Home"
                 focus: launchScreen.visible && visible
+                font.family: typography.interfaceFamily
+                palette.button: luluPalette.actionSurface
+                palette.buttonText: luluPalette.actionText
+                background: Rectangle {
+                    radius: luluPalette.radius("row", 8 * root.uiScale)
+                    color: parent.activeFocus ? luluPalette.selectionSurface : luluPalette.actionSurface
+                    border.color: parent.activeFocus ? luluPalette.focusIndicator : luluPalette.glassBorder
+                    MudosChromeFrame { anchors.fill: parent; luluPalette: root.luluPalette; uiScale: root.uiScale; cornerRadius: parent.radius; raised: !parent.activeFocus }
+                }
+                contentItem: Text { text: parent.text; color: parent.activeFocus ? luluPalette.selectedText : luluPalette.actionText; font: parent.font; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
                 onClicked: root.dismissLaunchFailure()
                 Accessible.name: "Return to Home after launch failure"
             }
