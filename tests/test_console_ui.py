@@ -1340,11 +1340,18 @@ class ConsoleUiTests(unittest.TestCase):
         projection = (ROOT / "ui" / "LibraryProjection.js").read_text()
         self.assertIn('label: platformLabel', projection)
         self.assertIn('label: providerLabel(provider)', projection)
+        self.assertIn('"steam-aurelia": "Steam"', projection)
+        self.assertIn('if (mode === "provider")', projection)
+        self.assertIn('platform.toLowerCase() === "pc"', projection)
         self.assertIn('game.genres && game.genres.length ? game.genres : ["Other"]', projection)
         self.assertIn('game.game_modes && game.game_modes.length ? game.game_modes : [game.game_mode || "Other"]', projection)
         self.assertIn('label.trim().toLowerCase()', projection)
         self.assertNotIn('game.platforms && game.platforms.length ? game.platforms', projection)
         self.assertNotIn('join(",")', projection)
+
+        installable_projection = (ROOT / "ui" / "InstallableProjection.js").read_text()
+        self.assertIn('var providers = ["steam-aurelia", "epic", "gog"]', installable_projection)
+        self.assertIn('if (game.provider === "steam")', installable_projection)
 
     def test_library_dimensions_are_canonical_and_home_mru_is_separate(self) -> None:
         shell = (ROOT / "ui" / "ConsoleShell.qml").read_text()

@@ -1,7 +1,7 @@
 .pragma library
 
 function providerLabel(provider) {
-    var labels = ({steam: "Steam", epic: "Epic", gog: "GOG", flatpak: "Flatpak",
+    var labels = ({steam: "Steam", "steam-aurelia": "Steam", epic: "Epic", gog: "GOG", flatpak: "Flatpak",
         lutris: "Lutris", retroarch: "RetroArch", dolphin: "Dolphin",
         eden: "Eden", pcsx2: "PCSX2"})
     var key = String(provider || "").toLowerCase()
@@ -12,8 +12,10 @@ function valuesFor(game, mode) {
     if (!game) return [{key: "other", label: "Other"}]
     var values = []
     if (mode === "platform") {
-        var platformLabel = String(game.platform_label || game.platform || "Other")
-        values = [{key: String(game.platform || platformLabel).toLowerCase(), label: platformLabel}]
+        var platform = String(game.platform || "")
+        var platformLabel = platform.toLowerCase() === "pc"
+            ? "PC" : String(game.platform_label || platform || "Other")
+        values = [{key: String(platform || platformLabel).toLowerCase(), label: platformLabel}]
     } else if (mode === "provider") {
         var provider = String(game.provider || "other").toLowerCase()
         values = [{key: provider === "local" ? "other" : provider, label: providerLabel(provider)}]
@@ -44,6 +46,10 @@ function build(canonicalGames, mode, requestedCategoryKey, requestedGameId, save
     }
     var categories = Object.keys(groups).map(function(key) { return groups[key] })
     categories.sort(function(a, b) {
+        if (mode === "provider") {
+            if (a.key === "steam-aurelia") return -1
+            if (b.key === "steam-aurelia") return 1
+        }
         var byLabel = a.label.localeCompare(b.label)
         return byLabel || a.key.localeCompare(b.key)
     })

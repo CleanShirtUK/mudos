@@ -266,7 +266,7 @@ class CatalogueGame:
             launchable=installed is not None, install_dir=installed_dir,
             artwork_url=str(getattr(installed or game, "artwork_url", "") or ""),
             last_played=int(getattr(installed or game, "last_played", 0) or 0),
-            platform_label=provider.title(), source_title=str(getattr(game, "title", title)),
+            platform_label="PC", source_title=str(getattr(game, "title", title)),
             normalized_search_title=clean_local_title(str(getattr(game, "title", title))),
             availability_state=("installed" if installed is not None else
                                 str(getattr(game, "availability_state", "available"))),

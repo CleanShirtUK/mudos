@@ -2,8 +2,8 @@
 
 function categories(games) {
     var result = [{label: "All", scope: "all"}]
-    var providers = ["steam", "steam-aurelia", "epic", "gog"]
-    var labels = ["Steam", "Steam / Aurelia", "Epic", "GOG"]
+    var providers = ["steam-aurelia", "epic", "gog"]
+    var labels = ["Steam", "Epic", "GOG"]
     for (var p = 0; p < providers.length; ++p)
         result.push({label: labels[p], scope: "provider:" + providers[p], provider: providers[p]})
     var seen = ({})
@@ -20,6 +20,10 @@ function categories(games) {
 
 function matches(game, category) {
     if (!game || game.availability_state !== "available" || game.install_state !== "available")
+        return false
+    // The Store presents the Aurelia-backed Steam catalogue only. Legacy Steam
+    // catalogue rows must not create a second listing or duplicate All entries.
+    if (game.provider === "steam")
         return false
     if (!category || category.scope === "all") return true
     if (category.provider) return game.provider === category.provider

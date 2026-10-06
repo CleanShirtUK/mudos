@@ -3,6 +3,7 @@ import unittest
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from pathlib import Path
+from types import SimpleNamespace
 
 from lulu.consoled import ConsoleInterface
 from lulu.catalogue import CatalogueGame, CatalogueStore
@@ -363,6 +364,12 @@ class CatalogueTests(unittest.TestCase):
         self.assertEqual(record.platform_label, "PC")
         self.assertEqual(record.provider, "romm")
         self.assertFalse(record.launchable)
+
+    def test_owned_pc_provider_uses_pc_platform_label(self) -> None:
+        game = SimpleNamespace(provider_id="1356240", title="Example", availability_state="available")
+        record = CatalogueGame.from_owned_provider("steam-aurelia", game)
+        self.assertEqual(record.platform, "PC")
+        self.assertEqual(record.platform_label, "PC")
 
     def test_romm_snapshot_failure_can_leave_previous_snapshot_untouched(self) -> None:
         romm = RommGame(43, "F-Zero", 1, "snes", "SNES", "F-Zero.sfc", ".sfc", 10, "", False)
