@@ -201,6 +201,20 @@ was not changed.
 
 ## ACTIVE
 
+### RECOVERY-001 — Recovery UI reports a connected controller as absent
+
+**Status:** OPEN — investigate controller-presence detection and recovery-screen
+reporting. Do not treat recovery UI's missing-controller message as authoritative
+without comparing it to the controller source.
+
+- Operator report (2026-10-06): Mudos Recovery claimed the controller was not
+  present while the controller was connected.
+- During recovery triage, `/v1/status` reported the controllers component
+  healthy with `connected_count: 1` from `InputPlumber GamepadOrder`, while the
+  normal graphical session was stopped. Reconcile the recovery UI's displayed
+  controller state with this health snapshot and live input source; add a
+  regression test for the mismatch.
+
 ### SET-001 — Consolidate System Settings navigation
 
 **Status:** VALIDATION — implementation, automated tests, and dev-current
