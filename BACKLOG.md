@@ -602,6 +602,17 @@ needs a durable fix and regression coverage.
   InputPlumber and Sessiond are active, and intercept mode remains 1. Physical
   D-pad/A/B/Start confirmation is still required; do not count the state readback
   alone as operator acceptance.
+- **Headless-display test reboot recurrence (2026-10-06):** booting with the
+  temporary `video=DP-1:1920x1080@60e` override again raced stale input nodes;
+  InputPlumber logged an absent Sunshine virtual-pad event node, briefly created
+  and tore down a second composite, and SDL ended up with two marked pads for
+  the one receiver composite. After recording the state and allowing discovery
+  to settle, one InputPlumber restart restored one composite/one SDL target and
+  Sessiond `sdl_index=0`. Profile `Default`, intercept mode 1, OSK bridge, and
+  native SDL remain intact. Restarting stopped the live Gamescope/Sunshine stream
+  session; Sunshine remains running and the client may need to reconnect.
+  Physical navigation confirmation is still pending. This is operational
+  recovery, not a durable fix for the boot-time stale-target race.
 
 ### LUTRIS-001 — Mudos-native PC game install and add-game flows
 
