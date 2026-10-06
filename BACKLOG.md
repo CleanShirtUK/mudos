@@ -7,10 +7,11 @@ retained in `docs/reconciliation-backlog.md` and are not the status authority.
 
 ### UI-001 — Lock the default visual baseline before theming
 
-**Status:** VALIDATION — corrective implementation commit `9a3f8ed` is deployed
-to `/opt/lulu/dev-current` and the development shell is running it. The required
-physical recording and operator visual acceptance remain. THEME-001 remains
-blocked until that acceptance is recorded. `/opt/lulu/current` remains untouched.
+**Status:** INITIAL VISUAL PASS — the accepted baseline and final controller-glyph
+micro-fix are deployed to `/opt/lulu/dev-current`. A post-deploy Gamescope
+physical capture confirms the leftmost status-strip gamepad glyph is fully
+visible. `/opt/lulu/current` remains untouched. THEME-001 is implementation-ready;
+theme-engine implementation has not begun.
 
 - Stabilize the accepted default UI baseline: neutral charcoal structural
   surfaces, one glass substrate per elevation root, shared expanded framing,
@@ -45,8 +46,8 @@ blocked until that acceptance is recorded. `/opt/lulu/current` remains untouched
   expectation failure (`2` observed, `3` expected). Commit `9332a86` is deployed
   to `/opt/lulu/dev-current`; Sessiond, Consoled, and Acquisitiond are active
   with that runtime configured. `/opt/lulu/current` remains unchanged. Operator
-  visual acceptance is still required; UI-001 remains VALIDATION and THEME-001
-  remains BLOCKED.
+  operator acceptance of the earlier baseline was recorded; the focused final
+  glyph correction is covered below.
 - Final geometry correction: extend only the common substrate upward by
   `design(8)` while retaining the prior content Y/bottom bounds. The Library and
   Installable category rail now spans its actual symmetric inner frame; the
@@ -55,8 +56,19 @@ blocked until that acceptance is recorded. `/opt/lulu/current` remains untouched
   build and `git diff --check` pass. `qmllint` reports only existing warnings in
   nested delegates and StoreHome. Commit `206b7a7` is deployed to
   `/opt/lulu/dev-current`; Sessiond, Consoled, and Acquisitiond are active from
-  that runtime. `/opt/lulu/current` is unchanged. Physical visual acceptance
-  remains outstanding.
+  that runtime. `/opt/lulu/current` is unchanged.
+- Final glyph micro-fix: the clipped icon was the controller/gamepad glyph in
+  `SystemStatusStrip.qml` via `StatusGlyph.qml`, not the controller-hint
+  `ControllerGlyph.qml`. The leading controller slot clips overflow, and the
+  gamepad's measured painted width exceeded its fixed glyph slot at the existing
+  target height. `StatusGlyph` now width-fits only when needed and optically
+  centers its tight painted bounds inside a 1.5-design-pixel safe inset. The
+  focused test exercises the real clipped controller slot, confirms width-fit,
+  and checks all four painted edges. Status-strip QML tests pass (9 tests),
+  asset-system tests pass (5), focused Console UI Python tests pass (92), native
+  build and `git diff --check` pass. The physical capture was inspected after
+  deployment; UI-001 is initially passed. Commit `9de4a74` is deployed to
+  `/opt/lulu/dev-current`.
 - Physical validation must cover Recent end-card clipping, status-strip
   placement, Library/Installable rail clearance, Settings glass/focus,
   Utilities layout/media/hints, centered Downloads glass/empty-state/hints,
@@ -74,7 +86,7 @@ blocked until that acceptance is recorded. `/opt/lulu/current` remains untouched
   `/opt/lulu/dev-current`. `NON_PROMOTABLE` marks the runtime non-promotable;
   `/opt/lulu/current` still resolves to
   `/opt/lulu/releases/786aba3-candidate-20261004065549` and was not changed.
-- Operator recording/acceptance remains the only closure gate. Sweep the Recent
+- Operator recording/acceptance was recorded for the initial baseline. Sweep the Recent
   rightmost-card transition, fixed status backing, aligned Library/Installable/
   Settings/Utilities framing, wave visibility/readability, Settings focus and
   row selection, Library rail clearance, Utilities media/hints, Downloads and
@@ -87,8 +99,8 @@ blocked until that acceptance is recorded. `/opt/lulu/current` remains untouched
 
 ### THEME-001 — Theme engine and external theme configuration
 
-**Status:** BLOCKED by UI-001 physical acceptance. Do not begin until the
-default visual baseline is explicitly accepted and frozen.
+**Status:** READY — UI-001 initial visual PASS is recorded and the default
+baseline is frozen. Theme-engine implementation has not begun in this patch.
 
 - Future work: build theme selection/configuration on the accepted semantic
   palette, typography roles, and icon authority. UI-001 must not add external
