@@ -142,6 +142,10 @@ was not changed.
 **Status:** VALIDATION — implementation, automated tests, and dev-current
 deployment are complete; physical/presentation acceptance remains.
 
+- **Back-to-Home acceptance: PASS.** Operator confirmed that Back from Settings
+  must return directly to normal Home; the standalone two-card System landing
+  was removed. The remaining checklist below is still open.
+
 - System exposes only **Settings** and **Utilities**. Settings categories are
   derived from the existing provider-backed pages: Network, Bluetooth, Display,
   Audio, Controllers, Storage, and System.
@@ -165,13 +169,13 @@ deployment are complete; physical/presentation acceptance remains.
      storage, pair/connect devices, or change network settings during this pass.
 - `/opt/lulu/current` must remain unchanged.
 
-**Implementation status:** committed in `701069f` plus follow-up QML startup fix
-`3656eb0`; the dev refresh was also corrected to retain the development shell,
-guide, and OSK wiring. Settings hosts are exclusive by category: System and
-Bluetooth use SystemSpace, while Network, Display, Audio, Controllers, and
-Storage use their existing dedicated components. Full Python suite: 1,204
-passed and 85 subtests; focused settings/backend suite: 111 passed; Settings
-QML suite: 5 passed; QML lint and shell syntax checks passed. The final
+**Implementation status:** latest commit `9524cc2` removes the standalone
+System landing and returns Back directly to Home. Earlier commits implement the
+unified Settings shell, category hosts, and corrected dev refresh wiring.
+Settings hosts are exclusive by category: System and Bluetooth use SystemSpace,
+while Network, Display, Audio, Controllers, and Storage use their existing
+dedicated components. Full Python suite: 1,205 passed and 85 subtests; focused
+settings QML suite: 5 passed; QML lint and shell syntax checks passed. The final
 `/opt/lulu/dev-current` deployment and running ConsoleShell are verified below.
 Three failed starts during initial validation entered the existing recovery
 latch; after correcting the duplicate QML properties, only that failure history
