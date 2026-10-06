@@ -224,6 +224,8 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertIn("readonly property bool launchOverlayEffectiveVisible:", QML)
         self.assertIn("readonly property bool launchScreenVisible:", QML)
         self.assertIn("visible: root.launchScreenVisible", QML)
+        self.assertIn("palette.dark: luluPalette.primaryText", QML)
+        self.assertIn("palette.text: luluPalette.primaryText", QML)
         self.assertIn('text: "Cancel Launch"', QML)
         self.assertIn('request("/launch-status", "GET"', QML)
         self.assertIn("function moveDomain(delta)", QML)
@@ -1665,6 +1667,8 @@ class ConsoleUiTests(unittest.TestCase):
 
     def test_launch_status_is_transactional_and_catalogue_focus_is_identity_based(self) -> None:
         self.assertIn('property string launchStatus: "idle"', QML)
+        self.assertIn('"[Launch] " + failureDetail', QML)
+        self.assertIn('String(state.last_failure_reason).replace(/\\s+/g, " ").slice(0, 320)', QML)
         self.assertIn("property int launchGeneration: 0", QML)
         self.assertIn("property string launchToken: \"\"", QML)
         self.assertIn("property int launchStateSerial: 0", QML)

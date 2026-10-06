@@ -428,6 +428,45 @@ class AureliaClient:
             start_new_session=True,
         )
 
+    def launch_failure_detail(self, app_id: str, started_at: float) -> str | None:
+        """Return Aurelia's concise structured failure for this launch, if present."""
+        logs = self.config_dir / "logs"
+        try:
+            sessions = sorted(
+                (path for path in logs.iterdir() if path.is_dir()),
+                key=lambda path: path.stat().st_mtime,
+                reverse=True,
+            )
+        except OSError:
+            return None
+        for session in sessions:
+            try:
+                summary = json.loads((session / "summary.json").read_text(encoding="utf-8"))
+                if (not isinstance(summary, dict)
+                        or str(summary.get("app_id")) != app_id
+                        or summary.get("result") != "Failure"
+                        or float(summary.get("timestamp", 0)) < started_at - 2):
+                    continue
+                events = (session / "events.jsonl").read_text(encoding="utf-8").splitlines()
+            except (OSError, ValueError, TypeError, json.JSONDecodeError):
+                continue
+            for line in reversed(events):
+                try:
+                    event = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if not isinstance(event, dict):
+                    continue
+                if event.get("event_type") != "stage_failure":
+                    continue
+                metadata = event.get("metadata")
+                metadata = metadata if isinstance(metadata, dict) else {}
+                stage = str(event.get("stage") or "Launch")
+                detail = str(metadata.get("error_message") or event.get("message") or "").strip()
+                if detail:
+                    return f"{stage}: {detail}"[:320]
+        return None
+
     async def running_record(self, app_id: str) -> dict[str, Any] | None:
         """Read Aurelia's per-AppID record while its blocking play command runs.
 

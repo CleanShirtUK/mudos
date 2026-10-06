@@ -6,6 +6,7 @@ import logging
 import os
 import signal
 import subprocess
+import time
 from pathlib import Path
 from typing import Awaitable, Callable
 from uuid import uuid4
@@ -1014,6 +1015,7 @@ class ProcessSupervisor:
                 await self._notify()
                 if provider.presentation_pids(app_id):
                     raise RuntimeError(f"AppID {app_id} already has a running Steam game process")
+                launch_started_wall = time.time()
                 process = await client.spawn_play(app_id)
                 self._aurelia_process, self._aurelia_app_id = process, app_id
                 loop = asyncio.get_running_loop()
@@ -1045,7 +1047,12 @@ class ProcessSupervisor:
                                               process_argv(game_pid))
                         break
                     if process.returncode is not None:
-                        raise RuntimeError(f"Aurelia CLI exited before a verified game appeared (status {process.returncode})")
+                        detail_reader = getattr(client, "launch_failure_detail", None)
+                        detail = detail_reader(app_id, launch_started_wall) if callable(detail_reader) else None
+                        reason = f"Aurelia CLI exited before a verified game appeared (status {process.returncode})"
+                        if detail:
+                            reason += f": {detail}"
+                        raise RuntimeError(reason)
                     now = loop.time()
                     # Give the launch request time to spawn/refresh the daemon,
                     # then fail promptly if the daemon endpoint disappears.

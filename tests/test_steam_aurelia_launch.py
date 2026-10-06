@@ -31,6 +31,7 @@ class FakeAurelia:
         }
         self.stopped = []
         self.daemon_states = iter(daemon_states) if daemon_states is not None else None
+        self.failure_detail = None
 
     async def spawn_play(self, app_id):
         self.app_id = app_id
@@ -58,6 +59,9 @@ class FakeAurelia:
         if self.daemon_states is not None:
             return next(self.daemon_states, False)
         return True
+
+    def launch_failure_detail(self, app_id, started_at):
+        return self.failure_detail
 
     async def stop(self, app_id):
         self.stopped.append(app_id)
@@ -111,6 +115,20 @@ class AureliaSessionLaunchTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(self.supervisor._steam_launch)
         self.assertEqual(self.model.last_result.token, token)
         self.assertFalse(hasattr(aurelia, "steamcmd"))
+
+    async def test_aurelia_structured_failure_is_preserved_in_session_reason(self):
+        cli = FakeCLI()
+        cli.returncode = 1
+        aurelia = FakeAurelia(cli=cli, running={"running": []})
+        aurelia.failure_detail = "BuildCommand: Invalid Compatibility Layer path: experimental"
+        self.supervisor._aurelia_client = aurelia
+        self.provider.presentation_pids = lambda _app: []
+
+        with self.assertRaisesRegex(ValueError, "BuildCommand: Invalid Compatibility Layer path: experimental"):
+            await self.supervisor._launch_aurelia(
+                "731490", 1000, self.model.request_launch("steam-aurelia:731490"))
+
+        self.assertIn(aurelia.failure_detail, self.model.last_failure_reason)
 
     async def test_aurelia_normal_exit_restores_native_controller_shell_profile(self):
         """Native-controller mode must not suppress the supervised SHELL reset."""

@@ -789,6 +789,12 @@ import QtQuick.Controls
             launchStatus = state.last_failure_reason && stateToken === launchToken ? "failed" : "idle"
             message = launchStatus === "failed" ? "Launch failed" : ""
             launchStatusTimer.stop()
+            launchLogTimer.stop()
+            if (launchStatus === "failed" && state.last_failure_reason) {
+                var failureDetail = String(state.last_failure_reason).replace(/\s+/g, " ").slice(0, 320)
+                if (launchLogLines.indexOf("[Launch] " + failureDetail) < 0)
+                    launchLogLines = launchLogLines.concat(["[Launch] " + failureDetail])
+            }
             if (launchOverlayRetired)
                 launchOverlayVisible = false
             evaluateReturnReadiness("state")
@@ -4526,6 +4532,8 @@ import QtQuick.Controls
                 width: root.design(94)
                 height: width
                 running: launchScreen.visible
+                palette.dark: luluPalette.primaryText
+                palette.text: luluPalette.primaryText
             }
             Text {
                 width: parent.width

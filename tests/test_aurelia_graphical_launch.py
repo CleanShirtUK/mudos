@@ -24,6 +24,27 @@ WRAPPER = ROOT / "scripts" / "aurelia-graphical-launch.py"
 
 
 class AureliaScriptAdapterTests(unittest.IsolatedAsyncioTestCase):
+    def test_launch_failure_detail_reads_matching_structured_stage_error(self):
+        with tempfile.TemporaryDirectory() as directory:
+            config_dir = Path(directory)
+            session = config_dir / "logs" / "launch-session"
+            session.mkdir(parents=True)
+            (session / "summary.json").write_text(json.dumps({
+                "app_id": 731490, "result": "Failure", "timestamp": 200,
+            }))
+            (session / "events.jsonl").write_text(json.dumps({
+                "event_type": "stage_failure", "stage": "BuildCommand",
+                "metadata": {"error_message": "Invalid Compatibility Layer path: experimental"},
+            }) + "\n")
+            client = AureliaClient(config_dir=config_dir, run=lambda *_a, **_k: None)
+
+            self.assertEqual(
+                client.launch_failure_detail("731490", 199),
+                "BuildCommand: Invalid Compatibility Layer path: experimental",
+            )
+            self.assertIsNone(client.launch_failure_detail("40800", 199))
+            self.assertIsNone(client.launch_failure_detail("731490", 300))
+
     async def test_play_uses_explicit_mudos_wrapper_script(self):
         client = AureliaClient(executable="/usr/bin/aurelia", config_dir=Path(tempfile.mkdtemp()), run=lambda *_a, **_k: None)
         captured = {}
