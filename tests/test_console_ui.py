@@ -676,6 +676,17 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertIn('root.embedded && rowDelegate.index === root.selectedIndex',
                       (ROOT / "ui" / "MudosSettingsPage.qml").read_text())
 
+    def test_system_landing_uses_home_focal_card_geometry(self) -> None:
+        system_landing = QML.split('id: systemLandingHome', 1)[1].split('SettingsSpace {', 1)[0]
+        self.assertIn('x: root.homeContentRailX', system_landing)
+        self.assertIn('y: root.homeActiveContentOriginY', system_landing)
+        self.assertIn('width: root.width - root.homeContentRailX - root.design(40)',
+                      system_landing)
+        self.assertIn('height: root.homeFocalCardHeight', system_landing)
+        back = QML.split('function back()', 1)[1].split('NumberAnimation {', 1)[0]
+        self.assertIn('systemLanding = true', back)
+        self.assertIn('space = "home"', back)
+
         for page_name in (
                 "SystemSpace.qml", "InternetSettings.qml", "StorageSettings.qml",
                 "DisplaySettings.qml", "AudioSettings.qml", "ControllerSettings.qml"):

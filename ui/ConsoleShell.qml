@@ -4049,7 +4049,10 @@ import QtQuick.Controls
 
         SystemHome {
             id: systemLandingHome
-            anchors.fill: parent
+            x: root.homeContentRailX
+            y: root.homeActiveContentOriginY
+            width: root.width - root.homeContentRailX - root.design(40)
+            height: root.homeFocalCardHeight
             visible: root.space === "system" && root.systemLanding
             categories: root.systemHomeCards
             selectedIndex: root.systemHomeCardIndex
