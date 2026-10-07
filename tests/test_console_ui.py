@@ -1613,7 +1613,8 @@ class ConsoleUiTests(unittest.TestCase):
         environment["QT_QPA_PLATFORM"] = "offscreen"
         environment["QT_QUICK_BACKEND"] = "software"
         result = subprocess.run(
-            [runner, "-input", str(ROOT / "tests/qml/tst_game_options_candidates.qml")],
+            [runner, "-import", str(ROOT / "tests/qml/fakes"),
+             "-input", str(ROOT / "tests/qml/tst_game_options_candidates.qml")],
             capture_output=True, text=True, env=environment, timeout=20,
         )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)

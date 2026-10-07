@@ -35,6 +35,10 @@ TestCase {
         property real chromeWidth: 1
         property bool bevelChrome: false
         function radius(_role, fallback) { return fallback }
+        function material(_role) {
+            return {style: "flat", orientation: "vertical", stops: [], edges: {}, innerEdges: {}}
+        }
+        function decorations(_role) { return ({}) }
     }
 
     Item {

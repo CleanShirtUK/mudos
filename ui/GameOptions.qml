@@ -20,6 +20,13 @@ Item {
     property string uninstallDescription: "Remove installed content"
     property bool textEditing: false
     property real uiScale: 1
+    property var canonicalTexture
+    property var canonicalCoordinateRoot
+    property size canonicalSize: Qt.size(1280, 720)
+    property real expandedContentX: 0
+    property real expandedContentY: 0
+    property real expandedContentWidth: width
+    property real expandedContentBottom: height
     property var typography
     property var luluPalette
     signal activated()
@@ -51,6 +58,10 @@ Item {
     readonly property var titleEntries: titleOverride
         ? ["Save Title", "Restore Canonical Title"] : ["Save Title", "Cancel"]
     readonly property int titleActionCount: titleEntries.length
+    readonly property real panelWidth: Math.min(expandedContentWidth, 780 * uiScale)
+    readonly property real panelHeight: Math.min(Math.max(1, expandedContentBottom - expandedContentY), 610 * uiScale)
+    readonly property real panelX: expandedContentX + (expandedContentWidth - panelWidth) / 2
+    readonly property real panelY: expandedContentY + (expandedContentBottom - expandedContentY - panelHeight) / 2
 
     anchors.fill: parent
     visible: game !== null
@@ -166,38 +177,31 @@ Item {
         color: options.luluPalette.overlayBackdrop
     }
 
-    Rectangle {
+    MudosPanelSurface {
         id: panel
-        anchors.right: parent.right
-        anchors.top: parent.top
-        anchors.bottom: parent.bottom
-        width: Math.min(parent.width * 0.50, 600 * options.uiScale)
-        color: options.luluPalette.material("overlay").style === "linearGradient"
-            ? "transparent" : options.luluPalette.overlaySurface
-        radius: options.luluPalette.radius("overlay", 10 * options.uiScale, options.uiScale)
-        border.color: options.luluPalette.glassBorder
-        border.width: options.uiScale
+        objectName: "gameOptionsPopupPanel"
+        x: options.panelX
+        y: options.panelY
+        width: options.panelWidth
+        height: options.panelHeight
+        cornerRadius: options.luluPalette.radius("panel", 18) * options.uiScale
+        uiScale: options.uiScale
+        luluPalette: options.luluPalette
+        canonicalTexture: options.canonicalTexture
+        canonicalCoordinateRoot: options.canonicalCoordinateRoot
+        canonicalSize: options.canonicalSize
+        mappingItem: panel
+        materialRole: "overlay"
+        decorationRole: "overlay"
         clip: true
-        MudosMaterialLayer {
-            anchors.fill: parent
-            luluPalette: options.luluPalette
-            role: "overlay"
-            cornerRadius: panel.radius
-            uiScale: options.uiScale
-        }
-        MudosDecorationLayer {
-            anchors.fill: parent
-            luluPalette: options.luluPalette
-            role: "overlay"
-            cornerRadius: panel.radius
-            uiScale: options.uiScale
-        }
-        MudosChromeFrame { anchors.fill: parent; luluPalette: options.luluPalette; uiScale: options.uiScale; cornerRadius: panel.radius }
 
         Column {
             anchors.fill: parent
-            anchors.margins: 24 * options.uiScale
-            spacing: 15 * options.uiScale
+            anchors.leftMargin: 24 * options.uiScale
+            anchors.rightMargin: 24 * options.uiScale
+            anchors.topMargin: 12 * options.uiScale
+            anchors.bottomMargin: 14 * options.uiScale
+            spacing: 8 * options.uiScale
 
             Text {
                 text: "GAME OPTIONS"
@@ -247,8 +251,9 @@ Item {
             ListView {
                 id: menuList
                 visible: options.view === "menu"
-                width: parent.width
-                height: Math.min(contentHeight, 420 * options.uiScale)
+                width: parent.width - 8 * options.uiScale
+                anchors.horizontalCenter: parent.horizontalCenter
+                height: Math.min(contentHeight, Math.max(0, parent.height - 150 * options.uiScale))
                 spacing: 8 * options.uiScale
                 model: options.menuEntries
                 delegate: menuRow
@@ -259,13 +264,16 @@ Item {
                 width: parent.width
                 spacing: 8 * options.uiScale
                 Rectangle {
-                    width: parent.width
+                    width: parent.width - 8 * options.uiScale
+                    anchors.horizontalCenter: parent.horizontalCenter
                     height: 58 * options.uiScale
                     radius: options.luluPalette.radius("row", 8 * options.uiScale, options.uiScale)
                     color: options.selectedIndex === 0
                         ? options.luluPalette.focusedCardSurface : options.luluPalette.cardSurface
                     border.color: options.selectedIndex === 0
                         ? options.luluPalette.focusIndicator : options.luluPalette.glassBorder
+                    MudosMaterialLayer { anchors.fill: parent; luluPalette: options.luluPalette; role: "row"; cornerRadius: parent.radius; uiScale: options.uiScale; selectionProgress: options.selectedIndex === 0 ? 1 : 0 }
+                    MudosChromeFrame { anchors.fill: parent; luluPalette: options.luluPalette; uiScale: options.uiScale; cornerRadius: parent.radius; raised: options.selectedIndex !== 0 }
                     TextInput {
                         id: mappingInput
                         anchors.fill: parent
@@ -292,13 +300,16 @@ Item {
                     }
                 }
                 Rectangle {
-                    width: parent.width
+                    width: parent.width - 8 * options.uiScale
+                    anchors.horizontalCenter: parent.horizontalCenter
                     height: 52 * options.uiScale
                     radius: options.luluPalette.radius("row", 8 * options.uiScale, options.uiScale)
                     color: options.selectedIndex === 1
                         ? options.luluPalette.focusedCardSurface : options.luluPalette.cardSurface
                     border.color: options.selectedIndex === 1
                         ? options.luluPalette.focusIndicator : options.luluPalette.glassBorder
+                    MudosMaterialLayer { anchors.fill: parent; luluPalette: options.luluPalette; role: "row"; cornerRadius: parent.radius; uiScale: options.uiScale; selectionProgress: options.selectedIndex === 1 ? 1 : 0 }
+                    MudosChromeFrame { anchors.fill: parent; luluPalette: options.luluPalette; uiScale: options.uiScale; cornerRadius: parent.radius; raised: options.selectedIndex !== 1 }
                     Text {
                         anchors.fill: parent
                         anchors.leftMargin: 16 * options.uiScale
@@ -331,7 +342,8 @@ Item {
             ListView {
                 id: roleList
                 visible: options.view === "artworkRole"
-                width: parent.width
+                width: parent.width - 8 * options.uiScale
+                anchors.horizontalCenter: parent.horizontalCenter
                 height: contentHeight
                 spacing: 8 * options.uiScale
                 model: options.artworkRoles
@@ -342,8 +354,9 @@ Item {
                 id: artworkList
                 objectName: "artworkCandidateList"
                 visible: options.view === "artwork"
-                width: parent.width
-                height: Math.min(contentHeight, 420 * options.uiScale)
+                width: parent.width - 8 * options.uiScale
+                anchors.horizontalCenter: parent.horizontalCenter
+                height: Math.min(contentHeight, Math.max(0, parent.height - 150 * options.uiScale))
                 spacing: 8 * options.uiScale
                 model: options.artworkCandidates
                 delegate: artworkRow
@@ -362,6 +375,8 @@ Item {
                         ? options.luluPalette.focusedCardSurface : options.luluPalette.cardSurface
                     border.color: options.selectedIndex === 0
                         ? options.luluPalette.focusIndicator : options.luluPalette.glassBorder
+                    MudosMaterialLayer { anchors.fill: parent; luluPalette: options.luluPalette; role: "row"; cornerRadius: parent.radius; uiScale: options.uiScale; selectionProgress: options.selectedIndex === 0 ? 1 : 0 }
+                    MudosChromeFrame { anchors.fill: parent; luluPalette: options.luluPalette; uiScale: options.uiScale; cornerRadius: parent.radius; raised: options.selectedIndex !== 0 }
                     TextInput {
                         id: titleInput
                         objectName: "gameOptionsTitleInput"
@@ -400,7 +415,8 @@ Item {
             ListView {
                 id: confirmList
                 visible: options.view === "confirm"
-                width: parent.width
+                width: parent.width - 8 * options.uiScale
+                anchors.horizontalCenter: parent.horizontalCenter
                 height: contentHeight
                 spacing: 8 * options.uiScale
                 model: ["Uninstall", "Cancel"]
@@ -416,6 +432,7 @@ Item {
                 color: options.luluPalette.secondaryText
                 font.family: options.typography.interfaceFamily
                 font.pixelSize: options.typography.size("hint", 14)
+                width: parent.width
             }
         }
     }
@@ -427,11 +444,16 @@ Item {
             required property var modelData
             width: ListView.view.width
             height: 58 * options.uiScale
+            scale: index === options.selectedIndex ? 1.01 : 1
+            transformOrigin: Item.Center
+            z: index === options.selectedIndex ? 1 : 0
             radius: options.luluPalette.radius("row", 8 * options.uiScale, options.uiScale)
             color: index === options.selectedIndex
                 ? options.luluPalette.focusedCardSurface : options.luluPalette.cardSurface
             border.color: index === options.selectedIndex
                 ? options.luluPalette.focusIndicator : options.luluPalette.glassBorder
+            border.width: options.uiScale
+            MudosMaterialLayer { anchors.fill: parent; luluPalette: options.luluPalette; role: "row"; cornerRadius: parent.radius; uiScale: options.uiScale; selectionProgress: index === options.selectedIndex ? 1 : 0 }
             MudosChromeFrame { anchors.fill: parent; luluPalette: options.luluPalette; uiScale: options.uiScale; cornerRadius: parent.radius; raised: index !== options.selectedIndex }
             Text {
                 anchors.fill: parent
@@ -451,11 +473,16 @@ Item {
             required property var modelData
             width: roleList.width
             height: 58 * options.uiScale
+            scale: index === options.selectedIndex ? 1.01 : 1
+            transformOrigin: Item.Center
+            z: index === options.selectedIndex ? 1 : 0
             radius: options.luluPalette.radius("row", 8 * options.uiScale, options.uiScale)
             color: index === options.selectedIndex
                 ? options.luluPalette.focusedCardSurface : options.luluPalette.cardSurface
             border.color: index === options.selectedIndex
                 ? options.luluPalette.focusIndicator : options.luluPalette.glassBorder
+            border.width: options.uiScale
+            MudosMaterialLayer { anchors.fill: parent; luluPalette: options.luluPalette; role: "row"; cornerRadius: parent.radius; uiScale: options.uiScale; selectionProgress: index === options.selectedIndex ? 1 : 0 }
             MudosChromeFrame { anchors.fill: parent; luluPalette: options.luluPalette; uiScale: options.uiScale; cornerRadius: parent.radius; raised: index !== options.selectedIndex }
             Text {
                 anchors.fill: parent
@@ -476,11 +503,16 @@ Item {
             required property var modelData
             width: artworkList.width
             height: 74 * options.uiScale
+            scale: index === options.selectedIndex ? 1.01 : 1
+            transformOrigin: Item.Center
+            z: index === options.selectedIndex ? 1 : 0
             radius: options.luluPalette.radius("row", 8 * options.uiScale, options.uiScale)
             color: index === options.selectedIndex
                 ? options.luluPalette.focusedCardSurface : options.luluPalette.cardSurface
             border.color: index === options.selectedIndex
                 ? options.luluPalette.focusIndicator : options.luluPalette.glassBorder
+            border.width: options.uiScale
+            MudosMaterialLayer { anchors.fill: parent; luluPalette: options.luluPalette; role: "row"; cornerRadius: parent.radius; uiScale: options.uiScale; selectionProgress: index === options.selectedIndex ? 1 : 0 }
             MudosChromeFrame { anchors.fill: parent; luluPalette: options.luluPalette; uiScale: options.uiScale; cornerRadius: parent.radius; raised: index !== options.selectedIndex }
             Rectangle {
                 anchors.left: parent.left
@@ -530,11 +562,16 @@ Item {
             required property var modelData
             width: mappingList.width
             height: 72 * options.uiScale
+            scale: index + 2 === options.selectedIndex ? 1.01 : 1
+            transformOrigin: Item.Center
+            z: index + 2 === options.selectedIndex ? 1 : 0
             radius: options.luluPalette.radius("row", 8 * options.uiScale, options.uiScale)
             color: index + 2 === options.selectedIndex
                 ? options.luluPalette.focusedCardSurface : options.luluPalette.cardSurface
             border.color: index + 2 === options.selectedIndex
                 ? options.luluPalette.focusIndicator : options.luluPalette.glassBorder
+            border.width: options.uiScale
+            MudosMaterialLayer { anchors.fill: parent; luluPalette: options.luluPalette; role: "row"; cornerRadius: parent.radius; uiScale: options.uiScale; selectionProgress: index + 2 === options.selectedIndex ? 1 : 0 }
             MudosChromeFrame { anchors.fill: parent; luluPalette: options.luluPalette; uiScale: options.uiScale; cornerRadius: parent.radius; raised: index + 2 !== options.selectedIndex }
             Rectangle {
                 anchors.left: parent.left

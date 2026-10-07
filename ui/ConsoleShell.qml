@@ -2701,6 +2701,11 @@ Window {
     }
 
     function beginLutrisSearch() {
+        lutrisRecipeInstall.openSearch()
+        requestLutrisSearchEntry()
+    }
+
+    function requestLutrisSearchEntry() {
         credentialTarget = ({kind: "lutris-search"})
         credentialValue = ""
         credentialKeyboardShown = false
@@ -3050,6 +3055,21 @@ Window {
     function back() {
         playAudioEvent(audioEventForAction("back"))
         if (lutrisRecipeInstall.visible) {
+            if (credentialTarget.kind === "lutris-search"
+                    && (credentialRequest.status === "requested"
+                        || credentialRequest.status === "waiting")) {
+                lutrisRecipeInstall.visible = false
+                credentialSubmitInFlight = false
+                root.request("/credential/cancel", "POST",
+                    JSON.stringify({id: credentialRequest.id}), function(data) {
+                        credentialRequest = data
+                        root.request("/keyboard/hide", "POST", "", function() {
+                            root.credentialKeyboardShown = false
+                            root.credentialKeyboardShowAttempted = false
+                        })
+                    }, "Credential cancellation failed")
+                return
+            }
             lutrisRecipeInstall.back()
             return
         }
@@ -4160,6 +4180,14 @@ Window {
             apiUrl: root.apiUrl
             luluPalette: luluPalette
             typography: typography
+            uiScale: root.uiScale
+            canonicalTexture: orbitTexture
+            canonicalCoordinateRoot: orbitRenderSource
+            canonicalSize: Qt.size(root.width, root.height)
+            expandedContentX: root.expandedContentX
+            expandedContentY: root.expandedContentY
+            expandedContentWidth: root.expandedContentWidth
+            expandedContentBottom: root.expandedContentBottom
             x: 0
             y: 0
             width: parent.width
@@ -4169,6 +4197,7 @@ Window {
                 root.refreshAcquisitionJobs()
                 root.openDownloads("store")
             }
+            onSearchEditRequested: root.requestLutrisSearchEntry()
         }
 
           StoreOptions {
@@ -4563,6 +4592,13 @@ Window {
             uiScale: root.uiScale
             typography: typography
             luluPalette: luluPalette
+            canonicalTexture: orbitTexture
+            canonicalCoordinateRoot: orbitRenderSource
+            canonicalSize: Qt.size(root.width, root.height)
+            expandedContentX: root.expandedContentX
+            expandedContentY: root.expandedContentY
+            expandedContentWidth: root.expandedContentWidth
+            expandedContentBottom: root.expandedContentBottom
             Component.onCompleted: root.gameOptionsRef = gameOptions
             onTextEntryRequested: root.showGameOptionsKeyboard()
             onTextEntryCancelled: root.finishGameOptionsTextEntry(true)
