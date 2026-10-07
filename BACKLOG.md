@@ -181,7 +181,11 @@ the Modern reference. `/opt/lulu/current` is unchanged.
   Utilities component tests remain blocked in the standalone runner because
   `Mudos.Poc` is not installed; full native build passes after wiring the
   already-used ThemeManager source into shell/Guide targets. This corrective
-  source is not yet dev-refreshed and no physical acceptance is claimed.
+  corrective implementation commit `9bdc5f2` was refreshed to
+  `/opt/lulu/dev-current` on 2026-10-07; its marker records this clean source
+  HEAD and `promotable=false`. The active `lulu-session@2` and Consoled services
+  were confirmed after refresh, and `/opt/lulu/current` remains unchanged. No
+  physical visual/controller acceptance is claimed.
 
 ## CLOSED
 
