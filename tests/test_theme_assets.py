@@ -77,7 +77,9 @@ class DefaultThemeInventoryTests(unittest.TestCase):
         self.assertIn("float pixelFootprint = max(", source)
         self.assertIn("edgeCoverage = 1.0-clamp(h.x/pixelFootprint,0.0,1.0)", source)
         self.assertIn("for(int i=0;i<4;i++)", source)
-        self.assertIn("for(int i=0;i<5;i++)", source)
+        self.assertIn("for(int i=0;i<4;i++)", source)
+        self.assertIn("const vec3 halfExtent = vec3(5.25,2.78,1.50)", source)
+        self.assertNotIn("calcAO(", source)
         self.assertIn("fwidth(d)", source)
 
         qsb = Path("/usr/lib/qt6/bin/qsb")

@@ -124,8 +124,8 @@ vec2 mapScene(vec3 p)
             float fi = float(i);
 
             vec3 off = vec3(
-                cos(fi*1.4 + t*0.16),
-                sin(fi*1.9 - t*0.12),
+                cos(fi*1.4),
+                sin(fi*1.9),
                 sin(fi*2.3 + 0.7)
             ) * vec3(0.08, 0.07, 0.07);
 
@@ -143,8 +143,6 @@ vec2 mapScene(vec3 p)
     // Large viewport-breaking spikes.
     for(int i=0;i<4;i++)
     {
-        float fi = float(i);
-
         vec3 dir;
         float len;
         float rad;
@@ -178,22 +176,13 @@ vec2 mapScene(vec3 p)
             rad = 0.13;
             flatten = 0.70;
         }
-        else if(i == 4)
-        {
-            dir = normalize(vec3(0.42,-0.88,0.22));
-            len = 3.2;
-            rad = 0.16;
-            flatten = 0.82;
-        }
         else
         {
-            dir = normalize(vec3(-0.70,0.38,0.02));
-            len = 2.7;
-            rad = 0.07;
-            flatten = 0.62;
+            dir = normalize(vec3(0.72,0.62,-0.05));
+            len = 3.6;
+            rad = 0.13;
+            flatten = 0.70;
         }
-
-        dir.xy *= rot(0.015*sin(t*0.25 + fi*1.7));
 
         vec3 q = toDirSpace(p-hub,dir);
         float h = len*0.5;
@@ -212,7 +201,7 @@ vec2 mapScene(vec3 p)
     // Orbital loops.
     {
         vec3 q = p-(hub+vec3(0.04,0.02,0.0));
-        q.xy *= rot(0.52 + 0.05*sin(t*0.32));
+        q.xy *= rot(0.52);
         q.yz *= rot(1.15);
 
         float d = sdTorus(q,vec2(0.78,0.032));
@@ -229,11 +218,11 @@ vec2 mapScene(vec3 p)
     }
 
     // Medium converging spikes.
-    for(int i=0;i<5;i++)
+    for(int i=0;i<4;i++)
     {
         float fi = float(i);
 
-        float ang = fi/5.0*2.0*PI + 0.05*sin(t*0.20+fi);
+        float ang = fi/4.0*2.0*PI;
 
         float z = mix(-0.35,0.35,hash11(fi*8.1+1.7));
 
@@ -269,23 +258,6 @@ vec3 calcNormal(vec3 p)
         e.yxy * mapScene(p+e.yxy).x +
         e.xxx * mapScene(p+e.xxx).x
     );
-}
-
-float calcAO(vec3 p, vec3 n)
-{
-    float occ = 0.0;
-    float sca = 1.0;
-
-    for(int i=0;i<1;i++)
-    {
-        float h = 0.025 + 0.11*float(i);
-        float d = mapScene(p+n*h).x;
-
-        occ += (h-d)*sca;
-        sca *= 0.68;
-    }
-
-    return clamp(1.0-occ*1.45,0.0,1.0);
 }
 
 float lineGrid(vec2 p, float scale, float thickness)
@@ -445,8 +417,8 @@ vec3 shade(vec3 p, vec3 rd, vec3 n, float mat)
 
 bool intersectSceneBounds(vec3 ro, vec3 rd, out float tNear, out float tFar)
 {
-    const vec3 center = vec3(0.04,0.02,0.0);
-    const vec3 halfExtent = vec3(5.35,4.05,1.65);
+    const vec3 center = vec3(0.04,1.17,0.0);
+    const vec3 halfExtent = vec3(5.25,2.78,1.50);
     vec3 a = (center-halfExtent-ro)/rd;
     vec3 b = (center+halfExtent-ro)/rd;
     vec3 lo = min(a,b);
@@ -520,10 +492,9 @@ void main()
     {
         vec3 p = ro + rd*travel;
         vec3 n = calcNormal(p);
-        float ao = calcAO(p,n);
         vec3 metal = shade(p,rd,n,mat);
 
-        metal *= mix(0.54,1.0,ao);
+        metal *= 0.88;
 
         float haze = smoothstep(5.0,11.0,travel);
 
