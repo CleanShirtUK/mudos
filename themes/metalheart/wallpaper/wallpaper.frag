@@ -482,6 +482,7 @@ void main()
     float tFar;
     float travel = 0.0;
     float mat = 0.0;
+    float edgeCoverage = 0.0;
     bool hit = false;
 
     if(intersectSceneBounds(ro,rd,tNear,tFar))
@@ -493,11 +494,16 @@ void main()
             vec3 p = ro + rd*travel;
             vec2 h = mapScene(p);
 
-            float hitThreshold = max(EPS,travel*0.00065);
+            float pixelFootprint = max(
+                EPS,
+                travel*2.0/(1.90*max(u_resolution.y,1.0))
+            );
+            float hitThreshold = pixelFootprint;
             if(h.x < hitThreshold)
             {
                 hit = true;
                 mat = h.y;
+                edgeCoverage = 1.0-smoothstep(0.0,pixelFootprint,h.x);
                 break;
             }
 
@@ -521,7 +527,8 @@ void main()
 
         float haze = smoothstep(5.0,11.0,travel);
 
-        color = mix(metal,bg,haze*0.08);
+        vec3 surfaceColor = mix(metal,bg,haze*0.08);
+        color = mix(bg,surfaceColor,edgeCoverage);
     }
 
     color = max(color,vec3(0.0));

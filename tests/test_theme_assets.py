@@ -74,6 +74,8 @@ class DefaultThemeInventoryTests(unittest.TestCase):
         self.assertIn("qt_TexCoord0.x, 1.0 - qt_TexCoord0.y", source)
         self.assertIn("vec2 fragCoord = shaderUv * u_resolution", source)
         self.assertIn("intersectSceneBounds(ro,rd,tNear,tFar)", source)
+        self.assertIn("float pixelFootprint = max(", source)
+        self.assertIn("edgeCoverage = 1.0-smoothstep", source)
         self.assertIn("for(int i=0;i<4;i++)", source)
         self.assertIn("for(int i=0;i<7;i++)", source)
         self.assertIn("fwidth(d)", source)
