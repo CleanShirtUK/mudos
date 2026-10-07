@@ -89,6 +89,7 @@ private:
             model_->insert("visible", object.value("visible").toBool(true));
             model_->insert("title", object.value("title").toString());
             model_->insert("body", object.value("body").toString());
+            model_->insert("severity", object.value("severity").toString("info"));
             model_->insert("glyph", object.value("glyph").toString());
             model_->insert("iconName", object.value("iconName").toString());
             qInfo().noquote() << "notification model updated event_id=" << eventId
@@ -113,6 +114,7 @@ int main(int argc, char **argv)
     model.insert("visible", false);
     model.insert("title", QString());
     model.insert("body", QString());
+    model.insert("severity", QStringLiteral("info"));
     model.insert("glyph", QString());
     model.insert("iconName", QString());
 

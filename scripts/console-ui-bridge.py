@@ -19,6 +19,7 @@ from urllib.parse import parse_qs, unquote, urlparse
 from lulu.onboarding import dismiss_onboarding, onboarding_state, reopen_onboarding
 from lulu.recovery import clear_failures, snapshot as recovery_snapshot
 from lulu.launch_routing import LaunchDispatch, resolve_game_launch_route
+from lulu.notifications import validate_notification
 
 
 LOGGER = logging.getLogger("lulu.console-ui-bridge")
@@ -217,6 +218,14 @@ class ConsoleUiBridge:
         LOGGER.info("manual staged catalogue refresh completed stages=%s games=%s",
                     ",".join(stages), count)
         return {"games": int(count)}
+
+    async def notify(self, payload: dict[str, object]) -> dict[str, bool]:
+        title, body, severity = payload.get("title"), payload.get("body"), payload.get("severity")
+        if not all(isinstance(value, str) for value in (title, body, severity)):
+            raise ValueError("title, body and severity must be strings")
+        validate_notification(title, body, severity)
+        accepted = await self.consoled.call_notify(title, body, severity, "", "shell")
+        return {"accepted": bool(accepted)}
 
     async def startup_readiness(self) -> dict[str, bool]:
         ready = await self.consoled.call_get_startup_readiness()
@@ -1054,6 +1063,20 @@ class ApiHandler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:
         path = urlparse(self.path).path
+        if path == "/notification":
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+                if length < 1 or length > 2048:
+                    raise ValueError("invalid notification request size")
+                payload = json.loads(self.rfile.read(length))
+                if not isinstance(payload, dict) or set(payload) - {"title", "body", "severity"}:
+                    raise ValueError("invalid notification payload")
+                self._respond(202, self.bridge.call(self.bridge.notify(payload)))
+            except (ValueError, json.JSONDecodeError) as error:
+                self._respond(400, {"error": str(error)})
+            except Exception as error:
+                self._respond(503, {"error": str(error) or type(error).__name__})
+            return
         if path in {"/onboarding/dismiss", "/onboarding/reopen"}:
             try:
                 state = dismiss_onboarding() if path.endswith("dismiss") else reopen_onboarding()

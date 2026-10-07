@@ -6,7 +6,8 @@ import tempfile
 import unittest
 
 from lulu.jobs import DownloadJob, JobError, JobOperation, JobState
-from lulu.notifications import Notification, NotificationBroker, NotificationPresenter
+from lulu.notifications import (Notification, NotificationBroker, NotificationPresenter,
+                                SEVERITY_LIFETIMES, validate_notification)
 
 
 def job(job_id: str = "job-1", *, state: JobState = JobState.QUEUED,
@@ -17,6 +18,35 @@ def job(job_id: str = "job-1", *, state: JobState = JobState.QUEUED,
 
 
 class NotificationBrokerTests(unittest.IsolatedAsyncioTestCase):
+    async def test_severity_payload_validation_and_bounded_policy(self) -> None:
+        for severity, duration in {"info": 4, "success": 4, "warning": 6, "error": 8}.items():
+            validate_notification("Title", "Body", severity)
+            self.assertEqual(SEVERITY_LIFETIMES[severity], duration)
+            self.assertLessEqual(duration, 8)
+        for title, body, severity in [("", "Body", "info"), ("Title", "", "info"),
+                                      ("Title", "Body", "urgent"), ("x" * 121, "Body", "error")]:
+            with self.assertRaises(ValueError):
+                validate_notification(title, body, severity)
+
+    async def test_shell_notifications_have_unique_ids_and_deterministic_lifetime(self) -> None:
+        first = NotificationBroker.shell_event("Library refreshed", "Up to date", "success")
+        second = NotificationBroker.shell_event("Library refreshed", "Up to date", "success")
+        self.assertNotEqual(first.event_id, second.event_id)
+        self.assertEqual(first.duration, 4)
+        self.assertEqual(first.severity, "success")
+
+    async def test_presenter_failure_does_not_fail_source_transition(self) -> None:
+        async def failing_sink(event: Notification) -> None:
+            raise RuntimeError("display unavailable")
+
+        broker = NotificationBroker(failing_sink)
+        initial = job(state=JobState.STARTING)
+        broker.seed([initial])
+        broker.observe([replace(initial, state=JobState.FAILED,
+                                error=JobError("failure", "failure"))])
+        await broker.drain()
+        self.assertEqual(broker.pending, ())
+
     async def test_failure_notifies_once_with_reason_and_retry_guidance(self) -> None:
         broker = NotificationBroker()
         initial = job(state=JobState.STARTING)

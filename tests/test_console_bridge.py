@@ -19,6 +19,24 @@ SPEC.loader.exec_module(BRIDGE)
 
 
 class ConsoleBridgeTests(unittest.TestCase):
+    def test_shell_notification_validates_and_forwards_through_consoled(self) -> None:
+        class Consoled:
+            async def call_notify(self, *args):
+                self.received = args
+                return True
+
+        async def exercise() -> None:
+            consoled = Consoled()
+            bridge = BRIDGE.ConsoleUiBridge(asyncio.get_running_loop(), consoled, object())
+            result = await bridge.notify({"title": "Library refreshed", "body": "Up to date",
+                                          "severity": "success"})
+            self.assertEqual(result, {"accepted": True})
+            self.assertEqual(consoled.received[:3], ("Library refreshed", "Up to date", "success"))
+            with self.assertRaises(ValueError):
+                await bridge.notify({"title": "Title", "body": "Body", "severity": "urgent"})
+
+        asyncio.run(exercise())
+
     def test_lutris_search_retries_dotted_abbreviations_in_compact_form(self):
         search = BRIDGE.ConsoleUiBridge.lutris_search.__get__(object(), BRIDGE.ConsoleUiBridge)
         result = {"name": "Sonic 3 A.I.R", "slug": "sonic-3-air"}

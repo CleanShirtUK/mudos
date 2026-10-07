@@ -761,14 +761,30 @@ projection corrected; full regression suite passed.
 
 ### NOTIFICATIONS-001 — Route transient status messages to Notifications
 
-**Status:** ACTIVE — inventory transient-message producers, then move
-bottom-right messages into the Notifications experience.
+**Status:** IMPLEMENTATION COMPLETE — automated validation recorded below;
+physical visual/passive-input acceptance pending.
 
-- Move transient bottom-right messages (including library refresh feedback) into
-  the Notifications experience instead of displaying them in the current
-  bottom-right message location. Preserve useful feedback and make it available
-  through Notifications; inventory the current message producers and define
-  notification severity, lifetime, and dismissal behavior during implementation.
+- Consoled owns the one FIFO presenter queue; Acquisitiond detects normalized
+  JobManager transitions and forwards through Consoled D-Bus, while the shell
+  uses bridge `POST /notification`. Severity lifetimes are info/success 4s,
+  warning 6s, error 8s; automatic passive dismissal only.
+- Inventory/disposition is documented in `docs/notification-system.md`.
+  Confirmation prompts remain in `interactionPrompt`; launch lifecycle and
+  contextual panel feedback stay local; acquisition submission/handoff strings
+  do not duplicate broker events. Generic bottom-right `root.message` rendering
+  is removed. Library refresh now produces completion feedback.
+- Validation: notification contract/convergence tests 15 passed; bridge tests
+  31 passed; acquisition suites 13 passed; Consoled startup tests 14 passed;
+  selected QML regressions 3 passed; focused console UI tests 13 passed. The
+  full Python discovery suite ran 1,168 tests and retained 9 unrelated existing
+  source-text failures (eight Home/Library/Store/Settings assertions and one
+  native easing-literal assertion); notification changes did not touch those
+  contracts. `compileall` and `git diff --check` passed. Notification native
+  binary compiled successfully (existing Qt deprecation warning only).
+- Sessiond inspection could not be performed (`org.lulu.ConsoleSessiond` was
+  not activatable on the current user bus), so development-runtime refresh is
+  deferred as ambiguous. No production runtime was touched. Physical
+  notification appearance and passive-input acceptance remain outstanding.
 
 ### LUTRIS-002 — Sonic 3 A.I.R. launch leaves Mudos unresponsive
 

@@ -11,6 +11,18 @@ Window {
 
     LuluPalette { id: luluPalette }
     Typography { id: typography }
+    function severityColor(severity) {
+        if (severity === "success") return luluPalette.notificationSuccess
+        if (severity === "warning") return luluPalette.notificationWarning
+        if (severity === "error") return luluPalette.notificationError
+        return luluPalette.notificationInfo
+    }
+    function severityGlyph(severity) {
+        if (severity === "success") return "✓"
+        if (severity === "warning") return "!"
+        if (severity === "error") return "×"
+        return "i"
+    }
 
     Rectangle {
         x: root.width - width - 56
@@ -53,16 +65,16 @@ Window {
                 visible: notificationModel.iconName !== ""
                 width: 42
                 height: 42
-                name: notificationModel.iconName
+                name: notificationModel.iconName || ""
                 typography: typography
-                semanticColor: luluPalette.headingAccent
+                semanticColor: root.severityColor(notificationModel.severity)
                 iconSize: 30
             }
             Text {
-                visible: notificationModel.glyph !== "" && notificationModel.iconName === ""
+                visible: notificationModel.iconName === ""
                 width: 42
-                text: notificationModel.glyph
-                color: luluPalette.headingAccent
+                text: notificationModel.glyph || root.severityGlyph(notificationModel.severity)
+                color: root.severityColor(notificationModel.severity)
                 font.family: typography.iconFamily
                 font.pixelSize: 30
                 verticalAlignment: Text.AlignVCenter

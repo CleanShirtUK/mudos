@@ -23,7 +23,7 @@ from .credential import CredentialInput
 from .catalogue import CatalogueStore
 from .local_uninstall import LocalUninstallExecutor
 from .jobs import JobOperation, JobState
-from .notifications import NotificationBroker, NotificationPresenter
+from .notifications import Notification, NotificationBroker
 from .lutris_install import LutrisInstallExecutor
 from .pc_install import PcInstallSource, PcSourceType
 from .pc_install_store import PcInstallSourceStore
@@ -117,7 +117,7 @@ class AcquisitionInterface(ServiceInterface):
                     self._usenet_startup_config["configured"],
                     self._usenet_startup_config["rpc_secret_available"],
                     "usenet" in manager.executors)
-        self.notifications = notifications or NotificationBroker(NotificationPresenter())
+        self.notifications = notifications or NotificationBroker(self._forward_notification)
         # Historical terminal jobs are already reflected in the catalogue;
         # only completions observed after this interface starts need a
         # provider refresh.
@@ -127,6 +127,15 @@ class AcquisitionInterface(ServiceInterface):
         }
         self.notifications.seed(manager.snapshot())
         manager._on_change = self._publish
+
+    async def _forward_notification(self, event: Notification) -> None:
+        """Keep transition detection here; Consoled owns shared presentation/FIFO."""
+        if self.bus is None:
+            raise RuntimeError("Consoled notification boundary is unavailable")
+        introspection = await self.bus.introspect("org.lulu.Consoled", "/org/lulu/Console")
+        proxy = self.bus.get_proxy_object("org.lulu.Consoled", "/org/lulu/Console", introspection)
+        await proxy.get_interface("org.lulu.Console").call_notify(
+            event.title, event.body, event.severity, event.event_id, event.event_type)
 
     def _snapshot(self) -> str:
         return json.dumps({

@@ -11,11 +11,23 @@ import logging
 import os
 from pathlib import Path
 from typing import Awaitable, Callable, Deque, Iterable
+from uuid import uuid4
 
 from .jobs import DownloadJob, JobOperation, JobState
 
 
 LOGGER = logging.getLogger("lulu.notifications")
+SEVERITIES = {"info", "success", "warning", "error"}
+SEVERITY_LIFETIMES = {"info": 4.0, "success": 4.0, "warning": 6.0, "error": 8.0}
+
+
+def validate_notification(title: str, body: str, severity: str) -> None:
+    if severity not in SEVERITIES:
+        raise ValueError("invalid notification severity")
+    if not isinstance(title, str) or not title.strip() or len(title) > 120:
+        raise ValueError("notification title must contain 1-120 characters")
+    if not isinstance(body, str) or not body.strip() or len(body) > 320:
+        raise ValueError("notification body must contain 1-320 characters")
 
 
 @dataclass(frozen=True, slots=True)
@@ -28,6 +40,8 @@ class Notification:
     source: str = ""
     timestamp: str = ""
     priority: int = 0
+    severity: str = "info"
+    duration: float = 4.0
 
     def as_dict(self) -> dict[str, object]:
         return asdict(self)
@@ -56,6 +70,13 @@ class NotificationBroker:
         self._emitted_ids: set[str] = set()
         self._states: dict[str, JobState] = {}
         self._worker: asyncio.Task[None] | None = None
+
+    @staticmethod
+    def shell_event(title: str, body: str, severity: str) -> Notification:
+        validate_notification(title, body, severity)
+        return Notification(str(uuid4()), "shell", title.strip(), body.strip(),
+                            timestamp=_timestamp(), severity=severity,
+                            duration=SEVERITY_LIFETIMES[severity])
 
     @property
     def pending(self) -> tuple[Notification, ...]:
@@ -108,6 +129,7 @@ class NotificationBroker:
                 event_id=f"{job.job_id}:acquisition_failed", event_type="acquisition_failed",
                 title=f"{operation} failed", body=f"{title}: {reason.rstrip('.')}. {guidance}",
                 source=source, timestamp=_timestamp(), priority=1,
+                severity="error", duration=SEVERITY_LIFETIMES["error"],
             ))
         if job.state is JobState.TRANSFERRING and previous is not JobState.TRANSFERRING \
                 and job.operation is not JobOperation.REMOVE:
@@ -131,6 +153,7 @@ class NotificationBroker:
                 event_id=f"{job.job_id}:installation_succeeded",
                 event_type="installation_succeeded", title="Installed successfully",
                 body=f"{title} is ready to play", source=source, timestamp=_timestamp(),
+                severity="success", duration=SEVERITY_LIFETIMES["success"],
             ))
         return tuple(events)
 
@@ -150,7 +173,7 @@ class NotificationBroker:
 class NotificationPresenter:
     """Passive external-overlay presenter with one-at-a-time FIFO display."""
 
-    def __init__(self, executable: str | None = None, duration: float = 4.0) -> None:
+    def __init__(self, executable: str | None = None, duration: float | None = None) -> None:
         self.executable = executable or str(
             Path(os.environ.get("LULU_INSTALL_ROOT", "/opt/lulu/current"))
             / "bin" / "mudos-notification"
@@ -161,6 +184,9 @@ class NotificationPresenter:
     async def _ensure_process(self) -> asyncio.subprocess.Process:
         if self._process is not None and self._process.returncode is None:
             return self._process
+        if self._process is not None and self._process.stdin is not None:
+            self._process.stdin.close()
+            self._process = None
         install_root = Path(os.environ.get("LULU_INSTALL_ROOT", "/opt/lulu/current"))
         env = {**os.environ, "DISPLAY": os.environ.get("DISPLAY", ":0"),
                "WAYLAND_DISPLAY": os.environ.get("WAYLAND_DISPLAY", "gamescope-0"),
@@ -180,6 +206,23 @@ class NotificationPresenter:
             raise RuntimeError("notification presenter stdin is unavailable")
         process.stdin.write((json.dumps(notification.as_dict()) + "\n").encode())
         await process.stdin.drain()
-        await asyncio.sleep(self.duration)
+        await asyncio.sleep(self.duration if self.duration is not None else notification.duration)
         process.stdin.write(b'{"visible":false}\n')
         await process.stdin.drain()
+
+    async def close(self) -> None:
+        process, self._process = self._process, None
+        if process is None or process.returncode is not None:
+            return
+        if process.stdin is not None:
+            process.stdin.close()
+            try:
+                await process.stdin.wait_closed()
+            except (BrokenPipeError, ConnectionResetError):
+                pass
+        process.terminate()
+        try:
+            await asyncio.wait_for(process.wait(), timeout=2)
+        except asyncio.TimeoutError:
+            process.kill()
+            await process.wait()

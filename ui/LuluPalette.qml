@@ -33,6 +33,10 @@ QtObject {
     readonly property color accent: role("accent", "#e0c5ff")
     readonly property color focusIndicator: role("focusIndicator", "#e0c5ff")
     readonly property color warning: role("warning", "#e0c5ff")
+    readonly property color notificationInfo: role("headingAccent", headingAccent)
+    readonly property color notificationSuccess: role("success", focusIndicator)
+    readonly property color notificationWarning: warning
+    readonly property color notificationError: role("error", warning)
     // Structural glass transmits most of the animated backdrop; modal overlays
     // use separate, deliberately stronger dimming roles below.
     readonly property color glassTint: role("surface", "#6b070809")

@@ -1,44 +1,86 @@
 # Mudos notifications
 
-Mudos notifications are session-scoped transient events, not a second
-acquisition database or a notification history. `NotificationBroker` lives at
-the normalized `JobManager` boundary in Acquisitiond. It observes meaningful
-job transitions and emits generic events:
+Notifications are session-scoped transient events, not persistent records or a
+history. Consoled owns the single FIFO presentation queue and the passive
+`mudos-notification` process. Both shell-originated feedback and normalized
+acquisition events enter that same queue, so their windows cannot overlap.
+Queue state is intentionally discarded on restart.
 
-- `download_started`
-- `download_finished`
-- `installation_succeeded`
+## Event ownership and routes
 
-The broker seeds its state from existing jobs at startup, so completed or
-active historical jobs are not replayed after a service restart. Each event is
-deduplicated by `job_id:event_type` for the lifetime of the service. Provider
-names are metadata only; providers do not call UI notification APIs.
+Acquisitiond's `NotificationBroker` observes authoritative JobManager
+transitions and retains the acquisition vocabulary and deduplication key
+`job_id:event_type`. It emits `download_started`, `download_finished`,
+`installation_succeeded`, and `acquisition_failed`; it seeds current jobs at
+startup so historical jobs are never replayed. Provider adapters do not call
+notification APIs. Acquisitiond forwards each normalized event to Consoled's
+`Notify` D-Bus method; it does not own a presenter.
 
-## Presentation boundary
+The shell's narrow `POST /notification` route is handled by
+`console-ui-bridge.py`, which validates/forwards through its mandatory Consoled
+proxy. The bridge never starts the presenter. Shell events receive generated
+monotonic event IDs and are not globally deduplicated, so repeated legitimate
+operations (such as two manual refreshes) remain distinct.
 
-Home, Store, Settings, and the shell's QML status surfaces are below a
-delegated Gamescope surface. The existing Guide is a modal external overlay
-and owns controller input, so it is intentionally not reused for passive
-notifications.
+## Severity, lifetime, presentation
 
-The v1 presenter is a separate `mudos-notification` process using the same
-Gamescope external-overlay boundary as Guide, but with
-`WindowTransparentForInput`. It presents one queued event at a time, keeps the
-active surface and input owner unchanged, and dismisses automatically. The
-presenter is transient: if it restarts, historical events are not replayed.
+The accepted severities and automatic lifetimes are fixed: `info` 4 seconds,
+`success` 4 seconds, `warning` 6 seconds, and `error` 8 seconds. Payloads require
+a non-empty title (at most 120 characters), non-empty body (at most 320
+characters), and a known severity. The API does not accept executable paths,
+icon paths, or caller-selected lifetimes. Dismissal is automatic and passive;
+there is no focus, controller action, dismiss button, or history.
 
-The current wording is deliberately concise: “Download started”, “Download
-finished”, and “Installed successfully”, followed by the catalogue title or
-“is ready to play”.
+The sole presenter is an external Gamescope overlay using
+`WindowTransparentForInput`; it does not own controller input or change focus.
+`MudosNotification.qml` communicates a concise title, body, and semantic
+severity marker using palette roles. Theme IDs are not inspected. Presenter
+launch/write failures are logged and do not fail the originating operation;
+queue processing continues. Consoled closes its child on service shutdown and
+discards queued transient state on restart.
 
-The presenter receives its QML path through `LULU_NOTIFICATION_UI_FILE`,
-derived from the active `LULU_INSTALL_ROOT`. This is important because the
-mutable development runtime lives under `/opt/lulu/dev-current`, while the
-packaged default root may be `/opt/lulu/current`.
+## Shell message inventory (NOTIFICATIONS-001)
+
+Only completed, useful results move to Notifications. Immediate confirmation
+prompts remain in the shell's dedicated `interactionPrompt` presentation:
+“Press X again to remove …” and “Press A again to confirm …”. Launching,
+Running, Returning, utility-launch start, Steam-install handoff, and reset
+choreography remain internal lifecycle state and are not notified. Detailed
+status/errors remain in their owning Settings, credential, browser, Lutris,
+Downloads, and other in-surface components. In particular, acquisition submit
+and browser-handoff messages are not duplicated: JobManager transitions are
+the global acquisition feedback authority.
+
+Migrated shell results include catalogue/library refresh (success), manual
+metadata/Downloads refresh, application launch failure, Bluetooth completion,
+credential submission failure, RomM/SteamCMD authentication results, Store
+bookmark/name/URL mutations, and onboarding network-connected completion.
+The library refresh notice is emitted only after the refresh completes; startup
+catalogue loading does not produce a notice. The generic bottom-right
+`root.message` hint-band rendering is removed. The property remains internal
+for launch/choreography and unrelated transitions, not as a transient feedback
+surface.
+
+Producer-by-producer disposition: refresh results and `request()` launch
+failures are passive events; the “Launching application…” utility status and
+launch state `Launching`/`Running`/`Returning` are choreography only. Bluetooth
+start text was removed and success/failure results are events. Credential
+surface-unavailable/rejected and auth completion results are events; credential
+entry and provider-specific detailed error surfaces remain contextual. Settings
+child messages such as display restart and storage selection/reset stay on
+their Settings page. Store removal's “Press X again…” and destructive Mudos
+actions' “Press A again…” are interaction prompts; completed bookmark mutations
+are events. Game launch, Steam install handoff, reset status, and message clears
+are lifecycle choreography. Library/manual metadata/download refreshes are
+events. Lutris installation submission and browser acquisition handoff stay
+local/are omitted globally because normalized acquisition transitions provide
+the notice. Network-connected completion is an event; onboarding navigation
+guidance remains local. Generic errors owned by Downloads, Lutris, browser,
+Game Options, or a Settings page are not moved merely because the old shell
+helper accepted a `failureMessage` argument.
 
 ## Deliberate limitations
 
-Notifications do not pause downloads, own navigation, expose history, or add
-actions. “Pause downloads during gameplay” remains a future capability-aware
-acquisition-policy feature requiring provider pause capabilities and a clear
-distinction between policy-paused and user-paused jobs.
+Notifications do not pause downloads or replace detailed owning-screen
+errors. Physical visual and passive-input validation remains distinct from
+automated contract and component tests.

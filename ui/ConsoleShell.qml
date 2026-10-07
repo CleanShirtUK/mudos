@@ -398,6 +398,7 @@ Window {
     property var storeHomeLandingRef: null
     property string storeError: ""
     property string message: ""
+    property string interactionPrompt: ""
     property var credentialRequest: ({status: "idle"})
     property string credentialValue: ""
     property bool credentialSubmitInFlight: false
@@ -409,6 +410,7 @@ Window {
     property string launchTitle: ""
     property string launchGameId: ""
     property string launchToken: ""
+    property string notifiedLaunchFailureToken: ""
     // Development-only parity switch for the stationary landing-card specimen.
     property bool catalogueRefreshTimerDisabled: true
     property bool launchOverlayVisible: false
@@ -650,6 +652,20 @@ Window {
     }
     readonly property string libraryScope: "all"
 
+    function notify(title, body, severity) {
+        var xhr = new XMLHttpRequest()
+        xhr.open("POST", apiUrl + "/notification")
+        xhr.setRequestHeader("Content-Type", "application/json")
+        xhr.send(JSON.stringify({title: title, body: body, severity: severity || "info"}))
+    }
+
+    function notifyLaunchFailure(reason) {
+        if (!launchToken || notifiedLaunchFailureToken === launchToken)
+            return
+        notifiedLaunchFailureToken = launchToken
+        notify("Launch failed", String(reason || "The application could not be launched").slice(0, 320), "error")
+    }
+
     function request(path, method, body, callback, failureMessage, generation, failureCallback) {
         var request = new XMLHttpRequest()
         request.onreadystatechange = function() {
@@ -659,6 +675,8 @@ Window {
                 callback(JSON.parse(request.responseText))
             else if (failureMessage && (generation === undefined || generation === launchGeneration)) {
                 message = failureMessage || "Catalogue unavailable"
+                if (generation !== undefined)
+                    notifyLaunchFailure(failureMessage || "The application could not be launched")
                 playAudioEvent("error")
                 if (generation !== undefined) {
                     launchStatus = "failed"
@@ -694,7 +712,9 @@ Window {
     }
 
     function refreshCatalogue() {
-        refreshLibrary()
+        refreshLibrary(function() {
+            root.notify("Library refreshed", "Your catalogue is up to date", "success")
+        }, true)
         refreshPlatformsCatalogue()
     }
 
@@ -820,6 +840,8 @@ Window {
         } else if (state.lifecycle === "shell") {
             launchStatus = state.last_failure_reason && stateToken === launchToken ? "failed" : "idle"
             message = launchStatus === "failed" ? "Launch failed" : ""
+            if (launchStatus === "failed")
+                notifyLaunchFailure(state.last_failure_reason)
             launchStatusTimer.stop()
             launchLogTimer.stop()
             if (launchStatus === "failed" && state.last_failure_reason) {
@@ -999,13 +1021,15 @@ Window {
         }, "", generation)
     }
 
-    function refreshLibrary(done) {
+    function refreshLibrary(done, announceResult) {
         request("/?scope=" + libraryScope, "GET", "", function(data) {
             libraryGames = data
             syncGameOptionsGame()
             if (done)
                 done()
-        })
+        }, announceResult ? "Library refresh failed" : "", undefined, announceResult ? function() {
+            root.notify("Library refresh failed", "The catalogue could not be updated", "error")
+        } : undefined)
     }
 
     function requestStartupReadiness() {
@@ -1422,7 +1446,10 @@ Window {
         message = "Launching application…"
         request("/utilities/launch", "POST", JSON.stringify({ref: applicationRef}), function() {
             message = ""
-        }, "Application could not be launched", undefined, function() { message = "" })
+        }, "Application could not be launched", undefined, function() {
+            root.notify("Application could not be launched", String(applicationRef), "error")
+            message = ""
+        })
     }
 
     function activateBluetoothSetting(key) {
@@ -1432,13 +1459,14 @@ Window {
         var devicePath = parts.length > 2 ? parts.slice(2).join(":") : ""
         if (action === "pairing-accept")
             devicePath = systemSpace.bluetoothInputValue
-        root.message = action === "discover" ? "Starting Bluetooth discovery…"
-            : action === "pair" ? "Pairing Bluetooth device…" : "Updating Bluetooth…"
         request("/bluetooth/action", "POST", JSON.stringify({action: action, path: devicePath}), function() {
-            root.message = "Bluetooth updated"
+                root.notify("Bluetooth updated", "The requested Bluetooth operation completed", "success")
             if (action === "pairing-accept") systemSpace.bluetoothInputValue = ""
             root.refreshSystemSettings()
-        }, "Bluetooth action failed", undefined, function() { root.refreshSystemSettings() })
+        }, "Bluetooth action failed", undefined, function() {
+            root.notify("Bluetooth operation failed", "The requested device operation could not be completed", "error")
+            root.refreshSystemSettings()
+        })
     }
 
     function refreshNetworkState() {
@@ -1532,7 +1560,7 @@ Window {
                     root.credentialKeyboardShown = true
                 }, "Keyboard unavailable", undefined, function() {
                     root.credentialKeyboardShowAttempted = false
-                    root.message = "Credential input unavailable"
+                    root.notify("Credential input unavailable", "The requested sign-in surface could not be opened", "error")
                     if (root.credentialRequest.status === "requested"
                             || root.credentialRequest.status === "waiting") {
                         root.request("/credential/cancel", "POST",
@@ -2260,7 +2288,7 @@ Window {
             }, function() {
                 credentialSubmitInFlight = false
                 root.lastCredentialValue = ""
-                root.message = "Credential rejected"
+                root.notify("Sign-in failed", "The service rejected the supplied credentials", "error")
             })
     }
 
@@ -2296,12 +2324,13 @@ Window {
             return false
         if (pendingStoreRemovalId !== card.id) {
             pendingStoreRemovalId = card.id
-            message = "Press X again to remove " + card.title
+            interactionPrompt = "Press X again to remove " + card.title
             return true
         }
         bookmarkStore.removeBookmark(card.id)
         pendingStoreRemovalId = ""
-        message = "Store removed"
+        interactionPrompt = ""
+        notify("Store removed", card.title + " was removed from Store bookmarks", "success")
         return true
     }
 
@@ -2635,10 +2664,11 @@ Window {
         var destructive = (key === "mudos.reset" || key === "mudos.reboot" || key === "mudos.shutdown")
         if (destructive && root.pendingMudosAction !== key) {
             root.pendingMudosAction = key
-            root.message = "Press A again to confirm " + root.systemSettings[root.systemRowIndex].label
+            root.interactionPrompt = "Press A again to confirm " + root.systemSettings[root.systemRowIndex].label
             return
         }
         root.pendingMudosAction = ""
+        root.interactionPrompt = ""
         var path = ""
         if (key === "mudos.reset") path = "/reset"
         else if (key === "mudos.metadata") path = "/mudos/refresh-metadata"
@@ -2653,10 +2683,17 @@ Window {
             return
         }
         if (path) {
-            root.message = key === "mudos.metadata" ? "Refreshing metadata…" :
-                key === "mudos.library" ? "Refreshing library…" :
-                key === "mudos.downloads" ? "Refreshing available downloads…" : "Working…"
-            root.request(path, "POST", "", function(data) { root.message = "" }, "Mudos action failed")
+            root.request(path, "POST", "", function(data) {
+                if (key === "mudos.library")
+                    root.notify("Library refreshed", "Your catalogue is up to date", "success")
+                else if (key === "mudos.metadata")
+                    root.notify("Metadata refreshed", "Game details were updated", "success")
+                else if (key === "mudos.downloads")
+                    root.notify("Downloads refreshed", "Available titles were updated", "success")
+            }, "Mudos action failed", undefined, function() {
+                if (key === "mudos.library" || key === "mudos.metadata" || key === "mudos.downloads")
+                    root.notify("Refresh failed", "Mudos could not refresh the requested catalogue data", "error")
+            })
         }
     }
 
@@ -2665,38 +2702,38 @@ Window {
             lutrisRecipeInstall.openForQuery(value)
         else if (target.kind === "romm-pair")
             root.request("/plugins/romm/pair", "POST", JSON.stringify({code: value}), function(result) {
-                root.message = "RomM paired"
+                root.notify("RomM paired", "Account pairing completed", "success")
                 root.refreshSystemSettings()
             }, "RomM pairing failed: check that the code is new and unexpired")
         else if (target.kind === "secret")
             root.request("/plugins/" + target.plugin + "/secret/" + target.name,
                 "POST", JSON.stringify({value: value}), function(result) {
                     if (result.verification && result.verification.status === "authenticated")
-                        root.message = "SteamCMD signed in"
+                        root.notify("SteamCMD signed in", "Authentication was verified", "success")
                     else if (result.verification && result.verification.status === "challenge-required")
-                        root.message = "SteamCMD requires a Steam Guard code"
+                        root.notify("Steam Guard required", "Enter the code sent by Steam", "warning")
                     else
-                        root.message = "Secret saved; SteamCMD authentication could not be verified"
+                        root.notify("Secret saved", "SteamCMD authentication could not be verified", "warning")
                 }, "Secret save failed")
         else if (target.kind === "setting")
             root.request("/plugins/" + target.plugin + "/setting/" + target.name,
                 "POST", JSON.stringify({value: value}), function() {}, "Setting save failed")
         else if (target.kind === "store") {
             if (bookmarkStore && bookmarkStore.addBookmark(value)) {
-                root.message = "Store saved"
+                root.notify("Store saved", "The bookmark was added", "success")
                 if (root.storeHomeRef) root.storeHomeRef.stores = bookmarkStore.bookmarks
                 if (root.storeHomeLandingRef) root.storeHomeLandingRef.stores = bookmarkStore.bookmarks
-            } else root.message = "Invalid store URL"
+            } else root.notify("Store not saved", "Enter a valid store URL", "error")
         } else if (target.kind === "store-name") {
             if (bookmarkStore && bookmarkStore.updateBookmarkName(target.id, value)) {
-                root.message = "Store name updated"
+                root.notify("Store updated", "The store name was changed", "success")
                 root.closeStoreOptions()
-            } else root.message = "Store name must not be blank"
+            } else root.notify("Store not updated", "Store name must not be blank", "warning")
         } else if (target.kind === "store-url") {
             if (bookmarkStore && bookmarkStore.updateBookmarkUrl(target.id, value)) {
-                root.message = "Store URL updated"
+                root.notify("Store updated", "The store URL was changed", "success")
                 root.closeStoreOptions()
-            } else root.message = "Use a valid http:// or https:// URL"
+            } else root.notify("Store not updated", "Use a valid http:// or https:// URL", "warning")
         }
     }
 
@@ -2759,12 +2796,13 @@ Window {
             if (!card) return
             if (pendingStoreRemovalId !== card.id) {
                 pendingStoreRemovalId = card.id
-                message = "Press A again to remove " + card.title
+                interactionPrompt = "Press A again to remove " + card.title
                 return
             }
             bookmarkStore.removeBookmark(card.id)
+            interactionPrompt = ""
             closeStoreOptions()
-            message = "Store removed"
+            notify("Store removed", card.title + " was removed from Store bookmarks", "success")
         }
     }
 
@@ -2912,7 +2950,7 @@ Window {
             openInstallableSurface()
         } else {
             // Store space is not implemented for unknown future domains: message = "Store space is not implemented"
-            message = "System space is not implemented"
+            notify("Unavailable", "System space is not implemented", "warning")
         }
     }
 
@@ -3054,6 +3092,7 @@ Window {
 
     function back() {
         playAudioEvent(audioEventForAction("back"))
+        interactionPrompt = ""
         if (lutrisRecipeInstall.visible) {
             if (credentialTarget.kind === "lutris-search"
                     && (credentialRequest.status === "requested"
@@ -3113,7 +3152,7 @@ Window {
                 space = "home"
                 inputSurface.forceActiveFocus()
             }
-            message = systemStatus && systemStatus.networkOnline
+            interactionPrompt = systemStatus && systemStatus.networkOnline
                 ? "Choose Set Up Locally or Continue to Home."
                 : "Connect to Wi-Fi or explicitly continue offline from onboarding."
             return
@@ -3349,7 +3388,7 @@ Window {
                     && systemStatus.networkOnline) {
                 root.onboardingNetworkSettings = false
                 root.space = "home"
-                root.message = "Network connected. Setup is ready."
+                root.notify("Network connected", "Setup is ready", "success")
                 inputSurface.forceActiveFocus()
             }
         }
@@ -4193,7 +4232,7 @@ Window {
             width: parent.width
             height: parent.height
             onSubmitted: function(jobId) {
-                root.message = "Lutris installation submitted"
+                // Acquisition transitions provide their own normalized notices.
                 root.refreshAcquisitionJobs()
                 root.openDownloads("store")
             }
@@ -4262,12 +4301,12 @@ Window {
              onTrustedCredentialsCaptured: function(details) { root.trustedWebCredentialCaptured(details) }
              onExternalNavigationRequested: function(targetUrl, sourceOrigin, disposition) {
                  browserSurface.setExternalActionMessage("Preparing installation…")
-                 root.message = "Preparing installation…"
+                 // Detailed browser handoff status remains local to the browser surface.
                  root.request("/browser-handoff", "POST", JSON.stringify({
                      uri: targetUrl, source_origin: sourceOrigin, disposition: disposition
                  }), function(data) {
                      browserSurface.setExternalActionMessage(data.message || "Installation queued")
-                     root.message = data.message || "Installation queued"
+                     // Acquisition transitions provide the global notification.
                  }, "Mudos could not accept this browser action")
              }
          }
@@ -4802,7 +4841,7 @@ Window {
                 x: parent.width * 0.58
                 width: parent.width * 0.36
                 anchors.verticalCenter: parent.verticalCenter
-                text: root.message
+                text: root.interactionPrompt
                 opacity: root.homeContentOpacity
                 color: luluPalette.accent
                 font.family: typography.interfaceFamily

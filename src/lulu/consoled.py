@@ -57,6 +57,7 @@ from .credential import (CredentialBroker, CredentialInput, CredentialPresentati
 from .settings import SettingsStore
 from .web_credentials import WebCredentialStore
 from .launch_routing import LaunchDispatch, resolve_game_launch_route
+from .notifications import Notification, NotificationPresenter, SEVERITY_LIFETIMES, validate_notification
 
 
 DESCRIPTOR = ServiceDescriptor(
@@ -1491,6 +1492,9 @@ class ConsoleInterface(ServiceInterface):
         self.storage_manager = storage_manager or StorageManagerAdapter()
         self.display_manager = display_manager or DisplayManagerAdapter()
         self.credentials = credentials or CredentialBroker()
+        self._notification_presenter = NotificationPresenter()
+        self._notification_queue: asyncio.Queue[Notification] = asyncio.Queue()
+        self._notification_worker: asyncio.Task[None] | None = None
         self.secrets = SecretStore()
         self.web_credentials = WebCredentialStore(self.secrets)
         self._local_process: asyncio.subprocess.Process | None = None
@@ -1520,6 +1524,26 @@ class ConsoleInterface(ServiceInterface):
         self._base_guide = load_base_guide()
         self._mudos_guide = load_mudos_guide()
         self._platforms = load_platforms()
+
+    def enqueue_notification(self, title: str, body: str, severity: str,
+                             event_id: str = "", event_type: str = "shell") -> None:
+        validate_notification(title, body, severity)
+        event = Notification(event_id or f"shell:{time.monotonic_ns()}", event_type,
+                             title.strip(), body.strip(), severity=severity,
+                             duration=SEVERITY_LIFETIMES[severity])
+        self._notification_queue.put_nowait(event)
+        if self._notification_worker is None or self._notification_worker.done():
+            self._notification_worker = asyncio.create_task(self._drain_notifications())
+
+    async def _drain_notifications(self) -> None:
+        while not self._notification_queue.empty():
+            event = await self._notification_queue.get()
+            try:
+                await self._notification_presenter(event)
+            except Exception:
+                LOGGER.exception("notification presentation failed event_id=%s", event.event_id)
+            finally:
+                self._notification_queue.task_done()
 
     def _provider_for_game_id(self, game_id: str):
         game = self.catalogue.store.get_game(game_id)
@@ -2082,6 +2106,14 @@ class ConsoleInterface(ServiceInterface):
     async def RefreshStages(self, stages: "as") -> "u":
         count = await self.refresh_catalogue(set(stages))
         return count
+
+    @method()
+    def Notify(self, title: "s", body: "s", severity: "s", event_id: "s", event_type: "s") -> "b":
+        try:
+            self.enqueue_notification(title, body, severity, event_id, event_type)
+            return True
+        except ValueError as error:
+            raise DBusError("org.lulu.Console.InvalidNotification", str(error)) from error
 
     @method()
     def GetStartupReadiness(self) -> "b":
@@ -3025,7 +3057,14 @@ async def serve() -> None:
             await asyncio.sleep(ROMM_SYNC_INTERVAL)
 
     asyncio.create_task(synchronize(), name="catalogue-sync")
-    await asyncio.Event().wait()
+    try:
+        await asyncio.Event().wait()
+    finally:
+        worker = interface._notification_worker
+        if worker is not None:
+            worker.cancel()
+            await asyncio.gather(worker, return_exceptions=True)
+        await interface._notification_presenter.close()
 
 
 def main() -> None:
