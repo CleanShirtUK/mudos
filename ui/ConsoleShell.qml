@@ -4878,7 +4878,7 @@ Window {
                 palette.button: luluPalette.actionSurface
                 palette.buttonText: luluPalette.actionText
                 background: Rectangle {
-                    radius: luluPalette.radius("row", 8 * root.uiScale)
+                    radius: luluPalette.radius("row", 8 * root.uiScale, root.uiScale)
                     color: cancelLaunchButton.activeFocus ? luluPalette.selectionSurface : luluPalette.actionSurface
                     border.color: cancelLaunchButton.activeFocus ? luluPalette.focusIndicator : luluPalette.glassBorder
                     MudosChromeFrame { anchors.fill: parent; luluPalette: root.luluPalette; uiScale: root.uiScale; cornerRadius: parent.radius; raised: !cancelLaunchButton.activeFocus }
@@ -4896,7 +4896,7 @@ Window {
                 palette.button: luluPalette.actionSurface
                 palette.buttonText: luluPalette.actionText
                 background: Rectangle {
-                    radius: luluPalette.radius("row", 8 * root.uiScale)
+                    radius: luluPalette.radius("row", 8 * root.uiScale, root.uiScale)
                     color: parent.activeFocus ? luluPalette.selectionSurface : luluPalette.actionSurface
                     border.color: parent.activeFocus ? luluPalette.focusIndicator : luluPalette.glassBorder
                     MudosChromeFrame { anchors.fill: parent; luluPalette: root.luluPalette; uiScale: root.uiScale; cornerRadius: parent.radius; raised: !parent.activeFocus }

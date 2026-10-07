@@ -22,6 +22,7 @@
   },
   "opacity": {"structuralSurface": 0.42, "internalSurface": 0.84, "card": 0.48, "focusedCard": 0.62, "selection": 0.32, "statusBacking": 0.46, "overlayBackdrop": 0.72, "overlaySurface": 0.97},
   "radii": {"panel": 18, "card": 10, "row": 7, "media": 14, "status": 12, "overlay": 14},
+  "radiusPolicy": "componentBaseline",
   "glass": {
     "enabled": true, "ior": 1.08, "depth": 0.32, "refractionPixels": 80,
     "dispersionIor": 0.0175, "diffusionPixels": 5, "transmission": 0.75,
@@ -41,6 +42,7 @@
     "fade": {"enabled": true, "duration": 180, "easing": "linear"},
     "status": {"enabled": true, "duration": 220, "easing": "outCubic"},
     "intro": {"enabled": true, "duration": 360},
+    "wallpaper": {"enabled": true, "speed": 1.0},
     "motionBlur": {"enabled": true}
   }},
   "labels": {

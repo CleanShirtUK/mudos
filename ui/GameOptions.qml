@@ -173,7 +173,7 @@ Item {
         anchors.bottom: parent.bottom
         width: Math.min(parent.width * 0.50, 600 * options.uiScale)
         color: options.luluPalette.overlaySurface
-        radius: options.luluPalette.radius("overlay", 10 * options.uiScale)
+        radius: options.luluPalette.radius("overlay", 10 * options.uiScale, options.uiScale)
         border.color: options.luluPalette.glassBorder
         border.width: options.uiScale
         clip: true
@@ -246,7 +246,7 @@ Item {
                 Rectangle {
                     width: parent.width
                     height: 58 * options.uiScale
-                    radius: options.luluPalette.radius("row", 8 * options.uiScale)
+                    radius: options.luluPalette.radius("row", 8 * options.uiScale, options.uiScale)
                     color: options.selectedIndex === 0
                         ? options.luluPalette.focusedCardSurface : options.luluPalette.cardSurface
                     border.color: options.selectedIndex === 0
@@ -279,7 +279,7 @@ Item {
                 Rectangle {
                     width: parent.width
                     height: 52 * options.uiScale
-                    radius: options.luluPalette.radius("row", 8 * options.uiScale)
+                    radius: options.luluPalette.radius("row", 8 * options.uiScale, options.uiScale)
                     color: options.selectedIndex === 1
                         ? options.luluPalette.focusedCardSurface : options.luluPalette.cardSurface
                     border.color: options.selectedIndex === 1
@@ -342,7 +342,7 @@ Item {
                 Rectangle {
                     width: parent.width
                     height: 58 * options.uiScale
-                    radius: options.luluPalette.radius("row", 8 * options.uiScale)
+                    radius: options.luluPalette.radius("row", 8 * options.uiScale, options.uiScale)
                     color: options.selectedIndex === 0
                         ? options.luluPalette.focusedCardSurface : options.luluPalette.cardSurface
                     border.color: options.selectedIndex === 0
@@ -412,7 +412,7 @@ Item {
             required property var modelData
             width: ListView.view.width
             height: 58 * options.uiScale
-            radius: options.luluPalette.radius("row", 8 * options.uiScale)
+            radius: options.luluPalette.radius("row", 8 * options.uiScale, options.uiScale)
             color: index === options.selectedIndex
                 ? options.luluPalette.focusedCardSurface : options.luluPalette.cardSurface
             border.color: index === options.selectedIndex
@@ -436,7 +436,7 @@ Item {
             required property var modelData
             width: roleList.width
             height: 58 * options.uiScale
-            radius: options.luluPalette.radius("row", 8 * options.uiScale)
+            radius: options.luluPalette.radius("row", 8 * options.uiScale, options.uiScale)
             color: index === options.selectedIndex
                 ? options.luluPalette.focusedCardSurface : options.luluPalette.cardSurface
             border.color: index === options.selectedIndex
@@ -461,7 +461,7 @@ Item {
             required property var modelData
             width: artworkList.width
             height: 74 * options.uiScale
-            radius: options.luluPalette.radius("row", 8 * options.uiScale)
+            radius: options.luluPalette.radius("row", 8 * options.uiScale, options.uiScale)
             color: index === options.selectedIndex
                 ? options.luluPalette.focusedCardSurface : options.luluPalette.cardSurface
             border.color: index === options.selectedIndex
@@ -473,7 +473,7 @@ Item {
                 anchors.verticalCenter: parent.verticalCenter
                 width: 74 * options.uiScale
                 height: 58 * options.uiScale
-                radius: options.luluPalette.radius("media", 4 * options.uiScale)
+                radius: options.luluPalette.radius("media", 4 * options.uiScale, options.uiScale)
                 color: options.luluPalette.cardSurface
                 clip: true
                 Image {
@@ -515,7 +515,7 @@ Item {
             required property var modelData
             width: mappingList.width
             height: 72 * options.uiScale
-            radius: options.luluPalette.radius("row", 8 * options.uiScale)
+            radius: options.luluPalette.radius("row", 8 * options.uiScale, options.uiScale)
             color: index + 2 === options.selectedIndex
                 ? options.luluPalette.focusedCardSurface : options.luluPalette.cardSurface
             border.color: index + 2 === options.selectedIndex
@@ -527,7 +527,7 @@ Item {
                 anchors.verticalCenter: parent.verticalCenter
                 width: 56 * options.uiScale
                 height: 56 * options.uiScale
-                radius: options.luluPalette.radius("media", 4 * options.uiScale)
+                radius: options.luluPalette.radius("media", 4 * options.uiScale, options.uiScale)
                 color: options.luluPalette.cardSurface
                 clip: true
                 Image {

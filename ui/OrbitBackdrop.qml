@@ -44,10 +44,11 @@ Item {
     }
 
     NumberAnimation on shaderTime {
-        from: 0
         to: 100000
-        duration: themeMotion.duration("intro", 100000000)
+        duration: themeMotion.speed("wallpaper", 1) > 0
+            ? 100000000 / themeMotion.speed("wallpaper", 1) : 100000000
         loops: Animation.Infinite
-        running: themeMotion.enabled("intro")
+        running: themeMotion.enabled("wallpaper")
+            && themeMotion.speed("wallpaper", 1) > 0
     }
 }

@@ -26,6 +26,7 @@
     "overlayBackdrop": 0.55, "overlaySurface": 1.0
   },
   "radii": {"panel": 0, "card": 0, "row": 0, "media": 0, "status": 0, "overlay": 0},
+  "radiusPolicy": "exact",
   "glass": {
     "enabled": false, "ior": 1.0, "depth": 0, "refractionPixels": 0,
     "dispersionIor": 0, "diffusionPixels": 0, "transmission": 1,
@@ -44,6 +45,7 @@
     "fade": {"enabled": true, "duration": 180, "easing": "linear"},
     "status": {"enabled": true, "duration": 220, "easing": "outCubic"},
     "intro": {"enabled": true, "duration": 360},
+    "wallpaper": {"enabled": false, "speed": 1.0},
     "motionBlur": {"enabled": true}
   }},
   "labels": {

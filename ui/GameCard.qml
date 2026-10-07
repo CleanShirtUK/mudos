@@ -8,7 +8,6 @@ import Mudos.Poc 1.0
 Rectangle {
     id: card
     ThemeMotion { id: themeMotion }
-    readonly property var themeRadii: typeof mudosTheme !== "undefined" ? mudosTheme.radii : ({})
     readonly property var themeGlass: typeof mudosTheme !== "undefined" ? mudosTheme.glass : ({})
 
     property var game: null
@@ -246,8 +245,9 @@ Rectangle {
 
     implicitWidth: recentFocal ? 1100 * uiScale : (compact ? 260 : 210) * uiScale
     implicitHeight: recentFocal ? 560 * uiScale : (compact ? 430 : 330) * uiScale
-    radius: themeRadii.card === 0 ? 0
-        : recentFocal ? 28 * focalScale * uiScale : (compact ? 16 : 18) * uiScale
+    radius: luluPalette.radius("card",
+        recentFocal ? 28 * focalScale * uiScale : (compact ? 16 : 18) * uiScale,
+        uiScale)
     color: card.librarySurfaceMaterial ? luluPalette.transparent
         : (recentFocal ? luluPalette.glassTint
            : Qt.rgba(luluPalette.cardSurface.r
@@ -299,8 +299,9 @@ Rectangle {
         y: card.mix(compactMargin, focalMargin, card.presentationProgress)
         width: card.mix(compactArtworkWidth, artworkWidth, card.presentationProgress)
         height: card.mix(compactArtworkHeight, artworkHeight, card.presentationProgress)
-        property real artworkRadius: card.themeRadii.media === 0 ? 0
-            : card.mix(10 * uiScale, 18 * focalScale * uiScale, card.presentationProgress)
+        property real artworkRadius: card.luluPalette.radius("media",
+            card.mix(10 * uiScale, 18 * focalScale * uiScale, card.presentationProgress),
+            uiScale)
         property real artworkBorderAlpha: 0.15
         radius: artworkRadius
         z: 2
@@ -399,7 +400,7 @@ Rectangle {
                 Rectangle {
                     width: parent.width
                     height: 6 * card.uiScale
-                    radius: card.themeRadii.row === 0 ? 0 : height / 2
+                    radius: card.luluPalette.radius("row", height / 2, card.uiScale)
                     color: card.luluPalette.glassBorder
                     visible: card.acquisitionState !== "failed"
 
@@ -521,7 +522,8 @@ Rectangle {
             anchors.bottom: parent.bottom
             height: 82 * focalScale * card.uiScale
             scale: card.playButtonScale
-            radius: card.themeRadii.media === 0 ? 0 : 20 * focalScale * card.uiScale
+            radius: card.luluPalette.radius("media", 20 * focalScale * card.uiScale,
+                card.uiScale)
             color: card.presentationProgress > 0 && card.presentationProgress < 1
                 ? card.luluPalette.transparent : card.luluPalette.actionSurface
             border.color: card.luluPalette.focusIndicator

@@ -12,8 +12,8 @@ Rectangle {
     property var mappingItem: root
     property var luluPalette
     property real uiScale: 1
-    readonly property var themeRadii: typeof mudosTheme !== "undefined" ? mudosTheme.radii : ({})
-    property real cornerRadius: (themeRadii.panel === undefined ? 18 : themeRadii.panel) * uiScale
+    property real cornerRadius: luluPalette
+        ? luluPalette.radius("panel", 18) * uiScale : 18 * uiScale
     property real tintOpacity: 0.12
     readonly property var themeGlass: typeof mudosTheme !== "undefined" ? mudosTheme.glass : ({})
     readonly property var themeOptics: themeGlass.panel || themeGlass

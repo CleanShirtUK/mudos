@@ -10,8 +10,8 @@ Item {
     property rect canonicalRect: Qt.rect(0, 0, width, height)
     property var canonicalMappingDependency
     property real uiScale: 1
-    readonly property var themeRadii: typeof mudosTheme !== "undefined" ? mudosTheme.radii : ({})
-    property real cornerRadius: (themeRadii.card === 0 ? 0 : 16) * uiScale
+    property real cornerRadius: luluPalette
+        ? luluPalette.radius("card", 16) * uiScale : 16 * uiScale
     property real refractionPixels: 80 * uiScale
     property real dispersionIor: 0.0175
     property real diffusionPixels: 5 * uiScale

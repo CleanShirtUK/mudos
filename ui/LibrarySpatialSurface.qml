@@ -75,8 +75,8 @@ Item {
          canonicalRect: root.canonicalRect
           transparentOutsideMask: root.transparentOutsideMask
            luluPalette: root.luluPalette
-           cornerRadius: (typeof mudosTheme !== "undefined" && mudosTheme.radii.card === 0)
-               ? 0 : 16 * root.uiScale + 12 * root.uiScale * root.surfacePresentationProgress
+          cornerRadius: root.luluPalette.radius("card",
+                16 + 12 * root.surfacePresentationProgress) * root.uiScale
           bevelWidthPx: 3 * root.uiScale + 3 * root.uiScale * root.surfacePresentationProgress
     }
 

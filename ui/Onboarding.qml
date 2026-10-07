@@ -80,7 +80,7 @@ Item {
                 source: "http://127.0.0.1/setup/qr.png"
                 cache: false
                 fillMode: Image.PreserveAspectFit
-                Rectangle { anchors.fill: parent; z: -1; color: "white"; radius: root.luluPalette ? root.luluPalette.radius("media", 8 * root.uiScale) : 8 * root.uiScale }
+                Rectangle { anchors.fill: parent; z: -1; color: "white"; radius: root.luluPalette ? root.luluPalette.radius("media", 8 * root.uiScale, root.uiScale) : 8 * root.uiScale }
             }
             Column {
                 anchors.verticalCenter: parent.verticalCenter
@@ -107,7 +107,7 @@ Item {
                         font.pixelSize: 20 * root.uiScale
                         font.bold: true
                     background: Rectangle {
-                            radius: root.luluPalette ? root.luluPalette.radius("row", 12 * root.uiScale) : 12 * root.uiScale
+                            radius: root.luluPalette ? root.luluPalette.radius("row", 12 * root.uiScale, root.uiScale) : 12 * root.uiScale
                             color: index === root.selectedAction
                                 ? (root.luluPalette ? root.luluPalette.focusedCardSurface : "#8ab4ff")
                                 : (root.luluPalette ? root.luluPalette.cardSurface : "#242d3a")
@@ -142,7 +142,7 @@ Item {
                     font.pixelSize: 20 * root.uiScale
                     font.bold: true
                     background: Rectangle {
-                        radius: root.luluPalette ? root.luluPalette.radius("row", 12 * root.uiScale) : 12 * root.uiScale
+                        radius: root.luluPalette ? root.luluPalette.radius("row", 12 * root.uiScale, root.uiScale) : 12 * root.uiScale
                         color: index === root.selectedAction
                             ? (root.luluPalette ? root.luluPalette.focusedCardSurface : "#8ab4ff")
                             : (root.luluPalette ? root.luluPalette.cardSurface : "#242d3a")

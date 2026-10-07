@@ -25,7 +25,8 @@
     "focusedCard": 0.90, "selection": 0.72, "statusBacking": 0.88,
     "overlayBackdrop": 0.82, "overlaySurface": 0.96
   },
-  "radii": {"panel": 4, "card": 3, "row": 1, "media": 2, "status": 3, "overlay": 4},
+  "radii": {"panel": 0, "card": 0, "row": 0, "media": 0, "status": 0, "overlay": 0},
+  "radiusPolicy": "exact",
   "glass": {
     "enabled": true, "ior": 1.08, "depth": 0.20, "refractionPixels": 34,
     "dispersionIor": 0.006, "diffusionPixels": 1.2, "transmission": 0.82,
@@ -36,7 +37,7 @@
     "status": {"ior": 1.08, "depth": 0.20, "refractionPixels": 26, "dispersionIor": 0.004, "diffusionPixels": 0.8, "transmission": 0.78, "bevelWidth": 2, "bulgeStrength": 20, "sceneLightStrength": 0.13, "sceneLightPixels": 16, "edgeLightStrength": 0.34, "edgeLightDirection": [1, -1]},
     "navigation": {"ior": 1.08, "depth": 0.20, "refractionPixels": 28, "dispersionIor": 0.004, "diffusionPixels": 0.8, "transmission": 0.74, "bevelWidth": 2.5, "bulgeStrength": 24, "sceneLightStrength": 0.14, "sceneLightPixels": 18, "edgeLightStrength": 0.35, "edgeLightDirection": [1, -1]}
   },
-  "chrome": {"style": "bevel", "highlight": "#F0F0F5", "light": "#A0A0A8", "shadow": "#2A2A32", "darkShadow": "#050508", "width": 2},
+  "chrome": {"style": "flat"},
   "motion": {"enabled": true, "durationScale": 0.72, "roles": {
     "navigation": {"enabled": true, "duration": 175, "easing": "outCubic"},
     "focus": {"enabled": true, "duration": 100, "easing": "outCubic"},
@@ -45,6 +46,7 @@
     "fade": {"enabled": true, "duration": 110, "easing": "linear"},
     "status": {"enabled": true, "duration": 140, "easing": "outCubic"},
     "intro": {"enabled": true, "duration": 250, "easing": "outCubic"},
+    "wallpaper": {"enabled": true, "speed": 1.0},
     "motionBlur": {"enabled": true}
   }},
   "labels": {

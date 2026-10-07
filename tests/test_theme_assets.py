@@ -15,6 +15,10 @@ class DefaultThemeInventoryTests(unittest.TestCase):
         self.assertEqual(config["id"], "modern")
         self.assertEqual(config["name"], "Modern")
         self.assertTrue(config["glass"]["enabled"])
+        self.assertEqual(config["radiusPolicy"], "componentBaseline")
+        self.assertEqual(config["chrome"]["style"], "flat")
+        self.assertEqual(config["motion"]["roles"]["wallpaper"],
+                         {"enabled": True, "speed": 1.0})
         self.assertTrue((theme / config["wallpaper"]["shader"]).is_file())
         for face in config["fonts"]["faces"].values():
             path = Path(face["file"])
@@ -46,6 +50,9 @@ class DefaultThemeInventoryTests(unittest.TestCase):
         self.assertEqual((config["id"], config["name"]), ("95", "95"))
         self.assertFalse(config["glass"]["enabled"])
         self.assertEqual(set(config["radii"].values()), {0})
+        self.assertEqual(config["radiusPolicy"], "exact")
+        self.assertEqual(config["chrome"]["style"], "bevel")
+        self.assertFalse(config["motion"]["roles"]["wallpaper"]["enabled"])
         self.assertTrue((theme / config["wallpaper"]["shader"]).is_file())
         self.assertTrue((theme / "wallpaper/wallpaper.frag").is_file())
         self.assertEqual(len(config["icons"]), 12)
@@ -62,6 +69,12 @@ class DefaultThemeInventoryTests(unittest.TestCase):
         config = json.loads((theme / "theme.json").read_text())
         self.assertEqual((config["id"], config["name"]), ("metalheart", "Metalheart"))
         self.assertTrue(config["glass"]["enabled"])
+        self.assertEqual(config["radii"],
+                         {role: 0 for role in ("panel", "card", "row", "media", "status", "overlay")})
+        self.assertEqual(config["radiusPolicy"], "exact")
+        self.assertEqual(config["chrome"]["style"], "flat")
+        self.assertEqual(config["motion"]["roles"]["wallpaper"],
+                         {"enabled": True, "speed": 1.0})
         self.assertEqual(config["labels"]["home"]["store"], "ACQUIRE")
         self.assertEqual(config["textStyles"]["homeTitle"],
                          {"case": "preserve", "letterSpacing": 1.25})

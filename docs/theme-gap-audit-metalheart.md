@@ -13,12 +13,16 @@ request to reproduce any site's artwork or navigation.
   graphite-to-gunmetal stops, a crisp upper chrome glint, and a darker lower
   edge, while preserving backdrop transmission.
 - **Current capability:** semantic solid/tinted colors, per-profile glass optics,
-  and `chrome.style = "bevel"`. `MudosChromeFrame` creates paired top/left and
-  bottom/right solid strips; the native glass item supplies its optical bevel.
+  a `flat` or generic `bevel` chrome mode, and the native glass item's optical
+  bevel. Metalheart now selects `chrome.style = "flat"`; the 95 theme retains
+  its paired top/left and bottom/right Windows-style bevel treatment.
 - **What blocks it:** there is no theme-owned gradient-stop list, per-surface
   material ramp, or independently styled edge/highlight band. Repeating narrow
   colors in QML would hard-code Metalheart into the engine, so the theme uses a
-  gunmetal substrate and the existing bevel/glass profile.
+  gunmetal substrate, flat chrome and its existing glass profile. Physical
+  review of the first bundle found its generic bevel read as 95-style UI; that
+  approximation was removed in this corrective pass, confirming the missing
+  material primitive rather than weakening the gap.
 - **Smallest generic primitive:** an optional declarative multi-stop surface
   material with independent top/bottom edge colors, consumed by the existing
   structural/card surface components (no arbitrary theme code).
@@ -27,28 +31,24 @@ request to reproduce any site's artwork or navigation.
   primitive for making every shell surface read as machined metal rather than
   tinted glass.
 
-## 2. Positive theme radii do not override component metrics everywhere
+## Radius authority — resolved in the corrective pass
 
-- **Desired treatment:** consistent small but nonzero panel/card/row/media radii
-  (approximately 4/3/1/2 px) throughout Settings, Utilities, Guide and content
-  rows.
-- **Current capability:** `theme.json` validates and exposes radius roles; some
-  surfaces consume configured values directly. `LuluPalette.radius(role,
-  fallback)` intentionally uses the configured value only when it is zero, and
-  otherwise preserves each component's existing local fallback. This protects
-  established Modern metrics but prevents Metalheart's small positive values
-  from reaching many helper-based surfaces.
-- **What blocks it:** the shared helper has no exact-positive-radius policy; using
-  the configured values globally would alter the currently accepted Modern
-  component radii (for example media and overlay fallbacks differ from the
-  configured Modern values). Metalheart therefore gets angular chrome on direct
-  consumers and the closest existing local metrics elsewhere.
-- **Smallest generic primitive:** an explicit, backwards-compatible radius
-  resolution policy (theme-exact versus component-baseline), selected by a
-  generic schema/versioned contract rather than theme ID.
-- **Layout/navigation impact:** no navigation change; corner curvature only.
-- **Priority / impact:** **medium-high** — consistency is noticeably limited on
-  nested panels and rows, though the information architecture remains intact.
+- **Desired treatment:** the current corrective target is a single authoritative
+  angular radius configuration throughout Settings, Utilities, Guide and
+  content rows; Metalheart currently requests zero on all six semantic roles.
+- **Originally desired:** consistent small radii throughout nested surfaces.
+- **Originally observed capability/defect:** zero configured radii were honored,
+  but any positive radius fell through to a component-local fallback.
+- **Correction:** the generic `radiusPolicy` is now validated as `exact` or
+  `componentBaseline`. Exact roles are authoritative across palette helper and
+  direct surface consumers; componentBaseline preserves Modern's accepted local
+  metrics while retaining its historical zero-radius opt-in. 95 and Metalheart
+  select exact. Metalheart sets every declared radius role to zero.
+- **Remaining blocker:** none for radius authority; this is a resolved engine
+  defect, not a proposed capability gap.
+- **Layout/navigation impact:** none; corner curvature only.
+- **Priority / impact:** resolved; regression coverage includes positive exact
+  values as well as Modern fallback and 95/Metalheart zero values.
 
 ## 3. Theme-owned ornaments have no safe placement slots
 
@@ -100,3 +100,7 @@ request to reproduce any site's artwork or navigation.
   uses those rather than requesting a new material-profile schema.
 - Existing status and hint placement, screen layout, and color-accurate artwork
   remain engine-owned and need no Metalheart-specific presentation layer.
+- Continuous wallpaper animation now has an independent `wallpaper` motion role
+  with validated enable and speed settings. It no longer shares the startup
+  `intro` role; Modern keeps speed 1, 95 disables wallpaper motion, and Metalheart
+  enables it at speed 1.

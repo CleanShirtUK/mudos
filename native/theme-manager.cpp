@@ -175,6 +175,10 @@ bool ThemeManager::inspectAt(const QString &directory, const QString &expectedId
     const QJsonObject c = data.value("colors").toObject();
     const QJsonObject o = data.value("opacity").toObject();
     const QJsonObject r = data.value("radii").toObject();
+    if (data.contains("radiusPolicy") && !data.value("radiusPolicy").isString()) return false;
+    const QString radiusPolicy = data.value("radiusPolicy").toString("componentBaseline");
+    if (radiusPolicy != QLatin1String("exact")
+        && radiusPolicy != QLatin1String("componentBaseline")) return false;
     const QJsonObject g = data.value("glass").toObject();
     const QJsonObject chrome = data.value("chrome").toObject();
     const QJsonObject f = data.value("fonts").toObject();
@@ -200,6 +204,10 @@ bool ThemeManager::inspectAt(const QString &directory, const QString &expectedId
             || role.value("duration").toDouble() < 0 || role.value("duration").toDouble() > 5000)) return false;
         if (role.contains("easing") && (!role.value("easing").isString()
             || !easings.contains(role.value("easing").toString()))) return false;
+        if (role.contains("speed") && (!role.value("speed").isDouble()
+            || !std::isfinite(role.value("speed").toDouble())
+            || role.value("speed").toDouble() < 0
+            || role.value("speed").toDouble() > 10)) return false;
     }
     const QJsonObject labels = data.value("labels").toObject();
     if (data.contains("labels") && !data.value("labels").isObject()) return false;
@@ -322,6 +330,7 @@ bool ThemeManager::inspectAt(const QString &directory, const QString &expectedId
     values.insert("root", QFileInfo(directory).canonicalFilePath());
     values.insert("colors", c.toVariantMap()); values.insert("opacity", o.toVariantMap());
     values.insert("radii", r.toVariantMap()); values.insert("glass", g.toVariantMap());
+    values.insert("radiusPolicy", radiusPolicy);
     values.insert("chrome", chrome.toVariantMap()); values.insert("fonts", fontPaths);
     QVariantMap resolvedRoles;
     for (auto it = roleMap.begin(); it != roleMap.end(); ++it) {
@@ -347,6 +356,7 @@ bool ThemeManager::inspectAt(const QString &directory, const QString &expectedId
 bool ThemeManager::apply(const QVariantMap &theme, bool persist)
 {
     m_id = theme.value("id").toString(); m_name = theme.value("name").toString();
+    m_radiusPolicy = theme.value("radiusPolicy", QStringLiteral("componentBaseline")).toString();
     m_root = theme.value("root").toString(); m_wallpaper = theme.value("wallpaper").toString();
     m_colors = theme.value("colors").toMap(); m_opacity = theme.value("opacity").toMap();
     m_radii = theme.value("radii").toMap(); m_glass = theme.value("glass").toMap();

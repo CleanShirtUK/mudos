@@ -32,4 +32,9 @@ QtObject {
         default: return Easing.Linear
         }
     }
+    function speed(role, fallback) {
+        var item = roles[role] || ({})
+        var configured = item.speed === undefined ? fallback : Number(item.speed)
+        return isFinite(configured) ? Math.max(0, Math.min(10, configured)) : fallback
+    }
 }

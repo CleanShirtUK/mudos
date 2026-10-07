@@ -30,7 +30,7 @@ Item {
         anchors.bottom: parent.bottom
         width: Math.min(parent.width * 0.48, 560 * root.uiScale)
         color: luluPalette.overlaySurface
-        radius: root.luluPalette.radius("overlay", 10 * root.uiScale)
+        radius: root.luluPalette.radius("overlay", 10 * root.uiScale, root.uiScale)
         border.color: luluPalette.glassBorder
         border.width: root.uiScale
         MudosChromeFrame { anchors.fill: parent; luluPalette: root.luluPalette; uiScale: root.uiScale; cornerRadius: parent.radius }
@@ -68,7 +68,7 @@ Item {
                     required property string modelData
                     width: list.width
                     height: 58 * root.uiScale
-                    radius: root.luluPalette.radius("row", 8 * root.uiScale)
+                    radius: root.luluPalette.radius("row", 8 * root.uiScale, root.uiScale)
                     property real selectionProgress: index === root.selectedIndex ? 1 : 0
                     color: Qt.rgba(
                         root.luluPalette.cardSurface.r

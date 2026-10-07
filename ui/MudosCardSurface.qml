@@ -37,9 +37,9 @@ Rectangle {
                        bottomRight.y - topLeft.y)
     }
 
-    readonly property var themeRadii: typeof mudosTheme !== "undefined" ? mudosTheme.radii : ({})
-    radius: themeRadii[root.radiusRole] === 0 ? 0
-        : (themeRadii.card === undefined ? 10 : themeRadii.card) * root.uiScale
+    radius: luluPalette
+        ? luluPalette.radius(root.radiusRole, 10) * root.uiScale
+        : 10 * root.uiScale
     color: Qt.rgba(
         luluPalette.cardSurface.r
             + (luluPalette.focusedCardSurface.r - luluPalette.cardSurface.r)

@@ -15,6 +15,7 @@ TestCase {
     Loader { id: motionLoader; source: Qt.resolvedUrl("../../ui/ThemeMotion.qml") }
     Loader { id: paletteLoader; active: false; source: Qt.resolvedUrl("../../ui/LuluPalette.qml") }
     Loader { id: typographyLoader; active: false; source: Qt.resolvedUrl("../../ui/Typography.qml") }
+    Loader { id: coordinatorLoader; active: false; source: Qt.resolvedUrl("../../ui/PresentationCoordinator.qml") }
     Loader {
         id: iconLoader
         active: false
@@ -93,6 +94,69 @@ TestCase {
         verify(!motionLoader.item.enabled("navigation"))
     }
 
+    function test_exact_and_component_baseline_radius_policies_and_chrome() {
+        mudosTheme = ({
+            radiusPolicy: "componentBaseline",
+            radii: {panel: 18, card: 10, row: 7, media: 14, status: 12, overlay: 14},
+            chrome: {style: "flat"}, colors: ({}),
+            motion: {enabled: true, durationScale: 1, roles: ({})}
+        })
+        paletteLoader.active = true
+        compare(paletteLoader.item.radius("panel", 14), 14)
+        compare(paletteLoader.item.radius("media", 9, 2), 9)
+        verify(!paletteLoader.item.bevelChrome)
+
+        mudosTheme = ({
+            radiusPolicy: "exact",
+            radii: {panel: 0, card: 0, row: 0, media: 0, status: 0, overlay: 0},
+            chrome: {style: "bevel"}, colors: ({}),
+            motion: {enabled: true, durationScale: 1, roles: ({})}
+        })
+        compare(paletteLoader.item.radius("panel", 14), 0)
+        compare(paletteLoader.item.radius("row", 8), 0)
+        verify(paletteLoader.item.bevelChrome)
+
+        mudosTheme = ({
+            radiusPolicy: "exact",
+            radii: {panel: 3, card: 0, row: 1, media: 0, status: 0, overlay: 0},
+            chrome: {style: "flat"}, colors: ({}),
+            motion: {enabled: true, durationScale: 1, roles: ({})}
+        })
+        compare(paletteLoader.item.radius("panel", 14), 3)
+        compare(paletteLoader.item.radius("row", 8, 2), 2)
+        verify(!paletteLoader.item.bevelChrome)
+        paletteLoader.active = false
+    }
+
+    function test_wallpaper_clock_is_independent_of_intro_and_switches_live() {
+        mudosTheme = ({motion: {enabled: true, durationScale: 1,
+            roles: {intro: {enabled: true}, wallpaper: {enabled: true, speed: 1}}}})
+        coordinatorLoader.active = true
+        tryCompare(coordinatorLoader.item, "ready", true)
+        coordinatorLoader.item.contentState = "PRESENTED"
+        tryCompare(coordinatorLoader.item, "wallpaperClockRunning", true)
+        compare(coordinatorLoader.item.wallpaperClockSpeed, 1)
+        var modernStart = coordinatorLoader.item.orbitBaseTime
+        wait(150)
+        verify(coordinatorLoader.item.orbitBaseTime > modernStart)
+
+        mudosTheme = ({motion: {enabled: false, durationScale: 1,
+            roles: {intro: {enabled: true}, wallpaper: {enabled: false, speed: 1}}}})
+        tryCompare(coordinatorLoader.item, "wallpaperClockRunning", false)
+        var ninetyFiveStoppedAt = coordinatorLoader.item.orbitBaseTime
+        wait(150)
+        compare(coordinatorLoader.item.orbitBaseTime, ninetyFiveStoppedAt)
+
+        mudosTheme = ({motion: {enabled: true, durationScale: 0.72,
+            roles: {intro: {enabled: true}, wallpaper: {enabled: true, speed: 1}}}})
+        tryCompare(coordinatorLoader.item, "wallpaperClockRunning", true)
+        compare(coordinatorLoader.item.wallpaperClockSpeed, 1)
+        var metalheartStart = coordinatorLoader.item.orbitBaseTime
+        wait(150)
+        verify(coordinatorLoader.item.orbitBaseTime > metalheartStart)
+        coordinatorLoader.active = false
+    }
+
     function test_metalheart_theme_consumers_resolve_configured_roles() {
         var root = Qt.resolvedUrl("../../themes/metalheart/")
         mudosTheme = ({
@@ -101,9 +165,9 @@ TestCase {
                 roles: {surface: {enabled: true, duration: 340, easing: "outQuint"}}},
             colors: {primaryText: "#E0E0E8", accent: "#0088FF", backdrop: "#050508",
                 surface: "#D9141418", headingAccent: "#E0E0E8", border: "#B5606068"},
-            chrome: {style: "bevel", highlight: "#F0F0F5", light: "#A0A0A8",
-                shadow: "#2A2A32", darkShadow: "#050508", width: 2},
-            radii: {panel: 4, card: 3, row: 1, media: 2, status: 3, overlay: 4},
+            chrome: {style: "flat"},
+            radiusPolicy: "exact",
+            radii: {panel: 0, card: 0, row: 0, media: 0, status: 0, overlay: 0},
             glass: {enabled: true, panel: {transmission: 0.86}},
             fonts: {
                 regular: root + "fonts/ShareTechMono-Regular.ttf",
@@ -130,7 +194,8 @@ TestCase {
         verify(typographyLoader.item.interfaceFamily !== typographyLoader.item.displayFamily)
         compare(paletteLoader.item.primaryText.toString().toLowerCase(), "#e0e0e8")
         compare(paletteLoader.item.accent.toString().toLowerCase(), "#0088ff")
-        verify(paletteLoader.item.bevelChrome)
+        verify(!paletteLoader.item.bevelChrome)
+        compare(paletteLoader.item.radius("panel", 14), 0)
         compare(mudosTheme.glass.panel.transmission, 0.86)
         compare(textLoader.item.homeLabel("store"), "ACQUIRE")
         compare(textLoader.item.homeTitle("store"), "ACQUIRE")

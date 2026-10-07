@@ -87,6 +87,16 @@ private slots:
             motion.insert("durationScale", 1e300);
             json.insert("motion", motion);
         }));
+        QVERIFY(editTheme("bad-wallpaper-speed", [](QJsonObject &json) {
+            QJsonObject motion = json.value("motion").toObject();
+            QJsonObject roles = motion.value("roles").toObject();
+            roles.insert("wallpaper", QJsonObject{{"enabled", true}, {"speed", 10.1}});
+            motion.insert("roles", roles);
+            json.insert("motion", motion);
+        }));
+        QVERIFY(editTheme("bad-radius-policy", [](QJsonObject &json) {
+            json.insert("radiusPolicy", "theme-magic");
+        }));
         QVERIFY(editTheme("zero-scale", [](QJsonObject &json) {
             QJsonObject motion = json.value("motion").toObject();
             motion.insert("durationScale", 0);
@@ -208,6 +218,8 @@ private slots:
         QVERIFY(!ids.contains("invalid-easing"));
         QVERIFY(!ids.contains("negative-duration"));
         QVERIFY(!ids.contains("bad-scale"));
+        QVERIFY(!ids.contains("bad-wallpaper-speed"));
+        QVERIFY(!ids.contains("bad-radius-policy"));
         QVERIFY(!ids.contains("zero-scale"));
         QVERIFY(!ids.contains("null-scale"));
         QVERIFY(!ids.contains("bad-label"));
@@ -227,21 +239,35 @@ private slots:
         QCOMPARE(manager.textStyles().value("viewTitle").toMap().value("letterSpacing").toDouble(), 0.0);
         QCOMPARE(manager.glass().value("enabled").toBool(), false);
         QCOMPARE(manager.radii().value("panel").toDouble(), 0.0);
+        QCOMPARE(manager.radiusPolicy(), QStringLiteral("exact"));
+        QCOMPARE(manager.chrome().value("style").toString(), QStringLiteral("bevel"));
         QVERIFY(manager.wallpaperShader().contains("themes/95/wallpaper/wallpaper.frag.qsb"));
         QVERIFY(manager.fonts().value("regular").toString().contains("themes/95/fonts/"));
         QVERIFY(manager.iconUrl("settings").contains("themes/95/icons/settings.svg"));
         QCOMPARE(saved.value("appearance/theme").toString(), QStringLiteral("95"));
         QVERIFY(manager.select("modern"));
         QCOMPARE(manager.colors().value("backdrop").toString(), QStringLiteral("#060607"));
+        QCOMPARE(manager.radiusPolicy(), QStringLiteral("componentBaseline"));
+        QCOMPARE(manager.chrome().value("style").toString(), QStringLiteral("flat"));
+        QVERIFY(manager.motion().value("roles").toMap().value("wallpaper").toMap()
+                    .value("enabled").toBool());
+        QCOMPARE(manager.motion().value("roles").toMap().value("wallpaper").toMap()
+                     .value("speed").toDouble(), 1.0);
         QVERIFY(manager.select("metalheart"));
         QCOMPARE(manager.activeName(), QStringLiteral("Metalheart"));
         QCOMPARE(manager.colors().value("backdrop").toString(), QStringLiteral("#050508"));
-        QCOMPARE(manager.radii().value("panel").toDouble(), 4.0);
+        QCOMPARE(manager.radii().value("panel").toDouble(), 0.0);
+        QCOMPARE(manager.radiusPolicy(), QStringLiteral("exact"));
+        QCOMPARE(manager.chrome().value("style").toString(), QStringLiteral("flat"));
         QCOMPARE(manager.glass().value("enabled").toBool(), true);
         QCOMPARE(manager.glass().value("panel").toMap().value("transmission").toDouble(), 0.86);
         QCOMPARE(manager.motion().value("durationScale").toDouble(), 0.72);
         QCOMPARE(manager.motion().value("roles").toMap().value("surface").toMap()
                      .value("duration").toInt(), 340);
+        QVERIFY(manager.motion().value("roles").toMap().value("wallpaper").toMap()
+                    .value("enabled").toBool());
+        QCOMPARE(manager.motion().value("roles").toMap().value("wallpaper").toMap()
+                     .value("speed").toDouble(), 1.0);
         QCOMPARE(manager.labels().value("home").toMap().value("store").toString(), QStringLiteral("ACQUIRE"));
         QCOMPARE(manager.fonts().value("regular").toString().contains("themes/metalheart/fonts/ShareTechMono-Regular.ttf"), true);
         QCOMPARE(manager.fonts().value("heavy").toString().contains("themes/metalheart/fonts/Oxanium-Variable.ttf"), true);

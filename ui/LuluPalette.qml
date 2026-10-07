@@ -3,12 +3,17 @@ import QtQuick
 QtObject {
     readonly property var themeColors: typeof mudosTheme !== "undefined" ? mudosTheme.colors : ({})
     readonly property var themeRadii: typeof mudosTheme !== "undefined" ? mudosTheme.radii : ({})
+    readonly property string radiusPolicy: typeof mudosTheme !== "undefined"
+        ? mudosTheme.radiusPolicy || "componentBaseline" : "componentBaseline"
     readonly property var themeChrome: typeof mudosTheme !== "undefined" ? mudosTheme.chrome : ({})
-    function radius(role, fallback) {
-        // Existing controls have component-specific Modern metrics. A zero
-        // radius is the opt-in semantic override needed by flat/square themes;
-        // otherwise keep each accepted baseline's existing local metric.
-        return themeRadii[role] === 0 ? 0 : fallback
+    function radius(role, fallback, scale) {
+        var configured = themeRadii[role]
+        if (configured === undefined) return fallback
+        if (radiusPolicy === "exact")
+            return Number(configured) * (scale === undefined ? 1 : Number(scale))
+        // Compatibility path for Modern's accepted component-local metrics;
+        // zero remains the historical opt-in square override.
+        return Number(configured) === 0 ? 0 : fallback
     }
     readonly property color chromeHighlight: themeChrome.highlight || "#ffffff"
     readonly property color chromeLight: themeChrome.light || "#ffffff"

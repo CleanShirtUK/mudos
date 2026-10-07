@@ -33,7 +33,7 @@ JavaScript.
 Metalheart is an original near-black/gunmetal interpretation using Oxanium for
 display and Share Tech Mono for interface text (both SIL OFL 1.1), with its own
 compiled procedural fracture/chrome/energy wallpaper and monochrome semantic SVG
-set. It uses existing glass profiles and paired bevel chrome rather than adding
+set. It uses existing glass profiles and flat generic chrome rather than adding
 theme-specific rendering logic. Its controller glyph face is inherited from the
 existing Mudos asset set; upstream provenance says free/open-source but does not
 specify an SPDX license. See `themes/metalheart/fonts/PROVENANCE.md` and the

@@ -63,6 +63,8 @@ Item {
     property real orbitExitStartSpeed: 1
     readonly property bool startupRunning: startupAnimation.running
     readonly property bool exitRunning: exitAnimation.running
+    readonly property bool wallpaperClockRunning: orbitBaseTimeAnimation.running
+    readonly property real wallpaperClockSpeed: themeMotion.speed("wallpaper", 1)
     readonly property bool contentVisible:
         contentState !== hiddenState
         && (contentState !== transitioningInState
@@ -411,8 +413,6 @@ Item {
     function beginStartup() {
         startupAnimation.stop()
         exitAnimation.stop()
-        orbitBaseTimeAnimation.stop()
-        orbitBaseTime = 0
         orbitSettledOffset = 0
         orbitIntroClock = 0
         orbitIntroActive = true
@@ -424,7 +424,6 @@ Item {
             markContentPresented()
             return
         }
-        orbitBaseTimeAnimation.start()
         orbitIntroAnimation.start()
         startupAnimation.start()
     }
@@ -455,7 +454,6 @@ Item {
     function markContentHidden() {
         startupAnimation.stop()
         exitAnimation.stop()
-        orbitBaseTimeAnimation.stop()
         orbitIntroAnimation.stop()
         orbitIntroActive = false
         startupClock = 0
@@ -489,7 +487,6 @@ Item {
             && typeof mudosTheme.themeChanged !== "undefined" ? mudosTheme : null
         function onThemeChanged() {
             if (themeMotion.enabled("intro")) return
-            orbitBaseTimeAnimation.stop()
             if (coordinator.orbitIntroActive) coordinator.finishOrbitIntro()
             if (coordinator.contentState === coordinator.transitioningInState)
                 coordinator.markContentPresented()
@@ -516,11 +513,13 @@ Item {
         id: orbitBaseTimeAnimation
         target: coordinator
         property: "orbitBaseTime"
-        from: 0
         to: 100000
-        duration: themeMotion.duration("intro", 100000000)
+        duration: themeMotion.speed("wallpaper", 1) > 0
+            ? 100000000 / themeMotion.speed("wallpaper", 1) : 100000000
         loops: Animation.Infinite
-        running: themeMotion.enabled("intro")
+        running: coordinator.contentState !== coordinator.hiddenState
+            && themeMotion.enabled("wallpaper")
+            && themeMotion.speed("wallpaper", 1) > 0
     }
 
     NumberAnimation {

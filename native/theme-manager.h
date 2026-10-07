@@ -16,6 +16,7 @@ class ThemeManager final : public QObject
     Q_PROPERTY(QVariantMap colors READ colors NOTIFY themeChanged)
     Q_PROPERTY(QVariantMap opacity READ opacity NOTIFY themeChanged)
     Q_PROPERTY(QVariantMap radii READ radii NOTIFY themeChanged)
+    Q_PROPERTY(QString radiusPolicy READ radiusPolicy NOTIFY themeChanged)
     Q_PROPERTY(QVariantMap glass READ glass NOTIFY themeChanged)
     Q_PROPERTY(QVariantMap chrome READ chrome NOTIFY themeChanged)
     Q_PROPERTY(QVariantMap fonts READ fonts NOTIFY themeChanged)
@@ -34,6 +35,7 @@ public:
     QVariantMap colors() const { return m_colors; }
     QVariantMap opacity() const { return m_opacity; }
     QVariantMap radii() const { return m_radii; }
+    QString radiusPolicy() const { return m_radiusPolicy; }
     QVariantMap glass() const { return m_glass; }
     QVariantMap chrome() const { return m_chrome; }
     QVariantMap fonts() const { return m_fonts; }
@@ -56,6 +58,7 @@ private:
     void watchSettings();
     QStringList roots() const;
     QString m_id, m_name, m_root, m_wallpaper;
+    QString m_radiusPolicy = QStringLiteral("componentBaseline");
     QVariantMap m_colors, m_opacity, m_radii, m_glass, m_chrome, m_fonts, m_icons;
     QVariantMap m_motion, m_labels, m_textStyles;
     QVariantMap m_wallpaperValues;
