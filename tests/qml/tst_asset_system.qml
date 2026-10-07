@@ -37,8 +37,28 @@ TestCase {
         source: Qt.resolvedUrl("../../ui/MudosIcon.qml")
     }
     Loader {
+        id: statusIconLoader
+        source: Qt.resolvedUrl("../../ui/StatusGlyph.qml")
+        onLoaded: {
+            item.iconName = "settings"
+            item.glyphColor = "#23aadd"
+        }
+    }
+    Loader {
+        id: metadataRowLoader
+        source: Qt.resolvedUrl("../../ui/FocalMetadataRow.qml")
+        onLoaded: {
+            item.width = 180
+            item.height = 24
+            item.iconName = "settings"
+            item.text = "Platform"
+        }
+    }
+    Loader {
         id: paletteLoader
         source: Qt.resolvedUrl("../../ui/LuluPalette.qml")
+        onItemChanged: if (item && panelSurfaceLoader.item)
+            panelSurfaceLoader.item.luluPalette = item
     }
     Loader {
         id: panelSurfaceLoader
@@ -99,6 +119,96 @@ TestCase {
         iconLoader.item.name = "settings"
         tryCompare(iconLoader.item, "overrideUrl", Qt.resolvedUrl("../../themes/95/icons/settings.svg"))
         compare(mudosTheme.iconUrl("settings"), Qt.resolvedUrl("../../themes/95/icons/settings.svg"))
+    }
+
+    function test_svg_tint_png_original_and_fallback_switch_without_stale_effects() {
+        function themeFor(id) {
+            var theme = {
+                activeId: id,
+                colors: {primaryText: "#163b5e", secondaryText: "#355a72", mutedText: "#54788e",
+                    selectedText: "#163b5e", accent: "#168be0", focusIndicator: "#168be0",
+                    warning: "#d87918", backdrop: "#bfe8ff", surface: "#7feffbff",
+                    surfaceElevated: "#a8d9f5ff", surfaceInternal: "#ddf3fcff",
+                    cardSurface: "#83d9f5ff", focusedCardSurface: "#b945d8f2",
+                    actionSurface: "#e8ffffff", actionText: "#163b5e", artworkSurface: "#cdeaf7ff",
+                    border: "#7a74b8d4", focusBorder: "#168be0", overlayBackdrop: "#783b8cc0",
+                    overlaySurface: "#edf2fbff", launchOverlaySurface: "#f2eef9ff", guideSurface: "#eaf3fcff",
+                    guideBorder: "#7a74b8d4", guideItemSurface: "#d9eaf8ff", guideSelectedText: "#163b5e",
+                    scrollFadeStart: "#00bfe8ff", scrollFadeEnd: "#e8bfe8ff", navigationText: "#163b5e",
+                    headingAccent: "#07599d", selectionSurface: "#6145bee8", librarySurface: "#9ed9f5ff",
+                    libraryCardSurface: "#95d9f5ff", libraryBorder: "#7a74b8d4", overlay: "#edf2fbff"},
+                radii: {panel: 22, card: 16, row: 12, media: 16, status: 18, overlay: 22},
+                glass: {enabled: true}, chrome: {style: "flat"},
+                fonts: {
+                    regular: Qt.resolvedUrl("../../themes/modern/fonts/JetBrainsMonoNLNerdFont-Regular.ttf"),
+                    bold: Qt.resolvedUrl("../../themes/modern/fonts/JetBrainsMonoNLNerdFont-Bold.ttf"),
+                    heavy: Qt.resolvedUrl("../../themes/modern/fonts/JetBrainsMonoNLNerdFont-ExtraBold.ttf"),
+                    icons: Qt.resolvedUrl("../../themes/modern/fonts/JetBrainsMonoNLNerdFont-Regular.ttf"),
+                    controller: Qt.resolvedUrl("../../themes/modern/fonts/Config-Glyphs.otf"),
+                    roles: {interface: "regular", display: "heavy", majorHeading: "heavy", icon: "icons", controller: "controller"}
+                }
+            }
+            if (id === "frutiger-aero") {
+                theme.iconAsset = function(name) {
+                    return name === "settings" ? {
+                        url: Qt.resolvedUrl("../assets/full-colour-icon.png").toString(),
+                        renderMode: "original", format: "png"
+                    } : ({})
+                }
+            } else if (id === "metalheart") {
+                theme.iconAsset = function(name) {
+                    return name === "settings" ? {
+                        url: Qt.resolvedUrl("../../themes/metalheart/icons/settings.svg").toString(),
+                        renderMode: "tint", format: "svg"
+                    } : ({})
+                }
+            } else {
+                theme.iconAsset = function() { return ({}) }
+            }
+            return theme
+        }
+
+        mudosTheme = themeFor("frutiger-aero")
+        iconLoader.item.name = "settings"
+        statusIconLoader.item.iconName = "settings"
+        metadataRowLoader.item.iconName = "settings"
+        compare(iconLoader.item.renderMode, "original")
+        compare(iconLoader.item.overrideUrl,
+            Qt.resolvedUrl("../assets/full-colour-icon.png").toString())
+        var original = findChild(iconLoader.item, "semanticOriginalImage")
+        var tintEffect = findChild(iconLoader.item, "semanticTintEffect")
+        verify(original !== null)
+        verify(tintEffect !== null)
+        compare(iconLoader.item.paintsOriginal, true)
+        compare(iconLoader.item.appliesSemanticTint, false)
+        compare(original.fillMode, Image.PreserveAspectFit)
+        tryCompare(original, "status", Image.Ready)
+        var statusOriginal = findChild(statusIconLoader.item, "statusOriginalImage")
+        var statusTint = findChild(statusIconLoader.item, "statusTintEffect")
+        verify(statusOriginal !== null)
+        compare(statusIconLoader.item.paintsOriginal, true)
+        compare(statusIconLoader.item.appliesSemanticTint, false)
+        compare(statusOriginal.fillMode, Image.PreserveAspectFit)
+        compare(statusOriginal.width, statusIconLoader.item.availablePaintedSize)
+        var metadataGlyph = findChild(metadataRowLoader.item, "metadataStatusGlyph")
+        verify(metadataGlyph !== null)
+        compare(metadataGlyph.paintsOriginal, true)
+
+        mudosTheme = themeFor("modern")
+        compare(iconLoader.item.overrideUrl, "")
+        compare(iconLoader.item.renderMode, "tint")
+        compare(original.source, "")
+        compare(iconLoader.item.appliesSemanticTint, false)
+        compare(iconLoader.item.usesFallbackGlyph, true)
+        compare(statusIconLoader.item.overrideUrl, "")
+        compare(statusIconLoader.item.usesFallbackGlyph, true)
+
+        mudosTheme = themeFor("metalheart")
+        compare(iconLoader.item.renderMode, "tint")
+        compare(iconLoader.item.appliesSemanticTint, true)
+        compare(original.source, "")
+        compare(statusIconLoader.item.appliesSemanticTint, true)
+        compare(statusIconLoader.item.paintsOriginal, false)
     }
 
     function test_controller_font_loads_with_config_family() {

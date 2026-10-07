@@ -662,6 +662,7 @@ Item {
                             iconName: modelData.iconName
                             text: modelData.text
                             fontFamily: root.libraryFontFamily
+                            typography: root.typography
                             iconFamily: root.typography ? root.typography.iconFamily : root.libraryFontFamily
                             textColor: root.luluPalette.secondaryText
                             uiScale: root.uiScale

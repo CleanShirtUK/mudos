@@ -20,8 +20,8 @@ collection, flathub, applications, empty, wrench, activity, steam and addStore.
 Game metadata uses genre, clock, gameMode, wifi, info, platform, plug, developer,
 publisher and release. Missing SVGs use the built-in semantic Nerd Font glyph.
 
-The built-in set includes `Modern` (`modern`), `95`, and `Metalheart`
-(`metalheart`).
+The built-in set includes `Modern` (`modern`), `95`, `Metalheart`
+(`metalheart`), and `Frutiger Aero` (`frutiger-aero`).
 Modern's existing palette, glass profile, radii, fonts and Orbit wallpaper are
 kept as the accepted UI-001 baseline. `themes/95` is an original classic desktop
 interpretation: teal wallpaper; gray surfaces; navy selection; black/white text;
@@ -43,14 +43,18 @@ theme-engine constraints in `docs/theme-gap-audit-metalheart.md`.
 `radii` (0..128 logical pixels), `radiusPolicy` (`exact` or
 `componentBaseline`), `glass` (enabled and optical settings),
 `fonts.faces` (role-to-relative-file declarations) and `fonts.roles`, `icons`
-(semantic ID to relative SVG), and `wallpaper.shader` plus primary/secondary/
+(semantic ID to legacy SVG shorthand or a validated SVG/PNG descriptor), and `wallpaper.shader` plus primary/secondary/
 surface/error colors. Font roles are interface/display/majorHeading/icon/
 controller. Colors accept Qt color strings. Glass optical values are finite and
 bounded by the engine; `glass.enabled: false` leaves the ordinary QML tint and
 border substrate in place and suppresses the native refraction item.
 
-Themes may also declare `motion`, `labels.home`, `labels.views`, and the
-`homeTitle`/`viewTitle` text styles.
+Themes may also declare `motion`, `labels.home`, `labels.views`, the
+`homeTitle`/`viewTitle` text styles, and semantic text styles for `heading`,
+`body`, `metadata`, `annotation`, and `status`. Each semantic role may select
+one existing font role, weight 1–1000, case (`preserve`, `upper`, `lower`), and
+letter spacing -4..32 design pixels. Pixel sizes remain engine-owned so theme
+styles cannot change layout dimensions.
 Motion uses `enabled`, finite `durationScale` in `(0,10]`, and a small set of
 semantic roles (`navigation`, `focus`, `surface`, `overlay`, `fade`, `status`,
 `intro`, `wallpaper`, `motionBlur`). A role may override `enabled`, `duration` (0..5000 ms), and a
@@ -71,6 +75,17 @@ Mudos wording. Both text styles accept `case` as `preserve`, `upper`, or
 UI. Dynamic Library dimensions remain engine-owned text, composed with the
 Library view label before applying `viewTitle`. Themes supply no executable
 transformation.
+
+Semantic icon values retain the legacy string shorthand for tintable SVG, for
+example `"wifi": "icons/wifi.svg"`. Descriptor form is
+`{"file":"icons/settings.svg","render":"tint"}` or
+`{"file":"icons/settings.png","render":"original"}`. Only SVG+tint and
+PNG+original are accepted. ThemeManager resolves each semantic ID to a
+validated `{url, renderMode, format}` descriptor; UI components do not infer
+semantics from extensions. Original-mode PNGs display directly without
+colorization, preserving RGB and alpha. PNGs must decode as actual PNG, be no
+larger than 4 MiB, 1024×1024, or 1,048,576 pixels. Theme-root containment and
+SVG validation apply as before.
 
 Optional `materials` profiles are restricted to `panel`, `card`, `navigation`,
 `status`, `overlay`, and `row`. An omitted profile (or section) preserves the
@@ -102,7 +117,7 @@ For authoring, compile a GLSL fragment with Qt's `qsb --qt6 --batchable -o
 wallpaper.frag.qsb wallpaper.frag`; production does not compile themes at boot.
 
 Discovery fully validates theme metadata, all required font roles, all declared
-assets, semantic SVG paths, wallpaper QSB, colors, opacity, radii, glass values,
+assets, semantic icon descriptors/SVG/PNG payloads, wallpaper QSB, colors, opacity, radii, glass values,
 and chrome before exposing a theme in Settings. Selection consumes the same
 validated manifest; invalid themes are never listed. `chrome.style` may be
 `flat` or `bevel`; bevel themes declare highlight/light/shadow/darkShadow and a
@@ -130,6 +145,13 @@ Illustrative shape only (incomplete themes are rejected by discovery):
   "glass": { "enabled": true },
   "fonts": { "faces": { "regular": { "file": "fonts/regular.ttf" } }, "roles": { "interface": "regular" } },
   "wallpaper": { "shader": "wallpaper/wallpaper.frag.qsb" },
-  "icons": { "wifi": "icons/wifi.svg" }
+  "icons": {
+    "wifi": "icons/wifi.svg",
+    "settings": { "file": "icons/settings.png", "render": "original" }
+  }
 }
 ```
+
+Frutiger Aero's palette/materials, original procedural wallpaper, Noto Sans
+font licensing, and icon/decoration provenance are documented in
+`themes/frutiger-aero/theme.json` and `themes/frutiger-aero/ASSET_PROVENANCE.md`.

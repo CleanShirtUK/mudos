@@ -6,6 +6,7 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QFileSystemWatcher>
+#include <QImageReader>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -173,6 +174,11 @@ bool ThemeManager::inspectAt(const QString &directory, const QString &expectedId
     const QJsonObject data = doc.object();
     if (data.value("schema_version").toInt() != 1 || data.value("id").toString() != expectedId) return false;
     if (data.value("name").toString().trimmed().isEmpty()) return false;
+    auto onlyKeys = [](const QJsonObject &object, const QSet<QString> &allowed) {
+        for (auto it = object.begin(); it != object.end(); ++it)
+            if (!allowed.contains(it.key())) return false;
+        return true;
+    };
     const QJsonObject c = data.value("colors").toObject();
     const QJsonObject o = data.value("opacity").toObject();
     const QJsonObject r = data.value("radii").toObject();
@@ -262,6 +268,32 @@ bool ThemeManager::inspectAt(const QString &directory, const QString &expectedId
         && viewTitleCase != "lower") return false;
     if (!viewTitleSpacing.isDouble() || !std::isfinite(viewTitleSpacing.toDouble())
         || viewTitleSpacing.toDouble() < 0 || viewTitleSpacing.toDouble() > 32) return false;
+    const QSet<QString> textRoleNames{"heading", "body", "metadata", "annotation", "status"};
+    const QSet<QString> textFields{"fontRole", "weight", "case", "letterSpacing"};
+    const QSet<QString> fontRoles{"interface", "display", "majorHeading", "icon", "controller"};
+    QVariantMap resolvedTextStyles{{"homeTitle", homeTitle.toVariantMap()},
+        {"viewTitle", viewTitle.toVariantMap()}};
+    for (const QString &roleName : textRoleNames) {
+        QJsonObject role = textStyles.value(roleName).toObject();
+        if (textStyles.contains(roleName) && !textStyles.value(roleName).isObject()) return false;
+        if (!onlyKeys(role, textFields)) return false;
+        const QString fontRole = role.value("fontRole").toString();
+        const QJsonValue weight = role.value("weight");
+        const QString roleCase = role.value("case").toString();
+        const QJsonValue roleSpacing = role.value("letterSpacing");
+        if ((role.contains("fontRole") && !fontRoles.contains(fontRole))
+            || (role.contains("weight") && (!weight.isDouble() || !std::isfinite(weight.toDouble())
+                || weight.toDouble() < 1 || weight.toDouble() > 1000))
+            || (role.contains("case") && roleCase != "preserve"
+                && roleCase != "upper" && roleCase != "lower")
+            || (role.contains("letterSpacing") && (!roleSpacing.isDouble()
+                || !std::isfinite(roleSpacing.toDouble())
+                || roleSpacing.toDouble() < -4 || roleSpacing.toDouble() > 32))) return false;
+        if (!role.isEmpty()) resolvedTextStyles.insert(roleName, role.toVariantMap());
+    }
+    for (auto it = textStyles.begin(); it != textStyles.end(); ++it)
+        if (it.key() != "homeTitle" && it.key() != "viewTitle"
+            && !textRoleNames.contains(it.key())) return false;
     auto requiredColor = [&](const char *key) {
         const QString value = c.value(QLatin1String(key)).toString();
         return value.startsWith(QLatin1Char('#')) && QColor(value).isValid();
@@ -298,20 +330,49 @@ bool ThemeManager::inspectAt(const QString &directory, const QString &expectedId
     }
     QVariantMap iconPaths;
     for (auto it = icons.begin(); it != icons.end(); ++it) {
-        const QString path = asset(it.value().toString());
-        if (path.isEmpty() || !QFileInfo(path).isFile()
-            || !it.value().toString().endsWith(".svg", Qt::CaseInsensitive)
-            || !validSvg(path)) return false;
-        iconPaths.insert(it.key(), QUrl::fromLocalFile(path).toString());
+        QString relativePath;
+        QString renderMode = QStringLiteral("tint");
+        if (it.value().isString()) {
+            relativePath = it.value().toString();
+        } else if (it.value().isObject()) {
+            const QJsonObject descriptor = it.value().toObject();
+            if (!onlyKeys(descriptor, QSet<QString>{"file", "render"})
+                || !descriptor.value("file").isString()
+                || !descriptor.value("render").isString()) return false;
+            relativePath = descriptor.value("file").toString();
+            renderMode = descriptor.value("render").toString();
+        } else {
+            return false;
+        }
+        const QString path = asset(relativePath);
+        if (path.isEmpty() || !QFileInfo(path).isFile()) return false;
+        const QString suffix = QFileInfo(relativePath).suffix().toLower();
+        QString format;
+        if (suffix == "svg") {
+            if (renderMode != "tint" || !validSvg(path)) return false;
+            format = QStringLiteral("svg");
+        } else if (suffix == "png") {
+            if (renderMode != "original" || QFileInfo(path).size() > 4 * 1024 * 1024) return false;
+            QImageReader reader(path);
+            reader.setDecideFormatFromContent(true);
+            if (!reader.canRead() || reader.format().toLower() != "png") return false;
+            const QSize size = reader.size();
+            if (!size.isValid() || size.width() <= 0 || size.height() <= 0
+                || size.width() > 1024 || size.height() > 1024
+                || static_cast<qint64>(size.width()) * size.height() > 1'048'576) return false;
+            const QImage image = reader.read();
+            if (image.isNull() || image.size() != size) return false;
+            format = QStringLiteral("png");
+        } else {
+            return false;
+        }
+        iconPaths.insert(it.key(), QVariantMap{
+            {"url", QUrl::fromLocalFile(path).toString()},
+            {"renderMode", renderMode}, {"format", format}});
     }
     const QSet<QString> materialRoles{"panel", "card", "navigation", "status", "overlay", "row"};
     const QSet<QString> materialFields{"style", "orientation", "stops", "edges", "innerEdges"};
     const QSet<QString> edgeNames{"top", "bottom", "left", "right"};
-    auto onlyKeys = [](const QJsonObject &object, const QSet<QString> &allowed) {
-        for (auto it = object.begin(); it != object.end(); ++it)
-            if (!allowed.contains(it.key())) return false;
-        return true;
-    };
     auto validateEdges = [&](const QJsonValue &value, QVariantMap *resolvedEdges) {
         if (!value.isObject()) return false;
         const QJsonObject edges = value.toObject();
@@ -470,8 +531,7 @@ bool ThemeManager::inspectAt(const QString &directory, const QString &expectedId
     values.insert("motion", resolvedMotion);
     values.insert("labels", QVariantMap{{"home", homeLabels.toVariantMap()},
                                         {"views", viewLabels.toVariantMap()}});
-    values.insert("textStyles", QVariantMap{{"homeTitle", homeTitle.toVariantMap()},
-                                             {"viewTitle", viewTitle.toVariantMap()}});
+    values.insert("textStyles", resolvedTextStyles);
     values.insert("wallpaperValues", wallpaperValues);
     QVariantMap resolvedFonts = fontPaths;
     resolvedFonts.insert("roles", resolvedRoles);
@@ -502,4 +562,5 @@ bool ThemeManager::apply(const QVariantMap &theme, bool persist)
 }
 
 bool ThemeManager::select(const QString &id) { return load(id, true); }
-QString ThemeManager::iconUrl(const QString &name) const { return m_icons.value(name).toString(); }
+QVariantMap ThemeManager::iconAsset(const QString &name) const { return m_icons.value(name).toMap(); }
+QString ThemeManager::iconUrl(const QString &name) const { return iconAsset(name).value("url").toString(); }

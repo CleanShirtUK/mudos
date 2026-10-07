@@ -2,6 +2,7 @@ import QtQuick
 
 Column {
     id: root
+    ThemeText { id: themeText }
     property string iconName: "info"
     property string title: "Nothing here"
     property string detail: ""
@@ -23,10 +24,12 @@ Column {
     Text {
         width: root.maximumTextWidth
         anchors.horizontalCenter: parent.horizontalCenter
-        text: root.title
+        text: themeText.formatRole(root.title, "heading")
         color: root.luluPalette.primaryText
-        font.family: root.typography.interfaceFamily
+        font.family: themeText.fontFamily("heading", root.typography, "interface")
+        font.weight: themeText.weight("heading", Font.Normal)
         font.pixelSize: root.typography.size("heading", 22)
+        font.letterSpacing: themeText.spacing("heading", root.uiScale)
         horizontalAlignment: Text.AlignHCenter
         wrapMode: Text.Wrap
     }
@@ -34,10 +37,12 @@ Column {
         visible: root.detail !== ""
         width: root.maximumTextWidth
         anchors.horizontalCenter: parent.horizontalCenter
-        text: root.detail
+        text: themeText.formatRole(root.detail, "annotation")
         color: root.luluPalette.secondaryText
-        font.family: root.typography.interfaceFamily
+        font.family: themeText.fontFamily("annotation", root.typography, "interface")
+        font.weight: themeText.weight("annotation", Font.Normal)
         font.pixelSize: root.typography.size("body", 15)
+        font.letterSpacing: themeText.spacing("annotation", root.uiScale)
         horizontalAlignment: Text.AlignHCenter
         wrapMode: Text.Wrap
     }

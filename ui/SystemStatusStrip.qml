@@ -8,6 +8,7 @@ import "MudosAssetCatalog.js" as MudosAssetCatalog
 Item {
     id: root
     ThemeMotion { id: themeMotion }
+    ThemeText { id: themeText }
 
     property bool compact: false
     property real uiScale: 1
@@ -239,9 +240,12 @@ Item {
                 Text {
                     text: String(root.activeDownloadCount)
                     color: root.statusColor
-                    font.family: root.typography ? root.typography.displayFamily : "monospace"
-                    font.weight: root.typography ? root.typography.displayWeight : Font.Black
+                    font.family: themeText.style("status").fontRole
+                        ? themeText.fontFamily("status", root.typography, "display")
+                        : root.typography ? root.typography.displayFamily : "monospace"
+                    font.weight: themeText.weight("status", root.typography ? root.typography.displayWeight : Font.Black)
                     font.pixelSize: root.valueSize
+                    font.letterSpacing: themeText.spacing("status", root.uiScale)
                     height: root.glyphSize
                     verticalAlignment: Text.AlignVCenter
                 }
@@ -288,9 +292,12 @@ Item {
                     Text {
                         text: player
                         color: root.statusColor
-                        font.family: root.typography ? root.typography.displayFamily : "monospace"
-                        font.weight: root.typography ? root.typography.displayWeight : Font.Black
+                        font.family: themeText.style("status").fontRole
+                            ? themeText.fontFamily("status", root.typography, "display")
+                            : root.typography ? root.typography.displayFamily : "monospace"
+                        font.weight: themeText.weight("status", root.typography ? root.typography.displayWeight : Font.Black)
                         font.pixelSize: root.valueSize
+                        font.letterSpacing: themeText.spacing("status", root.uiScale)
                         height: root.glyphSize
                         verticalAlignment: Text.AlignVCenter
                     }
@@ -298,9 +305,12 @@ Item {
                         visible: batteryKind === "percent" && batteryPercentage >= 0
                         text: ": " + battery
                         color: root.statusColor
-                        font.family: root.typography ? root.typography.displayFamily : "monospace"
-                        font.weight: root.typography ? root.typography.displayWeight : Font.Black
+                        font.family: themeText.style("status").fontRole
+                            ? themeText.fontFamily("status", root.typography, "display")
+                            : root.typography ? root.typography.displayFamily : "monospace"
+                        font.weight: themeText.weight("status", root.typography ? root.typography.displayWeight : Font.Black)
                         font.pixelSize: root.valueSize
+                        font.letterSpacing: themeText.spacing("status", root.uiScale)
                         height: root.glyphSize
                         verticalAlignment: Text.AlignVCenter
                     }
@@ -369,9 +379,12 @@ Item {
                 Text {
                     text: root.currentTime
                     color: root.statusColor
-                    font.family: root.typography ? root.typography.displayFamily : "monospace"
-                    font.weight: root.typography ? root.typography.displayWeight : Font.Black
+                    font.family: themeText.style("status").fontRole
+                        ? themeText.fontFamily("status", root.typography, "display")
+                        : root.typography ? root.typography.displayFamily : "monospace"
+                    font.weight: themeText.weight("status", root.typography ? root.typography.displayWeight : Font.Black)
                     font.pixelSize: root.valueSize
+                    font.letterSpacing: themeText.spacing("status", root.uiScale)
                     height: root.glyphSize
                     verticalAlignment: Text.AlignVCenter
                 }

@@ -2,11 +2,13 @@ import QtQuick
 
 Item {
     id: root
+    ThemeText { id: themeText }
     property string glyph: ""
     property string iconName: ""
     property string text: ""
     property string fontFamily: "sans-serif"
     property string iconFamily: fontFamily
+    property var typography
     property color textColor: "white"
     property real uiScale: 1
     property real glyphSize: 18 * uiScale
@@ -21,6 +23,7 @@ Item {
     implicitHeight: Math.max(22 * uiScale, metadataText.implicitHeight)
 
     StatusGlyph {
+        objectName: "metadataStatusGlyph"
         anchors.left: root.trailingGlyph ? undefined : parent.left
         anchors.right: root.trailingGlyph ? parent.right : undefined
         anchors.top: root.wrapText ? parent.top : undefined
@@ -41,10 +44,13 @@ Item {
         horizontalAlignment: root.trailingGlyph ? Text.AlignRight : Text.AlignLeft
         anchors.top: root.wrapText ? parent.top : undefined
         anchors.verticalCenter: root.wrapText ? undefined : parent.verticalCenter
-        text: root.text
+        text: themeText.formatRole(root.text, "metadata")
         color: root.textColor
-        font.family: root.fontFamily
+        font.family: themeText.style("metadata").fontRole
+            ? themeText.fontFamily("metadata", root.typography, "display") : root.fontFamily
+        font.weight: themeText.weight("metadata", Font.Normal)
         font.pixelSize: root.textSize
+        font.letterSpacing: themeText.spacing("metadata", root.uiScale)
         fontSizeMode: root.fitText ? Text.Fit : Text.FixedSize
         minimumPixelSize: root.fitText ? root.minimumTextSize : root.textSize
         wrapMode: root.wrapText ? Text.WordWrap : Text.NoWrap

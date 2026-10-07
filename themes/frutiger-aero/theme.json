@@ -1,0 +1,713 @@
+{
+  "schema_version": 1,
+  "id": "frutiger-aero",
+  "name": "Frutiger Aero",
+  "version": "1",
+  "author": "Mudos",
+  "colors": {
+    "primaryText": "#163B5E",
+    "secondaryText": "#355A72",
+    "mutedText": "#54788E",
+    "selectedText": "#123B5E",
+    "accent": "#168BE0",
+    "focusIndicator": "#168BE0",
+    "warning": "#D87918",
+    "backdrop": "#BFE8FF",
+    "surface": "#7FEFFBFF",
+    "surfaceElevated": "#A8D9F5FF",
+    "surfaceInternal": "#DDF3FCFF",
+    "cardSurface": "#83D9F5FF",
+    "focusedCardSurface": "#B945D8F2",
+    "actionSurface": "#E8FFFFFF",
+    "actionText": "#163B5E",
+    "artworkSurface": "#CDEAF7FF",
+    "border": "#7A74B8D4",
+    "focusBorder": "#168BE0",
+    "overlayBackdrop": "#783B8CC0",
+    "overlaySurface": "#EDF2FBFF",
+    "launchOverlaySurface": "#F2EEF9FF",
+    "guideSurface": "#EAF3FCFF",
+    "guideBorder": "#7A74B8D4",
+    "guideItemSurface": "#D9EAF8FF",
+    "guideSelectedText": "#163B5E",
+    "scrollFadeStart": "#00BFE8FF",
+    "scrollFadeEnd": "#E8BFE8FF",
+    "navigationText": "#163B5E",
+    "headingAccent": "#07599D",
+    "selectionSurface": "#6145BEE8",
+    "librarySurface": "#9ED9F5FF",
+    "libraryCardSurface": "#95D9F5FF",
+    "libraryBorder": "#7A74B8D4",
+    "overlay": "#EDF2FBFF"
+  },
+  "opacity": {
+    "structuralSurface": 0.56,
+    "internalSurface": 0.84,
+    "card": 0.62,
+    "focusedCard": 0.78,
+    "selection": 0.42,
+    "statusBacking": 0.58,
+    "overlayBackdrop": 0.48,
+    "overlaySurface": 0.92
+  },
+  "radii": {
+    "panel": 22,
+    "card": 16,
+    "row": 12,
+    "media": 16,
+    "status": 18,
+    "overlay": 22
+  },
+  "radiusPolicy": "exact",
+  "glass": {
+    "enabled": true,
+    "ior": 1.04,
+    "depth": 0.22,
+    "refractionPixels": 28,
+    "dispersionIor": 0.001,
+    "diffusionPixels": 2.0,
+    "transmission": 0.88,
+    "bevelWidth": 2.0,
+    "bulgeStrength": 15,
+    "sceneLightStrength": 0.12,
+    "sceneLightPixels": 24,
+    "edgeLightStrength": 0.2,
+    "edgeLightDirection": [
+      1,
+      -1
+    ],
+    "panel": {
+      "ior": 1.04,
+      "depth": 0.22,
+      "refractionPixels": 24,
+      "dispersionIor": 0.001,
+      "diffusionPixels": 1.8,
+      "transmission": 0.94,
+      "bevelWidth": 2,
+      "bulgeStrength": 15,
+      "sceneLightStrength": 0.12,
+      "sceneLightPixels": 24,
+      "edgeLightStrength": 0.23,
+      "edgeLightDirection": [
+        1,
+        -1
+      ]
+    },
+    "card": {
+      "ior": 1.04,
+      "depth": 0.22,
+      "refractionPixels": 24,
+      "dispersionIor": 0.001,
+      "diffusionPixels": 2.5,
+      "transmission": 0.84,
+      "bevelWidth": 2,
+      "bulgeStrength": 15,
+      "sceneLightStrength": 0.12,
+      "sceneLightPixels": 24,
+      "edgeLightStrength": 0.2,
+      "edgeLightDirection": [
+        1,
+        -1
+      ]
+    },
+    "navigation": {
+      "ior": 1.04,
+      "depth": 0.22,
+      "refractionPixels": 22,
+      "dispersionIor": 0.001,
+      "diffusionPixels": 1.8,
+      "transmission": 0.91,
+      "bevelWidth": 2,
+      "bulgeStrength": 15,
+      "sceneLightStrength": 0.12,
+      "sceneLightPixels": 24,
+      "edgeLightStrength": 0.24,
+      "edgeLightDirection": [
+        1,
+        -1
+      ]
+    },
+    "status": {
+      "ior": 1.04,
+      "depth": 0.22,
+      "refractionPixels": 18,
+      "dispersionIor": 0.001,
+      "diffusionPixels": 1.5,
+      "transmission": 0.86,
+      "bevelWidth": 1.5,
+      "bulgeStrength": 15,
+      "sceneLightStrength": 0.12,
+      "sceneLightPixels": 24,
+      "edgeLightStrength": 0.25,
+      "edgeLightDirection": [
+        1,
+        -1
+      ]
+    }
+  },
+  "chrome": {
+    "style": "flat"
+  },
+  "motion": {
+    "enabled": true,
+    "durationScale": 1.08,
+    "roles": {
+      "navigation": {
+        "enabled": true,
+        "duration": 290,
+        "easing": "outCubic"
+      },
+      "focus": {
+        "enabled": true,
+        "duration": 210,
+        "easing": "outQuint"
+      },
+      "surface": {
+        "enabled": true,
+        "duration": 520,
+        "easing": "outCubic"
+      },
+      "overlay": {
+        "enabled": true,
+        "duration": 205,
+        "easing": "outCubic"
+      },
+      "fade": {
+        "enabled": true,
+        "duration": 190,
+        "easing": "linear"
+      },
+      "status": {
+        "enabled": true,
+        "duration": 245,
+        "easing": "outCubic"
+      },
+      "intro": {
+        "enabled": true,
+        "duration": 390
+      },
+      "wallpaper": {
+        "enabled": true,
+        "speed": 0.45
+      },
+      "motionBlur": {
+        "enabled": true
+      }
+    }
+  },
+  "labels": {
+    "home": {
+      "system": "System",
+      "store": "Store",
+      "library": "Library",
+      "recent": "Recent"
+    },
+    "views": {
+      "settings": "Settings",
+      "utilities": "Utilities",
+      "library": "Library",
+      "installable": "Installable",
+      "downloads": "Downloads"
+    }
+  },
+  "textStyles": {
+    "homeTitle": {
+      "case": "preserve",
+      "letterSpacing": 0
+    },
+    "viewTitle": {
+      "case": "preserve",
+      "letterSpacing": 0
+    },
+    "heading": {
+      "fontRole": "majorHeading",
+      "weight": 600,
+      "case": "preserve",
+      "letterSpacing": 0
+    },
+    "body": {
+      "fontRole": "interface",
+      "weight": 400,
+      "case": "preserve",
+      "letterSpacing": 0
+    },
+    "metadata": {
+      "fontRole": "interface",
+      "weight": 400,
+      "case": "preserve",
+      "letterSpacing": 0.1
+    },
+    "annotation": {
+      "fontRole": "interface",
+      "weight": 400,
+      "case": "preserve",
+      "letterSpacing": 0.2
+    },
+    "status": {
+      "fontRole": "display",
+      "weight": 500,
+      "case": "preserve",
+      "letterSpacing": 0
+    }
+  },
+  "fonts": {
+    "faces": {
+      "regular": {
+        "file": "fonts/NotoSans-Regular.ttf",
+        "weight": 400
+      },
+      "bold": {
+        "file": "fonts/NotoSans-Bold.ttf",
+        "weight": 700
+      },
+      "heavy": {
+        "file": "fonts/NotoSans-Black.ttf",
+        "weight": 900
+      },
+      "icons": {
+        "file": "fonts/JetBrainsMonoNLNerdFont-Regular.ttf"
+      },
+      "controller": {
+        "file": "fonts/Config-Glyphs.otf"
+      }
+    },
+    "roles": {
+      "interface": "regular",
+      "display": "bold",
+      "majorHeading": "bold",
+      "icon": "icons",
+      "controller": "controller"
+    }
+  },
+  "wallpaper": {
+    "shader": "wallpaper/wallpaper.frag.qsb",
+    "primary": "#168BE0",
+    "secondary": "#78D542",
+    "surface": "#BFE8FF",
+    "error": "#D87918"
+  },
+  "icons": {
+    "settings": {
+      "file": "icons/settings.png",
+      "render": "original"
+    },
+    "applications": {
+      "file": "icons/applications.png",
+      "render": "original"
+    },
+    "controller": {
+      "file": "icons/controller.png",
+      "render": "original"
+    },
+    "wifi": {
+      "file": "icons/wifi.png",
+      "render": "original"
+    },
+    "wifiOff": {
+      "file": "icons/wifiOff.png",
+      "render": "original"
+    },
+    "bluetooth": {
+      "file": "icons/bluetooth.png",
+      "render": "original"
+    },
+    "bluetoothOff": {
+      "file": "icons/bluetoothOff.png",
+      "render": "original"
+    },
+    "volume": {
+      "file": "icons/volume.png",
+      "render": "original"
+    },
+    "volumeMute": {
+      "file": "icons/volumeMute.png",
+      "render": "original"
+    },
+    "storage": {
+      "file": "icons/storage.png",
+      "render": "original"
+    },
+    "display": {
+      "file": "icons/display.png",
+      "render": "original"
+    },
+    "download": {
+      "file": "icons/download.png",
+      "render": "original"
+    },
+    "refresh": {
+      "file": "icons/refresh.png",
+      "render": "original"
+    },
+    "platform": {
+      "file": "icons/platform.png",
+      "render": "original"
+    },
+    "provider": {
+      "file": "icons/provider.png",
+      "render": "original"
+    },
+    "gameMode": {
+      "file": "icons/gameMode.png",
+      "render": "original"
+    },
+    "genre": {
+      "file": "icons/genre.png",
+      "render": "original"
+    },
+    "play": {
+      "file": "icons/play.png",
+      "render": "original"
+    },
+    "warning": {
+      "file": "icons/warning.png",
+      "render": "original"
+    },
+    "info": {
+      "file": "icons/info.png",
+      "render": "original"
+    },
+    "error": {
+      "file": "icons/error.png",
+      "render": "original"
+    },
+    "clock": {
+      "file": "icons/clock.png",
+      "render": "original"
+    },
+    "ethernet": {
+      "file": "icons/ethernet.png",
+      "render": "original"
+    },
+    "plug": {
+      "file": "icons/plug.png",
+      "render": "original"
+    },
+    "collection": {
+      "file": "icons/collection.png",
+      "render": "original"
+    },
+    "steam": {
+      "file": "icons/steam.png",
+      "render": "original"
+    },
+    "empty": {
+      "file": "icons/empty.png",
+      "render": "original"
+    },
+    "check": {
+      "file": "icons/check.png",
+      "render": "original"
+    },
+    "close": {
+      "file": "icons/close.png",
+      "render": "original"
+    },
+    "back": {
+      "file": "icons/back.png",
+      "render": "original"
+    }
+  },
+  "materials": {
+    "panel": {
+      "style": "linearGradient",
+      "orientation": "vertical",
+      "stops": [
+        {
+          "position": 0.0,
+          "color": "#BFFFFFFF"
+        },
+        {
+          "position": 0.035,
+          "color": "#9FFFFFFF"
+        },
+        {
+          "position": 0.18,
+          "color": "#A9EFFBFF"
+        },
+        {
+          "position": 0.48,
+          "color": "#88DDF6FF"
+        },
+        {
+          "position": 0.82,
+          "color": "#8B9CDBF0"
+        },
+        {
+          "position": 1.0,
+          "color": "#9A76C9E9"
+        }
+      ],
+      "edges": {
+        "top": {
+          "color": "#CFFFFFFF",
+          "width": 1
+        },
+        "bottom": {
+          "color": "#703D9BC5",
+          "width": 2
+        },
+        "left": {
+          "color": "#507CB9D8",
+          "width": 1
+        },
+        "right": {
+          "color": "#507CB9D8",
+          "width": 1
+        }
+      },
+      "innerEdges": {
+        "top": {
+          "color": "#8CFFFFFF",
+          "width": 1
+        },
+        "bottom": {
+          "color": "#403B8CC0",
+          "width": 1
+        }
+      }
+    },
+    "card": {
+      "style": "linearGradient",
+      "orientation": "vertical",
+      "stops": [
+        {
+          "position": 0.0,
+          "color": "#DFFFFFFF"
+        },
+        {
+          "position": 0.06,
+          "color": "#AFFFFFFF"
+        },
+        {
+          "position": 0.22,
+          "color": "#BCEFFFFF"
+        },
+        {
+          "position": 0.62,
+          "color": "#9948C4EA"
+        },
+        {
+          "position": 1.0,
+          "color": "#A75DAFDC"
+        }
+      ],
+      "edges": {
+        "top": {
+          "color": "#DFFFFFFF",
+          "width": 1
+        },
+        "bottom": {
+          "color": "#78417DAE",
+          "width": 2
+        },
+        "left": {
+          "color": "#688BCBE0",
+          "width": 1
+        },
+        "right": {
+          "color": "#688BCBE0",
+          "width": 1
+        }
+      },
+      "innerEdges": {
+        "top": {
+          "color": "#90FFFFFF",
+          "width": 1
+        }
+      }
+    },
+    "navigation": {
+      "style": "linearGradient",
+      "orientation": "vertical",
+      "stops": [
+        {
+          "position": 0.0,
+          "color": "#DFFFFFFF"
+        },
+        {
+          "position": 0.04,
+          "color": "#CFFFFFFF"
+        },
+        {
+          "position": 0.2,
+          "color": "#B9E6F9FF"
+        },
+        {
+          "position": 0.58,
+          "color": "#9A61C5E8"
+        },
+        {
+          "position": 1.0,
+          "color": "#B545A5C8"
+        }
+      ],
+      "edges": {
+        "top": {
+          "color": "#E8FFFFFF",
+          "width": 1
+        },
+        "bottom": {
+          "color": "#804781B3",
+          "width": 2
+        },
+        "left": {
+          "color": "#708DCDE2",
+          "width": 1
+        },
+        "right": {
+          "color": "#708DCDE2",
+          "width": 1
+        }
+      },
+      "innerEdges": {
+        "top": {
+          "color": "#AFFFFFFF",
+          "width": 1
+        }
+      }
+    },
+    "status": {
+      "style": "linearGradient",
+      "orientation": "vertical",
+      "stops": [
+        {
+          "position": 0.0,
+          "color": "#DFFFFFFF"
+        },
+        {
+          "position": 0.08,
+          "color": "#AFFFFFFF"
+        },
+        {
+          "position": 0.42,
+          "color": "#A9DDF5FF"
+        },
+        {
+          "position": 0.88,
+          "color": "#A65BAED5"
+        },
+        {
+          "position": 1.0,
+          "color": "#B844A3C8"
+        }
+      ],
+      "edges": {
+        "top": {
+          "color": "#EFFFFFFF",
+          "width": 1
+        },
+        "bottom": {
+          "color": "#804786B7",
+          "width": 2
+        }
+      },
+      "innerEdges": {
+        "top": {
+          "color": "#AFFFFFFF",
+          "width": 1
+        }
+      }
+    },
+    "overlay": {
+      "style": "linearGradient",
+      "orientation": "vertical",
+      "stops": [
+        {
+          "position": 0.0,
+          "color": "#F0FFFFFF"
+        },
+        {
+          "position": 0.05,
+          "color": "#DFFFFFFF"
+        },
+        {
+          "position": 0.2,
+          "color": "#E5F5FFFF"
+        },
+        {
+          "position": 0.64,
+          "color": "#E2D8F2FC"
+        },
+        {
+          "position": 1.0,
+          "color": "#F0B9DFF0"
+        }
+      ],
+      "edges": {
+        "top": {
+          "color": "#FFFFFFFF",
+          "width": 1
+        },
+        "bottom": {
+          "color": "#984282B2",
+          "width": 2
+        },
+        "left": {
+          "color": "#8078BBDD",
+          "width": 1
+        },
+        "right": {
+          "color": "#8078BBDD",
+          "width": 1
+        }
+      },
+      "innerEdges": {
+        "top": {
+          "color": "#BFFFFFFF",
+          "width": 1
+        }
+      }
+    },
+    "row": {
+      "style": "linearGradient",
+      "orientation": "vertical",
+      "stops": [
+        {
+          "position": 0.0,
+          "color": "#9FFFFFFF"
+        },
+        {
+          "position": 0.13,
+          "color": "#80FFFFFF"
+        },
+        {
+          "position": 0.5,
+          "color": "#77D8F4FF"
+        },
+        {
+          "position": 1.0,
+          "color": "#844CB6DD"
+        }
+      ],
+      "edges": {
+        "top": {
+          "color": "#8FFFFFFF",
+          "width": 1
+        },
+        "bottom": {
+          "color": "#603E83B1",
+          "width": 1
+        }
+      }
+    }
+  },
+  "decorations": {
+    "panel": {
+      "topRight": {
+        "asset": "decorations/bubble-cluster.svg",
+        "tint": "accent",
+        "opacity": 0.38,
+        "scale": 0.85
+      }
+    },
+    "overlay": {
+      "topRight": {
+        "asset": "decorations/leaf-drop.svg",
+        "tint": "secondaryText",
+        "opacity": 0.3,
+        "scale": 0.8
+      }
+    }
+  }
+}

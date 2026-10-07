@@ -67,16 +67,19 @@ and futuristic pixel typography—not a request to copy artwork or navigation.
 
 ## Remaining presentation gap: semantic text treatment
 
-- **Current capability:** theme font-family/weight roles and Home/view title
-  case/tracking controls. Engine-owned pixel sizes and layouts remain fixed.
-- **Limitation:** there is no bounded set of generic body/metadata/annotation
-  tracking or weight roles. Some small labels therefore cannot receive the same
-  deliberate compact technical treatment as headings without changing engine
-  typography contracts.
-- **Smallest future primitive:** validated semantic text roles for family,
-  weight, and tracking only; keep pixel size and layout engine-owned.
-- **Priority:** highest remaining schema-level presentation gap after V2; not
-  required for the material/ornament system to function.
+- **Closed generically by the Frutiger Aero stress test:** validated
+  `heading`, `body`, `metadata`, `annotation`, and `status` roles now select an
+  existing font family role, weight, case, and letter spacing. Existing
+  `homeTitle`/`viewTitle` remain intact. Pixel size is deliberately excluded
+  and stays engine-owned. Consumers include Guide/empty-state headings and body,
+  metadata rows, and status-strip values. Missing roles preserve component
+  fallbacks, so Modern and 95 keep their existing appearance.
+- **Remaining text limitation:** some screen-local Text elements still request
+  existing Typography roles directly rather than consuming one of the five
+  semantic treatment roles. The role system is generic and usable, but a full
+  text-node migration would be a broad presentation audit, not a reason to
+  expose layout-sensitive sizes. Record screen-specific omissions before
+  considering more generic roles.
 
 ## Implementation coverage and acceptance boundary
 
@@ -103,3 +106,34 @@ and futuristic pixel typography—not a request to copy artwork or navigation.
   theme-controlled text sizes are outside this pass.
 - Wallpaper artwork was not redesigned; the existing Metalheart shader remains
   the source of the animated abstract environment.
+
+## Frutiger Aero stress-test findings
+
+- **Semantic icon asset modes — addressed:** `ThemeManager::iconAsset()` is the
+  single authority returning URL, format, and `tint`/`original` mode. Legacy
+  SVG string shorthand stays tintable; descriptor-mode SVG+tint and PNG+original
+  are validated. Full-colour PNGs are content-decoded within encoded-size,
+  dimension, and pixel-count bounds. `MudosIcon` and `StatusGlyph` use direct
+  original-image rendering or the existing tint effect; status images preserve
+  aspect ratio within the prior safe-inset envelope. Metadata routes through
+  `StatusGlyph`, not a separate raster implementation.
+- **Wallpaper source-type gap — not required by this theme:** the procedural
+  Qt Quick shader represents the sky, cloud/haze drift, meadow, aqua water,
+  sunlight, bokeh, and slowly rising bubbles adequately for a calm animated
+  interpretation. Raster/photo wallpaper source support remains absent; if a
+  later photographic theme cannot be adequately expressed by QSB, record
+  `GAP: theme wallpaper source type = raster image` and design a contained,
+  validated generic source contract rather than special-casing a theme.
+- **Surface/text audit classification:** common surfaces consume the existing
+  materials/radii/glass abstractions. Theme-aware semantic icon routes share
+  the resolver; game artwork/identity art remains outside semantic overrides.
+  No Frutiger-specific QML, layout, navigation, hit-testing, or routing was
+  added. Remaining inline screen text that is not assigned a semantic text role
+  is an incomplete consumption of the generic abstraction (A), not a missing
+  schema primitive (B); engine-owned geometry, focus, and navigation remain
+  intentional (C).
+- **Physical acceptance:** Home, Recent, Library, Installable, Settings,
+  Utilities, Downloads, Guide, notifications, status strip, controller hints,
+  and metadata still require inspection on the Gamescope display. No shell
+  screenshot, controller sweep, or matched BC-250 performance data is claimed
+  from headless tests.

@@ -3,6 +3,7 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QImage>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QSettings>
@@ -406,6 +407,168 @@ private slots:
         saved.sync();
         QTRY_COMPARE_WITH_TIMEOUT(manager.activeId(), QStringLiteral("95"), 2000);
         QTRY_COMPARE_WITH_TIMEOUT(guideAndNotificationManager.activeId(), QStringLiteral("95"), 2000);
+    }
+
+    void pngSemanticIconsAndTextRolesAreValidatedAndResolved()
+    {
+        QTemporaryDir temp;
+        QVERIFY(temp.isValid());
+        const QString root = QDir(temp.path()).filePath("themes");
+        for (const QString &id : {"modern", "95", "metalheart", "frutiger-aero"})
+            QVERIFY(copyTree(QStringLiteral(THEME_SOURCE_DIR) + "/" + id, root + "/" + id));
+        QVERIFY(copyTree(root + "/frutiger-aero", root + "/candidate"));
+        QVERIFY(QDir().mkpath(root + "/candidate/icons"));
+
+        const QString candidateConfigPath = root + "/candidate/theme.json";
+        auto readObject = [](const QString &path) {
+            QFile file(path);
+            if (!file.open(QIODevice::ReadOnly)) return QJsonObject{};
+            return QJsonDocument::fromJson(file.readAll()).object();
+        };
+        auto writeObject = [](const QString &path, const QJsonObject &object) {
+            QFile file(path);
+            if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate)) return false;
+            return file.write(QJsonDocument(object).toJson()) >= 0;
+        };
+        auto candidateWith = [&](const QString &relative, const QString &render,
+                                 const std::function<void(const QString &)> &writeAsset) {
+            QJsonObject config = readObject(candidateConfigPath);
+            config.insert("id", "candidate");
+            QJsonObject icons = config.value("icons").toObject();
+            icons.insert("settings", QJsonObject{{"file", relative}, {"render", render}});
+            config.insert("icons", icons);
+            if (!writeObject(candidateConfigPath, config)) return false;
+            writeAsset(QDir(root + "/candidate").filePath(relative));
+            return true;
+        };
+        auto candidateIsExcluded = [&]() {
+            ThemeManager manager;
+            for (const QVariant &entry : manager.themes())
+                if (entry.toMap().value("id").toString() == "candidate") return false;
+            return true;
+        };
+        qputenv("MUDOS_THEME_ROOTS", root.toUtf8());
+        QSettings::setPath(QSettings::IniFormat, QSettings::UserScope,
+                           QDir(temp.path()).filePath("settings"));
+        QSettings saved(QSettings::IniFormat, QSettings::UserScope, "Mudos", "lulu");
+        saved.setValue("appearance/theme", "modern");
+        saved.sync();
+
+        {
+            ThemeManager manager;
+            QStringList ids;
+            for (const QVariant &entry : manager.themes())
+                ids.append(entry.toMap().value("id").toString());
+            QVERIFY(ids.contains("frutiger-aero"));
+            QVERIFY(ids.indexOf("modern") < ids.indexOf("95"));
+            QVERIFY(manager.select("frutiger-aero"));
+            QCOMPARE(manager.activeName(), QStringLiteral("Frutiger Aero"));
+            const QVariantMap png = manager.iconAsset("settings");
+            QCOMPARE(png.value("format").toString(), QStringLiteral("png"));
+            QCOMPARE(png.value("renderMode").toString(), QStringLiteral("original"));
+            QVERIFY(png.value("url").toString().contains("frutiger-aero/icons/settings.png"));
+            QCOMPARE(manager.iconUrl("settings"), png.value("url").toString());
+            const QVariantMap styles = manager.textStyles();
+            for (const QString &role : {"heading", "body", "metadata", "annotation", "status"})
+                QVERIFY2(styles.contains(role), qPrintable(role));
+            QCOMPARE(styles.value("heading").toMap().value("fontRole").toString(),
+                     QStringLiteral("majorHeading"));
+            QCOMPARE(styles.value("metadata").toMap().value("letterSpacing").toDouble(), 0.1);
+            QVERIFY(manager.select("modern"));
+            QVERIFY(manager.iconAsset("settings").isEmpty());
+            QVERIFY(manager.select("metalheart"));
+            QCOMPARE(manager.iconAsset("settings").value("format").toString(), QStringLiteral("svg"));
+            QCOMPARE(manager.iconAsset("settings").value("renderMode").toString(), QStringLiteral("tint"));
+        }
+
+        auto writePng = [](const QString &path, const QSize &size) {
+            QDir().mkpath(QFileInfo(path).absolutePath());
+            QImage image(size, QImage::Format_RGBA8888);
+            image.fill(QColor(20, 150, 230, 180));
+            return image.save(path, "PNG");
+        };
+        QVERIFY(candidateWith("icons/test.png", "original", [&](const QString &path) {
+            QVERIFY(writePng(path, QSize(80, 40)));
+        }));
+        QVERIFY(!candidateIsExcluded());
+
+        QVERIFY(candidateWith("icons/test.png", "original", [](const QString &path) {
+            QFile file(path); QDir().mkpath(QFileInfo(path).absolutePath());
+            if (file.open(QIODevice::WriteOnly)) file.write("not a PNG");
+        }));
+        QVERIFY(candidateIsExcluded());
+
+        QVERIFY(candidateWith("icons/test.png", "original", [](const QString &path) {
+            QFile file(path); QDir().mkpath(QFileInfo(path).absolutePath());
+            if (file.open(QIODevice::WriteOnly)) file.write(QByteArray::fromHex("89504e470d0a1a0a") + "corrupt-data");
+        }));
+        QVERIFY(candidateIsExcluded());
+
+        QVERIFY(candidateWith("icons/test.png", "original", [&](const QString &path) {
+            QVERIFY(writePng(path, QSize(1025, 1)));
+        }));
+        QVERIFY(candidateIsExcluded());
+
+        QVERIFY(candidateWith("icons/test.png", "original", [](const QString &path) {
+            QDir().mkpath(QFileInfo(path).absolutePath());
+            QFile file(path);
+            if (file.open(QIODevice::WriteOnly)) {
+                QByteArray bytes = QByteArray::fromHex("89504e470d0a1a0a");
+                bytes += QByteArray(4 * 1024 * 1024, 'x');
+                file.write(bytes);
+            }
+        }));
+        QVERIFY(candidateIsExcluded());
+
+        QVERIFY(candidateWith("../outside.png", "original", [](const QString &) {}));
+        QVERIFY(candidateIsExcluded());
+
+        const QString outsidePng = QDir(temp.path()).filePath("outside.png");
+        QVERIFY(writePng(outsidePng, QSize(8, 8)));
+        QVERIFY(candidateWith("icons/test.png", "original", [&](const QString &path) {
+            QFile::remove(path);
+            QFile::link(outsidePng, path);
+        }));
+        QVERIFY(candidateIsExcluded());
+
+        QVERIFY(candidateWith("icons/settings.svg", "original", [&](const QString &path) {
+            QFile::remove(path);
+            QVERIFY(QFile::copy(QStringLiteral(THEME_SOURCE_DIR)
+                                    + "/metalheart/icons/settings.svg", path));
+        }));
+        QVERIFY(candidateIsExcluded());
+
+        QVERIFY(candidateWith("icons/test.png", "tint", [&](const QString &path) {
+            QVERIFY(writePng(path, QSize(8, 8)));
+        }));
+        QVERIFY(candidateIsExcluded());
+
+        QVERIFY(candidateWith("icons/settings.svg", "tint", [&](const QString &path) {
+            QFile::remove(path);
+            QVERIFY(QFile::copy(QStringLiteral(THEME_SOURCE_DIR)
+                                    + "/metalheart/icons/settings.svg", path));
+        }));
+        QVERIFY(!candidateIsExcluded());
+
+        auto invalidTextRole = [&](const QString &id, const QString &field,
+                                   const QJsonValue &value) {
+            QJsonObject config = readObject(candidateConfigPath);
+            config.insert("id", id);
+            QJsonObject textStyles = config.value("textStyles").toObject();
+            QJsonObject heading = textStyles.value("heading").toObject();
+            heading.insert(field, value);
+            textStyles.insert("heading", heading);
+            config.insert("textStyles", textStyles);
+            return writeObject(candidateConfigPath, config);
+        };
+        for (const auto &bad : {qMakePair(QStringLiteral("bad-text-font"), QPair<QString,QJsonValue>{"fontRole", "runtime"}),
+                                qMakePair(QStringLiteral("bad-text-weight"), QPair<QString,QJsonValue>{"weight", 1001}),
+                                qMakePair(QStringLiteral("bad-text-case"), QPair<QString,QJsonValue>{"case", "titleCase"}),
+                                qMakePair(QStringLiteral("bad-text-spacing"), QPair<QString,QJsonValue>{"letterSpacing", 33}),
+                                qMakePair(QStringLiteral("theme-text-size"), QPair<QString,QJsonValue>{"pixelSize", 20})}) {
+            QVERIFY(invalidTextRole(bad.first, bad.second.first, bad.second.second));
+            QVERIFY(candidateIsExcluded());
+        }
     }
 };
 

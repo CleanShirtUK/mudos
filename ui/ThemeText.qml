@@ -22,6 +22,23 @@ QtObject {
         if (style.case === "lower") return text.toLowerCase()
         return text
     }
+    function style(role) { return styles[role] || ({}) }
+    function formatRole(value, role) { return format(value, role) }
+    function fontFamily(role, typography, fallbackFontRole) {
+        var fontRole = style(role).fontRole || fallbackFontRole || "interface"
+        if (typography && typeof typography.familyForRole === "function")
+            return typography.familyForRole(fontRole, fontRole)
+        return String(fontRole)
+    }
+    function weight(role, fallbackWeight) {
+        var configured = style(role).weight
+        return configured === undefined ? fallbackWeight : Number(configured)
+    }
+    function spacing(role, uiScale, fallbackSpacing) {
+        var configured = style(role).letterSpacing
+        return Number(configured === undefined ? (fallbackSpacing || 0) : configured)
+            * (uiScale === undefined ? 1 : uiScale)
+    }
     function homeTitle(identity) {
         return format(homeLabel(identity), "homeTitle")
     }

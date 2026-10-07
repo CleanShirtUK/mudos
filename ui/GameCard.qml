@@ -517,6 +517,7 @@ Rectangle {
                         iconName: modelData.iconName
                         text: modelData.text
                         fontFamily: card.typography ? card.typography.interfaceFamily : "sans-serif"
+                        typography: card.typography
                         iconFamily: card.typography ? card.typography.iconFamily : "sans-serif"
                         textColor: card.focusedColor(card.luluPalette.secondaryText)
                         uiScale: focalScale * card.uiScale

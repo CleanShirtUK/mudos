@@ -86,6 +86,44 @@ TestCase {
         compare(activeSpace, "library")
     }
 
+    function test_semantic_text_roles_propagate_without_theme_pixel_sizes() {
+        mudosTheme = ({
+            motion: {enabled: true, durationScale: 1, roles: {}},
+            textStyles: {
+                heading: {fontRole: "majorHeading", weight: 600, case: "preserve", letterSpacing: 0},
+                body: {fontRole: "interface", weight: 400, case: "preserve", letterSpacing: 0},
+                metadata: {fontRole: "display", weight: 500, case: "upper", letterSpacing: 0.1},
+                annotation: {fontRole: "interface", weight: 400, case: "lower", letterSpacing: 0.2},
+                status: {fontRole: "display", weight: 600, case: "preserve", letterSpacing: 0}
+            },
+            fonts: {
+                regular: Qt.resolvedUrl("../../themes/modern/fonts/JetBrainsMonoNLNerdFont-Regular.ttf"),
+                bold: Qt.resolvedUrl("../../themes/modern/fonts/JetBrainsMonoNLNerdFont-Bold.ttf"),
+                heavy: Qt.resolvedUrl("../../themes/modern/fonts/JetBrainsMonoNLNerdFont-ExtraBold.ttf"),
+                icons: Qt.resolvedUrl("../../themes/modern/fonts/JetBrainsMonoNLNerdFont-Regular.ttf"),
+                roles: {interface: "regular", display: "bold", majorHeading: "heavy", icon: "icons"}
+            }
+        })
+        typographyLoader.active = true
+        tryCompare(typographyLoader.item.regularFont, "status", FontLoader.Ready)
+        tryCompare(typographyLoader.item.boldFont, "status", FontLoader.Ready)
+        tryCompare(typographyLoader.item.extraBoldFont, "status", FontLoader.Ready)
+        compare(textLoader.item.fontFamily("heading", typographyLoader.item, "interface"),
+                typographyLoader.item.extraBoldFont.name)
+        compare(textLoader.item.fontFamily("metadata", typographyLoader.item, "interface"),
+                typographyLoader.item.boldFont.name)
+        compare(textLoader.item.weight("heading", Font.Normal), 600)
+        compare(textLoader.item.weight("body", Font.Normal), 400)
+        compare(textLoader.item.spacing("metadata", 2), 0.2)
+        compare(textLoader.item.formatRole("Online Multiplayer", "metadata"), "ONLINE MULTIPLAYER")
+        compare(textLoader.item.formatRole("Small note", "annotation"), "small note")
+        compare(textLoader.item.style("status").pixelSize, undefined)
+        compare(typographyLoader.item.size("heading", 22), 22)
+        typographyLoader.item.uiScale = 1.5
+        compare(typographyLoader.item.size("heading", 22), 33)
+        typographyLoader.active = false
+    }
+
     function test_motion_role_override_and_duration_scale() {
         mudosTheme = ({motion: {enabled: true, durationScale: 0.5,
                 roles: {navigation: {enabled: true, duration: 500, easing: "inOutCubic"}}}})

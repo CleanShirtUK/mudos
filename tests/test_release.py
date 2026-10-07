@@ -23,6 +23,11 @@ class ReleaseToolTests(unittest.TestCase):
         self.assertIn("themes/metalheart/theme.json", release.REQUIRED_FILES)
         self.assertIn("themes/metalheart/wallpaper/wallpaper.frag.qsb", release.REQUIRED_FILES)
         self.assertIn("themes/metalheart/decorations/corner-bracket.svg", release.REQUIRED_FILES)
+        self.assertIn("themes/frutiger-aero/theme.json", release.REQUIRED_FILES)
+        self.assertIn("themes/frutiger-aero/wallpaper/wallpaper.frag.qsb", release.REQUIRED_FILES)
+        self.assertIn("themes/frutiger-aero/ASSET_PROVENANCE.md", release.REQUIRED_FILES)
+        self.assertIn("themes/frutiger-aero/icons/settings.png", release.REQUIRED_FILES)
+        self.assertIn("themes/frutiger-aero/fonts/NotoSans-Regular.ttf", release.REQUIRED_FILES)
         self.assertIn("ui/MudosMaterialLayer.qml", release.REQUIRED_FILES)
         self.assertIn("ui/MudosDecorationLayer.qml", release.REQUIRED_FILES)
 

@@ -25,10 +25,41 @@ class DefaultThemeInventoryTests(unittest.TestCase):
             self.assertFalse(path.is_absolute())
             self.assertNotIn("..", path.parts)
             self.assertTrue((theme / path).is_file(), str(path))
-        for path in config["icons"].values():
+        for icon in config["icons"].values():
+            path = icon["file"] if isinstance(icon, dict) else icon
             self.assertTrue((theme / path).is_file())
         for value in config["colors"].values():
             self.assertTrue(value.startswith("#"))
+
+    def test_frutiger_aero_full_colour_assets_and_presentation_contract(self):
+        theme = THEMES / "frutiger-aero"
+        config = json.loads((theme / "theme.json").read_text())
+        self.assertEqual((config["id"], config["name"]), ("frutiger-aero", "Frutiger Aero"))
+        self.assertTrue(config["glass"]["enabled"])
+        self.assertEqual(config["radii"],
+                         {"panel": 22, "card": 16, "row": 12,
+                          "media": 16, "status": 18, "overlay": 22})
+        self.assertEqual(config["radiusPolicy"], "exact")
+        self.assertEqual(config["chrome"]["style"], "flat")
+        self.assertEqual(set(config["textStyles"]) ,
+                         {"homeTitle", "viewTitle", "heading", "body", "metadata",
+                          "annotation", "status"})
+        self.assertNotIn("pixelSize", json.dumps(config["textStyles"]))
+        self.assertEqual(set(config["materials"]),
+                         {"panel", "card", "navigation", "status", "overlay", "row"})
+        self.assertTrue((theme / "wallpaper/wallpaper.frag").is_file())
+        self.assertTrue((theme / config["wallpaper"]["shader"]).is_file())
+        self.assertTrue((theme / "ASSET_PROVENANCE.md").is_file())
+        required = {"settings", "applications", "controller", "wifi", "bluetooth",
+                    "volume", "storage", "display", "download", "refresh", "platform",
+                    "provider", "gameMode", "genre", "play", "warning", "info"}
+        self.assertTrue(required.issubset(config["icons"]))
+        for name, descriptor in config["icons"].items():
+            self.assertEqual(descriptor["render"], "original", name)
+            self.assertTrue(descriptor["file"].endswith(".png"), name)
+            self.assertTrue((theme / descriptor["file"]).is_file(), name)
+        for key in ("regular", "bold", "heavy"):
+            self.assertTrue((theme / config["fonts"]["faces"][key]["file"]).is_file())
         for value in config["opacity"].values():
             self.assertGreaterEqual(value, 0)
             self.assertLessEqual(value, 1)
@@ -105,7 +136,7 @@ class DefaultThemeInventoryTests(unittest.TestCase):
             self.assertNotIn("..", path.parts)
             self.assertTrue((theme / path).is_file(), str(path))
         for icon in config["icons"].values():
-            path = Path(icon)
+            path = Path(icon["file"] if isinstance(icon, dict) else icon)
             self.assertFalse(path.is_absolute())
             self.assertNotIn("..", path.parts)
             self.assertTrue((theme / path).is_file(), str(path))

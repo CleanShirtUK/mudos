@@ -51,6 +51,7 @@ public:
     QVariantMap wallpaper() const { return m_wallpaperValues; }
     QVariantList themes() const { return m_themes; }
     Q_INVOKABLE bool select(const QString &id);
+    Q_INVOKABLE QVariantMap iconAsset(const QString &name) const;
     Q_INVOKABLE QString iconUrl(const QString &name) const;
 signals:
     void themeChanged();

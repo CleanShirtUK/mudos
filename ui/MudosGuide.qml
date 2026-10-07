@@ -71,16 +71,17 @@ Window {
             spacing: 18
 
             Text {
-                text: confirmationPending ? "CONFIRM"
+                text: themeText.formatRole(confirmationPending ? "CONFIRM"
                       : guideModel.sessionClassification !== ""
                         ? guideModel.sessionClassification
                           + (guideModel.sessionTitle !== "" ? " · " + guideModel.sessionTitle : "")
-                        : "GUIDE"
+                        : "GUIDE", "heading")
                 color: luluPalette.headingAccent
-                font.family: typography.majorHeadingFamily
-                font.weight: typography.majorHeadingWeight
+                font.family: themeText.fontFamily("heading", typography, "majorHeading")
+                font.weight: themeText.weight("heading", typography.majorHeadingWeight)
                 font.pixelSize: typography.size("section", 30)
-                font.letterSpacing: themeText.letterSpacing("viewTitle", 1)
+                font.letterSpacing: themeText.spacing("heading", 1,
+                    themeText.letterSpacing("viewTitle", 1))
                 layer.enabled: true
                 layer.effect: MultiEffect {
                     shadowEnabled: true
@@ -149,10 +150,12 @@ Window {
                             anchors.fill: parent
                             anchors.leftMargin: 18
                             anchors.rightMargin: 18
-                            text: rowDelegate.modelData.label
+                            text: themeText.formatRole(rowDelegate.modelData.label, "body")
                             color: rowDelegate.textColor
-                            font.family: typography.interfaceFamily
+                            font.family: themeText.fontFamily("body", typography, "interface")
+                            font.weight: themeText.weight("body", Font.Normal)
                             font.pixelSize: typography.size("body", 18)
+                            font.letterSpacing: themeText.spacing("body", 1)
                             verticalAlignment: Text.AlignVCenter
                             elide: Text.ElideRight
                             layer.enabled: true

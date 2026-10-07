@@ -99,10 +99,11 @@ the Modern/95 end-to-end proof-of-concept described below.
 
 ### THEME-001 — Theme engine and external theme configuration
 
-**Status:** VALIDATION — Modern/95 are operator-accepted; Metalheart is implemented
-and deployed for development validation. Keep open pending full physical
-Metalheart visual/controller acceptance and runtime review. UI-001's accepted
-baseline remains Modern. `/opt/lulu/current` is unchanged.
+**Status:** VALIDATION — Modern/95 are operator-accepted; Metalheart V2 is
+deployed for development validation; Frutiger Aero implementation is underway.
+Keep open pending commit/development refresh and physical visual/controller/
+performance acceptance for the latest theme-engine stress test. UI-001's
+accepted baseline remains Modern. `/opt/lulu/current` is unchanged.
 
 - A theme directory owns `theme.json`, declared font assets, optional semantic
   SVG overrides, and its wallpaper QSB. Discovery uses the immutable runtime's
@@ -140,7 +141,7 @@ baseline remains Modern. `/opt/lulu/current` is unchanged.
   the shell reached Home, logged one SDL gamepad, and the immutable
   `/opt/lulu/current` selector remains unchanged. No physical controller input
   or visual theme acceptance is claimed.
-- Still open: end-to-end SVG tint/fallback rendering coverage; complete glass
+- Still open from the earlier validation stage: complete glass
   optics binding coverage; inspection of all actual screens under both themes;
   live Settings selection and persistence across shell restart; Guide and
   notification visual checks; and controller/runtime acceptance. Keep
@@ -270,6 +271,36 @@ baseline remains Modern. `/opt/lulu/current` is unchanged.
   substitute for inspection of Home, Library, Settings, Utilities, Downloads,
   Guide, cards, and status, nor for Modern/95 visual comparison. Keep THEME-001
   open until operator visual/controller acceptance and performance review.
+
+- **Frutiger Aero final theme-engine stress test:** source implementation is
+  underway on the canonical checkout from `ef14dfe`. It adds the fourth
+  built-in theme (`frutiger-aero`), data-only original PNG semantic overrides,
+  generic semantic text treatments, and a shader-based Aero palette/material/
+  glass/radius/motion configuration. PNG schema accepts legacy tintable SVG
+  shorthand plus `{file, render}` descriptors (`SVG+tint`, `PNG+original`);
+  one native resolver returns URL/format/render mode. Original PNGs use direct
+  `Image` paths with aspect fit and no `MultiEffect`; status icons retain their
+  existing safe-inset geometry. PNG payloads are content-decoded and bounded to
+  4 MiB, 1024×1024, and 1,048,576 pixels. Original, theme-authored colorful
+  pictograms are used (not Crystal Project/archive artwork); font and asset
+  provenance is in `themes/frutiger-aero/ASSET_PROVENANCE.md`.
+- Semantic text roles `heading`, `body`, `metadata`, `annotation`, and `status`
+  add font-role, weight, case, and letter-spacing presentation only; pixel sizes
+  remain engine-owned and the existing title roles are preserved. The Frutiger
+  theme uses Noto Sans (Apache-2.0), daylight sky/aqua/grass colors, six glossy
+  gradients, enabled high-transmission glass, exact 22/16/12/16/18/22 radii,
+  and an original slowly animated sky/meadow/water/bubbles QSB wallpaper with
+  sparse corner ornaments. No raster wallpaper primitive was needed; this
+  remains a documented future gap only if a photo theme cannot be represented
+  adequately by shader.
+- **Automated verification so far:** ThemeManager native tests include PNG
+  validation/resolution, invalid mode/signature/corrupt/oversized/traversal/
+  symlink cases, text-role bounds, and Frutiger → Modern → Metalheart selection.
+  QML tests cover PNG-direct versus SVG-tint/fallback switching in `MudosIcon`,
+  `StatusGlyph`, and a metadata row; theme semantics cover all five text roles.
+  Physical Frutiger visual/controller/performance acceptance is still pending.
+  Dev-current refresh and final commit/clean-marker verification are not yet
+  recorded; `/opt/lulu/current` must remain untouched and THEME-001 stays open.
 
 ## CLOSED
 
