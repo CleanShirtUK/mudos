@@ -364,6 +364,29 @@ theme-engine stress test. UI-001's accepted baseline remains Modern.
   QSB source/deployed checksum at this iteration is
   `541689b8954ff0d6c1c1da68cd8e63035ca369f18fc6ff49a4adb8265303436c`.
 
+- **Metalheart temporal-stability follow-up:** the static object centre is moved
+  farther up/right by changing the hub from `(-0.10,-0.03,0)` to `(0.04,0.02,0)`
+  and camera target from `(-0.62,-0.50,0)` to `(-0.75,-0.64,0)`; the estimate is
+  now about 67% x / 24% y. The construction rings move to `(0.52,0.28)`. Four
+  major spikes and two loops remain; medium spikes are 5→4, major radii are
+  smaller major radii are thickened, loop tube radii 0.022/0.018→0.032/0.030,
+  and all needles remain
+  removed. The three center nodes and per-spike directions are now static; only
+  coherent whole-object motion, background scan, and energy sweep animate. The
+  AABB remains, tightened to center `(0.04,1.17,0)`
+  and half-extents `(5.25,2.78,1.50)`. AO is disabled; march remains 24 steps
+  with multiplier 0.92. Projected-footprint edge coverage is linearized. Two-
+  sample spatial AA has not been added.
+- **Idle profile after temporal-stability follow-up:** 120-second GPU sample
+  averaged 55.98% busy (43.33–70.83%). Over the accompanying 3-minute fan
+  window, CPU Tctl averaged 67.12°C (61–75°C), PWM ranged 120–128 (never rose
+  to 150), and pump fan RPM averaged 1,671 (1,604–1,726). GPU edge temperature
+  remained unreadable at 0°C. The fan target of no wallpaper-related rise to
+  PWM 150 passed this window, though GPU utilization remains substantially
+  above the old-shader baseline. Motion shimmer and the final placement still
+  require operator physical confirmation before the two-sample AA decision or
+  final visual acceptance.
+
 ## CLOSED
 
 ### UNINSTALL-001 — Complete provider-owned uninstall coverage
