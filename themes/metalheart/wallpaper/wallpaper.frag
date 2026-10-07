@@ -37,7 +37,10 @@ void main()
 {
     vec2 uv = qt_TexCoord0;
     vec2 p = (uv - 0.5) * vec2(u_resolution.x / max(u_resolution.y, 1.0), 1.0);
-    float time = u_time * 0.035;
+    // The base shell clock advances roughly one shader-time unit per second.
+    // Keep the image anchored but give the low-amplitude deformation and light
+    // travel enough phase movement to register during a short Home-screen glance.
+    float time = u_time * 0.16;
 
     // Asymmetric blast core, deliberately offset into the right half to retain
     // quiet negative space behind the Home title and left rail.
@@ -69,10 +72,15 @@ void main()
     float structure = max(ribbonA, max(ribbonB * 0.82, ribbonC * 0.72));
 
     // Alternating dark/mid/silver bands provide a sharp polished-metal response.
-    float band = 0.5 + 0.5 * cos((dA + 0.012 * sin(a * 6.0)) * 480.0);
+    float band = 0.5 + 0.5 * cos((dA + 0.012 * sin(a * 6.0 + time * 0.9)
+        + 0.006 * sin(a * 3.0 - time * 0.7)) * 480.0);
     float specular = smoothstep(0.78, 0.99, band) * structure;
     float steel = structure * (0.18 + 0.42 * band);
-    float blueRef = structure * (0.16 + 0.25 * (0.5 + 0.5 * sin(a * 9.0 + r * 50.0)));
+    float blueRef = structure * (0.16 + 0.25
+        * (0.5 + 0.5 * sin(a * 9.0 + r * 50.0 - time * 0.8)));
+    float energySweep = pow(max(0.0, 0.5 + 0.5
+        * sin(angle * 3.0 + time * 0.75 - radius * 24.0)), 9.0)
+        * exp(-radius * 2.2);
 
     // Fine radial construction lines and a nearly invisible technical grid.
     float gridX = 1.0 - smoothstep(0.0, 0.010, abs(fract((uv.x + 0.5) * 22.0) - 0.5));
@@ -88,7 +96,8 @@ void main()
     vec3 color = voidColor * (0.38 + 0.62 * vignette);
     color += u_surface * (0.10 + 0.16 * explosion);
     color += u_secondary * (explosion * 0.27 + spokes * 0.55);
-    color += u_primary * (explosion * 0.14 + blueRef * 0.50 + grid * 0.30);
+    color += u_primary * (explosion * 0.14 + blueRef * 0.50
+        + energySweep * 0.18 + grid * 0.30);
     color += vec3(0.20, 0.22, 0.27) * steel;
     color += vec3(0.78, 0.80, 0.86) * specular;
     color += vec3(0.62, 0.66, 0.73) * (structure * 0.20);

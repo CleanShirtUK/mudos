@@ -53,6 +53,7 @@ Item {
     // a subordinate animation triggered by beginStartup; it never gates the
     // shell's PRESENTED/HIDDEN boundaries.
     property real orbitBaseTime: 0
+    property double wallpaperClockLastTick: 0
     property real orbitSettledOffset: 0
     property real orbitIntroClock: 0
     property bool orbitIntroActive: false
@@ -509,17 +510,23 @@ Item {
         }
     }
 
-    NumberAnimation {
+    Timer {
         id: orbitBaseTimeAnimation
-        target: coordinator
-        property: "orbitBaseTime"
-        to: 100000
-        duration: themeMotion.speed("wallpaper", 1) > 0
-            ? 100000000 / themeMotion.speed("wallpaper", 1) : 100000000
-        loops: Animation.Infinite
+        interval: 16
+        repeat: true
         running: coordinator.contentState !== coordinator.hiddenState
             && themeMotion.enabled("wallpaper")
             && themeMotion.speed("wallpaper", 1) > 0
+        onRunningChanged: {
+            if (running)
+                coordinator.wallpaperClockLastTick = Date.now()
+        }
+        onTriggered: {
+            var now = Date.now()
+            var elapsed = Math.max(0, now - coordinator.wallpaperClockLastTick)
+            coordinator.wallpaperClockLastTick = now
+            coordinator.orbitBaseTime += elapsed * themeMotion.speed("wallpaper", 1) / 1000
+        }
     }
 
     NumberAnimation {

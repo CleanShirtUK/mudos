@@ -40,7 +40,8 @@ specify an SPDX license. See `themes/metalheart/fonts/PROVENANCE.md` and the
 theme-engine constraints in `docs/theme-gap-audit-metalheart.md`.
 
 `theme.json` v1 provides `colors` (semantic color roles), `opacity` (0..1),
-`radii` (0..128 logical pixels), `glass` (enabled and optical settings),
+`radii` (0..128 logical pixels), `radiusPolicy` (`exact` or
+`componentBaseline`), `glass` (enabled and optical settings),
 `fonts.faces` (role-to-relative-file declarations) and `fonts.roles`, `icons`
 (semantic ID to relative SVG), and `wallpaper.shader` plus primary/secondary/
 surface/error colors. Font roles are interface/display/majorHeading/icon/
@@ -52,12 +53,16 @@ Themes may also declare `motion`, `labels.home`, `labels.views`, and the
 `homeTitle`/`viewTitle` text styles.
 Motion uses `enabled`, finite `durationScale` in `(0,10]`, and a small set of
 semantic roles (`navigation`, `focus`, `surface`, `overlay`, `fade`, `status`,
-`intro`, `motionBlur`). A role may override `enabled`, `duration` (0..5000 ms), and a
+`intro`, `wallpaper`, `motionBlur`). A role may override `enabled`, `duration` (0..5000 ms), and a
 safe easing name (`linear`, `inCubic`, `outCubic`, `inOutCubic`, `inQuint`,
 `outQuint`, `inOutQuint`, and quadratic variants). Effective enablement is the
 global switch AND the role switch. Disabled motion finalizes presentation state
 synchronously; it never disables jobs, operational indicators, or lifecycle
-logic. Omitted motion uses enabled, unit-scale defaults. Home labels map stable
+logic. The wallpaper role may set finite `speed` in `[0,10]`; its independent
+clock is not affected by UI `durationScale` or `intro` timing. Omitted motion uses
+enabled, unit-scale defaults. An omitted radius policy retains the legacy
+`componentBaseline` behavior; `exact` makes configured semantic radii
+authoritative. Home labels map stable
 domain IDs (`system`, `store`, `library`, `recent`) and `labels.views` maps
 first-class view IDs (`settings`, `utilities`, `library`, `installable`,
 `downloads`) to strings of at most 64 characters; absent labels use canonical
