@@ -428,6 +428,61 @@ bool intersectSceneBounds(vec3 ro, vec3 rd, out float tNear, out float tFar)
     return tFar >= tNear && tFar > 0.0;
 }
 
+vec3 renderSceneRay(vec3 ro, vec3 rd, vec3 bg, out bool edgeCandidate)
+{
+    float tNear;
+    float tFar;
+    float travel = 0.0;
+    float mat = 0.0;
+    float closestDistance = 1e5;
+    bool hit = false;
+    edgeCandidate = false;
+
+    if(intersectSceneBounds(ro,rd,tNear,tFar))
+    {
+        travel = tNear;
+        float marchLimit = min(tFar,FAR_CLIP);
+        for(int i=0;i<MAX_STEPS;i++)
+        {
+            vec3 p = ro + rd*travel;
+            vec2 h = mapScene(p);
+            closestDistance = min(closestDistance,h.x);
+
+            if(h.x < EPS)
+            {
+                hit = true;
+                mat = h.y;
+                break;
+            }
+
+            travel += max(h.x*0.92,EPS*0.5);
+
+            if(travel > marchLimit)
+                break;
+        }
+
+        float pixelFootprint = max(
+            EPS,
+            travel*2.0/(1.90*max(u_resolution.y,1.0))
+        );
+
+        if(!hit && closestDistance < pixelFootprint*1.5)
+            edgeCandidate = true;
+    }
+
+    if(!hit)
+        return bg;
+
+    vec3 p = ro + rd*travel;
+    vec3 n = calcNormal(p);
+    if(abs(dot(n,rd)) < 0.22)
+        edgeCandidate = true;
+
+    vec3 metal = shade(p,rd,n,mat) * 0.88;
+    float haze = smoothstep(5.0,11.0,travel);
+    return mix(metal,bg,haze*0.08);
+}
+
 void main()
 {
     vec2 shaderUv = vec2(qt_TexCoord0.x, 1.0 - qt_TexCoord0.y);
@@ -450,56 +505,22 @@ void main()
 
     vec3 rd = normalize(ww*1.90 + uv.x*uu + uv.y*vv);
 
-    float tNear;
-    float tFar;
-    float travel = 0.0;
-    float mat = 0.0;
-    float edgeCoverage = 0.0;
-    bool hit = false;
+    bool edgeCandidate;
+    vec3 color = renderSceneRay(ro,rd,bg,edgeCandidate);
 
-    if(intersectSceneBounds(ro,rd,tNear,tFar))
+    if(edgeCandidate)
     {
-        travel = tNear;
-        float marchLimit = min(tFar,FAR_CLIP);
-        for(int i=0;i<MAX_STEPS;i++)
-        {
-            vec3 p = ro + rd*travel;
-            vec2 h = mapScene(p);
-
-            float pixelFootprint = max(
-                EPS,
-                travel*2.0/(1.90*max(u_resolution.y,1.0))
-            );
-            float hitThreshold = pixelFootprint;
-            if(h.x < hitThreshold)
-            {
-                hit = true;
-                mat = h.y;
-                edgeCoverage = 1.0-clamp(h.x/pixelFootprint,0.0,1.0);
-                break;
-            }
-
-            travel += max(h.x*0.92,hitThreshold*0.5);
-
-            if(travel > marchLimit)
-                break;
-        }
-    }
-
-    vec3 color = bg;
-
-    if(hit)
-    {
-        vec3 p = ro + rd*travel;
-        vec3 n = calcNormal(p);
-        vec3 metal = shade(p,rd,n,mat);
-
-        metal *= 0.88;
-
-        float haze = smoothstep(5.0,11.0,travel);
-
-        vec3 surfaceColor = mix(metal,bg,haze*0.08);
-        color = mix(bg,surfaceColor,edgeCoverage);
+        vec2 sampleOffset = vec2(
+            0.5/max(u_resolution.x,1.0),
+            0.5/max(u_resolution.y,1.0)
+        );
+        vec2 secondUv = uv + sampleOffset;
+        vec3 secondRd = normalize(
+            ww*1.90 + secondUv.x*uu + secondUv.y*vv
+        );
+        bool secondEdgeCandidate;
+        vec3 secondColor = renderSceneRay(ro,secondRd,bg,secondEdgeCandidate);
+        color = mix(color,secondColor,0.5);
     }
 
     color = max(color,vec3(0.0));
