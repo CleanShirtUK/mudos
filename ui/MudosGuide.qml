@@ -5,6 +5,7 @@ import QtQuick.Window
 Window {
     id: root
     ThemeMotion { id: themeMotion }
+    ThemeText { id: themeText }
     objectName: "mudosGuide"
     visible: false
     title: "Mudos Guide"
@@ -64,7 +65,7 @@ Window {
                 font.family: typography.majorHeadingFamily
                 font.weight: typography.majorHeadingWeight
                 font.pixelSize: typography.size("section", 30)
-                font.letterSpacing: 5
+                font.letterSpacing: themeText.letterSpacing("viewTitle", 1)
                 layer.enabled: true
                 layer.effect: MultiEffect {
                     shadowEnabled: true

@@ -35,6 +35,7 @@ private slots:
         const QString root = QDir(temp.path()).filePath("themes");
         QVERIFY(copyTree(QStringLiteral(THEME_SOURCE_DIR) + "/modern", root + "/modern"));
         QVERIFY(copyTree(QStringLiteral(THEME_SOURCE_DIR) + "/95", root + "/95"));
+        QVERIFY(copyTree(QStringLiteral(THEME_SOURCE_DIR) + "/metalheart", root + "/metalheart"));
 
         auto editTheme = [&](const QString &id, const std::function<void(QJsonObject &)> &edit) {
             const QString dir = root + "/" + id;
@@ -199,7 +200,7 @@ private slots:
         QCOMPARE(saved.value("appearance/theme").toString(), QStringLiteral("modern"));
         QStringList ids;
         for (const QVariant &theme : manager.themes()) ids.append(theme.toMap().value("id").toString());
-        QCOMPARE(ids, QStringList({"modern", "95", "custom", "missing-motion"}));
+        QCOMPARE(ids, QStringList({"modern", "95", "custom", "metalheart", "missing-motion"}));
         QVERIFY(!ids.contains("mudos-default"));
         QVERIFY(!ids.contains("invalid"));
         QVERIFY(!ids.contains("escaped"));
@@ -232,6 +233,20 @@ private slots:
         QCOMPARE(saved.value("appearance/theme").toString(), QStringLiteral("95"));
         QVERIFY(manager.select("modern"));
         QCOMPARE(manager.colors().value("backdrop").toString(), QStringLiteral("#060607"));
+        QVERIFY(manager.select("metalheart"));
+        QCOMPARE(manager.activeName(), QStringLiteral("Metalheart"));
+        QCOMPARE(manager.colors().value("backdrop").toString(), QStringLiteral("#050508"));
+        QCOMPARE(manager.radii().value("panel").toDouble(), 4.0);
+        QCOMPARE(manager.glass().value("enabled").toBool(), true);
+        QCOMPARE(manager.glass().value("panel").toMap().value("transmission").toDouble(), 0.86);
+        QCOMPARE(manager.motion().value("durationScale").toDouble(), 0.72);
+        QCOMPARE(manager.motion().value("roles").toMap().value("surface").toMap()
+                     .value("duration").toInt(), 340);
+        QCOMPARE(manager.labels().value("home").toMap().value("store").toString(), QStringLiteral("ACQUIRE"));
+        QCOMPARE(manager.fonts().value("regular").toString().contains("themes/metalheart/fonts/ShareTechMono-Regular.ttf"), true);
+        QCOMPARE(manager.fonts().value("heavy").toString().contains("themes/metalheart/fonts/Oxanium-Variable.ttf"), true);
+        QVERIFY(manager.wallpaperShader().contains("themes/metalheart/wallpaper/wallpaper.frag.qsb"));
+        QVERIFY(manager.iconUrl("settings").contains("themes/metalheart/icons/settings.svg"));
         QVERIFY(manager.select("missing-motion"));
         QCOMPARE(manager.motion().value("enabled").toBool(), true);
         QCOMPARE(manager.motion().value("durationScale").toDouble(), 1.0);

@@ -57,6 +57,46 @@ class DefaultThemeInventoryTests(unittest.TestCase):
         for icon in config["icons"].values():
             self.assertTrue((theme / icon).is_file())
 
+    def test_metalheart_is_a_self_contained_glass_theme(self):
+        theme = THEMES / "metalheart"
+        config = json.loads((theme / "theme.json").read_text())
+        self.assertEqual((config["id"], config["name"]), ("metalheart", "Metalheart"))
+        self.assertTrue(config["glass"]["enabled"])
+        self.assertEqual(config["labels"]["home"]["store"], "ACQUIRE")
+        self.assertEqual(config["textStyles"]["homeTitle"],
+                         {"case": "preserve", "letterSpacing": 1.25})
+        self.assertEqual(config["motion"]["durationScale"], 0.72)
+        self.assertEqual(config["fonts"]["roles"]["interface"], "regular")
+        self.assertEqual(config["fonts"]["roles"]["display"], "heavy")
+        self.assertNotEqual(config["fonts"]["faces"]["regular"]["file"],
+                            config["fonts"]["faces"]["heavy"]["file"])
+        self.assertTrue((theme / config["wallpaper"]["shader"]).is_file())
+        self.assertTrue((theme / "wallpaper/wallpaper.frag").is_file())
+        self.assertGreaterEqual(len(config["icons"]), 30)
+        for face in config["fonts"]["faces"].values():
+            path = Path(face["file"])
+            self.assertFalse(path.is_absolute())
+            self.assertNotIn("..", path.parts)
+            self.assertTrue((theme / path).is_file(), str(path))
+        for icon in config["icons"].values():
+            path = Path(icon)
+            self.assertFalse(path.is_absolute())
+            self.assertNotIn("..", path.parts)
+            self.assertTrue((theme / path).is_file(), str(path))
+        for license_name in ("OXANIUM-OFL.txt", "SHARE-TECH-MONO-OFL.txt",
+                             "NERD-FONTS-LICENSE.txt", "PROVENANCE.md"):
+            self.assertTrue((theme / "fonts" / license_name).is_file())
+        for value in config["colors"].values():
+            self.assertTrue(value.startswith("#"))
+        for value in config["glass"].values():
+            if isinstance(value, dict):
+                for metric in ("ior", "depth", "refractionPixels", "dispersionIor",
+                               "diffusionPixels", "transmission", "bevelWidth",
+                               "bulgeStrength", "sceneLightStrength", "sceneLightPixels",
+                               "edgeLightStrength"):
+                    self.assertIn(metric, value)
+                    self.assertGreaterEqual(value[metric], 0)
+
 
 if __name__ == "__main__":
     unittest.main()

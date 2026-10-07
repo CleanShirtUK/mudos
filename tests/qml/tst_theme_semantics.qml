@@ -13,6 +13,19 @@ TestCase {
     })
     Loader { id: textLoader; source: Qt.resolvedUrl("../../ui/ThemeText.qml") }
     Loader { id: motionLoader; source: Qt.resolvedUrl("../../ui/ThemeMotion.qml") }
+    Loader { id: paletteLoader; active: false; source: Qt.resolvedUrl("../../ui/LuluPalette.qml") }
+    Loader { id: typographyLoader; active: false; source: Qt.resolvedUrl("../../ui/Typography.qml") }
+    Loader {
+        id: iconLoader
+        active: false
+        source: Qt.resolvedUrl("../../ui/MudosIcon.qml")
+        onLoaded: {
+            item.name = "settings"
+            item.iconSize = 24
+            item.semanticColor = "#0088ff"
+            item.typography = typographyLoader.item
+        }
+    }
     Item { id: blurSource; width: 40; height: 40 }
     Loader {
         id: blurLoader
@@ -78,6 +91,56 @@ TestCase {
         compare(motionLoader.item.easing("navigation", "linear"), Easing.InOutCubic)
         mudosTheme.motion.enabled = false
         verify(!motionLoader.item.enabled("navigation"))
+    }
+
+    function test_metalheart_theme_consumers_resolve_configured_roles() {
+        var root = Qt.resolvedUrl("../../themes/metalheart/")
+        mudosTheme = ({
+            activeId: "metalheart",
+            motion: {enabled: true, durationScale: 0.72,
+                roles: {surface: {enabled: true, duration: 340, easing: "outQuint"}}},
+            colors: {primaryText: "#E0E0E8", accent: "#0088FF", backdrop: "#050508",
+                surface: "#D9141418", headingAccent: "#E0E0E8", border: "#B5606068"},
+            chrome: {style: "bevel", highlight: "#F0F0F5", light: "#A0A0A8",
+                shadow: "#2A2A32", darkShadow: "#050508", width: 2},
+            radii: {panel: 4, card: 3, row: 1, media: 2, status: 3, overlay: 4},
+            glass: {enabled: true, panel: {transmission: 0.86}},
+            fonts: {
+                regular: root + "fonts/ShareTechMono-Regular.ttf",
+                bold: root + "fonts/ShareTechMono-Regular.ttf",
+                heavy: root + "fonts/Oxanium-Variable.ttf",
+                icons: root + "fonts/JetBrainsMonoNLNerdFont-Regular.ttf",
+                roles: {interface: "regular", display: "heavy", majorHeading: "heavy", icon: "icons"}
+            },
+            labels: {home: {system: "SYSTEM", store: "ACQUIRE", library: "LIBRARY", recent: "RECENT"},
+                views: {settings: "SETTINGS", utilities: "UTILITIES", library: "LIBRARY",
+                    installable: "INSTALLABLE", downloads: "DOWNLOADS"}},
+            textStyles: {homeTitle: {case: "preserve", letterSpacing: 1.25},
+                viewTitle: {case: "preserve", letterSpacing: 1.25}},
+            wallpaperShader: root + "wallpaper/wallpaper.frag.qsb",
+            iconUrl: function(name) { return name === "settings" ? root + "icons/settings.svg" : "" }
+        })
+        paletteLoader.active = true
+        typographyLoader.active = true
+        iconLoader.active = true
+        tryCompare(typographyLoader.item.regularFont, "status", FontLoader.Ready)
+        tryCompare(typographyLoader.item.extraBoldFont, "status", FontLoader.Ready)
+        compare(typographyLoader.item.interfaceFamily, typographyLoader.item.regularFont.name)
+        compare(typographyLoader.item.displayFamily, typographyLoader.item.extraBoldFont.name)
+        verify(typographyLoader.item.interfaceFamily !== typographyLoader.item.displayFamily)
+        compare(paletteLoader.item.primaryText.toString().toLowerCase(), "#e0e0e8")
+        compare(paletteLoader.item.accent.toString().toLowerCase(), "#0088ff")
+        verify(paletteLoader.item.bevelChrome)
+        compare(mudosTheme.glass.panel.transmission, 0.86)
+        compare(textLoader.item.homeLabel("store"), "ACQUIRE")
+        compare(textLoader.item.homeTitle("store"), "ACQUIRE")
+        compare(textLoader.item.homeTitleSpacing(1), 1.25)
+        compare(motionLoader.item.duration("surface", 500), 244.8)
+        compare(mudosTheme.wallpaperShader, root + "wallpaper/wallpaper.frag.qsb")
+        compare(iconLoader.item.overrideUrl, root + "icons/settings.svg")
+        iconLoader.active = false
+        typographyLoader.active = false
+        paletteLoader.active = false
     }
 
     function test_global_no_motion_disables_blur_capture() {

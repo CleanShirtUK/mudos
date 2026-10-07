@@ -143,7 +143,7 @@ the Modern reference. `/opt/lulu/current` is unchanged.
 - Still open: end-to-end SVG tint/fallback rendering coverage; complete glass
   optics binding coverage; inspection of all actual screens under both themes;
   live Settings selection and persistence across shell restart; Guide and
-  notification visual checks; and operator visual/controller acceptance. Keep
+  notification visual checks; and controller/runtime acceptance. Keep
   THEME-001 open until that acceptance sweep is complete.
 - Themeability follow-up implementation is in source: validated motion roles,
   duration scaling and safe easing resolution; synchronous Home/Recent/coordinator
@@ -154,14 +154,14 @@ the Modern reference. `/opt/lulu/current` is unchanged.
   the `recent` semantic ID. Native schema tests and focused semantics/Home QML
   tests pass. Full headless QML execution still includes known fixture failures
   (native `Mudos.Poc` module unavailable, and pre-existing projection/mapping/
-  Recent groups); no physical Modern/95 sweep has been performed. Commit
+  Recent groups); at the time, no physical Modern/95 sweep had been performed. Commit
   `46b8b97` was refreshed to `/opt/lulu/dev-current` on 2026-10-07 with explicit
   operator authorization to restart the session while Sunshine was active. The
   runtime marker records this clean HEAD and `promotable=false`; Sessiond,
   Consoled and Acquisitiond recovered, and the shell started with one SDL
   gamepad. Startup journal review also shows existing QML warnings/errors in
   SettingsSpace/ConsoleShell and other unrelated system services; theme-motion
-  runtime has not received a complete visual/input acceptance sweep. The
+  runtime had not received a complete visual/input acceptance sweep. The
  immutable `/opt/lulu/current` selector remains unchanged. Do not close THEME-001.
 
 - Corrective pass prepared on the canonical checkout: the no-motion defect was
@@ -186,6 +186,10 @@ the Modern reference. `/opt/lulu/current` is unchanged.
   HEAD and `promotable=false`. The active `lulu-session@2` and Consoled services
   were confirmed after refresh, and `/opt/lulu/current` remains unchanged. No
   physical visual/controller acceptance is claimed.
+
+- **Operator update:** Modern/95 visual acceptance has since been granted. This
+  does not close THEME-001; remaining gates include Metalheart runtime/performance
+  inspection and the documented theme-engine gap review.
 
 ## CLOSED
 

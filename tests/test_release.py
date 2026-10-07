@@ -20,6 +20,8 @@ class ReleaseToolTests(unittest.TestCase):
         self.assertIn("scripts/dolphin-bluetooth-lease.py", release.REQUIRED_FILES)
         self.assertIn("scripts/aurelia-graphical-launch.py", release.REQUIRED_FILES)
         self.assertIn("scripts/provision-aurelia-state.py", release.REQUIRED_FILES)
+        self.assertIn("themes/metalheart/theme.json", release.REQUIRED_FILES)
+        self.assertIn("themes/metalheart/wallpaper/wallpaper.frag.qsb", release.REQUIRED_FILES)
 
     def git_repo(self):
         root = Path(tempfile.mkdtemp())

@@ -46,6 +46,8 @@ REQUIRED_FILES = (
     "themes/modern/wallpaper/wallpaper.frag.qsb",
     "themes/95/theme.json",
     "themes/95/wallpaper/wallpaper.frag.qsb",
+    "themes/metalheart/theme.json",
+    "themes/metalheart/wallpaper/wallpaper.frag.qsb",
     "ui/MudosSettingsPage.qml",
     "ui/SystemStatusStrip.qml",
     "scripts/console-ui.sh",

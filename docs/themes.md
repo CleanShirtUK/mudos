@@ -20,7 +20,8 @@ collection, flathub, applications, empty, wrench, activity, steam and addStore.
 Game metadata uses genre, clock, gameMode, wifi, info, platform, plug, developer,
 publisher and release. Missing SVGs use the built-in semantic Nerd Font glyph.
 
-The POC includes exactly two built-in themes: `Modern` (`modern`) and `95`.
+The built-in set includes `Modern` (`modern`), `95`, and `Metalheart`
+(`metalheart`).
 Modern's existing palette, glass profile, radii, fonts and Orbit wallpaper are
 kept as the accepted UI-001 baseline. `themes/95` is an original classic desktop
 interpretation: teal wallpaper; gray surfaces; navy selection; black/white text;
@@ -28,6 +29,15 @@ square radii; glass disabled; generic bevel chrome; Liberation Sans with its
 redistribution license; and original monochrome semantic SVGs. Its controller
 face is retained for controller-hint compatibility. No theme includes QML or
 JavaScript.
+
+Metalheart is an original near-black/gunmetal interpretation using Oxanium for
+display and Share Tech Mono for interface text (both SIL OFL 1.1), with its own
+compiled procedural fracture/chrome/energy wallpaper and monochrome semantic SVG
+set. It uses existing glass profiles and paired bevel chrome rather than adding
+theme-specific rendering logic. Its controller glyph face is inherited from the
+existing Mudos asset set; upstream provenance says free/open-source but does not
+specify an SPDX license. See `themes/metalheart/fonts/PROVENANCE.md` and the
+theme-engine constraints in `docs/theme-gap-audit-metalheart.md`.
 
 `theme.json` v1 provides `colors` (semantic color roles), `opacity` (0..1),
 `radii` (0..128 logical pixels), `glass` (enabled and optical settings),
