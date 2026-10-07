@@ -169,13 +169,6 @@ vec2 mapScene(vec3 p)
             rad = 0.14;
             flatten = 0.65;
         }
-        else if(i == 3)
-        {
-            dir = normalize(vec3(0.72,0.62,-0.05));
-            len = 3.6;
-            rad = 0.13;
-            flatten = 0.70;
-        }
         else
         {
             dir = normalize(vec3(0.72,0.62,-0.05));
@@ -188,7 +181,7 @@ vec2 mapScene(vec3 p)
         float h = len*0.5;
         q.y -= h;
 
-        float spike = sdCappedCone(q,h,rad,0.004);
+        float spike = sdCappedCone(q,h,rad,0.014);
 
         spike = max(
             spike,
@@ -204,7 +197,7 @@ vec2 mapScene(vec3 p)
         q.xy *= rot(0.52);
         q.yz *= rot(1.15);
 
-        float d = sdTorus(q,vec2(0.78,0.032));
+        float d = sdTorus(q,vec2(0.78,0.040));
         res = opU(res,vec2(d,3.0));
     }
 
@@ -213,7 +206,7 @@ vec2 mapScene(vec3 p)
         q.xz *= rot(-0.78);
         q.xy *= rot(0.95);
 
-        float d = sdTorus(q,vec2(1.02,0.030));
+        float d = sdTorus(q,vec2(1.02,0.038));
         res = opU(res,vec2(d,3.0));
     }
 
@@ -241,7 +234,7 @@ vec2 mapScene(vec3 p)
         float h = len*0.5;
         q.y -= h;
 
-        float spike = sdCappedCone(q,h,w,0.0018);
+        float spike = sdCappedCone(q,h,w,0.012);
 
         res = opU(res,vec2(spike,4.0));
     }
@@ -264,14 +257,14 @@ float lineGrid(vec2 p, float scale, float thickness)
 {
     vec2 g = abs(fract(p*scale)-0.5);
     float d = min(g.x,g.y);
-    float aa = max(fwidth(d), 0.0001);
+    float aa = max(1.2*fwidth(d), 0.0001);
     return 1.0-smoothstep(thickness-aa,thickness+aa,d);
 }
 
 float ring(vec2 p, vec2 c, float r, float w)
 {
     float d = abs(length(p-c)-r);
-    float aa = max(fwidth(d), 0.0001);
+    float aa = max(1.2*fwidth(d), 0.0001);
     return 1.0-smoothstep(w-aa,w+aa,d);
 }
 
@@ -287,7 +280,10 @@ vec3 backdrop(vec2 uv)
 
     col *= 1.0 - 0.24*dot(uv,uv);
 
-    float diag = sin((uv.x+uv.y)*170.0)*0.5+0.5;
+    float diagonalPhase = (uv.x+uv.y)*170.0;
+    float diagonalFootprint = 0.5*170.0*fwidth(uv.x+uv.y);
+    float diagonalFilter = sin(diagonalFootprint)/max(diagonalFootprint,0.0001);
+    float diag = sin(diagonalPhase)*0.5*diagonalFilter+0.5;
     col *= 0.992 + 0.012*diag;
 
     float g1 = lineGrid(uv+vec2(0.02,0.0),4.8,0.009);
@@ -296,8 +292,8 @@ vec3 backdrop(vec2 uv)
     col += vec3(0.010,0.045,0.055)*g1*0.22;
     col += vec3(0.006,0.022,0.030)*g2*0.12;
 
-    float r1 = ring(uv,vec2(0.52,0.28),0.56,0.0025);
-    float r2 = ring(uv,vec2(0.52,0.28),0.90,0.0018);
+    float r1 = ring(uv,vec2(0.66,0.42),0.56,0.0025);
+    float r2 = ring(uv,vec2(0.66,0.42),0.90,0.0018);
 
     col += vec3(0.04,0.19,0.23)*(r1+r2)*0.30;
 
@@ -321,13 +317,6 @@ vec3 backdrop(vec2 uv)
     float scanWidth = max(fwidth(uv.y),0.0015);
     float scan = exp(-2.5*abs(uv.y-scanY)/scanWidth);
     col += vec3(0.010,0.045,0.060)*scan*0.18;
-
-    float grain = hash11(
-        floor(uv.x*900.0)
-        + floor(uv.y*700.0)*57.0
-        + floor(u_time*12.0)*0.001
-    );
-    col += (grain-0.5)*0.002;
 
     return col;
 }
@@ -466,7 +455,7 @@ vec3 renderSceneRay(vec3 ro, vec3 rd, vec3 bg, out bool edgeCandidate)
             travel*2.0/(1.90*max(u_resolution.y,1.0))
         );
 
-        if(!hit && closestDistance < pixelFootprint*1.5)
+        if(!hit && closestDistance < pixelFootprint*3.0)
             edgeCandidate = true;
     }
 
@@ -475,7 +464,7 @@ vec3 renderSceneRay(vec3 ro, vec3 rd, vec3 bg, out bool edgeCandidate)
 
     vec3 p = ro + rd*travel;
     vec3 n = calcNormal(p);
-    if(abs(dot(n,rd)) < 0.22)
+    if(abs(dot(n,rd)) < 0.55)
         edgeCandidate = true;
 
     vec3 metal = shade(p,rd,n,mat) * 0.88;
@@ -495,7 +484,7 @@ void main()
     vec3 bg = backdrop(uv);
 
     vec3 ro = vec3(0.10,0.02,4.8);
-    vec3 ta = vec3(-0.75,-0.64,0.0);
+    vec3 ta = vec3(-1.55,-1.20,0.0);
 
     ro.xy += vec2(sin(u_time*0.34),cos(u_time*0.26))*0.035;
 
@@ -510,17 +499,22 @@ void main()
 
     if(edgeCandidate)
     {
-        vec2 sampleOffset = vec2(
-            0.5/max(u_resolution.x,1.0),
-            0.5/max(u_resolution.y,1.0)
+        float quarterPixel = 0.5/max(u_resolution.y,1.0);
+        vec2 sampleOffsets[2] = vec2[2](
+            vec2(-quarterPixel,-quarterPixel),
+            vec2(quarterPixel,quarterPixel)
         );
-        vec2 secondUv = uv + sampleOffset;
-        vec3 secondRd = normalize(
-            ww*1.90 + secondUv.x*uu + secondUv.y*vv
-        );
-        bool secondEdgeCandidate;
-        vec3 secondColor = renderSceneRay(ro,secondRd,bg,secondEdgeCandidate);
-        color = mix(color,secondColor,0.5);
+        vec3 colorSum = color;
+        for(int i=0;i<2;i++)
+        {
+            vec2 sampleUv = uv + sampleOffsets[i];
+            vec3 sampleRd = normalize(
+                ww*1.90 + sampleUv.x*uu + sampleUv.y*vv
+            );
+            bool sampleEdgeCandidate;
+            colorSum += renderSceneRay(ro,sampleRd,bg,sampleEdgeCandidate);
+        }
+        color = colorSum/3.0;
     }
 
     color = max(color,vec3(0.0));
