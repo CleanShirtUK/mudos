@@ -368,15 +368,14 @@ theme-engine stress test. UI-001's accepted baseline remains Modern.
   farther up/right by changing the hub from `(-0.10,-0.03,0)` to `(0.04,0.02,0)`
   and camera target from `(-0.62,-0.50,0)` to `(-0.75,-0.64,0)`; the estimate is
   now about 67% x / 24% y. The construction rings move to `(0.52,0.28)`. Four
-  major spikes and two loops remain; medium spikes are 5→4, major radii are
-  smaller major radii are thickened, loop tube radii 0.022/0.018→0.032/0.030,
-  and all needles remain
-  removed. The three center nodes and per-spike directions are now static; only
+  major spikes and two loops remain; medium spikes are 5→4, the three smaller
+  major spikes are thickened, loop tube radii 0.022/0.018→0.032/0.030, and all
+  needles remain removed. The three center nodes and per-spike directions are now static; only
   coherent whole-object motion, background scan, and energy sweep animate. The
   AABB remains, tightened to center `(0.04,1.17,0)`
   and half-extents `(5.25,2.78,1.50)`. AO is disabled; march remains 24 steps
-  with multiplier 0.92. Projected-footprint edge coverage is linearized. Two-
-  sample spatial AA has not been added.
+  with multiplier 0.92. A fixed projected-footprint estimate is used for edge
+  candidacy.
 - **Idle profile after temporal-stability follow-up:** 120-second GPU sample
   averaged 55.98% busy (43.33–70.83%). Over the accompanying 3-minute fan
   window, CPU Tctl averaged 67.12°C (61–75°C), PWM ranged 120–128 (never rose
@@ -384,8 +383,24 @@ theme-engine stress test. UI-001's accepted baseline remains Modern.
   remained unreadable at 0°C. The fan target of no wallpaper-related rise to
   PWM 150 passed this window, though GPU utilization remains substantially
   above the old-shader baseline. Motion shimmer and the final placement still
-  require operator physical confirmation before the two-sample AA decision or
-  final visual acceptance.
+  require operator physical confirmation.
+
+- **Metalheart adaptive two-sample edge test:** commit `18cf950` replaces the
+  broad raymarch residual blend with a stable `EPS` hit test and adds a second
+  fixed subpixel ray only for grazing hits or near-miss rays inside the scene
+  bound. This is edge-conditioned 2-sample spatial AA; it does not double-sample
+  the whole frame and uses no temporal jitter. QSB compiles reproducibly, the
+  theme/release tests (15) and theme-semantics QML tests (12) pass. Source and
+  deployed QSB checksum:
+  `a6c90ec5e14bb230c930406f37ed88aa4f8b41f443e0309465b87514b6e8afb3`.
+- **BC-250 after adaptive AA:** a 90-second GPU sample averaged 55.96% busy
+  (43.33–72.50%). Over the settled two-minute fan window, CPU Tctl averaged
+  62.58°C (60–68°C), fan PWM ranged 110–128 (never 150), and pump fan RPM
+  averaged 1,624 (1,488–1,719). GPU edge sensor remained 0°C and is unusable.
+  The target of no fan escalation above PWM 128 passed in this window, although
+  GPU busy remains well above the old shader's approximately 21.83% baseline.
+  Physical confirmation that motion shimmer is materially reduced and the
+  object aligns with the requested Home reference points remains outstanding.
 
 ## CLOSED
 
