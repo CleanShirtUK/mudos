@@ -425,6 +425,23 @@ theme-engine stress test. UI-001's accepted baseline remains Modern.
   stepping is materially reduced and the new upper-right placement matches the
   operator's Home landmarks is still required.
 
+- **Metalheart edge-highlight lighting correction:** commit `fce5b41` leaves
+  placement, geometry, motion, and adaptive edge sampling unchanged. Reflected
+  environment bands are broadened and reduced in energy. Specular exponent is
+  reduced from 110 to 48 while its multiplier drops from 2.25 to 0.95; Fresnel
+  exponent changes from 5 to 4 and its environment gain from 0.58 to 0.32. The
+  explicit blue rim term changes exponent 7→4 and gain 0.88→0.30, with lower
+  RGB intensity. A soft `col/(1+0.22*col)` shoulder compresses highlight peaks.
+  This broadens and lowers the edge response; no geometry or additional AA
+  changes were made. QSB reproducibility, 15 theme/release tests, 12 theme
+  semantics tests, and `git diff --check` passed.
+- **BC-250 after highlight correction:** 90-second GPU busy averaged 48.27%
+  (0–72.50%). Over the associated two-minute fan window, CPU Tctl averaged
+  64.55°C (61–70°C), GPU sensor remained invalid at 0°C, PWM ranged 120–128,
+  and pump fan RPM averaged 1,670 (1,602–1,719). PWM remained within the 128
+  ceiling; the fan curve was unchanged. Physical verification of the perceived
+  edge smoothness remains with the operator.
+
 ## CLOSED
 
 ### UNINSTALL-001 — Complete provider-owned uninstall coverage
