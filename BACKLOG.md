@@ -99,10 +99,10 @@ the Modern/95 end-to-end proof-of-concept described below.
 
 ### THEME-001 — Theme engine and external theme configuration
 
-**Status:** VALIDATION — THEME-001 proof-of-concept implementation is in progress.
-Modern + 95 are implemented in source; live physical review and final deployment
-checks remain. Do not close automatically. UI-001's accepted baseline remains
-the Modern reference. `/opt/lulu/current` is unchanged.
+**Status:** VALIDATION — Modern/95 are operator-accepted; Metalheart is implemented
+and deployed for development validation. Keep open pending full physical
+Metalheart visual/controller acceptance and runtime review. UI-001's accepted
+baseline remains Modern. `/opt/lulu/current` is unchanged.
 
 - A theme directory owns `theme.json`, declared font assets, optional semantic
   SVG overrides, and its wallpaper QSB. Discovery uses the immutable runtime's
@@ -190,6 +190,44 @@ the Modern reference. `/opt/lulu/current` is unchanged.
 - **Operator update:** Modern/95 visual acceptance has since been granted. This
   does not close THEME-001; remaining gates include Metalheart runtime/performance
   inspection and the documented theme-engine gap review.
+
+- **Metalheart stress-test implementation:** third built-in `metalheart` theme
+  added without changing the theme schema or Modern/95 assets. It includes
+  bundled Oxanium Variable (SIL OFL 1.1) display and Share Tech Mono (SIL OFL
+  1.1) interface fonts, 35 original monochrome semantic SVG overrides, the
+  compiled procedural fracture/chrome/energy wallpaper, near-black/gunmetal/
+  chrome/electric-blue palette, dark glass profiles, small nonzero radii, fast
+  motion, and `SYSTEM` / `ACQUIRE` / `LIBRARY` / `RECENT` title labels. Controller
+  glyph compatibility uses the existing Config Glyphs face; its upstream says
+  free/open-source but does not declare a specific SPDX license. The requested
+  capability audit is `docs/theme-gap-audit-metalheart.md`; its highest-impact
+  gap is declarative multi-stop structural surface material with separate edge
+  highlights/shadows. A generic Guide title-tracking consumption issue was
+  corrected to consume the already-existing `viewTitle` style. No screen has a
+  Metalheart-specific branch, and Modern/95 theme files are unchanged.
+- **Validation/deployment:** ThemeManager accepts and selects Metalheart; the
+  representative QML test exercises configured font families, palette, radius,
+  bevel, glass profile, icon URL, wallpaper URL, motion, and Home label. Theme
+  inventory/release tests, native build/CTest, focused semantics and spatial
+  QML suites, QSB rebuild/byte comparison, JSON validation, and `git diff
+  --check` pass. Implementation commit `d28dfcc` is clean and its marker matches
+  `/opt/lulu/dev-current` (`promotable=false`); source/config/QSB checksums agree.
+  `lulu-session@2` and Consoled remain active, and `/opt/lulu/current` still
+  points to the same immutable release.
+- **Live switching/performance:** the watched user selection completed
+  Modern → Metalheart → 95 → Metalheart → Modern with the same shell PID and no
+  service restart; final persisted theme is Modern. On the BC-250, frame windows
+  during this exercise were predominantly 60 fps (about 16.67 ms/frame), with
+  some 54–58 fps windows and transient maxima up to 225 ms; the first startup
+  window included an 801 ms outlier. RadeonTop reported 45 samples, mean GPU
+  busy 17.59%, range 0–31.67%, but its capture was not aligned to a matched
+  Modern baseline, so it cannot establish a Metalheart-specific performance
+  delta. No shader/QSB load failure was logged. Existing shell QML startup
+  warnings/errors were seen at unrelated display/settings bindings and must not
+  be represented as theme regressions. The environment did not provide a usable
+  display capture path; live switching and timing were verified, but individual
+  screens were not visually inspected in this pass. Controller navigation and
+  physical visual acceptance remain pending.
 
 ## CLOSED
 
