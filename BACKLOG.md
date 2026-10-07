@@ -154,10 +154,15 @@ the Modern reference. `/opt/lulu/current` is unchanged.
   the `recent` semantic ID. Native schema tests and focused semantics/Home QML
   tests pass. Full headless QML execution still includes known fixture failures
   (native `Mudos.Poc` module unavailable, and pre-existing projection/mapping/
-  Recent groups); no physical Modern/95 sweep has been performed. Do not close
-  THEME-001. Dev-current refresh is pending a safe non-streaming window: Sunshine,
-  Gamescope and the shell are currently running, and `/opt/lulu/current` must
-  remain unchanged.
+  Recent groups); no physical Modern/95 sweep has been performed. Commit
+  `46b8b97` was refreshed to `/opt/lulu/dev-current` on 2026-10-07 with explicit
+  operator authorization to restart the session while Sunshine was active. The
+  runtime marker records this clean HEAD and `promotable=false`; Sessiond,
+  Consoled and Acquisitiond recovered, and the shell started with one SDL
+  gamepad. Startup journal review also shows existing QML warnings/errors in
+  SettingsSpace/ConsoleShell and other unrelated system services; theme-motion
+  runtime has not received a complete visual/input acceptance sweep. The
+  immutable `/opt/lulu/current` selector remains unchanged. Do not close THEME-001.
 
 ## CLOSED
 
