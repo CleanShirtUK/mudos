@@ -334,7 +334,35 @@ theme-engine stress test. UI-001's accepted baseline remains Modern.
   Utilization is materially improved from the initial port but remains above
   baseline; `radeontop` does not provide frame-time or interaction smoothness
   acceptance. Physical visual, glass, switching, and controller checks remain
-  pending; do not infer them from utilization or shader compilation.
+   pending; do not infer them from utilization or shader compilation.
+
+- **Metalheart wallpaper dark-field/edge/performance iteration:** source
+  started at `6dde5d6`; wallpaper-only commits `2159331` and `1c33a24` darken
+  the technical field and reflection environment, move the camera framing
+  toward an estimated nexus position near 61% x / 31% y, and reduce scene
+  primitives: major spikes 6→4, orbital loops 3→2, medium spikes 15→7,
+  needles 8→0, and fused center nodes 5→3. Major silhouette directions retain
+  rightward, lower-left, upper, and diagonal spikes; remaining medium spikes
+  have a larger minimum radius. A conservative world-space AABB centered on
+  the hub (half-extents 5.35, 4.05, 1.65) clips each ray to its scene interval.
+  Final march uses 24 steps, multiplier 0.90, and one AO sample. Technical grid,
+  rings, horizon, and scan lines use derivative-aware widths; raymarched surface
+  hits blend over an estimated one-pixel projected footprint without
+  supersampling. Source colors move from the bright blue-gray gradient to a
+  near-black lower field (`0.003,0.006,0.010`) and subdued upper steel/cyan
+  (`0.010,0.025,0.035`) with restrained cyan drafting marks. Chrome environment
+  highlights and the faster motion remain.
+- **Steady idle telemetry after this iteration:** after the device settled, a
+  120-second GPU sample averaged 54.44% busy (45–67.5%); a separate 60-second
+  sample averaged 44.57%. This is below the pre-iteration 99.83%, but above the
+  prior shader's 21.83% baseline. Across 63 consecutive fan-curve readings over
+  3m10s, PWM held exactly 128, CPU Tctl averaged 72.17°C (71–74°C), and pump
+  fan RPM averaged 1714 (1666–1948). The GPU edge sensor reports 0°C throughout
+  and is not a valid temperature measurement. Fan target passed for this stable
+  idle window; longer-term performance and physical judgement of placement,
+  darkness, silhouette AA, glass interaction, and Home overlap remain pending.
+  QSB source/deployed checksum at this iteration is
+  `541689b8954ff0d6c1c1da68cd8e63035ca369f18fc6ff49a4adb8265303436c`.
 
 ## CLOSED
 
