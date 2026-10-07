@@ -26,6 +26,7 @@ from .gamescope import (GamescopeInvocation, GamescopePresentation,
                         PresentationOutputUnavailable, discover_presentation_output,
                         connected_presentation_outputs, has_connected_presentation_output)
 from .gamescope_observer import GamescopeWindowObserver
+from .drm_events import is_drm_hotplug_uevent, open_drm_uevent_socket
 from .contracts import InputMode, LaunchDescriptor, Lifecycle, Presentation, SessionClassification
 from .launch_identity import LaunchIdentity
 from .process_supervisor import ProcessSupervisor
@@ -99,6 +100,10 @@ class ConsoleSessionInterface(ServiceInterface):
         self._inputplumber_event: asyncio.Event | None = None
         self._initialized_composites: dict[str, tuple[str, tuple[str, ...]]] = {}
         self._presentation_watchdog_task: asyncio.Task[None] | None = None
+        self._drm_hotplug_task: asyncio.Task[None] | None = None
+        self._display_recovery_requested = False
+        self._display_recovery_pending = False
+        self._display_recovery_last_at = 0.0
         self._resident_steam_runtime_task: asyncio.Task[None] | None = None
         self._resident_steam_runtime = ResidentSteamRuntimeStatus()
         self._presentation_wait_log_at = 0.0
@@ -237,6 +242,7 @@ class ConsoleSessionInterface(ServiceInterface):
         self._gamescope_observer.start()
         if self._presentation_watchdog_enabled:
             self._presentation_watchdog_task = asyncio.create_task(self._monitor_presentation())
+        self._drm_hotplug_task = asyncio.create_task(self._monitor_drm_hotplug())
         self._resident_steam_runtime_task = asyncio.create_task(
             self._monitor_resident_steam_runtime()
         )
@@ -311,6 +317,76 @@ class ConsoleSessionInterface(ServiceInterface):
             await self._refresh_presentation_readiness()
             await self._reconcile_game_presentation()
             await asyncio.sleep(0.5)
+
+    async def _monitor_drm_hotplug(self) -> None:
+        """Recreate the idle shell after DRM wake/relink events.
+
+        Gamescope can survive a connector wake with an active but unusable
+        scanout. DRM hotplug is therefore a recovery signal even when sysfs
+        continues to report the connector as connected.
+        """
+        loop = asyncio.get_running_loop()
+        while True:
+            event_socket = None
+            try:
+                event_socket = open_drm_uevent_socket()
+                LOGGER.info("DRM hotplug recovery monitor ready")
+                while True:
+                    payload = await loop.sock_recv(event_socket, 8192)
+                    if is_drm_hotplug_uevent(payload):
+                        await self._handle_drm_hotplug()
+            except asyncio.CancelledError:
+                raise
+            except OSError:
+                LOGGER.exception("DRM hotplug recovery monitor failed; retrying")
+                await asyncio.sleep(5.0)
+            finally:
+                if event_socket is not None:
+                    event_socket.close()
+
+    async def _handle_drm_hotplug(self) -> None:
+        """Debounce output changes, then restart only an idle shell once."""
+        state = self.model.state
+        if state.lifecycle.value != "shell" or not self._presentation_ready:
+            LOGGER.info("DRM hotplug observed outside a ready shell; active session is left untouched")
+            return
+        now = time.monotonic()
+        if self._display_recovery_pending or now - self._display_recovery_last_at < 10.0:
+            LOGGER.debug("coalescing DRM hotplug during display recovery cooldown")
+            return
+        self._display_recovery_pending = True
+        self._display_recovery_last_at = now
+        shell = self.supervisor.shell_status()
+        if shell is None or not shell.running:
+            self._display_recovery_pending = False
+            LOGGER.info("DRM hotplug observed without a running shell; normal bootstrap will recover")
+            return
+        await asyncio.sleep(0.75)
+        if self.model.state.lifecycle.value != "shell":
+            self._display_recovery_pending = False
+            LOGGER.info("DRM hotplug recovery skipped because a game session became active")
+            return
+        current = self.supervisor.shell_status()
+        if current is None or current.token != shell.token or not current.running:
+            self._display_recovery_pending = False
+            return
+        LOGGER.warning("DRM hotplug/wake detected; restarting idle Gamescope shell to reinitialize scanout")
+        self._presentation_ready = False
+        self._display_recovery_requested = True
+        try:
+            stopped = await self.supervisor.restart_shell_for_display_recovery()
+        except (OSError, RuntimeError, ProcessLookupError):
+            LOGGER.exception("could not stop Gamescope for DRM display recovery")
+            stopped = False
+        if not stopped:
+            self._display_recovery_requested = False
+            self._display_recovery_pending = False
+
+    def _consume_display_recovery_request(self) -> bool:
+        requested = self._display_recovery_requested
+        self._display_recovery_requested = False
+        self._display_recovery_pending = False
+        return requested
 
     async def _monitor_resident_steam_runtime(self) -> None:
         """Publish read-only systemd state without supervising the unit."""
@@ -834,6 +910,10 @@ class ConsoleSessionInterface(ServiceInterface):
             self._presentation_watchdog_task.cancel()
             await asyncio.gather(self._presentation_watchdog_task, return_exceptions=True)
             self._presentation_watchdog_task = None
+        if self._drm_hotplug_task is not None:
+            self._drm_hotplug_task.cancel()
+            await asyncio.gather(self._drm_hotplug_task, return_exceptions=True)
+            self._drm_hotplug_task = None
         if self._resident_steam_runtime_task is not None:
             self._resident_steam_runtime_task.cancel()
             await asyncio.gather(self._resident_steam_runtime_task, return_exceptions=True)
@@ -1536,6 +1616,20 @@ async def restart_shell_after_display_loss(interface: ConsoleSessionInterface,
     return True
 
 
+async def restart_shell_after_drm_event(interface: ConsoleSessionInterface,
+                                        stop_task: asyncio.Task[None]) -> bool:
+    """Relaunch a stopped idle shell after a DRM event, even if connector says connected."""
+    LOGGER.warning("restarting Gamescope after DRM hotplug/wake recovery request")
+    restart_task = asyncio.create_task(interface.bootstrap_shell())
+    done, _ = await asyncio.wait((stop_task, restart_task), return_when=asyncio.FIRST_COMPLETED)
+    if stop_task in done:
+        restart_task.cancel()
+        await asyncio.gather(restart_task, return_exceptions=True)
+        return True
+    await restart_task
+    return True
+
+
 async def serve(bus_type: BusType = BusType.SESSION, bootstrap_shell: bool = False) -> None:
     LOGGER.info("session_lifecycle event=start pid=%s uid=%s monotonic_ns=%s",
                 os.getpid(), os.geteuid(), time.monotonic_ns())
@@ -1586,6 +1680,9 @@ async def serve(bus_type: BusType = BusType.SESSION, bootstrap_shell: bool = Fal
             await asyncio.gather(shell_task, return_exceptions=True)
             break
         if shell_task in done:
+            if interface._consume_display_recovery_request():
+                await restart_shell_after_drm_event(interface, stop_task)
+                continue
             # Gamescope can terminate when the DRM connector vanishes. That is
             # a hardware transition, not a shell/application crash: keep this
             # appliance service alive and relaunch when an output returns.

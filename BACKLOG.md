@@ -576,6 +576,31 @@ was not changed.
 
 ## ACTIVE
 
+### DISPLAY-001 — Recover the idle presentation after DRM wake/relink
+
+**Status:** VALIDATION — Sessiond now listens for DRM hotplug uevents and
+restarts only the idle Gamescope shell after a debounced event, even when the
+connector remains reported as connected. Validate with a real display sleep/wake
+cycle before closing.
+
+- Incident evidence (2026-10-07): DP-1 remained `connected`, `enabled`, DPMS On,
+  link-status Good, and had an active 1920×1080 CRTC while the operator reported
+  no video signal. The kernel logged `bc250 relink: stream down` followed by an
+  AMD DC `triplebuffer_flips` warning. Existing readiness checks inspected
+  Gamescope/window state and connector presence, so they incorrectly left a
+  stale scanout running.
+- Sessiond now subscribes unprivileged to `NETLINK_KOBJECT_UEVENT`, filters DRM
+  `HOTPLUG=1` events, waits 750 ms for the kernel/display transition to settle,
+  and then recreates Gamescope only while the presentation is a ready idle
+  shell. A 10-second cooldown coalesces wake/relink bursts. Active game sessions
+  are not killed by this fallback. A missing connector still follows the
+  existing wait-for-hotplug bootstrap path.
+- Software-only restart of `lulu-session@2.service` was performed to reinitialize
+  scanout; no cable/display disconnect was requested. Automated recovery tests
+  cover DRM event recognition and restart with a still-connected connector.
+  Real sleep/wake physical validation remains required; the home/session restart
+  is a fallback and not evidence that the DRM/kernel state is fixed permanently.
+
 ### RECOVERY-001 — Recovery UI reports a connected controller as absent
 
 **Status:** OPEN — investigate controller-presence detection and recovery-screen

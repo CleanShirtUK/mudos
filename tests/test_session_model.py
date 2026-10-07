@@ -290,6 +290,18 @@ class SessionModelTests(unittest.TestCase):
 
         asyncio.run(exercise())
 
+    def test_display_recovery_restarts_the_owned_shell_process_group(self) -> None:
+        async def exercise() -> None:
+            supervisor = ProcessSupervisor(SessionStateModel())
+            await supervisor.launch_shell(["/usr/bin/sleep", "30"], 1000, select_shell=False)
+            status = supervisor.shell_status()
+            self.assertIsNotNone(status)
+            self.assertTrue(await supervisor.restart_shell_for_display_recovery())
+            self.assertIsNone(supervisor.shell_status())
+            self.assertEqual(supervisor.model.last_result.outcome, "failed")
+
+        asyncio.run(exercise())
+
     def test_fresh_session_after_compatibility_shutdown_starts_clean_shell(self) -> None:
         """A reboot constructs fresh authority; game/delegated state is never resumed."""
         previous_boot = SessionStateModel()

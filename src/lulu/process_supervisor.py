@@ -146,6 +146,18 @@ class ProcessSupervisor:
             await asyncio.Event().wait()
         await asyncio.shield(task)
 
+    async def restart_shell_for_display_recovery(self) -> bool:
+        """Stop only the appliance shell so Sessiond can recreate DRM state."""
+        process = self._shell_process
+        task = self._shell_watch_task
+        if process is None or task is None or process.returncode is not None:
+            return False
+        await self._terminate_group(self._pgid_or_pid(process.pid))
+        await asyncio.shield(task)
+        if self._shell_watch_task is task:
+            self._shell_watch_task = None
+        return True
+
     def session_process_ids(self, identity: LaunchIdentity | None = None) -> set[int]:
         """Return process evidence for one accepted game/session identity."""
         identity = identity or self.active_identity

@@ -6,7 +6,8 @@ from unittest.mock import AsyncMock, Mock, patch
 
 from lulu.gamescope import (PresentationOutputUnavailable, connected_presentation_outputs,
                             has_connected_presentation_output)
-from lulu.sessiond import ConsoleSessionInterface, restart_shell_after_display_loss
+from lulu.sessiond import (ConsoleSessionInterface, restart_shell_after_display_loss,
+                           restart_shell_after_drm_event)
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -94,6 +95,44 @@ class ApplianceSessionRecoveryTests(unittest.TestCase):
             finally:
                 stop_task.cancel()
                 await asyncio.gather(stop_task, return_exceptions=True)
+
+        asyncio.run(exercise())
+
+    def test_drm_event_restarts_shell_even_when_connector_stays_connected(self) -> None:
+        interface = SimpleNamespace(bootstrap_shell=AsyncMock())
+
+        async def exercise() -> None:
+            stop_task = asyncio.create_task(asyncio.Event().wait())
+            try:
+                recovered = await restart_shell_after_drm_event(interface, stop_task)
+                self.assertTrue(recovered)
+                interface.bootstrap_shell.assert_awaited_once()
+            finally:
+                stop_task.cancel()
+                await asyncio.gather(stop_task, return_exceptions=True)
+
+        asyncio.run(exercise())
+
+    def test_drm_hotplug_requests_only_idle_shell_recovery(self) -> None:
+        interface = ConsoleSessionInterface.__new__(ConsoleSessionInterface)
+        interface.model = SimpleNamespace(
+            state=SimpleNamespace(lifecycle=SimpleNamespace(value="shell"))
+        )
+        interface._presentation_ready = True
+        interface._display_recovery_pending = False
+        interface._display_recovery_last_at = 0.0
+        interface._display_recovery_requested = False
+        interface.supervisor = SimpleNamespace(
+            shell_status=Mock(return_value=SimpleNamespace(token="shell-1", running=True)),
+            restart_shell_for_display_recovery=AsyncMock(return_value=True),
+        )
+
+        async def exercise() -> None:
+            with patch("lulu.sessiond.asyncio.sleep", new=AsyncMock()):
+                await interface._handle_drm_hotplug()
+            self.assertTrue(interface._display_recovery_requested)
+            self.assertFalse(interface._presentation_ready)
+            interface.supervisor.restart_shell_for_display_recovery.assert_awaited_once()
 
         asyncio.run(exercise())
 
