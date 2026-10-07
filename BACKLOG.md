@@ -402,6 +402,29 @@ theme-engine stress test. UI-001's accepted baseline remains Modern.
   Physical confirmation that motion shimmer is materially reduced and the
   object aligns with the requested Home reference points remains outstanding.
 
+- **Metalheart final aliasing/reposition pass:** source started from
+  `258ffea`; wallpaper-only commit `6d70dcc` keeps the simplified 4-major / 2-
+  loop / 4-medium / 0-needle / 3-node scene and moves the camera target to
+  `(-1.55,-1.20,0)`. With hub `(0.04,0.02,0)` this projects the static nexus
+  centre to approximately 68.1% x / 27.2% y. Drafting rings move to `(0.66,0.42)`.
+  Candidate-edge detection now includes near misses within 3 projected pixels
+  and grazing hits with `abs(dot(normal,ray)) < 0.55`. Those pixels receive two
+  extra fixed quarter-pixel diagonal samples, averaged with the centre ray
+  (three samples total only on candidate edges). No full-frame supersampling or
+  temporal jitter is used. Major cone tips and loop tubes are thicker; the
+  dynamic grain was removed. Ring/grid/horizon/scan retain derivative-aware AA,
+  with a small feather increase; diagonal texture now has analytic footprint
+  filtering. Dark field, shading, animation, 24 steps, 0.92 multiplier, AO-off,
+  and the asymmetric AABB are retained.
+- **BC-250 after final AA/reposition pass:** over 120 seconds GPU busy averaged
+  50.10% (0–75%). In a settled three-minute fan window, CPU Tctl averaged
+  64.05°C (60–71°C), GPU edge remained unreadable at 0°C, PWM ranged 120–128,
+  and pump fan RPM averaged 1,660 (1,600–1,719). No PWM 150 occurred; the fan
+  curve was not changed. The PWM ceiling target passed for this window; GPU busy
+  remains above the old shader baseline. Physical confirmation that stair
+  stepping is materially reduced and the new upper-right placement matches the
+  operator's Home landmarks is still required.
+
 ## CLOSED
 
 ### UNINSTALL-001 — Complete provider-owned uninstall coverage
