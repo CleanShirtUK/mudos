@@ -107,7 +107,7 @@ vec2 mapScene(vec3 p)
     p.xy *= rot(0.05*sin(t*0.23));
     p.yz *= rot(0.04*cos(t*0.19));
 
-    vec3 hub = vec3(-0.10, -0.03, 0.0);
+    vec3 hub = vec3(0.04, 0.02, 0.0);
 
     // Central nexus.
     {
@@ -124,10 +124,10 @@ vec2 mapScene(vec3 p)
             float fi = float(i);
 
             vec3 off = vec3(
-                cos(fi*1.4 + t*0.7),
-                sin(fi*1.9 - t*0.5),
+                cos(fi*1.4 + t*0.16),
+                sin(fi*1.9 - t*0.12),
                 sin(fi*2.3 + 0.7)
-            ) * vec3(0.12, 0.10, 0.10);
+            ) * vec3(0.08, 0.07, 0.07);
 
             float sphere = sdSphere(
                 q-off,
@@ -161,21 +161,21 @@ vec2 mapScene(vec3 p)
         {
             dir = normalize(vec3(-1.0,-0.26,0.05));
             len = 4.2;
-            rad = 0.15;
+            rad = 0.17;
             flatten = 0.80;
         }
         else if(i == 2)
         {
             dir = normalize(vec3(-0.08,1.0,0.06));
             len = 3.5;
-            rad = 0.10;
+            rad = 0.14;
             flatten = 0.65;
         }
         else if(i == 3)
         {
             dir = normalize(vec3(0.72,0.62,-0.05));
             len = 3.6;
-            rad = 0.09;
+            rad = 0.13;
             flatten = 0.70;
         }
         else if(i == 4)
@@ -193,7 +193,7 @@ vec2 mapScene(vec3 p)
             flatten = 0.62;
         }
 
-        dir.xy *= rot(0.08*sin(t*0.33 + fi*1.7));
+        dir.xy *= rot(0.015*sin(t*0.25 + fi*1.7));
 
         vec3 q = toDirSpace(p-hub,dir);
         float h = len*0.5;
@@ -212,10 +212,10 @@ vec2 mapScene(vec3 p)
     // Orbital loops.
     {
         vec3 q = p-(hub+vec3(0.04,0.02,0.0));
-        q.xy *= rot(0.52 + 0.15*sin(t*0.32));
+        q.xy *= rot(0.52 + 0.05*sin(t*0.32));
         q.yz *= rot(1.15);
 
-        float d = sdTorus(q,vec2(0.78,0.022));
+        float d = sdTorus(q,vec2(0.78,0.032));
         res = opU(res,vec2(d,3.0));
     }
 
@@ -224,16 +224,16 @@ vec2 mapScene(vec3 p)
         q.xz *= rot(-0.78);
         q.xy *= rot(0.95);
 
-        float d = sdTorus(q,vec2(1.02,0.018));
+        float d = sdTorus(q,vec2(1.02,0.030));
         res = opU(res,vec2(d,3.0));
     }
 
     // Medium converging spikes.
-    for(int i=0;i<7;i++)
+    for(int i=0;i<5;i++)
     {
         float fi = float(i);
 
-        float ang = fi/7.0*2.0*PI + 0.28*sin(t*0.45+fi);
+        float ang = fi/5.0*2.0*PI + 0.05*sin(t*0.20+fi);
 
         float z = mix(-0.35,0.35,hash11(fi*8.1+1.7));
 
@@ -243,9 +243,9 @@ vec2 mapScene(vec3 p)
             z
         ));
 
-        float len = mix(0.75,1.6,hash11(fi*3.7+2.3));
+        float len = mix(0.80,1.55,hash11(fi*3.7+2.3));
 
-        float w = mix(0.035,0.070,hash11(fi*6.2+4.1));
+        float w = mix(0.055,0.085,hash11(fi*6.2+4.1));
 
         vec3 q = toDirSpace(p-hub,dir);
 
@@ -324,8 +324,8 @@ vec3 backdrop(vec2 uv)
     col += vec3(0.010,0.045,0.055)*g1*0.22;
     col += vec3(0.006,0.022,0.030)*g2*0.12;
 
-    float r1 = ring(uv,vec2(0.40,0.16),0.56,0.0025);
-    float r2 = ring(uv,vec2(0.40,0.16),0.90,0.0018);
+    float r1 = ring(uv,vec2(0.52,0.28),0.56,0.0025);
+    float r2 = ring(uv,vec2(0.52,0.28),0.90,0.0018);
 
     col += vec3(0.04,0.19,0.23)*(r1+r2)*0.30;
 
@@ -445,7 +445,7 @@ vec3 shade(vec3 p, vec3 rd, vec3 n, float mat)
 
 bool intersectSceneBounds(vec3 ro, vec3 rd, out float tNear, out float tFar)
 {
-    const vec3 center = vec3(-0.10,-0.03,0.0);
+    const vec3 center = vec3(0.04,0.02,0.0);
     const vec3 halfExtent = vec3(5.35,4.05,1.65);
     vec3 a = (center-halfExtent-ro)/rd;
     vec3 b = (center+halfExtent-ro)/rd;
@@ -468,7 +468,7 @@ void main()
     vec3 bg = backdrop(uv);
 
     vec3 ro = vec3(0.10,0.02,4.8);
-    vec3 ta = vec3(-0.62,-0.50,0.0);
+    vec3 ta = vec3(-0.75,-0.64,0.0);
 
     ro.xy += vec2(sin(u_time*0.34),cos(u_time*0.26))*0.035;
 
@@ -503,11 +503,11 @@ void main()
             {
                 hit = true;
                 mat = h.y;
-                edgeCoverage = 1.0-smoothstep(0.0,pixelFootprint,h.x);
+                edgeCoverage = 1.0-clamp(h.x/pixelFootprint,0.0,1.0);
                 break;
             }
 
-            travel += max(h.x*0.90,hitThreshold*0.5);
+            travel += max(h.x*0.92,hitThreshold*0.5);
 
             if(travel > marchLimit)
                 break;
