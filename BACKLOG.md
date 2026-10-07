@@ -96,6 +96,11 @@ the Modern/95 end-to-end proof-of-concept described below.
   uses the neutral panel/selection palette. It cannot sample the shell's animated
   canonical texture from that isolated process; true backdrop-refraction there
   remains subject to physical review without changing Guide ownership/routing.
+- Popup convergence initial physical acceptance: Lutris search/install and Game
+  Options were accepted for initial physical use after commit `3594dc7` was
+  refreshed to `/opt/lulu/dev-current`. `/opt/lulu/current` remains unchanged.
+  Record visual refinements for the final UI pass; do not treat those deferred
+  tweaks as a blocker for this initial acceptance.
 
 ### THEME-001 — Theme engine and external theme configuration
 
