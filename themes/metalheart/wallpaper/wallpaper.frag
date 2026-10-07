@@ -331,13 +331,15 @@ vec3 envMap(vec3 r)
         pow(y,0.80)
     );
 
-    float band1 = exp(-55.0*abs(r.y-0.28));
-    float band2 = exp(-100.0*abs(r.y+0.18));
-    float band3 = exp(-120.0*abs(r.x*0.6+r.y*0.3-0.18));
+    // Broaden and lower reflected light strips so they read as soft metal
+    // response rather than sub-pixel, high-contrast edge accents.
+    float band1 = exp(-30.0*abs(r.y-0.28));
+    float band2 = exp(-48.0*abs(r.y+0.18));
+    float band3 = exp(-58.0*abs(r.x*0.6+r.y*0.3-0.18));
 
-    col += vec3(0.42,0.72,0.88)*band1*1.25;
-    col += vec3(0.88,0.98,1.0)*band2*1.55;
-    col += vec3(0.12,0.42,0.62)*band3*0.55;
+    col += vec3(0.30,0.50,0.62)*band1*0.72;
+    col += vec3(0.54,0.66,0.74)*band2*0.78;
+    col += vec3(0.10,0.30,0.44)*band3*0.38;
     col += vec3(0.015,0.075,0.16)*pow(max(r.x,0.0),8.0);
 
     return col;
@@ -352,8 +354,10 @@ vec3 shade(vec3 p, vec3 rd, vec3 n, float mat)
     vec3 halfDir = normalize(lightDir+V);
 
     float diff = max(dot(n,lightDir),0.0);
-    float spec = pow(max(dot(n,halfDir),0.0),110.0);
-    float fres = pow(1.0-max(dot(n,V),0.0),5.0);
+    // Lower exponent broadens the specular lobe; reduced energy avoids a
+    // razor-bright single-pixel sparkle along silhouettes and ring edges.
+    float spec = pow(max(dot(n,halfDir),0.0),48.0);
+    float fres = pow(1.0-max(dot(n,V),0.0),4.0);
 
     vec3 env = envMap(R);
 
@@ -394,14 +398,16 @@ vec3 shade(vec3 p, vec3 rd, vec3 n, float mat)
     vec3 sweepCol = vec3(0.12,0.72,1.20)*sweep;
 
     vec3 col = base*(0.07+0.62*diff)
-        + env*envAmt*(0.74+0.58*fres)
-        + spec*vec3(1.45,1.55,1.70)*2.25
+        + env*envAmt*(0.74+0.32*fres)
+        + spec*vec3(1.15,1.25,1.38)*0.95
         + sweepCol*(0.12+0.38*fres);
 
-    col += vec3(0.20,0.55,1.10)
-        *pow(1.0-max(dot(n,V),0.0),7.0)*0.88;
+    col += vec3(0.16,0.38,0.72)
+        *pow(1.0-max(dot(n,V),0.0),4.0)*0.30;
 
-    return col;
+    // Soft shoulder preserves chrome contrast without clipping the hottest
+    // reflection and rim contributions into a hard white/cyan stripe.
+    return col/(1.0+0.22*col);
 }
 
 bool intersectSceneBounds(vec3 ro, vec3 rd, out float tNear, out float tFar)
