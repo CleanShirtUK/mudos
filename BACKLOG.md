@@ -578,10 +578,10 @@ was not changed.
 
 ### DISPLAY-001 — Recover the idle presentation after DRM wake/relink
 
-**Status:** VALIDATION — Sessiond now listens for DRM hotplug uevents and
-restarts only the idle Gamescope shell after a debounced event, even when the
-connector remains reported as connected. Validate with a real display sleep/wake
-cycle before closing.
+**Status:** OPEN — a real display sleep/wake caused persistent no-signal even
+though DRM reported a healthy connected output. Current Sessiond recovery did
+not restore the display. Reproduce and complete an end-to-end automatic recovery
+test before closing; do not ask the operator to disconnect/reconnect the display.
 
 - Incident evidence (2026-10-07): DP-1 remained `connected`, `enabled`, DPMS On,
   link-status Good, and had an active 1920×1080 CRTC while the operator reported
@@ -595,11 +595,24 @@ cycle before closing.
   shell. A 10-second cooldown coalesces wake/relink bursts. Active game sessions
   are not killed by this fallback. A missing connector still follows the
   existing wait-for-hotplug bootstrap path.
-- Software-only restart of `lulu-session@2.service` was performed to reinitialize
-  scanout; no cable/display disconnect was requested. Automated recovery tests
-  cover DRM event recognition and restart with a still-connected connector.
-  Real sleep/wake physical validation remains required; the home/session restart
-  is a fallback and not evidence that the DRM/kernel state is fixed permanently.
+- Sessiond hotplug/wake recovery was added in commit `1ae5388`: it listens for
+  DRM `HOTPLUG=1` uevents and recreates Gamescope while the shell is idle. The
+  patch's unit tests pass, but its deployed recovery did not restore video in
+  this incident. A software Sessiond restart and a DPMS cycle also failed to
+  restore the image. Temporarily lowering the BC-250 `cs_relink_ms` parameter
+  made the kernel log `blank re-detect: done`, but still did not restore video;
+  the parameter was returned to 3000 ms.
+- A user-authorized PCI FLR attempt left the kernel reporting the GPU “device
+  lost from bus” and caused repeated amdgpu failures. Do not repeat FLR as a
+  recovery step. The host later restarted for an unrelated reason; the display
+  was present again after returning. Current state is display available, but
+  automatic recovery remains unverified and the triggering hardware/driver
+  failure is not diagnosed.
+- Follow-up should correlate DRM uevents, BC-250 `cs_relink` logs, and actual
+  output recovery across a controlled idle/wake test. Any future GPU reset
+  mechanism needs a supported amdgpu reset path and an explicit recovery plan;
+  do not treat `link-status=Good` or an active CRTC as proof that a picture is
+  reaching the panel.
 
 ### RECOVERY-001 — Recovery UI reports a connected controller as absent
 
