@@ -657,6 +657,10 @@ class ConsoleUiBridge:
         result = await self.sessiond.call_reset_mudos()
         return {"status": result}
 
+    async def enter_desktop(self) -> dict[str, str]:
+        token = await self.sessiond.call_request_desktop_launch()
+        return {"token": str(token)}
+
     async def mudos_menu(self) -> list[dict[str, object]]:
         return json.loads(await self.consoled.call_list_mudos_providers())
 
@@ -811,6 +815,8 @@ class ConsoleUiBridge:
         return json.loads(result)
 
     async def network_mutation(self, action: str, payload: dict[str, object]) -> dict[str, object]:
+        if action == "scan":
+            return json.loads(await self.consoled.call_scan_wifi())
         if action == "wifi":
             result = await self.consoled.call_set_wifi_enabled(bool(payload.get("enabled")))
         elif action == "connect":
@@ -1338,6 +1344,12 @@ class ApiHandler(BaseHTTPRequestHandler):
                 self._respond(200, self.bridge.call(self.bridge.reset_mudos(), timeout=5))
             except Exception as error:  # pragma: no cover - session restart may close IPC
                 self._respond(202, {"status": "reset-requested", "error": str(error)})
+            return
+        if path == "/desktop/enter":
+            try:
+                self._respond(200, self.bridge.call(self.bridge.enter_desktop(), timeout=None))
+            except Exception as error:
+                self._respond(409, {"error": str(error) or type(error).__name__})
             return
         if path.startswith("/mudos/"):
             try:

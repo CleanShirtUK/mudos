@@ -115,18 +115,23 @@ class ReleaseToolTests(unittest.TestCase):
             repo = Path(directory) / "source-repo"
             repo.mkdir()
             subprocess.run(["git", "init", "-q", "-b", "main"], cwd=repo, check=True)
-            for name in ("src/lulu", "ui", "scripts", "config", "packaging", "packages", "themes",
+            for name in ("src/lulu", "ui", "scripts", "config", "packaging/desktop-applications", "packages", "themes",
                          "deploy/payload/bin"):
                 (repo / name).mkdir(parents=True, exist_ok=True)
             (repo / "themes/modern").mkdir(parents=True, exist_ok=True)
             build_script = repo / "scripts/build-lulu-shell.sh"
             build_script.write_text(
                 "#!/bin/sh\nset -eu\nout=$1\ndir=$(dirname \"$out\")\n"
-                "touch \"$out\" \"$dir/mudos-guide\" \"$dir/mudos-notification\" \"$dir/generated.moc\"\n"
+                "touch \"$out\" \"$dir/mudos-guide\" \"$dir/mudos-notification\" \"$dir/mudos-desktop-theme\" \"$dir/generated.moc\"\n"
             )
             for path in (
                 "packaging/lulu-vt", "packaging/mudos-provider-install",
+                "packaging/desktop-applications/mudos-settings.desktop",
+                "packaging/desktop-applications/mudos-wifi.desktop",
+                "packaging/desktop-applications/mudos-bluetooth.desktop",
                 "scripts/release.py",
+                "scripts/mudos-desktop-session", "scripts/mudos-desktop-sessionctl",
+                "scripts/mudos-desktop-settings",
                 "deploy/payload/bin/verify-mudos.sh", "src/lulu/__init__.py",
                 "ui/placeholder.qml", "config/placeholder.toml", "packages/placeholder.txt",
             ):
@@ -142,6 +147,7 @@ class ReleaseToolTests(unittest.TestCase):
             self.assertTrue((payload / "bin/lulu-shell").is_file())
             self.assertTrue((payload / "bin/mudos-guide").is_file())
             self.assertTrue((payload / "bin/mudos-notification").is_file())
+            self.assertTrue((payload / "bin/mudos-desktop-theme").is_file())
             self.assertFalse((payload / ".native-build").exists())
             self.assertFalse(any(path.suffix == ".moc" for path in payload.rglob("*")))
             for excluded in release.RUNTIME_EXCLUDED_SCRIPTS:

@@ -1,0 +1,131 @@
+#!/usr/bin/env bash
+set -euo pipefail
+runtime="${XDG_RUNTIME_DIR:?}/mudos-desktop"
+mkdir -p "$runtime/config/openbox" "$runtime/config/tint2"
+chmod 700 "$runtime"
+config="$runtime/config"
+auth="$runtime/Xauthority"
+install_root="${LULU_INSTALL_ROOT:-/opt/lulu/current}"
+app_dir="${XDG_DATA_HOME:-$HOME/.local/share}/applications"
+mkdir -p "$app_dir"
+for desktop_file in "$install_root"/packaging/desktop-applications/*.desktop; do
+    if [[ -f "$desktop_file" ]]; then
+        sed "s|/opt/lulu/current|$install_root|g" "$desktop_file" > "$app_dir/$(basename "$desktop_file")"
+        chmod 644 "$app_dir/$(basename "$desktop_file")"
+    fi
+done
+children=()
+cleanup() {
+    trap - EXIT INT TERM HUP
+    for pid in "${children[@]}"; do kill "$pid" 2>/dev/null || true; done
+    for pid in "${children[@]}"; do wait "$pid" 2>/dev/null || true; done
+    rm -f "$auth"
+}
+trap cleanup EXIT
+trap 'exit 0' INT TERM HUP
+outer="${DISPLAY:-:0}"; outer_number="${outer#:}"; outer_number="${outer_number%%.*}"
+number=91
+while [[ -e "/tmp/.X${number}-lock" || -e "/tmp/.X11-unix/X${number}" || "$number" == "$outer_number" ]]; do ((number+=1)); done
+display=":${number}"
+cookie="$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')"
+: > "$auth"; chmod 600 "$auth"
+xauth -f "$auth" add "$display" MIT-MAGIC-COOKIE-1 "$cookie"
+theme="$("$install_root/bin/mudos-desktop-theme" 2>/dev/null || printf '{}')"
+background="$(python -c 'import json,sys; print(json.loads(sys.argv[1]).get("background", "#202124"))' "$theme")"
+python - "$theme" "$config" "$install_root" <<'PY'
+import json,pathlib,sys
+t=json.loads(sys.argv[1]); root=pathlib.Path(sys.argv[2])
+install_root=sys.argv[3]
+def col(k,d): return t.get(k,d)
+r=max(0,min(18,int(t.get('radius',6))))
+(root/'tint2/tint2rc').write_text(f'''panel_items = PPPPTSC
+panel_position = bottom center horizontal
+panel_size = 100% 36
+panel_margin = 0 0
+panel_padding = 8 4 6
+panel_background_id = 1
+rounded = {r}
+border_width = 1
+border_color = {col('border','#555555')} 100
+background_color = {col('surface','#292a2d')} 100
+rounded = {r}
+border_width = 1
+border_color = {col('focus','#80cbc4')} 100
+background_color = {col('accent','#80cbc4')} 100
+font = Sans 10
+font_color = {col('primaryText','#eeeeee')} 100
+taskbar_mode = single_desktop
+taskbar_padding = 2 2 3
+task_background_id = 1
+task_active_background_id = 2
+task_text = 1
+task_icon = 1
+clock_format = %a %d %b %H:%M
+clock_font = Sans 10
+clock_font_color = {col('secondaryText','#cccccc')} 100
+systray_padding = 4 2 4
+button = new
+button_text = Menu
+button_text_color = {col('primaryText','#eeeeee')} 100
+button_lclick_command = jgmenu --config-file={root}/jgmenurc --csv-cmd='jgmenu_run apps'
+button = new
+button_text = Wi-Fi
+button_text_color = {col('accent','#80cbc4')} 100
+button_lclick_command = {install_root}/scripts/mudos-desktop-settings network
+button = new
+button_text = Bluetooth
+button_text_color = {col('accent','#80cbc4')} 100
+button_lclick_command = {install_root}/scripts/mudos-desktop-settings bluetooth
+button = new
+button_text = Power
+button_text_color = {col('primaryText','#eeeeee')} 100
+button_lclick_command = jgmenu --config-file={root}/jgmenurc --csv-file={root}/power.csv
+''')
+(root/'power.csv').write_text(f'''^tag(main)
+Restart, ^checkout(restart)
+Shutdown, ^checkout(shutdown)
+Exit Desktop Mode, exec: {install_root}/scripts/mudos-desktop-sessionctl exit
+^tag(restart)
+Confirm Restart, exec: {install_root}/scripts/mudos-desktop-sessionctl reboot
+^tag(shutdown)
+Confirm Shutdown, exec: {install_root}/scripts/mudos-desktop-sessionctl shutdown
+''')
+(root/'jgmenurc').write_text(f'''tint2_look = 0
+menu_width = 260
+menu_radius = {r}
+menu_border = 1
+color_menu_bg = {col('surface','#292a2d')} 100
+color_menu_border = {col('border','#555555')} 100
+color_norm_bg = {col('surface','#292a2d')} 100
+color_norm_fg = {col('primaryText','#eeeeee')} 100
+color_sel_bg = {col('accent','#80cbc4')} 100
+color_sel_fg = {col('background','#202124')} 100
+''')
+(root/'openbox/rc.xml').write_text('''<?xml version="1.0"?>
+<openbox_config xmlns="http://openbox.org/3.4/rc"><keyboard/><mouse/><menu/><applications/>
+<focus><focusNew>yes</focusNew><followMouse>no</followMouse></focus><placement><policy>Smart</policy></placement>
+<theme><name>Clearlooks</name><titleLayout>NLIMC</titleLayout></theme><desktops><number>1</number></desktops>
+<margins><top>0</top><bottom>40</bottom><left>0</left><right>0</right></margins></openbox_config>\n''')
+PY
+Xephyr "$display" -screen "${MUDOS_DESKTOP_SIZE:-1280x720}" -resizeable -auth "$auth" -nolisten tcp -title 'Mudos Desktop Mode' &
+xephyr=$!; children+=("$xephyr")
+for _ in $(seq 1 100); do
+    kill -0 "$xephyr" 2>/dev/null || exit 1
+    if DISPLAY="$display" XAUTHORITY="$auth" xdpyinfo >/dev/null 2>&1; then break; fi
+    sleep .1
+done
+DISPLAY="$display" XAUTHORITY="$auth" xdpyinfo >/dev/null
+desktop=(env DISPLAY="$display" XAUTHORITY="$auth")
+"${desktop[@]}" openbox --config-file "$config/openbox/rc.xml" &
+wm=$!; children+=("$wm")
+"${desktop[@]}" xsetroot -solid "$background"
+"${desktop[@]}" tint2 -c "$config/tint2/tint2rc" &
+panel=$!; children+=("$panel")
+while kill -0 "$xephyr" 2>/dev/null && kill -0 "$wm" 2>/dev/null; do
+    if ! kill -0 "$panel" 2>/dev/null; then
+        wait "$panel" 2>/dev/null || true
+        children=("${children[@]/$panel}")
+        "${desktop[@]}" tint2 -c "$config/tint2/tint2rc" & panel=$!; children+=("$panel")
+    fi
+    sleep 1
+done

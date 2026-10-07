@@ -294,7 +294,7 @@ Window {
     property string settingsPanelFocus: "categories"
     property var systemHomeRailRef: null
     property var settingsSpaceRef: null
-    readonly property var systemHomeCards: ["Settings", "Utilities"]
+    readonly property var systemHomeCards: ["Settings", "Utilities", "Desktop Mode"]
     readonly property var settingsCategoryModel: MudosAssetCatalog.settingsCategories(systemCategories)
     property int systemRowIndex: 0
     property var systemCategories: ["System", "Display", "Audio", "Network", "Bluetooth", "Controllers", "Storage", "Utilities"]
@@ -3060,6 +3060,12 @@ Window {
             space = "system"
             beginSystemEntry()
             refreshUtilities()
+        } else if (systemHomeCards[systemHomeCardIndex] === "Desktop Mode") {
+            request("/desktop/enter", "POST", "{}", function() {
+                notify("Desktop Mode", "Entering the Mudos desktop", "info")
+            }, "Could not enter Desktop Mode", undefined, function() {
+                notify("Desktop Mode", "Could not enter the desktop session", "error")
+            })
         } else {
             openSettingsCategory(systemCategories[systemCategoryIndex] === "Utilities"
                 ? "System" : systemCategories[systemCategoryIndex])

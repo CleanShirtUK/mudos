@@ -655,7 +655,7 @@ class ConsoleUiTests(unittest.TestCase):
         shell = (ROOT / "ui" / "ConsoleShell.qml").read_text()
         settings_space = (ROOT / "ui" / "SettingsSpace.qml").read_text()
         catalog = (ROOT / "ui" / "MudosAssetCatalog.js").read_text()
-        self.assertIn('property var systemHomeCards: ["Settings", "Utilities"]', shell)
+        self.assertIn('property var systemHomeCards: ["Settings", "Utilities", "Desktop Mode"]', shell)
         self.assertIn('categories: root.systemHomeCards', shell)
         self.assertIn('MudosAssetCatalog.settingsCategories(systemCategories)', shell)
         self.assertIn('function settingsCategories(systemCategories)', catalog)

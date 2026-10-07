@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=Bluetooth (Mudos)
+Exec=/opt/lulu/current/scripts/mudos-desktop-settings bluetooth
+Icon=bluetooth
+Categories=Settings;HardwareSettings;
+Terminal=false

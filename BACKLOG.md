@@ -1110,3 +1110,10 @@ occurred.
 controller input, clean lifecycle return, rendering, and remaining requested
 checks. Keep EDEN-001 ACTIVE until those checks pass. Do not promote this dirty
 dev runtime.
+
+## DESKTOP-001 — Mudos Desktop Mode
+
+- Core implementation is ready for physical acceptance: explicit Sessiond desktop classification and COMPAT input, System Home third card, supervised Xephyr/Openbox wrapper, tint2/jgmenu panel and allowlisted Sessiond controls, Mudos network/BlueZ frontend boundary, validated ThemeManager semantic snapshot, desktop launchers, package/release ownership, and documentation are integrated.
+- Focused automated validation: 134 tests passed; native shell/theme helper build, Python compilation, JSON validation, shell syntax, and `git diff --check` passed.
+- `tests/test_console_ui.py` still has 8 existing Home/Library/Store/Settings source-assertion failures outside DESKTOP-001 (84 passed); no physical X server acceptance was possible because Xephyr/tint2/jgmenu are not installed on the development host.
+- Runtime deployment was not attempted because operator/session safety could not be established. `/opt/lulu/current` remains unchanged. Physical display/controller acceptance remains pending.

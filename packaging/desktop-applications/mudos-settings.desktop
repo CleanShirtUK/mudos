@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Mudos Settings
+Comment=Manage Wi-Fi and Bluetooth through Mudos
+Exec=/opt/lulu/current/scripts/mudos-desktop-settings network
+Icon=preferences-system
+Categories=Settings;System;
+Terminal=false

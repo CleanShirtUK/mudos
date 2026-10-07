@@ -28,6 +28,7 @@ var iconCodepoints = {
     ethernet: nerdGlyph(0xF0201),
     storage: "\uf0a0",
     display: "\uf108",
+    desktop: nerdGlyph(0xF108),
     wrench: "\uf0ad",
     power: "\uf011",
     warning: "\uf071",
@@ -150,6 +151,7 @@ var systemIcons = {
     Controllers: "controller",
     Storage: "storage",
     Utilities: "applications",
+    "Desktop Mode": "desktop",
     System: "wrench",
     Lulu: "settings"
 }

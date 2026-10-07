@@ -1,0 +1,27 @@
+#!/usr/bin/env python3
+"""Allowlisted controls for the Sessiond-owned Desktop Mode session."""
+import asyncio
+import sys
+from dbus_next import BusType
+from dbus_next.aio import MessageBus
+
+async def run(action: str) -> None:
+    if action not in {"exit", "reboot", "shutdown"}:
+        raise SystemExit("usage: mudos-desktop-sessionctl {exit|reboot|shutdown}")
+    bus = await MessageBus(bus_type=BusType.SESSION).connect()
+    try:
+        intro = await bus.introspect("org.lulu.ConsoleSessiond", "/org/lulu/ConsoleSession")
+        interface = bus.get_proxy_object("org.lulu.ConsoleSessiond", "/org/lulu/ConsoleSession", intro).get_interface("org.lulu.ConsoleSession")
+        if action == "exit":
+            await interface.call_quit_active_session()
+        elif action == "reboot":
+            await interface.call_reboot()
+        else:
+            await interface.call_shutdown()
+    finally:
+        bus.disconnect()
+
+if __name__ == "__main__":
+    if len(sys.argv) != 2:
+        raise SystemExit("usage: mudos-desktop-sessionctl {exit|reboot|shutdown}")
+    asyncio.run(run(sys.argv[1]))

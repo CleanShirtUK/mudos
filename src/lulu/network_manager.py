@@ -141,6 +141,18 @@ class NetworkManagerAdapter:
             LOGGER.warning("NetworkManager snapshot failed: %s", error)
             return base | {"wifi_available": False, "online": False, "error": str(error)}
 
+    async def scan(self) -> dict[str, Any]:
+        """Request an access-point scan through NetworkManager."""
+        try:
+            if self.nm is None:
+                await self.connect()
+            wifi = await self._wifi_device()
+            if wifi is not None:
+                await wifi[1].call_request_scan({})
+            return await self.snapshot()
+        except Exception as error:
+            return {"ok": False, "error": str(error)}
+
     async def set_enabled(self, enabled: bool) -> dict[str, Any]:
         try:
             if self.nm is None:

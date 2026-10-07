@@ -132,7 +132,8 @@ class ConsoleSessionInterface(ServiceInterface):
     def _apply_supervised_input_mode(self, mode: InputMode) -> None:
         """Apply supervised Utility profiles even when shell input is native."""
         if (self._native_controller and mode is not InputMode.SHELL
-                and self.model.state.session_kind != SessionClassification.UTILITY.value):
+                and self.model.state.session_kind not in (SessionClassification.UTILITY.value,
+                                                          SessionClassification.DESKTOP.value)):
             # Native game/shell input remains managed by the existing native
             # controller path. Utilities still require InputPlumber's desktop
             # compatibility mapping on entry; every return still resets the
@@ -292,7 +293,8 @@ class ConsoleSessionInterface(ServiceInterface):
         # or shell navigation).
         reset_mode = (
             InputMode.SHELL if self.model.state.lifecycle.value == "shell" else
-            InputMode.COMPAT if self.model.state.session_kind == SessionClassification.UTILITY.value else
+            InputMode.COMPAT if self.model.state.session_kind in (SessionClassification.UTILITY.value,
+                                                                  SessionClassification.DESKTOP.value) else
             self.model.automatic_game_input_mode(
                 focused=(
                     getattr(self, "_observed_game_surface", (None, None, False))[2]
@@ -305,7 +307,8 @@ class ConsoleSessionInterface(ServiceInterface):
         self._apply_input_mode(reset_mode)
         self.model.set_input_mode(reset_mode)
         if (self.model.state.lifecycle.value == "game"
-                and self.model.state.session_kind != SessionClassification.UTILITY.value):
+                and self.model.state.session_kind not in (SessionClassification.UTILITY.value,
+                                                          SessionClassification.DESKTOP.value)):
             self._last_automatic_mode = reset_mode
         self._initialized_composites[object_path] = composite
         logging.getLogger("lulu.sessiond").info(
@@ -473,7 +476,8 @@ class ConsoleSessionInterface(ServiceInterface):
 
     def _eden_surface_session(self, identity: LaunchIdentity) -> bool:
         return (self._local_identity is identity and self._local_provider_id == "eden"
-                and self.model.state.session_kind != SessionClassification.UTILITY.value)
+                and self.model.state.session_kind not in (SessionClassification.UTILITY.value,
+                                                          SessionClassification.DESKTOP.value))
 
     async def _reconcile_eden_surface_lifecycle(self, identity: LaunchIdentity) -> None:
         """End Eden's presentation transaction when its real window owner exits.
@@ -954,7 +958,8 @@ class ConsoleSessionInterface(ServiceInterface):
 
     def _reconcile_game_input_policy(self) -> None:
         state = self.model.state
-        if state.lifecycle.value != "game" or state.session_kind == SessionClassification.UTILITY.value:
+        if state.lifecycle.value != "game" or state.session_kind in (
+                SessionClassification.UTILITY.value, SessionClassification.DESKTOP.value):
             self._last_automatic_mode = None
             return
         _xid, window_pid, focused_fullscreen = self._observed_game_surface
@@ -1322,6 +1327,22 @@ class ConsoleSessionInterface(ServiceInterface):
             raise self._error(error) from error
 
     @method()
+    async def RequestDesktopLaunch(self) -> "s":
+        """Enter the isolated desktop as a Sessiond-owned foreign surface."""
+        descriptor = LaunchDescriptor(
+            primary_id="mudos-desktop",
+            classification=SessionClassification.DESKTOP,
+            title="Desktop Mode",
+            presentation=Presentation.FOREIGN_UI,
+            input_mode=InputMode.COMPAT,
+        )
+        command = [str(PATHS.install_root / "scripts/mudos-desktop-session")]
+        try:
+            return await self.supervisor.launch(command, 30000, descriptor=descriptor)
+        except ValueError as error:
+            raise self._error(error) from error
+
+    @method()
     async def RequestInteractiveLaunch(self, transaction_id: "s", command: "as", startup_timeout_ms: "u") -> "s":
         """Run an owned interactive child for an external transaction."""
         try:
@@ -1547,7 +1568,8 @@ class ConsoleSessionInterface(ServiceInterface):
                     and state.delegated_surface != "browser" and not steam_launch_starting:
                 raise ValueError("Compatibility Mode requires an active application")
             self._apply_input_mode(requested)
-            if state.lifecycle.value == "game" and state.session_kind != SessionClassification.UTILITY.value:
+            if state.lifecycle.value == "game" and state.session_kind not in (
+                    SessionClassification.UTILITY.value, SessionClassification.DESKTOP.value):
                 self.model.set_explicit_game_input_mode(requested)
                 self._last_automatic_mode = requested
             else:

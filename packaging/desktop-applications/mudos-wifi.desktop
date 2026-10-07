@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=Wi-Fi (Mudos)
+Exec=/opt/lulu/current/scripts/mudos-desktop-settings network
+Icon=network-wireless
+Categories=Settings;Network;
+Terminal=false

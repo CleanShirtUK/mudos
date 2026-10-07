@@ -1,0 +1,128 @@
+#!/usr/bin/env python3
+"""Small GTK presentation for Mudos-owned Wi-Fi and Bluetooth APIs."""
+import json
+import sys
+import urllib.error
+import urllib.request
+
+import gi
+gi.require_version("Gtk", "3.0")
+from gi.repository import Gtk
+
+BASE = "http://127.0.0.1:38123"
+
+def api(path, payload=None):
+    data = None if payload is None else json.dumps(payload).encode()
+    request = urllib.request.Request(BASE + path, data=data,
+        headers={"Content-Type": "application/json"}, method="POST" if data is not None else "GET")
+    with urllib.request.urlopen(request, timeout=20) as response:
+        return json.load(response)
+
+class Settings(Gtk.Window):
+    def __init__(self, category):
+        super().__init__(title="Mudos Settings — " + category)
+        self.category = category
+        self.set_default_size(620, 460)
+        self.set_border_width(14)
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        self.add(box)
+        self.status = Gtk.Label(xalign=0)
+        box.pack_start(self.status, False, False, 0)
+        self.rows = Gtk.ListBox(selection_mode=Gtk.SelectionMode.SINGLE)
+        box.pack_start(self.rows, True, True, 0)
+        actions = Gtk.Box(spacing=6)
+        box.pack_start(actions, False, False, 0)
+        refresh = Gtk.Button(label="Refresh")
+        refresh.connect("clicked", lambda *_: self.refresh())
+        actions.pack_start(refresh, False, False, 0)
+        if category == "Network":
+            scan = Gtk.Button(label="Scan")
+            scan.connect("clicked", lambda *_: self.mutate("/network/scan", {}))
+            actions.pack_start(scan, False, False, 0)
+            connect = Gtk.Button(label="Connect to selected")
+            connect.connect("clicked", self.connect_wifi)
+            actions.pack_start(connect, False, False, 0)
+            disconnect = Gtk.Button(label="Disconnect")
+            disconnect.connect("clicked", lambda *_: self.mutate("/network/disconnect", {}))
+            actions.pack_start(disconnect, False, False, 0)
+            forget = Gtk.Button(label="Forget selected")
+            forget.connect("clicked", self.forget_wifi)
+            actions.pack_start(forget, False, False, 0)
+        else:
+            action = Gtk.Button(label="Perform selected action")
+            action.connect("clicked", self.bluetooth_action)
+            actions.pack_start(action, False, False, 0)
+        self.connect("destroy", Gtk.main_quit)
+        self.refresh()
+
+    def refresh(self):
+        for child in self.rows.get_children(): self.rows.remove(child)
+        try:
+            if self.category == "Network":
+                snap = api("/network")
+                self.status.set_text("Wi-Fi: " + ("enabled" if snap.get("wifi_enabled") else "disabled") +
+                    " · " + str((snap.get("current") or {}).get("ssid", "not connected")))
+                wifi = Gtk.Button(label="Wi-Fi on/off")
+                wifi.connect("clicked", lambda *_: self.mutate("/network/wifi", {"enabled": not snap.get("wifi_enabled", False)}))
+                self.rows.add(wifi)
+                for item in snap.get("networks", []):
+                    row = Gtk.ListBoxRow(); row.data = item
+                    row.add(Gtk.Label(label=f"{item.get('ssid','')}  ·  {item.get('signal','')}%", xalign=0))
+                    self.rows.add(row)
+            else:
+                settings = api("/settings?category=Bluetooth")
+                self.status.set_text("Bluetooth state and actions are supplied by Mudos / BlueZ")
+                for item in settings:
+                    row = Gtk.ListBoxRow(); row.data = item
+                    row.add(Gtk.Label(label=f"{item.get('label','')}  ·  {item.get('detail','')}", xalign=0))
+                    self.rows.add(row)
+            self.rows.show_all()
+        except Exception as error:
+            self.status.set_text("Mudos API unavailable: " + str(error))
+
+    def mutate(self, path, payload):
+        try: api(path, payload)
+        except Exception as error: self.status.set_text(str(error))
+        self.refresh()
+
+    def selected(self):
+        row = self.rows.get_selected_row()
+        return getattr(row, "data", None) if row else None
+
+    def connect_wifi(self, *_):
+        item = self.selected()
+        if not item: return
+        dialog = Gtk.Dialog(title="Connect to Wi-Fi", transient_for=self, flags=0)
+        dialog.add_buttons("Cancel", Gtk.ResponseType.CANCEL, "Connect", Gtk.ResponseType.OK)
+        entry = Gtk.Entry(); entry.set_visibility(False); entry.set_placeholder_text("Network password")
+        dialog.get_content_area().pack_start(entry, True, True, 10); dialog.show_all()
+        if dialog.run() == Gtk.ResponseType.OK:
+            self.mutate("/network/connect", {"ssid": item.get("ssid", ""), "password": entry.get_text()})
+        dialog.destroy()
+
+    def forget_wifi(self, *_):
+        item = self.selected()
+        if item: self.mutate("/network/forget", {"ssid": item.get("ssid", "")})
+
+    def bluetooth_action(self, *_):
+        item = self.selected()
+        if not item: return
+        key = item.get("key", "")
+        if not key.startswith("bluetooth:") or item.get("kind") not in {"action", "input"}: return
+        parts = key.split(":", 2); action = parts[1]; path = parts[2] if len(parts) > 2 else ""
+        if action in {"pairing-accept", "pairing-reject"} and action.endswith("accept"):
+            dialog = Gtk.Dialog(title="Bluetooth pairing", transient_for=self, flags=0)
+            dialog.add_buttons("Cancel", Gtk.ResponseType.CANCEL, "Confirm", Gtk.ResponseType.OK)
+            entry = Gtk.Entry(); dialog.get_content_area().pack_start(entry, True, True, 8); dialog.show_all()
+            if dialog.run() == Gtk.ResponseType.OK:
+                try: api("/bluetooth/action", {"action": action, "path": entry.get_text() or path})
+                except Exception as error: self.status.set_text(str(error))
+            dialog.destroy()
+        else:
+            try: api("/bluetooth/action", {"action": action, "path": path})
+            except Exception as error: self.status.set_text(str(error))
+        self.refresh()
+
+if __name__ == "__main__":
+    category = "Bluetooth" if len(sys.argv) > 1 and sys.argv[1].lower().startswith("bluetooth") else "Network"
+    window = Settings(category); window.show_all(); Gtk.main()

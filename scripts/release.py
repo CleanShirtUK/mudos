@@ -36,11 +36,13 @@ RUNTIME_EXCLUDED_SCRIPTS = (
 REQUIRED_FILES = (
     "bin/lulu-shell",
     "bin/mudos-guide",
+    "bin/mudos-desktop-theme",
     "bin/lulu-vt",
     "bin/verify-mudos.sh",
     "lib/lulu/sessiond.py",
     "lib/lulu/consoled.py",
     "lib/lulu/bluetooth.py",
+    "lib/lulu/network_manager.py",
     "ui/ConsoleShell.qml",
     "themes/modern/theme.json",
     "themes/modern/wallpaper/wallpaper.frag.qsb",
@@ -65,6 +67,12 @@ REQUIRED_FILES = (
     "ui/SystemStatusStrip.qml",
     "scripts/console-ui.sh",
     "scripts/console-ui-bridge.py",
+    "scripts/mudos-desktop-session",
+    "scripts/mudos-desktop-sessionctl",
+    "scripts/mudos-desktop-settings",
+    "packaging/desktop-applications/mudos-settings.desktop",
+    "packaging/desktop-applications/mudos-wifi.desktop",
+    "packaging/desktop-applications/mudos-bluetooth.desktop",
     "scripts/aurelia-graphical-launch.py",
     "scripts/provision-aurelia-state.py",
     "scripts/provision-inputplumber-gamepads.py",
@@ -196,7 +204,7 @@ def build_payload(repo_root: Path, payload: Path) -> None:
         check=True,
     )
     # Keep generated moc sources and intermediates outside the runtime payload.
-    for binary in ("lulu-shell", "mudos-guide", "mudos-notification"):
+    for binary in ("lulu-shell", "mudos-guide", "mudos-notification", "mudos-desktop-theme"):
         shutil.move(str(build_dir / binary), payload / "bin" / binary)
     shutil.rmtree(build_dir)
     shutil.copy2(source / "packaging" / "lulu-vt", payload / "bin" / "lulu-vt")

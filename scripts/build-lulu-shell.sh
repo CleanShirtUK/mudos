@@ -43,3 +43,10 @@ g++ -std=c++17 -O2 -fPIC -Wall -Wextra \
     -o "$repo_build/mudos-notification" \
     $(pkg-config --cflags --libs Qt6Gui Qt6Qml Qt6Quick xcb) \
     -no-pie
+
+g++ -std=c++17 -O2 -fPIC -Wall -Wextra \
+    "$repo_root/native/mudos-desktop-theme.cpp" \
+    "$repo_root/native/theme-manager.cpp" "$repo_build/theme-manager_moc.cpp" \
+    -o "$repo_build/mudos-desktop-theme" \
+    $(pkg-config --cflags --libs Qt6Core Qt6Gui) \
+    -no-pie

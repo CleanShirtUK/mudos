@@ -2037,6 +2037,10 @@ class ConsoleInterface(ServiceInterface):
         return json.dumps(await self.network_manager.snapshot(), sort_keys=True)
 
     @method()
+    async def ScanWifi(self) -> "s":
+        return json.dumps(await self.network_manager.scan(), sort_keys=True)
+
+    @method()
     async def SetWifiEnabled(self, enabled: "b") -> "s":
         return json.dumps(await self.network_manager.set_enabled(enabled), sort_keys=True)
 

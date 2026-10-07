@@ -47,6 +47,7 @@ class InputMode(StrEnum):
 class SessionClassification(StrEnum):
     GAME = "game"
     UTILITY = "utility"
+    DESKTOP = "desktop"
 
 
 @dataclass(frozen=True, slots=True)
@@ -62,7 +63,8 @@ class LaunchDescriptor:
     def __post_init__(self) -> None:
         if self.input_mode is None:
             default_mode = (InputMode.COMPAT
-                            if self.classification is SessionClassification.UTILITY
+                            if self.classification in (SessionClassification.UTILITY,
+                                                       SessionClassification.DESKTOP)
                             else InputMode.GAME)
             object.__setattr__(self, "input_mode", default_mode)
 
