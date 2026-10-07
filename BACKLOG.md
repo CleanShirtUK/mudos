@@ -314,16 +314,23 @@ theme-engine stress test. UI-001's accepted baseline remains Modern.
   spikes, three orbital loops, 15 medium spikes, eight needles, and a pale
   technical/blueprint field with linework, rings, a moving energy sweep, and
   subtle object motion. The port uses the required Shadertoy-preserving
-  `qt_TexCoord0.y` flip, `u_resolution` pixel coordinates, and `u_time`; no
-  scene simplification or performance optimization has been made. The theme's
-  wallpaper speed remains enabled at 1.0. `MAX_STEPS` remains 96.
+  `qt_TexCoord0.y` flip, `u_resolution` pixel coordinates, and `u_time`. After
+  an initial post-port sample saturated the GPU, raymarching was reduced from 96
+  to 32 steps, the conservative step multiplier raised from 0.76 to 0.84, and
+  AO samples reduced from five to three. All six large, three orbital, 15
+  medium, and eight needle primitives remain. The theme's wallpaper speed
+  remains enabled at 1.0. This performance tuning still needs physical visual
+  validation against the accepted Shadertoy composition.
 - **BC-250 baseline before replacement:** with Metalheart selected in the
   1920×1080 dev shell and the old shader active, a 30-sample/30-second idle
   `radeontop` capture reported mean GPU busy 21.83% (10.00–29.17%), VRAM
   394.60 MB, GTT 47.03 MB, and SCLK mean 3.27 GHz (2.48–3.79). This is a
   baseline sample, not a matched interaction or frame-time measurement. The
-  post-deployment sample and physical review remain pending; do not infer smooth
-  interaction or visual acceptance from shader compilation or GPU utilization.
+  post-optimization sample and physical review remain pending; do not infer
+  smooth interaction or visual acceptance from shader compilation or GPU
+  utilization. The first post-port sample saturated GPU at 99.97% mean, but
+  Gamescope had fallen back to 640×480 after the monitor EDID disappeared, so
+  that is not directly comparable to the 1920×1080 baseline.
 
 ## CLOSED
 

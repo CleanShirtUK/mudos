@@ -18,7 +18,7 @@ layout(std140, binding = 0) uniform buf {
     vec3 u_error;
 };
 
-#define MAX_STEPS 96
+#define MAX_STEPS 32
 #define FAR_CLIP  18.0
 #define EPS       0.0012
 #define PI        3.14159265359
@@ -311,7 +311,7 @@ float calcAO(vec3 p, vec3 n)
     float occ = 0.0;
     float sca = 1.0;
 
-    for(int i=0;i<5;i++)
+    for(int i=0;i<3;i++)
     {
         float h = 0.025 + 0.11*float(i);
         float d = mapScene(p+n*h).x;
@@ -511,7 +511,7 @@ void main()
             break;
         }
 
-        travel += h.x*0.76;
+        travel += h.x*0.84;
 
         if(travel > FAR_CLIP)
             break;
