@@ -14,6 +14,8 @@ TestCase {
     Loader { id: textLoader; source: Qt.resolvedUrl("../../ui/ThemeText.qml") }
     Loader { id: motionLoader; source: Qt.resolvedUrl("../../ui/ThemeMotion.qml") }
     Loader { id: paletteLoader; active: false; source: Qt.resolvedUrl("../../ui/LuluPalette.qml") }
+    Loader { id: materialLoader; active: false; source: Qt.resolvedUrl("../../ui/MudosMaterialLayer.qml") }
+    Loader { id: decorationLoader; active: false; source: Qt.resolvedUrl("../../ui/MudosDecorationLayer.qml") }
     Loader { id: typographyLoader; active: false; source: Qt.resolvedUrl("../../ui/Typography.qml") }
     Loader { id: coordinatorLoader; active: false; source: Qt.resolvedUrl("../../ui/PresentationCoordinator.qml") }
     Loader {
@@ -155,6 +157,69 @@ TestCase {
         wait(150)
         verify(coordinatorLoader.item.orbitBaseTime > metalheartStart)
         coordinatorLoader.active = false
+    }
+
+    function test_generic_material_profiles_and_absent_fallback() {
+        mudosTheme = ({
+            radiusPolicy: "componentBaseline", radii: ({}), colors: ({}),
+            chrome: {style: "flat"}, motion: {enabled: true, durationScale: 1, roles: ({})}
+        })
+        paletteLoader.active = true
+        materialLoader.active = true
+        materialLoader.item.luluPalette = paletteLoader.item
+        compare(materialLoader.item.resolvedStyle, "flat")
+        verify(!materialLoader.item.active)
+
+        mudosTheme = ({
+            radiusPolicy: "exact",
+            radii: {panel: 0, card: 0, row: 0, media: 0, status: 0, overlay: 0},
+            colors: {focusIndicator: "#0088ff", secondaryText: "#a0a0a8"},
+            materials: ({
+                panel: {style: "linearGradient", orientation: "vertical",
+                    stops: [{position: 0, color: "#805a5f68"}, {position: 1, color: "#d0040508"}],
+                    edges: {top: {color: "#a0ffffff", width: 1}},
+                    innerEdges: {bottom: {color: "#60000000", width: 1}}},
+                card: {style: "linearGradient", orientation: "horizontal", stops: []},
+                navigation: {style: "flat"}, status: {style: "flat"},
+                overlay: {style: "flat"}, row: {style: "flat"}
+            }),
+            decorations: ({
+                panel: {topLeft: {asset: Qt.resolvedUrl("../assets/test-ornament.svg").toString(),
+                    tint: "secondaryText", opacity: 0.65, scale: 1}},
+                card: ({}), status: ({}), overlay: ({})
+            }),
+            chrome: {style: "flat"}, motion: {enabled: true, durationScale: 1, roles: ({})}
+        })
+        decorationLoader.active = true
+        decorationLoader.item.luluPalette = paletteLoader.item
+
+        materialLoader.item.role = "missing"
+        compare(materialLoader.item.resolvedStyle, "flat")
+        verify(!materialLoader.item.active)
+        materialLoader.item.role = "panel"
+        compare(materialLoader.item.resolvedStyle, "linearGradient")
+        verify(materialLoader.item.active)
+        compare(paletteLoader.item.material("panel").orientation, "vertical")
+        compare(paletteLoader.item.material("panel").stops.length, 2)
+        compare(paletteLoader.item.material("panel").edges.top.width, 1)
+        compare(paletteLoader.item.material("panel").innerEdges.bottom.color, "#60000000")
+        compare(paletteLoader.item.material("card").orientation, "horizontal")
+        compare(materialLoader.item.implicitWidth, 0)
+        compare(materialLoader.item.implicitHeight, 0)
+
+        var roleNames = ["panel", "card", "navigation", "status", "overlay", "row"]
+        for (var i = 0; i < roleNames.length; ++i)
+            verify(paletteLoader.item.material(roleNames[i]) !== undefined)
+        verify(decorationLoader.item.slots.topLeft.asset.indexOf("file:") === 0)
+        compare(decorationLoader.item.tint(decorationLoader.item.slots.topLeft), "#a0a0a8")
+        compare(decorationLoader.item.implicitWidth, 0)
+        compare(decorationLoader.item.implicitHeight, 0)
+        verify(!decorationLoader.item.enabled)
+        compare(decorationLoader.item.slotNames.length, 4)
+
+        decorationLoader.active = false
+        materialLoader.active = false
+        paletteLoader.active = false
     }
 
     function test_metalheart_theme_consumers_resolve_configured_roles() {

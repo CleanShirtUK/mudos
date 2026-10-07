@@ -6,6 +6,10 @@ QtObject {
     readonly property string radiusPolicy: typeof mudosTheme !== "undefined"
         ? mudosTheme.radiusPolicy || "componentBaseline" : "componentBaseline"
     readonly property var themeChrome: typeof mudosTheme !== "undefined" ? mudosTheme.chrome : ({})
+    readonly property var themeMaterials: typeof mudosTheme !== "undefined" ? mudosTheme.materials || ({}) : ({})
+    readonly property var themeDecorations: typeof mudosTheme !== "undefined" ? mudosTheme.decorations || ({}) : ({})
+    function material(role) { return themeMaterials[role] || ({}) }
+    function decorations(role) { return themeDecorations[role] || ({}) }
     function radius(role, fallback, scale) {
         var configured = themeRadii[role]
         if (configured === undefined) return fallback

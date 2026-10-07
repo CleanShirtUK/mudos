@@ -172,11 +172,26 @@ Item {
         anchors.top: parent.top
         anchors.bottom: parent.bottom
         width: Math.min(parent.width * 0.50, 600 * options.uiScale)
-        color: options.luluPalette.overlaySurface
+        color: options.luluPalette.material("overlay").style === "linearGradient"
+            ? "transparent" : options.luluPalette.overlaySurface
         radius: options.luluPalette.radius("overlay", 10 * options.uiScale, options.uiScale)
         border.color: options.luluPalette.glassBorder
         border.width: options.uiScale
         clip: true
+        MudosMaterialLayer {
+            anchors.fill: parent
+            luluPalette: options.luluPalette
+            role: "overlay"
+            cornerRadius: panel.radius
+            uiScale: options.uiScale
+        }
+        MudosDecorationLayer {
+            anchors.fill: parent
+            luluPalette: options.luluPalette
+            role: "overlay"
+            cornerRadius: panel.radius
+            uiScale: options.uiScale
+        }
         MudosChromeFrame { anchors.fill: parent; luluPalette: options.luluPalette; uiScale: options.uiScale; cornerRadius: panel.radius }
 
         Column {

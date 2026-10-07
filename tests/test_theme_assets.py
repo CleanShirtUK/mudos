@@ -86,6 +86,19 @@ class DefaultThemeInventoryTests(unittest.TestCase):
         self.assertTrue((theme / config["wallpaper"]["shader"]).is_file())
         self.assertTrue((theme / "wallpaper/wallpaper.frag").is_file())
         self.assertGreaterEqual(len(config["icons"]), 30)
+        self.assertEqual(set(config["materials"]),
+                         {"panel", "card", "navigation", "status", "overlay", "row"})
+        for material in config["materials"].values():
+            self.assertEqual(material["style"], "linearGradient")
+            self.assertIn(material["orientation"], {"vertical", "horizontal"})
+            self.assertGreaterEqual(len(material["stops"]), 2)
+            self.assertLessEqual(len(material["stops"]), 8)
+        self.assertIn("panel", config["decorations"])
+        self.assertIn("overlay", config["decorations"])
+        for profile in config["decorations"].values():
+            for slot in profile.values():
+                self.assertTrue((theme / slot["asset"]).is_file())
+                self.assertIn(slot["tint"], {"accent", "secondaryText", "border", "focusIndicator"})
         for face in config["fonts"]["faces"].values():
             path = Path(face["file"])
             self.assertFalse(path.is_absolute())

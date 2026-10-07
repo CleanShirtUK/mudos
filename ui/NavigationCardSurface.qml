@@ -25,6 +25,8 @@ Item {
     readonly property var themeOptics: themeGlass.navigation || themeGlass.card || themeGlass
     readonly property var themeColors: typeof mudosTheme !== "undefined" ? mudosTheme.colors : ({})
     property var luluPalette
+    readonly property bool materialEnabled: luluPalette
+        && luluPalette.material("navigation").style === "linearGradient"
 
     Rectangle {
         anchors.fill: parent
@@ -57,12 +59,28 @@ Item {
         transparentOutsideMask: root.transparentOutsideMask
     }
 
+    MudosMaterialLayer {
+        anchors.fill: parent
+        luluPalette: root.luluPalette
+        role: "navigation"
+        cornerRadius: root.cornerRadius
+        uiScale: root.uiScale
+    }
+
     MudosChromeFrame {
         anchors.fill: parent
         luluPalette: root.luluPalette
         uiScale: root.uiScale
         cornerRadius: root.cornerRadius
         raised: true
+    }
+
+    MudosDecorationLayer {
+        anchors.fill: parent
+        luluPalette: root.luluPalette
+        role: "card"
+        cornerRadius: root.cornerRadius
+        uiScale: root.uiScale
     }
 
 }

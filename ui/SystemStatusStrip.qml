@@ -29,6 +29,8 @@ Item {
     property string currentTime: Qt.formatTime(new Date(), "HH:mm")
     readonly property var themeGlass: typeof mudosTheme !== "undefined" ? mudosTheme.glass : ({})
     readonly property var themeOptics: themeGlass.status || themeGlass.panel || themeGlass
+    readonly property bool statusMaterialEnabled: luluPalette
+        && luluPalette.material("status").style === "linearGradient"
 
     readonly property real presentationScale: compact ? 0.72 : 1.35
     readonly property real glyphSize: (compact ? 15 : 19) * uiScale * presentationScale
@@ -137,9 +139,10 @@ Item {
         objectName: "statusBacking"
         anchors.fill: parent
         radius: root.luluPalette ? root.luluPalette.radius("status", 10) * root.uiScale : 10 * root.uiScale
-        color: root.luluPalette ? root.luluPalette.glassTint : Qt.rgba(0.025, 0.027, 0.032, 0.88)
-        border.color: root.luluPalette ? root.luluPalette.glassBorder : "#665f68"
-        border.width: root.uiScale
+        color: root.statusMaterialEnabled && root.themeGlass.enabled !== false && !!root.canonicalTexture
+            ? "transparent" : root.luluPalette ? root.luluPalette.glassTint : Qt.rgba(0.025, 0.027, 0.032, 0.88)
+        border.color: root.statusMaterialEnabled ? "transparent" : root.luluPalette ? root.luluPalette.glassBorder : "#665f68"
+        border.width: root.statusMaterialEnabled ? 0 : root.uiScale
 
         MudosGlassItem {
             anchors.fill: parent
@@ -168,13 +171,27 @@ Item {
             radius: statusBacking.radius
             color: Qt.rgba(0.008, 0.009, 0.012, 0.30)
             border.width: 0
-            visible: root.themeGlass.enabled !== false
+            visible: root.themeGlass.enabled !== false && !root.statusMaterialEnabled
+        }
+        MudosMaterialLayer {
+            anchors.fill: parent
+            luluPalette: root.luluPalette
+            role: "status"
+            cornerRadius: statusBacking.radius
+            uiScale: root.uiScale
         }
         MudosChromeFrame {
             anchors.fill: parent
             luluPalette: root.luluPalette
             uiScale: root.uiScale
             cornerRadius: statusBacking.radius
+        }
+        MudosDecorationLayer {
+            anchors.fill: parent
+            luluPalette: root.luluPalette
+            role: "status"
+            cornerRadius: statusBacking.radius
+            uiScale: root.uiScale
         }
     }
 

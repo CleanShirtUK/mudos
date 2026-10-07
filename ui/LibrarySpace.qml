@@ -369,12 +369,19 @@ Item {
             width: Math.min(root.listWidth, parent.width * 0.42)
             height: Math.max(0, parent.height - y - root.panelBottomMargin)
             radius: root.luluPalette.radius("panel", 10 * root.uiScale, root.uiScale)
-            color: Qt.rgba(root.luluPalette.librarySurface.r,
+            color: root.luluPalette.material("panel").style === "linearGradient" ? "transparent" : Qt.rgba(root.luluPalette.librarySurface.r,
                            root.luluPalette.librarySurface.g,
                            root.luluPalette.librarySurface.b,
                            root.internalSurfaceOpacity)
             border.color: root.luluPalette.libraryBorder
             border.width: root.uiScale
+            MudosMaterialLayer {
+                anchors.fill: parent
+                luluPalette: root.luluPalette
+                role: "panel"
+                cornerRadius: parent.radius
+                uiScale: root.uiScale
+            }
             ListView {
                 id: gameRows
                 objectName: "libraryGameRows"
@@ -403,6 +410,14 @@ Item {
                                       root.luluPalette.focusIndicator.g,
                                       root.luluPalette.focusIndicator.b, 0.18)
                             : "transparent"
+                        MudosMaterialLayer {
+                            anchors.fill: parent
+                            luluPalette: root.luluPalette
+                            role: "row"
+                            cornerRadius: parent.radius
+                            uiScale: root.uiScale
+                            selectionProgress: root.selectedIndex === gameRow.index ? 1 : 0
+                        }
                     }
                     Rectangle {
                         x: 10 * root.uiScale
@@ -480,12 +495,19 @@ Item {
             width: Math.max(0, parent.width - x)
             height: Math.max(0, parent.height - y - root.panelBottomMargin)
             radius: root.luluPalette.radius("panel", 10 * root.uiScale, root.uiScale)
-            color: Qt.rgba(root.luluPalette.librarySurface.r,
+            color: root.luluPalette.material("panel").style === "linearGradient" ? "transparent" : Qt.rgba(root.luluPalette.librarySurface.r,
                            root.luluPalette.librarySurface.g,
                            root.luluPalette.librarySurface.b,
                            root.internalSurfaceOpacity)
             border.color: root.luluPalette.libraryBorder
             border.width: root.uiScale
+            MudosMaterialLayer {
+                anchors.fill: parent
+                luluPalette: root.luluPalette
+                role: "panel"
+                cornerRadius: parent.radius
+                uiScale: root.uiScale
+            }
             clip: true
 
             readonly property real inset: root.detailInset

@@ -229,6 +229,34 @@ baseline remains Modern. `/opt/lulu/current` is unchanged.
   screens were not visually inspected in this pass. Controller navigation and
   physical visual acceptance remain pending.
 
+- **Metalheart V2 — declarative presentation primitives:** local accepted HEAD
+  before this pass was `09ae3df` (the remote branch was behind at `80f7705` and
+  was not used as the source of truth). Added validated optional `materials`
+  profiles (`panel`, `card`, `navigation`, `status`, `overlay`, `row`) and
+  `decorations` profiles with fixed corner SVG slots. The shared
+  `MudosMaterialLayer` uses native Qt Quick gradients and bounded edge bands;
+  `MudosDecorationLayer` uses validated, contained, monochrome SVG assets with
+  semantic tint and engine-owned geometry. Absent profiles preserve the prior
+  Modern/95 path. Metalheart declares six layered ramps and original bracket,
+  registration, and segmented-chevron assets, while retaining flat chrome and
+  the existing wallpaper.
+- **Integration/guardrails:** canonical glass remains below the material layer;
+  focus/selection and ornament layers remain above it. Material activation
+  suppresses redundant flat tint over canonical glass, while glass-off fallback
+  still paints the material over its semantic substrate. Shared panel/card/
+  navigation/status/overlay surfaces and major Library, Settings, Utilities,
+  Downloads, Guide, GameCard, and row consumers use the generic layers. No
+  Metalheart-specific QML branches or layout/input changes were added. Release
+  payloads recursively include `ui/` and `themes/`, including the new component
+  QML and Metalheart decoration files.
+- **Validation:** ThemeManager strictly rejects malformed material profiles,
+  stops, colors, edges, decoration roles/slots/tints/ranges/coordinates, missing
+  SVGs, traversal, symlink escapes, and unsafe SVG content. Native, QML,
+  inventory, and release regression suites cover the new contracts. Full build,
+  deployment, live theme switching, and BC-250/runtime review are pending this
+  V2 pass; do not claim physical inspection from headless tests. THEME-001 stays
+  open for physical visual/controller acceptance and performance review.
+
 ## CLOSED
 
 ### UNINSTALL-001 — Complete provider-owned uninstall coverage

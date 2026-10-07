@@ -314,6 +314,8 @@ Item {
         canonicalCoordinateRoot: root.canonicalCoordinateRoot
         canonicalSize: root.canonicalSize
         mappingItem: panel
+        materialRole: "overlay"
+        decorationRole: "overlay"
         clip: true
 
         Column {
@@ -403,6 +405,14 @@ Item {
                     color: surfaceColor
                     border.color: borderColor
                     border.width: root.uiScale
+                    MudosMaterialLayer {
+                        anchors.fill: parent
+                        luluPalette: root.luluPalette
+                        role: "row"
+                        cornerRadius: parent.radius
+                        uiScale: root.uiScale
+                        selectionProgress: row.selectionProgress
+                    }
                     MudosChromeFrame { anchors.fill: parent; luluPalette: root.luluPalette; uiScale: root.uiScale; cornerRadius: parent.radius; raised: row.selectionProgress < 0.5 }
 
                     Text { x: 18 * root.uiScale; y: 10 * root.uiScale; width: parent.width * 0.58; text: row.modelData.title || "Untitled acquisition"; color: row.textColor; font.family: root.typography.interfaceFamily; font.pixelSize: root.typography.size("body", 18); font.bold: true; elide: Text.ElideRight }

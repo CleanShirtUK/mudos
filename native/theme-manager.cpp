@@ -6,6 +6,7 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QFileSystemWatcher>
+#include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QSettings>
@@ -184,6 +185,10 @@ bool ThemeManager::inspectAt(const QString &directory, const QString &expectedId
     const QJsonObject f = data.value("fonts").toObject();
     const QJsonObject faces = f.value("faces").toObject();
     const QJsonObject icons = data.value("icons").toObject();
+    if (data.contains("materials") && !data.value("materials").isObject()) return false;
+    if (data.contains("decorations") && !data.value("decorations").isObject()) return false;
+    const QJsonObject materials = data.value("materials").toObject();
+    const QJsonObject decorations = data.value("decorations").toObject();
     QJsonObject motion = data.value("motion").toObject();
     if (data.contains("motion") && !data.value("motion").isObject()) return false;
     if (motion.isEmpty()) motion = QJsonObject{{"enabled", true}, {"durationScale", 1.0}};
@@ -299,6 +304,126 @@ bool ThemeManager::inspectAt(const QString &directory, const QString &expectedId
             || !validSvg(path)) return false;
         iconPaths.insert(it.key(), QUrl::fromLocalFile(path).toString());
     }
+    const QSet<QString> materialRoles{"panel", "card", "navigation", "status", "overlay", "row"};
+    const QSet<QString> materialFields{"style", "orientation", "stops", "edges", "innerEdges"};
+    const QSet<QString> edgeNames{"top", "bottom", "left", "right"};
+    auto onlyKeys = [](const QJsonObject &object, const QSet<QString> &allowed) {
+        for (auto it = object.begin(); it != object.end(); ++it)
+            if (!allowed.contains(it.key())) return false;
+        return true;
+    };
+    auto validateEdges = [&](const QJsonValue &value, QVariantMap *resolvedEdges) {
+        if (!value.isObject()) return false;
+        const QJsonObject edges = value.toObject();
+        if (!onlyKeys(edges, edgeNames)) return false;
+        for (auto it = edges.begin(); it != edges.end(); ++it) {
+            if (!it.value().isObject()) return false;
+            const QJsonObject edge = it.value().toObject();
+            if (!onlyKeys(edge, QSet<QString>{"color", "width"})
+                || edge.size() != 2) return false;
+            const QJsonValue colorValue = edge.value("color");
+            const QJsonValue widthValue = edge.value("width");
+            if (!colorValue.isString() || !QColor(colorValue.toString()).isValid()
+                || !widthValue.isDouble() || !std::isfinite(widthValue.toDouble())
+                || widthValue.toDouble() < 0 || widthValue.toDouble() > 8) return false;
+        }
+        if (resolvedEdges) *resolvedEdges = edges.toVariantMap();
+        return true;
+    };
+    QVariantMap resolvedMaterials;
+    for (auto it = materials.begin(); it != materials.end(); ++it) {
+        if (!materialRoles.contains(it.key()) || !it.value().isObject()) return false;
+        const QJsonObject material = it.value().toObject();
+        if (!onlyKeys(material, materialFields)) return false;
+        const QString style = material.value("style").toString();
+        if (style == QLatin1String("flat")) {
+            if (material.contains("orientation") || material.contains("stops")) return false;
+            QVariantMap resolved = material.toVariantMap();
+            if (material.contains("edges")) {
+                QVariantMap validated;
+                if (!validateEdges(material.value("edges"), &validated)) return false;
+                resolved.insert("edges", validated);
+            }
+            if (material.contains("innerEdges")) {
+                QVariantMap validated;
+                if (!validateEdges(material.value("innerEdges"), &validated)) return false;
+                resolved.insert("innerEdges", validated);
+            }
+            resolvedMaterials.insert(it.key(), resolved);
+            continue;
+        }
+        if (style != QLatin1String("linearGradient")
+            || material.value("orientation").toString().isEmpty()
+            || (material.value("orientation").toString() != QLatin1String("vertical")
+                && material.value("orientation").toString() != QLatin1String("horizontal")))
+            return false;
+        const QJsonValue stopsValue = material.value("stops");
+        if (!stopsValue.isArray()) return false;
+        const QJsonArray stops = stopsValue.toArray();
+        if (stops.size() < 2 || stops.size() > 8) return false;
+        double previousPosition = -1.0;
+        for (const QJsonValue &stopValue : stops) {
+            if (!stopValue.isObject()) return false;
+            const QJsonObject stop = stopValue.toObject();
+            if (!onlyKeys(stop, QSet<QString>{"position", "color"}) || stop.size() != 2)
+                return false;
+            const QJsonValue position = stop.value("position");
+            const QJsonValue colorValue = stop.value("color");
+            if (!position.isDouble() || !std::isfinite(position.toDouble())
+                || position.toDouble() < 0 || position.toDouble() > 1
+                || position.toDouble() < previousPosition
+                || !colorValue.isString() || !QColor(colorValue.toString()).isValid())
+                return false;
+            previousPosition = position.toDouble();
+        }
+        QVariantMap resolved = material.toVariantMap();
+        if (material.contains("edges")) {
+            QVariantMap validated;
+            if (!validateEdges(material.value("edges"), &validated)) return false;
+            resolved.insert("edges", validated);
+        }
+        if (material.contains("innerEdges")) {
+            QVariantMap validated;
+            if (!validateEdges(material.value("innerEdges"), &validated)) return false;
+            resolved.insert("innerEdges", validated);
+        }
+        resolvedMaterials.insert(it.key(), resolved);
+    }
+    const QSet<QString> decorationRoles{"panel", "card", "status", "overlay"};
+    const QSet<QString> decorationSlots{"topLeft", "topRight", "bottomLeft", "bottomRight"};
+    const QSet<QString> tintRoles{"accent", "secondaryText", "border", "focusIndicator"};
+    QVariantMap resolvedDecorations;
+    for (auto it = decorations.begin(); it != decorations.end(); ++it) {
+        if (!decorationRoles.contains(it.key()) || !it.value().isObject()) return false;
+        const QJsonObject slotObject = it.value().toObject();
+        if (!onlyKeys(slotObject, decorationSlots)) return false;
+        QVariantMap resolvedSlots;
+        for (auto slotIt = slotObject.begin(); slotIt != slotObject.end(); ++slotIt) {
+            if (!slotIt.value().isObject()) return false;
+            const QJsonObject slot = slotIt.value().toObject();
+            if (!onlyKeys(slot, QSet<QString>{"asset", "tint", "opacity", "scale"})
+                || !slot.value("asset").isString()) return false;
+            const QString relativeAsset = slot.value("asset").toString();
+            const QString path = asset(relativeAsset);
+            if (path.isEmpty() || !QFileInfo(path).isFile()
+                || !relativeAsset.endsWith(".svg", Qt::CaseInsensitive)
+                || !validSvg(path)) return false;
+            if (slot.contains("tint") && (!slot.value("tint").isString()
+                || !tintRoles.contains(slot.value("tint").toString()))) return false;
+            if (slot.contains("opacity") && (!slot.value("opacity").isDouble()
+                || !std::isfinite(slot.value("opacity").toDouble())
+                || slot.value("opacity").toDouble() < 0
+                || slot.value("opacity").toDouble() > 1)) return false;
+            if (slot.contains("scale") && (!slot.value("scale").isDouble()
+                || !std::isfinite(slot.value("scale").toDouble())
+                || slot.value("scale").toDouble() < 0.5
+                || slot.value("scale").toDouble() > 2.0)) return false;
+            QVariantMap resolvedSlot = slot.toVariantMap();
+            resolvedSlot.insert("asset", QUrl::fromLocalFile(path).toString());
+            resolvedSlots.insert(slotIt.key(), resolvedSlot);
+        }
+        resolvedDecorations.insert(it.key(), resolvedSlots);
+    }
     for (const char *key : {"structuralSurface", "internalSurface", "card", "focusedCard", "selection", "statusBacking", "overlayBackdrop", "overlaySurface"})
         if (!o.value(QLatin1String(key)).isDouble()) return false;
     for (auto it = o.begin(); it != o.end(); ++it)
@@ -338,6 +463,8 @@ bool ThemeManager::inspectAt(const QString &directory, const QString &expectedId
         resolvedRoles.insert(it.key(), it.value().toString());
     }
     values.insert("icons", iconPaths); values.insert("wallpaper", QUrl::fromLocalFile(wallpaper).toString());
+    values.insert("materials", resolvedMaterials);
+    values.insert("decorations", resolvedDecorations);
     QVariantMap resolvedMotion = motion.toVariantMap();
     resolvedMotion.insert("roles", motionRoles.toVariantMap());
     values.insert("motion", resolvedMotion);
@@ -362,6 +489,8 @@ bool ThemeManager::apply(const QVariantMap &theme, bool persist)
     m_radii = theme.value("radii").toMap(); m_glass = theme.value("glass").toMap();
     m_chrome = theme.value("chrome").toMap(); m_fonts = theme.value("fonts").toMap();
     m_icons = theme.value("icons").toMap(); m_wallpaperValues = theme.value("wallpaperValues").toMap();
+    m_materials = theme.value("materials").toMap();
+    m_decorations = theme.value("decorations").toMap();
     m_motion = theme.value("motion").toMap(); m_labels = theme.value("labels").toMap();
     m_textStyles = theme.value("textStyles").toMap();
     if (persist) {

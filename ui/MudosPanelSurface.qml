@@ -15,8 +15,12 @@ Rectangle {
     property real cornerRadius: luluPalette
         ? luluPalette.radius("panel", 18) * uiScale : 18 * uiScale
     property real tintOpacity: 0.12
+    property string materialRole: "panel"
+    property string decorationRole: "panel"
     readonly property var themeGlass: typeof mudosTheme !== "undefined" ? mudosTheme.glass : ({})
     readonly property var themeOptics: themeGlass.panel || themeGlass
+    readonly property var materialProfile: luluPalette ? luluPalette.material(materialRole) : ({})
+    readonly property bool materialEnabled: materialProfile.style === "linearGradient"
     property bool glassEnabled: themeGlass.enabled !== false
 
     readonly property rect mappedCanonicalRect: {
@@ -38,8 +42,9 @@ Rectangle {
     }
 
     radius: cornerRadius
-    color: luluPalette ? luluPalette.glassTint : Qt.rgba(0.025, 0.027, 0.032, 0.42)
-    border.color: luluPalette ? luluPalette.glassBorder : "#665f68"
+    color: luluPalette && materialEnabled && glassEnabled && !!canonicalTexture
+        ? "transparent" : luluPalette ? luluPalette.glassTint : Qt.rgba(0.025, 0.027, 0.032, 0.42)
+    border.color: materialEnabled ? "transparent" : luluPalette ? luluPalette.glassBorder : "#665f68"
     border.width: Math.max(1, uiScale)
     clip: true
 
@@ -71,7 +76,15 @@ Rectangle {
         radius: root.cornerRadius
         color: Qt.rgba(0.008, 0.009, 0.012, root.tintOpacity)
         border.width: 0
-        visible: root.glassEnabled
+        visible: root.glassEnabled && !root.materialEnabled
+    }
+
+    MudosMaterialLayer {
+        anchors.fill: parent
+        luluPalette: root.luluPalette
+        role: root.materialRole
+        cornerRadius: root.cornerRadius
+        uiScale: root.uiScale
     }
 
     MudosChromeFrame {
@@ -79,5 +92,13 @@ Rectangle {
         luluPalette: root.luluPalette
         uiScale: root.uiScale
         cornerRadius: root.cornerRadius
+    }
+
+    MudosDecorationLayer {
+        anchors.fill: parent
+        luluPalette: root.luluPalette
+        role: root.decorationRole
+        cornerRadius: root.cornerRadius
+        uiScale: root.uiScale
     }
 }

@@ -14,6 +14,8 @@ Rectangle {
     property var mappingItem: root
     readonly property var themeGlass: typeof mudosTheme !== "undefined" ? mudosTheme.glass : ({})
     readonly property var themeOptics: themeGlass.card || themeGlass
+    readonly property bool materialEnabled: luluPalette
+        && luluPalette.material(root.radiusRole === "row" ? "row" : "card").style === "linearGradient"
 
     readonly property rect mappedCanonicalRect: {
         var sourceItem = mappingItem || root
@@ -40,7 +42,8 @@ Rectangle {
     radius: luluPalette
         ? luluPalette.radius(root.radiusRole, 10) * root.uiScale
         : 10 * root.uiScale
-    color: Qt.rgba(
+    color: root.materialEnabled && root.themeGlass.enabled !== false && !!root.canonicalTexture
+        ? "transparent" : Qt.rgba(
         luluPalette.cardSurface.r
             + (luluPalette.focusedCardSurface.r - luluPalette.cardSurface.r)
                 * root.selectionProgress,
@@ -53,7 +56,7 @@ Rectangle {
         luluPalette.cardSurface.a
             + (luluPalette.focusedCardSurface.a - luluPalette.cardSurface.a)
                 * root.selectionProgress)
-    border.color: Qt.rgba(
+    border.color: root.materialEnabled ? "transparent" : Qt.rgba(
         luluPalette.glassBorder.r
             + (luluPalette.focusIndicator.r - luluPalette.glassBorder.r)
                 * root.selectionProgress,
@@ -66,7 +69,7 @@ Rectangle {
         luluPalette.glassBorder.a
             + (luluPalette.focusIndicator.a - luluPalette.glassBorder.a)
                 * root.selectionProgress)
-    border.width: (1 + 2 * root.selectionProgress) * root.uiScale
+    border.width: root.materialEnabled ? 0 : (1 + 2 * root.selectionProgress) * root.uiScale
     clip: true
 
     MudosGlassItem {
@@ -89,6 +92,15 @@ Rectangle {
         cornerRadius: root.radius
         edgeLightDirection: root.themeOptics.edgeLightDirection ? Qt.vector2d(root.themeOptics.edgeLightDirection[0], root.themeOptics.edgeLightDirection[1]) : Qt.vector2d(1, -1)
         transparentOutsideMask: true
+    }
+
+    MudosMaterialLayer {
+        anchors.fill: parent
+        luluPalette: root.luluPalette
+        role: root.radiusRole === "row" ? "row" : "card"
+        cornerRadius: root.radius
+        uiScale: root.uiScale
+        selectionProgress: root.selectionProgress
     }
 
     MudosChromeFrame {

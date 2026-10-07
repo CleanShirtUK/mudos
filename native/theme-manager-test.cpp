@@ -10,6 +10,7 @@
 #include <QUrl>
 #include <QtTest>
 #include <functional>
+#include <limits>
 
 static bool copyTree(const QString &source, const QString &target)
 {
@@ -97,6 +98,77 @@ private slots:
         QVERIFY(editTheme("bad-radius-policy", [](QJsonObject &json) {
             json.insert("radiusPolicy", "theme-magic");
         }));
+        auto invalidMaterial = [&](const QString &id, const std::function<void(QJsonObject &)> &edit) {
+            return editTheme(id, [&](QJsonObject &json) {
+                QJsonObject materials = json.value("materials").toObject();
+                QJsonObject panel{{"style", "linearGradient"}, {"orientation", "vertical"},
+                    {"stops", QJsonArray{QJsonObject{{"position", 0}, {"color", "#ffffff"}},
+                                         QJsonObject{{"position", 1}, {"color", "#000000"}}}}};
+                edit(panel);
+                materials.insert("panel", panel);
+                json.insert("materials", materials);
+            });
+        };
+        QVERIFY(invalidMaterial("bad-material-style", [](QJsonObject &panel) { panel.insert("style", "radial"); }));
+        QVERIFY(invalidMaterial("bad-material-orientation", [](QJsonObject &panel) { panel.insert("orientation", "diagonal"); }));
+        QVERIFY(invalidMaterial("few-material-stops", [](QJsonObject &panel) { panel.insert("stops", QJsonArray{QJsonObject{{"position", 0}, {"color", "#fff"}}}); }));
+        QVERIFY(invalidMaterial("many-material-stops", [](QJsonObject &panel) {
+            QJsonArray stops; for (int i = 0; i < 9; ++i) stops.append(QJsonObject{{"position", i / 8.0}, {"color", "#ffffff"}});
+            panel.insert("stops", stops);
+        }));
+        QVERIFY(invalidMaterial("unsorted-material-stops", [](QJsonObject &panel) {
+            panel.insert("stops", QJsonArray{QJsonObject{{"position", 0.8}, {"color", "#ffffff"}},
+                                              QJsonObject{{"position", 0.2}, {"color", "#000000"}}});
+        }));
+        QVERIFY(invalidMaterial("invalid-material-color", [](QJsonObject &panel) {
+            panel.insert("stops", QJsonArray{QJsonObject{{"position", 0}, {"color", "nope"}},
+                                              QJsonObject{{"position", 1}, {"color", "#000000"}}});
+        }));
+        QVERIFY(invalidMaterial("nan-material-position", [](QJsonObject &panel) {
+            panel.insert("stops", QJsonArray{QJsonObject{{"position", QJsonValue(std::numeric_limits<double>::quiet_NaN())}, {"color", "#ffffff"}},
+                                              QJsonObject{{"position", 1}, {"color", "#000000"}}});
+        }));
+        QVERIFY(invalidMaterial("bad-material-edge-width", [](QJsonObject &panel) {
+            panel.insert("edges", QJsonObject{{"top", QJsonObject{{"color", "#ffffff"}, {"width", 8.1}}}});
+        }));
+        QVERIFY(editTheme("unknown-material-role", [](QJsonObject &json) {
+            QJsonObject materials = json.value("materials").toObject();
+            materials.insert("metalheartPanel", QJsonObject{{"style", "flat"}});
+            json.insert("materials", materials);
+        }));
+
+        QVERIFY(editTheme("bad-decoration-slot", [](QJsonObject &json) {
+            json.insert("decorations", QJsonObject{{"panel", QJsonObject{{"center", QJsonObject{{"asset", "icons/settings.svg"}}}}}});
+        }));
+        QVERIFY(editTheme("missing-decoration", [](QJsonObject &json) {
+            json.insert("decorations", QJsonObject{{"panel", QJsonObject{{"topLeft", QJsonObject{{"asset", "decorations/missing.svg"}}}}}});
+        }));
+        QVERIFY(editTheme("traversal-decoration", [](QJsonObject &json) {
+            json.insert("decorations", QJsonObject{{"panel", QJsonObject{{"topLeft", QJsonObject{{"asset", "../outside.svg"}}}}}});
+        }));
+        QVERIFY(editTheme("bad-decoration-tint", [](QJsonObject &json) {
+            json.insert("decorations", QJsonObject{{"panel", QJsonObject{{"topLeft", QJsonObject{{"asset", "icons/settings.svg"}, {"tint", "theme-expression"}}}}}});
+        }));
+        QVERIFY(editTheme("bad-decoration-scale", [](QJsonObject &json) {
+            json.insert("decorations", QJsonObject{{"panel", QJsonObject{{"topLeft", QJsonObject{{"asset", "icons/settings.svg"}, {"scale", 2.1}}}}}});
+        }));
+        QVERIFY(editTheme("bad-decoration-opacity", [](QJsonObject &json) {
+            json.insert("decorations", QJsonObject{{"panel", QJsonObject{{"topLeft", QJsonObject{{"asset", "icons/settings.svg"}, {"opacity", -0.1}}}}}});
+        }));
+        QVERIFY(editTheme("unknown-decoration-role", [](QJsonObject &json) {
+            json.insert("decorations", QJsonObject{{"metalheartPanel", QJsonObject{}}});
+        }));
+        QVERIFY(editTheme("decoration-coordinates", [](QJsonObject &json) {
+            json.insert("decorations", QJsonObject{{"panel", QJsonObject{{"topLeft", QJsonObject{{"asset", "icons/settings.svg"}, {"x", 10}}}}}});
+        }));
+        QVERIFY(editTheme("bad-decoration-svg", [](QJsonObject &json) {
+            json.insert("decorations", QJsonObject{{"panel", QJsonObject{{"topLeft", QJsonObject{{"asset", "icons/settings.svg"}}}}}});
+        }));
+        QVERIFY(QDir().mkpath(root + "/bad-decoration-svg/icons"));
+        QFile badDecorationSvg(root + "/bad-decoration-svg/icons/settings.svg");
+        QVERIFY(badDecorationSvg.open(QIODevice::WriteOnly | QIODevice::Truncate));
+        badDecorationSvg.write("<svg><script>no</script></svg>");
+        badDecorationSvg.close();
         QVERIFY(editTheme("zero-scale", [](QJsonObject &json) {
             QJsonObject motion = json.value("motion").toObject();
             motion.insert("durationScale", 0);
@@ -174,6 +246,20 @@ private slots:
         QVERIFY(QFile::remove(root + "/escaped/icons/settings.svg"));
         QVERIFY(QFile::link(outsideSvg, root + "/escaped/icons/settings.svg"));
 
+        QVERIFY(copyTree(root + "/modern", root + "/decoration-escaped"));
+        QFile escapedDecorationConfig(root + "/decoration-escaped/theme.json");
+        QVERIFY(escapedDecorationConfig.open(QIODevice::ReadOnly));
+        QJsonObject escapedDecorationJson = QJsonDocument::fromJson(escapedDecorationConfig.readAll()).object();
+        escapedDecorationConfig.close();
+        escapedDecorationJson.insert("id", "decoration-escaped");
+        escapedDecorationJson.insert("decorations", QJsonObject{{"panel", QJsonObject{
+            {"topLeft", QJsonObject{{"asset", "decorations/escape.svg"}}}}}});
+        QVERIFY(escapedDecorationConfig.open(QIODevice::WriteOnly | QIODevice::Truncate));
+        escapedDecorationConfig.write(QJsonDocument(escapedDecorationJson).toJson());
+        escapedDecorationConfig.close();
+        QVERIFY(QDir().mkpath(root + "/decoration-escaped/decorations"));
+        QVERIFY(QFile::link(outsideSvg, root + "/decoration-escaped/decorations/escape.svg"));
+
         QVERIFY(copyTree(root + "/95", root + "/bad-svg"));
         QFile badSvgConfig(root + "/bad-svg/theme.json");
         QVERIFY(badSvgConfig.open(QIODevice::ReadOnly));
@@ -220,6 +306,15 @@ private slots:
         QVERIFY(!ids.contains("bad-scale"));
         QVERIFY(!ids.contains("bad-wallpaper-speed"));
         QVERIFY(!ids.contains("bad-radius-policy"));
+        for (const QString &invalidId : {"bad-material-style", "bad-material-orientation",
+                 "few-material-stops", "many-material-stops", "unsorted-material-stops",
+                 "invalid-material-color", "nan-material-position", "bad-material-edge-width",
+                 "unknown-material-role", "bad-decoration-slot", "missing-decoration",
+                 "traversal-decoration", "bad-decoration-tint", "bad-decoration-scale",
+                 "bad-decoration-opacity", "unknown-decoration-role", "decoration-coordinates"})
+            QVERIFY2(!ids.contains(invalidId), qPrintable(invalidId));
+        QVERIFY(!ids.contains("bad-decoration-svg"));
+        QVERIFY(!ids.contains("decoration-escaped"));
         QVERIFY(!ids.contains("zero-scale"));
         QVERIFY(!ids.contains("null-scale"));
         QVERIFY(!ids.contains("bad-label"));
@@ -241,6 +336,8 @@ private slots:
         QCOMPARE(manager.radii().value("panel").toDouble(), 0.0);
         QCOMPARE(manager.radiusPolicy(), QStringLiteral("exact"));
         QCOMPARE(manager.chrome().value("style").toString(), QStringLiteral("bevel"));
+        QCOMPARE(manager.materials().size(), 0);
+        QCOMPARE(manager.decorations().size(), 0);
         QVERIFY(manager.wallpaperShader().contains("themes/95/wallpaper/wallpaper.frag.qsb"));
         QVERIFY(manager.fonts().value("regular").toString().contains("themes/95/fonts/"));
         QVERIFY(manager.iconUrl("settings").contains("themes/95/icons/settings.svg"));
@@ -249,6 +346,8 @@ private slots:
         QCOMPARE(manager.colors().value("backdrop").toString(), QStringLiteral("#060607"));
         QCOMPARE(manager.radiusPolicy(), QStringLiteral("componentBaseline"));
         QCOMPARE(manager.chrome().value("style").toString(), QStringLiteral("flat"));
+        QCOMPARE(manager.materials().size(), 0);
+        QCOMPARE(manager.decorations().size(), 0);
         QVERIFY(manager.motion().value("roles").toMap().value("wallpaper").toMap()
                     .value("enabled").toBool());
         QCOMPARE(manager.motion().value("roles").toMap().value("wallpaper").toMap()
@@ -259,6 +358,26 @@ private slots:
         QCOMPARE(manager.radii().value("panel").toDouble(), 0.0);
         QCOMPARE(manager.radiusPolicy(), QStringLiteral("exact"));
         QCOMPARE(manager.chrome().value("style").toString(), QStringLiteral("flat"));
+        QCOMPARE(manager.materials().size(), 6);
+        const QVariantMap panelMaterial = manager.materials().value("panel").toMap();
+        QCOMPARE(panelMaterial.value("style").toString(), QStringLiteral("linearGradient"));
+        QCOMPARE(panelMaterial.value("orientation").toString(), QStringLiteral("vertical"));
+        QCOMPARE(panelMaterial.value("stops").toList().size(), 7);
+        QCOMPARE(panelMaterial.value("edges").toMap().value("top").toMap()
+                     .value("width").toDouble(), 1.0);
+        QCOMPARE(manager.materials().value("card").toMap().value("orientation").toString(),
+                 QStringLiteral("vertical"));
+        QCOMPARE(manager.materials().value("navigation").toMap().value("style").toString(),
+                 QStringLiteral("linearGradient"));
+        QCOMPARE(manager.materials().value("status").toMap().value("style").toString(),
+                 QStringLiteral("linearGradient"));
+        QCOMPARE(manager.materials().value("overlay").toMap().value("style").toString(),
+                 QStringLiteral("linearGradient"));
+        QCOMPARE(manager.materials().value("row").toMap().value("orientation").toString(),
+                 QStringLiteral("horizontal"));
+        QCOMPARE(manager.decorations().value("panel").toMap().value("topLeft").toMap()
+                     .value("asset").toString().section('/', -2),
+                 QStringLiteral("decorations/corner-bracket.svg"));
         QCOMPARE(manager.glass().value("enabled").toBool(), true);
         QCOMPARE(manager.glass().value("panel").toMap().value("transmission").toDouble(), 0.86);
         QCOMPARE(manager.motion().value("durationScale").toDouble(), 0.72);

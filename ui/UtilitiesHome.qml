@@ -93,9 +93,11 @@ Item {
         width: root.listWidth
         height: Math.max(0, root.height - y - root.innerInset)
         radius: root.luluPalette.radius("panel", 12) * root.uiScale
-        color: root.luluPalette.librarySurface
+        color: root.luluPalette.material("panel").style === "linearGradient"
+            ? "transparent" : root.luluPalette.librarySurface
         border.color: root.luluPalette.glassBorder
         border.width: root.uiScale
+        MudosMaterialLayer { anchors.fill: parent; luluPalette: root.luluPalette; role: "panel"; cornerRadius: parent.radius; uiScale: root.uiScale }
         MudosChromeFrame { anchors.fill: parent; luluPalette: root.luluPalette; uiScale: root.uiScale; cornerRadius: parent.radius }
 
         ListView {
@@ -117,6 +119,7 @@ Item {
                 border.color: index === root.selectedIndex
                     ? root.luluPalette.focusIndicator : root.luluPalette.glassBorder
                 border.width: index === root.selectedIndex ? 2 * root.uiScale : root.uiScale
+                MudosMaterialLayer { anchors.fill: parent; luluPalette: root.luluPalette; role: "row"; cornerRadius: parent.radius; uiScale: root.uiScale; selectionProgress: index === root.selectedIndex ? 1 : 0 }
                 MudosChromeFrame { anchors.fill: parent; luluPalette: root.luluPalette; uiScale: root.uiScale; cornerRadius: parent.radius; raised: index !== root.selectedIndex }
 
                 Image {
@@ -158,9 +161,11 @@ Item {
         width: Math.max(0, root.width - x - 20 * root.uiScale)
         height: listPane.height
         radius: root.luluPalette.radius("panel", 12) * root.uiScale
-        color: root.luluPalette.librarySurface
+        color: root.luluPalette.material("panel").style === "linearGradient"
+            ? "transparent" : root.luluPalette.librarySurface
         border.color: root.luluPalette.glassBorder
         border.width: root.uiScale
+        MudosMaterialLayer { anchors.fill: parent; luluPalette: root.luluPalette; role: "panel"; cornerRadius: parent.radius; uiScale: root.uiScale }
         MudosChromeFrame { anchors.fill: parent; luluPalette: root.luluPalette; uiScale: root.uiScale; cornerRadius: parent.radius }
         visible: !!root.selectedApplication
 

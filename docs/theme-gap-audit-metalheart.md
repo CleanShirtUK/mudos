@@ -1,106 +1,105 @@
 # Metalheart theme-engine gap audit
 
-This audit records only constraints encountered while rendering Metalheart
-through the existing theme contracts. No engine/schema feature is added by the
-Metalheart pass. The original look is interpreted for Mudos; the 2000–2003
-reference is the Web Design Museum's documented combination of deformed abstract
-fractals, explosion-like backgrounds and futuristic pixel typography, not a
-request to reproduce any site's artwork or navigation.
+This audit tracks presentation constraints encountered while rendering
+Metalheart through Mudos' declarative theme contracts. The V2 additions remain
+data-only: themes cannot supply executable QML or shaders, choose layout
+coordinates, or change navigation/routing. The 2000–2003 reference remains the
+Web Design Museum's account of abstract fractals, explosion-like backgrounds,
+and futuristic pixel typography—not a request to copy artwork or navigation.
 
-## 1. Surface material has no continuous metal finish
+## Surface material — addressed in V2
 
-- **Desired treatment:** a dark steel body with several restrained vertical
-  graphite-to-gunmetal stops, a crisp upper chrome glint, and a darker lower
-  edge, while preserving backdrop transmission.
-- **Current capability:** semantic solid/tinted colors, per-profile glass optics,
-  a `flat` or generic `bevel` chrome mode, and the native glass item's optical
-  bevel. Metalheart now selects `chrome.style = "flat"`; the 95 theme retains
-  its paired top/left and bottom/right Windows-style bevel treatment.
-- **What blocks it:** there is no theme-owned gradient-stop list, per-surface
-  material ramp, or independently styled edge/highlight band. Repeating narrow
-  colors in QML would hard-code Metalheart into the engine, so the theme uses a
-  gunmetal substrate, flat chrome and its existing glass profile. Physical
-  review of the first bundle found its generic bevel read as 95-style UI; that
-  approximation was removed in this corrective pass, confirming the missing
-  material primitive rather than weakening the gap.
-- **Smallest generic primitive:** an optional declarative multi-stop surface
-  material with independent top/bottom edge colors, consumed by the existing
-  structural/card surface components (no arbitrary theme code).
-- **Layout/navigation impact:** none; paint-only.
-- **Priority / impact:** **high** — this is the single largest missing visual
-  primitive for making every shell surface read as machined metal rather than
-  tinted glass.
+- **Original finding:** surfaces could use semantic solid/tinted color, native
+  glass, and generic flat/95 bevel chrome, but had no continuous metallic ramp
+  or independently styled edge bands. The first Metalheart bevel approximation
+  read as Windows-95 framing during physical review and was removed in the
+  corrective pass.
+- **V2 capability:** validated semantic `materials` profiles (`panel`, `card`,
+  `navigation`, `status`, `overlay`, `row`) support flat fallback or bounded
+  vertical/horizontal Qt Quick linear gradients, 2–8 ordered stops, four outer
+  edges, and four optional inner edges. Band widths are 0–8 design pixels.
+  `MudosMaterialLayer` is shared by the structural surfaces and selected/common
+  row consumers; no theme shader or offscreen material pass was added.
+- **Layering:** semantic base color → canonical glass/refraction → translucent
+  material ramp and edge bands → semantic selection/focus overlay → optional
+  fixed-slot ornament. When the material is active over canonical glass, the
+  old flat tint contribution is suppressed; glass-off themes retain their
+  ordinary substrate below the material. Absent profiles leave the legacy
+  surface path in place.
+- **Metalheart use:** all six generic profiles are declared. Panel, card,
+  navigation, status, and overlay use vertical graphite/steel ramps; the row
+  profile is horizontal and restrained. Metalheart stays `chrome.style =
+  "flat"`; 95 keeps its classic bevel.
+- **Validation:** schema validation rejects unknown profiles/fields, bad styles
+  or orientation, stop counts outside 2–8, invalid/non-finite/out-of-range or
+  descending stop positions, invalid colors, and invalid edge colors/widths.
+- **Status:** engine gap addressed; visual tuning still requires the pending
+  physical Metalheart surface sweep.
 
-## Radius authority — resolved in the corrective pass
+## Radius authority — addressed by the corrective pass
 
-- **Desired treatment:** the current corrective target is a single authoritative
-  angular radius configuration throughout Settings, Utilities, Guide and
-  content rows; Metalheart currently requests zero on all six semantic roles.
-- **Originally desired:** consistent small radii throughout nested surfaces.
-- **Originally observed capability/defect:** zero configured radii were honored,
-  but any positive radius fell through to a component-local fallback.
-- **Correction:** the generic `radiusPolicy` is now validated as `exact` or
-  `componentBaseline`. Exact roles are authoritative across palette helper and
-  direct surface consumers; componentBaseline preserves Modern's accepted local
-  metrics while retaining its historical zero-radius opt-in. 95 and Metalheart
-  select exact. Metalheart sets every declared radius role to zero.
-- **Remaining blocker:** none for radius authority; this is a resolved engine
-  defect, not a proposed capability gap.
-- **Layout/navigation impact:** none; corner curvature only.
-- **Priority / impact:** resolved; regression coverage includes positive exact
-  values as well as Modern fallback and 95/Metalheart zero values.
+- **Original defect:** configured zero radii were honored, but positive theme
+  radii often fell through to component-local values.
+- **Correction:** validated `radiusPolicy` supports `exact` and
+  `componentBaseline`. Exact radii are authoritative; Modern explicitly keeps
+  the compatibility behavior, and 95/Metalheart use exact values. Metalheart
+  currently requests zero for all six semantic roles.
+- **Status:** resolved generically and covered by positive/zero radius tests.
 
-## 3. Theme-owned ornaments have no safe placement slots
+## Fixed decorative SVG slots — addressed in V2
 
-- **Desired treatment:** small corner brackets, registration marks and sparse
-  technical annotations on selected panel/header chrome.
-- **Current capability:** semantic SVG overrides are validated, root-contained,
-  and monochrome-tinted at semantic icon consumers. They replace icons; they do
-  not decorate arbitrary panel locations.
-- **What blocks it:** themes cannot request extra artwork around existing
-  content without executable QML or engine-owned per-screen special cases.
-- **Smallest generic primitive:** optional named decorative SVG slots on existing
-  surface/header primitives, with fixed engine-defined anchors and no effect on
-  content ownership.
-- **Layout/navigation impact:** none if slots are paint-only and excluded from
-  hit testing.
-- **Priority / impact:** **medium** — useful for the historic technical/HUD
-  vocabulary, but less important than coherent surface materials.
+- **Original finding:** semantic SVG overrides could replace icons but there
+  were no safe theme-owned locations for small technical marks without
+  screen-specific QML or arbitrary coordinates.
+- **V2 capability:** `MudosDecorationLayer` supports `panel`, `card`, `status`,
+  and `overlay` profiles with fixed four-corner slots. The engine owns slot
+  size/inset/orientation; themes control only SVG asset, semantic tint, opacity,
+  and bounded scale. Layers are disabled for input and have zero implicit size.
+- **Security:** assets use the existing canonical root-containment and SVG XML
+  safety path, including symlink-escape rejection. Unknown roles/slots and
+  arbitrary coordinates are rejected.
+- **Metalheart assets:** original monochrome corner bracket, registration mark,
+  and segmented-chevron SVGs. Panel and major overlay slots are used sparingly;
+  the compact status strip intentionally has no ornament configured because its
+  content already occupies its safe inset.
+- **Status:** generic capability addressed; pending physical check that selected
+  surfaces keep all ornaments clear of content at appliance scale.
 
-## 4. Text treatment is limited to Home and first-class view titles
+## Remaining presentation gap: semantic text treatment
 
-- **Desired treatment:** compact tracking and typography treatment on the Guide
-  header and selected small technical annotations, as well as Home/view titles.
-- **Current capability:** the theme controls font families/weights through
-  existing semantic roles and case/tracking through `homeTitle` and `viewTitle`.
-  Most body/status text uses fixed engine pixel-size and weight values; arbitrary
-  per-role size/tracking is not configurable. Guide now consumes `viewTitle`
-  tracking, without changing its classification/title data.
-- **What blocks it:** there is no general semantic text-treatment role or
-  per-role size/weight/tracking table. The current supported title styles cover
-  the prominent Metalheart headings, so the remaining annotations use the
-  technical font and existing sizes.
-- **Smallest generic primitive:** a small validated set of semantic text roles
-  (for example `annotation`, `metadata`, `body`, `heading`) for family/weight/
-  tracking, preserving engine-owned pixel-size/layout decisions.
-- **Layout/navigation impact:** potentially text fit only; no routing changes.
-- **Priority / impact:** **low-medium** — a coherent family split already gives
-  a strong technical voice, but some small data labels remain less compact.
+- **Current capability:** theme font-family/weight roles and Home/view title
+  case/tracking controls. Engine-owned pixel sizes and layouts remain fixed.
+- **Limitation:** there is no bounded set of generic body/metadata/annotation
+  tracking or weight roles. Some small labels therefore cannot receive the same
+  deliberate compact technical treatment as headings without changing engine
+  typography contracts.
+- **Smallest future primitive:** validated semantic text roles for family,
+  weight, and tracking only; keep pixel size and layout engine-owned.
+- **Priority:** highest remaining schema-level presentation gap after V2; not
+  required for the material/ornament system to function.
 
-## Deliberately not recorded as gaps
+## Implementation coverage and acceptance boundary
 
-- The current font roles can select distinct existing faces for interface and
-  display/major-heading use; Metalheart uses Share Tech Mono with Oxanium and
-  does not require a font-engine extension.
-- The wallpaper shader can derive its own fractal, metallic bands, energy burst,
-  grid and slow drift from the existing time/color uniforms. No wallpaper-only
-  scalar uniform is necessary for this composition.
-- Glass already exposes panel/card/status/navigation profiles, transmission,
-  refraction, dispersion, diffusion, bevel and edge-light values. Metalheart
-  uses those rather than requesting a new material-profile schema.
-- Existing status and hint placement, screen layout, and color-accurate artwork
-  remain engine-owned and need no Metalheart-specific presentation layer.
-- Continuous wallpaper animation now has an independent `wallpaper` motion role
-  with validated enable and speed settings. It no longer shares the startup
-  `intro` role; Modern keeps speed 1, 95 disables wallpaper motion, and Metalheart
-  enables it at speed 1.
+- Common panel/card/navigation/status/overlay surfaces and major Library,
+  Settings, Utilities, Downloads, Guide, GameCard, and shared row boundaries
+  consume the generic layers. Some inline provider/modal rows remain on the
+  semantic flat path; moving every inline row is implementation debt, not a
+  theme-specific workaround or a material-schema blocker.
+- No Metalheart-specific production QML branch was added. Modern and 95 omit
+  both optional sections and are covered by regression tests for empty resolved
+  material/decoration maps.
+- The local headless/capture path does not expose the Gamescope shell output.
+  Therefore this code pass cannot claim physical inspection, controller
+  acceptance, or a BC-250 before/after performance comparison. Those remain
+  operator acceptance gates; no performance delta is inferred from off-device
+  tests.
+
+## Deliberately not recorded as V2 gaps
+
+- Existing glass profiles, canonical wallpaper texture, wallpaper clock, and
+  surface geometry remain unchanged.
+- Material noise/grain, material masks, arbitrary gradients/angles, custom
+  shaders, multi-color icon architecture, free-form ornament placement, and
+  theme-controlled text sizes are outside this pass.
+- Wallpaper artwork was not redesigned; the existing Metalheart shader remains
+  the source of the animated abstract environment.

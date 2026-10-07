@@ -147,6 +147,14 @@ Item {
                             color: root.luluPalette.selectionSurface
                             border.color: root.luluPalette.focusIndicator
                             border.width: 2 * root.uiScale
+                            MudosMaterialLayer {
+                                anchors.fill: parent
+                                luluPalette: root.luluPalette
+                                role: "row"
+                                cornerRadius: parent.radius
+                                uiScale: root.uiScale
+                                selectionProgress: 1
+                            }
                             MudosChromeFrame {
                                 anchors.fill: parent
                                 luluPalette: root.luluPalette

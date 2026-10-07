@@ -40,9 +40,24 @@ Window {
         width: 520
         height: Math.max(250, 110 + guideModel.actions.length * 68)
         radius: luluPalette.radius("panel", 14)
-        color: luluPalette.guideSurface
+        color: luluPalette.material("overlay").style === "linearGradient"
+            ? "transparent" : luluPalette.guideSurface
         border.color: luluPalette.guideBorder
         border.width: 1
+
+        MudosMaterialLayer {
+            anchors.fill: parent
+            luluPalette: luluPalette
+            role: "overlay"
+            cornerRadius: panel.radius
+            selectionProgress: 0
+        }
+        MudosDecorationLayer {
+            anchors.fill: parent
+            luluPalette: luluPalette
+            role: "overlay"
+            cornerRadius: panel.radius
+        }
 
         MudosChromeFrame {
             anchors.fill: parent
@@ -114,6 +129,14 @@ Window {
                         color: parent.surfaceColor
                         border.color: parent.borderColor
                         border.width: 1
+
+                        MudosMaterialLayer {
+                            anchors.fill: parent
+                            luluPalette: luluPalette
+                            role: "row"
+                            cornerRadius: parent.radius
+                            selectionProgress: rowDelegate.selectionProgress
+                        }
 
                         MudosChromeFrame {
                             anchors.fill: parent

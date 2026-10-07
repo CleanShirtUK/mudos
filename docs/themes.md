@@ -72,6 +72,27 @@ UI. Dynamic Library dimensions remain engine-owned text, composed with the
 Library view label before applying `viewTitle`. Themes supply no executable
 transformation.
 
+Optional `materials` profiles are restricted to `panel`, `card`, `navigation`,
+`status`, `overlay`, and `row`. An omitted profile (or section) preserves the
+existing surface rendering. `style: "flat"` selects that legacy semantic-color
+path; `linearGradient` supports vertical/horizontal orientation and 2–8
+monotonic, finite stops with valid Qt colors. `edges` and `innerEdges` may name
+only top/bottom/left/right bands, each with a color and width from 0 to 8 design
+pixels. Mudos renders the validated data with a normal Qt Quick rounded
+rectangle gradient and boundary-aligned strips; themes cannot provide shader
+code or coordinates. Material layers follow canonical glass and precede
+selection/focus treatment. Glass-off themes still paint the ramp over their
+ordinary semantic substrate.
+
+Optional `decorations` profiles are restricted to `panel`, `card`, `status`,
+and `overlay`, with only `topLeft`, `topRight`, `bottomLeft`, and `bottomRight`
+slots. Each slot references a root-contained, validated SVG and may select one
+of the semantic `accent`, `secondaryText`, `border`, or `focusIndicator` tints,
+opacity 0–1, and scale 0.5–2.0. Slot anchors, 12-design-pixel base size, and
+insets are engine-owned; coordinates and arbitrary theme QML are rejected.
+Decoration items are input-disabled and have zero implicit size. SVG path,
+symlink, and XML checks reuse the semantic icon validator.
+
 Wallpaper shaders are Qt Quick QSB packages. Their fixed uniform contract is
 `u_resolution`, `u_origin`, `u_canvas`, `u_time`, `u_brightness`, `u_visibility`,
 `u_primary`, `u_secondary`, `u_surface` and `u_error`; unused uniforms may be

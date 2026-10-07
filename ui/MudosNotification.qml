@@ -20,9 +20,23 @@ Window {
         radius: luluPalette.radius("overlay", 12)
         visible: notificationModel.visible
         opacity: 1
-        color: luluPalette.overlaySurface
+        color: luluPalette.material("overlay").style === "linearGradient"
+            ? "transparent" : luluPalette.overlaySurface
         border.color: luluPalette.glassBorder
         border.width: 1
+
+        MudosMaterialLayer {
+            anchors.fill: parent
+            luluPalette: luluPalette
+            role: "overlay"
+            cornerRadius: parent.radius
+        }
+        MudosDecorationLayer {
+            anchors.fill: parent
+            luluPalette: luluPalette
+            role: "overlay"
+            cornerRadius: parent.radius
+        }
 
         MudosChromeFrame {
             anchors.fill: parent

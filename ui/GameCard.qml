@@ -9,6 +9,8 @@ Rectangle {
     id: card
     ThemeMotion { id: themeMotion }
     readonly property var themeGlass: typeof mudosTheme !== "undefined" ? mudosTheme.glass : ({})
+    readonly property bool materialEnabled: luluPalette
+        && luluPalette.material("card").style === "linearGradient"
 
     property var game: null
     property bool focused: false
@@ -249,6 +251,9 @@ Rectangle {
         recentFocal ? 28 * focalScale * uiScale : (compact ? 16 : 18) * uiScale,
         uiScale)
     color: card.librarySurfaceMaterial ? luluPalette.transparent
+        : (card.materialEnabled && card.themeGlass.enabled !== false
+            && (card.homeCard || card.catalogueCard) && card.glassVisible
+            && !!card.canonicalTexture ? luluPalette.transparent
         : (recentFocal ? luluPalette.glassTint
            : Qt.rgba(luluPalette.cardSurface.r
                + (luluPalette.focusedCardSurface.r - luluPalette.cardSurface.r) * card.selectionProgress,
@@ -257,8 +262,8 @@ Rectangle {
                luluPalette.cardSurface.b
                + (luluPalette.focusedCardSurface.b - luluPalette.cardSurface.b) * card.selectionProgress,
                luluPalette.cardSurface.a
-               + (luluPalette.focusedCardSurface.a - luluPalette.cardSurface.a) * card.selectionProgress))
-    border.color: card.librarySurfaceMaterial ? luluPalette.transparent
+                + (luluPalette.focusedCardSurface.a - luluPalette.cardSurface.a) * card.selectionProgress)))
+    border.color: card.librarySurfaceMaterial || card.materialEnabled ? luluPalette.transparent
         : Qt.rgba(luluPalette.glassBorder.r
             + (luluPalette.focusIndicator.r - luluPalette.glassBorder.r) * card.selectionProgress,
             luluPalette.glassBorder.g
@@ -267,7 +272,7 @@ Rectangle {
             + (luluPalette.focusIndicator.b - luluPalette.glassBorder.b) * card.selectionProgress,
             luluPalette.glassBorder.a
             + (luluPalette.focusIndicator.a - luluPalette.glassBorder.a) * card.selectionProgress)
-    border.width: card.librarySurfaceMaterial ? 0 : (1 + 2 * card.selectionProgress) * uiScale
+    border.width: card.librarySurfaceMaterial || card.materialEnabled ? 0 : (1 + 2 * card.selectionProgress) * uiScale
     clip: true
 
     MudosGlassItem {
@@ -291,6 +296,16 @@ Rectangle {
         edgeLightStrength: card.opticsStage >= 0 && card.opticsStage < 7 ? 0 : 0.10
         edgeLightDirection: Qt.vector2d(1, -1)
         transparentOutsideMask: card.nativeGlassTransparentOutsideMask
+    }
+
+    MudosMaterialLayer {
+        anchors.fill: parent
+        luluPalette: card.luluPalette
+        role: "card"
+        cornerRadius: card.radius
+        uiScale: card.uiScale
+        selectionProgress: card.selectionProgress
+        forceHidden: card.librarySurfaceMaterial
     }
 
     Rectangle {

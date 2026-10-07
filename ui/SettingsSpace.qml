@@ -65,11 +65,27 @@ Item {
         x: root.leftBounds.x; y: root.leftBounds.y
         width: root.leftBounds.width; height: root.leftBounds.height
         radius: root.luluPalette.radius("panel", 14) * root.uiScale
-        color: root.luluPalette.cardSurface
+        color: root.luluPalette.material("panel").style === "linearGradient"
+            ? "transparent" : root.luluPalette.cardSurface
         border.width: root.activePanel === "categories" ? 3 * root.uiScale : 1 * root.uiScale
         border.color: root.activePanel === "categories"
             ? root.luluPalette.focusIndicator : root.luluPalette.glassBorder
         opacity: root.activePanel === "categories" ? 1 : 0.72
+        MudosMaterialLayer {
+            anchors.fill: parent
+            luluPalette: root.luluPalette
+            role: "panel"
+            cornerRadius: parent.radius
+            uiScale: root.uiScale
+            selectionProgress: root.activePanel === "categories" ? 1 : 0
+        }
+        MudosDecorationLayer {
+            anchors.fill: parent
+            luluPalette: root.luluPalette
+            role: "panel"
+            cornerRadius: parent.radius
+            uiScale: root.uiScale
+        }
         MudosChromeFrame {
             anchors.fill: parent
             luluPalette: root.luluPalette
@@ -86,11 +102,27 @@ Item {
         x: root.rightBounds.x; y: root.rightBounds.y
         width: root.rightBounds.width; height: root.rightBounds.height
         radius: root.luluPalette.radius("panel", 14) * root.uiScale
-        color: root.luluPalette.cardSurface
+        color: root.luluPalette.material("panel").style === "linearGradient"
+            ? "transparent" : root.luluPalette.cardSurface
         border.width: root.activePanel === "content" ? 3 * root.uiScale : 1 * root.uiScale
         border.color: root.activePanel === "content"
             ? root.luluPalette.focusIndicator : root.luluPalette.glassBorder
         opacity: root.activePanel === "content" ? 1 : 0.72
+        MudosMaterialLayer {
+            anchors.fill: parent
+            luluPalette: root.luluPalette
+            role: "panel"
+            cornerRadius: parent.radius
+            uiScale: root.uiScale
+            selectionProgress: root.activePanel === "content" ? 1 : 0
+        }
+        MudosDecorationLayer {
+            anchors.fill: parent
+            luluPalette: root.luluPalette
+            role: "panel"
+            cornerRadius: parent.radius
+            uiScale: root.uiScale
+        }
         MudosChromeFrame {
             anchors.fill: parent
             luluPalette: root.luluPalette
@@ -129,6 +161,14 @@ Item {
                         ? root.luluPalette.focusIndicator : "transparent"
                     border.width: categoryRow.index === root.selectedCategory
                         ? 2 * root.uiScale : 0
+                    MudosMaterialLayer {
+                        anchors.fill: parent
+                        luluPalette: root.luluPalette
+                        role: "row"
+                        cornerRadius: parent.radius
+                        uiScale: root.uiScale
+                        selectionProgress: categoryRow.index === root.selectedCategory ? 1 : 0
+                    }
                 }
                 MudosIcon {
                     x: 14 * root.uiScale; width: 30 * root.uiScale
