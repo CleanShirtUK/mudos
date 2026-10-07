@@ -773,10 +773,10 @@ physical visual/passive-input acceptance pending.
   contextual panel feedback stay local; acquisition submission/handoff strings
   do not duplicate broker events. Generic bottom-right `root.message` rendering
   is removed. Library refresh now produces completion feedback.
-- Validation: notification contract/convergence tests 15 passed; bridge tests
+- Validation: notification contract/convergence tests 16 passed; bridge tests
   31 passed; acquisition suites 13 passed; Consoled startup tests 14 passed;
   selected QML regressions 3 passed; focused console UI tests 13 passed. The
-  full Python discovery suite ran 1,168 tests and retained 9 unrelated existing
+  full Python discovery suite ran 1,169 tests and retained 9 unrelated existing
   source-text failures (eight Home/Library/Store/Settings assertions and one
   native easing-literal assertion); notification changes did not touch those
   contracts. `compileall` and `git diff --check` passed. Notification native
