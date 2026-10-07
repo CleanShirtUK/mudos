@@ -46,8 +46,11 @@
     "intro": {"enabled": true, "duration": 360},
     "motionBlur": {"enabled": true}
   }},
-  "labels": {"home": {"system": "System", "store": "Store", "library": "Library", "recent": "Recent"}},
-  "textStyles": {"homeTitle": {"case": "preserve", "letterSpacing": 0}},
+  "labels": {
+    "home": {"system": "System", "store": "Store", "library": "Library", "recent": "Recent"},
+    "views": {"settings": "Settings", "utilities": "Utilities", "library": "Library", "installable": "Installable", "downloads": "Downloads"}
+  },
+  "textStyles": {"homeTitle": {"case": "preserve", "letterSpacing": 0}, "viewTitle": {"case": "preserve", "letterSpacing": 0}},
   "fonts": {
     "faces": {
       "regular": {"file": "fonts/LiberationSans-Regular.ttf", "weight": 400},

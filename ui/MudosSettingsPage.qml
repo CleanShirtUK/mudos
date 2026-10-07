@@ -4,8 +4,10 @@ import QtQuick.Effects
 Item {
     id: root
     ThemeMotion { id: themeMotion }
+    ThemeText { id: themeText }
 
-    property string title: "SETTINGS"
+    property string title: "Settings"
+    property string titleIdentity: ""
     property var rows: []
     property int selectedIndex: 0
     property real uiScale: 1
@@ -84,12 +86,14 @@ Item {
         x: root.expandedShellX + root.contentInset
         y: root.expandedShellY + root.contentInset
         visible: !root.embedded
-        text: root.title
+        text: root.titleIdentity
+            ? themeText.viewTitle(root.titleIdentity, root.title)
+            : themeText.viewTitleText(root.title)
         color: root.luluPalette.headingAccent
         font.family: root.typography.majorHeadingFamily
         font.weight: root.typography.majorHeadingWeight
         font.pixelSize: root.typography.size("section", 30)
-        font.letterSpacing: 5 * root.uiScale
+        font.letterSpacing: themeText.letterSpacing("viewTitle", root.uiScale)
     }
 
     Flickable {

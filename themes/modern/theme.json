@@ -43,8 +43,11 @@
     "intro": {"enabled": true, "duration": 360},
     "motionBlur": {"enabled": true}
   }},
-  "labels": {"home": {"system": "System", "store": "Store", "library": "Library", "recent": "Recent"}},
-  "textStyles": {"homeTitle": {"case": "upper", "letterSpacing": 5}},
+  "labels": {
+    "home": {"system": "System", "store": "Store", "library": "Library", "recent": "Recent"},
+    "views": {"settings": "Settings", "utilities": "Utilities", "library": "Library", "installable": "Installable", "downloads": "Downloads"}
+  },
+  "textStyles": {"homeTitle": {"case": "upper", "letterSpacing": 5}, "viewTitle": {"case": "upper", "letterSpacing": 5}},
   "fonts": {
     "faces": {
       "regular": {"file": "fonts/JetBrainsMonoNLNerdFont-Regular.ttf", "weight": 400},

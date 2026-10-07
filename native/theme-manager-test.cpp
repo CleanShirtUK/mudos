@@ -54,6 +54,10 @@ private slots:
             QJsonObject home = labels.value("home").toObject();
             home.insert("recent", "Last Played");
             labels.insert("home", home);
+            QJsonObject views = labels.value("views").toObject();
+            views.insert("utilities", "Tools");
+            views.insert("library", "Archive");
+            labels.insert("views", views);
             json.insert("labels", labels);
         }));
         QVERIFY(editTheme("missing-motion", [](QJsonObject &json) {
@@ -111,6 +115,20 @@ private slots:
             QJsonObject homeTitle = styles.value("homeTitle").toObject();
             homeTitle.insert("letterSpacing", -1);
             styles.insert("homeTitle", homeTitle);
+            json.insert("textStyles", styles);
+        }));
+        QVERIFY(editTheme("bad-view-label", [](QJsonObject &json) {
+            QJsonObject labels = json.value("labels").toObject();
+            QJsonObject views = labels.value("views").toObject();
+            views.insert("utilities", QString(65, QLatin1Char('x')));
+            labels.insert("views", views);
+            json.insert("labels", labels);
+        }));
+        QVERIFY(editTheme("bad-view-title", [](QJsonObject &json) {
+            QJsonObject styles = json.value("textStyles").toObject();
+            QJsonObject viewTitle = styles.value("viewTitle").toObject();
+            viewTitle.insert("case", "execute");
+            styles.insert("viewTitle", viewTitle);
             json.insert("textStyles", styles);
         }));
 
@@ -172,8 +190,12 @@ private slots:
         QCOMPARE(manager.motion().value("enabled").toBool(), true);
         QCOMPARE(manager.motion().value("roles").toMap().value("navigation").toMap().value("duration").toInt(), 250);
         QCOMPARE(manager.labels().value("home").toMap().value("recent").toString(), QStringLiteral("Recent"));
+        QCOMPARE(manager.labels().value("views").toMap().value("utilities").toString(), QStringLiteral("Utilities"));
+        QCOMPARE(manager.labels().value("views").toMap().value("installable").toString(), QStringLiteral("Installable"));
         QCOMPARE(manager.textStyles().value("homeTitle").toMap().value("case").toString(), QStringLiteral("upper"));
         QCOMPARE(manager.textStyles().value("homeTitle").toMap().value("letterSpacing").toDouble(), 5.0);
+        QCOMPARE(manager.textStyles().value("viewTitle").toMap().value("case").toString(), QStringLiteral("upper"));
+        QCOMPARE(manager.textStyles().value("viewTitle").toMap().value("letterSpacing").toDouble(), 5.0);
         QCOMPARE(saved.value("appearance/theme").toString(), QStringLiteral("modern"));
         QStringList ids;
         for (const QVariant &theme : manager.themes()) ids.append(theme.toMap().value("id").toString());
@@ -190,6 +212,8 @@ private slots:
         QVERIFY(!ids.contains("bad-label"));
         QVERIFY(!ids.contains("bad-case"));
         QVERIFY(!ids.contains("bad-spacing"));
+        QVERIFY(!ids.contains("bad-view-label"));
+        QVERIFY(!ids.contains("bad-view-title"));
 
         QVERIFY(manager.select("95"));
         QCOMPARE(manager.activeName(), QStringLiteral("95"));
@@ -197,6 +221,9 @@ private slots:
         QCOMPARE(manager.labels().value("home").toMap().value("recent").toString(), QStringLiteral("Recent"));
         QCOMPARE(manager.textStyles().value("homeTitle").toMap().value("case").toString(), QStringLiteral("preserve"));
         QCOMPARE(manager.textStyles().value("homeTitle").toMap().value("letterSpacing").toDouble(), 0.0);
+        QCOMPARE(manager.labels().value("views").toMap().value("utilities").toString(), QStringLiteral("Utilities"));
+        QCOMPARE(manager.textStyles().value("viewTitle").toMap().value("case").toString(), QStringLiteral("preserve"));
+        QCOMPARE(manager.textStyles().value("viewTitle").toMap().value("letterSpacing").toDouble(), 0.0);
         QCOMPARE(manager.glass().value("enabled").toBool(), false);
         QCOMPARE(manager.radii().value("panel").toDouble(), 0.0);
         QVERIFY(manager.wallpaperShader().contains("themes/95/wallpaper/wallpaper.frag.qsb"));
@@ -210,6 +237,8 @@ private slots:
         QCOMPARE(manager.motion().value("durationScale").toDouble(), 1.0);
         QVERIFY(manager.select("custom"));
         QCOMPARE(manager.labels().value("home").toMap().value("recent").toString(), QStringLiteral("Last Played"));
+        QCOMPARE(manager.labels().value("views").toMap().value("utilities").toString(), QStringLiteral("Tools"));
+        QCOMPARE(manager.labels().value("views").toMap().value("library").toString(), QStringLiteral("Archive"));
         QVERIFY(manager.select("modern"));
         ThemeManager guideAndNotificationManager;
         QCOMPARE(guideAndNotificationManager.activeId(), QStringLiteral("modern"));

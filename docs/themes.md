@@ -38,7 +38,8 @@ controller. Colors accept Qt color strings. Glass optical values are finite and
 bounded by the engine; `glass.enabled: false` leaves the ordinary QML tint and
 border substrate in place and suppresses the native refraction item.
 
-Themes may also declare `motion`, `labels.home`, and `textStyles.homeTitle`.
+Themes may also declare `motion`, `labels.home`, `labels.views`, and the
+`homeTitle`/`viewTitle` text styles.
 Motion uses `enabled`, finite `durationScale` in `(0,10]`, and a small set of
 semantic roles (`navigation`, `focus`, `surface`, `overlay`, `fade`, `status`,
 `intro`, `motionBlur`). A role may override `enabled`, `duration` (0..5000 ms), and a
@@ -47,10 +48,14 @@ safe easing name (`linear`, `inCubic`, `outCubic`, `inOutCubic`, `inQuint`,
 global switch AND the role switch. Disabled motion finalizes presentation state
 synchronously; it never disables jobs, operational indicators, or lifecycle
 logic. Omitted motion uses enabled, unit-scale defaults. Home labels map stable
-domain IDs (`system`, `store`, `library`, `recent`) to strings of at most 64
-characters; absent labels use canonical Mudos wording. `homeTitle.case` is one
-of `preserve`, `upper`, or `lower`; `letterSpacing` is finite design pixels
-(0..32) and scales with the UI. Themes supply no executable transformation.
+domain IDs (`system`, `store`, `library`, `recent`) and `labels.views` maps
+first-class view IDs (`settings`, `utilities`, `library`, `installable`,
+`downloads`) to strings of at most 64 characters; absent labels use canonical
+Mudos wording. Both text styles accept `case` as `preserve`, `upper`, or
+`lower`; `letterSpacing` is finite design pixels (0..32) and scales with the
+UI. Dynamic Library dimensions remain engine-owned text, composed with the
+Library view label before applying `viewTitle`. Themes supply no executable
+transformation.
 
 Wallpaper shaders are Qt Quick QSB packages. Their fixed uniform contract is
 `u_resolution`, `u_origin`, `u_canvas`, `u_time`, `u_brightness`, `u_visibility`,

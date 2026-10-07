@@ -68,7 +68,7 @@ Item {
 
     MudosSettingsPage {
         anchors.fill: parent
-        title: "AUDIO"
+        title: "Audio"
         rows: root.rows()
         selectedIndex: root.selectedIndex
         embedded: root.embedded

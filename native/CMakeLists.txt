@@ -10,7 +10,7 @@ pkg_check_modules(XCB_KEYSYMS REQUIRED IMPORTED_TARGET xcb-keysyms)
 pkg_check_modules(XCB REQUIRED IMPORTED_TARGET xcb)
 pkg_check_modules(SDL3 REQUIRED IMPORTED_TARGET sdl3)
 
-add_executable(lulu-shell lulu-shell.cpp catalogue-model.cpp recent-model.cpp mudos-glass-item.cpp)
+add_executable(lulu-shell lulu-shell.cpp catalogue-model.cpp recent-model.cpp mudos-glass-item.cpp theme-manager.cpp)
 target_link_libraries(lulu-shell PRIVATE Qt6::DBus Qt6::Gui Qt6::Network Qt6::Qml Qt6::Quick Qt6::WebEngineQuick
     PkgConfig::XCB PkgConfig::XCB_KEYSYMS PkgConfig::SDL3)
 
@@ -24,7 +24,7 @@ target_compile_definitions(theme-manager-test PRIVATE
 target_link_libraries(theme-manager-test PRIVATE Qt6::Core Qt6::Gui Qt6::Test)
 add_test(NAME theme-manager-test COMMAND theme-manager-test)
 
-add_executable(mudos-guide mudos-guide.cpp)
+add_executable(mudos-guide mudos-guide.cpp theme-manager.cpp)
 target_link_libraries(mudos-guide PRIVATE Qt6::DBus Qt6::Gui Qt6::Qml Qt6::Quick PkgConfig::XCB PkgConfig::XCB_XTEST PkgConfig::XCB_KEYSYMS)
 
 install(TARGETS lulu-shell mudos-guide RUNTIME DESTINATION bin)

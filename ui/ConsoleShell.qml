@@ -2,6 +2,7 @@ import QtQuick
 import "OnboardingBack.js" as OnboardingBack
 import "InstallableProjection.js" as InstallableProjection
 import "HomeDomains.js" as HomeDomains
+import "LibrarySurfaceTransition.js" as LibrarySurfaceTransition
 import "MudosAssetCatalog.js" as MudosAssetCatalog
 import QtQuick.Window
 import QtQuick.Controls
@@ -322,6 +323,7 @@ Window {
     property real libraryTransitionProgress: 0
     property bool libraryTransitionExpanding: true
     property bool libraryHandoffPending: false
+    property bool suppressLibraryTransitionCompletion: false
     property var pendingLibraryLaunch: null
     property real homeContentOpacity: 1
     property bool systemTransitioning: false
@@ -1815,26 +1817,36 @@ Window {
         }
     }
     function finishLibraryTransition() {
-        if (libraryTransitionExpanding) {
-            libraryContentOpacity = 1
-            space = presentationTarget
-            libraryTransitioning = false
-            storeTransitioning = false
-            libraryTransitionState = "EXPANDED"
-        } else {
-            libraryContentOpacity = 0
-            space = "home"
-            libraryTransitioning = false
-            storeTransitioning = false
-            libraryHandoffPending = true
+        var settled = LibrarySurfaceTransition.completedState(
+            libraryTransitionExpanding, presentationTarget)
+        // The spatial backing consumes this progress. Set its endpoint before
+        // publishing the destination/clearing transition visibility flags.
+        libraryTransitionProgress = settled.progress
+        libraryContentOpacity = settled.contentOpacity
+        space = settled.space
+        libraryTransitionState = settled.transitionState
+        libraryHandoffPending = settled.handoffPending
+        libraryTransitioning = settled.libraryTransitioning
+        storeTransitioning = settled.storeTransitioning
+        if (!libraryTransitionExpanding) {
             if (!pendingLibraryLaunch) homeContentOpacity = 1
             handoffTimer.restart()
         }
     }
     function startLibraryTransition() {
-        if (themeMotion.enabled("surface")) libraryTransitionAnimation.restart()
-        else {
-            libraryTransitionAnimation.stop()
+        if (themeMotion.enabled("surface")) {
+            if (libraryTransitionAnimation.running) {
+                suppressLibraryTransitionCompletion = true
+                libraryTransitionAnimation.stop()
+                suppressLibraryTransitionCompletion = false
+            }
+            libraryTransitionAnimation.restart()
+        } else {
+            if (libraryTransitionAnimation.running) {
+                suppressLibraryTransitionCompletion = true
+                libraryTransitionAnimation.stop()
+                suppressLibraryTransitionCompletion = false
+            }
             finishLibraryTransition()
         }
     }
@@ -3185,7 +3197,8 @@ Window {
         duration: themeMotion.duration("surface", 500)
         easing.type: themeMotion.easing("surface", "outQuint")
         onStopped: {
-            root.finishLibraryTransition()
+            if (!root.suppressLibraryTransitionCompletion)
+                root.finishLibraryTransition()
         }
     }
 
@@ -4292,12 +4305,12 @@ Window {
             transform: Translate {
                 y: root.design(36) * (1 - root.systemTransitionProgress)
             }
-            text: "SETTINGS"
+            text: themeText.viewTitle("settings", "Settings")
             color: luluPalette.headingAccent
             font.family: typography.majorHeadingFamily
             font.weight: typography.majorHeadingWeight
             font.pixelSize: typography.size("section", 30)
-            font.letterSpacing: 5 * root.uiScale
+            font.letterSpacing: themeText.letterSpacing("viewTitle", root.uiScale)
         }
 
         Text {
@@ -4308,12 +4321,12 @@ Window {
                 || root.systemTransitioning
                     && root.systemCategories[root.systemCategoryIndex] === "Utilities"
             opacity: root.systemTransitionProgress
-            text: "UTILITIES"
+            text: themeText.viewTitle("utilities", "Utilities")
             color: luluPalette.headingAccent
             font.family: typography.majorHeadingFamily
             font.weight: typography.majorHeadingWeight
             font.pixelSize: typography.size("section", 30)
-            font.letterSpacing: 5 * root.uiScale
+            font.letterSpacing: themeText.letterSpacing("viewTitle", root.uiScale)
             transform: Translate {
                 y: root.design(36) * (1 - root.systemTransitionProgress)
             }

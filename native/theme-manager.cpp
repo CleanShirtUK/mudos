@@ -215,6 +215,20 @@ bool ThemeManager::inspectAt(const QString &directory, const QString &expectedId
     for (auto it = homeLabels.begin(); it != homeLabels.end(); ++it)
         if (!it.value().isString() || it.value().toString().trimmed().isEmpty()
             || it.value().toString().size() > 64) return false;
+    QJsonObject viewLabels = labels.value("views").toObject();
+    if (labels.contains("views") && !labels.value("views").isObject()) return false;
+    const QMap<QString, QString> canonicalViews{{"settings", "Settings"},
+        {"utilities", "Utilities"}, {"library", "Library"},
+        {"installable", "Installable"}, {"downloads", "Downloads"}};
+    for (auto it = canonicalViews.cbegin(); it != canonicalViews.cend(); ++it) {
+        if (!viewLabels.contains(it.key())) viewLabels.insert(it.key(), it.value());
+        const QJsonValue label = viewLabels.value(it.key());
+        if (!label.isString() || label.toString().trimmed().isEmpty()
+            || label.toString().size() > 64) return false;
+    }
+    for (auto it = viewLabels.begin(); it != viewLabels.end(); ++it)
+        if (!it.value().isString() || it.value().toString().trimmed().isEmpty()
+            || it.value().toString().size() > 64) return false;
     const QJsonObject textStyles = data.value("textStyles").toObject();
     if (data.contains("textStyles") && !data.value("textStyles").isObject()) return false;
     QJsonObject homeTitle = textStyles.value("homeTitle").toObject();
@@ -225,6 +239,16 @@ bool ThemeManager::inspectAt(const QString &directory, const QString &expectedId
     const QJsonValue spacing = homeTitle.value("letterSpacing");
     if (titleCase != "preserve" && titleCase != "upper" && titleCase != "lower") return false;
     if (!spacing.isDouble() || !std::isfinite(spacing.toDouble()) || spacing.toDouble() < 0 || spacing.toDouble() > 32) return false;
+    QJsonObject viewTitle = textStyles.value("viewTitle").toObject();
+    if (textStyles.contains("viewTitle") && !textStyles.value("viewTitle").isObject()) return false;
+    if (!viewTitle.contains("case")) viewTitle.insert("case", "preserve");
+    if (!viewTitle.contains("letterSpacing")) viewTitle.insert("letterSpacing", 0);
+    const QString viewTitleCase = viewTitle.value("case").toString();
+    const QJsonValue viewTitleSpacing = viewTitle.value("letterSpacing");
+    if (viewTitleCase != "preserve" && viewTitleCase != "upper"
+        && viewTitleCase != "lower") return false;
+    if (!viewTitleSpacing.isDouble() || !std::isfinite(viewTitleSpacing.toDouble())
+        || viewTitleSpacing.toDouble() < 0 || viewTitleSpacing.toDouble() > 32) return false;
     auto requiredColor = [&](const char *key) {
         const QString value = c.value(QLatin1String(key)).toString();
         return value.startsWith(QLatin1Char('#')) && QColor(value).isValid();
@@ -308,8 +332,10 @@ bool ThemeManager::inspectAt(const QString &directory, const QString &expectedId
     QVariantMap resolvedMotion = motion.toVariantMap();
     resolvedMotion.insert("roles", motionRoles.toVariantMap());
     values.insert("motion", resolvedMotion);
-    values.insert("labels", QVariantMap{{"home", homeLabels.toVariantMap()}});
-    values.insert("textStyles", QVariantMap{{"homeTitle", homeTitle.toVariantMap()}});
+    values.insert("labels", QVariantMap{{"home", homeLabels.toVariantMap()},
+                                        {"views", viewLabels.toVariantMap()}});
+    values.insert("textStyles", QVariantMap{{"homeTitle", homeTitle.toVariantMap()},
+                                             {"viewTitle", viewTitle.toVariantMap()}});
     values.insert("wallpaperValues", wallpaperValues);
     QVariantMap resolvedFonts = fontPaths;
     resolvedFonts.insert("roles", resolvedRoles);

@@ -96,7 +96,7 @@ Item {
 
     MudosSettingsPage {
         anchors.fill: parent
-        title: "DISPLAY"
+        title: "Display"
         rows: root.rows()
         selectedIndex: root.selectedIndex
         embedded: root.embedded

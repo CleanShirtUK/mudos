@@ -315,7 +315,7 @@ Item {
         titleX: root.titleX
         titleY: root.titleY
         contentSideMargin: root.contentSideMargin
-        headingText: "INSTALLABLE"
+        headingIdentity: "installable"
         emptyText: root.errorMessage !== "" ? root.errorMessage : "No games ready to install"
         contentOpacity: root.contentOpacity
         actionLabel: "Install"

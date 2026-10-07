@@ -1,4 +1,5 @@
 import QtQuick
+import "LibrarySpatialGeometry.js" as LibrarySpatialGeometry
 
 Item {
     id: root
@@ -24,14 +25,14 @@ Item {
     property color panelSurfaceColor: "transparent"
     property real panelSurfaceOpacity: 0.18
 
-    readonly property real surfaceX: launchExitActive ? fullscreenX
-        : homeX + (fullscreenX - homeX) * progress
-    readonly property real surfaceY: launchExitActive ? fullscreenY
-        : homeY + (fullscreenY - homeY) * progress
-    readonly property real surfaceWidth: launchExitActive ? fullscreenWidth
-        : homeWidth + (fullscreenWidth - homeWidth) * progress
-    readonly property real surfaceHeight: launchExitActive ? fullscreenHeight
-        : homeHeight + (fullscreenHeight - homeHeight) * progress
+    readonly property var interpolatedBounds: LibrarySpatialGeometry.bounds(
+        progress, homeX, homeY, homeWidth, homeHeight,
+        fullscreenX, fullscreenY, fullscreenWidth, fullscreenHeight,
+        launchExitActive)
+    readonly property real surfaceX: interpolatedBounds.x
+    readonly property real surfaceY: interpolatedBounds.y
+    readonly property real surfaceWidth: interpolatedBounds.width
+    readonly property real surfaceHeight: interpolatedBounds.height
     readonly property real surfacePresentationProgress: launchExitActive ? 1 : progress
 
     x: surfaceX

@@ -162,7 +162,26 @@ the Modern reference. `/opt/lulu/current` is unchanged.
   gamepad. Startup journal review also shows existing QML warnings/errors in
   SettingsSpace/ConsoleShell and other unrelated system services; theme-motion
   runtime has not received a complete visual/input acceptance sweep. The
-  immutable `/opt/lulu/current` selector remains unchanged. Do not close THEME-001.
+ immutable `/opt/lulu/current` selector remains unchanged. Do not close THEME-001.
+
+- Corrective pass prepared on the canonical checkout: the no-motion defect was
+  `libraryTransitionProgress` remaining at `0` when the transition finalizer
+  published `space = "library"` or `"store"`; the shared spatial substrate
+  therefore remained at Home-card bounds. Animated completion also depended on
+  the animation's endpoint rather than the finalizer establishing it. Animated
+  and synchronous completion now share the same endpoint finalizer, which sets
+  progress to `1` before exposing the expanded destination and to `0` before
+  returning to Home. A geometry-focused no-motion QML test covers Library,
+  Installable, and both Back paths. `labels.views` and `textStyles.viewTitle`
+  now theme first-class Settings, Utilities, Library, Installable, and Downloads
+  headings; dynamic Library dimensions remain engine-owned and compose with the
+  semantic Library label. Modern retains uppercase/tracking, while 95 uses
+  preserved case/zero tracking. The ThemeManager native test and focused theme,
+  geometry, Home-domain, and Library-projection QML tests pass. Settings and
+  Utilities component tests remain blocked in the standalone runner because
+  `Mudos.Poc` is not installed; full native build passes after wiring the
+  already-used ThemeManager source into shell/Guide targets. This corrective
+  source is not yet dev-refreshed and no physical acceptance is claimed.
 
 ## CLOSED
 

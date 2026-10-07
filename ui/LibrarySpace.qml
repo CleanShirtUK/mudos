@@ -8,6 +8,7 @@ import "MudosAssetCatalog.js" as MudosAssetCatalog
 Item {
     id: root
     ThemeMotion { id: themeMotion }
+    ThemeText { id: themeText }
     y: !transitionExpanding ? (1 - transitionProgress) * height : 0
     property var canonicalGames: []
     property var acquisitionJobs: ({})
@@ -44,7 +45,8 @@ Item {
     property real innerInset: 20 * uiScale
     property real contentBottom: parent ? parent.height : 0
     property real contentSideMargin: 72 * uiScale
-    property string headingText: "LIBRARY"
+    property string headingIdentity: "library"
+    property string headingText: "Library"
     property string sectionTitle: ""
     property string emptyText: "No installed games"
     property real titleX: 0
@@ -290,13 +292,15 @@ Item {
         width: Math.max(0, root.width - x)
         height: 42 * root.uiScale
         opacity: root.contentOpacity
-        text: root.browsingExternalCategories ? root.headingText
-            : root.headingText + ": " + String(root.categoryMode).replace(/_/g, " ").toUpperCase()
+        text: root.browsingExternalCategories
+            ? themeText.viewTitle(root.headingIdentity, root.headingText)
+            : themeText.viewTitleText(themeText.viewLabel(root.headingIdentity,
+                root.headingText) + ": " + root.dimensionLabel)
         color: root.luluPalette.headingAccent
         font.family: root.libraryFontFamily
         font.pixelSize: root.typography ? root.typography.size("section", 27) : 27 * root.uiScale
         font.bold: true
-        font.letterSpacing: 2 * root.uiScale
+        font.letterSpacing: themeText.letterSpacing("viewTitle", root.uiScale)
         elide: Text.ElideRight
         verticalAlignment: Text.AlignVCenter
     }

@@ -27,7 +27,7 @@ Item {
     MudosSettingsPage {
         id: settingsPage
         anchors.fill: parent
-        title: root.category.toUpperCase()
+        title: root.category
         rows: root.settings
         embedded: root.embedded
         textInputFocusEnabled: root.textInputFocusEnabled

@@ -89,7 +89,7 @@ Item {
 
     MudosSettingsPage {
         anchors.fill: parent
-        title: "STORAGE"
+        title: "Storage"
         rows: root.rows()
         selectedIndex: root.selectedIndex
         embedded: root.embedded

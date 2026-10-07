@@ -6,6 +6,7 @@ import QtQuick.Effects
 Item {
     id: root
     ThemeMotion { id: themeMotion }
+    ThemeText { id: themeText }
 
     property string snapshot: "{\"jobs\":[],\"activeDownloadCount\":0}"
     property bool serviceAvailable: true
@@ -324,12 +325,14 @@ Item {
             spacing: 8 * root.uiScale
 
             Text {
-                text: root.confirmationPending ? "CONFIRM" : "DOWNLOADS"
+                text: root.confirmationPending
+                    ? themeText.viewTitleText("Confirm")
+                    : themeText.viewTitle("downloads", "Downloads")
                 color: root.luluPalette.headingAccent
                 font.family: root.typography.majorHeadingFamily
                 font.weight: root.typography.majorHeadingWeight
                 font.pixelSize: root.typography.size("section", 30)
-                font.letterSpacing: 5 * root.uiScale
+                font.letterSpacing: themeText.letterSpacing("viewTitle", root.uiScale)
                 layer.enabled: true
                 layer.effect: MultiEffect { shadowEnabled: true; shadowColor: "#000000"; shadowOpacity: 0.35; shadowBlur: 0.2; shadowVerticalOffset: root.uiScale }
             }

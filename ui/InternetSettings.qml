@@ -85,7 +85,7 @@ Item {
 
     MudosSettingsPage {
         anchors.fill: parent
-        title: root.onboardingMode ? "CONNECT TO WI-FI" : "INTERNET"
+        title: root.onboardingMode ? "Connect to Wi-Fi" : "Internet"
         rows: root.rows()
         selectedIndex: root.selectedIndex
         rowsVisible: !root.credentialView
