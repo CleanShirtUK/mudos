@@ -251,11 +251,25 @@ baseline remains Modern. `/opt/lulu/current` is unchanged.
   QML and Metalheart decoration files.
 - **Validation:** ThemeManager strictly rejects malformed material profiles,
   stops, colors, edges, decoration roles/slots/tints/ranges/coordinates, missing
-  SVGs, traversal, symlink escapes, and unsafe SVG content. Native, QML,
-  inventory, and release regression suites cover the new contracts. Full build,
-  deployment, live theme switching, and BC-250/runtime review are pending this
-  V2 pass; do not claim physical inspection from headless tests. THEME-001 stays
-  open for physical visual/controller acceptance and performance review.
+  SVGs, traversal, symlink escapes, and unsafe SVG content. Native build and
+  CTest pass (2); focused theme semantics pass (11); theme inventory/release
+  tests pass (13); focused spatial/navigation QML tests pass. The broad Python
+  suite reports 1,217 passed and 85 subtests passed, with 9 failures in legacy
+  source-text assertions; no starting-revision comparison was run, so these are
+  not classified as regressions or baseline failures. `qmllint` accepts the two
+  new layers; it reports existing unqualified-access warnings in older
+  `GameCard`, `GameOptions`, and notification bindings.
+- **Deployment:** commit `4cba15b` is deployed to `/opt/lulu/dev-current` from
+  the canonical checkout. Its marker reports `dirty=false` and
+  `promotable=false`; new QML/SVG checksums match source. `/opt/lulu/current`
+  remains pointed at the unchanged immutable release
+  `/opt/lulu/releases/786aba3-candidate-20261004065549`.
+- **Acceptance still pending:** no physical screen/controller sweep or matched
+  BC-250 performance comparison was completed. The available display capture
+  path does not expose Gamescope's shell output; headless validation cannot
+  substitute for inspection of Home, Library, Settings, Utilities, Downloads,
+  Guide, cards, and status, nor for Modern/95 visual comparison. Keep THEME-001
+  open until operator visual/controller acceptance and performance review.
 
 ## CLOSED
 
