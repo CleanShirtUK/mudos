@@ -133,14 +133,18 @@ the Modern reference. `/opt/lulu/current` is unchanged.
   Downloads and onboarding QML suites pass, plus Recovery and Browser component-
   load smoke tests. The status-strip test uses the theme's bundled Modern font
   assets to retain its painted-bounds regression assertion.
+- Source commit `47f7974` was built and refreshed to `/opt/lulu/dev-current` on
+  2026-10-07; its `NON_PROMOTABLE` marker records this commit, clean source and
+  `promotable=false`. Modern and 95 theme config, wallpaper and icon/font assets
+  match the source checksums. Sessiond, Consoled and Acquisitiond are active;
+  the shell reached Home, logged one SDL gamepad, and the immutable
+  `/opt/lulu/current` selector remains unchanged. No physical controller input
+  or visual theme acceptance is claimed.
 - Still open: end-to-end SVG tint/fallback rendering coverage; complete glass
   optics binding coverage; inspection of all actual screens under both themes;
   live Settings selection and persistence across shell restart; Guide and
-  notification visual checks; and operator visual/controller acceptance. No
-  physical theme-switch sweep or deployment of this POC is claimed yet. The dev
-  session currently has Sunshine and Gamescope running; refresh/restart is
-  deferred to avoid interrupting a possible active stream. Do not close
-  THEME-001 until dev-current deployment and runtime/operator acceptance finish.
+  notification visual checks; and operator visual/controller acceptance. Keep
+  THEME-001 open until that acceptance sweep is complete.
 
 ## CLOSED
 
