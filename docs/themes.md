@@ -31,13 +31,14 @@ face is retained for controller-hint compatibility. No theme includes QML or
 JavaScript.
 
 Metalheart is an original near-black/gunmetal interpretation using Oxanium for
-display and Share Tech Mono for interface text (both SIL OFL 1.1), with its own
-compiled procedural fracture/chrome/energy wallpaper and monochrome semantic SVG
-set. It uses existing glass profiles and flat generic chrome rather than adding
-theme-specific rendering logic. Its controller glyph face is inherited from the
-existing Mudos asset set; upstream provenance says free/open-source but does not
-specify an SPDX license. See `themes/metalheart/fonts/PROVENANCE.md` and the
-theme-engine constraints in `docs/theme-gap-audit-metalheart.md`.
+display and Share Tech Mono for interface text (both SIL OFL 1.1), with a
+raymarched chrome nexus, viewport-breaking tapered spikes, orbital rings, and a
+pale technical/blueprint field in its compiled wallpaper. It uses existing
+glass profiles and flat generic chrome rather than adding theme-specific
+rendering logic. Its controller glyph face is inherited from the existing
+Mudos asset set; upstream provenance says free/open-source but does not specify
+an SPDX license. See `themes/metalheart/fonts/PROVENANCE.md` and the theme-engine
+constraints in `docs/theme-gap-audit-metalheart.md`.
 
 `theme.json` v1 provides `colors` (semantic color roles), `opacity` (0..1),
 `radii` (0..128 logical pixels), `radiusPolicy` (`exact` or

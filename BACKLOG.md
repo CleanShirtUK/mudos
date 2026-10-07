@@ -306,6 +306,25 @@ theme-engine stress test. UI-001's accepted baseline remains Modern.
   `/opt/lulu/current` remains on the unchanged immutable release. Keep THEME-001
   open for the physical acceptance sweep.
 
+- **Metalheart wallpaper finalisation:** starting from local clean HEAD
+  `48b56ec`, replaced only `themes/metalheart/wallpaper/wallpaper.frag` and its
+  QSB, plus this record, the theme description, and a reproducibility test. The
+  old low-cost polar ribbon/fractal field is replaced by the operator-accepted
+  Shadertoy direction: raymarched chrome nexus, six viewport-breaking tapered
+  spikes, three orbital loops, 15 medium spikes, eight needles, and a pale
+  technical/blueprint field with linework, rings, a moving energy sweep, and
+  subtle object motion. The port uses the required Shadertoy-preserving
+  `qt_TexCoord0.y` flip, `u_resolution` pixel coordinates, and `u_time`; no
+  scene simplification or performance optimization has been made. The theme's
+  wallpaper speed remains enabled at 1.0. `MAX_STEPS` remains 96.
+- **BC-250 baseline before replacement:** with Metalheart selected in the
+  1920×1080 dev shell and the old shader active, a 30-sample/30-second idle
+  `radeontop` capture reported mean GPU busy 21.83% (10.00–29.17%), VRAM
+  394.60 MB, GTT 47.03 MB, and SCLK mean 3.27 GHz (2.48–3.79). This is a
+  baseline sample, not a matched interaction or frame-time measurement. The
+  post-deployment sample and physical review remain pending; do not infer smooth
+  interaction or visual acceptance from shader compilation or GPU utilization.
+
 ## CLOSED
 
 ### UNINSTALL-001 — Complete provider-owned uninstall coverage

@@ -1,5 +1,7 @@
 import json
 from pathlib import Path
+import subprocess
+import tempfile
 import unittest
 
 
@@ -60,6 +62,32 @@ class DefaultThemeInventoryTests(unittest.TestCase):
             self.assertTrue((theme / descriptor["file"]).is_file(), name)
         for key in ("regular", "bold", "heavy"):
             self.assertTrue((theme / config["fonts"]["faces"][key]["file"]).is_file())
+
+    def test_metalheart_wallpaper_contract_and_qsb_are_reproducible(self):
+        theme = THEMES / "metalheart"
+        config = json.loads((theme / "theme.json").read_text())
+        self.assertEqual(config["wallpaper"]["shader"], "wallpaper/wallpaper.frag.qsb")
+        self.assertEqual(config["motion"]["roles"]["wallpaper"],
+                         {"enabled": True, "speed": 1.0})
+        source = (theme / "wallpaper/wallpaper.frag").read_text()
+        self.assertIn("#define MAX_STEPS 96", source)
+        self.assertIn("qt_TexCoord0.x, 1.0 - qt_TexCoord0.y", source)
+        self.assertIn("vec2 fragCoord = shaderUv * u_resolution", source)
+        self.assertIn("for(int i=0;i<6;i++)", source)
+        self.assertIn("for(int i=0;i<15;i++)", source)
+        self.assertIn("for(int i=0;i<8;i++)", source)
+
+        qsb = Path("/usr/lib/qt6/bin/qsb")
+        if not qsb.is_file():
+            self.skipTest("Qt Shader Baker is unavailable")
+        with tempfile.TemporaryDirectory() as directory:
+            rebuilt = Path(directory) / "wallpaper.frag.qsb"
+            subprocess.run([
+                str(qsb), "--qt6", "--batchable", "-o", str(rebuilt),
+                str(theme / "wallpaper/wallpaper.frag")
+            ], check=True, capture_output=True, text=True)
+            self.assertEqual(rebuilt.read_bytes(),
+                             (theme / "wallpaper/wallpaper.frag.qsb").read_bytes())
         for value in config["opacity"].values():
             self.assertGreaterEqual(value, 0)
             self.assertLessEqual(value, 1)
