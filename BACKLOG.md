@@ -408,9 +408,9 @@ theme-engine stress test. UI-001's accepted baseline remains Modern.
   `(-1.55,-1.20,0)`. With hub `(0.04,0.02,0)` this projects the static nexus
   centre to approximately 68.1% x / 27.2% y. Drafting rings move to `(0.66,0.42)`.
   Candidate-edge detection now includes near misses within 3 projected pixels
-  and grazing hits with `abs(dot(normal,ray)) < 0.55`. Those pixels receive two
-  extra fixed quarter-pixel diagonal samples, averaged with the centre ray
-  (three samples total only on candidate edges). No full-frame supersampling or
+  and grazing hits with `abs(dot(normal,ray)) < 0.55`. Those pixels receive a
+  fixed three-point triangular pattern spanning quarter-pixel offsets (three
+  samples total only on candidate edges). No full-frame supersampling or
   temporal jitter is used. Major cone tips and loop tubes are thicker; the
   dynamic grain was removed. Ring/grid/horizon/scan retain derivative-aware AA,
   with a small feather increase; diagonal texture now has analytic footprint

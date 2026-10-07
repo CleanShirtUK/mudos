@@ -78,6 +78,7 @@ class DefaultThemeInventoryTests(unittest.TestCase):
         self.assertIn("closestDistance < pixelFootprint*3.0", source)
         self.assertIn("if(edgeCandidate)", source)
         self.assertIn("vec2 sampleOffsets[2]", source)
+        self.assertIn("vec2 primaryUv = uv + vec2(-quarterPixel,-quarterPixel)", source)
         self.assertIn("colorSum += renderSceneRay", source)
         self.assertIn("for(int i=0;i<4;i++)", source)
         self.assertIn("for(int i=0;i<4;i++)", source)

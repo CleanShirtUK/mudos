@@ -492,17 +492,18 @@ void main()
     vec3 uu = normalize(cross(ww,vec3(0.0,1.0,0.0)));
     vec3 vv = cross(uu,ww);
 
-    vec3 rd = normalize(ww*1.90 + uv.x*uu + uv.y*vv);
+    float quarterPixel = 0.5/max(u_resolution.y,1.0);
+    vec2 primaryUv = uv + vec2(-quarterPixel,-quarterPixel);
+    vec3 rd = normalize(ww*1.90 + primaryUv.x*uu + primaryUv.y*vv);
 
     bool edgeCandidate;
     vec3 color = renderSceneRay(ro,rd,bg,edgeCandidate);
 
     if(edgeCandidate)
     {
-        float quarterPixel = 0.5/max(u_resolution.y,1.0);
         vec2 sampleOffsets[2] = vec2[2](
-            vec2(-quarterPixel,-quarterPixel),
-            vec2(quarterPixel,quarterPixel)
+            vec2(quarterPixel,-quarterPixel),
+            vec2(0.0,quarterPixel)
         );
         vec3 colorSum = color;
         for(int i=0;i<2;i++)
