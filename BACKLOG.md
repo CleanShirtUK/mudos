@@ -327,11 +327,14 @@ theme-engine stress test. UI-001's accepted baseline remains Modern.
   `radeontop` capture reported mean GPU busy 21.83% (10.00–29.17%), VRAM
   394.60 MB, GTT 47.03 MB, and SCLK mean 3.27 GHz (2.48–3.79). This is a
   baseline sample, not a matched interaction or frame-time measurement. The
-  post-optimization sample and physical review remain pending; do not infer
-  smooth interaction or visual acceptance from shader compilation or GPU
-  utilization. The first post-port sample saturated GPU at 99.97% mean, but
-  Gamescope had fallen back to 640×480 after the monitor EDID disappeared, so
-  that is not directly comparable to the 1920×1080 baseline.
+  initial 32-step version saturated GPU at 99.97% mean in 1920×1080 after the
+  display reconnected. The final 20-step/tetrahedral-normal/two-sample-AO
+  version measured 42.28% mean GPU busy (0–100% range) over 30 idle seconds at
+  1920×1080, versus the old shader's 21.83% mean (10–29.17%) over 30 seconds.
+  Utilization is materially improved from the initial port but remains above
+  baseline; `radeontop` does not provide frame-time or interaction smoothness
+  acceptance. Physical visual, glass, switching, and controller checks remain
+  pending; do not infer them from utilization or shader compilation.
 
 ## CLOSED
 
