@@ -99,11 +99,11 @@ the Modern/95 end-to-end proof-of-concept described below.
 
 ### THEME-001 — Theme engine and external theme configuration
 
-**Status:** VALIDATION — Modern/95 are operator-accepted; Metalheart V2 is
-deployed for development validation; Frutiger Aero implementation is underway.
-Keep open pending commit/development refresh and physical visual/controller/
-performance acceptance for the latest theme-engine stress test. UI-001's
-accepted baseline remains Modern. `/opt/lulu/current` is unchanged.
+**Status:** VALIDATION — Modern/95 are operator-accepted; Metalheart V2 and the
+Frutiger Aero implementation are deployed for development validation. Keep open
+pending physical visual/controller/performance acceptance for the latest
+theme-engine stress test. UI-001's accepted baseline remains Modern.
+`/opt/lulu/current` is unchanged.
 
 - A theme directory owns `theme.json`, declared font assets, optional semantic
   SVG overrides, and its wallpaper QSB. Discovery uses the immutable runtime's
@@ -293,14 +293,18 @@ accepted baseline remains Modern. `/opt/lulu/current` is unchanged.
   sparse corner ornaments. No raster wallpaper primitive was needed; this
   remains a documented future gap only if a photo theme cannot be represented
   adequately by shader.
-- **Automated verification so far:** ThemeManager native tests include PNG
+- **Automated verification:** ThemeManager native tests include PNG
   validation/resolution, invalid mode/signature/corrupt/oversized/traversal/
   symlink cases, text-role bounds, and Frutiger → Modern → Metalheart selection.
   QML tests cover PNG-direct versus SVG-tint/fallback switching in `MudosIcon`,
   `StatusGlyph`, and a metadata row; theme semantics cover all five text roles.
   Physical Frutiger visual/controller/performance acceptance is still pending.
-  Dev-current refresh and final commit/clean-marker verification are not yet
-  recorded; `/opt/lulu/current` must remain untouched and THEME-001 stays open.
+  Source commit `1c593bf` was refreshed to `/opt/lulu/dev-current` on
+  2026-10-07; its `NON_PROMOTABLE` marker records the clean source and
+  `promotable=false`. Theme JSON, QSB, representative PNG, and Noto font
+  checksums match source. Session, Consoled, and Acquisition services are active.
+  `/opt/lulu/current` remains on the unchanged immutable release. Keep THEME-001
+  open for the physical acceptance sweep.
 
 ## CLOSED
 
