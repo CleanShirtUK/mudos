@@ -18,7 +18,7 @@ layout(std140, binding = 0) uniform buf {
     vec3 u_error;
 };
 
-#define MAX_STEPS 20
+#define MAX_STEPS 24
 #define FAR_CLIP  18.0
 #define EPS       0.0012
 #define PI        3.14159265359
@@ -119,7 +119,7 @@ vec2 mapScene(vec3 p)
         float cage = sdRoundBox(q, vec3(0.20,0.12,0.12), 0.02);
         float d = min(core, cage);
 
-        for(int i=0;i<5;i++)
+        for(int i=0;i<3;i++)
         {
             float fi = float(i);
 
@@ -141,7 +141,7 @@ vec2 mapScene(vec3 p)
     }
 
     // Large viewport-breaking spikes.
-    for(int i=0;i<6;i++)
+    for(int i=0;i<4;i++)
     {
         float fi = float(i);
 
@@ -228,21 +228,12 @@ vec2 mapScene(vec3 p)
         res = opU(res,vec2(d,3.0));
     }
 
-    {
-        vec3 q = p-hub;
-        q.yz *= rot(0.42);
-        q.xz *= rot(0.30 + 0.12*cos(t*0.28));
-
-        float d = sdTorus(q,vec2(0.56,0.015));
-        res = opU(res,vec2(d,3.0));
-    }
-
     // Medium converging spikes.
-    for(int i=0;i<15;i++)
+    for(int i=0;i<7;i++)
     {
         float fi = float(i);
 
-        float ang = fi/15.0*2.0*PI + 0.28*sin(t*0.45+fi);
+        float ang = fi/7.0*2.0*PI + 0.28*sin(t*0.45+fi);
 
         float z = mix(-0.35,0.35,hash11(fi*8.1+1.7));
 
@@ -252,9 +243,9 @@ vec2 mapScene(vec3 p)
             z
         ));
 
-        float len = mix(0.65,1.8,hash11(fi*3.7+2.3));
+        float len = mix(0.75,1.6,hash11(fi*3.7+2.3));
 
-        float w = mix(0.018,0.050,hash11(fi*6.2+4.1));
+        float w = mix(0.035,0.070,hash11(fi*6.2+4.1));
 
         vec3 q = toDirSpace(p-hub,dir);
 
@@ -263,33 +254,7 @@ vec2 mapScene(vec3 p)
 
         float spike = sdCappedCone(q,h,w,0.0018);
 
-        if(mod(fi,3.0)<1.0)
-            spike = max(spike,abs(q.z)-w*0.35);
-
         res = opU(res,vec2(spike,4.0));
-    }
-
-    // Thin needle accents.
-    for(int i=0;i<8;i++)
-    {
-        float fi = float(i);
-        float ang = fi/8.0*2.0*PI+0.1;
-
-        vec3 dir = normalize(vec3(
-            cos(ang),
-            0.25*sin(ang*2.0)+0.45,
-            sin(ang)
-        ));
-
-        vec3 q = toDirSpace(p-(hub+vec3(0.0,0.02,0.0)),dir);
-
-        float h = 1.6 + 0.6*hash11(fi*7.0);
-
-        q.y -= h;
-
-        float needle = sdCappedCone(q,h,0.010,0.0008);
-
-        res = opU(res,vec2(needle,5.0));
     }
 
     return res;
@@ -311,7 +276,7 @@ float calcAO(vec3 p, vec3 n)
     float occ = 0.0;
     float sca = 1.0;
 
-    for(int i=0;i<2;i++)
+    for(int i=0;i<1;i++)
     {
         float h = 0.025 + 0.11*float(i);
         float d = mapScene(p+n*h).x;
@@ -327,13 +292,15 @@ float lineGrid(vec2 p, float scale, float thickness)
 {
     vec2 g = abs(fract(p*scale)-0.5);
     float d = min(g.x,g.y);
-
-    return 1.0-smoothstep(thickness,thickness+0.01,d);
+    float aa = max(fwidth(d), 0.0001);
+    return 1.0-smoothstep(thickness-aa,thickness+aa,d);
 }
 
 float ring(vec2 p, vec2 c, float r, float w)
 {
-    return 1.0-smoothstep(w,w+0.002,abs(length(p-c)-r));
+    float d = abs(length(p-c)-r);
+    float aa = max(fwidth(d), 0.0001);
+    return 1.0-smoothstep(w-aa,w+aa,d);
 }
 
 vec3 backdrop(vec2 uv)
@@ -341,51 +308,54 @@ vec3 backdrop(vec2 uv)
     float t = u_time*0.50;
 
     vec3 col = mix(
-        vec3(0.47,0.62,0.75),
-        vec3(0.86,0.92,0.96),
-        uv.y*0.55+0.5
+        vec3(0.003,0.006,0.010),
+        vec3(0.010,0.025,0.035),
+        clamp(uv.y*0.55+0.5,0.0,1.0)
     );
 
     col *= 1.0 - 0.24*dot(uv,uv);
 
     float diag = sin((uv.x+uv.y)*170.0)*0.5+0.5;
-    col *= 0.98 + 0.03*diag;
+    col *= 0.992 + 0.012*diag;
 
-    float g1 = lineGrid(uv+vec2(0.02,0.0),4.8,0.48);
-    float g2 = lineGrid(uv,12.0,0.487);
+    float g1 = lineGrid(uv+vec2(0.02,0.0),4.8,0.009);
+    float g2 = lineGrid(uv,12.0,0.005);
 
-    col += vec3(0.16,0.22,0.27)*g1*0.34;
-    col += vec3(0.10,0.14,0.18)*g2*0.10;
+    col += vec3(0.010,0.045,0.055)*g1*0.22;
+    col += vec3(0.006,0.022,0.030)*g2*0.12;
 
-    float r1 = ring(uv,vec2(0.34,-0.18),0.56,0.004);
-    float r2 = ring(uv,vec2(0.34,-0.18),0.90,0.003);
+    float r1 = ring(uv,vec2(0.40,0.16),0.56,0.0025);
+    float r2 = ring(uv,vec2(0.40,0.16),0.90,0.0018);
 
-    col += vec3(0.90,0.97,1.0)*(r1+r2)*0.42;
+    col += vec3(0.04,0.19,0.23)*(r1+r2)*0.30;
 
     for(int i=0;i<4;i++)
     {
         float y = 0.48 - float(i)*0.18;
 
-        float a = ring(uv,vec2(0.56,y),0.026,0.004);
-        float b = ring(uv,vec2(0.64,y),0.026,0.004);
+        float a = ring(uv,vec2(0.62,y),0.026,0.0025);
+        float b = ring(uv,vec2(0.70,y),0.026,0.0025);
 
-        col += vec3(1.0)*a*0.68;
-        col += vec3(1.0)*b*0.48;
+        col += vec3(0.12,0.48,0.58)*a*0.35;
+        col += vec3(0.08,0.30,0.38)*b*0.22;
     }
 
-    float horizon = 1.0-smoothstep(0.002,0.006,abs(uv.y+0.02));
-    col += vec3(0.95,0.99,1.0)*horizon*0.72;
+    float horizonDistance = abs(uv.y-0.04);
+    float horizonAA = max(fwidth(horizonDistance),0.0001);
+    float horizon = 1.0-smoothstep(0.001-horizonAA,0.001+horizonAA,horizonDistance);
+    col += vec3(0.035,0.16,0.20)*horizon*0.35;
 
-    float scanY = -0.24 + 0.52*sin(t*0.65);
-    float scan = exp(-70.0*abs(uv.y-scanY));
-    col += vec3(0.12,0.18,0.26)*scan*0.11;
+    float scanY = -0.18 + 0.46*sin(t*0.65);
+    float scanWidth = max(fwidth(uv.y),0.0015);
+    float scan = exp(-2.5*abs(uv.y-scanY)/scanWidth);
+    col += vec3(0.010,0.045,0.060)*scan*0.18;
 
     float grain = hash11(
         floor(uv.x*900.0)
         + floor(uv.y*700.0)*57.0
         + floor(u_time*12.0)*0.001
     );
-    col += (grain-0.5)*0.028;
+    col += (grain-0.5)*0.002;
 
     return col;
 }
@@ -395,19 +365,19 @@ vec3 envMap(vec3 r)
     float y = r.y*0.5+0.5;
 
     vec3 col = mix(
-        vec3(0.008,0.015,0.040),
-        vec3(0.72,0.86,0.98),
-        pow(y,0.65)
+        vec3(0.002,0.004,0.008),
+        vec3(0.10,0.22,0.30),
+        pow(y,0.80)
     );
 
     float band1 = exp(-55.0*abs(r.y-0.28));
     float band2 = exp(-100.0*abs(r.y+0.18));
     float band3 = exp(-120.0*abs(r.x*0.6+r.y*0.3-0.18));
 
-    col += vec3(0.78,0.92,1.0)*band1*1.45;
-    col += vec3(1.0)*band2*1.75;
-    col += vec3(0.38,0.70,1.0)*band3*0.68;
-    col += vec3(0.05,0.18,0.45)*pow(max(r.x,0.0),8.0);
+    col += vec3(0.42,0.72,0.88)*band1*1.25;
+    col += vec3(0.88,0.98,1.0)*band2*1.55;
+    col += vec3(0.12,0.42,0.62)*band3*0.55;
+    col += vec3(0.015,0.075,0.16)*pow(max(r.x,0.0),8.0);
 
     return col;
 }
@@ -460,7 +430,7 @@ vec3 shade(vec3 p, vec3 rd, vec3 n, float mat)
     );
     sweep = pow(sweep,8.0);
 
-    vec3 sweepCol = vec3(0.18,0.65,1.25)*sweep;
+    vec3 sweepCol = vec3(0.12,0.72,1.20)*sweep;
 
     vec3 col = base*(0.07+0.62*diff)
         + env*envAmt*(0.74+0.58*fres)
@@ -471,6 +441,19 @@ vec3 shade(vec3 p, vec3 rd, vec3 n, float mat)
         *pow(1.0-max(dot(n,V),0.0),7.0)*0.88;
 
     return col;
+}
+
+bool intersectSceneBounds(vec3 ro, vec3 rd, out float tNear, out float tFar)
+{
+    const vec3 center = vec3(-0.10,-0.03,0.0);
+    const vec3 halfExtent = vec3(5.35,4.05,1.65);
+    vec3 a = (center-halfExtent-ro)/rd;
+    vec3 b = (center+halfExtent-ro)/rd;
+    vec3 lo = min(a,b);
+    vec3 hi = max(a,b);
+    tNear = max(max(lo.x,lo.y),max(lo.z,0.0));
+    tFar = min(min(hi.x,hi.y),hi.z);
+    return tFar >= tNear && tFar > 0.0;
 }
 
 void main()
@@ -485,7 +468,7 @@ void main()
     vec3 bg = backdrop(uv);
 
     vec3 ro = vec3(0.10,0.02,4.8);
-    vec3 ta = vec3(-0.10,-0.02,0.0);
+    vec3 ta = vec3(-0.62,-0.50,0.0);
 
     ro.xy += vec2(sin(u_time*0.34),cos(u_time*0.26))*0.035;
 
@@ -495,26 +478,34 @@ void main()
 
     vec3 rd = normalize(ww*1.90 + uv.x*uu + uv.y*vv);
 
+    float tNear;
+    float tFar;
     float travel = 0.0;
     float mat = 0.0;
     bool hit = false;
 
-    for(int i=0;i<MAX_STEPS;i++)
+    if(intersectSceneBounds(ro,rd,tNear,tFar))
     {
-        vec3 p = ro + rd*travel;
-        vec2 h = mapScene(p);
-
-        if(h.x < EPS)
+        travel = tNear;
+        float marchLimit = min(tFar,FAR_CLIP);
+        for(int i=0;i<MAX_STEPS;i++)
         {
-            hit = true;
-            mat = h.y;
-            break;
+            vec3 p = ro + rd*travel;
+            vec2 h = mapScene(p);
+
+            float hitThreshold = max(EPS,travel*0.00065);
+            if(h.x < hitThreshold)
+            {
+                hit = true;
+                mat = h.y;
+                break;
+            }
+
+            travel += max(h.x*0.90,hitThreshold*0.5);
+
+            if(travel > marchLimit)
+                break;
         }
-
-        travel += h.x*0.84;
-
-        if(travel > FAR_CLIP)
-            break;
     }
 
     vec3 color = bg;
@@ -530,13 +521,13 @@ void main()
 
         float haze = smoothstep(5.0,11.0,travel);
 
-        color = mix(metal,bg,haze*0.14);
+        color = mix(metal,bg,haze*0.08);
     }
 
     color = max(color,vec3(0.0));
     color = pow(color,vec3(0.92));
     color *= vec3(0.92,0.98,1.08);
-    color = (color-0.5)*1.22+0.5;
+    color *= 1.12;
     color = clamp(color,0.0,1.0);
     color *= clamp(u_brightness,0.0,1.0);
 
