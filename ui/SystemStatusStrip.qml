@@ -7,6 +7,7 @@ import "MudosAssetCatalog.js" as MudosAssetCatalog
 // in without moving this component into Home or Library.
 Item {
     id: root
+    ThemeMotion { id: themeMotion }
 
     property bool compact: false
     property real uiScale: 1
@@ -201,8 +202,8 @@ Item {
                 ? downloadContent.implicitWidth + contentInset : 0
             opacity: root.activeDownloadCount > 0 ? 1 : 0
             clip: true
-            Behavior on width { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
-            Behavior on opacity { NumberAnimation { duration: 180 } }
+            Behavior on width { enabled: themeMotion.enabled("status"); NumberAnimation { duration: themeMotion.duration("status", 220); easing.type: themeMotion.easing("status", "outCubic") } }
+            Behavior on opacity { enabled: themeMotion.enabled("fade"); NumberAnimation { duration: themeMotion.duration("fade", 180); easing.type: themeMotion.easing("fade", "linear") } }
 
             Row {
                 id: downloadContent
@@ -249,8 +250,8 @@ Item {
                 opacity: appeared && present ? 1 : 0
                 clip: true
                 Component.onCompleted: appeared = true
-                Behavior on width { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
-                Behavior on opacity { NumberAnimation { duration: 180 } }
+                Behavior on width { enabled: themeMotion.enabled("status"); NumberAnimation { duration: themeMotion.duration("status", 220); easing.type: themeMotion.easing("status", "outCubic") } }
+                Behavior on opacity { enabled: themeMotion.enabled("fade"); NumberAnimation { duration: themeMotion.duration("fade", 180); easing.type: themeMotion.easing("fade", "linear") } }
 
                 Row {
                     id: controllerContent

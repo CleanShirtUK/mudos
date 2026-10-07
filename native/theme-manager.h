@@ -19,6 +19,9 @@ class ThemeManager final : public QObject
     Q_PROPERTY(QVariantMap glass READ glass NOTIFY themeChanged)
     Q_PROPERTY(QVariantMap chrome READ chrome NOTIFY themeChanged)
     Q_PROPERTY(QVariantMap fonts READ fonts NOTIFY themeChanged)
+    Q_PROPERTY(QVariantMap motion READ motion NOTIFY themeChanged)
+    Q_PROPERTY(QVariantMap labels READ labels NOTIFY themeChanged)
+    Q_PROPERTY(QVariantMap textStyles READ textStyles NOTIFY themeChanged)
     Q_PROPERTY(QVariantMap icons READ icons NOTIFY themeChanged)
     Q_PROPERTY(QString wallpaperShader READ wallpaperShader NOTIFY themeChanged)
     Q_PROPERTY(QVariantMap wallpaper READ wallpaper NOTIFY themeChanged)
@@ -34,6 +37,9 @@ public:
     QVariantMap glass() const { return m_glass; }
     QVariantMap chrome() const { return m_chrome; }
     QVariantMap fonts() const { return m_fonts; }
+    QVariantMap motion() const { return m_motion; }
+    QVariantMap labels() const { return m_labels; }
+    QVariantMap textStyles() const { return m_textStyles; }
     QVariantMap icons() const { return m_icons; }
     QString wallpaperShader() const { return m_wallpaper; }
     QVariantMap wallpaper() const { return m_wallpaperValues; }
@@ -51,6 +57,7 @@ private:
     QStringList roots() const;
     QString m_id, m_name, m_root, m_wallpaper;
     QVariantMap m_colors, m_opacity, m_radii, m_glass, m_chrome, m_fonts, m_icons;
+    QVariantMap m_motion, m_labels, m_textStyles;
     QVariantMap m_wallpaperValues;
     QVariantList m_themes;
     QFileSystemWatcher *m_settingsWatcher = nullptr;

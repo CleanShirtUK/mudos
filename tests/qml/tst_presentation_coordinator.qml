@@ -3,6 +3,7 @@ import QtTest
 
 TestCase {
     name: "PresentationCoordinator"
+    property var mudosTheme: ({motion: {enabled: true, durationScale: 1, roles: {}}})
 
     Loader {
         id: coordinatorLoader
@@ -445,5 +446,20 @@ TestCase {
         coordinator.markContentHidden()
         verify(coordinator.contentHidden)
         verify(!coordinator.contentVisible)
+    }
+
+    function test_no_motion_startup_and_exit_finalize_without_running_animations() {
+        mudosTheme = ({motion: {enabled: false, durationScale: 1, roles: {intro: {enabled: true}}}})
+        var coordinator = coordinatorLoader.item
+        coordinator.contentState = coordinator.hiddenState
+        coordinator.beginStartup()
+        compare(coordinator.contentState, coordinator.presentedState)
+        compare(coordinator.startupClock, coordinator.startupDuration)
+        verify(!coordinator.startupRunning)
+        verify(!coordinator.orbitIntroActive)
+        verify(coordinator.beginContentExit())
+        compare(coordinator.contentState, coordinator.hiddenState)
+        verify(!coordinator.exitRunning)
+        mudosTheme = ({motion: {enabled: true, durationScale: 1, roles: {}}})
     }
 }

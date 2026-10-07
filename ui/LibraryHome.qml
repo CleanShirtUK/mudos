@@ -6,6 +6,7 @@ Item {
     // "PC Games", "scope": "pc"; modelData.scope === "all";
     // artworkRole: modelData.scope === "all" ? "icon"
     id: libraryHome
+    ThemeMotion { id: themeMotion }
     property real cardHeight: 0
     property var typography
     property var luluPalette
@@ -73,7 +74,22 @@ Item {
         selectionAnimation.stop()
         suppressSelectionCompletion = false
         selectionProgress = 0
-        selectionAnimation.start()
+        if (themeMotion.enabled("navigation")) selectionAnimation.start()
+        else { selectionProgress = 1; captureSelection() }
+    }
+    function finishSelectionMotion() {
+        suppressSelectionCompletion = true
+        selectionAnimation.stop()
+        suppressSelectionCompletion = false
+        selectionProgress = 1
+        captureSelection()
+    }
+    Connections {
+        target: typeof mudosTheme !== "undefined"
+            && typeof mudosTheme.themeChanged !== "undefined" ? mudosTheme : null
+        function onThemeChanged() {
+            if (!themeMotion.enabled("navigation")) libraryHome.finishSelectionMotion()
+        }
     }
 
     Component.onCompleted: captureSelection()
@@ -83,8 +99,8 @@ Item {
         target: libraryHome
         property: "selectionProgress"
         to: 1
-        duration: 500
-        easing.type: Easing.OutQuint
+        duration: themeMotion.duration("navigation", 500)
+        easing.type: themeMotion.easing("navigation", "outQuint")
         onStopped: {
             if (libraryHome.suppressSelectionCompletion)
                 return

@@ -6,8 +6,10 @@ import "MudosAssetCatalog.js" as MudosAssetCatalog
 import QtQuick.Window
 import QtQuick.Controls
 
-    Window {
+Window {
     id: root
+    ThemeMotion { id: themeMotion }
+    ThemeText { id: themeText }
     visible: false
     visibility: Window.FullScreen
     color: luluPalette.backdrop
@@ -1743,13 +1745,27 @@ import QtQuick.Controls
     function startNextHomeCategoryHop(chained) {
         if (selectedCategoryIndex === desiredCategoryIndex)
             return
-        homeCategoryHopDuration = chained ? 100 : 250
+        homeCategoryHopDuration = themeMotion.duration("navigation", chained ? 100 : 250)
         homeCategoryFrom = selectedCategoryIndex
         homeCategoryTarget = selectedCategoryIndex
             + (desiredCategoryIndex > selectedCategoryIndex ? 1 : -1)
         homeCategoryDirection = selectedCategoryIndex > homeCategoryTarget ? 1 : -1
         homeCategoryTransitioning = true
         homeCategoryProgress = 0
+        if (!themeMotion.enabled("navigation")) {
+            // Preserve the same semantic hop/reconciliation chain without
+            // waiting for an animation callback when interpolation is disabled.
+            var finalState = HomeDomains.settleSelection(selectedCategoryIndex,
+                                                         desiredCategoryIndex)
+            homeCategoryProgress = finalState.progress
+            selectedCategoryIndex = finalState.selectedIndex
+            homeCategoryTransitioning = finalState.transitioning
+            homeCategoryFrom = selectedCategoryIndex
+            homeCategoryTarget = selectedCategoryIndex
+            titleRailY = titleRailTargetY
+            homeCategoryHopDuration = themeMotion.duration("navigation", 250)
+            return
+        }
         suppressTitleRailCompletion = true
         titleRailAnimation.stop()
         suppressTitleRailCompletion = false
@@ -1769,6 +1785,96 @@ import QtQuick.Controls
             return
         startNextHomeCategoryHop()
         message = ""
+    }
+    function settleHomeCategoryTransition() {
+        suppressTitleRailCompletion = true
+        homeCategoryAnimation.stop()
+        titleRailAnimation.stop()
+        suppressTitleRailCompletion = false
+        homeCategoryProgress = 1
+        var finalState = HomeDomains.settleSelection(selectedCategoryIndex,
+                                                     desiredCategoryIndex)
+        selectedCategoryIndex = finalState.selectedIndex
+        homeCategoryFrom = selectedCategoryIndex
+        homeCategoryTarget = selectedCategoryIndex
+        homeCategoryTransitioning = finalState.transitioning
+        titleRailY = titleRailTargetY
+        homeCategoryHopDuration = themeMotion.duration("navigation", 250)
+    }
+
+    function finishSystemTransition() {
+        if (systemTransitionEntering) systemTransitionProgress = 1
+        else { systemTransitionProgress = 1; space = "home" }
+        systemTransitioning = false
+    }
+    function startSystemTransition() {
+        if (themeMotion.enabled("intro")) systemTransitionAnimation.restart()
+        else {
+            systemTransitionAnimation.stop()
+            finishSystemTransition()
+        }
+    }
+    function finishLibraryTransition() {
+        if (libraryTransitionExpanding) {
+            libraryContentOpacity = 1
+            space = presentationTarget
+            libraryTransitioning = false
+            storeTransitioning = false
+            libraryTransitionState = "EXPANDED"
+        } else {
+            libraryContentOpacity = 0
+            space = "home"
+            libraryTransitioning = false
+            storeTransitioning = false
+            libraryHandoffPending = true
+            if (!pendingLibraryLaunch) homeContentOpacity = 1
+            handoffTimer.restart()
+        }
+    }
+    function startLibraryTransition() {
+        if (themeMotion.enabled("surface")) libraryTransitionAnimation.restart()
+        else {
+            libraryTransitionAnimation.stop()
+            finishLibraryTransition()
+        }
+    }
+    function fadeHomeOut() {
+        if (themeMotion.enabled("fade")) homeFadeOut.restart()
+        else homeContentOpacity = 0
+    }
+    function fadeHomeIn() {
+        if (themeMotion.enabled("fade")) homeFadeIn.restart()
+        else homeContentOpacity = 1
+    }
+    function fadeLibraryIn() {
+        if (themeMotion.enabled("fade")) libraryContentFadeIn.restart()
+        else libraryContentOpacity = 1
+    }
+    function fadeLibraryOut() {
+        if (themeMotion.enabled("fade")) libraryContentFadeOut.restart()
+        else libraryContentOpacity = 0
+    }
+    Connections {
+        target: typeof mudosTheme !== "undefined"
+            && typeof mudosTheme.themeChanged !== "undefined" ? mudosTheme : null
+        function onThemeChanged() {
+            if (!themeMotion.enabled("navigation") && root.homeCategoryTransitioning)
+                root.settleHomeCategoryTransition()
+            if (!themeMotion.enabled("intro") && root.systemTransitioning)
+                root.startSystemTransition()
+            if (!themeMotion.enabled("surface")) {
+                if (root.libraryTransitioning || root.storeTransitioning)
+                    root.startLibraryTransition()
+                root.homeContentOpacity = 1
+                root.libraryContentOpacity = root.space === "library" || root.space === "store" ? 1 : 0
+            }
+            if (!themeMotion.enabled("fade")) {
+                homeFadeIn.stop(); homeFadeOut.stop()
+                libraryContentFadeIn.stop(); libraryContentFadeOut.stop()
+                root.homeContentOpacity = 1
+                root.libraryContentOpacity = root.space === "library" || root.space === "store" ? 1 : 0
+            }
+        }
     }
 
 
@@ -2739,9 +2845,9 @@ import QtQuick.Controls
                 libraryTransitioning = true
                 libraryTransitionExpanding = false
                 libraryTransitionProgress = 1
-                libraryTransitionAnimation.restart()
+                startLibraryTransition()
                 libraryContentFadeIn.stop()
-                libraryContentFadeOut.restart()
+                fadeLibraryOut()
                 homeFadeOut.stop()
                 homeFadeIn.stop()
             }
@@ -2771,12 +2877,12 @@ import QtQuick.Controls
             libraryTransitioning = true
             libraryTransitionExpanding = true
             libraryTransitionProgress = 0
-            libraryTransitionAnimation.restart()
+            startLibraryTransition()
             refreshLibrary()
             libraryContentFadeOut.stop()
-            libraryContentFadeIn.restart()
+            fadeLibraryIn()
             homeFadeIn.stop()
-            homeFadeOut.restart()
+            fadeHomeOut()
             libraryFocus = "games"
             message = ""
         } else if (selectedCategoryIndex === 0) {
@@ -2800,11 +2906,11 @@ import QtQuick.Controls
         libraryTransitionExpanding = true
         libraryTransitionProgress = 0
         libraryContentOpacity = 0
-        libraryTransitionAnimation.restart()
+        startLibraryTransition()
         libraryContentFadeOut.stop()
-        libraryContentFadeIn.restart()
+        fadeLibraryIn()
         homeFadeIn.stop()
-        homeFadeOut.restart()
+        fadeHomeOut()
         if (storeHomeRef) {
             storeHomeRef.categoryIndex = 0
             storeHomeRef.selectedIndex = 0
@@ -2878,8 +2984,8 @@ import QtQuick.Controls
         systemTransitioning = true
         systemTransitionProgress = 0
         homeFadeOut.stop()
-        homeFadeOut.restart()
-        systemTransitionAnimation.restart()
+        fadeHomeOut()
+        startSystemTransition()
     }
 
     function beginSystemExit() {
@@ -2888,8 +2994,8 @@ import QtQuick.Controls
         systemTransitionProgress = 1
         homeContentOpacity = 0
         homeFadeIn.stop()
-        homeFadeIn.restart()
-        systemTransitionAnimation.restart()
+        fadeHomeIn()
+        startSystemTransition()
     }
 
     function openSystemCategory(index) {
@@ -3038,11 +3144,11 @@ import QtQuick.Controls
             libraryTransitioning = true
             libraryTransitionExpanding = false
             libraryTransitionProgress = 1
-            libraryTransitionAnimation.restart()
+            startLibraryTransition()
             libraryContentFadeIn.stop()
-            libraryContentFadeOut.restart()
+            fadeLibraryOut()
             homeFadeOut.stop()
-            homeFadeIn.restart()
+            fadeHomeIn()
             libraryFocus = "games"
             message = ""
         } else if (space === "store") {
@@ -3050,9 +3156,9 @@ import QtQuick.Controls
             storeTransitioning = true
             libraryTransitionExpanding = false
             libraryTransitionProgress = 1
-            libraryTransitionAnimation.restart()
-            libraryContentFadeOut.restart()
-            homeFadeIn.restart()
+            startLibraryTransition()
+            fadeLibraryOut()
+            fadeHomeIn()
             message = ""
         } else {
             message = ""
@@ -3064,16 +3170,10 @@ import QtQuick.Controls
         target: root
         property: "systemTransitionProgress"
         to: root.systemTransitionEntering ? 1 : 0
-        duration: 360
-        easing.type: Easing.OutQuint
+        duration: themeMotion.duration("intro", 360)
+        easing.type: themeMotion.easing("intro", "outQuint")
         onStopped: {
-            if (root.systemTransitionEntering) {
-                root.systemTransitionProgress = 1
-            } else {
-                root.systemTransitionProgress = 1
-                root.space = "home"
-            }
-            root.systemTransitioning = false
+            root.finishSystemTransition()
         }
     }
 
@@ -3082,25 +3182,10 @@ import QtQuick.Controls
         target: root
         property: "libraryTransitionProgress"
         to: root.libraryTransitionExpanding ? 1 : 0
-        duration: 500
-        easing.type: Easing.OutQuint
+        duration: themeMotion.duration("surface", 500)
+        easing.type: themeMotion.easing("surface", "outQuint")
         onStopped: {
-            if (root.libraryTransitionExpanding) {
-                root.libraryContentOpacity = 1
-                root.space = root.presentationTarget
-                root.libraryTransitioning = false
-                root.storeTransitioning = false
-                root.libraryTransitionState = "EXPANDED"
-            } else {
-                root.libraryContentOpacity = 0
-                root.space = "home"
-                root.libraryTransitioning = false
-                root.storeTransitioning = false
-                root.libraryHandoffPending = true
-                if (!root.pendingLibraryLaunch)
-                    homeFadeIn.restart()
-                handoffTimer.restart()
-            }
+            root.finishLibraryTransition()
         }
     }
 
@@ -3110,7 +3195,7 @@ import QtQuick.Controls
         property: "homeCategoryProgress"
         to: 1
         duration: root.homeCategoryHopDuration
-        easing.type: Easing.OutQuint
+        easing.type: themeMotion.easing("navigation", "outQuint")
         onStopped: {
             root.homeCategoryProgress = 1
             root.homeCategoryTransitioning = false
@@ -3130,7 +3215,7 @@ import QtQuick.Controls
         property: "titleRailY"
         to: root.titleRailTargetY
         duration: root.homeCategoryHopDuration
-        easing.type: Easing.OutQuint
+        easing.type: themeMotion.easing("navigation", "outQuint")
         onStopped: {
             if (root.suppressTitleRailCompletion)
                 return
@@ -3146,7 +3231,8 @@ import QtQuick.Controls
             target: root
             property: "homeContentOpacity"
             to: 0
-            duration: 100
+            duration: themeMotion.duration("fade", 100)
+            easing.type: themeMotion.easing("fade", "linear")
         }
     }
 
@@ -3179,23 +3265,25 @@ import QtQuick.Controls
 
     SequentialAnimation {
         id: homeFadeIn
-        PauseAnimation { duration: 400 }
+        PauseAnimation { duration: themeMotion.duration("surface", 400) }
         NumberAnimation {
             target: root
             property: "homeContentOpacity"
             to: 1
-            duration: 100
+            duration: themeMotion.duration("fade", 100)
+            easing.type: themeMotion.easing("fade", "linear")
         }
     }
 
     SequentialAnimation {
         id: libraryContentFadeIn
-        PauseAnimation { duration: 400 }
+        PauseAnimation { duration: themeMotion.duration("surface", 400) }
         NumberAnimation {
             target: root
             property: "libraryContentOpacity"
             to: 1
-            duration: 100
+            duration: themeMotion.duration("fade", 100)
+            easing.type: themeMotion.easing("fade", "linear")
         }
     }
 
@@ -3205,7 +3293,8 @@ import QtQuick.Controls
             target: root
             property: "libraryContentOpacity"
             to: 0
-            duration: 100
+            duration: themeMotion.duration("fade", 100)
+            easing.type: themeMotion.easing("fade", "linear")
         }
     }
 
@@ -3956,14 +4045,16 @@ import QtQuick.Controls
 
                         Text {
                             id: titleText
-                            width: implicitWidth
+                            width: Math.min(implicitWidth, Math.max(0,
+                                root.width - root.homeCategoryRailX - root.design(32)))
                             height: implicitHeight
-                            text: root.domains[index].toUpperCase()
+                            text: themeText.homeTitle(root.domains[index])
+                            elide: Text.ElideRight
                             color: root.homeCategoryTitleColor(index)
                             font.family: typography.displayFamily
                             font.weight: typography.displayWeight
                             font.pixelSize: root.homeCategoryFontSize
-                            font.letterSpacing: 5 * root.uiScale
+                            font.letterSpacing: themeText.homeTitleSpacing(root.uiScale)
                             // The blur source is captured by titleMotionBlur;
                             // keep the source opaque and fade the visible copy.
                             opacity: 1
@@ -3995,11 +4086,12 @@ import QtQuick.Controls
             y: root.homeBottomBandCenterY - height * 0.5
             visible: false
                 && root.selectedCategoryIndex < root.domains.length - 1
-            text: root.domains[root.selectedCategoryIndex + 1]
+            text: themeText.homeTitle(root.domains[root.selectedCategoryIndex + 1])
             color: luluPalette.selectedText
             font.family: typography.displayFamily
             font.weight: typography.displayWeight
             font.pixelSize: root.homeCategoryFontSize
+            font.letterSpacing: themeText.homeTitleSpacing(root.uiScale)
             opacity: 0.58
         }
 

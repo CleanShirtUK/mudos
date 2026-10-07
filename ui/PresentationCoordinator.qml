@@ -5,6 +5,7 @@ import QtQuick
 // layout and interaction state.
 Item {
     id: coordinator
+    ThemeMotion { id: themeMotion }
 
     readonly property string hiddenState: "HIDDEN"
     readonly property string transitioningInState: "TRANSITIONING_IN"
@@ -418,6 +419,11 @@ Item {
         startupClock = 0
         console.log("COORDINATOR", contentState, "->", transitioningInState)
         contentState = transitioningInState
+        if (!themeMotion.enabled("intro")) {
+            finishOrbitIntro()
+            markContentPresented()
+            return
+        }
         orbitBaseTimeAnimation.start()
         orbitIntroAnimation.start()
         startupAnimation.start()
@@ -438,6 +444,10 @@ Item {
         orbitIntroAnimation.stop()
         contentState = transitioningAwayState
         startupClock = startupDuration
+        if (!themeMotion.enabled("intro")) {
+            markContentHidden()
+            return true
+        }
         exitAnimation.start()
         return true
     }
@@ -457,6 +467,7 @@ Item {
     function markContentPresented() {
         startupAnimation.stop()
         exitAnimation.stop()
+        startupClock = startupDuration
         contentState = presentedState
         console.log("COORDINATOR", transitioningInState, "->", presentedState)
         contentPresentedReached()
@@ -473,14 +484,28 @@ Item {
         orbitIntroActive = false
     }
 
+    Connections {
+        target: typeof mudosTheme !== "undefined"
+            && typeof mudosTheme.themeChanged !== "undefined" ? mudosTheme : null
+        function onThemeChanged() {
+            if (themeMotion.enabled("intro")) return
+            orbitBaseTimeAnimation.stop()
+            if (coordinator.orbitIntroActive) coordinator.finishOrbitIntro()
+            if (coordinator.contentState === coordinator.transitioningInState)
+                coordinator.markContentPresented()
+            else if (coordinator.contentState === coordinator.transitioningAwayState)
+                coordinator.markContentHidden()
+        }
+    }
+
     NumberAnimation {
         id: startupAnimation
         target: coordinator
         property: "startupClock"
         from: 0
         to: coordinator.startupDuration
-        duration: coordinator.startupDuration
-        easing.type: Easing.Linear
+        duration: themeMotion.duration("intro", coordinator.startupDuration)
+        easing.type: themeMotion.easing("intro", "linear")
         onStopped: {
             if (coordinator.contentState === coordinator.transitioningInState)
                 coordinator.markContentPresented()
@@ -493,9 +518,9 @@ Item {
         property: "orbitBaseTime"
         from: 0
         to: 100000
-        duration: 100000000
+        duration: themeMotion.duration("intro", 100000000)
         loops: Animation.Infinite
-        running: true
+        running: themeMotion.enabled("intro")
     }
 
     NumberAnimation {
@@ -504,8 +529,8 @@ Item {
         property: "orbitIntroClock"
         from: 0
         to: coordinator.orbitIntroDuration
-        duration: coordinator.orbitIntroDuration
-        easing.type: Easing.Linear
+        duration: themeMotion.duration("intro", coordinator.orbitIntroDuration)
+        easing.type: themeMotion.easing("intro", "linear")
         onStopped: {
             if (coordinator.orbitIntroActive
                     && coordinator.contentState !== coordinator.transitioningAwayState)
@@ -519,8 +544,8 @@ Item {
         property: "startupClock"
         from: coordinator.startupDuration
         to: 0
-        duration: coordinator.startupDuration
-        easing.type: Easing.Linear
+        duration: themeMotion.duration("intro", coordinator.startupDuration)
+        easing.type: themeMotion.easing("intro", "linear")
         onStopped: {
             if (coordinator.contentState === coordinator.transitioningAwayState)
                 coordinator.markContentHidden()

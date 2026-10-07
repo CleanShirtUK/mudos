@@ -9,6 +9,7 @@
 #include <QTemporaryDir>
 #include <QUrl>
 #include <QtTest>
+#include <functional>
 
 static bool copyTree(const QString &source, const QString &target)
 {
@@ -34,6 +35,84 @@ private slots:
         const QString root = QDir(temp.path()).filePath("themes");
         QVERIFY(copyTree(QStringLiteral(THEME_SOURCE_DIR) + "/modern", root + "/modern"));
         QVERIFY(copyTree(QStringLiteral(THEME_SOURCE_DIR) + "/95", root + "/95"));
+
+        auto editTheme = [&](const QString &id, const std::function<void(QJsonObject &)> &edit) {
+            const QString dir = root + "/" + id;
+            if (!copyTree(root + "/modern", dir)) return false;
+            QFile config(dir + "/theme.json");
+            if (!config.open(QIODevice::ReadOnly)) return false;
+            QJsonObject json = QJsonDocument::fromJson(config.readAll()).object();
+            config.close();
+            json.insert("id", id);
+            edit(json);
+            if (!config.open(QIODevice::WriteOnly | QIODevice::Truncate)) return false;
+            config.write(QJsonDocument(json).toJson());
+            return true;
+        };
+        QVERIFY(editTheme("custom", [](QJsonObject &json) {
+            QJsonObject labels = json.value("labels").toObject();
+            QJsonObject home = labels.value("home").toObject();
+            home.insert("recent", "Last Played");
+            labels.insert("home", home);
+            json.insert("labels", labels);
+        }));
+        QVERIFY(editTheme("missing-motion", [](QJsonObject &json) {
+            json.remove("motion");
+        }));
+        QVERIFY(editTheme("invalid-easing", [](QJsonObject &json) {
+            QJsonObject motion = json.value("motion").toObject();
+            QJsonObject roles = motion.value("roles").toObject();
+            QJsonObject navigation = roles.value("navigation").toObject();
+            navigation.insert("easing", "runJavaScript");
+            roles.insert("navigation", navigation);
+            motion.insert("roles", roles);
+            json.insert("motion", motion);
+        }));
+        QVERIFY(editTheme("negative-duration", [](QJsonObject &json) {
+            QJsonObject motion = json.value("motion").toObject();
+            QJsonObject roles = motion.value("roles").toObject();
+            QJsonObject navigation = roles.value("navigation").toObject();
+            navigation.insert("duration", -1);
+            roles.insert("navigation", navigation);
+            motion.insert("roles", roles);
+            json.insert("motion", motion);
+        }));
+        QVERIFY(editTheme("bad-scale", [](QJsonObject &json) {
+            QJsonObject motion = json.value("motion").toObject();
+            motion.insert("durationScale", 1e300);
+            json.insert("motion", motion);
+        }));
+        QVERIFY(editTheme("zero-scale", [](QJsonObject &json) {
+            QJsonObject motion = json.value("motion").toObject();
+            motion.insert("durationScale", 0);
+            json.insert("motion", motion);
+        }));
+        QVERIFY(editTheme("null-scale", [](QJsonObject &json) {
+            QJsonObject motion = json.value("motion").toObject();
+            motion.insert("durationScale", QJsonValue::Null);
+            json.insert("motion", motion);
+        }));
+        QVERIFY(editTheme("bad-label", [](QJsonObject &json) {
+            QJsonObject labels = json.value("labels").toObject();
+            QJsonObject home = labels.value("home").toObject();
+            home.insert("recent", QString(65, QLatin1Char('x')));
+            labels.insert("home", home);
+            json.insert("labels", labels);
+        }));
+        QVERIFY(editTheme("bad-case", [](QJsonObject &json) {
+            QJsonObject styles = json.value("textStyles").toObject();
+            QJsonObject homeTitle = styles.value("homeTitle").toObject();
+            homeTitle.insert("case", "randomCode");
+            styles.insert("homeTitle", homeTitle);
+            json.insert("textStyles", styles);
+        }));
+        QVERIFY(editTheme("bad-spacing", [](QJsonObject &json) {
+            QJsonObject styles = json.value("textStyles").toObject();
+            QJsonObject homeTitle = styles.value("homeTitle").toObject();
+            homeTitle.insert("letterSpacing", -1);
+            styles.insert("homeTitle", homeTitle);
+            json.insert("textStyles", styles);
+        }));
 
         const QString bad = root + "/invalid";
         QVERIFY(copyTree(root + "/95", bad));
@@ -90,17 +169,34 @@ private slots:
         ThemeManager manager;
         QCOMPARE(manager.activeId(), QStringLiteral("modern"));
         QCOMPARE(manager.activeName(), QStringLiteral("Modern"));
+        QCOMPARE(manager.motion().value("enabled").toBool(), true);
+        QCOMPARE(manager.motion().value("roles").toMap().value("navigation").toMap().value("duration").toInt(), 250);
+        QCOMPARE(manager.labels().value("home").toMap().value("recent").toString(), QStringLiteral("Recent"));
+        QCOMPARE(manager.textStyles().value("homeTitle").toMap().value("case").toString(), QStringLiteral("upper"));
+        QCOMPARE(manager.textStyles().value("homeTitle").toMap().value("letterSpacing").toDouble(), 5.0);
         QCOMPARE(saved.value("appearance/theme").toString(), QStringLiteral("modern"));
         QStringList ids;
         for (const QVariant &theme : manager.themes()) ids.append(theme.toMap().value("id").toString());
-        QCOMPARE(ids, QStringList({"modern", "95"}));
+        QCOMPARE(ids, QStringList({"modern", "95", "custom", "missing-motion"}));
         QVERIFY(!ids.contains("mudos-default"));
         QVERIFY(!ids.contains("invalid"));
         QVERIFY(!ids.contains("escaped"));
         QVERIFY(!ids.contains("bad-svg"));
+        QVERIFY(!ids.contains("invalid-easing"));
+        QVERIFY(!ids.contains("negative-duration"));
+        QVERIFY(!ids.contains("bad-scale"));
+        QVERIFY(!ids.contains("zero-scale"));
+        QVERIFY(!ids.contains("null-scale"));
+        QVERIFY(!ids.contains("bad-label"));
+        QVERIFY(!ids.contains("bad-case"));
+        QVERIFY(!ids.contains("bad-spacing"));
 
         QVERIFY(manager.select("95"));
         QCOMPARE(manager.activeName(), QStringLiteral("95"));
+        QCOMPARE(manager.motion().value("enabled").toBool(), false);
+        QCOMPARE(manager.labels().value("home").toMap().value("recent").toString(), QStringLiteral("Recent"));
+        QCOMPARE(manager.textStyles().value("homeTitle").toMap().value("case").toString(), QStringLiteral("preserve"));
+        QCOMPARE(manager.textStyles().value("homeTitle").toMap().value("letterSpacing").toDouble(), 0.0);
         QCOMPARE(manager.glass().value("enabled").toBool(), false);
         QCOMPARE(manager.radii().value("panel").toDouble(), 0.0);
         QVERIFY(manager.wallpaperShader().contains("themes/95/wallpaper/wallpaper.frag.qsb"));
@@ -109,6 +205,12 @@ private slots:
         QCOMPARE(saved.value("appearance/theme").toString(), QStringLiteral("95"));
         QVERIFY(manager.select("modern"));
         QCOMPARE(manager.colors().value("backdrop").toString(), QStringLiteral("#060607"));
+        QVERIFY(manager.select("missing-motion"));
+        QCOMPARE(manager.motion().value("enabled").toBool(), true);
+        QCOMPARE(manager.motion().value("durationScale").toDouble(), 1.0);
+        QVERIFY(manager.select("custom"));
+        QCOMPARE(manager.labels().value("home").toMap().value("recent").toString(), QStringLiteral("Last Played"));
+        QVERIFY(manager.select("modern"));
         ThemeManager guideAndNotificationManager;
         QCOMPARE(guideAndNotificationManager.activeId(), QStringLiteral("modern"));
         saved.setValue("appearance/theme", "95");

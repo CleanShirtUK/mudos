@@ -3,6 +3,7 @@ import "MudosAssetCatalog.js" as MudosAssetCatalog
 
 Item {
     id: root
+    ThemeMotion { id: themeMotion }
     property var categories: []
     property int selectedIndex: 0
     property real cardWidth: 248 * uiScale
@@ -59,7 +60,22 @@ Item {
         selectionAnimation.stop()
         suppressSelectionCompletion = false
         selectionProgress = 0
-        selectionAnimation.start()
+        if (themeMotion.enabled("navigation")) selectionAnimation.start()
+        else { selectionProgress = 1; captureSelection() }
+    }
+    function finishSelectionMotion() {
+        suppressSelectionCompletion = true
+        selectionAnimation.stop()
+        suppressSelectionCompletion = false
+        selectionProgress = 1
+        captureSelection()
+    }
+    Connections {
+        target: typeof mudosTheme !== "undefined"
+            && typeof mudosTheme.themeChanged !== "undefined" ? mudosTheme : null
+        function onThemeChanged() {
+            if (!themeMotion.enabled("navigation")) root.finishSelectionMotion()
+        }
     }
 
     Component.onCompleted: captureSelection()
@@ -69,8 +85,8 @@ Item {
         target: root
         property: "selectionProgress"
         to: 1
-        duration: 500
-        easing.type: Easing.OutQuint
+        duration: themeMotion.duration("navigation", 500)
+        easing.type: themeMotion.easing("navigation", "outQuint")
         onStopped: {
             if (root.suppressSelectionCompletion)
                 return

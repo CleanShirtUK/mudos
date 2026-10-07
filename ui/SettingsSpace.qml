@@ -5,6 +5,7 @@ import QtQuick
 // owned by the existing category-specific components hosted in contentHost.
 Item {
     id: root
+    ThemeMotion { id: themeMotion }
     property var categories: []
     property int selectedCategory: 0
     property string activePanel: "categories"
@@ -76,9 +77,9 @@ Item {
             cornerRadius: parent.radius
             raised: root.activePanel === "categories"
         }
-        Behavior on border.color { ColorAnimation { duration: 180; easing.type: Easing.OutCubic } }
-        Behavior on border.width { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
-        Behavior on opacity { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
+        Behavior on border.color { enabled: themeMotion.enabled("overlay"); ColorAnimation { duration: themeMotion.duration("overlay", 180); easing.type: themeMotion.easing("overlay", "outCubic") } }
+        Behavior on border.width { enabled: themeMotion.enabled("overlay"); NumberAnimation { duration: themeMotion.duration("overlay", 180); easing.type: themeMotion.easing("overlay", "outCubic") } }
+        Behavior on opacity { enabled: themeMotion.enabled("overlay"); NumberAnimation { duration: themeMotion.duration("overlay", 180); easing.type: themeMotion.easing("overlay", "outCubic") } }
     }
     Rectangle {
         objectName: "settingsContentPanel"
@@ -97,9 +98,9 @@ Item {
             cornerRadius: parent.radius
             raised: root.activePanel === "content"
         }
-        Behavior on border.color { ColorAnimation { duration: 180; easing.type: Easing.OutCubic } }
-        Behavior on border.width { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
-        Behavior on opacity { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
+        Behavior on border.color { enabled: themeMotion.enabled("overlay"); ColorAnimation { duration: themeMotion.duration("overlay", 180); easing.type: themeMotion.easing("overlay", "outCubic") } }
+        Behavior on border.width { enabled: themeMotion.enabled("overlay"); NumberAnimation { duration: themeMotion.duration("overlay", 180); easing.type: themeMotion.easing("overlay", "outCubic") } }
+        Behavior on opacity { enabled: themeMotion.enabled("overlay"); NumberAnimation { duration: themeMotion.duration("overlay", 180); easing.type: themeMotion.easing("overlay", "outCubic") } }
     }
 
     Column {

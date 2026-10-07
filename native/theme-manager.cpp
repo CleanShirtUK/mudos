@@ -9,6 +9,7 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QSettings>
+#include <QSet>
 #include <QStandardPaths>
 #include <QTimer>
 #include <QXmlStreamReader>
@@ -179,6 +180,51 @@ bool ThemeManager::inspectAt(const QString &directory, const QString &expectedId
     const QJsonObject f = data.value("fonts").toObject();
     const QJsonObject faces = f.value("faces").toObject();
     const QJsonObject icons = data.value("icons").toObject();
+    QJsonObject motion = data.value("motion").toObject();
+    if (data.contains("motion") && !data.value("motion").isObject()) return false;
+    if (motion.isEmpty()) motion = QJsonObject{{"enabled", true}, {"durationScale", 1.0}};
+    if (motion.contains("roles") && !motion.value("roles").isObject()) return false;
+    const QJsonObject motionRoles = motion.value("roles").toObject();
+    if (!motion.value("enabled").isBool()) return false;
+    const QJsonValue scaleValue = motion.value("durationScale");
+    if (!scaleValue.isDouble() || !std::isfinite(scaleValue.toDouble())
+        || scaleValue.toDouble() <= 0 || scaleValue.toDouble() > 10) return false;
+    const QSet<QString> easings{"linear", "inCubic", "outCubic", "inOutCubic",
+        "inQuint", "outQuint", "inOutQuint", "inQuad", "outQuad", "inOutQuad"};
+    for (auto it = motionRoles.begin(); it != motionRoles.end(); ++it) {
+        if (!it.value().isObject()) return false;
+        const QJsonObject role = it.value().toObject();
+        if (role.contains("enabled") && !role.value("enabled").isBool()) return false;
+        if (role.contains("duration") && (!role.value("duration").isDouble()
+            || !std::isfinite(role.value("duration").toDouble())
+            || role.value("duration").toDouble() < 0 || role.value("duration").toDouble() > 5000)) return false;
+        if (role.contains("easing") && (!role.value("easing").isString()
+            || !easings.contains(role.value("easing").toString()))) return false;
+    }
+    const QJsonObject labels = data.value("labels").toObject();
+    if (data.contains("labels") && !data.value("labels").isObject()) return false;
+    QJsonObject homeLabels = labels.value("home").toObject();
+    if (labels.contains("home") && !labels.value("home").isObject()) return false;
+    const QMap<QString, QString> canonicalLabels{{"system", "System"}, {"store", "Store"},
+        {"library", "Library"}, {"recent", "Recent"}};
+    for (auto it = canonicalLabels.cbegin(); it != canonicalLabels.cend(); ++it) {
+        if (!homeLabels.contains(it.key())) homeLabels.insert(it.key(), it.value());
+        const QJsonValue label = homeLabels.value(it.key());
+        if (!label.isString() || label.toString().trimmed().isEmpty() || label.toString().size() > 64) return false;
+    }
+    for (auto it = homeLabels.begin(); it != homeLabels.end(); ++it)
+        if (!it.value().isString() || it.value().toString().trimmed().isEmpty()
+            || it.value().toString().size() > 64) return false;
+    const QJsonObject textStyles = data.value("textStyles").toObject();
+    if (data.contains("textStyles") && !data.value("textStyles").isObject()) return false;
+    QJsonObject homeTitle = textStyles.value("homeTitle").toObject();
+    if (textStyles.contains("homeTitle") && !textStyles.value("homeTitle").isObject()) return false;
+    if (!homeTitle.contains("case")) homeTitle.insert("case", "preserve");
+    if (!homeTitle.contains("letterSpacing")) homeTitle.insert("letterSpacing", 0);
+    const QString titleCase = homeTitle.value("case").toString();
+    const QJsonValue spacing = homeTitle.value("letterSpacing");
+    if (titleCase != "preserve" && titleCase != "upper" && titleCase != "lower") return false;
+    if (!spacing.isDouble() || !std::isfinite(spacing.toDouble()) || spacing.toDouble() < 0 || spacing.toDouble() > 32) return false;
     auto requiredColor = [&](const char *key) {
         const QString value = c.value(QLatin1String(key)).toString();
         return value.startsWith(QLatin1Char('#')) && QColor(value).isValid();
@@ -259,6 +305,11 @@ bool ThemeManager::inspectAt(const QString &directory, const QString &expectedId
         resolvedRoles.insert(it.key(), it.value().toString());
     }
     values.insert("icons", iconPaths); values.insert("wallpaper", QUrl::fromLocalFile(wallpaper).toString());
+    QVariantMap resolvedMotion = motion.toVariantMap();
+    resolvedMotion.insert("roles", motionRoles.toVariantMap());
+    values.insert("motion", resolvedMotion);
+    values.insert("labels", QVariantMap{{"home", homeLabels.toVariantMap()}});
+    values.insert("textStyles", QVariantMap{{"homeTitle", homeTitle.toVariantMap()}});
     values.insert("wallpaperValues", wallpaperValues);
     QVariantMap resolvedFonts = fontPaths;
     resolvedFonts.insert("roles", resolvedRoles);
@@ -275,6 +326,8 @@ bool ThemeManager::apply(const QVariantMap &theme, bool persist)
     m_radii = theme.value("radii").toMap(); m_glass = theme.value("glass").toMap();
     m_chrome = theme.value("chrome").toMap(); m_fonts = theme.value("fonts").toMap();
     m_icons = theme.value("icons").toMap(); m_wallpaperValues = theme.value("wallpaperValues").toMap();
+    m_motion = theme.value("motion").toMap(); m_labels = theme.value("labels").toMap();
+    m_textStyles = theme.value("textStyles").toMap();
     if (persist) {
         QSettings settings(QSettings::IniFormat, QSettings::UserScope, "Mudos", "lulu");
         settings.setValue("appearance/theme", m_id);

@@ -3,6 +3,7 @@ import QtQuick.Effects
 
 Item {
     id: root
+    ThemeMotion { id: themeMotion }
     property var store: null
     property int selectedIndex: 0
     property real uiScale: 1
@@ -81,7 +82,7 @@ Item {
                         ? root.luluPalette.focusIndicator : root.luluPalette.glassBorder
                     border.width: root.uiScale
                     MudosChromeFrame { anchors.fill: parent; luluPalette: root.luluPalette; uiScale: root.uiScale; cornerRadius: parent.radius; raised: index !== root.selectedIndex }
-                    Behavior on selectionProgress { NumberAnimation { duration: 180; easing.type: Easing.OutQuint } }
+                    Behavior on selectionProgress { enabled: themeMotion.enabled("focus"); NumberAnimation { duration: themeMotion.duration("focus", 180); easing.type: themeMotion.easing("focus", "outQuint") } }
                     Text {
                         anchors.fill: parent
                         anchors.leftMargin: 18 * root.uiScale

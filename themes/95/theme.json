@@ -36,6 +36,18 @@
     "style": "bevel", "highlight": "#FFFFFF", "light": "#DFDFDF",
     "shadow": "#808080", "darkShadow": "#000000", "width": 2
   },
+  "motion": {"enabled": false, "durationScale": 1.0, "roles": {
+    "navigation": {"enabled": true, "duration": 250, "easing": "outQuint"},
+    "focus": {"enabled": true, "duration": 180, "easing": "outQuint"},
+    "surface": {"enabled": true, "duration": 500, "easing": "outQuint"},
+    "overlay": {"enabled": true, "duration": 180, "easing": "outCubic"},
+    "fade": {"enabled": true, "duration": 180, "easing": "linear"},
+    "status": {"enabled": true, "duration": 220, "easing": "outCubic"},
+    "intro": {"enabled": true, "duration": 360},
+    "motionBlur": {"enabled": true}
+  }},
+  "labels": {"home": {"system": "System", "store": "Store", "library": "Library", "recent": "Recent"}},
+  "textStyles": {"homeTitle": {"case": "preserve", "letterSpacing": 0}},
   "fonts": {
     "faces": {
       "regular": {"file": "fonts/LiberationSans-Regular.ttf", "weight": 400},

@@ -7,6 +7,7 @@ import Mudos.Poc 1.0
 
 Rectangle {
     id: card
+    ThemeMotion { id: themeMotion }
     readonly property var themeRadii: typeof mudosTheme !== "undefined" ? mudosTheme.radii : ({})
     readonly property var themeGlass: typeof mudosTheme !== "undefined" ? mudosTheme.glass : ({})
 
@@ -59,6 +60,7 @@ Rectangle {
     property real selectionProgress: focused ? 1 : 0
     property int playActivationSerial: 0
     property real playButtonScale: 1
+    property bool suppressPlayCompletion: false
     signal playFeedbackCompleted()
     property real compactEndpointWidth: 0
     property point sceneOriginOverride: canonicalSceneOrigin
@@ -69,21 +71,24 @@ Rectangle {
     property var acquisitionJob: null
     property real focusBrightness: 1
     Behavior on selectionProgress {
+        enabled: themeMotion.enabled("focus")
         NumberAnimation {
-            duration: 180
-            easing.type: Easing.OutQuint
+            duration: themeMotion.duration("focus", 180)
+            easing.type: themeMotion.easing("focus", "outQuint")
         }
     }
     Behavior on focusBrightness {
+        enabled: themeMotion.enabled("focus")
         NumberAnimation {
-            duration: 180
-            easing.type: Easing.OutQuint
+            duration: themeMotion.duration("focus", 180)
+            easing.type: themeMotion.easing("focus", "outQuint")
         }
     }
     Behavior on scale {
+        enabled: themeMotion.enabled("focus")
         NumberAnimation {
-            duration: 180
-            easing.type: Easing.OutQuint
+            duration: themeMotion.duration("focus", 180)
+            easing.type: themeMotion.easing("focus", "outQuint")
         }
     }
     readonly property bool recentFocal: homeCard && focused
@@ -103,8 +108,25 @@ Rectangle {
         && ["queued", "starting", "transferring", "finalizing", "paused", "cancelling", "failed"].indexOf(acquisitionState) >= 0
     readonly property string presentationGameId: presentationId || (game ? String(game.game_id) : "")
     onPlayActivationSerialChanged: {
-        if (card.recentFocal)
+        if (card.recentFocal && themeMotion.enabled("focus"))
             playPressAnimation.restart()
+        else if (card.recentFocal) {
+            playButtonScale = 1
+            playFeedbackCompleted()
+        }
+    }
+    Connections {
+        target: typeof mudosTheme !== "undefined"
+            && typeof mudosTheme.themeChanged !== "undefined" ? mudosTheme : null
+        function onThemeChanged() {
+            if (!themeMotion.enabled("focus") && playPressAnimation.running) {
+                card.suppressPlayCompletion = true
+                playPressAnimation.stop()
+                card.suppressPlayCompletion = false
+                card.playButtonScale = 1
+                card.playFeedbackCompleted()
+            }
+        }
     }
 
     SequentialAnimation {
@@ -113,18 +135,18 @@ Rectangle {
             target: card
             property: "playButtonScale"
             to: 0.97
-            duration: 60
-            easing.type: Easing.OutQuint
+            duration: themeMotion.duration("focus", 60)
+            easing.type: themeMotion.easing("focus", "outQuint")
         }
         NumberAnimation {
             target: card
             property: "playButtonScale"
             to: 1
-            duration: 100
-            easing.type: Easing.OutQuint
+            duration: themeMotion.duration("focus", 100)
+            easing.type: themeMotion.easing("focus", "outQuint")
         }
         onStopped: {
-            if (card.playButtonScale === 1)
+            if (!card.suppressPlayCompletion && card.playButtonScale === 1)
                 card.playFeedbackCompleted()
         }
     }
@@ -392,7 +414,8 @@ Rectangle {
                         visible: card.acquisitionState !== "queued"
                         property real indeterminateOffset: 0
                         NumberAnimation on indeterminateOffset {
-                            running: !card.acquisitionProgressKnown
+                            running: themeMotion.enabled("status")
+                                && !card.acquisitionProgressKnown
                                 && (card.acquisitionState === "starting"
                                     || card.acquisitionState === "finalizing")
                             from: -parent.width * 0.24

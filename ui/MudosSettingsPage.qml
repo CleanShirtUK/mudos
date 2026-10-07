@@ -3,6 +3,7 @@ import QtQuick.Effects
 
 Item {
     id: root
+    ThemeMotion { id: themeMotion }
 
     property string title: "SETTINGS"
     property var rows: []
@@ -125,9 +126,10 @@ Item {
                     property real selectionProgress: index === root.selectedIndex ? 1 : 0
 
                     Behavior on selectionProgress {
+                        enabled: themeMotion.enabled("focus")
                         NumberAnimation {
-                            duration: 180
-                            easing.type: Easing.OutQuint
+                            duration: themeMotion.duration("focus", 180)
+                            easing.type: themeMotion.easing("focus", "outQuint")
                         }
                     }
 

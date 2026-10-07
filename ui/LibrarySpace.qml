@@ -7,6 +7,7 @@ import "MudosAssetCatalog.js" as MudosAssetCatalog
 
 Item {
     id: root
+    ThemeMotion { id: themeMotion }
     y: !transitionExpanding ? (1 - transitionProgress) * height : 0
     property var canonicalGames: []
     property var acquisitionJobs: ({})
@@ -599,7 +600,7 @@ Item {
                         asynchronous: true
                         cache: false
                         opacity: root.previewAnimationReady ? 0 : 1
-                        Behavior on opacity { NumberAnimation { duration: 260 } }
+                        Behavior on opacity { enabled: themeMotion.enabled("fade"); NumberAnimation { duration: themeMotion.duration("fade", 260); easing.type: themeMotion.easing("fade", "linear") } }
                     }
                     Loader {
                         id: animationLoader

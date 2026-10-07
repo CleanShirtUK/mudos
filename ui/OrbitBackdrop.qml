@@ -2,6 +2,7 @@ import QtQuick
 
 Item {
     id: root
+    ThemeMotion { id: themeMotion }
     anchors.fill: parent
 
     property real shaderTime: 0
@@ -45,8 +46,8 @@ Item {
     NumberAnimation on shaderTime {
         from: 0
         to: 100000
-        duration: 100000000
+        duration: themeMotion.duration("intro", 100000000)
         loops: Animation.Infinite
-        running: true
+        running: themeMotion.enabled("intro")
     }
 }

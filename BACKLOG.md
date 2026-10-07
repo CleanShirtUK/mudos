@@ -145,6 +145,19 @@ the Modern reference. `/opt/lulu/current` is unchanged.
   live Settings selection and persistence across shell restart; Guide and
   notification visual checks; and operator visual/controller acceptance. Keep
   THEME-001 open until that acceptance sweep is complete.
+- Themeability follow-up implementation is in source: validated motion roles,
+  duration scaling and safe easing resolution; synchronous Home/Recent/coordinator
+  completion paths; motion-blur capture suppression; and stable Home domain IDs
+  resolved through theme labels and title typography. Modern retains the current
+  uppercase/tracked title treatment; 95 selects global no-motion and preserved
+  case/no tracking. Custom `recent = "Last Played"` is covered without changing
+  the `recent` semantic ID. Native schema tests and focused semantics/Home QML
+  tests pass. Full headless QML execution still includes known fixture failures
+  (native `Mudos.Poc` module unavailable, and pre-existing projection/mapping/
+  Recent groups); no physical Modern/95 sweep has been performed. Do not close
+  THEME-001. Dev-current refresh is pending a safe non-streaming window: Sunshine,
+  Gamescope and the shell are currently running, and `/opt/lulu/current` must
+  remain unchanged.
 
 ## CLOSED
 

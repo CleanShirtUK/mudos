@@ -3,6 +3,7 @@ import "MudosAssetCatalog.js" as MudosAssetCatalog
 import "InstallableProjection.js" as InstallableProjection
 Item {
     id: root
+    ThemeMotion { id: themeMotion }
     property real cardHeight: 0
     property real cardWidth: 0
     property var availableGames: []
@@ -253,7 +254,22 @@ Item {
         homeSelectionAnimation.stop()
         suppressHomeSelectionCompletion = false
         homeSelectionProgress = 0
-        homeSelectionAnimation.start()
+        if (themeMotion.enabled("navigation")) homeSelectionAnimation.start()
+        else { homeSelectionProgress = 1; captureHomeSelection() }
+    }
+    function finishHomeSelectionMotion() {
+        suppressHomeSelectionCompletion = true
+        homeSelectionAnimation.stop()
+        suppressHomeSelectionCompletion = false
+        homeSelectionProgress = 1
+        captureHomeSelection()
+    }
+    Connections {
+        target: typeof mudosTheme !== "undefined"
+            && typeof mudosTheme.themeChanged !== "undefined" ? mudosTheme : null
+        function onThemeChanged() {
+            if (!themeMotion.enabled("navigation")) root.finishHomeSelectionMotion()
+        }
     }
     function activateHome() {
         var card = homeCards()[homeSelectedIndex]
@@ -274,8 +290,8 @@ Item {
         target: root
         property: "homeSelectionProgress"
         to: 1
-        duration: 500
-        easing.type: Easing.OutQuint
+        duration: themeMotion.duration("navigation", 500)
+        easing.type: themeMotion.easing("navigation", "outQuint")
         onStopped: {
             if (root.suppressHomeSelectionCompletion)
                 return

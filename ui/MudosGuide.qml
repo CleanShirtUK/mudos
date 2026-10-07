@@ -4,6 +4,7 @@ import QtQuick.Window
 
 Window {
     id: root
+    ThemeMotion { id: themeMotion }
     objectName: "mudosGuide"
     visible: false
     title: "Mudos Guide"
@@ -97,9 +98,10 @@ Window {
                         luluPalette.navigationText, luluPalette.primaryText,
                         selectionProgress)
                     Behavior on selectionProgress {
+                        enabled: themeMotion.enabled("focus")
                         NumberAnimation {
-                            duration: 180
-                            easing.type: Easing.OutQuint
+                            duration: themeMotion.duration("focus", 180)
+                            easing.type: themeMotion.easing("focus", "outQuint")
                         }
                     }
 

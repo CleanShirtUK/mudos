@@ -3,6 +3,7 @@ import "RecentCaptureEnvelope.js" as RecentCaptureEnvelope
 
 Item {
     id: recentHome
+    ThemeMotion { id: themeMotion }
     property var recentModel
     property int selectedIndex: 0
     property int transitionFromIndex: 0
@@ -184,13 +185,39 @@ Item {
         suppressTransitionCompletion = false
         transitionProgress = 0
         transitionFadeProgress = 0
+        if (!themeMotion.enabled("navigation")) {
+            transitionProgress = 1
+            transitionFadeProgress = 1
+            capturePresentation()
+            return
+        }
         transitionAnimation.start()
         fadeAnimation.restart()
+    }
+    function finishRetarget() {
+        suppressTransitionCompletion = true
+        transitionAnimation.stop()
+        fadeAnimation.stop()
+        suppressTransitionCompletion = false
+        transitionProgress = 1
+        transitionFadeProgress = 1
+        capturePresentation()
+    }
+
+    Connections {
+        target: typeof mudosTheme !== "undefined"
+            && typeof mudosTheme.themeChanged !== "undefined" ? mudosTheme : null
+        function onThemeChanged() {
+            if (!themeMotion.enabled("navigation")
+                    && (transitionAnimation.running || recentHome.transitionProgress < 1))
+                recentHome.finishRetarget()
+        }
     }
 
     function selectionProgressVelocityPxPerMs(progress) {
         var normalized = Math.max(0, Math.min(1, progress))
-        return 5 * Math.pow(1 - normalized, 4) / transitionAnimation.duration
+        return 5 * Math.pow(1 - normalized, 4)
+            / Math.max(1, themeMotion.duration("navigation", 500))
     }
 
     function selectedOpacityOwner(index) {
@@ -341,8 +368,8 @@ Item {
         target: recentHome
         property: "transitionProgress"
         to: 1
-        duration: 500
-        easing.type: Easing.OutQuint
+        duration: themeMotion.duration("navigation", 500)
+        easing.type: themeMotion.easing("navigation", "outQuint")
         onStopped: {
             if (recentHome.suppressTransitionCompletion)
                 return
@@ -357,8 +384,8 @@ Item {
         target: recentHome
         property: "transitionFadeProgress"
         to: 1
-        duration: 300
-        easing.type: Easing.Linear
+        duration: themeMotion.duration("fade", 300)
+        easing.type: themeMotion.easing("fade", "linear")
     }
 
     Text {

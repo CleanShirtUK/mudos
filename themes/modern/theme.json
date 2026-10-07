@@ -33,6 +33,18 @@
     "navigation": {"ior": 1.08, "depth": 0.32, "refractionPixels": 80, "dispersionIor": 0.0175, "diffusionPixels": 5, "transmission": 1, "bevelWidth": 3, "bulgeStrength": 100, "sceneLightStrength": 0, "sceneLightPixels": 24, "edgeLightStrength": 0.1, "edgeLightDirection": [1, -1]}
   },
   "chrome": {"style": "flat"},
+  "motion": {"enabled": true, "durationScale": 1.0, "roles": {
+    "navigation": {"enabled": true, "duration": 250, "easing": "outQuint"},
+    "focus": {"enabled": true, "duration": 180, "easing": "outQuint"},
+    "surface": {"enabled": true, "duration": 500, "easing": "outQuint"},
+    "overlay": {"enabled": true, "duration": 180, "easing": "outCubic"},
+    "fade": {"enabled": true, "duration": 180, "easing": "linear"},
+    "status": {"enabled": true, "duration": 220, "easing": "outCubic"},
+    "intro": {"enabled": true, "duration": 360},
+    "motionBlur": {"enabled": true}
+  }},
+  "labels": {"home": {"system": "System", "store": "Store", "library": "Library", "recent": "Recent"}},
+  "textStyles": {"homeTitle": {"case": "upper", "letterSpacing": 5}},
   "fonts": {
     "faces": {
       "regular": {"file": "fonts/JetBrainsMonoNLNerdFont-Regular.ttf", "weight": 400},

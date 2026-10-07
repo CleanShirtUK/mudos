@@ -5,6 +5,7 @@ import QtQuick.Effects
 // only source of job state; this component owns presentation and selection only.
 Item {
     id: root
+    ThemeMotion { id: themeMotion }
 
     property string snapshot: "{\"jobs\":[],\"activeDownloadCount\":0}"
     property bool serviceAvailable: true
@@ -395,7 +396,7 @@ Item {
                         root.luluPalette.focusIndicator, selectionProgress)
                     readonly property color textColor: root.mixColor(root.luluPalette.navigationText,
                         root.luluPalette.primaryText, selectionProgress)
-                    Behavior on selectionProgress { NumberAnimation { duration: 180; easing.type: Easing.OutQuint } }
+                    Behavior on selectionProgress { enabled: themeMotion.enabled("focus"); NumberAnimation { duration: themeMotion.duration("focus", 180); easing.type: themeMotion.easing("focus", "outQuint") } }
                     color: surfaceColor
                     border.color: borderColor
                     border.width: root.uiScale
