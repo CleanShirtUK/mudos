@@ -70,7 +70,7 @@ class DefaultThemeInventoryTests(unittest.TestCase):
         self.assertEqual(config["motion"]["roles"]["wallpaper"],
                          {"enabled": True, "speed": 1.0})
         source = (theme / "wallpaper/wallpaper.frag").read_text()
-        self.assertIn("#define MAX_STEPS 32", source)
+        self.assertIn("#define MAX_STEPS 20", source)
         self.assertIn("qt_TexCoord0.x, 1.0 - qt_TexCoord0.y", source)
         self.assertIn("vec2 fragCoord = shaderUv * u_resolution", source)
         self.assertIn("for(int i=0;i<6;i++)", source)

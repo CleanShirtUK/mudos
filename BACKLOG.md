@@ -316,8 +316,9 @@ theme-engine stress test. UI-001's accepted baseline remains Modern.
   subtle object motion. The port uses the required Shadertoy-preserving
   `qt_TexCoord0.y` flip, `u_resolution` pixel coordinates, and `u_time`. After
   an initial post-port sample saturated the GPU, raymarching was reduced from 96
-  to 32 steps, the conservative step multiplier raised from 0.76 to 0.84, and
-  AO samples reduced from five to three. All six large, three orbital, 15
+  to 20 steps, the conservative step multiplier raised from 0.76 to 0.84, AO
+  samples reduced from five to two, and the six-tap normal estimate replaced
+  with a four-tap tetrahedral estimate. All six large, three orbital, 15
   medium, and eight needle primitives remain. The theme's wallpaper speed
   remains enabled at 1.0. This performance tuning still needs physical visual
   validation against the accepted Shadertoy composition.

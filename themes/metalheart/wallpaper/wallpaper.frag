@@ -18,7 +18,7 @@ layout(std140, binding = 0) uniform buf {
     vec3 u_error;
 };
 
-#define MAX_STEPS 32
+#define MAX_STEPS 20
 #define FAR_CLIP  18.0
 #define EPS       0.0012
 #define PI        3.14159265359
@@ -297,13 +297,13 @@ vec2 mapScene(vec3 p)
 
 vec3 calcNormal(vec3 p)
 {
-    vec2 e = vec2(EPS,0.0);
-
-    return normalize(vec3(
-        mapScene(p+e.xyy).x-mapScene(p-e.xyy).x,
-        mapScene(p+e.yxy).x-mapScene(p-e.yxy).x,
-        mapScene(p+e.yyx).x-mapScene(p-e.yyx).x
-    ));
+    vec2 e = vec2(EPS, -EPS);
+    return normalize(
+        e.xyy * mapScene(p+e.xyy).x +
+        e.yyx * mapScene(p+e.yyx).x +
+        e.yxy * mapScene(p+e.yxy).x +
+        e.xxx * mapScene(p+e.xxx).x
+    );
 }
 
 float calcAO(vec3 p, vec3 n)
@@ -311,7 +311,7 @@ float calcAO(vec3 p, vec3 n)
     float occ = 0.0;
     float sca = 1.0;
 
-    for(int i=0;i<3;i++)
+    for(int i=0;i<2;i++)
     {
         float h = 0.025 + 0.11*float(i);
         float d = mapScene(p+n*h).x;
