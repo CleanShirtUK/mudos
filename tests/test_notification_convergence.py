@@ -67,6 +67,29 @@ class NotificationConvergenceTests(unittest.TestCase):
 
         asyncio.run(exercise())
 
+    def test_queue_continues_after_presenter_failure_and_keeps_repeated_shell_events(self):
+        async def exercise():
+            interface = object.__new__(ConsoleInterface)
+            delivered = []
+            event_ids = []
+
+            async def unreliable_presenter(event):
+                event_ids.append(event.event_id)
+                if len(event_ids) == 1:
+                    raise RuntimeError("presenter unavailable")
+                delivered.append(event.title)
+
+            interface._notification_presenter = unreliable_presenter
+            interface._notification_queue = asyncio.Queue()
+            interface._notification_worker = None
+            interface.enqueue_notification("Refresh complete", "Done", "success")
+            interface.enqueue_notification("Refresh complete", "Done", "success")
+            await interface._notification_worker
+            self.assertNotEqual(event_ids[0], event_ids[1])
+            self.assertEqual(delivered, ["Refresh complete"])
+
+        asyncio.run(exercise())
+
 
 if __name__ == "__main__":
     unittest.main()
