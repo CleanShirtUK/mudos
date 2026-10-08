@@ -644,6 +644,15 @@ test before closing; do not ask the operator to disconnect/reconnect the display
   switch to determine whether this BC-250 event emits a DRM uevent that the
   current `HOTPLUG=1` filter can receive. No manual Sessiond/Gamescope restart
   was performed; keep DISPLAY-001 OPEN.
+- Second source-switch attempt (operator report: done): the kernel again logged
+  `bc250 relink: stream down` at 22:52:31 (signal=512), while Sessiond PID
+  `87915` and Gamescope PID `87989` remained unchanged. The 120-second
+  `udevadm monitor --kernel --property --subsystem-match=drm` capture showed
+  only its startup banner and no DRM `KERNEL` event for that relink. DP-1
+  continued to report connected/enabled, DPMS On. This indicates this source
+  switch/relink path does not produce a DRM uevent visible to udevadm, so the
+  current event-only recovery mechanism cannot cover it; investigate a
+  BC-250-appropriate signal before claiming physical acceptance.
 - Retained journal coverage is limited to the current and immediately previous
   boot. It confirms the forced `video=DP-1:1920x1080@60e` configuration, the
   BC-250 `stream down`/`triplebuffer_flips` incident is retained in this backlog,
