@@ -46,7 +46,7 @@ class DesktopModeContractTests(unittest.TestCase):
         wrapper = (ROOT / "scripts/mudos-desktop-session").read_text()
         self.assertIn('DISPLAY="$outer" xdpyinfo', wrapper)
         self.assertIn('DISPLAY="$outer" xrandr --current', wrapper)
-        self.assertIn('Xephyr "$display" -screen "0 $outer_size" -dpi 96', wrapper)
+        self.assertIn('Xephyr "$display" -screen "$outer_size" -dpi 96', wrapper)
         self.assertIn('if [[ "$dimensions" != "$outer_size" ]]', wrapper)
         self.assertNotIn("1280x720", wrapper)
         self.assertIn("safe fallback 1024x768", wrapper)

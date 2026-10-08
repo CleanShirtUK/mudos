@@ -136,10 +136,10 @@ if [[ ! "$outer_size" =~ ^([1-9][0-9]{1,4})x([1-9][0-9]{1,4})$ ]] \
     echo "WARNING: cannot query valid dimensions from outer DISPLAY=$outer; using safe fallback 1024x768" >&2
     outer_size=1024x768
 fi
-width="${BASH_REMATCH[1]}"; height="${BASH_REMATCH[2]}"
+IFS=x read -r width height <<<"$outer_size"
 if (( width > 32767 || height > 32767 )); then echo "outer display is outside Xephyr limits: $outer_size" >&2; exit 1; fi
 echo "outer DISPLAY=$outer dimensions=$outer_size; Xephyr DISPLAY=$display" >>"$runtime/logs/session.log"
-Xephyr "$display" -screen "0 $outer_size" -dpi 96 -resizeable -auth "$auth" -nolisten tcp -title 'Mudos Desktop Mode' >"$runtime/logs/xephyr.log" 2>&1 &
+Xephyr "$display" -screen "$outer_size" -dpi 96 -resizeable -auth "$auth" -nolisten tcp -title 'Mudos Desktop Mode' >"$runtime/logs/xephyr.log" 2>&1 &
 xephyr=$!; children+=("$xephyr")
 for _ in $(seq 1 100); do
     kill -0 "$xephyr" 2>/dev/null || exit 1
