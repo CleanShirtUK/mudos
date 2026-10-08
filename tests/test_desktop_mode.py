@@ -39,8 +39,27 @@ class DesktopModeContractTests(unittest.TestCase):
         self.assertIn("/etc/xdg/tint2/tint2rc", wrapper)
         self.assertIn("panel_items = PPPPTSC", wrapper)
         self.assertIn("time1_format =", wrapper)
-        self.assertIn("jgmenu_run apps", wrapper)
+        self.assertIn("mudos-desktop-menu", wrapper)
         self.assertNotIn("systemctl stop", wrapper)
+
+    def test_native_resolution_is_queried_and_nested_root_is_asserted(self):
+        wrapper = (ROOT / "scripts/mudos-desktop-session").read_text()
+        self.assertIn('DISPLAY="$outer" xdpyinfo', wrapper)
+        self.assertIn('DISPLAY="$outer" xrandr --current', wrapper)
+        self.assertIn('Xephyr "$display" -screen "0 $outer_size" -dpi 96', wrapper)
+        self.assertIn('if [[ "$dimensions" != "$outer_size" ]]', wrapper)
+        self.assertNotIn("1280x720", wrapper)
+        self.assertIn("safe fallback 1024x768", wrapper)
+
+    def test_menu_is_transient_and_does_not_block_tint2(self):
+        wrapper = (ROOT / "scripts/mudos-desktop-session").read_text()
+        launcher = (ROOT / "scripts/mudos-desktop-menu").read_text()
+        self.assertIn("mudos-desktop-menu {root}/jgmenurc", wrapper)
+        self.assertIn("stay_alive = 0", wrapper)
+        self.assertIn("exec jgmenu", launcher)
+        self.assertIn("logs/jgmenu.log", launcher)
+        self.assertNotIn("wait", launcher)
+        self.assertNotIn("killall", launcher)
 
     def test_wallpaper_reuses_theme_manager_shader_contract(self):
         wallpaper = (ROOT / "ui/DesktopWallpaper.qml").read_text()
@@ -66,7 +85,7 @@ class DesktopModeContractTests(unittest.TestCase):
 
     def test_wrapper_orders_readiness_wallpaper_and_panel_and_isolates_failures(self):
         wrapper = (ROOT / "scripts/mudos-desktop-session").read_text()
-        self.assertLess(wrapper.index('xdpyinfo >/dev/null\n'), wrapper.index('openbox --config-file'))
+        self.assertLess(wrapper.index('if [[ "$dimensions" != "$outer_size" ]]'), wrapper.index('openbox --config-file'))
         self.assertLess(wrapper.index("Openbox did not become ready"), wrapper.index('wallpaper=$!'))
         self.assertLess(wrapper.index('wallpaper=$!'), wrapper.index('tint2 -c "$config/tint2/tint2rc"'))
         self.assertIn('DISPLAY="$display" XAUTHORITY="$auth"', wrapper)
@@ -92,7 +111,7 @@ class DesktopModeContractTests(unittest.TestCase):
         for invalid in (r"(?m)^font =", r"(?m)^font_color =", "clock_format =", "button_text_color ="):
             self.assertNotRegex(wrapper, invalid)
         self.assertEqual(wrapper.count("panel_items = PPPPTSC"), 1)
-        self.assertIn("jgmenu_run apps", wrapper)
+        self.assertIn("mudos-desktop-menu", wrapper)
         power = wrapper.split("(root/'power.csv').write_text", 1)[1].split("(root/'jgmenurc')", 1)[0]
         self.assertIn("Restart,", power)
         self.assertIn("Shutdown,", power)
@@ -124,10 +143,10 @@ class DesktopModeContractTests(unittest.TestCase):
         ownership = json.loads((ROOT / "packaging/mudos-ownership.json").read_text())
         packages = ownership["shared_dependencies"]["packages"]
         for package in ("openbox", "tint2", "jgmenu", "xorg-server-xephyr", "xorg-xauth",
-                        "xorg-xsetroot", "xorg-xdpyinfo", "xorg-xprop", "qt6-base", "qt6-declarative"):
+                        "xorg-xsetroot", "xorg-xdpyinfo", "xorg-xrandr", "xorg-xprop", "qt6-base", "qt6-declarative"):
             self.assertIn(package, packages)
         release = (ROOT / "scripts/release.py").read_text()
-        for file_name in ("mudos-desktop-session", "mudos-desktop-sessionctl", "mudos-desktop-theme", "mudos-desktop-wallpaper"):
+        for file_name in ("mudos-desktop-session", "mudos-desktop-menu", "mudos-desktop-sessionctl", "mudos-desktop-theme", "mudos-desktop-wallpaper"):
             self.assertIn(file_name, release)
         self.assertIn("ui/DesktopWallpaper.qml", release)
 

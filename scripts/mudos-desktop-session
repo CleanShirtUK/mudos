@@ -32,7 +32,7 @@ cookie="$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')"
 xauth -f "$auth" add "$display" MIT-MAGIC-COOKIE-1 "$cookie"
 theme="$("$install_root/bin/mudos-desktop-theme" 2>/dev/null || printf '{}')"
 background="$(python -c 'import json,sys; print(json.loads(sys.argv[1]).get("surface", "#202124"))' "$theme")"
-for binary in Xephyr xauth xdpyinfo xsetroot xprop openbox tint2 jgmenu; do
+for binary in Xephyr xauth xdpyinfo xrandr xsetroot xprop openbox tint2 jgmenu; do
     command -v "$binary" >/dev/null 2>&1 || { echo "Desktop Mode requires missing binary: $binary" >&2; exit 1; }
 done
 [[ -x "$install_root/bin/mudos-desktop-wallpaper" ]] || { echo "Desktop Mode wallpaper host missing: $install_root/bin/mudos-desktop-wallpaper" >&2; exit 1; }
@@ -76,7 +76,7 @@ button = new
 button_text = Menu
 button_font = Sans 9
 button_font_color = {col('primaryText','#eeeeee')} 100
-button_lclick_command = jgmenu --config-file={root}/jgmenurc --csv-cmd='jgmenu_run apps'
+button_lclick_command = {install_root}/scripts/mudos-desktop-menu {root}/jgmenurc
 button = new
 button_text = Wi-Fi
 button_font = Sans 9
@@ -104,6 +104,7 @@ Confirm Restart, exec: {install_root}/scripts/mudos-desktop-sessionctl reboot
 Confirm Shutdown, exec: {install_root}/scripts/mudos-desktop-sessionctl shutdown
 ''')
 (root/'jgmenurc').write_text(f'''tint2_look = 0
+stay_alive = 0
 menu_width = 260
 menu_radius = {r}
 menu_border = 1
@@ -120,14 +121,34 @@ color_sel_fg = {col('background','#202124')} 100
 <theme><name>Clearlooks</name><titleLayout>NLIMC</titleLayout></theme><desktops><number>1</number></desktops>
 <margins><top>0</top><bottom>40</bottom><left>0</left><right>0</right></margins></openbox_config>\n''')
 PY
-Xephyr "$display" -screen "${MUDOS_DESKTOP_SIZE:-1280x720}" -resizeable -auth "$auth" -nolisten tcp -title 'Mudos Desktop Mode' &
+# Resolve the actual active Gamescope/Xwayland surface, not EDID or a test
+# resolution. 1024x768 is the documented safe fallback if both X queries fail.
+outer_size=''
+if outer_info="$(DISPLAY="$outer" xdpyinfo 2>/dev/null)"; then
+    outer_size="$(printf '%s\n' "$outer_info" | sed -nE 's/^[[:space:]]*dimensions:[[:space:]]*([0-9]+x[0-9]+).*/\1/p' | head -n1)"
+fi
+if [[ ! "$outer_size" =~ ^([1-9][0-9]{1,4})x([1-9][0-9]{1,4})$ ]] \
+        || (( ${BASH_REMATCH[1]:-0} < 160 || ${BASH_REMATCH[2]:-0} < 160 )); then
+    outer_size="$(DISPLAY="$outer" xrandr --current 2>/dev/null | sed -nE 's/.*current ([0-9]+) x ([0-9]+),.*/\1x\2/p' | head -n1)"
+fi
+if [[ ! "$outer_size" =~ ^([1-9][0-9]{1,4})x([1-9][0-9]{1,4})$ ]] \
+        || (( ${BASH_REMATCH[1]:-0} < 160 || ${BASH_REMATCH[2]:-0} < 160 )); then
+    echo "WARNING: cannot query valid dimensions from outer DISPLAY=$outer; using safe fallback 1024x768" >&2
+    outer_size=1024x768
+fi
+width="${BASH_REMATCH[1]}"; height="${BASH_REMATCH[2]}"
+if (( width > 32767 || height > 32767 )); then echo "outer display is outside Xephyr limits: $outer_size" >&2; exit 1; fi
+echo "outer DISPLAY=$outer dimensions=$outer_size; Xephyr DISPLAY=$display" >>"$runtime/logs/session.log"
+Xephyr "$display" -screen "0 $outer_size" -dpi 96 -resizeable -auth "$auth" -nolisten tcp -title 'Mudos Desktop Mode' >"$runtime/logs/xephyr.log" 2>&1 &
 xephyr=$!; children+=("$xephyr")
 for _ in $(seq 1 100); do
     kill -0 "$xephyr" 2>/dev/null || exit 1
     if DISPLAY="$display" XAUTHORITY="$auth" xdpyinfo >/dev/null 2>&1; then break; fi
     sleep .1
 done
-DISPLAY="$display" XAUTHORITY="$auth" xdpyinfo >/dev/null
+dimensions="$(DISPLAY="$display" XAUTHORITY="$auth" xdpyinfo 2>/dev/null | sed -nE 's/^[[:space:]]*dimensions:[[:space:]]*([0-9]+x[0-9]+).*/\1/p' | head -n1)"
+if [[ "$dimensions" != "$outer_size" ]]; then echo "Xephyr root dimensions mismatch: expected $outer_size, got ${dimensions:-unknown}" >&2; exit 1; fi
+echo "Xephyr root dimensions=$dimensions; dpi=96" >>"$runtime/logs/session.log"
 desktop=(env DISPLAY="$display" XAUTHORITY="$auth")
 "${desktop[@]}" openbox --config-file "$config/openbox/rc.xml" &
 wm=$!; children+=("$wm")

@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# One-shot menu boundary: jgmenu exits on select/cancel (stay_alive=0), and
+# neither tint2 nor this helper owns the lifetime of an application window.
+set -euo pipefail
+runtime="${XDG_RUNTIME_DIR:?}/mudos-desktop"
+config="${1:?usage: mudos-desktop-menu JGMENU_CONFIG}"
+mkdir -p "$runtime/logs"
+exec jgmenu --config-file="$config" --csv-cmd='jgmenu_run apps' \
+    >>"$runtime/logs/jgmenu.log" 2>&1
