@@ -653,6 +653,65 @@ test before closing; do not ask the operator to disconnect/reconnect the display
   switch/relink path does not produce a DRM uevent visible to udevadm, so the
   current event-only recovery mechanism cannot cover it; investigate a
   BC-250-appropriate signal before claiming physical acceptance.
+- Historical comparison and authorized idle restart test (2026-10-08):
+  Sessiond's live `GetState` immediately before the test showed
+  `lifecycle=shell`, `active_identity=null`, and `presentation_ready=true` while
+  the operator reported no TV picture. `_refresh_presentation_readiness()`
+  checks connector status, shell/Gamescope liveness and selection, and fresh
+  graphical context; it does not observe a physical scanout or received image.
+  With the forced connector still reported connected and the context intact,
+  those logical checks can remain true indefinitely despite a blank TV.
+- A matching synthetic DRM event was sent only after confirming the appliance
+  was idle and under the operator's requested controlled-reinitialization test.
+  The existing Sessiond path kept Sessiond PID `87915`, stopped Gamescope PID
+  `87989`, and launched PID `151796`; a new shell was selected and readiness
+  returned true. Gamescope 3.16.31 logged opening `/dev/dri/card1`, DP-1
+  connected, and selecting 1920×1080@60. The operator confirmed the TV picture
+  still did not return. Thus a Gamescope/shell reinitialization alone does not
+  recover this observed failure; the remaining failure is below the shell's
+  logical presentation checks (KMS/link/scanout or the effective output policy).
+  No Sessiond restart, reboot, GPU reset, or package/config experiment was done.
+- Leading regression hypothesis, not yet proven: tracked commit `f97109f`
+  (2026-10-04) introduced `video=DP-1:1920x1080@60e`; `92a2476` removed that
+  tracked boot override on 2026-10-06. However, the appliance still has a
+  distinct local `/etc/limine-entry-tool.d/60-lulu-headless-evening.conf`, born
+  and modified 2026-10-06 20:27, whose comment calls it a temporary Sunshine
+  headless test and whose active line re-adds the same forced mode. The live
+  kernel command line confirms it remains effective. It masks the output-loss
+  condition used by Sessiond's earlier generic fallback: since DP-1 remains
+  `connected` and Gamescope survives, the preserved `2a6a183` path (Gamescope
+  exits while output is absent → Sessiond waits → output returns → bootstrap)
+  is not entered. No matching DRM uevent exists to invoke the newer handler.
+  Do not remove this override until its headless/Sunshine impact is understood.
+- A second confounder falls in the same earliest credible regression window:
+  pacman upgraded on 2026-10-06 at 20:54: Mesa 26.2.2-2→26.2.4-1.244,
+  Gamescope 3.16.28.r43.gea3579ed-1→3.16.31.r6.g38293404-1, BC-250 kernel
+  7.2.4-1.115→7.2.9-1.250, and AMD firmware 20260810-2→20260916-1. Current
+  versions are the latter versions. Available journal history contains only
+  Oct 8 boots, and repository records do not establish a dated physical
+  source-switch pass immediately before these changes. Therefore the earliest
+  credible regression window is Oct 6 20:27–20:54 through the Oct 7 incident;
+  source history alone cannot isolate forced output policy from the package
+  upgrades or identify a definitive last physically known-good revision.
+- Gamescope has used the DRM backend since the initial Sep 7 session baseline;
+  no historical backend switch was found. Display Settings (`8134f2c`, Sep 17)
+  introduced validated `--prefer-output`/mode policy and a session restart on
+  Apply. Current live launch uses `--backend drm --prefer-output DP-1`
+  `--output-width 1920 --output-height 1080 --nested-refresh 60.0`; no persisted
+  display-state file or explicit `/etc/lulu/presentation.conf` output override
+  was found, so DP-1 selection follows the forced connector's apparent DRM
+  presence. These mode arguments do not themselves supply a physical-link
+  health signal. Readiness evolution (`f8f28b2` through `a25b472`) protects
+  launch context freshness, but that logical invariant is not physical-output
+  proof.
+- No minimal software correction is justified yet: the observed transition
+  supplies neither connector absence, Gamescope exit, nor a DRM uevent, and a
+  controlled Gamescope restart failed to restore the image. Do not add periodic
+  restarts or weaken the readiness invariant. Further automatic recovery needs
+  a reliable generic signal or restoration of the previously effective link
+  reacquisition behavior, while retaining the headless/Sunshine requirement.
+  DISPLAY-001 remains OPEN; no code correction or dev refresh was performed
+  during this archaeology pass, and `/opt/lulu/current` remains unchanged.
 - Retained journal coverage is limited to the current and immediately previous
   boot. It confirms the forced `video=DP-1:1920x1080@60e` configuration, the
   BC-250 `stream down`/`triplebuffer_flips` incident is retained in this backlog,
