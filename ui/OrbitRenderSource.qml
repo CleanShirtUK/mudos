@@ -5,8 +5,10 @@ Item {
     anchors.fill: parent
 
     property var presentationCoordinator
+    property bool continuousTime: false
+    property real continuousShaderTime: 0
     readonly property real shaderTime: presentationCoordinator
-        ? presentationCoordinator.orbitShaderTime : 0
+        ? presentationCoordinator.orbitShaderTime : (continuousTime ? continuousShaderTime : 0)
     readonly property real shaderBrightness: presentationCoordinator
         ? presentationCoordinator.orbitBrightness : 1
     readonly property real shaderVisibility: presentationCoordinator
@@ -19,10 +21,30 @@ Item {
     property vector3d errorColor: Qt.vector3d(0.969, 0.463, 0.557)
     property string themeShader: typeof mudosTheme !== "undefined" ? mudosTheme.wallpaperShader : ""
     readonly property var themeWallpaper: typeof mudosTheme !== "undefined" ? mudosTheme.wallpaper : ({})
+    readonly property color fallbackColor: typeof mudosTheme !== "undefined"
+        ? (mudosTheme.colors.backdrop || "#202124") : "#202124"
+
+    Timer {
+        running: root.continuousTime && !root.presentationCoordinator
+        repeat: true
+        interval: 16
+        onTriggered: root.continuousShaderTime += interval / 1000
+    }
+
+    Rectangle {
+        anchors.fill: parent
+        color: root.fallbackColor
+        visible: shader.status !== ShaderEffect.Compiled
+    }
 
     ShaderEffect {
+        id: shader
         anchors.fill: parent
         fragmentShader: root.themeShader
+        onStatusChanged: {
+            if (status === ShaderEffect.Error)
+                console.error("Mudos wallpaper shader failed:", root.themeShader, log)
+        }
         property vector2d u_resolution: Qt.vector2d(width, height)
         property vector2d u_origin: root.shaderOrigin
         property vector2d u_canvas: root.shaderCanvas

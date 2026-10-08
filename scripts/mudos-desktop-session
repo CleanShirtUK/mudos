@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 runtime="${XDG_RUNTIME_DIR:?}/mudos-desktop"
-mkdir -p "$runtime/config/openbox" "$runtime/config/tint2"
+mkdir -p "$runtime/config/openbox" "$runtime/config/tint2" "$runtime/logs"
 chmod 700 "$runtime"
 config="$runtime/config"
 auth="$runtime/Xauthority"
@@ -31,56 +31,69 @@ cookie="$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')"
 : > "$auth"; chmod 600 "$auth"
 xauth -f "$auth" add "$display" MIT-MAGIC-COOKIE-1 "$cookie"
 theme="$("$install_root/bin/mudos-desktop-theme" 2>/dev/null || printf '{}')"
-background="$(python -c 'import json,sys; print(json.loads(sys.argv[1]).get("background", "#202124"))' "$theme")"
+background="$(python -c 'import json,sys; print(json.loads(sys.argv[1]).get("surface", "#202124"))' "$theme")"
+for binary in Xephyr xauth xdpyinfo xsetroot xprop openbox tint2 jgmenu; do
+    command -v "$binary" >/dev/null 2>&1 || { echo "Desktop Mode requires missing binary: $binary" >&2; exit 1; }
+done
+[[ -x "$install_root/bin/mudos-desktop-wallpaper" ]] || { echo "Desktop Mode wallpaper host missing: $install_root/bin/mudos-desktop-wallpaper" >&2; exit 1; }
 python - "$theme" "$config" "$install_root" <<'PY'
 import json,pathlib,sys
+import re
 t=json.loads(sys.argv[1]); root=pathlib.Path(sys.argv[2])
 install_root=sys.argv[3]
 def col(k,d): return t.get(k,d)
-r=max(0,min(18,int(t.get('radius',6))))
-(root/'tint2/tint2rc').write_text(f'''panel_items = PPPPTSC
-panel_position = bottom center horizontal
-panel_size = 100% 36
-panel_margin = 0 0
-panel_padding = 8 4 6
-panel_background_id = 1
-rounded = {r}
-border_width = 1
-border_color = {col('border','#555555')} 100
-background_color = {col('surface','#292a2d')} 100
-rounded = {r}
-border_width = 1
-border_color = {col('focus','#80cbc4')} 100
-background_color = {col('accent','#80cbc4')} 100
-font = Sans 10
-font_color = {col('primaryText','#eeeeee')} 100
-taskbar_mode = single_desktop
-taskbar_padding = 2 2 3
-task_background_id = 1
-task_active_background_id = 2
-task_text = 1
-task_icon = 1
-clock_format = %a %d %b %H:%M
-clock_font = Sans 10
-clock_font_color = {col('secondaryText','#cccccc')} 100
-systray_padding = 4 2 4
+r=max(0,min(10,int(t.get('radius',6))))
+template=pathlib.Path('/etc/xdg/tint2/tint2rc').read_text()
+if 'panel_items = LTSC' not in template:
+    raise SystemExit('installed tint2 default template is missing expected panel_items setting')
+template=template.replace('panel_items = LTSC','panel_items = PPPPTSC',1)
+template=template.replace('panel_size = 100% 30','panel_size = 100% 36',1)
+template=template.replace('panel_padding = 2 0 2','panel_padding = 8 4 6',1)
+template=template.replace('panel_layer = top','panel_layer = normal',1)
+template=template.replace('time1_format = %H:%M','time1_format = %a %d %b %H:%M',1)
+template=template.replace('time1_format = %a %d %b %H:%M','time1_format = %a %d %b %H:%M\ntime1_font = Sans 9',1)
+template=template.replace('clock_font_color = #ffffff 100',f"clock_font_color = {col('secondaryText','#cccccc')} 100",1)
+template=template.replace('task_font_color = #ffffff 100',f"task_font = Sans 9\ntask_font_color = {col('primaryText','#eeeeee')} 100",1)
+template=template.replace('task_font_color = #ffffff 100',f"task_font_color = {col('primaryText','#eeeeee')} 100",1)
+template=template.replace('taskbar_name_font_color = #e3e3e3 100',f"taskbar_name_font_color = {col('secondaryText','#cccccc')} 100",1)
+template=template.replace('taskbar_name_active_font_color = #ffffff 100',f"taskbar_name_active_font_color = {col('primaryText','#eeeeee')} 100",1)
+groups={1:('surface','border'),2:('surface','border'),3:('accent','focus'),4:('accent','focus'),5:('surface','border')}
+background=0; lines=[]
+for line in template.splitlines():
+    match=re.match(r'# Background (\d+):',line)
+    if match: background=int(match.group(1))
+    if line.startswith('rounded = '): line=f'rounded = {r}'
+    if background in groups:
+        bg,border=groups[background]
+        for key,role,fallback in (
+            ('background_color = ',bg,'#292a2d'),('background_color_hover = ',bg,'#292a2d'),
+            ('background_color_pressed = ',bg,'#292a2d'),('border_color = ',border,'#555555'),
+            ('border_color_hover = ',border,'#555555'),('border_color_pressed = ',border,'#555555')):
+            if line.startswith(key): line=f'{key}{col(role,fallback)} 100'
+    lines.append(line)
+template='\n'.join(lines)+f'''\n
 button = new
 button_text = Menu
-button_text_color = {col('primaryText','#eeeeee')} 100
+button_font = Sans 9
+button_font_color = {col('primaryText','#eeeeee')} 100
 button_lclick_command = jgmenu --config-file={root}/jgmenurc --csv-cmd='jgmenu_run apps'
 button = new
 button_text = Wi-Fi
-button_text_color = {col('accent','#80cbc4')} 100
+button_font = Sans 9
+button_font_color = {col('accent','#80cbc4')} 100
 button_lclick_command = {install_root}/scripts/mudos-desktop-settings network
 button = new
 button_text = Bluetooth
-button_text_color = {col('accent','#80cbc4')} 100
+button_font = Sans 9
+button_font_color = {col('accent','#80cbc4')} 100
 button_lclick_command = {install_root}/scripts/mudos-desktop-settings bluetooth
 button = new
 button_text = Power
-button_text_color = {col('primaryText','#eeeeee')} 100
+button_font = Sans 9
+button_font_color = {col('primaryText','#eeeeee')} 100
 button_lclick_command = jgmenu --config-file={root}/jgmenurc --csv-file={root}/power.csv
-''')
+'''
+(root/'tint2/tint2rc').write_text(template)
 (root/'power.csv').write_text(f'''^tag(main)
 Restart, ^checkout(restart)
 Shutdown, ^checkout(shutdown)
@@ -118,14 +131,63 @@ DISPLAY="$display" XAUTHORITY="$auth" xdpyinfo >/dev/null
 desktop=(env DISPLAY="$display" XAUTHORITY="$auth")
 "${desktop[@]}" openbox --config-file "$config/openbox/rc.xml" &
 wm=$!; children+=("$wm")
+wm_ready=0
+for _ in $(seq 1 100); do
+    kill -0 "$wm" 2>/dev/null || break
+    if "${desktop[@]}" xprop -root _NET_SUPPORTING_WM_CHECK 2>/dev/null | grep -q 'window id'; then wm_ready=1; break; fi
+    sleep .1
+done
+if (( ! wm_ready )); then echo 'Openbox did not become ready on nested display' >&2; exit 1; fi
 "${desktop[@]}" xsetroot -solid "$background"
-"${desktop[@]}" tint2 -c "$config/tint2/tint2rc" &
-panel=$!; children+=("$panel")
+"${desktop[@]}" env LULU_UI_ROOT="$install_root/ui" "$install_root/bin/mudos-desktop-wallpaper" >"$runtime/logs/wallpaper.log" 2>&1 &
+wallpaper=$!; children+=("$wallpaper")
+start_panel() {
+    "${desktop[@]}" tint2 -c "$config/tint2/tint2rc" >"$runtime/logs/tint2.log" 2>&1 &
+    panel=$!
+    for _ in $(seq 1 30); do
+        kill -0 "$panel" 2>/dev/null || return 1
+        if "${desktop[@]}" xprop -root -notype 2>/dev/null >/dev/null; then
+            # tint2 has parsed configuration and remained alive through X connection.
+            sleep .2
+            kill -0 "$panel" 2>/dev/null && return 0
+        fi
+        sleep .1
+    done
+    return 1
+}
+panel=''
+if start_panel; then children+=("$panel"); else
+    wait "$panel" 2>/dev/null || status=$?
+    echo "tint2 initial launch failed (status ${status:-unknown}); retrying once" >>"$runtime/logs/tint2.log"
+    if start_panel; then children+=("$panel"); else
+        wait "$panel" 2>/dev/null || status=$?
+        echo "FAULT: tint2 failed after bounded retry (status ${status:-unknown}); desktop remains available" >>"$runtime/logs/tint2.log"
+        panel=''
+    fi
+fi
+panel_restarted=0
 while kill -0 "$xephyr" 2>/dev/null && kill -0 "$wm" 2>/dev/null; do
-    if ! kill -0 "$panel" 2>/dev/null; then
+    if [[ -n "$panel" ]] && ! kill -0 "$panel" 2>/dev/null; then
         wait "$panel" 2>/dev/null || true
-        children=("${children[@]/$panel}")
-        "${desktop[@]}" tint2 -c "$config/tint2/tint2rc" & panel=$!; children+=("$panel")
+        if (( ! panel_restarted )); then
+            panel_restarted=1
+            echo 'tint2 exited unexpectedly; attempting one bounded restart' >>"$runtime/logs/tint2.log"
+            if start_panel; then children+=("$panel"); else
+                wait "$panel" 2>/dev/null || status=$?
+                echo "FAULT: tint2 restart failed (status ${status:-unknown}); wallpaper/Openbox remain usable" >>"$runtime/logs/tint2.log"
+                panel=''
+            fi
+        else
+            echo 'FAULT: tint2 exited after its bounded restart; wallpaper/Openbox remain usable' >>"$runtime/logs/tint2.log"
+            panel=''
+        fi
+    elif [[ -z "$panel" ]]; then
+        : # A persistent panel fault must not take down the desktop.
+    fi
+    if [[ -n "$wallpaper" ]] && ! kill -0 "$wallpaper" 2>/dev/null; then
+        wait "$wallpaper" 2>/dev/null || status=$?
+        echo "FAULT: wallpaper renderer exited (status ${status:-unknown}); semantic root color remains" >>"$runtime/logs/wallpaper.log"
+        wallpaper=''
     fi
     sleep 1
 done

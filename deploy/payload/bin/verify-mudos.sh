@@ -28,7 +28,7 @@ id -nG lulu | tr ' ' '\n' | grep -Fxq inputplumber || fail 'lulu is not in input
 [[ -L "$INSTALL_ROOT" && -f "$INSTALL_ROOT/RELEASE" ]] || fail 'versioned Mudos release is missing'
 [[ "$(readlink -f "$INSTALL_ROOT")" == /opt/lulu/releases/* ]] || fail 'current does not resolve below /opt/lulu/releases'
 
-for path in lib/lulu bin/lulu-shell bin/mudos-guide bin/lulu-vt ui config scripts/steam-session-bootstrap.sh scripts/steam-bootstrap.sh; do
+for path in lib/lulu bin/lulu-shell bin/mudos-guide bin/mudos-desktop-theme bin/mudos-desktop-wallpaper bin/lulu-vt ui config scripts/mudos-desktop-session scripts/mudos-desktop-sessionctl scripts/mudos-desktop-settings scripts/steam-session-bootstrap.sh scripts/steam-bootstrap.sh; do
     [[ -e "$INSTALL_ROOT/$path" ]] || fail "missing installed path: $path"
 done
 for script in "$INSTALL_ROOT/scripts/steam-session-bootstrap.sh" "$INSTALL_ROOT/scripts/steam-bootstrap.sh"; do
@@ -37,13 +37,13 @@ done
 grep -Fxq "commit=${VERSION}" "$INSTALL_ROOT/RELEASE" || fail 'release commit mismatch'
 grep -Fxq "tag=${VERSION_TAG}" "$INSTALL_ROOT/RELEASE" || fail 'release tag mismatch'
 (cd "$INSTALL_ROOT" && sha256sum --strict --check manifest.sha256) || fail 'installed payload checksum failed'
-for executable in python dolphin-emu pcsx2 pcsx2-qt retroarch gamescope busctl systemctl; do
+for executable in python dolphin-emu pcsx2 pcsx2-qt retroarch gamescope Xephyr xauth xdpyinfo xsetroot xprop openbox tint2 jgmenu busctl systemctl; do
     command -v "$executable" >/dev/null || fail "missing executable: $executable"
 done
 [[ "$(getent passwd lulu | cut -d: -f6)" == /home/lulu ]] || fail 'lulu home is not /home/lulu'
 [[ "$(getent passwd lulu | cut -d: -f7)" == /bin/bash ]] || fail 'lulu shell is not /bin/bash'
 [[ "$(readlink /home/user 2>/dev/null || true)" == /home/lulu ]] || fail 'Eden compatibility home link is missing'
-for package in inputplumber gamescope-git dolphin-emu retroarch libretro-nestopia libretro-genesis-plus-gx steam steam-devices seatd pipewire wireplumber qt6-base qt6-declarative sdl3 python python-dbus-next python-rapidyaml rapidyaml ttf-zalando-sans; do
+for package in inputplumber gamescope-git dolphin-emu retroarch libretro-nestopia libretro-genesis-plus-gx steam steam-devices seatd pipewire wireplumber qt6-base qt6-declarative sdl3 xorg-server-xephyr xorg-xauth xorg-xdpyinfo xorg-xsetroot xorg-xprop openbox tint2 jgmenu python python-dbus-next python-rapidyaml rapidyaml ttf-zalando-sans; do
     pacman -Q "$package" >/dev/null 2>&1 || fail "missing package: $package"
 done
 for file in lulu.target lulu-session@.service lulu-consoled.service; do
@@ -72,7 +72,7 @@ from pathlib import Path
 for path in Path(sys.argv[1]).rglob('*.py'):
     ast.parse(path.read_text(), filename=str(path))
 PY
-for binary in "$INSTALL_ROOT/bin/lulu-shell" "$INSTALL_ROOT/bin/mudos-guide"; do
+for binary in "$INSTALL_ROOT/bin/lulu-shell" "$INSTALL_ROOT/bin/mudos-guide" "$INSTALL_ROOT/bin/mudos-desktop-wallpaper"; do
     if ldd "$binary" | grep -q 'not found'; then
         fail "native dependency is missing: $binary"
     fi
