@@ -712,6 +712,21 @@ test before closing; do not ask the operator to disconnect/reconnect the display
   reacquisition behavior, while retaining the headless/Sunshine requirement.
   DISPLAY-001 remains OPEN; no code correction or dev refresh was performed
   during this archaeology pass, and `/opt/lulu/current` remains unchanged.
+- Sunshine isolation test (operator authorized, 2026-10-08): the development
+  `lulu-sunshine-dev.service` was stopped (not disabled and no configuration
+  changed). With Sessiond reporting idle shell/no active identity, a second
+  synthetic event exercised the same Sessiond-owned scoped Gamescope restart:
+  Sessiond remained PID `87915`, Gamescope changed from `151796` to `168932`,
+  and a fresh shell/context reached `presentation_ready=true`. Gamescope again
+  opened the DRM card and selected DP-1 1920×1080@60. The operator confirmed
+  there was still no TV picture. Stopping Sunshine alone had not restored it.
+  This rules out Sunshine being sufficient to explain the failed reacquisition;
+  it does not prove Sunshine has no interaction while active. Sunshine remains
+  stopped for now; its user unit remains enabled. No GPU reset, reboot, forced-
+  output edit, or package downgrade was attempted. The failure remains below
+  Gamescope process/context readiness, and no code correction is warranted
+  until the effective forced-output policy versus the coincident Oct 6 stack
+  upgrades can be distinguished without sacrificing headless presentation.
 - Retained journal coverage is limited to the current and immediately previous
   boot. It confirms the forced `video=DP-1:1920x1080@60e` configuration, the
   BC-250 `stream down`/`triplebuffer_flips` incident is retained in this backlog,
