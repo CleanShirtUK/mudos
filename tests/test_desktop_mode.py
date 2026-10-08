@@ -70,6 +70,7 @@ class DesktopModeContractTests(unittest.TestCase):
         self.assertLess(wrapper.index("Openbox did not become ready"), wrapper.index('wallpaper=$!'))
         self.assertLess(wrapper.index('wallpaper=$!'), wrapper.index('tint2 -c "$config/tint2/tint2rc"'))
         self.assertIn('DISPLAY="$display" XAUTHORITY="$auth"', wrapper)
+        self.assertIn("QT_QPA_PLATFORM=xcb", wrapper)
         self.assertIn('logs/tint2.log', wrapper)
         self.assertIn('logs/wallpaper.log', wrapper)
         self.assertIn("retrying once", wrapper)

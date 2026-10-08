@@ -139,7 +139,8 @@ for _ in $(seq 1 100); do
 done
 if (( ! wm_ready )); then echo 'Openbox did not become ready on nested display' >&2; exit 1; fi
 "${desktop[@]}" xsetroot -solid "$background"
-"${desktop[@]}" env LULU_UI_ROOT="$install_root/ui" "$install_root/bin/mudos-desktop-wallpaper" >"$runtime/logs/wallpaper.log" 2>&1 &
+"${desktop[@]}" env QT_QPA_PLATFORM=xcb LULU_UI_ROOT="$install_root/ui" \
+    "$install_root/bin/mudos-desktop-wallpaper" >"$runtime/logs/wallpaper.log" 2>&1 &
 wallpaper=$!; children+=("$wallpaper")
 start_panel() {
     "${desktop[@]}" tint2 -c "$config/tint2/tint2rc" >"$runtime/logs/tint2.log" 2>&1 &
