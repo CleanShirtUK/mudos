@@ -594,19 +594,56 @@ test before closing; do not ask the operator to disconnect/reconnect the display
   AMD DC `triplebuffer_flips` warning. Existing readiness checks inspected
   Gamescope/window state and connector presence, so they incorrectly left a
   stale scanout running.
-- Sessiond now subscribes unprivileged to `NETLINK_KOBJECT_UEVENT`, filters DRM
-  `HOTPLUG=1` events, waits 750 ms for the kernel/display transition to settle,
-  and then recreates Gamescope only while the presentation is a ready idle
-  shell. A 10-second cooldown coalesces wake/relink bursts. Active game sessions
-  are not killed by this fallback. A missing connector still follows the
-  existing wait-for-hotplug bootstrap path.
-- Sessiond hotplug/wake recovery was added in commit `1ae5388`: it listens for
-  DRM `HOTPLUG=1` uevents and recreates Gamescope while the shell is idle. The
-  patch's unit tests pass, but its deployed recovery did not restore video in
-  this incident. A software Sessiond restart and a DPMS cycle also failed to
-  restore the image. Temporarily lowering the BC-250 `cs_relink_ms` parameter
-  made the kernel log `blank re-detect: done`, but still did not restore video;
-  the parameter was returned to 3000 ms.
+- Regression archaeology (2026-10-08): commit `1ae5388` added the surviving-
+  Gamescope DRM-uEvent recovery path. It returned unless both lifecycle was
+  `shell` **and** `_presentation_ready` was true. The readiness watchdog
+  correctly clears that bit on output loss, so the reconnect event was discarded
+  precisely in the surviving-Gamescope failure mode. The same patch stamped a
+  10-second cooldown on the first event; a reconnect within that interval could
+  also be swallowed after the initial attempt. The regression test first failed
+  at this guard after exercising the real watchdog readiness transition.
+- The existing Gamescope-exits/output-absent path dates from `2a6a183` (2026-10-01):
+  Sessiond stays alive and `bootstrap_shell()` waits for an output before starting
+  Gamescope. That path is preserved. No retained journal or source acceptance
+  record establishes a later physical known-good revision for the distinct
+  “Gamescope survives with stale scanout” case; `1ae5388` is the first revision
+  intended to cover it.
+- Implementation: explicit recovery-required/pending state survives watchdog
+  readiness loss; only lifecycle `shell` can trigger a restart. An absent output
+  records intent and waits, while a DRM wake event can recover even if forced
+  DP-1 sysfs remains `connected`. The 10-second cooldown is removed; pending
+  recovery coalesces duplicate events and failed attempts remain retryable.
+  Readiness and graphical launch context are invalidated before recovery and
+  accepted only after a new shell/context is verified. Game/foreign sessions
+  defer recovery until shell ownership returns. The new regression was first
+  run against the old handler and failed at the readiness guard; it now covers
+  watchdog loss/reconnect within the old cooldown window, absent-output wait,
+  duplicate events, game deferral/return, failed-attempt retry, and fresh shell
+  context. Related Sessiond/readiness/lease tests: 60 passed and 13 subtests.
+  The full suite has 1,250 passing tests and 85 subtests; 11 unrelated pre-existing
+  UI/provisioning/release checks fail. Implementation is committed as
+  `bd5a821` and is ready for the canonical dev refresh; `/opt/lulu/current` must
+  remain unchanged.
+- Runtime evidence recorded during this pass: the previous boot's retained
+  journal has no Sessiond/seatd display-recovery sequence or matching DRM
+  disconnect/reconnect records. The current boot logs forced DP-1 at kernel
+  startup and BC-250 AMD IRQ/infoframe warnings, but no hotplug recovery attempt.
+  Live `/sys/class/drm/card1-DP-1/status` reads `connected`, `enabled`, DPMS On,
+  mode 1920×1080; the kernel command line retains `video=DP-1:1920x1080@60e`.
+- Physical disconnect/reconnect cycles were not performed in this pass. Keep
+  DISPLAY-001 OPEN until the three requested cycles (including a short
+  reconnect) pass with no manual intervention.
+- Retained journal coverage is limited to the current and immediately previous
+  boot. It confirms the forced `video=DP-1:1920x1080@60e` configuration, the
+  BC-250 `stream down`/`triplebuffer_flips` incident is retained in this backlog,
+  and current boot-time DP-1 forcing plus AMD IRQ/infoframe warnings; it contains
+  no retained disconnect/reconnect uevent or Sessiond recovery attempt from the
+  incident boot. Current sysfs reads `DP-1 connected`, enabled, DPMS On,
+  1920×1080. Sysfs therefore cannot be the sole recovery signal on this setup.
+- Physical acceptance remains OPEN. Do not close until three disconnect/reconnect
+  cycles (including a reconnect within ten seconds) pass without reboot or manual
+  service/Gamescope intervention; confirm Sessiond PID remains stable, fresh
+  shell/context and `presentation_ready` return, and controller navigation works.
 - A user-authorized PCI FLR attempt left the kernel reporting the GPU “device
   lost from bus” and caused repeated amdgpu failures. Do not repeat FLR as a
   recovery step. The host later restarted for an unrelated reason; the display
