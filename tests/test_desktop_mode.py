@@ -1,4 +1,7 @@
 import json
+import os
+import subprocess
+import sys
 import unittest
 from pathlib import Path
 
@@ -60,6 +63,24 @@ class DesktopModeContractTests(unittest.TestCase):
         self.assertIn("logs/jgmenu.log", launcher)
         self.assertNotIn("wait", launcher)
         self.assertNotIn("killall", launcher)
+
+    def test_desktop_cleanup_targets_only_exact_nested_display_and_cookie(self):
+        cleanup = ROOT / "scripts/mudos-desktop-cleanup-apps"
+        env = os.environ.copy()
+        env.update(DISPLAY=":987", XAUTHORITY="/tmp/test-desktop-cookie")
+        child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"], env=env)
+        unrelated_env = env | {"DISPLAY": ":986"}
+        unrelated = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"], env=unrelated_env)
+        try:
+            result = subprocess.run([sys.executable, str(cleanup), ":987", "/tmp/test-desktop-cookie"], timeout=5)
+            self.assertEqual(result.returncode, 0)
+            self.assertIsNotNone(child.poll())
+            self.assertIsNone(unrelated.poll())
+        finally:
+            for process in (child, unrelated):
+                if process.poll() is None:
+                    process.terminate()
+                process.wait(timeout=3)
 
     def test_wallpaper_reuses_theme_manager_shader_contract(self):
         wallpaper = (ROOT / "ui/DesktopWallpaper.qml").read_text()
@@ -146,7 +167,7 @@ class DesktopModeContractTests(unittest.TestCase):
                         "xorg-xsetroot", "xorg-xdpyinfo", "xorg-xrandr", "xorg-xprop", "qt6-base", "qt6-declarative"):
             self.assertIn(package, packages)
         release = (ROOT / "scripts/release.py").read_text()
-        for file_name in ("mudos-desktop-session", "mudos-desktop-menu", "mudos-desktop-sessionctl", "mudos-desktop-theme", "mudos-desktop-wallpaper"):
+        for file_name in ("mudos-desktop-session", "mudos-desktop-menu", "mudos-desktop-cleanup-apps", "mudos-desktop-sessionctl", "mudos-desktop-theme", "mudos-desktop-wallpaper"):
             self.assertIn(file_name, release)
         self.assertIn("ui/DesktopWallpaper.qml", release)
 

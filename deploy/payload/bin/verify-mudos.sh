@@ -28,7 +28,7 @@ id -nG lulu | tr ' ' '\n' | grep -Fxq inputplumber || fail 'lulu is not in input
 [[ -L "$INSTALL_ROOT" && -f "$INSTALL_ROOT/RELEASE" ]] || fail 'versioned Mudos release is missing'
 [[ "$(readlink -f "$INSTALL_ROOT")" == /opt/lulu/releases/* ]] || fail 'current does not resolve below /opt/lulu/releases'
 
-for path in lib/lulu bin/lulu-shell bin/mudos-guide bin/mudos-desktop-theme bin/mudos-desktop-wallpaper bin/lulu-vt ui config scripts/mudos-desktop-session scripts/mudos-desktop-menu scripts/mudos-desktop-sessionctl scripts/mudos-desktop-settings scripts/steam-session-bootstrap.sh scripts/steam-bootstrap.sh; do
+for path in lib/lulu bin/lulu-shell bin/mudos-guide bin/mudos-desktop-theme bin/mudos-desktop-wallpaper bin/lulu-vt ui config scripts/mudos-desktop-session scripts/mudos-desktop-menu scripts/mudos-desktop-cleanup-apps scripts/mudos-desktop-sessionctl scripts/mudos-desktop-settings scripts/steam-session-bootstrap.sh scripts/steam-bootstrap.sh; do
     [[ -e "$INSTALL_ROOT/$path" ]] || fail "missing installed path: $path"
 done
 for script in "$INSTALL_ROOT/scripts/steam-session-bootstrap.sh" "$INSTALL_ROOT/scripts/steam-bootstrap.sh"; do

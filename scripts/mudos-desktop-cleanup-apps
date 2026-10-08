@@ -1,0 +1,49 @@
+#!/usr/bin/env python3
+"""Stop only this Desktop Mode's escaped X11 application processes."""
+import os
+import signal
+import sys
+import time
+
+
+def owned_processes(display: str, auth: str) -> list[int]:
+    matches = []
+    uid = os.getuid()
+    for entry in os.scandir("/proc"):
+        if not entry.name.isdigit():
+            continue
+        pid = int(entry.name)
+        if pid == os.getpid():
+            continue
+        try:
+            if entry.stat().st_uid != uid:
+                continue
+            values = {}
+            with open(f"/proc/{pid}/environ", "rb") as environ:
+                for item in environ.read().split(b"\0"):
+                    if b"=" in item:
+                        key, value = item.split(b"=", 1)
+                        if key in (b"DISPLAY", b"XAUTHORITY"):
+                            values[key] = value
+            if values.get(b"DISPLAY") == display.encode() and values.get(b"XAUTHORITY") == auth.encode():
+                matches.append(pid)
+        except (FileNotFoundError, PermissionError, ProcessLookupError, OSError):
+            continue
+    return matches
+
+
+def signal_all(pids: list[int], signum: int) -> None:
+    for pid in pids:
+        try:
+            os.kill(pid, signum)
+        except ProcessLookupError:
+            pass
+
+
+if len(sys.argv) != 3:
+    raise SystemExit("usage: mudos-desktop-cleanup-apps DISPLAY XAUTHORITY")
+display, auth = sys.argv[1:]
+pids = owned_processes(display, auth)
+signal_all(pids, signal.SIGTERM)
+time.sleep(0.5)
+signal_all(owned_processes(display, auth), signal.SIGKILL)

@@ -72,6 +72,7 @@ REQUIRED_FILES = (
     "scripts/console-ui-bridge.py",
     "scripts/mudos-desktop-session",
     "scripts/mudos-desktop-menu",
+    "scripts/mudos-desktop-cleanup-apps",
     "scripts/mudos-desktop-sessionctl",
     "scripts/mudos-desktop-settings",
     "packaging/desktop-applications/mudos-settings.desktop",

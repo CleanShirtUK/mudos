@@ -19,6 +19,7 @@ cleanup() {
     trap - EXIT INT TERM HUP
     for pid in "${children[@]}"; do kill "$pid" 2>/dev/null || true; done
     for pid in "${children[@]}"; do wait "$pid" 2>/dev/null || true; done
+    "$install_root/scripts/mudos-desktop-cleanup-apps" "$display" "$auth" >>"$runtime/logs/session.log" 2>&1 || true
     rm -f "$auth"
 }
 trap cleanup EXIT
