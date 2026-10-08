@@ -53,6 +53,9 @@ def make_interface(*, ready: bool, presentation: object | None = object(),
     interface = ConsoleSessionInterface.__new__(ConsoleSessionInterface)
     interface.model = SessionStateModel()
     interface._presentation_ready = ready
+    interface._display_recovery_required = False
+    interface._display_recovery_pending = False
+    interface._display_recovery_shell_token = None
     interface._graphical_session_id = "unit-test-session"
     interface._graphical_launch_lease = None
     interface.controller_registry = SimpleNamespace(
@@ -136,6 +139,9 @@ class SessiondPresentationReadinessTests(unittest.TestCase):
         interface = ConsoleSessionInterface.__new__(ConsoleSessionInterface)
         interface._bootstrap_output = None
         interface._presentation_ready = False
+        interface._display_recovery_required = False
+        interface._display_recovery_pending = False
+        interface._display_recovery_shell_token = None
         interface.recovery_mode = False
         interface.supervisor = SimpleNamespace(
             launch_shell=Mock(), set_delegated_launch_environment=Mock(),
@@ -168,6 +174,9 @@ class SessiondPresentationReadinessTests(unittest.TestCase):
         interface._local_identity = None
         interface._local_provider_id = ""
         interface._presentation_ready = False
+        interface._display_recovery_required = False
+        interface._display_recovery_pending = False
+        interface._display_recovery_shell_token = None
         interface._graphical_session_id = "test-session"
         interface._graphical_launch_lease = None
         shell_process = SimpleNamespace(pid=os.getpid(), returncode=None)
@@ -212,6 +221,9 @@ class SessiondPresentationReadinessTests(unittest.TestCase):
         interface._local_identity = None
         interface._local_provider_id = ""
         interface._presentation_ready = True
+        interface._display_recovery_required = False
+        interface._display_recovery_pending = False
+        interface._display_recovery_shell_token = None
         interface._graphical_session_id = "test-session"
         interface._graphical_launch_lease = None
         shell_process = SimpleNamespace(pid=os.getpid(), returncode=None)
@@ -297,6 +309,9 @@ class GraphicalReadinessInvariantTests(unittest.IsolatedAsyncioTestCase):
         interface._local_identity = None
         interface._local_provider_id = ""
         interface._presentation_ready = False
+        interface._display_recovery_required = False
+        interface._display_recovery_pending = False
+        interface._display_recovery_shell_token = None
         interface._graphical_session_id = "readiness-test-session"
         interface._graphical_launch_lease = None
         interface._presentation_wait_log_at = 0.0

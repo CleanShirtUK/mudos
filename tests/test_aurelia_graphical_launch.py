@@ -263,6 +263,10 @@ class SessiondLaunchLeaseTests(unittest.IsolatedAsyncioTestCase):
         interface.model = model
         interface.supervisor = supervisor
         interface._presentation_ready = True
+        interface._display_recovery_required = False
+        interface._display_recovery_pending = False
+        interface._display_recovery_shell_token = None
+        interface._display_recovery_attempted_token = None
         interface._graphical_session_id = "accepted-session"
         interface._graphical_launch_lease = None
         interface._presentation_wait_log_at = 0.0

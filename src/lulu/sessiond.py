@@ -103,7 +103,9 @@ class ConsoleSessionInterface(ServiceInterface):
         self._drm_hotplug_task: asyncio.Task[None] | None = None
         self._display_recovery_requested = False
         self._display_recovery_pending = False
-        self._display_recovery_last_at = 0.0
+        self._display_recovery_required = False
+        self._display_recovery_shell_token: str | None = None
+        self._display_recovery_attempted_token: str | None = None
         self._resident_steam_runtime_task: asyncio.Task[None] | None = None
         self._resident_steam_runtime = ResidentSteamRuntimeStatus()
         self._presentation_wait_log_at = 0.0
@@ -318,6 +320,18 @@ class ConsoleSessionInterface(ServiceInterface):
     async def _monitor_presentation(self) -> None:
         while True:
             await self._refresh_presentation_readiness()
+            if (self._display_recovery_required
+                    and self.model.state.lifecycle.value == "shell"
+                    and has_connected_presentation_output()):
+                shell = self.supervisor.shell_status()
+            else:
+                shell = None
+            if (shell is not None and shell.running
+                    and shell.token != self._display_recovery_attempted_token
+                    and not self._display_recovery_pending):
+                # Reconcile a missed reconnect event and recovery intent recorded
+                # while a game/foreign session owned the presentation.
+                await self._handle_drm_hotplug(from_uevent=False)
             await self._reconcile_game_presentation()
             await asyncio.sleep(0.5)
 
@@ -347,23 +361,43 @@ class ConsoleSessionInterface(ServiceInterface):
                 if event_socket is not None:
                     event_socket.close()
 
-    async def _handle_drm_hotplug(self) -> None:
-        """Debounce output changes, then restart only an idle shell once."""
+    async def _handle_drm_hotplug(self, *, from_uevent: bool = True) -> None:
+        """Retain recovery intent across readiness loss; restart only idle shell."""
         state = self.model.state
-        if state.lifecycle.value != "shell" or not self._presentation_ready:
-            LOGGER.info("DRM hotplug observed outside a ready shell; active session is left untouched")
+        if state.lifecycle.value != "shell":
+            self._display_recovery_required = True
+            LOGGER.info("DRM hotplug recorded during active session; shell recovery deferred")
             return
-        now = time.monotonic()
-        if self._display_recovery_pending or now - self._display_recovery_last_at < 10.0:
-            LOGGER.debug("coalescing DRM hotplug during display recovery cooldown")
-            return
-        self._display_recovery_pending = True
-        self._display_recovery_last_at = now
         shell = self.supervisor.shell_status()
         if shell is None or not shell.running:
-            self._display_recovery_pending = False
+            self._display_recovery_required = True
             LOGGER.info("DRM hotplug observed without a running shell; normal bootstrap will recover")
             return
+        self._display_recovery_required = True
+        if self._display_recovery_shell_token is None:
+            self._display_recovery_shell_token = shell.token
+        was_ready = self._presentation_ready
+        self._presentation_ready = False
+        if not self._graphical_launch_lease:
+            self.supervisor.set_delegated_launch_environment({})
+        write_graphical_launch_context({}, self._graphical_session_id, ready=False)
+        if was_ready:
+            self.StateChanged(self._state_json())
+        if not has_connected_presentation_output():
+            LOGGER.info("DRM recovery required; configured presentation output is absent, awaiting return")
+            return
+        if self._display_recovery_pending:
+            if (from_uevent and self._display_recovery_shell_token is not None
+                    and shell.token != self._display_recovery_shell_token):
+                # A distinct shell was bootstrapped but never became ready;
+                # a new hardware event is a fresh retry, not a duplicate burst.
+                self._display_recovery_pending = False
+            else:
+                LOGGER.debug("coalescing DRM hotplug while display recovery is pending")
+                return
+        if not from_uevent and shell.token == self._display_recovery_attempted_token:
+            return
+        self._display_recovery_pending = True
         await asyncio.sleep(0.75)
         if self.model.state.lifecycle.value != "shell":
             self._display_recovery_pending = False
@@ -373,8 +407,12 @@ class ConsoleSessionInterface(ServiceInterface):
         if current is None or current.token != shell.token or not current.running:
             self._display_recovery_pending = False
             return
+        if not has_connected_presentation_output():
+            self._display_recovery_pending = False
+            LOGGER.info("DRM output absent after event settling; retaining recovery intent until reconnect")
+            return
         LOGGER.warning("DRM hotplug/wake detected; restarting idle Gamescope shell to reinitialize scanout")
-        self._presentation_ready = False
+        self._display_recovery_attempted_token = shell.token
         self._display_recovery_requested = True
         try:
             stopped = await self.supervisor.restart_shell_for_display_recovery()
@@ -384,11 +422,11 @@ class ConsoleSessionInterface(ServiceInterface):
         if not stopped:
             self._display_recovery_requested = False
             self._display_recovery_pending = False
+            self._display_recovery_shell_token = None
 
     def _consume_display_recovery_request(self) -> bool:
         requested = self._display_recovery_requested
         self._display_recovery_requested = False
-        self._display_recovery_pending = False
         return requested
 
     async def _monitor_resident_steam_runtime(self) -> None:
@@ -578,6 +616,35 @@ class ConsoleSessionInterface(ServiceInterface):
                                    error)
                     self._presentation_wait_log_at = now
         self._presentation_ready = ready
+        if (self._display_recovery_required
+                and self._display_recovery_shell_token is not None
+                and shell is not None
+                and shell.token != self._display_recovery_shell_token):
+            # The original shell exited and the existing bootstrap path has
+            # already supplied a replacement (case A). Do not restart it again
+            # merely because its fresh context is still being verified.
+            self._display_recovery_attempted_token = shell.token
+        if (was_ready and not ready and self.model.state.lifecycle.value == "shell"
+                and not has_connected_presentation_output()):
+            self._display_recovery_required = True
+            if shell is not None:
+                self._display_recovery_shell_token = shell.token
+            LOGGER.warning("idle shell presentation readiness lost; display recovery is required")
+        if ready and not self._display_recovery_required:
+            self._display_recovery_pending = False
+            if shell is not None:
+                # Retain the last shell identity even if ProcessSupervisor
+                # clears its status immediately after a process exit; this
+                # distinguishes case-A bootstrap from a still-stale shell.
+                self._display_recovery_shell_token = shell.token
+        elif (ready and self._display_recovery_required
+              and self._display_recovery_shell_token is not None
+              and shell is not None
+              and shell.token != self._display_recovery_shell_token):
+            self._display_recovery_required = False
+            self._display_recovery_pending = False
+            self._display_recovery_shell_token = None
+            self._display_recovery_attempted_token = None
         if not ready and not self._graphical_launch_lease:
             # Never carry display values across an unavailable/recovery interval.
             # The launch lease below is separately tied to the accepted session.
