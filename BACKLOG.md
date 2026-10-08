@@ -633,6 +633,17 @@ test before closing; do not ask the operator to disconnect/reconnect the display
 - Physical disconnect/reconnect cycles were not performed in this pass. Keep
   DISPLAY-001 OPEN until the three requested cycles (including a short
   reconnect) pass with no manual intervention.
+- Follow-up physical source-switch attempt (2026-10-08, after dev refresh):
+  the operator switched the display source away and back; video did not return.
+  At 22:50:49 the kernel logged `bc250 relink: stream down` and `blank was 0 ms,
+  under the 3000 ms threshold`. Sessiond PID `87915` and Gamescope PID `87989`
+  remained unchanged, with no Sessiond hotplug/recovery log in the interval.
+  DP-1 still reported connected/enabled, DPMS On, 1920×1080. This is a failed
+  physical acceptance cycle: the new recovery handler was not observed to run.
+  A bounded DRM udev monitor was started for the next operator-provided source
+  switch to determine whether this BC-250 event emits a DRM uevent that the
+  current `HOTPLUG=1` filter can receive. No manual Sessiond/Gamescope restart
+  was performed; keep DISPLAY-001 OPEN.
 - Retained journal coverage is limited to the current and immediately previous
   boot. It confirms the forced `video=DP-1:1920x1080@60e` configuration, the
   BC-250 `stream down`/`triplebuffer_flips` incident is retained in this backlog,
