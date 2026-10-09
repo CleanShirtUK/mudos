@@ -297,7 +297,7 @@ Window {
     readonly property var systemHomeCards: ["Settings", "Utilities", "Desktop Mode"]
     readonly property var settingsCategoryModel: MudosAssetCatalog.settingsCategories(systemCategories)
     property int systemRowIndex: 0
-    property var systemCategories: ["System", "Display", "Audio", "Network", "Bluetooth", "Controllers", "Storage", "Utilities"]
+    property var systemCategories: ["System", "Display", "Audio", "Network", "Bluetooth", "Controllers", "Storage", "Performance", "Utilities"]
     property var systemSettings: []
     property var utilities: []
     property var utilitiesHomeRef: null

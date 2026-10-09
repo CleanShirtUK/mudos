@@ -632,7 +632,7 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertIn('surfaceVisible: !root.embedded', settings_page)
         self.assertIn('MudosCardSurface {', settings_page)
         self.assertIn('MudosSettingsPage {', system_space)
-        self.assertIn('property var systemCategories: ["System", "Display", "Audio", "Network", "Bluetooth", "Controllers", "Storage", "Utilities"]', QML)
+        self.assertIn('property var systemCategories: ["System", "Display", "Audio", "Network", "Bluetooth", "Controllers", "Storage", "Performance", "Utilities"]', QML)
         self.assertNotIn('"Plugins"', QML)
         self.assertNotIn('"Lulu"', QML)
         self.assertIn('request("/settings?category=System"', QML)
@@ -660,7 +660,7 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertIn('MudosAssetCatalog.settingsCategories(systemCategories)', shell)
         self.assertIn('function settingsCategories(systemCategories)', catalog)
         self.assertIn('component: pages[label] || "systemSpace"', catalog)
-        for category in ("Network", "Bluetooth", "Display", "Audio", "Controllers", "Storage", "System"):
+        for category in ("Network", "Bluetooth", "Display", "Audio", "Controllers", "Storage", "Performance", "System"):
             self.assertIn('"' + category + '"', catalog)
         self.assertIn('property string activePanel: "categories"', settings_space)
         self.assertIn('function enterContent()', settings_space)
@@ -671,7 +671,7 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertIn('settingsPanelFocus = "categories"', shell)
         self.assertIn('settingsPanelFocus = "content"', shell)
         self.assertIn('parent: settingsSpace.contentHost', shell)
-        self.assertIn('|| root.systemCategories[root.systemCategoryIndex] === "Bluetooth")', shell)
+        self.assertIn('|| root.systemCategories[root.systemCategoryIndex] === "Performance")', shell)
         self.assertIn('root.systemCategories[root.systemCategoryIndex] === "System"', shell)
         self.assertIn('embedded: true', shell)
         self.assertIn('root.settingsCategoryModel.findIndex', shell)

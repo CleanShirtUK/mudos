@@ -5,7 +5,7 @@ from lulu.system_settings import CATEGORIES, SystemSettingsProvider
 
 class SystemSettingsProviderTests(unittest.TestCase):
     def test_categories_are_stable_and_product_facing(self) -> None:
-        self.assertEqual(CATEGORIES, ("Display", "Audio", "Network", "Bluetooth", "Controllers", "Storage", "System"))
+        self.assertEqual(CATEGORIES, ("Display", "Audio", "Network", "Bluetooth", "Controllers", "Storage", "Performance", "System"))
 
     def test_each_category_returns_normalized_rows(self) -> None:
         provider = SystemSettingsProvider()
@@ -15,6 +15,9 @@ class SystemSettingsProviderTests(unittest.TestCase):
             for row in rows:
                 self.assertEqual(set(row), {"key", "label", "kind", "value", "detail", "writable"})
                 if row["key"] == "lulu.reset":
+                    self.assertTrue(row["writable"])
+                    self.assertEqual(row["kind"], "action")
+                elif row["key"] == "statistics-overlay:mode":
                     self.assertTrue(row["writable"])
                     self.assertEqual(row["kind"], "action")
                 else:
