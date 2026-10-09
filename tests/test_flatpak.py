@@ -1,5 +1,6 @@
 import asyncio
 from pathlib import Path
+import subprocess
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -7,6 +8,7 @@ from unittest.mock import patch
 from lulu.plugins.flatpak import FlatpakAdapter, FlatpakApplication
 from lulu.plugins.flatpak.adapter import _flatpak_operation_failure
 from lulu.jobs import DownloadJob, JobOperation, JobState
+from lulu.statistics_overlay import launch_environment
 
 
 class FakeFlatpak(FlatpakAdapter):
@@ -191,6 +193,57 @@ class FlatpakTests(unittest.TestCase):
         # The operation command is intentionally constructed without
         # --delete-data; Flatpak owns application data retention policy.
         self.assertNotIn("--delete-data", " ".join(["flatpak", "--user", "uninstall", "--noninteractive"]))
+
+    def test_launch_forwards_selected_profile_at_flatpak_app_boundary(self):
+        adapter = FakeFlatpak()
+        with patch.object(adapter, "_mangohud_extension_ready", return_value=True) as ensure, \
+                patch.object(adapter, "_application_command", return_value="openttd"):
+            command = adapter.launch_command("org.openttd.OpenTTD", {
+                "MANGOHUD": "1", "MANGOHUD_CONFIG": "fps_only=1",
+            })
+        ensure.assert_called_once_with("org.openttd.OpenTTD")
+        self.assertIn("--env=MANGOHUD=1", command)
+        self.assertIn("--env=MANGOHUD_CONFIG=fps_only=1", command)
+        self.assertIn("--command=/usr/lib/extensions/vulkan/MangoHud/bin/mangohud", command)
+        self.assertEqual(command[-3:], ["org.openttd.OpenTTD", "--dlsym", "openttd"])
+
+    def test_unavailable_runtime_extension_disables_instead_of_claiming_overlay(self):
+        adapter = FakeFlatpak()
+        with patch.object(adapter, "_mangohud_extension_ready", return_value=False), \
+                patch.object(adapter, "_application_command", return_value="openttd"):
+            command = adapter.launch_command("org.openttd.OpenTTD", {
+                "MANGOHUD": "1", "MANGOHUD_CONFIG": "full",
+            })
+        self.assertIn("--env=MANGOHUD=0", command)
+        self.assertNotIn("--env=MANGOHUD_CONFIG=full", command)
+
+    def test_extension_provisioning_uses_runtime_declared_branch(self):
+        adapter = FakeFlatpak()
+        responses = iter((
+            subprocess.CompletedProcess([], 0, "org.kde.Platform/x86_64/6.10\n", ""),
+            subprocess.CompletedProcess([], 0,
+                "[Extension org.freedesktop.Platform.VulkanLayer]\nversion=25.08\n", ""),
+            subprocess.CompletedProcess([], 0, "", ""),
+            subprocess.CompletedProcess([], 0, "", ""),
+        ))
+        with patch.object(adapter, "_flatpak_result", side_effect=lambda _command: next(responses)) as run:
+            self.assertTrue(adapter._mangohud_extension_ready("org.example.Game"))
+        self.assertEqual(run.call_args_list[-1].args[0][-1],
+                         "org.freedesktop.Platform.VulkanLayer.MangoHud//25.08")
+
+    def test_all_profiles_cross_flatpak_boundary_and_off_never_wraps(self):
+        adapter = FakeFlatpak()
+        with patch.object(adapter, "_mangohud_extension_ready", return_value=True) as ensure, \
+                patch.object(adapter, "_application_command", return_value="game"):
+            for mode in ("fps", "minimal", "detailed"):
+                with self.subTest(mode=mode):
+                    command = adapter.launch_command("org.example.Game", launch_environment(mode))
+                    self.assertIn("--command=/usr/lib/extensions/vulkan/MangoHud/bin/mangohud", command)
+                    self.assertIn(f"--env=MANGOHUD_CONFIG={launch_environment(mode)['MANGOHUD_CONFIG']}", command)
+            off_command = adapter.launch_command("org.example.Game", launch_environment("off"))
+        self.assertEqual(ensure.call_count, 3)
+        self.assertIn("--env=MANGOHUD=0", off_command)
+        self.assertFalse(any("MangoHud/bin/mangohud" in item for item in off_command))
 
     def test_remove_uses_user_scoped_flatpak_uninstall_and_reconciles(self):
         class AppAdapter(FlatpakAdapter):

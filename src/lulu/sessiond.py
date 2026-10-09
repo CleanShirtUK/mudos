@@ -39,7 +39,10 @@ from .resident_steam_runtime import (
     read_resident_steam_runtime_status,
 )
 from .settings import SettingsStore
-from .statistics_overlay import launch_environment as statistics_overlay_environment
+from .statistics_overlay import (
+    adapt_native_launch,
+    launch_environment as statistics_overlay_environment,
+)
 from .provider_config import ProviderConfigurationService
 from .graphical_launch_context import (
     clear_context as clear_graphical_launch_context,
@@ -1377,11 +1380,13 @@ class ConsoleSessionInterface(ServiceInterface):
             # Apply MangoHud only to this Sessiond-owned game launch.  Never
             # modify the daemon environment, shell, utilities, or delegated apps.
             mode = self.settings.get("statistics_overlay_mode")
-            self.supervisor.set_delegated_launch_environment({
+            launch_environment = {
                 **base_environment,
                 **statistics_overlay_environment(mode),
-            })
-            return await self.supervisor.launch(list(command), startup_timeout_ms, primary_id=game_id)
+            }
+            adapted_command, launch_environment = adapt_native_launch(command, launch_environment)
+            self.supervisor.set_delegated_launch_environment(launch_environment)
+            return await self.supervisor.launch(adapted_command, startup_timeout_ms, primary_id=game_id)
         except ValueError as error:
             raise self._error(error) from error
         finally:

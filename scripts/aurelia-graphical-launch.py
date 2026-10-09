@@ -20,6 +20,12 @@ def _load_context_reader():
     raise RuntimeError("Mudos graphical launch context support is not installed")
 
 
+def _load_native_adapter():
+    _load_context_reader()  # Establish the same release/source package root.
+    from lulu.statistics_overlay import adapt_native_launch
+    return adapt_native_launch
+
+
 def main(argv: list[str] | None = None) -> int:
     command = list(sys.argv[1:] if argv is None else argv)
     if not command or not command[0]:
@@ -27,11 +33,13 @@ def main(argv: list[str] | None = None) -> int:
         return 126
     try:
         graphical_environment = _load_context_reader()()
+        adapt_native_launch = _load_native_adapter()
     except (OSError, RuntimeError, ValueError) as error:
         print(f"Mudos Aurelia launch: refusing graphical launch: {error}", file=sys.stderr)
         return 125
     environment = os.environ.copy()
     environment.update(graphical_environment)
+    command, environment = adapt_native_launch(command, environment)
     try:
         os.execvpe(command[0], command, environment)
     except OSError as error:

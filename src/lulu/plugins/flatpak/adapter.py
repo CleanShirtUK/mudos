@@ -7,10 +7,12 @@ import configparser
 from dataclasses import dataclass, field, replace
 import hashlib
 import json
+import logging
 import os
 from pathlib import Path
 import re
 import shutil
+import subprocess
 import xml.etree.ElementTree as ET
 from typing import AsyncIterator, Callable
 from urllib.parse import urlsplit
@@ -19,6 +21,9 @@ from urllib.request import Request, urlopen
 from ...job_manager import JobCancelled, JobExecutionError, JobReporter
 from ...jobs import DownloadJob, JobOperation, JobState
 from ...flatpak_classification import classify_flatpak, is_flatpak_game
+
+
+LOGGER = logging.getLogger(__name__)
 
 
 class FlatpakError(RuntimeError):
@@ -555,7 +560,63 @@ class FlatpakAdapter:
                                   installed=app_id in user or app_id in system))
         return tuple(result)
 
-    def launch_command(self, application_id: str) -> list[str]:
+    @staticmethod
+    def _flatpak_result(command: list[str]) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(command, check=False, capture_output=True, text=True, timeout=120)
+
+    def _mangohud_extension_ready(self, application_id: str) -> bool:
+        """Install the VulkanLayer extension matching this app runtime's extension point."""
+        if not self.command:
+            return False
+        try:
+            runtime = self._flatpak_result([self.command, "info", "--show-runtime", application_id])
+            if runtime.returncode:
+                return False
+            runtime_ref = runtime.stdout.strip()
+            if not re.fullmatch(r"[A-Za-z0-9._-]+/(?:x86_64|aarch64)/[A-Za-z0-9._-]+", runtime_ref):
+                return False
+            metadata = self._flatpak_result([self.command, "info", "--show-metadata", runtime_ref])
+            if metadata.returncode:
+                return False
+            parser = configparser.ConfigParser(interpolation=None, strict=False)
+            parser.read_string(metadata.stdout)
+            section = "Extension org.freedesktop.Platform.VulkanLayer"
+            branch = parser.get(section, "version", fallback="").strip()
+            if not branch:
+                return False
+            extension_id = "org.freedesktop.Platform.VulkanLayer.MangoHud"
+            installed = self._flatpak_result([
+                self.command, "list", "--runtime", "--columns=application,branch",
+            ])
+            if installed.returncode == 0 and any(
+                    line.split("\t")[:2] == [extension_id, branch]
+                    for line in installed.stdout.splitlines()):
+                return True
+            # Flathub is provisioned by the Mudos Flatpak component. This is a
+            # runtime extension install, not an app override or a permission grant.
+            result = self._flatpak_result([
+                self.command, "install", "--user", "--noninteractive", "--assumeyes",
+                "flathub", f"{extension_id}//{branch}",
+            ])
+            return result.returncode == 0
+        except (OSError, subprocess.SubprocessError, configparser.Error, ValueError):
+            return False
+
+    def _application_command(self, target: str) -> str | None:
+        if not self.command:
+            return None
+        try:
+            result = self._flatpak_result([self.command, "info", "--show-metadata", target])
+            if result.returncode:
+                return None
+            parser = configparser.ConfigParser(interpolation=None, strict=False)
+            parser.read_string(result.stdout)
+            return parser.get("Application", "command", fallback="").strip() or None
+        except (OSError, subprocess.SubprocessError, configparser.Error, ValueError):
+            return None
+
+    def launch_command(self, application_id: str,
+                       overlay_environment: dict[str, str] | None = None) -> list[str]:
         self._require()
         target = application_id
         if application_id.startswith("app/"):
@@ -570,8 +631,33 @@ class FlatpakAdapter:
         # Gamescope selects the supervised application's X11 window. Keep
         # common application toolkits on X11; otherwise GTK/Qt may prefer the
         # nested Wayland socket and bypass Gamescope's focusable-window registry.
-        return [self.command, "run", "--socket=x11", "--env=SDL_VIDEODRIVER=x11",
-                "--env=GDK_BACKEND=x11", "--env=QT_QPA_PLATFORM=xcb", target]
+        command = [self.command, "run", "--socket=x11", "--env=SDL_VIDEODRIVER=x11",
+                   "--env=GDK_BACKEND=x11", "--env=QT_QPA_PLATFORM=xcb"]
+        overlay = dict(overlay_environment or {})
+        if overlay.get("MANGOHUD") == "1":
+            app_id = target.split("/")[1] if target.startswith("app/") else target
+            app_command = self._application_command(target)
+            if not self._mangohud_extension_ready(app_id) or not app_command:
+                # Keep the app launchable, but do not pretend an overlay was
+                # enabled when the runtime extension is unavailable.
+                LOGGER.warning(
+                    "Flatpak MangoHud unavailable for %s: matching VulkanLayer extension "
+                    "could not be installed; launching without overlay", app_id,
+                )
+                overlay = {"MANGOHUD": "0"}
+            else:
+                # The official extension ships MangoHud's own wrapper here.
+                # Running the app's declared entry point through it supports
+                # both OpenGL and Vulkan without host LD_PRELOAD or overrides.
+                command.append("--command=/usr/lib/extensions/vulkan/MangoHud/bin/mangohud")
+                command.extend(["--env=MANGOHUD=1"])
+                if overlay.get("MANGOHUD_CONFIG"):
+                    command.append(f"--env=MANGOHUD_CONFIG={overlay['MANGOHUD_CONFIG']}")
+                return [*command, target, "--dlsym", app_command]
+        for key in ("MANGOHUD", "MANGOHUD_CONFIG"):
+            if key in overlay:
+                command.append(f"--env={key}={overlay[key]}")
+        return [*command, target]
 
     async def prepare_browser_handoff(self, uri: str) -> dict[str, str]:
         """Fetch and validate one claimed flatpak+https flatpakref."""

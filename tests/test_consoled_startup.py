@@ -296,8 +296,10 @@ class ConsoledStartupTests(unittest.TestCase):
                     FlatpakApplication("org.example.Unknown", "Unknown", installed=True),
                 )
 
-            def launch_command(self, application_ref):
-                return ["flatpak", "run", application_ref]
+            def launch_command(self, application_ref, overlay_environment=None):
+                environment = overlay_environment or {}
+                return ["flatpak", "run", *[f"--env={key}={value}"
+                        for key, value in environment.items()], application_ref]
 
         class Session:
             def __init__(self):
@@ -325,7 +327,7 @@ class ConsoledStartupTests(unittest.TestCase):
             self.assertEqual(token, "launch-token")
             self.assertEqual(session.launch, (
                 "utility:flatpak:org.example.Graphics", "Example Graphics",
-                ["flatpak", "run", ref], 15000))
+                ["flatpak", "run", "--env=MANGOHUD=0", ref], 15000))
 
         import json
         asyncio.run(exercise())

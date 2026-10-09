@@ -5,6 +5,19 @@ app=net.pcsx2.PCSX2
 args=()
 pcsx2_args=()
 
+# Flatpak does not pass host environment variables through implicitly. Keep the
+# profile game-scoped by forwarding only Mudos' launch-time MangoHud settings.
+overlay_enabled=0
+if [[ ${MANGOHUD:-0} == 1 ]]; then
+    overlay_enabled=1
+    args+=("--env=MANGOHUD=1")
+    if [[ -n ${MANGOHUD_CONFIG:-} ]]; then
+        args+=("--env=MANGOHUD_CONFIG=$MANGOHUD_CONFIG")
+    fi
+else
+    args+=("--env=MANGOHUD=0")
+fi
+
 # A managed local-game launch supplies Mudos' XDG config root. Flatpak reserves
 # XDG_CONFIG_HOME for its private tree even with --env, so pass PCSX2's native
 # -datapath option to select the Mudos-owned PCSX2 data directory explicitly.
@@ -23,5 +36,11 @@ if [ -n "${MUDOS_PCSX2_BIOS_DIR:-}" ]; then
     args+=("--filesystem=$bios_dir:ro")
 fi
 
-# Preserve paths (including spaces) and the game's argv exactly.
+# Preserve paths (including spaces) and the game's argv exactly. The extension
+# wrapper is the supported in-sandbox mechanism for both OpenGL and Vulkan.
+if (( overlay_enabled )); then
+    exec /usr/bin/flatpak run --system "${args[@]}" \
+        --command=/usr/lib/extensions/vulkan/MangoHud/bin/mangohud \
+        "$app" --dlsym pcsx2-qt "${pcsx2_args[@]}" "$@"
+fi
 exec /usr/bin/flatpak run --system "${args[@]}" "$app" "${pcsx2_args[@]}" "$@"

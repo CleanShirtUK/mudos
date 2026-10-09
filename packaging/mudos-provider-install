@@ -20,6 +20,7 @@ case "$provider" in
         pacman -S --needed --noconfirm flatpak
         flatpak remote-add --system --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
         flatpak install --system --assumeyes flathub "$app_id"
+        "$root/scripts/provision-flatpak-mangohud.sh" --system "$app_id"
         install -D -m 0755 "$root/packaging/$wrapper_source" "/usr/local/bin/$wrapper"
         flatpak override --system --filesystem=/home/lulu/Games:ro "$app_id"
         exit 0

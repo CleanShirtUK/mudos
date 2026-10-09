@@ -55,7 +55,10 @@ from .plugins import ComponentRegistry, PluginRegistry
 from .credential import (CredentialBroker, CredentialInput, CredentialPresentation,
                            CredentialStatus, SecretStore)
 from .settings import SettingsStore
-from .statistics_overlay import launch_environment as statistics_overlay_environment
+from .statistics_overlay import (
+    adapt_native_launch,
+    launch_environment as statistics_overlay_environment,
+)
 from .web_credentials import WebCredentialStore
 from .launch_routing import LaunchDispatch, resolve_game_launch_route
 from .notifications import Notification, NotificationPresenter, SEVERITY_LIFETIMES, validate_notification
@@ -2200,7 +2203,16 @@ class ConsoleInterface(ServiceInterface):
             raise ValueError("Flatpak Utility is no longer installed or is not classified as an application")
         if self.sessiond is None:
             raise ValueError("console session is unavailable")
-        command = flatpak.launch_command(application_ref)
+        overlay_settings = SettingsStore(PATHS.config_root / "settings.sqlite3")
+        try:
+            overlay_environment = statistics_overlay_environment(
+                overlay_settings.get("statistics_overlay_mode")
+            )
+        finally:
+            overlay_settings.connection.close()
+        command = await asyncio.to_thread(
+            flatpak.launch_command, application_ref, overlay_environment,
+        )
         context = {key: os.environ[key] for key in (
             "DISPLAY", "WAYLAND_DISPLAY", "XDG_RUNTIME_DIR", "XDG_SESSION_TYPE",
             "DBUS_SESSION_BUS_ADDRESS", "XAUTHORITY", "HOME", "USER",
@@ -2671,7 +2683,19 @@ class ConsoleInterface(ServiceInterface):
             provider_ids = tuple(getattr(launcher, "provider_ids", ()))
             if route.provider_id not in provider_ids or not hasattr(launcher, "launch_command"):
                 continue
-            command = launcher.launch_command(route.provider_game_id)
+            if route.provider_id == "flatpak":
+                overlay_settings = SettingsStore(PATHS.config_root / "settings.sqlite3")
+                try:
+                    overlay_environment = statistics_overlay_environment(
+                        overlay_settings.get("statistics_overlay_mode")
+                    )
+                finally:
+                    overlay_settings.connection.close()
+                command = await asyncio.to_thread(
+                    launcher.launch_command, route.provider_game_id, overlay_environment,
+                )
+            else:
+                command = launcher.launch_command(route.provider_game_id)
             if self.sessiond is None:
                 raise ValueError("console session is unavailable")
             context = {
@@ -2801,6 +2825,7 @@ class ConsoleInterface(ServiceInterface):
                 ))
             finally:
                 overlay_settings.connection.close()
+            command, child_environment = adapt_native_launch(command, child_environment)
             if intent.provider in {"retroarch", "pcsx2"}:
                 child_environment.pop("WAYLAND_DISPLAY", None)
             if intent.provider:

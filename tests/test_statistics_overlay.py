@@ -1,8 +1,13 @@
 from __future__ import annotations
 
 import unittest
+import tempfile
+from pathlib import Path
+from unittest.mock import patch
 
-from lulu.statistics_overlay import PROFILES, launch_environment, next_mode, profile
+from lulu.statistics_overlay import (
+    PROFILES, adapt_native_launch, launch_environment, next_mode, profile,
+)
 from lulu.process_supervisor import ProcessSupervisor
 
 
@@ -39,6 +44,43 @@ class StatisticsOverlayProfileTests(unittest.TestCase):
             "MANGOHUD": "1",
             "MANGOHUD_CONFIG": "fps,frametime,cpu_temp,gpu_temp,gpu_core_clock",
         })
+
+    def test_native_elf_launch_uses_official_wrapper_and_forwards_argv(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            executable = Path(directory) / "native-game"
+            executable.write_bytes(b"\x7fELF" + b"fixture")
+            command, environment = adapt_native_launch(
+                [str(executable), "arg with spaces"], launch_environment("minimal"),
+                wrapper="/usr/bin/mangohud",
+            )
+        self.assertEqual(command, ["/usr/bin/mangohud", "--dlsym", str(executable), "arg with spaces"])
+        self.assertEqual(environment, launch_environment("minimal"))
+
+    def test_off_does_not_wrap_and_missing_wrapper_is_graceful(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            executable = Path(directory) / "native-game"
+            executable.write_bytes(b"\x7fELF" + b"fixture")
+            off_command, off_environment = adapt_native_launch([str(executable)], launch_environment("off"))
+            with patch("lulu.statistics_overlay.shutil.which", return_value=None):
+                command, environment = adapt_native_launch([str(executable)], launch_environment("fps"))
+        self.assertEqual(off_command, [str(executable)])
+        self.assertEqual(off_environment, {"MANGOHUD": "0"})
+        self.assertEqual(command, [str(executable)])
+        self.assertEqual(environment, launch_environment("fps"))
+
+    def test_native_entry_script_is_wrapped_but_proton_launcher_script_is_not(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            native = root / "SuperMeatBoy"
+            native.write_text('#!/bin/sh\ncd "$(dirname "$0")"\nexec ./amd64/SuperMeatBoy "$@"\n')
+            proton = root / "proton-game"
+            proton.write_text('#!/bin/sh\nexec wine64-preloader game.exe "$@"\n')
+            wrapped, _ = adapt_native_launch([str(native), "arg"], launch_environment("fps"),
+                                             wrapper="/usr/bin/mangohud")
+            unchanged, _ = adapt_native_launch([str(proton)], launch_environment("fps"),
+                                               wrapper="/usr/bin/mangohud")
+        self.assertEqual(wrapped, ["/usr/bin/mangohud", "--dlsym", str(native), "arg"])
+        self.assertEqual(unchanged, [str(proton)])
 
 
 if __name__ == "__main__":
