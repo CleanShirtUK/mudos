@@ -29,9 +29,9 @@ extension branch selected by the installed PCSX2 runtime.
 | Path | Renderer/runtime evidence | Status |
 | --- | --- | --- |
 | Silent Hill 2, Aurelia/Proton | Existing Aurelia launch produced MangoHud log activity and the user confirmed visible output. | **Physically verified** before this change; path intentionally unchanged. |
-| Super Meat Boy, Aurelia/native Linux | Aurelia resolved the shell entry script `/home/lulu/.local/share/Steam/steamapps/common/Super Meat Boy/SuperMeatBoy`, which changes into its install directory and `exec`s the ELF at `amd64/SuperMeatBoy`. Gamescope selected a window owned by the actual ELF PID. Journal evidence shows one launch alive from 22:43:28 to 22:43:47, so the earlier ~2-second report was not a consistent lifetime and did not mean Aurelia had only started a wrapper. The adapter now wraps this simple native entry script; its MangoHud preload environment is inherited by the script's `exec`ed game. | **Implemented, not visually verified** with this candidate. Prior process/window evidence is not MangoHud evidence. |
-| PCSX2 / SSX Tricky, Flatpak | `net.pcsx2.PCSX2` uses `org.kde.Platform/x86_64/6.10`. Its runtime metadata exposes VulkanLayer version `25.08`; no MangoHud runtime extension was installed at inspection. | **Implemented, not tested**. Installer now provisions matching extension; existing installation needs the new provisioning step. |
-| Independently installed Flatpak apps | Shared launch adapter uses each app's declared runtime and app command; no allowlist. | **Implemented, not tested**. No distinct independent Flatpak game was available in the installed-app inventory at inspection. |
+| Super Meat Boy, Aurelia/native Linux | Aurelia resolved the shell entry script `/home/lulu/.local/share/Steam/steamapps/common/Super Meat Boy/SuperMeatBoy`, which changes into its install directory and `exec`s the ELF at `amd64/SuperMeatBoy`. Gamescope selected a window owned by the actual ELF PID. Journal evidence showed previous launches alive for 8–19 seconds, not ~2 seconds. On the activated candidate, the live game's environment had `MANGOHUD=1`, `MANGOHUD_CONFIG=fps_only=1`, and `/usr/lib/mangohud/libMangoHud_opengl.so` mapped in the actual game PID. | **Physically instrumented: FPS Only**. The X11 screenshot attempt was black (the game surface is not captured by that X11 path), so visible pixels/preset are **not independently verified**. Current game was left running. |
+| PCSX2 / SSX Tricky, Flatpak | `net.pcsx2.PCSX2` uses `org.kde.Platform/x86_64/6.10`, whose metadata selects VulkanLayer version `25.08`. That system extension is now installed; wrapper presence and invocation inside the PCSX2 sandbox were checked. | **Implemented, not visually tested**. SSX was left stopped; no game session launched after the candidate activation. |
+| Independently installed Flatpak games/apps | SuperTux (runtime `org.freedesktop.Platform` branch `26.08`) and FurMark (`25.08`) were present. The shared adapter resolved their declared app commands and provisioned the corresponding MangoHud extension branches (`26.08` user, `25.08` system). | **Dependency provisioning verified; app rendering untested**. Neither app was launched during this pass. |
 | RetroArch | Active Mudos config selects `video_driver = "gl"` (OpenGL). Native executable is eligible for the official wrapper. | **Implemented, not visually verified**. |
 | Dolphin | Mudos launch uses the native executable; its managed graphics config contains no explicit backend selection, so the active backend is not established by stored config. The official wrapper supports either OpenGL or Vulkan. | **Implemented, backend unverified**. |
 | Eden | Active Mudos config records renderer `backend=1` and Vulkan-device settings; the intended backend is Vulkan. The current Mudos runtime is the native AppImage, not the separately installed Flatpak app. | **Implemented for native executable, not visually verified**. |
@@ -39,7 +39,7 @@ extension branch selected by the installed PCSX2 runtime.
 | Flatpak runtimes without the Freedesktop VulkanLayer extension point, or unavailable matching extension | Cannot load the runtime extension required by the supported in-sandbox wrapper. | **Unsupported**; launch continues with overlay explicitly disabled and a diagnostic logged. |
 
 Automated launch/profile regression tests do not establish visual output. The
-candidate still needs visible FPS Only, Minimal, Detailed, and Off checks on
-subsequent launches, including game exit and return-to-Mudos behavior. The
-current change has not been activated, and no physical controller acceptance
-is claimed.
+activated candidate showed MangoHud's OpenGL library in the actual Super Meat
+Boy process under FPS Only. Visible profile confirmation and Minimal, Detailed,
+and Off checks on subsequent launches remain outstanding, including game exit
+and return-to-Mudos behavior. No physical controller acceptance is claimed.
