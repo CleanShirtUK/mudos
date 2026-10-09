@@ -55,6 +55,7 @@ from .plugins import ComponentRegistry, PluginRegistry
 from .credential import (CredentialBroker, CredentialInput, CredentialPresentation,
                            CredentialStatus, SecretStore)
 from .settings import SettingsStore
+from .statistics_overlay import launch_environment as statistics_overlay_environment
 from .web_credentials import WebCredentialStore
 from .launch_routing import LaunchDispatch, resolve_game_launch_route
 from .notifications import Notification, NotificationPresenter, SEVERITY_LIFETIMES, validate_notification
@@ -2793,6 +2794,13 @@ class ConsoleInterface(ServiceInterface):
             if is_pcsx2:
                 LOGGER.info("[PCSX2] command line=%s", shlex.join(command))
             child_environment = os.environ.copy()
+            overlay_settings = SettingsStore(PATHS.config_root / "settings.sqlite3")
+            try:
+                child_environment.update(statistics_overlay_environment(
+                    overlay_settings.get("statistics_overlay_mode")
+                ))
+            finally:
+                overlay_settings.connection.close()
             if intent.provider in {"retroarch", "pcsx2"}:
                 child_environment.pop("WAYLAND_DISPLAY", None)
             if intent.provider:

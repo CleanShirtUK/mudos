@@ -39,4 +39,6 @@ def next_mode(value: object) -> str:
 def launch_environment(value: object) -> dict[str, str]:
     """MangoHud environment for a game launched by Mudos, not shell/apps."""
     selected = profile(value)
+    if selected is PROFILES["off"]:
+        return {"MANGOHUD": "0"}
     return {"MANGOHUD": "1", "MANGOHUD_CONFIG": selected.config}

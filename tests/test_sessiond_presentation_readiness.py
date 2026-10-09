@@ -52,6 +52,7 @@ def make_interface(*, ready: bool, presentation: object | None = object(),
                    shell_process: object | None = None) -> ConsoleSessionInterface:
     interface = ConsoleSessionInterface.__new__(ConsoleSessionInterface)
     interface.model = SessionStateModel()
+    interface.settings = SimpleNamespace(get=Mock(return_value="off"))
     interface._presentation_ready = ready
     interface._display_recovery_required = False
     interface._display_recovery_pending = False
@@ -169,6 +170,7 @@ class SessiondPresentationReadinessTests(unittest.TestCase):
     def test_watchdog_selection_sets_readiness_and_launch_remains_allowed(self) -> None:
         interface = ConsoleSessionInterface.__new__(ConsoleSessionInterface)
         interface.model = SessionStateModel()
+        interface.settings = SimpleNamespace(get=Mock(return_value="off"))
         interface.controller_registry = SimpleNamespace(
             navigation_controller_id=None, navigation_mode="all", controllers={})
         interface._local_identity = None
@@ -216,6 +218,7 @@ class SessiondPresentationReadinessTests(unittest.TestCase):
     def test_watchdog_clears_readiness_when_output_disappears_and_restores_it(self) -> None:
         interface = ConsoleSessionInterface.__new__(ConsoleSessionInterface)
         interface.model = SessionStateModel()
+        interface.settings = SimpleNamespace(get=Mock(return_value="off"))
         interface.controller_registry = SimpleNamespace(
             navigation_controller_id=None, navigation_mode="all", controllers={})
         interface._local_identity = None

@@ -14,6 +14,8 @@ from typing import Mapping
 from .paths import PATHS
 
 GRAPHICAL_ENV = ("DISPLAY", "WAYLAND_DISPLAY", "XDG_RUNTIME_DIR")
+OPTIONAL_GAME_ENV = ("MANGOHUD", "MANGOHUD_CONFIG")
+APPROVED_CONTEXT_ENV = GRAPHICAL_ENV + OPTIONAL_GAME_ENV
 CONTEXT_PATH = PATHS.runtime_root / "aurelia-graphical-launch-context.json"
 # Sessiond refreshes this snapshot on its 0.5-second presentation watchdog.
 # A narrow expiry prevents a recently disconnected display from riding out a
@@ -44,9 +46,9 @@ def write_context(
         if not ready:
             clear_context(path)
             return True
-        environment = {key: values[key] for key in GRAPHICAL_ENV if values.get(key)}
+        environment = {key: values[key] for key in APPROVED_CONTEXT_ENV if values.get(key)}
         shell_start_time = _process_start_time(shell_pid) if shell_pid is not None else None
-        if (set(environment) != set(GRAPHICAL_ENV) or shell_start_time is None
+        if (not set(GRAPHICAL_ENV).issubset(environment) or shell_start_time is None
                 or (launch_token is not None and not _LAUNCH_TOKEN.fullmatch(launch_token))):
             clear_context(path)
             return False
@@ -198,6 +200,6 @@ def read_current_context(path: Path | None = None, *, now: float | None = None) 
         descriptor = os.open(marker, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
         os.close(descriptor)
         path.unlink(missing_ok=True)
-        return {key: environment[key] for key in GRAPHICAL_ENV}
+        return {key: environment[key] for key in APPROVED_CONTEXT_ENV if key in environment}
     except (OSError, KeyError, TypeError, json.JSONDecodeError) as error:
         raise ValueError("no current graphical launch context") from error

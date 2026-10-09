@@ -181,5 +181,5 @@ class SystemSettingsProvider:
         selected = labels.get(mode, "Off")
         return [SystemSetting(
             "statistics-overlay:mode", "Statistics Overlay", "action", selected,
-            "Press A to cycle. Applies to subsequent Sessiond-launched games with MangoHud support; Steam-managed launches are not covered.", True,
+            "Press A to cycle. Applies to subsequent native Sessiond/local and Aurelia game launches with MangoHud support; Steam-managed and Flatpak-sandboxed launches are not covered.", True,
         )]

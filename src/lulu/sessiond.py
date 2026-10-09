@@ -1498,6 +1498,9 @@ class ConsoleSessionInterface(ServiceInterface):
                 key: self.supervisor.delegated_launch_environment.get(key, "")
                 for key in ("DISPLAY", "WAYLAND_DISPLAY", "XDG_RUNTIME_DIR")
             }
+            environment.update(statistics_overlay_environment(
+                self.settings.get("statistics_overlay_mode")
+            ))
             shell = self.supervisor.shell_status()
             if not graphical_context_is_live(environment):
                 raise ValueError("game launch unavailable: delegated graphical context is absent or disconnected")

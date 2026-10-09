@@ -1,5 +1,5 @@
 #!/usr/bin/python3
-"""Aurelia --script wrapper that adds only Mudos's live graphical context."""
+"""Aurelia --script wrapper that adds Mudos's live game launch context."""
 
 from __future__ import annotations
 

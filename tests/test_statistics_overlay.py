@@ -9,9 +9,7 @@ from lulu.process_supervisor import ProcessSupervisor
 class StatisticsOverlayProfileTests(unittest.TestCase):
     def test_all_four_profiles_are_mangohud_configs(self) -> None:
         self.assertEqual(set(PROFILES), {"off", "fps", "minimal", "detailed"})
-        self.assertEqual(launch_environment("off"), {
-            "MANGOHUD": "1", "MANGOHUD_CONFIG": "no_display=1"
-        })
+        self.assertEqual(launch_environment("off"), {"MANGOHUD": "0"})
         self.assertIn("fps_only=1", launch_environment("fps")["MANGOHUD_CONFIG"])
         self.assertIn("gpu_core_clock", launch_environment("minimal")["MANGOHUD_CONFIG"])
         self.assertIn("full", launch_environment("detailed")["MANGOHUD_CONFIG"])

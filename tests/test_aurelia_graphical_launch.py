@@ -17,6 +17,7 @@ from lulu.console_sessiond import SessionStateModel
 from lulu.graphical_launch_context import GRAPHICAL_ENV, graphical_context_is_live
 from lulu.plugins.steam.aurelia import AureliaClient
 from lulu.sessiond import ConsoleSessionInterface
+from lulu.statistics_overlay import launch_environment as statistics_overlay_environment
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -136,6 +137,14 @@ class WrapperBoundaryTests(unittest.TestCase):
         self.assertEqual({key: final[key] for key in GRAPHICAL_ENV}, self.context)
         self.assertEqual(final["WINEPREFIX"], "/aurelia/prefix")
         self.assertEqual(final["argv"], args)
+
+    def test_off_profile_reaches_resolved_game_as_explicit_disable(self):
+        self.context.update(statistics_overlay_environment("off"))
+        self.write_context()
+        code = "import json,os; print(json.dumps({k:os.environ.get(k) for k in ('MANGOHUD','MANGOHUD_CONFIG')}))"
+        result = self.run_wrapper(sys.executable, "-c", code)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout), {"MANGOHUD": "0", "MANGOHUD_CONFIG": None})
 
     def test_child_exit_code_propagates_through_exec(self):
         self.write_context()
@@ -262,6 +271,7 @@ class SessiondLaunchLeaseTests(unittest.IsolatedAsyncioTestCase):
         interface = ConsoleSessionInterface.__new__(ConsoleSessionInterface)
         interface.model = model
         interface.supervisor = supervisor
+        interface.settings = SimpleNamespace(get=lambda key: "minimal")
         interface._presentation_ready = True
         interface._display_recovery_required = False
         interface._display_recovery_pending = False
@@ -298,7 +308,8 @@ class SessiondLaunchLeaseTests(unittest.IsolatedAsyncioTestCase):
             "WAYLAND_DISPLAY": "stale",
             "XDG_RUNTIME_DIR": "/stale",
         }
-        probe = "import json,os; print(json.dumps({k:os.environ.get(k) for k in " + repr(GRAPHICAL_ENV) + "}))"
+        keys = (*GRAPHICAL_ENV, "MANGOHUD", "MANGOHUD_CONFIG")
+        probe = "import json,os; print(json.dumps({k:os.environ.get(k) for k in " + repr(keys) + "}))"
         return subprocess.run([sys.executable, str(WRAPPER), sys.executable, "-c", probe],
                               env=env, text=True, capture_output=True)
 
@@ -310,12 +321,18 @@ class SessiondLaunchLeaseTests(unittest.IsolatedAsyncioTestCase):
                     await interface._refresh_presentation_readiness()
             record = json.loads(self.context_path.read_text())
             self.assertEqual(record["launch_token"], token)
+            self.assertEqual(
+                {key: record["environment"][key] for key in ("MANGOHUD", "MANGOHUD_CONFIG")},
+                statistics_overlay_environment("minimal"),
+            )
             self.assertFalse(interface._presentation_ready)
             self.assertTrue(graphical_context_is_live(record["environment"]), record)
 
             result = self._run_wrapper()
             self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertEqual(json.loads(result.stdout), self.environment)
+            self.assertEqual(json.loads(result.stdout), {
+                **self.environment, **statistics_overlay_environment("minimal"),
+            })
             self.assertFalse(self.context_path.exists())
 
             with patch("lulu.sessiond.has_connected_presentation_output", return_value=True):
