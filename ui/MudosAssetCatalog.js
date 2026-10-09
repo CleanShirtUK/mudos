@@ -168,7 +168,7 @@ function systemIcon(category) {
 // labels and glyphs remain tied to the existing semantic icon vocabulary.
 function settingsCategories(systemCategories) {
     var source = Array.isArray(systemCategories) ? systemCategories : []
-    var order = ["Network", "Bluetooth", "Display", "Audio", "Controllers", "Storage", "System"]
+    var order = ["Network", "Bluetooth", "Display", "Audio", "Controllers", "Storage", "Performance", "System"]
     var pages = {Network: "internetSettings", Bluetooth: "systemSpace",
                  Display: "displaySettings", Audio: "audioSettings",
                  Controllers: "controllerSettings", Storage: "storageSettings",

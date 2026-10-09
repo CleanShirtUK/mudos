@@ -30,6 +30,7 @@ SETTING_SPECS = (
     SettingSpec("runtime.dolphin_ready", "Applications", bool, False, writable=False),
     SettingSpec("power.confirm_shutdown", "Power", bool, True),
     SettingSpec("launch_overlay_enabled", "Lulu", bool, True),
+    SettingSpec("statistics_overlay_mode", "System", str, "off"),
 )
 
 

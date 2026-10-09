@@ -12,6 +12,8 @@ import asyncio
 from typing import Any
 
 from .bluetooth import BluezClient
+from .paths import PATHS
+from .settings import SettingsStore
 
 
 @dataclass(frozen=True, slots=True)
@@ -34,7 +36,7 @@ class SystemSetting:
         }
 
 
-CATEGORIES = ("Display", "Audio", "Network", "Bluetooth", "Controllers", "Storage", "System")
+CATEGORIES = ("Display", "Audio", "Network", "Bluetooth", "Controllers", "Storage", "Performance", "System")
 FILE_BROWSER_SERVICE = "lulu-file-browser.service"
 FILE_BROWSER_PORT = int(os.environ.get("LULU_FILE_BROWSER_PORT", "8080"))
 
@@ -170,3 +172,14 @@ class SystemSettingsProvider:
             _status("system.memory", "Memory", "available", "Detailed memory model is TO PROVE"),
             _status("system.power", "Power controls", "available", "Controller confirmation required"),
         ]
+
+    def _performance_settings(self) -> list[SystemSetting]:
+        mode = SettingsStore(PATHS.config_root / "settings.sqlite3").get(
+            "statistics_overlay_mode"
+        )
+        labels = {"off": "Off", "fps": "FPS Only", "minimal": "Minimal", "detailed": "Detailed"}
+        selected = labels.get(mode, "Off")
+        return [SystemSetting(
+            "statistics-overlay:mode", "Statistics Overlay", "action", selected,
+            "Press A to cycle. Applies to subsequent Mudos-launched games with MangoHud support.", True,
+        )]

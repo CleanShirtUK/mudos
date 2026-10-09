@@ -1469,6 +1469,13 @@ Window {
         })
     }
 
+    function cycleStatisticsOverlayMode() {
+        request("/settings/statistics-overlay", "POST", "{}", function(result) {
+            root.notify("Statistics Overlay", "Selected for the next game: " + result.mode, "success")
+            root.refreshSystemSettings()
+        }, "Statistics Overlay setting could not be saved")
+    }
+
     function refreshNetworkState() {
         request("/network", "GET", "", function(data) {
             root.networkState = data
@@ -2854,8 +2861,18 @@ Window {
             if (systemCategories[systemCategoryIndex] === "System"
                     && systemSettings[systemRowIndex]) {
                 var selectedKey = systemSettings[systemRowIndex].key
+                if (selectedKey === "statistics-overlay:mode") {
+                    cycleStatisticsOverlayMode()
+                    return
+                }
                 if (selectedKey.indexOf("mudos.") === 0)
                     activateMudosAction(selectedKey)
+                return
+            }
+            if (systemCategories[systemCategoryIndex] === "Performance"
+                    && systemSettings[systemRowIndex]
+                    && systemSettings[systemRowIndex].key === "statistics-overlay:mode") {
+                cycleStatisticsOverlayMode()
                 return
             }
             if (systemCategories[systemCategoryIndex] === "Network"
@@ -4412,7 +4429,8 @@ Window {
             anchors.fill: parent
             visible: settingsSpace.visible
                 && (root.systemCategories[root.systemCategoryIndex] === "System"
-                    || root.systemCategories[root.systemCategoryIndex] === "Bluetooth")
+                    || root.systemCategories[root.systemCategoryIndex] === "Bluetooth"
+                    || root.systemCategories[root.systemCategoryIndex] === "Performance")
             category: root.systemCategories[root.systemCategoryIndex]
             embedded: true
             textInputFocusEnabled: root.settingsPanelFocus === "content"
@@ -4434,6 +4452,9 @@ Window {
                     root.activateMudosAction(key)
                 else if (root.systemCategories[root.systemCategoryIndex] === "Bluetooth")
                     root.activateBluetoothSetting(key)
+                else if (root.systemCategories[root.systemCategoryIndex] === "Performance"
+                        && key === "statistics-overlay:mode")
+                    root.cycleStatisticsOverlayMode()
                 else if (key === "lulu.reset") root.resetMudos()
             }
             onInteractionRequested: {

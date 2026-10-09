@@ -2259,6 +2259,18 @@ class ConsoleInterface(ServiceInterface):
         return [self._variants(item) for item in rows]
 
     @method()
+    def CycleStatisticsOverlayMode(self) -> "s":
+        """Select the MangoHud profile used by subsequent owned game launches."""
+        from .settings import SettingsStore
+        from .paths import PATHS
+        from .statistics_overlay import next_mode
+        store = SettingsStore(PATHS.config_root / "settings.sqlite3")
+        current = store.get("statistics_overlay_mode")
+        selected = next_mode(current)
+        store.set("statistics_overlay_mode", selected)
+        return selected
+
+    @method()
     async def BluetoothAction(self, action: "s", device_path: "s") -> "s":
         try:
             result = await self.system_settings.bluetooth.mutate(action, device_path)

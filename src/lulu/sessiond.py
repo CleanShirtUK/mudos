@@ -39,6 +39,7 @@ from .resident_steam_runtime import (
     read_resident_steam_runtime_status,
 )
 from .settings import SettingsStore
+from .statistics_overlay import launch_environment as statistics_overlay_environment
 from .provider_config import ProviderConfigurationService
 from .graphical_launch_context import (
     clear_context as clear_graphical_launch_context,
@@ -1371,10 +1372,21 @@ class ConsoleSessionInterface(ServiceInterface):
     @method()
     async def RequestGameLaunch(self, game_id: "s", command: "as", startup_timeout_ms: "u") -> "s":
         """Launch an owned game process while retaining its catalogue identity."""
+        base_environment = self.supervisor.delegated_launch_environment
         try:
+            # Apply MangoHud only to this Sessiond-owned game launch.  Never
+            # modify the daemon environment, shell, utilities, or delegated apps.
+            mode = self.settings.get("statistics_overlay_mode")
+            self.supervisor.set_delegated_launch_environment({
+                **base_environment,
+                **statistics_overlay_environment(mode),
+            })
             return await self.supervisor.launch(list(command), startup_timeout_ms, primary_id=game_id)
         except ValueError as error:
             raise self._error(error) from error
+        finally:
+            # Delegated environment belongs to the next launch only.
+            self.supervisor.set_delegated_launch_environment(base_environment)
 
     @method()
     async def RequestUtilityLaunch(self, utility_id: "s", title: "s", command: "as",

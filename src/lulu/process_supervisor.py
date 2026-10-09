@@ -265,6 +265,7 @@ class ProcessSupervisor:
         allowed = {
             "DISPLAY", "WAYLAND_DISPLAY", "XDG_RUNTIME_DIR", "XDG_SESSION_TYPE",
             "DBUS_SESSION_BUS_ADDRESS", "XAUTHORITY", "HOME", "USER", "SDL_VIDEODRIVER",
+            "MANGOHUD", "MANGOHUD_CONFIG",
         }
         self._delegated_launch_environment = {
             key: value for key, value in values.items()
