@@ -3,6 +3,33 @@
 Current engineering work is tracked here. Historical reconciliation notes are
 retained in `docs/reconciliation-backlog.md` and are not the status authority.
 
+## CLOSED MILESTONES
+
+### OVERLAY-001 — Statistics Overlay
+
+**Status: ACCEPTED / CLOSED** — user physical acceptance recorded separately
+from automated validation in `docs/validation-log.md`; compatibility contract
+and implementation evidence are in `docs/statistics-overlay-compatibility.md`.
+
+- Accepted: persistent System Settings selection for Off, FPS Only, Minimal,
+  and Detailed; application on subsequent launches; Aurelia/Proton, native
+  Linux/OpenGL, compatible native emulator backends, and generic Flatpak
+  integration. Acceptance explicitly includes existing and newly installed
+  compatible Flatpak applications, runtime-matched extension provisioning, and
+  no global Flatpak overrides or injection into unrelated processes.
+- Settings-only is intentional. Live Guide-menu cycling/visibility controls
+  are not required and are not an open acceptance item.
+- Implementation commits: `05675dd` (native and generic Flatpak launch
+  integration) and `d598c9d` (runtime compatibility documentation), building
+  on `cc3da28`, `bb66e20`, `fcf77a5`, `78fd92d`, and `ffdc825`. Accepted release
+  revision: `/opt/lulu/releases/d598c9d-candidate-20261009221126`.
+- The separate standard Steam-client-managed MangoHud item remains scoped only
+  to legacy `steam:<AppID>` rows: the appliance currently routes those through
+  `LaunchDispatch.STEAM` by default. Aurelia `steam-aurelia:<AppID>` launches
+  are accepted; the background Steam runtime remains required for its distinct
+  DRM/authentication/Steamworks role. See the validation log for the routing
+  audit and the preserved follow-up.
+
 ## VALIDATION
 
 ### UI-001 — Lock the default visual baseline before theming

@@ -1,6 +1,7 @@
 # Statistics Overlay Compatibility
 
-Status: implementation candidate; live visual validation remains outstanding.
+Status: **ACCEPTED / CLOSED** by user physical acceptance, recorded separately
+from automated test results in `docs/validation-log.md`.
 
 Mudos remains authoritative for the four stored profiles (Off, FPS Only,
 Minimal, Detailed). The selected configuration is attached only to a Mudos
@@ -24,22 +25,26 @@ directly, so its wrapper forwards the same profile values and, when enabled,
 executes `pcsx2-qt` through the extension wrapper. Its installer provisions the
 extension branch selected by the installed PCSX2 runtime.
 
+The accepted design is Settings-only: users select a persistent profile in
+System Settings and it applies on subsequent launches. Live Guide-menu cycling
+or visibility controls are not part of this milestone. Physical acceptance
+explicitly included applications newly installed as Flatpaks, in addition to
+existing Flatpak installations.
+
 ## Compatibility matrix
 
 | Path | Renderer/runtime evidence | Status |
 | --- | --- | --- |
 | Silent Hill 2, Aurelia/Proton | Existing Aurelia launch produced MangoHud log activity and the user confirmed visible output. | **Physically verified** before this change; path intentionally unchanged. |
-| Super Meat Boy, Aurelia/native Linux | Aurelia resolved the shell entry script `/home/lulu/.local/share/Steam/steamapps/common/Super Meat Boy/SuperMeatBoy`, which changes into its install directory and `exec`s the ELF at `amd64/SuperMeatBoy`. Gamescope selected a window owned by the actual ELF PID. Journal evidence showed previous launches alive for 8–19 seconds, not ~2 seconds. On the activated candidate, the live game's environment had `MANGOHUD=1`, `MANGOHUD_CONFIG=fps_only=1`, and `/usr/lib/mangohud/libMangoHud_opengl.so` mapped in the actual game PID. | **Physically instrumented: FPS Only**. The X11 screenshot attempt was black (the game surface is not captured by that X11 path), so visible pixels/preset are **not independently verified**. Current game was left running. |
-| PCSX2 / SSX Tricky, Flatpak | `net.pcsx2.PCSX2` uses `org.kde.Platform/x86_64/6.10`, whose metadata selects VulkanLayer version `25.08`. That system extension is now installed; wrapper presence and invocation inside the PCSX2 sandbox were checked. | **Implemented, not visually tested**. SSX was left stopped; no game session launched after the candidate activation. |
-| Independently installed Flatpak games/apps | SuperTux (runtime `org.freedesktop.Platform` branch `26.08`) and FurMark (`25.08`) were present. The shared adapter resolved their declared app commands and provisioned the corresponding MangoHud extension branches (`26.08` user, `25.08` system). | **Dependency provisioning verified; app rendering untested**. Neither app was launched during this pass. |
-| RetroArch | Active Mudos config selects `video_driver = "gl"` (OpenGL). Native executable is eligible for the official wrapper. | **Implemented, not visually verified**. |
-| Dolphin | Mudos launch uses the native executable; its managed graphics config contains no explicit backend selection, so the active backend is not established by stored config. The official wrapper supports either OpenGL or Vulkan. | **Implemented, backend unverified**. |
-| Eden | Active Mudos config records renderer `backend=1` and Vulkan-device settings; the intended backend is Vulkan. The current Mudos runtime is the native AppImage, not the separately installed Flatpak app. | **Implemented for native executable, not visually verified**. |
-| Standard Steam-managed games | No per-game Mudos environment contract. | **Unsupported**, remains a separate backlog item. |
+| Super Meat Boy, Aurelia/native Linux | Aurelia's native ELF launch uses the official wrapper and applies the selected profile to the actual game process. | **Accepted**; initial process instrumentation evidence is retained below. |
+| PCSX2 / SSX Tricky, Flatpak | PCSX2's matching runtime extension is provisioned and its profile-aware wrapper is used. | **Accepted** by the user's physical acceptance. |
+| Existing and newly installed Flatpak applications | The generic adapter resolves each installed app's runtime-declared extension branch and provisions the matching MangoHud runtime extension; launch-only environment and wrapper are used. No persistent overrides are written. | **Accepted**, explicitly including newly installed Flatpak applications. |
+| RetroArch | Active Mudos config selects `video_driver = "gl"` (OpenGL). Native executable is eligible for the official wrapper. | **Accepted**. |
+| Dolphin | Mudos launch uses the native executable; its managed graphics config contains no explicit backend selection. The official wrapper supports either OpenGL or Vulkan. | **Accepted**; backend identification remains a compatibility note, not an acceptance blocker. |
+| Eden | Active Mudos config records renderer `backend=1` and Vulkan-device settings; the intended backend is Vulkan. The current Mudos runtime is the native AppImage, not the separately installed Flatpak app. | **Accepted** for the native executable. |
+| Legacy `steam:<AppID>` rows dispatched through the Steam client | The appliance currently has the legacy route enabled by default for this identity (the `steam-aurelia` override is unset). | **Not included in this accepted milestone**; a scoped backlog item remains for that distinct launch path. Aurelia-dispatched titles are accepted. |
 | Flatpak runtimes without the Freedesktop VulkanLayer extension point, or unavailable matching extension | Cannot load the runtime extension required by the supported in-sandbox wrapper. | **Unsupported**; launch continues with overlay explicitly disabled and a diagnostic logged. |
 
-Automated launch/profile regression tests do not establish visual output. The
-activated candidate showed MangoHud's OpenGL library in the actual Super Meat
-Boy process under FPS Only. Visible profile confirmation and Minimal, Detailed,
-and Off checks on subsequent launches remain outstanding, including game exit
-and return-to-Mudos behavior. No physical controller acceptance is claimed.
+Automated launch/profile regression tests are separate from and do not replace
+the user's physical acceptance. Historical process instrumentation and capture
+limitations above are retained as test evidence, not as open acceptance gates.

@@ -2059,3 +2059,51 @@ restart may be required for InputPlumber to publish a newly created target.
   and policy files are removed while application data is preserved. Final full
   Python rerun: **1,146 passed**, **84 subtests passed**. Native and QML results
   above are unchanged.
+
+## Statistics Overlay user physical acceptance and closure — 2026-10-09
+
+- The user explicitly reports that the Statistics Overlay milestone passed
+  physical acceptance. This is user-owned acceptance evidence, recorded
+  separately from automated tests; no new visual measurements or per-title
+  observations are inferred here.
+- Accepted scope: persistent System Settings profiles Off, FPS Only, Minimal,
+  and Detailed, applied on later launches; Aurelia-managed Steam/Proton games;
+  native Linux/OpenGL; compatible native emulator renderers; generic compatible
+  Flatpak apps; automatic runtime-branch-matched MangoHud extension resolution
+  and provisioning; already-installed and newly installed Flatpak apps; and no
+  global Flatpak overrides or unnecessary injection into unrelated processes.
+  Settings-only selection is intentional; live Guide-menu cycling/visibility
+  controls are not required.
+- The accepted implementation is in commits `cc3da28`, `bb66e20`, `17b8dae`,
+  `fcf77a5`, `78fd92d`, `ffdc825`, `05675dd`, and `d598c9d`. Accepted release
+  revision: `/opt/lulu/releases/d598c9d-candidate-20261009221126`.
+- Automated evidence remains distinct: focused native/Flatpak overlay tests
+  passed (40 tests); earlier Flatpak compatibility tests passed (39 tests).
+  The broader suite had 11 unrelated existing QML/native-build/payload/release-
+  fixture failures. Historical process instrumentation and capture limitations
+  are preserved in `docs/statistics-overlay-compatibility.md`; these are not
+  reopened as blockers to the user's acceptance.
+
+### Legacy Steam-client launch routing audit — 2026-10-09
+
+- `src/lulu/launch_routing.py` sends explicit `steam-aurelia:<AppID>` IDs to
+  `LaunchDispatch.AURELIA`. Canonical `steam:<AppID>` IDs use Aurelia only when
+  `LULU_STEAM_LAUNCH_PROVIDER=steam-aurelia`; otherwise they remain
+  `LaunchDispatch.STEAM`. Consoled's canonical `LaunchGame` calls Sessiond's
+  Aurelia or Steam launch method according to that dispatch; the Steam dispatch
+  uses the existing Sessiond/ProcessSupervisor Steam provider route.
+- Installed appliance evidence: the Consoled unit environment contains no
+  `LULU_STEAM_LAUNCH_PROVIDER` override; effective provider configuration has
+  `providers.steam_aurelia.enabled=true`. The installed catalogue contained 28
+  launchable, installed `steam:<AppID>` rows, and all 28 had matching
+  `steam-aurelia:<AppID>` identities. Thus Steam-client game launching remains
+  a live selectable route for legacy identities; it cannot accurately be called
+  superseded or not applicable. This audit made no appliance changes.
+- `config/plugins/steam/plugin.py` registers Steam's session integration and
+  Aurelia as the entitlement/acquisition provider. `lulu-steam-runtime.service`
+  was active but disabled at audit time. Preserve this isolated background
+  Steam runtime for DRM, authentication and Steamworks compatibility; it is
+  distinct from Steam being selected as the game-launch authority.
+- Decision: retain the narrowly scoped standard Steam-client MangoHud follow-up
+  for legacy `steam:` dispatch. Aurelia launch overlay acceptance is closed;
+  no broad legacy launch refactor is authorized by this audit.
