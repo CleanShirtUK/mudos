@@ -33,6 +33,22 @@ and implementation evidence are in `docs/statistics-overlay-compatibility.md`.
   `934c18d` and the retained-ID lookup correction in `7adb957`; verified and
   active candidate: `/opt/lulu/releases/7adb957-candidate-20261009223803`.
 
+## ROUTING VALIDATION
+
+### STEAM-ROUTE-001 — Physically verify both Steam identity routes
+
+**Status: BLOCKED on connected presentation output.** The active release passes
+automated routing tests, but the appliance currently reports DP-1 and DP-2
+disconnected. Sessiond correctly refuses game launch without DRM presentation;
+no game was started against the hidden Steam display.
+
+- When a display is connected, launch one Aurelia-installed title (for example,
+  Super Meat Boy / AppID `40800`) once as `steam:40800` and once as
+  `steam-aurelia:40800`. Confirm the actual game process starts through Aurelia,
+  no Steam client game window is selected, and each launch returns to Mudos.
+- Do not test stale legacy rows that Aurelia reports uninstalled. Their retained
+  metadata and paths were not deleted, and Consoled fails them closed.
+
 ## VALIDATION
 
 ### UI-001 — Lock the default visual baseline before theming
