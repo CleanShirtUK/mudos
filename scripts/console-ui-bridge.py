@@ -763,6 +763,9 @@ class ConsoleUiBridge:
         rows = await self.consoled.call_list_system_settings(category)
         return [{key: value.value for key, value in row.items()} for row in rows]
 
+    async def cycle_statistics_overlay_mode(self) -> str:
+        return await self.consoled.call_cycle_statistics_overlay_mode()
+
     async def bluetooth_action(self, action: str, path: str) -> dict[str, object]:
         return json.loads(await self.consoled.call_bluetooth_action(action, path))
 
@@ -1069,6 +1072,13 @@ class ApiHandler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:
         path = urlparse(self.path).path
+        if path == "/settings/statistics-overlay":
+            try:
+                mode = self.bridge.call(self.bridge.cycle_statistics_overlay_mode())
+                self._respond(200, {"mode": mode})
+            except Exception as error:
+                self._respond(409, {"error": str(error) or type(error).__name__})
+            return
         if path == "/notification":
             try:
                 length = int(self.headers.get("Content-Length", "0"))

@@ -418,6 +418,39 @@ class ConsoleBridgeTests(unittest.TestCase):
         self.assertNotIsInstance(body["token"], dict)
         self.assertEqual(fake.asserted_game_id, "steam:40800")
 
+    def test_statistics_overlay_endpoint_cycles_saved_mode(self) -> None:
+        class FakeBridge:
+            def call(self, operation, timeout=None):
+                return asyncio.run(operation)
+
+            async def cycle_statistics_overlay_mode(self):
+                return "minimal"
+
+        fake = FakeBridge()
+        previous = getattr(BRIDGE.ApiHandler, "bridge", None)
+        BRIDGE.ApiHandler.bridge = fake
+        server = BRIDGE.ThreadingHTTPServer(("127.0.0.1", 0), BRIDGE.ApiHandler)
+        thread = BRIDGE.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            connection = http.client.HTTPConnection("127.0.0.1", server.server_address[1])
+            connection.request("POST", "/settings/statistics-overlay", body="{}",
+                               headers={"Content-Type": "application/json"})
+            response = connection.getresponse()
+            body = json.loads(response.read())
+            connection.close()
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join()
+            if previous is None:
+                del BRIDGE.ApiHandler.bridge
+            else:
+                BRIDGE.ApiHandler.bridge = previous
+
+        self.assertEqual(response.status, 200)
+        self.assertEqual(body, {"mode": "minimal"})
+
     def test_steam_game_uses_session_transaction_not_navigation_only_uri(self) -> None:
         class Session:
             async def call_request_steam_launch(self, appid: str, timeout: int) -> str:
