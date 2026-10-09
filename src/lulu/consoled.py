@@ -2643,7 +2643,10 @@ class ConsoleInterface(ServiceInterface):
 
     @method()
     async def LaunchGame(self, game_id: "s", timeout_ms: "u") -> "s":
-        games = {game.game_id: game for game in self.catalogue.store.list_games()}
+        # Library projection collapses legacy Steam identities when an Aurelia
+        # counterpart exists. Retain direct launch compatibility for those
+        # persisted IDs without putting duplicate rows back in the UI.
+        games = {game.game_id: game for game in self.catalogue.store.list_catalogue_games()}
         game = games.get(game_id)
         if game is None or not game.launchable:
             raise ValueError("game is not installed and launchable")

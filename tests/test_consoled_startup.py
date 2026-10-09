@@ -37,7 +37,7 @@ class ConsoledStartupTests(unittest.TestCase):
             provider_id="104200", launchable=True,
         )
         store = SimpleNamespace(
-            list_games=Mock(return_value=[game]),
+            list_catalogue_games=Mock(return_value=[game]),
             mark_played=Mock(return_value="catalogue-delta"),
         )
         consoled = ConsoleInterface.__new__(ConsoleInterface)
@@ -74,7 +74,7 @@ class ConsoledStartupTests(unittest.TestCase):
             provider_id="104200", launchable=True,
         )
         store = SimpleNamespace(
-            list_games=Mock(return_value=[game, aurelia_game]),
+            list_catalogue_games=Mock(return_value=[game, aurelia_game]),
             mark_played=Mock(return_value="catalogue-delta"),
         )
         consoled = ConsoleInterface.__new__(ConsoleInterface)
@@ -111,7 +111,7 @@ class ConsoledStartupTests(unittest.TestCase):
             provider_id="40800", launchable=True,
         )
         store = SimpleNamespace(
-            list_games=Mock(return_value=[game, aurelia_game]),
+            list_catalogue_games=Mock(return_value=[game, aurelia_game]),
             mark_played=Mock(return_value="catalogue-delta"),
         )
         consoled = ConsoleInterface.__new__(ConsoleInterface)
@@ -135,7 +135,7 @@ class ConsoledStartupTests(unittest.TestCase):
         game = SimpleNamespace(
             game_id="steam:40800", provider="steam", provider_id="40800", launchable=True,
         )
-        store = SimpleNamespace(list_games=Mock(return_value=[game]))
+        store = SimpleNamespace(list_catalogue_games=Mock(return_value=[game]))
         consoled = ConsoleInterface.__new__(ConsoleInterface)
         consoled.catalogue = SimpleNamespace(store=store)
         consoled._plugins = SimpleNamespace(with_capability=lambda _capability: ())

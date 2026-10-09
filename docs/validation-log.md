@@ -2132,17 +2132,30 @@ restart may be required for InputPlumber to publish a newly created target.
   data was migrated or deleted.
 - Correction: `resolve_game_launch_route` now maps both Steam identity prefixes
   to `LaunchDispatch.AURELIA` independent of environment. The UI bridge sends
-  both identities through Consoled's canonical LaunchGame boundary. Consoled
-  checks that a legacy `steam:` row has a launchable matching Aurelia identity
-  before dispatching. The compatibility `RequestSteamLaunch` D-Bus method now
-  delegates to the same guarded Aurelia launch implementation. No Mudos game
-  entry point can navigate the Steam client or silently fall back to its
-  display. The Steam client background runtime and Steam Store functions remain
-  unchanged.
+  both identities through Consoled's canonical LaunchGame boundary. Since the
+  library projection intentionally hides duplicate `steam:` rows when their
+  Aurelia counterpart exists, Consoled launch lookup uses the complete stored
+  catalogue rather than the UI projection. It checks that a legacy `steam:`
+  row has a launchable matching Aurelia identity before dispatching. The
+  compatibility `RequestSteamLaunch` D-Bus method now delegates to the same
+  guarded Aurelia launch implementation. No Mudos game entry point can navigate
+  the Steam client or silently fall back to its display. The Steam client
+  background runtime and Steam Store functions remain unchanged.
 - The standard Steam-client MangoHud follow-up is superseded: the accepted
   overlay profile is applied in Aurelia's launch environment for both identity
   forms. No per-AppID Steam-client launch-options contract is needed.
 - Regression validation: focused routing, Consoled, bridge, and presentation
   readiness suites passed (**64 tests**); Python compile and `git diff --check`
-  passed. Physical game launch validation and immutable candidate verification
-  are recorded below after completion.
+  passed. Candidate `934c18d-candidate-20261009223402` was built by the
+  canonical release builder, checksum-verified, and activated. Sessiond and
+  Consoled restarted with no game active; the isolated Steam runtime restarted
+  as part of the session dependency and returned to active/authenticated.
+- Physical game launch was not attempted: after the controlled Mudos restart,
+  `/sys/class/drm` reported no connected presentation output, Sessiond remained
+  in shell/waiting state, and no Gamescope surface was available. Sessiond
+  correctly rejects launches in that state. A direct `steam:40800` D-Bus probe
+  against the first activated candidate was rejected before route evaluation
+  because its UI library projection hides the duplicate legacy row; the source
+  fix now uses the full catalogue for launch lookup. Real launch verification
+  remains pending a connected display and a follow-up candidate containing
+  that correction. No game was started against the hidden Steam display.

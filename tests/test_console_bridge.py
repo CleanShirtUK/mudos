@@ -539,7 +539,7 @@ class ConsoleBridgeTests(unittest.TestCase):
                     provider_id="104200", launchable=True,
                 ))
             store = SimpleNamespace(
-                list_games=Mock(return_value=games),
+                list_catalogue_games=Mock(return_value=games),
                 mark_played=Mock(return_value="catalogue-delta"),
             )
             consoled = ConsoleInterface.__new__(ConsoleInterface)
