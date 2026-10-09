@@ -2153,9 +2153,19 @@ restart may be required for InputPlumber to publish a newly created target.
 - Physical game launch was not attempted: after the controlled Mudos restart,
   `/sys/class/drm` reported no connected presentation output, Sessiond remained
   in shell/waiting state, and no Gamescope surface was available. Sessiond
-  correctly rejects launches in that state. A direct `steam:40800` D-Bus probe
-  against the first activated candidate was rejected before route evaluation
-  because its UI library projection hides the duplicate legacy row; the source
-  fix now uses the full catalogue for launch lookup. Real launch verification
-  remains pending a connected display and a follow-up candidate containing
-  that correction. No game was started against the hidden Steam display.
+  correctly rejects launches in that state. After the full-catalogue lookup
+  correction, direct `steam:40800` and `steam-aurelia:40800` D-Bus requests both
+  reached Sessiond's explicit `no connected DRM presentation output` refusal;
+  neither fell back to Steam-client navigation. Aurelia reported no running
+  games. The display connectors currently report DP-1 and DP-2 disconnected.
+  No game was started against the hidden Steam display. Real process/render
+  validation remains pending a connected output.
+- Follow-up commit `7adb957` preserves the visible catalogue de-duplication
+  while looking up retained legacy IDs from the complete store. It passed the
+  same focused suites (**109 tests** total across route, bridge, Sessiond,
+  Aurelia graphical launch, and overlay integration), compilation, and
+  `git diff --check`. The canonical builder produced and checksum-verified
+  `/opt/lulu/releases/7adb957-candidate-20261009223803`; it is now the active
+  release. Only Consoled was restarted for this second activation. Sessiond
+  remains active and waiting for a connected display; the isolated Steam
+  runtime remains active/authenticated.

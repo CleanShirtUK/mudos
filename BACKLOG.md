@@ -29,7 +29,9 @@ and implementation evidence are in `docs/statistics-overlay-compatibility.md`.
   launch ownership. Nine of 28 formerly launchable legacy catalogue rows were
   stale (missing content and not installed in Aurelia); routing rejects these
   unless a matching Aurelia identity is currently launchable. See
-  `docs/validation-log.md` for the complete audit.
+  `docs/validation-log.md` for the complete audit. Routing implementation is in
+  `934c18d` and the retained-ID lookup correction in `7adb957`; verified and
+  active candidate: `/opt/lulu/releases/7adb957-candidate-20261009223803`.
 
 ## VALIDATION
 
