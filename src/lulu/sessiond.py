@@ -1486,14 +1486,14 @@ class ConsoleSessionInterface(ServiceInterface):
 
     @method()
     def RequestSteamLaunch(self, app_id: "s", startup_timeout_ms: "u") -> "s":
-        try:
-            self._require_game_presentation_ready()
-            return self.supervisor.queue_steam_launch(app_id, startup_timeout_ms)
-        except ValueError as error:
-            raise self._error(error) from error
+        """Compatibility alias that can no longer launch through the Steam UI."""
+        return self._request_aurelia_launch(app_id, startup_timeout_ms)
 
     @method()
     def RequestAureliaLaunch(self, app_id: "s", startup_timeout_ms: "u") -> "s":
+        return self._request_aurelia_launch(app_id, startup_timeout_ms)
+
+    def _request_aurelia_launch(self, app_id: str, startup_timeout_ms: int) -> str:
         try:
             self._require_game_presentation_ready()
             if not ProviderConfigurationService.from_environment().provider(

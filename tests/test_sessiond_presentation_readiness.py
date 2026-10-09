@@ -75,7 +75,7 @@ def make_interface(*, ready: bool, presentation: object | None = object(),
 
 
 class SessiondPresentationReadinessTests(unittest.TestCase):
-    def test_ready_shell_allows_both_steam_backends(self) -> None:
+    def test_legacy_steam_dbus_alias_routes_to_aurelia(self) -> None:
         interface = make_interface(ready=True)
         aurelia_config = SimpleNamespace(provider=Mock(return_value=SimpleNamespace(enabled=True)))
 
@@ -91,10 +91,10 @@ class SessiondPresentationReadinessTests(unittest.TestCase):
             aurelia_token = ConsoleSessionInterface.RequestAureliaLaunch.__wrapped__(
                 interface, "104200", 15000)
 
-        self.assertEqual(steam_token, "steam-token")
+        self.assertEqual(steam_token, "aurelia-token")
         self.assertEqual(aurelia_token, "aurelia-token")
-        interface.supervisor.queue_steam_launch.assert_called_once_with("104200", 15000)
-        interface.supervisor.queue_aurelia_launch.assert_called_once_with("104200", 15000)
+        interface.supervisor.queue_steam_launch.assert_not_called()
+        self.assertEqual(interface.supervisor.queue_aurelia_launch.call_count, 2)
 
     def test_missing_drm_output_rejects_both_backends_before_provider(self) -> None:
         for method_name in ("RequestSteamLaunch", "RequestAureliaLaunch"):
@@ -106,8 +106,8 @@ class SessiondPresentationReadinessTests(unittest.TestCase):
                               aurelia_config):
                     with self.assertRaisesRegex(
                             DBusError, "no connected DRM presentation output"):
-                        getattr(ConsoleSessionInterface, method_name).__wrapped__(
-                            interface, "104200", 15000)
+                            getattr(ConsoleSessionInterface, method_name).__wrapped__(
+                                interface, "104200", 15000)
 
                 interface.supervisor.queue_steam_launch.assert_not_called()
                 interface.supervisor.queue_aurelia_launch.assert_not_called()
@@ -128,8 +128,8 @@ class SessiondPresentationReadinessTests(unittest.TestCase):
                         patch.object(interface, "StateChanged", lambda *_args: None):
                     with self.assertRaisesRegex(
                             DBusError, "Gamescope presentation is not ready"):
-                        getattr(ConsoleSessionInterface, method_name).__wrapped__(
-                            interface, "104200", 15000)
+                            getattr(ConsoleSessionInterface, method_name).__wrapped__(
+                                interface, "104200", 15000)
 
                 interface.supervisor.queue_steam_launch.assert_not_called()
                 interface.supervisor.queue_aurelia_launch.assert_not_called()

@@ -23,12 +23,13 @@ and implementation evidence are in `docs/statistics-overlay-compatibility.md`.
   integration) and `d598c9d` (runtime compatibility documentation), building
   on `cc3da28`, `bb66e20`, `fcf77a5`, `78fd92d`, and `ffdc825`. Accepted release
   revision: `/opt/lulu/releases/d598c9d-candidate-20261009221126`.
-- The separate standard Steam-client-managed MangoHud item remains scoped only
-  to legacy `steam:<AppID>` rows: the appliance currently routes those through
-  `LaunchDispatch.STEAM` by default. Aurelia `steam-aurelia:<AppID>` launches
-  are accepted; the background Steam runtime remains required for its distinct
-  DRM/authentication/Steamworks role. See the validation log for the routing
-  audit and the preserved follow-up.
+- Standard Steam-client-managed MangoHud work is superseded: both `steam:` and
+  `steam-aurelia:` Mudos identities now use Aurelia. The isolated background
+  Steam runtime remains required for DRM/authentication/Steamworks, not game
+  launch ownership. Nine of 28 formerly launchable legacy catalogue rows were
+  stale (missing content and not installed in Aurelia); routing rejects these
+  unless a matching Aurelia identity is currently launchable. See
+  `docs/validation-log.md` for the complete audit.
 
 ## VALIDATION
 

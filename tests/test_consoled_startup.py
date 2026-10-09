@@ -4,7 +4,7 @@ import tempfile
 import threading
 import unittest
 from types import SimpleNamespace
-from unittest.mock import Mock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 from lulu.consoled import (ConsoleCatalog, ConsoleInterface,
                            _BackpressureSafeMessageWriter,
@@ -57,7 +57,7 @@ class ConsoledStartupTests(unittest.TestCase):
         store.mark_played.assert_called_once_with("steam-aurelia:104200")
         consoled._publish_delta.assert_called_once_with("catalogue-delta")
 
-    def test_steam_id_with_aurelia_override_uses_canonical_aurelia_route(self) -> None:
+    def test_legacy_steam_id_without_override_uses_canonical_aurelia_route(self) -> None:
         class Sessiond:
             async def call_request_aurelia_launch(self, app_id, timeout_ms):
                 self.request = (app_id, timeout_ms)
@@ -69,8 +69,12 @@ class ConsoledStartupTests(unittest.TestCase):
         game = SimpleNamespace(
             game_id="steam:104200", provider="steam", provider_id="104200", launchable=True,
         )
+        aurelia_game = SimpleNamespace(
+            game_id="steam-aurelia:104200", provider="steam-aurelia",
+            provider_id="104200", launchable=True,
+        )
         store = SimpleNamespace(
-            list_games=Mock(return_value=[game]),
+            list_games=Mock(return_value=[game, aurelia_game]),
             mark_played=Mock(return_value="catalogue-delta"),
         )
         consoled = ConsoleInterface.__new__(ConsoleInterface)
@@ -80,7 +84,7 @@ class ConsoledStartupTests(unittest.TestCase):
         consoled._publish_delta = Mock()
 
         async def exercise():
-            with patch.dict("os.environ", {"LULU_STEAM_LAUNCH_PROVIDER": "steam-aurelia"}), \
+            with patch.dict("os.environ", {}, clear=True), \
                     patch.object(consoled, "CatalogueChanged", lambda: None):
                 result = await ConsoleInterface.LaunchGame.__wrapped__(
                     consoled, "steam:104200", 15000)
@@ -90,34 +94,61 @@ class ConsoledStartupTests(unittest.TestCase):
         self.assertEqual(consoled.sessiond.request, ("104200", 15000))
         store.mark_played.assert_called_once_with("steam:104200")
 
-    def test_steam_contextual_navigation_result_is_preserved(self) -> None:
-        class Provider:
-            def __init__(self):
-                self.calls = []
+    def test_legacy_steam_id_never_opens_the_steam_display(self) -> None:
+        class Sessiond:
+            async def call_request_aurelia_launch(self, app_id, timeout_ms):
+                self.request = (app_id, timeout_ms)
+                return "aurelia-token"
 
-            def open_game_details(self, app_id):
-                self.calls.append(("details", app_id))
-                return f"steam://nav/games/details/{app_id}"
-
-            def launch_gamepad_title(self, app_id):
-                self.calls.append(("launch", app_id))
-                return f"steam://rungameid/{app_id}"
+            async def call_request_steam_launch(self, *_args):
+                raise AssertionError("legacy Steam launch was invoked")
 
         game = SimpleNamespace(
             game_id="steam:40800", provider="steam", provider_id="40800", launchable=True,
         )
-        store = SimpleNamespace(list_games=Mock(return_value=[game]))
-        provider = Provider()
+        aurelia_game = SimpleNamespace(
+            game_id="steam-aurelia:40800", provider="steam-aurelia",
+            provider_id="40800", launchable=True,
+        )
+        store = SimpleNamespace(
+            list_games=Mock(return_value=[game, aurelia_game]),
+            mark_played=Mock(return_value="catalogue-delta"),
+        )
         consoled = ConsoleInterface.__new__(ConsoleInterface)
-        consoled.catalogue = SimpleNamespace(store=store, provider=provider)
+        consoled.catalogue = SimpleNamespace(store=store)
         consoled._plugins = SimpleNamespace(with_capability=lambda _capability: ())
-        consoled.sessiond = None
+        consoled.sessiond = Sessiond()
+        consoled._publish_delta = Mock()
 
-        result = asyncio.run(ConsoleInterface.LaunchGame.__wrapped__(
-            consoled, "steam:40800", 15000))
+        async def exercise():
+            with patch.dict("os.environ", {}, clear=True), \
+                    patch.object(consoled, "CatalogueChanged", lambda: None):
+                return await ConsoleInterface.LaunchGame.__wrapped__(
+                    consoled, "steam:40800", 15000)
 
-        self.assertEqual(result, "steam://nav/games/details/40800")
-        self.assertEqual(provider.calls, [("details", "40800"), ("launch", "40800")])
+        result = asyncio.run(exercise())
+
+        self.assertEqual(result, "aurelia-token")
+        self.assertEqual(consoled.sessiond.request, ("40800", 15000))
+
+    def test_legacy_steam_id_rejects_stale_non_aurelia_install_record(self) -> None:
+        game = SimpleNamespace(
+            game_id="steam:40800", provider="steam", provider_id="40800", launchable=True,
+        )
+        store = SimpleNamespace(list_games=Mock(return_value=[game]))
+        consoled = ConsoleInterface.__new__(ConsoleInterface)
+        consoled.catalogue = SimpleNamespace(store=store)
+        consoled._plugins = SimpleNamespace(with_capability=lambda _capability: ())
+        consoled.sessiond = SimpleNamespace(
+            call_request_aurelia_launch=AsyncMock(),
+            call_request_steam_launch=AsyncMock(),
+        )
+
+        with self.assertRaisesRegex(ValueError, "not currently installed and launchable through Aurelia"):
+            asyncio.run(ConsoleInterface.LaunchGame.__wrapped__(
+                consoled, "steam:40800", 15000))
+        consoled.sessiond.call_request_aurelia_launch.assert_not_awaited()
+        consoled.sessiond.call_request_steam_launch.assert_not_awaited()
 
     def test_dbus_writer_keeps_connection_alive_on_socket_backpressure(self) -> None:
         class Socket:

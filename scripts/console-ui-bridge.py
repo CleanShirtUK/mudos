@@ -284,31 +284,18 @@ class ConsoleUiBridge:
         LOGGER.info("launch request game_id=%s", game_id)
         route = resolve_game_launch_route(
             game_id,
-            steam_launch_provider=os.environ.get("LULU_STEAM_LAUNCH_PROVIDER"),
         )
         self.launch_logs.note("Lulu", f"HTTP launch request started game_id={game_id}")
         if route.dispatch is LaunchDispatch.AURELIA:
-            context = {key: os.environ[key] for key in (
-                "DISPLAY", "WAYLAND_DISPLAY", "XDG_RUNTIME_DIR",
-            ) if os.environ.get(key)}
-            await self.sessiond.call_set_delegated_launch_context(json.dumps(context, sort_keys=True))
-            token = normalize_launch_token(await self.sessiond.call_request_aurelia_launch(
-                route.provider_game_id, 15000))
-            await self._record_played(game_id)
+            # Consoled owns the authoritative catalogue installability check
+            # for both steam: and steam-aurelia: identities, then routes to
+            # Sessiond's Aurelia API. Avoid a parallel bridge-only launch path.
+            token = normalize_launch_token(await self.consoled.call_launch_game(game_id, 15000))
             self.launch_logs.note("Steam Aurelia", f"aurelia play {route.provider_game_id}")
             self.launch_logs.note(
                 "Lulu", f"session launch boundary reached game_id={game_id} "
                 f"appid={route.provider_game_id} token={token}",
             )
-        elif route.dispatch is LaunchDispatch.STEAM:
-            token = normalize_launch_token(await self.sessiond.call_request_steam_launch(
-                route.provider_game_id, 15000))
-            await self._record_played(game_id)
-            self.launch_logs.note(
-                "Lulu", f"session launch boundary reached game_id={game_id} "
-                f"appid={route.provider_game_id} token={token}",
-            )
-            self.launch_logs.note("Steam", f"steam://rungameid/{route.provider_game_id}")
         else:
             startup_timeout = 120000 if route.provider_id == "epic" else 15000
             token = await self.consoled.call_launch_game(game_id, startup_timeout)
@@ -319,15 +306,6 @@ class ConsoleUiBridge:
             "token": token,
             "navigation_only": token.startswith("steam://nav/games/details/"),
         }
-
-    async def _record_played(self, game_id: str) -> None:
-        """Persist Recents after Sessiond accepts a direct Steam-family launch."""
-        try:
-            await self.consoled.call_mark_played(game_id)
-        except Exception:
-            # Do not report a successfully accepted game launch as failed just
-            # because the optional Recents update could not be committed.
-            LOGGER.exception("launch accepted but Recents update failed game_id=%s", game_id)
 
     async def state(self) -> dict[str, object]:
         return json.loads(await self.sessiond.call_get_state())
@@ -1461,9 +1439,8 @@ class ApiHandler(BaseHTTPRequestHandler):
             self.bridge.launch_logs.start(game_id)
             route = resolve_game_launch_route(
                 game_id,
-                steam_launch_provider=os.environ.get("LULU_STEAM_LAUNCH_PROVIDER"),
             )
-            timeout = None if route.provider_id == "steam" else 15
+            timeout = 15
             if route.provider_id == "epic":
                 timeout = 125
             result = self.bridge.call(

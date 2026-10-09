@@ -42,7 +42,7 @@ existing Flatpak installations.
 | RetroArch | Active Mudos config selects `video_driver = "gl"` (OpenGL). Native executable is eligible for the official wrapper. | **Accepted**. |
 | Dolphin | Mudos launch uses the native executable; its managed graphics config contains no explicit backend selection. The official wrapper supports either OpenGL or Vulkan. | **Accepted**; backend identification remains a compatibility note, not an acceptance blocker. |
 | Eden | Active Mudos config records renderer `backend=1` and Vulkan-device settings; the intended backend is Vulkan. The current Mudos runtime is the native AppImage, not the separately installed Flatpak app. | **Accepted** for the native executable. |
-| Legacy `steam:<AppID>` rows dispatched through the Steam client | The appliance currently has the legacy route enabled by default for this identity (the `steam-aurelia` override is unset). | **Not included in this accepted milestone**; a scoped backlog item remains for that distinct launch path. Aurelia-dispatched titles are accepted. |
+| Canonical `steam:<AppID>` catalogue identities | Mudos now routes these through the same Aurelia Sessiond path as explicit `steam-aurelia:<AppID>` identities. A `steam:` entry is launchable only when its matching Aurelia entry is installed and launchable. | **Covered by the accepted Aurelia path**; no Steam-client game-launch fallback. |
 | Flatpak runtimes without the Freedesktop VulkanLayer extension point, or unavailable matching extension | Cannot load the runtime extension required by the supported in-sandbox wrapper. | **Unsupported**; launch continues with overlay explicitly disabled and a diagnostic logged. |
 
 Automated launch/profile regression tests are separate from and do not replace

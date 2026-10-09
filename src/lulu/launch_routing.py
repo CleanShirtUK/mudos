@@ -11,7 +11,6 @@ from enum import StrEnum
 
 
 class LaunchDispatch(StrEnum):
-    STEAM = "steam"
     AURELIA = "steam-aurelia"
     CONSOLED = "consoled"
 
@@ -33,15 +32,14 @@ def _positive_app_id(value: str, provider: str) -> str:
 def resolve_game_launch_route(
     game_id: str,
     *,
-    steam_launch_provider: str | None = None,
     catalogue_provider: str | None = None,
     catalogue_provider_id: str | None = None,
 ) -> GameLaunchRoute:
     """Resolve a launch ID using the canonical provider-selection rules.
 
-    Explicit ``steam-aurelia:<AppID>`` IDs always use Aurelia. A canonical
-    ``steam:<AppID>`` ID uses Aurelia only when the existing override is set
-    exactly to ``steam-aurelia``; otherwise it uses the supervised Steam path.
+    Both explicit ``steam-aurelia:<AppID>`` IDs and canonical
+    ``steam:<AppID>`` IDs use Aurelia. The latter identity is retained for
+    catalogue compatibility; it does not select Steam-client game launching.
     Other providers remain Consoled/catalogue dispatched and are validated by
     that application boundary.
 
@@ -65,16 +63,11 @@ def resolve_game_launch_route(
         provider_game_id = catalogue_provider_id or app_id
         provider_name = "Steam Aurelia" if provider_id == "steam-aurelia" else "Steam"
         provider_game_id = _positive_app_id(provider_game_id, provider_name)
-        if provider_id == "steam-aurelia":
-            dispatch = LaunchDispatch.AURELIA
-        elif provider_id == "steam" and steam_launch_provider == "steam-aurelia":
-            dispatch = LaunchDispatch.AURELIA
-        elif provider_id == "steam":
-            dispatch = LaunchDispatch.STEAM
-        else:
+        if provider_id not in {"steam", "steam-aurelia"}:
             # Catalogue disagreement must not silently route a Steam-shaped ID
             # through an unrelated provider.
             raise ValueError(f"launch identity/provider mismatch for {game_id}")
+        dispatch = LaunchDispatch.AURELIA
         return GameLaunchRoute(game_id, provider_id, provider_game_id, dispatch)
 
     provider_id = catalogue_provider or prefix

@@ -2649,11 +2649,17 @@ class ConsoleInterface(ServiceInterface):
             raise ValueError("game is not installed and launchable")
         route = resolve_game_launch_route(
             game_id,
-            steam_launch_provider=os.environ.get("LULU_STEAM_LAUNCH_PROVIDER"),
             catalogue_provider=game.provider,
             catalogue_provider_id=game.provider_id,
         )
         if route.dispatch is LaunchDispatch.AURELIA:
+            if route.game_id.startswith("steam:"):
+                aurelia_identity = f"steam-aurelia:{route.provider_game_id}"
+                aurelia_game = games.get(aurelia_identity)
+                if aurelia_game is None or not aurelia_game.launchable:
+                    raise ValueError(
+                        "Steam game is not currently installed and launchable through Aurelia"
+                    )
             # Aurelia is a Sessiond-owned launch backend, not a Consoled launch
             # plugin. Keep this direct library-entry boundary supported for
             # callers that submit LaunchGame over D-Bus as well as the UI
@@ -2710,16 +2716,6 @@ class ConsoleInterface(ServiceInterface):
             self._publish_delta(delta)
             self.CatalogueChanged()
             return token
-        if route.dispatch is LaunchDispatch.STEAM:
-            details_uri = self.catalogue.provider.open_game_details(route.provider_game_id)
-            launch_uri = self.catalogue.provider.launch_gamepad_title(route.provider_game_id)
-            LOGGER.info(
-                "Steam contextual launch submitted game_id=%s details=%s launch=%s",
-                game_id,
-                details_uri,
-                launch_uri,
-            )
-            return details_uri
         if route.provider_id == "lutris":
             from .lutris_adapter import LutrisAdapter
             script = PATHS.cache_home / "lutris" / f"mudos-{route.provider_game_id}.sh"

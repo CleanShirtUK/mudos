@@ -2107,3 +2107,42 @@ restart may be required for InputPlumber to publish a newly created target.
 - Decision: retain the narrowly scoped standard Steam-client MangoHud follow-up
   for legacy `steam:` dispatch. Aurelia launch overlay acceptance is closed;
   no broad legacy launch refactor is authorized by this audit.
+
+## Steam launch ownership routing correction — 2026-10-09
+
+- Root cause: the canonical resolver preserved `LaunchDispatch.STEAM` for
+  `steam:<AppID>` unless the optional `LULU_STEAM_LAUNCH_PROVIDER` override was
+  set. The appliance did not set it. Both the UI HTTP bridge and Consoled
+  honored this split, and Sessiond exposed a direct Steam-client game launch.
+- The 28 launchable installed-looking `steam:` rows were persisted under
+  `catalogue_source='steam'` from local Steam appmanifest/library discovery
+  (`SteamProvider.list_installed` / `CatalogueStore.reconcile_steam`). All 28
+  have a matching `steam-aurelia:<AppID>` entitlement identity. IDs are:
+  `945360, 104200, 26800, 2835570, 341500, 731490, 17300, 381210, 1537830,
+  1097150, 224760, 319510, 2706170, 3240220, 366040, 307780, 15710, 263980,
+  1290000, 252950, 2124490, 40800, 1755580, 220780, 11020, 2225070, 837470,
+  204180`.
+- Read-only install audit: 19 of those IDs are installed according to Aurelia
+  and their recorded content directories exist. Nine persisted legacy rows were
+  stale: `945360` Among Us, `104200` Beep, `26800` Braid, `341500` Camera
+  Obscura, `224760` Fez, `319510` Five Nights at Freddy's, `15710` Oddworld:
+  Abe's Exoddus, `263980` Out There Somewhere, and `204180` Waveform. Their
+  recorded install directories do not exist, and Aurelia reports them not
+  installed. No ownership, catalogue, metadata, save, manifest, or install-path
+  data was migrated or deleted.
+- Correction: `resolve_game_launch_route` now maps both Steam identity prefixes
+  to `LaunchDispatch.AURELIA` independent of environment. The UI bridge sends
+  both identities through Consoled's canonical LaunchGame boundary. Consoled
+  checks that a legacy `steam:` row has a launchable matching Aurelia identity
+  before dispatching. The compatibility `RequestSteamLaunch` D-Bus method now
+  delegates to the same guarded Aurelia launch implementation. No Mudos game
+  entry point can navigate the Steam client or silently fall back to its
+  display. The Steam client background runtime and Steam Store functions remain
+  unchanged.
+- The standard Steam-client MangoHud follow-up is superseded: the accepted
+  overlay profile is applied in Aurelia's launch environment for both identity
+  forms. No per-AppID Steam-client launch-options contract is needed.
+- Regression validation: focused routing, Consoled, bridge, and presentation
+  readiness suites passed (**64 tests**); Python compile and `git diff --check`
+  passed. Physical game launch validation and immutable candidate verification
+  are recorded below after completion.
