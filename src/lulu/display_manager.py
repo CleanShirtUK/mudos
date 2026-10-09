@@ -137,6 +137,11 @@ def display_environment() -> dict[str, str]:
     adapter = DisplayManagerAdapter()
     state = adapter.snapshot()
     policy = state.get("requested") or state.get("known_good") or {}
+    # Automatic detection is informational; do not convert the first detected
+    # output into a Gamescope --prefer-output override. Only a persisted user
+    # choice is a connector preference.
+    if not policy:
+        return {}
     selected = next((item for item in state["displays"] if item["id"] == policy.get("output")), None)
     # Keep the preference intact while falling back to a currently connected
     # output; disappearance must not prevent the session from starting.

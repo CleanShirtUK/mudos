@@ -44,15 +44,13 @@ class ApplianceSessionRecoveryTests(unittest.TestCase):
         async def exercise() -> None:
             with patch("lulu.sessiond.has_connected_presentation_output", side_effect=[False, False, True]) as has_output, \
                     patch("lulu.sessiond.connected_presentation_outputs", return_value=("DP-1",)), \
-                    patch("lulu.sessiond.discover_presentation_output", return_value="DP-1"), \
                     patch("lulu.sessiond.asyncio.sleep", new=AsyncMock()), \
                     patch.dict("os.environ", {}, clear=False):
                 await interface.bootstrap_shell()
             self.assertEqual(has_output.call_count, 3)
             interface.supervisor.launch_shell.assert_awaited_once()
             command = interface.supervisor.launch_shell.await_args.args[0]
-            self.assertIn("--prefer-output", command)
-            self.assertIn("DP-1", command)
+            self.assertNotIn("--prefer-output", command)
 
         asyncio.run(exercise())
 

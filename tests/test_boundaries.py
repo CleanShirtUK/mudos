@@ -1430,8 +1430,7 @@ class BoundaryTests(unittest.TestCase):
 
         async def exercise() -> None:
             with patch("lulu.sessiond.has_connected_presentation_output", return_value=True), \
-                    patch("lulu.sessiond.connected_presentation_outputs", return_value=("HDMI-A-1",)), \
-                    patch("lulu.sessiond.discover_presentation_output", return_value="HDMI-A-1"):
+                    patch("lulu.sessiond.connected_presentation_outputs", return_value=("HDMI-A-1",)):
                 await interface.bootstrap_shell()
             await asyncio.sleep(0)
             self.assertEqual(len(interface.supervisor.commands), 1)

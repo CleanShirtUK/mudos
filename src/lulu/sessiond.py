@@ -23,7 +23,7 @@ from .controllerd import ControllerRegistry, default_inputplumber_client
 from .inputplumber import (DEFAULT_PROFILE_PATH, InputPlumberObjectDisappeared,
                            is_service_unavailable, sdl_gamepad_inventory)
 from .gamescope import (GamescopeInvocation, GamescopePresentation,
-                        PresentationOutputUnavailable, discover_presentation_output,
+                        PresentationOutputUnavailable,
                         connected_presentation_outputs, has_connected_presentation_output)
 from .gamescope_observer import GamescopeWindowObserver
 from .drm_events import is_drm_hotplug_uevent, open_drm_uevent_socket
@@ -906,8 +906,7 @@ class ConsoleSessionInterface(ServiceInterface):
                     raise PresentationOutputUnavailable("no connected DRM presentation output found")
                 available_outputs = connected_presentation_outputs()
                 output = (self._bootstrap_output
-                          if self._bootstrap_output in available_outputs else
-                          discover_presentation_output())
+                          if self._bootstrap_output in available_outputs else None)
             except PresentationOutputUnavailable:
                 now = time.monotonic()
                 if now - last_wait_log >= 30:
@@ -919,6 +918,8 @@ class ConsoleSessionInterface(ServiceInterface):
             display = GamescopeInvocation.from_environment()
             invocation = GamescopeInvocation(
                 steam=False,
+                # Leave connector selection to Gamescope unless an explicit,
+                # currently-connected host policy was supplied.
                 output=output,
                 output_width=display.output_width,
                 output_height=display.output_height,

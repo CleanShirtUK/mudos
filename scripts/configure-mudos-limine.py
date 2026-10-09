@@ -31,16 +31,17 @@ def configure(text: str) -> str:
         end = next((offset for offset, child in enumerate(lines[index + 1:], start=index + 1)
                     if kernel_re.match(child) or re.match(r"^/", child)), len(lines))
         body = lines[index + 1:end]
-        if any(re.match(r"^\s*protocol:\s*linux\s*$", child) for child in body) and any(
-                re.match(r"^\s*path:\s*boot\(\):/.+", child) for child in body):
+        if (name == "linux-cachyos-bc250"
+                and any(re.match(r"^\s*protocol:\s*linux\s*$", child) for child in body)
+                and any(re.match(r"^\s*path:\s*boot\(\):/.+", child) for child in body)):
             default_entry = f"{entry_path}/{name}" if entry_path else name
             break
     if not default_entry:
-        raise BootConfigError("no real Limine Linux kernel entry with a boot path was found")
+        raise BootConfigError("no bootable linux-cachyos-bc250 Limine entry was found")
 
     timeout_indexes = [i for i, line in enumerate(lines) if re.match(r"^\s*timeout\s*:", line)]
     if timeout_indexes:
-        lines[timeout_indexes[0]] = "timeout: 0"
+        lines[timeout_indexes[0]] = "timeout: 5"
         for index in reversed(timeout_indexes[1:]):
             del lines[index]
     else:
@@ -48,7 +49,7 @@ def configure(text: str) -> str:
         while insert_at < len(lines) and (not lines[insert_at].strip()
                                           or lines[insert_at].lstrip().startswith("#")):
             insert_at += 1
-        lines.insert(insert_at, "timeout: 0")
+        lines.insert(insert_at, "timeout: 5")
 
     default_indexes = [i for i, line in enumerate(lines)
                        if re.match(r"^\s*default_entry\s*:", line)]
@@ -65,8 +66,8 @@ def configure(text: str) -> str:
         for index in reversed(remember_indexes[1:]):
             del lines[index]
     result = "\n".join(lines).rstrip() + "\n"
-    if not re.search(r"(?m)^timeout:\s*0\s*$", result):
-        raise BootConfigError("Limine timeout was not set to zero")
+    if not re.search(r"(?m)^timeout:\s*5\s*$", result):
+        raise BootConfigError("Limine timeout was not set to five seconds")
     if not re.search(r"(?m)^remember_last_entry:\s*no\s*$", result):
         raise BootConfigError("Limine must honor the explicit Mudos default rather than remembered selection")
     return result
@@ -84,6 +85,28 @@ def validate_kernel_defaults(path: Path) -> None:
         )
 
 
+def validate_bc250_files(text: str, boot_root: Path = Path("/boot")) -> None:
+    """Require the named BC250 entry's kernel and initramfs to exist."""
+    lines = text.splitlines()
+    found = False
+    paths: list[str] = []
+    for index, line in enumerate(lines):
+        if not re.match(r"^\s*//linux-cachyos-bc250\s*$", line):
+            continue
+        end = next((offset for offset, child in enumerate(lines[index + 1:], start=index + 1)
+                    if re.match(r"^\s*//[^/].*", child) or re.match(r"^/", child)), len(lines))
+        body = lines[index + 1:end]
+        found = any(re.match(r"^\s*protocol:\s*linux\s*$", child) for child in body)
+        paths = [match.group(1).split("#", 1)[0] for child in body
+                 if (match := re.match(r"^\s*(?:path|module_path):\s*boot\(\):(/[^\s]+)", child))]
+        break
+    if not found or len(paths) < 2:
+        raise BootConfigError("BC250 Limine entry is missing its Linux kernel or initramfs path")
+    missing = [path for path in paths if not (boot_root / path.lstrip("/")).is_file()]
+    if missing:
+        raise BootConfigError("BC250 Limine entry references missing boot files: " + ", ".join(missing))
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", type=Path, default=Path("/boot/limine.conf"))
@@ -93,6 +116,7 @@ def main() -> int:
     try:
         validate_kernel_defaults(args.limine_defaults)
         before = args.config.read_text()
+        validate_bc250_files(before, args.config.parent)
         after = configure(before)
         if args.check:
             if before != after:
@@ -102,7 +126,7 @@ def main() -> int:
             temporary.write_text(after)
             temporary.chmod(args.config.stat().st_mode & 0o777)
             temporary.replace(args.config)
-        print(f"Limine config valid: default is a bootable Linux entry; timeout=0 ({args.config})")
+        print(f"Limine config valid: default is linux-cachyos-bc250; timeout=5 ({args.config})")
         return 0
     except (OSError, BootConfigError) as error:
         print(f"configure-mudos-limine: {error}", file=sys.stderr)

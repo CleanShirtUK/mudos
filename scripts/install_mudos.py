@@ -555,6 +555,10 @@ def install_startup_integration(release: Path) -> None:
     integration cannot be mistaken for immutable payload content.
     """
     packaging = release / "packaging"
+    # Retire the temporary DP-1 headless test hook from older host installs.
+    # This exact obsolete file is outside current package ownership and must
+    # not survive an update to re-apply video=DP-1 on kernel regeneration.
+    Path("/etc/limine-entry-tool.d/60-lulu-headless-evening.conf").unlink(missing_ok=True)
     required_sources = [*STARTUP_INTEGRATION_FILES,
                        *(f"packaging/plymouth/themes/mudos/{name}"
                          for name in PLYMOUTH_THEME_FILES),
