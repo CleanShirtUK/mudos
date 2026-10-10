@@ -1021,12 +1021,31 @@ class CatalogueStore:
                 aurelia_by_id = {game.provider_id: game for game in normalized}
                 legacy_rows = self._rows(
                     f"SELECT {SELECT_COLUMNS} FROM games "
-                    "WHERE provider='steam' AND catalogue_source='steam' "
-                    "AND install_state='installed' AND launchable=1"
+                    "WHERE provider='steam' AND catalogue_source='steam'"
                 )
                 for legacy in legacy_rows:
                     authoritative = aurelia_by_id.get(legacy.provider_id)
-                    if authoritative is None or authoritative.install_state == "installed":
+                    if authoritative is None:
+                        continue
+                    if authoritative.install_state == "installed":
+                        # Preserve the legacy launch identifier as a
+                        # compatibility alias, but take its install state and
+                        # path exclusively from Aurelia. This also repairs
+                        # aliases left available when an Aurelia install
+                        # completed through Acquisitiond.
+                        self._apply_existing_locked(
+                            legacy,
+                            replace(
+                                legacy,
+                                install_state="installed",
+                                launchable=True,
+                                install_dir=authoritative.install_dir,
+                                availability_state="installed",
+                            ),
+                            deltas,
+                        )
+                        continue
+                    if legacy.install_state != "installed" or not legacy.launchable:
                         continue
                     self.connection.execute(
                         "DELETE FROM games WHERE game_id=? AND provider='steam' "

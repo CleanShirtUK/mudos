@@ -376,16 +376,25 @@ class CatalogueTests(unittest.TestCase):
         valid = InstalledSteamGame("40800", "Super Meat Boy", "/games/Super Meat Boy", "/games", 2, 0)
         stale_owned = SimpleNamespace(provider_id="945360", title="Among Us")
         valid_owned = SimpleNamespace(provider_id="40800", title="Super Meat Boy")
+        recently_installed_owned = SimpleNamespace(provider_id="730", title="Counter-Strike 2")
         valid_aurelia_install = SimpleNamespace(
             provider_id="40800", title="Super Meat Boy", install_dir="/games/Super Meat Boy",
             artwork_url="", last_played=2,
         )
+        recently_installed = SimpleNamespace(
+            provider_id="730", title="Counter-Strike 2", install_dir="/games/CS2",
+            artwork_url="", last_played=3,
+        )
         with tempfile.TemporaryDirectory() as directory:
             store = CatalogueStore(Path(directory) / "catalogue.sqlite3")
+            # A previous entitlement observation left this compatibility ID
+            # installable; Aurelia's current installed inventory supersedes it.
+            store.reconcile_owned_provider("steam", (recently_installed_owned,), ())
             store.reconcile_steam(FakeSteamProvider([stale, valid]))
 
             store.reconcile_owned_provider(
-                "steam-aurelia", (stale_owned, valid_owned), (valid_aurelia_install,)
+                "steam-aurelia", (stale_owned, valid_owned, recently_installed_owned),
+                (valid_aurelia_install, recently_installed),
             )
 
             self.assertIsNone(store.get_game("steam:945360"))
@@ -396,16 +405,19 @@ class CatalogueTests(unittest.TestCase):
             )
             self.assertEqual(store.get_game("steam:40800").install_state, "installed")
             self.assertTrue(store.get_game("steam-aurelia:40800").launchable)
+            self.assertTrue(store.get_game("steam:730").launchable)
+            self.assertEqual(store.get_game("steam:730").install_dir, "/games/CS2")
             self.assertEqual(
                 [game.game_id for game in store.list_games("steam")],
-                ["steam-aurelia:40800"],
+                ["steam-aurelia:730", "steam-aurelia:40800"],
             )
 
             # Subsequent reconciliation and a manifest refresh cannot revive
             # the removed stale install row.
             store.reconcile_steam(FakeSteamProvider([]))
             store.reconcile_owned_provider(
-                "steam-aurelia", (stale_owned, valid_owned), (valid_aurelia_install,)
+                "steam-aurelia", (stale_owned, valid_owned, recently_installed_owned),
+                (valid_aurelia_install, recently_installed),
             )
             self.assertIsNone(store.get_game("steam:945360"))
             self.assertTrue(store.get_game("steam-aurelia:40800").launchable)
