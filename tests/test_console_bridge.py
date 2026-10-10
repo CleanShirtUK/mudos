@@ -114,6 +114,8 @@ class ConsoleBridgeTests(unittest.TestCase):
         self.assertIn('OPTIONAL_LULU_DBUS_OBJECTS["acquisitiond"]', bootstrap)
         self.assertIn("ConsoleUiBridge(asyncio.get_running_loop(), consoled, sessiond)", bootstrap)
         self.assertIn('name="optional-acquisitiond-connect"', bootstrap)
+        self.assertIn("while bridge.acquisitiond is None:", bootstrap)
+        self.assertIn("await asyncio.sleep(1)", bootstrap)
         self.assertIn("asyncio.create_subprocess_exec(shell, qml, env=environment)", bootstrap)
         self.assertNotIn("await connect_optional_acquisitiond()", bootstrap)
 

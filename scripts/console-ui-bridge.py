@@ -1547,16 +1547,20 @@ async def main() -> None:
     Thread(target=server.serve_forever, daemon=True).start()
 
     async def connect_optional_acquisitiond() -> None:
-        try:
-            acquisition_name, acquisition_path = OPTIONAL_LULU_DBUS_OBJECTS["acquisitiond"]
-            acquisition_introspection = await bus.introspect(acquisition_name, acquisition_path)
-            acquisition_proxy = bus.get_proxy_object(
-                acquisition_name, acquisition_path, acquisition_introspection)
-            bridge.acquisitiond = acquisition_proxy.get_interface("org.lulu.Acquisition")
-            LOGGER.info("optional Acquisitiond boundary connected after shell bridge startup")
-        except Exception as error:
-            LOGGER.warning("optional Acquisitiond boundary unavailable during shell startup: %s",
-                           type(error).__name__)
+        while bridge.acquisitiond is None:
+            try:
+                acquisition_name, acquisition_path = OPTIONAL_LULU_DBUS_OBJECTS["acquisitiond"]
+                acquisition_introspection = await bus.introspect(acquisition_name, acquisition_path)
+                acquisition_proxy = bus.get_proxy_object(
+                    acquisition_name, acquisition_path, acquisition_introspection)
+                bridge.acquisitiond = acquisition_proxy.get_interface("org.lulu.Acquisition")
+                LOGGER.info("optional Acquisitiond boundary connected after shell bridge startup")
+            except asyncio.CancelledError:
+                raise
+            except Exception as error:
+                LOGGER.warning("optional Acquisitiond boundary unavailable; retrying: %s",
+                               type(error).__name__)
+                await asyncio.sleep(1)
 
     acquisition_task = asyncio.create_task(connect_optional_acquisitiond(),
                                             name="optional-acquisitiond-connect")
