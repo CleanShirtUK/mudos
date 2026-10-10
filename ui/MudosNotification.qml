@@ -6,8 +6,34 @@ Window {
     visible: true
     color: "transparent"
     flags: Qt.FramelessWindowHint | Qt.Tool | Qt.WindowStaysOnTopHint | Qt.WindowTransparentForInput
-    width: 1920
-    height: 1080
+    width: Screen.width
+    height: Screen.height
+    readonly property real notificationGap: 12 * Number(notificationModel.uiScale || 1)
+    readonly property real notificationX: Number(notificationModel.statusRight) - notice.width
+    readonly property real notificationY: Number(notificationModel.statusBottom) + notificationGap
+    readonly property bool geometryFits: notificationModel.geometryValid === true
+        && notificationX >= 0 && notificationY >= 0
+        && notificationX + notice.width <= width
+        && notificationY + notice.height <= height
+
+    Timer {
+        id: dismissalTimer
+        repeat: false
+        onTriggered: notificationModel.visible = false
+    }
+
+    Connections {
+        target: notificationModel
+        function onVisibleChanged() {
+            if (notificationModel.visible)
+                dismissalTimer.restart()
+        }
+        function onDurationChanged() {
+            dismissalTimer.interval = Math.max(1, Number(notificationModel.duration || 4) * 1000)
+            if (notificationModel.visible)
+                dismissalTimer.restart()
+        }
+    }
 
     LuluPalette { id: luluPalette }
     Typography { id: typography }
@@ -25,12 +51,13 @@ Window {
     }
 
     Rectangle {
-        x: root.width - width - 56
-        y: 54
+        id: notice
+        x: root.notificationX
+        y: root.notificationY
         width: 620
         height: 132
         radius: luluPalette.radius("overlay", 12)
-        visible: notificationModel.visible
+        visible: notificationModel.visible && root.geometryFits
         opacity: 1
         color: luluPalette.material("overlay").style === "linearGradient"
             ? "transparent" : luluPalette.overlaySurface
@@ -104,4 +131,6 @@ Window {
             }
         }
     }
+
+    Component.onCompleted: dismissalTimer.interval = Math.max(1, Number(notificationModel.duration || 4) * 1000)
 }

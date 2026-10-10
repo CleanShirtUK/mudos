@@ -1,5 +1,11 @@
 #include <QGuiApplication>
+#include <QCoreApplication>
+#include <QDir>
+#include <QFile>
+#include <QFileInfo>
+#include <QFileSystemWatcher>
 #include <QJsonDocument>
+#include <QJsonParseError>
 #include <QJsonObject>
 #include <qnativeinterface.h>
 #include <QQmlApplicationEngine>
@@ -33,6 +39,17 @@ public:
         if (!window_->winId()) return false;
         window_->show();
         if (!setExternalOverlay()) return false;
+        geometryPath_ = QDir(qEnvironmentVariable("XDG_RUNTIME_DIR", "/run/user/958"))
+                            .filePath("mudos-status-geometry.json");
+        geometryWatcher_ = new QFileSystemWatcher(this);
+        const QFileInfo geometryInfo(geometryPath_);
+        if (geometryInfo.dir().exists()) geometryWatcher_->addPath(geometryInfo.dir().absolutePath());
+        if (geometryInfo.exists()) geometryWatcher_->addPath(geometryPath_);
+        connect(geometryWatcher_, &QFileSystemWatcher::directoryChanged,
+                this, [this]() { refreshGeometryWatch(); loadGeometry(); });
+        connect(geometryWatcher_, &QFileSystemWatcher::fileChanged,
+                this, [this]() { refreshGeometryWatch(); loadGeometry(); });
+        loadGeometry();
         const int flags = ::fcntl(STDIN_FILENO, F_GETFL, 0);
         if (flags < 0 || ::fcntl(STDIN_FILENO, F_SETFL, flags | O_NONBLOCK) < 0) return false;
         notifier_ = new QSocketNotifier(STDIN_FILENO, QSocketNotifier::Read, this);
@@ -42,6 +59,55 @@ public:
     }
 
 private:
+    void refreshGeometryWatch()
+    {
+        const QFileInfo info(geometryPath_);
+        const QString directory = info.dir().absolutePath();
+        if (!geometryWatcher_->directories().contains(directory) && QDir(directory).exists())
+            geometryWatcher_->addPath(directory);
+        if (info.exists() && !geometryWatcher_->files().contains(geometryPath_))
+            geometryWatcher_->addPath(geometryPath_);
+    }
+
+    void loadGeometry()
+    {
+        QFile file(geometryPath_);
+        if (!file.open(QIODevice::ReadOnly)) return; // retain last valid session layout
+        QJsonParseError error;
+        const auto document = QJsonDocument::fromJson(file.readAll(), &error);
+        if (error.error != QJsonParseError::NoError || !document.isObject()) return;
+        const QJsonObject object = document.object();
+        const QString session = object.value("session_id").toString();
+        const QString space = object.value("coordinate_space").toString();
+        const double x = object.value("x").toDouble(-1);
+        const double y = object.value("y").toDouble(-1);
+        const double width = object.value("width").toDouble(0);
+        const double height = object.value("height").toDouble(0);
+        const double viewportWidth = object.value("viewport_width").toDouble(0);
+        const double viewportHeight = object.value("viewport_height").toDouble(0);
+        const double displayWidth = object.value("display_width").toDouble(0);
+        const double displayHeight = object.value("display_height").toDouble(0);
+        const double uiScale = object.value("ui_scale").toDouble(0);
+        const double dpr = object.value("device_pixel_ratio").toDouble(0);
+        if (session.isEmpty() || space != "shell-logical-top-left" || x < 0 || y < 0
+            || width <= 0 || height <= 0 || viewportWidth <= 0 || viewportHeight <= 0
+            || displayWidth <= 0 || displayHeight <= 0 || uiScale <= 0 || dpr <= 0
+            || x + width > viewportWidth + 1 || y + height > viewportHeight + 1
+            || viewportWidth > displayWidth + 1 || viewportHeight > displayHeight + 1)
+            return;
+        model_->insert("statusRight", (x + width) * displayWidth / viewportWidth);
+        model_->insert("statusBottom", (y + height) * displayHeight / viewportHeight);
+        model_->insert("displayWidth", displayWidth);
+        model_->insert("displayHeight", displayHeight);
+        model_->insert("uiScale", uiScale);
+        model_->insert("devicePixelRatio", dpr);
+        model_->insert("geometrySession", session);
+        model_->insert("geometryValid", true);
+        qInfo().noquote() << "notification geometry updated session=" << session
+                          << "right=" << model_->value("statusRight").toDouble()
+                          << "bottom=" << model_->value("statusBottom").toDouble();
+    }
+
     bool setExternalOverlay()
     {
         auto *x11 = qGuiApp->nativeInterface<QNativeInterface::QX11Application>();
@@ -64,7 +130,12 @@ private:
         char buffer[4096];
         while (true) {
             const ssize_t count = ::read(STDIN_FILENO, buffer, sizeof(buffer));
-            if (count == 0) break;
+            if (count == 0) {
+                model_->insert("visible", false);
+                qInfo() << "notification producer disconnected; hiding and exiting presenter";
+                QCoreApplication::quit();
+                return;
+            }
             if (count < 0) {
                 if (errno == EAGAIN || errno == EWOULDBLOCK) break;
                 qWarning() << "notification presenter stdin read failed errno=" << errno;
@@ -92,6 +163,7 @@ private:
             model_->insert("severity", object.value("severity").toString("info"));
             model_->insert("glyph", object.value("glyph").toString());
             model_->insert("iconName", object.value("iconName").toString());
+            model_->insert("duration", object.value("duration").toDouble(4.0));
             qInfo().noquote() << "notification model updated event_id=" << eventId
                               << "visible=" << model_->value("visible").toBool()
                               << "title=" << model_->value("title").toString();
@@ -102,6 +174,8 @@ private:
     QQuickWindow *window_;
     QQmlPropertyMap *model_;
     QSocketNotifier *notifier_ = nullptr;
+    QFileSystemWatcher *geometryWatcher_ = nullptr;
+    QString geometryPath_;
     QByteArray input_;
 };
 
@@ -117,6 +191,15 @@ int main(int argc, char **argv)
     model.insert("severity", QStringLiteral("info"));
     model.insert("glyph", QString());
     model.insert("iconName", QString());
+    model.insert("duration", 4.0);
+    model.insert("geometryValid", false);
+    model.insert("statusRight", 0.0);
+    model.insert("statusBottom", 0.0);
+    model.insert("displayWidth", 0.0);
+    model.insert("displayHeight", 0.0);
+    model.insert("uiScale", 1.0);
+    model.insert("devicePixelRatio", 1.0);
+    model.insert("geometrySession", QString());
 
     QQmlApplicationEngine engine;
     ThemeManager mudosTheme(&application);

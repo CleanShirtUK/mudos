@@ -1475,6 +1475,10 @@ class ConsoleInterface(ServiceInterface):
         self._local_process: asyncio.subprocess.Process | None = None
         self._local_token: str | None = None
         self._refresh_task: asyncio.Task[list[dict[str, object]]] | None = None
+        self._deferred_refresh_task: asyncio.Task[None] | None = None
+        self._deferred_refresh_stages: set[str] = set()
+        self._deferred_refresh_all = False
+        self._deferred_refresh_waiter: asyncio.Future[int] | None = None
         self._catalogue_generation = 0
         self._startup_reconciliation_ready = False
         self._delta_history: deque[tuple[int, list[dict[str, object]]]] = deque(maxlen=256)
@@ -2113,9 +2117,57 @@ class ConsoleInterface(ServiceInterface):
         self.CatalogueChanged()
         return count
 
-    async def refresh_catalogue(self, stages: set[str] | None = None, source: str = "api") -> int:
+    async def _game_session_active(self) -> bool:
+        if self.sessiond is None:
+            return False
+        try:
+            state = json.loads(await self.sessiond.call_get_state())
+        except Exception:
+            # Fail closed: a lost lifecycle authority must not permit costly
+            # automatic reconciliation while a game may still be running.
+            LOGGER.exception("could not read Sessiond lifecycle before catalogue refresh")
+            return True
+        return state.get("lifecycle") == "game"
+
+    async def _drain_deferred_refreshes(self) -> None:
+        while await self._game_session_active():
+            await asyncio.sleep(2)
+        stages = None if self._deferred_refresh_all else set(self._deferred_refresh_stages)
+        self._deferred_refresh_stages.clear()
+        self._deferred_refresh_all = False
+        waiter, self._deferred_refresh_waiter = self._deferred_refresh_waiter, None
+        try:
+            count = await self.refresh_catalogue(stages, source="deferred-game-return", _bypass_game_gate=True)
+        except Exception as error:
+            if waiter is not None and not waiter.done():
+                waiter.set_exception(error)
+        else:
+            if waiter is not None and not waiter.done():
+                waiter.set_result(count)
+        finally:
+            self._deferred_refresh_task = None
+            if self._deferred_refresh_waiter is not None and self._deferred_refresh_task is None:
+                self._deferred_refresh_task = asyncio.create_task(
+                    self._drain_deferred_refreshes(), name="deferred-catalogue-refresh")
+
+    async def refresh_catalogue(self, stages: set[str] | None = None, source: str = "api",
+                               _bypass_game_gate: bool = False) -> int:
         """Run one refresh at a time and share it across callers."""
         LOGGER.info("catalogue refresh requested source=%s", source)
+        if not _bypass_game_gate and await self._game_session_active():
+            if stages is None:
+                self._deferred_refresh_all = True
+            else:
+                self._deferred_refresh_stages.update(stages)
+            if self._deferred_refresh_waiter is None or self._deferred_refresh_waiter.done():
+                self._deferred_refresh_waiter = asyncio.get_running_loop().create_future()
+            waiter = self._deferred_refresh_waiter
+            if self._deferred_refresh_task is None or self._deferred_refresh_task.done():
+                self._deferred_refresh_task = asyncio.create_task(
+                    self._drain_deferred_refreshes(), name="deferred-catalogue-refresh")
+            LOGGER.info("catalogue refresh deferred during gameplay stages=%s",
+                        ",".join(sorted(stages or ())) or "all")
+            return await waiter
         if self._refresh_task is None or self._refresh_task.done():
             if stages is None:
                 self._refresh_task = asyncio.create_task(

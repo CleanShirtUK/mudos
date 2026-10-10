@@ -37,7 +37,25 @@ The sole presenter is an external Gamescope overlay using
 severity marker using palette roles. Theme IDs are not inspected. Presenter
 launch/write failures are logged and do not fail the originating operation;
 queue processing continues. Consoled closes its child on service shutdown and
-discards queued transient state on restart.
+discards queued transient state on restart. Dismissal is enforced inside the
+presenter QML using each event's bounded severity duration; it does not depend
+on Consoled remaining alive to send a later hide command. EOF on the control
+pipe also hides and exits the presenter, so an orphan cannot retain its last
+visible model indefinitely.
+
+## Status-strip geometry handoff
+
+The shell maps the live `SystemStatusStrip` bounds into shell-window coordinates
+and publishes them through the existing local HTTP bridge. The bridge validates
+the coordinate space, viewport/display dimensions, scale and session token,
+then atomically replaces the private
+`$XDG_RUNTIME_DIR/mudos-status-geometry.json` record. The native presenter
+watches the runtime directory (including atomic rename updates), loads the last
+valid record at startup, and retains it while the shell is hidden over a game.
+Placement is computed from the actual status-strip right and bottom edges; if
+the record is invalid or the notification cannot fit below the strip, the
+notification is not shown at a guessed location. Resolution and scale changes
+cause the shell to publish a replacement record.
 
 ## Shell message inventory (NOTIFICATIONS-001)
 
@@ -55,8 +73,8 @@ Migrated shell results include catalogue/library refresh (success), manual
 metadata/Downloads refresh, application launch failure, Bluetooth completion,
 credential submission failure, RomM/SteamCMD authentication results, Store
 bookmark/name/URL mutations, and onboarding network-connected completion.
-The library refresh notice is emitted only after the refresh completes; startup
-catalogue loading does not produce a notice. The generic bottom-right
+The explicit Settings library refresh reports its success/failure; startup and
+background catalogue reconciliation stay silent. The generic bottom-right
 `root.message` hint-band rendering is removed. The property remains internal
 for launch/choreography and unrelated transitions, not as a transient feedback
 surface.

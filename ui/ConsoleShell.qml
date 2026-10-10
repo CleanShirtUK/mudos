@@ -17,6 +17,8 @@ Window {
     flags: Qt.FramelessWindowHint
 
     onVisibleChanged: { }
+    onWidthChanged: notificationGeometryTimer.restart()
+    onHeightChanged: notificationGeometryTimer.restart()
 
     readonly property bool recentDomainAvailable: HomeDomains.recentVisible(
         recentHome ? recentHome.itemCount : 0,
@@ -639,6 +641,8 @@ Window {
     onLaunchLogLinesChanged: traceLaunchMutation("launchLogLines", {length: launchLogLines.length}, "property-change")
 
     readonly property string apiUrl: "http://127.0.0.1:38123"
+    readonly property string notificationGeometrySession: Date.now().toString(36)
+        + "-" + Math.random().toString(36).slice(2)
     readonly property var catalogueRecentModel: recentModel
     readonly property var visibleRecentGame: recentSelectedGameId !== ""
         ? catalogueModel.game(recentSelectedGameId) : null
@@ -657,6 +661,28 @@ Window {
         xhr.open("POST", apiUrl + "/notification")
         xhr.setRequestHeader("Content-Type", "application/json")
         xhr.send(JSON.stringify({title: title, body: body, severity: severity || "info"}))
+    }
+
+    function publishNotificationGeometry() {
+        if (!systemStatusStrip || root.width <= 0 || root.height <= 0
+                || Screen.width <= 0 || Screen.height <= 0
+                || systemStatusStrip.width <= 0 || systemStatusStrip.height <= 0)
+            return
+        var point = systemStatusStrip.mapToItem(root.contentItem, 0, 0)
+        var record = {
+            session_id: notificationGeometrySession,
+            coordinate_space: "shell-logical-top-left",
+            x: point.x, y: point.y,
+            width: systemStatusStrip.width, height: systemStatusStrip.height,
+            viewport_width: root.width, viewport_height: root.height,
+            display_width: Screen.width, display_height: Screen.height,
+            device_pixel_ratio: Screen.devicePixelRatio,
+            ui_scale: root.uiScale
+        }
+        var xhr = new XMLHttpRequest()
+        xhr.open("POST", apiUrl + "/notification-geometry")
+        xhr.setRequestHeader("Content-Type", "application/json")
+        xhr.send(JSON.stringify(record))
     }
 
     function notifyLaunchFailure(reason) {
@@ -712,9 +738,10 @@ Window {
     }
 
     function refreshCatalogue() {
-        refreshLibrary(function() {
-            root.notify("Library refreshed", "Your catalogue is up to date", "success")
-        }, true)
+        // Catalogue generation changes also happen during startup and
+        // background reconciliation. User-visible success is emitted only by
+        // the explicit Settings action below; this projection is silent.
+        refreshLibrary()
         refreshPlatformsCatalogue()
     }
 
@@ -3402,6 +3429,13 @@ Window {
         traceLaunchEvent("STARTUP_RECONCILE_BEGIN", {})
         requestStartupReadiness()
         loadOnboardingState()
+        notificationGeometryTimer.start()
+    }
+
+    Connections {
+        target: root.screen
+        function onGeometryChanged() { notificationGeometryTimer.restart() }
+        function onAvailableGeometryChanged() { notificationGeometryTimer.restart() }
     }
 
     Connections {
@@ -3415,6 +3449,13 @@ Window {
                 inputSurface.forceActiveFocus()
             }
         }
+    }
+
+    Timer {
+        id: notificationGeometryTimer
+        interval: 100
+        repeat: false
+        onTriggered: root.publishNotificationGeometry()
     }
 
     Timer {
@@ -4701,6 +4742,10 @@ Window {
             bluetoothState: systemStatus ? systemStatus.bluetoothState : "unavailable"
             networkAvailable: systemStatus ? systemStatus.networkConnected : false
             networkConnectionType: systemStatus ? systemStatus.networkConnectionType : ""
+            onXChanged: notificationGeometryTimer.restart()
+            onYChanged: notificationGeometryTimer.restart()
+            onWidthChanged: notificationGeometryTimer.restart()
+            onHeightChanged: notificationGeometryTimer.restart()
         }
 
         Item {

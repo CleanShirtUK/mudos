@@ -207,8 +207,6 @@ class NotificationPresenter:
         process.stdin.write((json.dumps(notification.as_dict()) + "\n").encode())
         await process.stdin.drain()
         await asyncio.sleep(self.duration if self.duration is not None else notification.duration)
-        process.stdin.write(b'{"visible":false}\n')
-        await process.stdin.drain()
 
     async def close(self) -> None:
         process, self._process = self._process, None

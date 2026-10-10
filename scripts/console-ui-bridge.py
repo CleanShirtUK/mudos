@@ -20,6 +20,7 @@ from lulu.onboarding import dismiss_onboarding, onboarding_state, reopen_onboard
 from lulu.recovery import clear_failures, snapshot as recovery_snapshot
 from lulu.launch_routing import LaunchDispatch, resolve_game_launch_route
 from lulu.notifications import validate_notification
+from lulu.notification_geometry import write_geometry
 
 
 LOGGER = logging.getLogger("lulu.console-ui-bridge")
@@ -226,6 +227,10 @@ class ConsoleUiBridge:
         validate_notification(title, body, severity)
         accepted = await self.consoled.call_notify(title, body, severity, "", "shell")
         return {"accepted": bool(accepted)}
+
+    def update_notification_geometry(self, payload: object) -> dict[str, bool]:
+        write_geometry(payload)
+        return {"accepted": True}
 
     async def startup_readiness(self) -> dict[str, bool]:
         ready = await self.consoled.call_get_startup_readiness()
@@ -1050,6 +1055,19 @@ class ApiHandler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:
         path = urlparse(self.path).path
+        if path == "/notification-geometry":
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+                if length < 1 or length > 2048:
+                    raise ValueError("invalid geometry request size")
+                payload = json.loads(self.rfile.read(length))
+                result = self.bridge.update_notification_geometry(payload)
+                self._respond(200, result)
+            except (ValueError, json.JSONDecodeError) as error:
+                self._respond(400, {"error": str(error)})
+            except Exception as error:
+                self._respond(503, {"error": str(error) or type(error).__name__})
+            return
         if path == "/settings/statistics-overlay":
             try:
                 mode = self.bridge.call(self.bridge.cycle_statistics_overlay_mode())
