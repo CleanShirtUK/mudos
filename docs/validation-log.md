@@ -2382,3 +2382,11 @@ restart may be required for InputPlumber to publish a newly created target.
 - Regressions after the reference fix: `tests/test_console_ui.py` passed
   **93/93**; Library landing QML passed **6/6**; Library projection QML passed
   **6/6**; `git diff --check` passed.
+- The canonical candidate from `6c26cc5` was built and verified at
+  `/opt/lulu/releases/6c26cc5-candidate-20261010101751`; manifest SHA-256:
+  `ee3338829671ef471c5120dd47f082bca9abdd1b2f980283c8e532f49637ecd5`.
+  Sessiond was idle and no game process existed before activation. It is active
+  now; the session shell was restarted from this release and returned to shell
+  state with presentation ready. Consoled, Acquisitiond and the authenticated
+  Steam runtime are active; restart count remains **0**. The user must physically
+  retest before this issue can be accepted.
