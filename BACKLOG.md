@@ -61,6 +61,13 @@ rows do not return. The verified active candidate is
 `/opt/lulu/releases/a29ca42-candidate-20261010073614`. See
 `docs/validation-log.md` for exact IDs, backup, counts, and non-Steam comparison.
 
+- Narrow deferred data cleanup: 69 older `steam:` available-entitlement rows
+  remain, each with a matching Aurelia entitlement. They are not installed
+  records, do not override Aurelia state, and are excluded from the visible
+  installable list when the Aurelia identity exists. Several carry distinct
+  artwork/metadata fields, so they were retained rather than destructively
+  deduplicated. Any future metadata merge/removal should be separately scoped.
+
 ## VALIDATION
 
 ### UI-001 — Lock the default visual baseline before theming

@@ -2247,6 +2247,13 @@ restart may be required for InputPlumber to publish a newly created target.
   all non-Steam-provider catalogue rows byte-for-byte unchanged. Generated
   artwork cache files were not deleted. No launch, install, uninstall, save,
   Steam-runtime, or user-file operation was performed as part of cleanup.
+- There are still 69 stored `steam:` rows whose state is `available`; each has
+  a matching `steam-aurelia:` entitlement, and all are suppressed from the
+  installable view in favor of the Aurelia identity. They are not stale
+  installed entries. Artwork/metadata comparisons show distinct data on some
+  rows, so they were deliberately retained. A metadata-aware merge before any
+  future removal is the only remaining narrow catalogue cleanup; it is not
+  required for installed-state authority or correct visible installability.
 - Aurelia installation/acquisition paths remain wired to the existing
   `steam-aurelia` executor and completed-job refresh; relevant acquisition,
   uninstall, Aurelia, and reconciliation regression suites passed. No live
