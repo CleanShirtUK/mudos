@@ -128,6 +128,7 @@ class NotificationConvergenceTests(unittest.TestCase):
         self.assertIn('apiUrl + "/notification-geometry"', shell)
         self.assertIn('systemStatusStrip.mapToItem(root.contentItem, 0, 0)', shell)
         self.assertIn('"shell-logical-top-left"', shell)
+        self.assertIn("onScreenChanged: notificationGeometryTimer.restart()", shell)
         self.assertIn("notificationModel.statusRight) - notice.width", presenter)
         self.assertIn("notificationModel.statusBottom) + notificationGap", presenter)
         self.assertIn("notificationModel.visible && root.geometryFits", presenter)

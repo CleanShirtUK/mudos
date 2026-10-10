@@ -19,6 +19,7 @@ Window {
     onVisibleChanged: { }
     onWidthChanged: notificationGeometryTimer.restart()
     onHeightChanged: notificationGeometryTimer.restart()
+    onScreenChanged: notificationGeometryTimer.restart()
 
     readonly property bool recentDomainAvailable: HomeDomains.recentVisible(
         recentHome ? recentHome.itemCount : 0,
@@ -3430,12 +3431,6 @@ Window {
         requestStartupReadiness()
         loadOnboardingState()
         notificationGeometryTimer.start()
-    }
-
-    Connections {
-        target: root.screen
-        function onGeometryChanged() { notificationGeometryTimer.restart() }
-        function onAvailableGeometryChanged() { notificationGeometryTimer.restart() }
     }
 
     Connections {
