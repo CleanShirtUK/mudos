@@ -258,7 +258,7 @@ do not remove rows without comparing and preserving metadata.
   hygiene defects, but not evidence of a live appliance fault. Keep visible for
   next engineering cycle; do not mix fixes into this reconnaissance.
 - **Appliance baseline (2026-10-10):** canonical clean checkout `122db13`, same
-  `origin/mudos/modularisation`; `/opt/lulu/current` resolves to
+  `origin/dev`; `/opt/lulu/current` resolves to
   `/opt/lulu/releases/122db13-candidate-20261010080657`. Development runtime
   exists but is non-promotable, marked `dirty=false`, source HEAD `76d3300`, and
   is not the running shell. Sessiond, Consoled, Acquisitiond, InputPlumber and
