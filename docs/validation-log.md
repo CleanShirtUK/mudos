@@ -2207,15 +2207,51 @@ restart may be required for InputPlumber to publish a newly created target.
 - Root cause of recurrence: Aurelia reconciliation updated its own
   `steam-aurelia:` rows but left historical `steam:` manifest rows untouched.
   Consoled also retained a dormant legacy entitlement/manifest-refresh
-  fallback. The source correction deletes only a matching
+  fallback. The correction deletes only a matching
   `catalogue_source='steam'`, installed+launchable legacy row when Aurelia still
-  reports the owned AppID but does not report it installed. The Aurelia
-  entitlement remains available for acquisition. Valid install rows,
-  RomM-backed observations, canonical metadata/artwork, saves, content paths,
-  and files are outside the delete predicate. Consoled no longer falls back to
+  reports the owned AppID but does not report it installed. If Aurelia reports
+  an installed title, its matching legacy alias is synchronized to Aurelia's
+  installed state and install path. Aurelia entitlements remain available for
+  acquisition. RomM-backed observations, metadata/artwork, saves, content, and
+  files are outside the delete predicate. Consoled no longer falls back to
   legacy Steam installation discovery; missing Aurelia fails closed and
   preserves the last-known-good catalogue.
-- Automated tests before live cleanup: **168 passed** across catalogue,
+- Automated tests before live cleanup: **159 passed** across catalogue,
   external-provider, Steam entitlement/provider, launch routing, bridge,
   Consoled, and Sessiond presentation suites. Compilation and `git diff
-  --check` passed. Live cleanup and post-refresh validation follow.
+  --check` passed.
+- The first canonical candidate
+  `/opt/lulu/releases/e45d112-candidate-20261010073051` cleaned the nine stale
+  rows. A subsequent audit found four *newer* Aurelia installs whose retained
+  `steam:` compatibility aliases were still available: `2497920` A Difficult
+  Game About Climbing, `268910` Cuphead, `48000` Limbo, and `1356240` Who Wants
+  to Be A Millionaire. A follow-up reconciliation change synchronizes those
+  aliases from Aurelia so legacy IDs remain launchable without becoming an
+  independent install authority. Final candidate verification and activation
+  are recorded below.
+- Before/after installed counts: legacy `provider='steam'` installed rows
+  **28 → 23**; Aurelia `provider='steam-aurelia'` installed rows **23 → 23**.
+  The 19 previously valid legacy rows retain their paths and matching
+  launchable Aurelia identities; the four newer aliases are now synchronized
+  to the Aurelia install paths. The 9 stale `steam:` rows are gone;
+  their `steam-aurelia:` records remain `available` and installable. Aurelia
+  currently exposes **74** owned-but-uninstalled titles. Total raw installed
+  rows are 46 across both identities, representing 23 unique installed games;
+  the library projection continues to show one identity per installed game.
+- An additional explicit `RefreshStages(['steam'])` returned successfully
+  after the final service restart. The nine stale IDs remained absent,
+  Aurelia's 23 installed count was unchanged, and 74 Aurelia-owned available
+  records remained. A full row comparison against the pre-cleanup SQLite backup found
+  all non-Steam-provider catalogue rows byte-for-byte unchanged. No launch,
+  install, uninstall, save, artwork-cache, Steam-runtime, or user-file operation
+  was performed as part of cleanup.
+- Aurelia installation/acquisition paths remain wired to the existing
+  `steam-aurelia` executor and completed-job refresh; relevant acquisition,
+  uninstall, Aurelia, and reconciliation regression suites passed. No live
+  installation was started because that would download game content and is not
+  needed to prove catalogue reconciliation.
+- Result: **STEAM-CATALOGUE-001 ACCEPTED / CLOSED**. The source corrections are
+  committed as `e45d112` and `57b3eeb`; the final candidate and checksum
+  verification are recorded above. The legacy Steam-managed MangoHud item remains
+  **SUPERSEDED** because all Mudos Steam launches use Aurelia; the isolated
+  background Steam runtime remains required for DRM/authentication/Steamworks.

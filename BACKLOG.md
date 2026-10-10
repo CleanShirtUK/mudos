@@ -51,9 +51,14 @@ separately from the automated evidence in `docs/validation-log.md`.
 
 ### STEAM-CATALOGUE-001 — Aurelia installed-state authority
 
-**Status: IN PROGRESS** — remove confirmed stale legacy installed observations
-and make Aurelia reconciliation clean them up durably. Preserve Aurelia-owned
-uninstalled entitlements and valid install records. See `docs/validation-log.md`.
+**Status: ACCEPTED / CLOSED.** The nine confirmed stale `steam:` installed
+observations were removed by Aurelia reconciliation; their 9 matching Aurelia
+entitlements remain available. All 19 previously valid legacy installed rows
+and all 23 Aurelia installed rows remain; visible installed Steam entries are
+deduplicated. Reconciliation regression tests and a second live refresh confirm
+the stale rows do not return. The verified active candidate is
+`/opt/lulu/releases/e45d112-candidate-20261010073051`. See
+`docs/validation-log.md` for exact IDs, backup, counts, and non-Steam comparison.
 
 ## VALIDATION
 
