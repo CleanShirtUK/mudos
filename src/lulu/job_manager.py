@@ -400,8 +400,12 @@ class JobManager:
                 self.transition(job_id, JobState.FINALIZING, stage="finalizing")
             if self.jobs[job_id].state == JobState.FINALIZING:
                 current = self.jobs[job_id]
-                self.update_progress(job_id, 1.0, downloaded_bytes=current.downloaded_bytes,
-                                     total_bytes=current.total_bytes, stage="completed")
+                # UPDATE providers may expose no measurable percentage at all.
+                # Completion is a terminal state, not evidence of a 100% value
+                # that the provider never reported.
+                if current.operation is not JobOperation.UPDATE:
+                    self.update_progress(job_id, 1.0, downloaded_bytes=current.downloaded_bytes,
+                                         total_bytes=current.total_bytes, stage="completed")
                 self.transition(job_id, JobState.COMPLETED, stage="completed")
         except JobCancelled:
             if self.jobs[job_id].state not in {JobState.CANCELLED, JobState.COMPLETED, JobState.FAILED}:

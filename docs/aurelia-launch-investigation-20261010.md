@@ -309,6 +309,6 @@ without reopening the accepted layout repair.
 The five other audit candidates (Buckshot Roulette, Iggy's Egg Adventure,
 Rocket League, TrackMania Nations Forever, Untitled Goose Game) remain
 read-only findings requiring focused launch-path resolution. Do not modify them
-without approval. `STEAM-UPDATES-001` remains a separate outstanding feature;
+without approval. `STEAM-UPDATES-001` remains a separate implementation effort;
 no implementation was started. No runtime change, game launch, release build,
 or service restart was performed to record operator acceptance.

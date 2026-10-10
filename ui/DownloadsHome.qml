@@ -164,11 +164,14 @@ Item {
             title: String(job.title || "Untitled acquisition"),
             state: String(job.state || "queued"),
             provider: String(job.provider || "provider"),
+            operation: String(job.operation || "acquire"),
+            stage: String(job.stage || ""),
             progress: job.progress === undefined ? null : job.progress,
             downloaded_bytes: job.downloaded_bytes === undefined ? null : job.downloaded_bytes,
             total_bytes: job.total_bytes === undefined ? null : job.total_bytes,
             error: job.error === undefined ? null : job.error,
             retryable: job.retryable === true,
+            cancellation_supported: job.cancellation_supported === true,
             pause_supported: job.pause_supported === true
         }
     }
@@ -207,8 +210,7 @@ Item {
             clearRequested(String(job.job_id))
             return
         }
-        if (job && ["queued", "starting", "transferring", "finalizing", "paused",
-                    "pausing", "resuming"].indexOf(String(job.state)) >= 0)
+        if (canCancel(job))
             confirmationPending = true
     }
 
@@ -245,6 +247,14 @@ Item {
 
     function stateLabel(job) {
         var state = String(job.state || "queued")
+        if (job.operation === "update") {
+            var stage = String(job.stage || "").toLowerCase()
+            if (stage.indexOf("verif") >= 0) return "VERIFYING UPDATE"
+            if (stage.indexOf("final") >= 0) return "FINALISING UPDATE"
+            if (stage.indexOf("apply") >= 0 || stage.indexOf("moving") >= 0) return "APPLYING UPDATE"
+            if (stage.indexOf("download") >= 0) return "DOWNLOADING UPDATE"
+            return state === "queued" ? "UPDATE QUEUED" : "UPDATING"
+        }
         if (state === "transferring") return "DOWNLOADING"
         if (state === "pausing") return "Pausing…"
         if (state === "resuming") return "Resuming…"
@@ -264,7 +274,8 @@ Item {
     }
 
     function canCancel(job) {
-        return job && ["queued", "starting", "transferring", "finalizing", "paused"]
+        return job && job.cancellation_supported === true
+            && ["queued", "starting", "transferring", "finalizing", "paused"]
             .indexOf(String(job.state)) >= 0
     }
 
@@ -416,7 +427,7 @@ Item {
                     MudosChromeFrame { anchors.fill: parent; luluPalette: root.luluPalette; uiScale: root.uiScale; cornerRadius: parent.radius; raised: row.selectionProgress < 0.5 }
 
                     Text { x: 18 * root.uiScale; y: 10 * root.uiScale; width: parent.width * 0.58; text: row.modelData.title || "Untitled acquisition"; color: row.textColor; font.family: root.typography.interfaceFamily; font.pixelSize: root.typography.size("body", 18); font.bold: true; elide: Text.ElideRight }
-                     Text { x: 18 * root.uiScale; y: 37 * root.uiScale; text: String(row.modelData.provider || "provider").toUpperCase() + "  ·  " + (String(row.modelData.state) === "failed" ? "Failed" : root.stateLabel(row.modelData)); color: root.luluPalette.secondaryText; font.family: root.typography.interfaceFamily; font.pixelSize: root.typography.size("hint", 12) }
+                      Text { x: 18 * root.uiScale; y: 37 * root.uiScale; text: String(row.modelData.provider || "provider").toUpperCase() + (row.modelData.operation === "update" ? "  ·  UPDATE  ·  " : "  ·  ") + (String(row.modelData.state) === "failed" ? "Failed" : root.stateLabel(row.modelData)); color: root.luluPalette.secondaryText; font.family: root.typography.interfaceFamily; font.pixelSize: root.typography.size("hint", 12) }
                      Text { id: failureText; visible: String(row.modelData.state) === "failed"; x: 18 * root.uiScale; y: 57 * root.uiScale; text: root.failureReason(row.modelData); color: root.luluPalette.secondaryText; font.family: root.typography.interfaceFamily; font.pixelSize: root.typography.size("hint", 11); wrapMode: Text.Wrap; width: parent.width - 36 * root.uiScale }
                     Text { anchors.right: parent.right; anchors.rightMargin: 18 * root.uiScale; y: 10 * root.uiScale; text: row.modelData.progress !== null && row.modelData.progress !== undefined ? Math.round(Number(row.modelData.progress) * 100) + "%" : root.stateLabel(row.modelData); color: root.luluPalette.accent; font.family: root.typography.interfaceFamily; font.pixelSize: root.typography.size("hint", 13) }
                      Rectangle { visible: String(row.modelData.state) !== "failed"; x: 18 * root.uiScale; y: 61 * root.uiScale; width: parent.width - 36 * root.uiScale; height: 5 * root.uiScale; radius: root.luluPalette.radius("row", height / 2, root.uiScale); color: root.luluPalette.glassBorder; Rectangle { width: row.modelData.progress !== null && row.modelData.progress !== undefined ? parent.width * Math.max(0, Math.min(1, Number(row.modelData.progress))) : 0; height: parent.height; radius: parent.radius; color: root.luluPalette.accent } }

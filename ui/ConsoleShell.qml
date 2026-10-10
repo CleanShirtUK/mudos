@@ -113,10 +113,12 @@ Window {
         id: typography
         uiScale: root.uiScale
     }
+    readonly property var shellTypography: typography
 
     LuluPalette {
         id: luluPalette
     }
+    readonly property var shellPalette: luluPalette
 
     UiAudioEngine { id: uiAudioEngine }
 
@@ -390,6 +392,20 @@ Window {
     property bool storeOptionsOpen: false
     property var acquisitionJobs: ({})
     property var acquisitionCompletionSeen: ({})
+    property var steamUpdatePromptGame: null
+    property string steamUpdatePromptState: ""
+    property string steamUpdateCheckError: ""
+    property int steamUpdateChoiceIndex: 0
+    property bool steamUpdateCheckInFlight: false
+    property string steamUpdateCheckAppId: ""
+    property bool steamUpdatePromptChoreographyComplete: false
+    property bool steamUpdateSkipCheckOnce: false
+    property var steamUpdateLaunchGame: null
+    property string steamUpdateLaunchJobId: ""
+    property int steamUpdateLaunchGeneration: -1
+    property bool steamUpdateLaunchIntentLive: false
+    property string steamUpdateWaitError: ""
+    property bool steamUpdateWaitingVisible: false
     property var storeCategories: InstallableProjection.categories([])
     property var storeHomeRef: null
     property var storeHomeLandingRef: null
@@ -789,16 +805,29 @@ Window {
             var rows = parsed.jobs || []
             for (var index = 0; index < rows.length; index++) {
                 var job = rows[index]
-                if (String(job.content_identity || ""))
-                    jobs[String(job.content_identity || "")] = job
+                var identity = String(job.content_identity || "")
+                if (identity)
+                    jobs[identity] = job
+                if (String(job.provider || "") === "steam-aurelia"
+                        && String(job.operation || "") === "update") {
+                    var appId = identity.replace(/^(steam-aurelia:|steam:)/, "")
+                    if (/^[1-9][0-9]*$/.test(appId)) {
+                        jobs["steam-aurelia:" + appId] = job
+                        jobs["steam:" + appId] = job
+                    }
+                }
                 if (String(job.state || "") === "completed"
                         && !acquisitionCompletionSeen[String(job.job_id || "")]) {
                     acquisitionCompletionSeen[String(job.job_id || "")] = true
-                    refreshStore()
-                    refreshCatalogue()
+                    if (String(job.operation || "") !== "update") {
+                        refreshStore()
+                        refreshCatalogue()
+                    }
                 }
             }
             acquisitionJobs = jobs
+            for (var updateIndex = 0; updateIndex < rows.length; updateIndex++)
+                observeUpdateLaunchJob(rows[updateIndex])
         } catch (error) {
             acquisitionJobs = ({})
         }
@@ -818,6 +847,22 @@ Window {
         repeat: true
         running: true
         onTriggered: root.refreshAcquisitionJobs()
+    }
+
+    Timer {
+        id: steamUpdateWaitTimer
+        interval: 1200
+        repeat: true
+        running: root.steamUpdateWaitingVisible
+        onTriggered: {
+            root.refreshAcquisitionJobs()
+            if (!root.steamUpdateLaunchIntentLive)
+                return
+            request("/launch-status", "GET", "", function(state) {
+                if (root.steamUpdateLaunchIntentLive && state.lifecycle !== "shell")
+                    root.continueSteamUpdateInBackground()
+            })
+        }
     }
 
     function applyLaunchState(state, generation) {
@@ -2389,9 +2434,166 @@ Window {
         }, "Clear failed")
     }
 
+    function steamAppId(game) {
+        if (!game || ["steam", "steam-aurelia"].indexOf(String(game.provider || "")) < 0)
+            return ""
+        var appId = String(game.provider_id || "")
+        return /^[1-9][0-9]*$/.test(appId) ? appId : ""
+    }
+
+    function checkSteamUpdateBeforeLaunch(game, choreographyComplete) {
+        var appId = steamAppId(game)
+        if (!appId)
+            return false
+        if (steamUpdateCheckInFlight && steamUpdateCheckAppId === appId)
+            return true
+        steamUpdatePromptGame = game
+        steamUpdatePromptChoreographyComplete = choreographyComplete === true
+        steamUpdatePromptState = "checking"
+        steamUpdateCheckError = ""
+        steamUpdateChoiceIndex = 0
+        steamUpdateCheckInFlight = true
+        steamUpdateCheckAppId = appId
+        request("/steam/update-check", "POST", JSON.stringify({app_id: appId}), function(result) {
+            steamUpdateCheckInFlight = false
+            steamUpdateCheckAppId = ""
+            if (!steamUpdatePromptGame
+                    || String(steamUpdatePromptGame.game_id) !== String(game.game_id))
+                return
+            if (result.status === "current" && result.available === false) {
+                steamUpdatePromptGame = null
+                steamUpdatePromptState = ""
+            steamUpdateSkipCheckOnce = true
+            launchGame(game, choreographyComplete)
+            } else if (result.status === "available" && result.available === true) {
+                steamUpdatePromptState = "choice"
+            } else {
+                steamUpdatePromptState = "unknown"
+                steamUpdateCheckError = String(result.error || "Steam update status could not be confirmed")
+            }
+        }, "Update check failed", undefined, function() {
+            steamUpdateCheckInFlight = false
+            steamUpdateCheckAppId = ""
+            steamUpdatePromptState = "unknown"
+            steamUpdateCheckError = "Steam update status could not be confirmed. Retry or cancel."
+        })
+        return true
+    }
+
+    function cancelSteamUpdatePrompt() {
+        steamUpdatePromptGame = null
+        steamUpdatePromptState = ""
+        steamUpdateCheckError = ""
+        steamUpdateCheckInFlight = false
+        steamUpdateCheckAppId = ""
+    }
+
+    function startSteamUpdate(intent) {
+        var game = steamUpdatePromptGame
+        if (!game || intent !== "update-launch" && intent !== "background")
+            return
+        var appId = steamAppId(game)
+        if (!appId)
+            return
+        steamUpdatePromptState = "submitting"
+        request("/steam/update", "POST", JSON.stringify({app_id: appId,
+            title: String(game.title || game.canonical_title || appId), intent: intent}), function(result) {
+            var jobId = String(result.job_id || "")
+            if (!jobId) {
+                steamUpdatePromptState = "unknown"
+                steamUpdateCheckError = "Acquisitiond did not return an update job."
+                return
+            }
+            cancelSteamUpdatePrompt()
+            if (intent === "background") {
+                notify("Update started", String(game.title || "Steam game") + " will update in the background", "info")
+                refreshAcquisitionJobs()
+                return
+            }
+            steamUpdateLaunchGame = game
+            steamUpdateLaunchJobId = jobId
+            steamUpdateLaunchGeneration = launchGeneration
+            steamUpdateLaunchIntentLive = true
+            steamUpdateWaitError = ""
+            steamUpdateWaitingVisible = true
+            refreshAcquisitionJobs()
+        }, "Steam update could not be submitted", undefined, function() {
+            steamUpdatePromptState = "unknown"
+            steamUpdateCheckError = "The update could not be queued. Retry or cancel."
+        })
+    }
+
+    function continueSteamUpdateInBackground() {
+        var jobId = steamUpdateLaunchJobId
+        steamUpdateLaunchIntentLive = false
+        steamUpdateLaunchGame = null
+        steamUpdateLaunchJobId = ""
+        steamUpdateLaunchGeneration = -1
+        steamUpdateWaitingVisible = false
+        steamUpdateWaitError = ""
+        if (jobId.length)
+            request("/steam/update-background/" + encodeURIComponent(jobId), "POST", "", function() {}, "")
+        notify("Updating in background", "The game will not launch automatically", "info")
+    }
+
+    function updateJobFor(game) {
+        if (!game)
+            return null
+        var appId = steamAppId(game)
+        return appId ? (acquisitionJobs["steam-aurelia:" + appId]
+            || acquisitionJobs["steam:" + appId] || null) : null
+    }
+
+    function observeUpdateLaunchJob(job) {
+        if (!steamUpdateLaunchIntentLive || !job
+                || String(job.job_id || "") !== steamUpdateLaunchJobId)
+            return
+        var metadata = job.origin_metadata || {}
+        if (String(job.recovery_reason || "") === "service-restart"
+                || String(metadata.launch_intent || "") === "none"
+                || String(metadata.launch_policy || "") === "background-only") {
+            continueSteamUpdateInBackground()
+            return
+        }
+        if (job.state === "failed" || job.state === "cancelled") {
+            steamUpdateLaunchIntentLive = false
+            steamUpdateWaitError = job.error && (job.error.message || job.error.code)
+                ? String(job.error.message || job.error.code)
+                : (job.state === "cancelled" ? "The update was cancelled." : "The update failed.")
+            return
+        }
+        if (job.state !== "completed")
+            return
+        var game = steamUpdateLaunchGame
+        var expectedGeneration = steamUpdateLaunchGeneration
+        // Consume first: duplicate snapshots/completion signals can never launch twice.
+        steamUpdateLaunchIntentLive = false
+        steamUpdateLaunchGame = null
+        steamUpdateLaunchJobId = ""
+        steamUpdateLaunchGeneration = -1
+        request("/launch-status", "GET", "", function(state) {
+            steamUpdateWaitingVisible = false
+            if (!game || expectedGeneration !== launchGeneration
+                    || state.lifecycle !== "shell" || startupLifecycle !== "HOME") {
+                notify("Update complete", "Return to Home to launch the updated game", "success")
+                return
+            }
+            steamUpdateSkipCheckOnce = true
+            launchGame(game, false, true)
+        }, "", undefined, function() {
+            steamUpdateWaitingVisible = false
+            notify("Update complete", "The updated game is ready to launch from Home", "success")
+        })
+    }
+
     function launchGame(game, choreographyComplete) {
         if (!game)
             return
+        if (!steamUpdateSkipCheckOnce) {
+            if (checkSteamUpdateBeforeLaunch(game, choreographyComplete))
+                return
+        }
+        steamUpdateSkipCheckOnce = false
         if (choreographyComplete !== true && presentationCoordinator.contentPresented) {
             pendingHomeLaunch = game
             pendingHomeLaunchPhase = "exiting"
@@ -3718,6 +3920,41 @@ Window {
                 }
                 return
             }
+            if (root.steamUpdatePromptGame) {
+                var choiceCount = root.steamUpdatePromptState === "choice" ? 3
+                    : root.steamUpdatePromptState === "unknown" ? 2 : 1
+                if (event.key === Qt.Key_Up || event.key === Qt.Key_Left) {
+                    root.steamUpdateChoiceIndex = Math.max(0, root.steamUpdateChoiceIndex - 1)
+                } else if (event.key === Qt.Key_Down || event.key === Qt.Key_Right) {
+                    root.steamUpdateChoiceIndex = Math.min(choiceCount - 1, root.steamUpdateChoiceIndex + 1)
+                } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
+                    if (root.steamUpdatePromptState === "choice") {
+                        if (root.steamUpdateChoiceIndex === 0) root.startSteamUpdate("update-launch")
+                        else if (root.steamUpdateChoiceIndex === 1) root.startSteamUpdate("background")
+                        else root.cancelSteamUpdatePrompt()
+                    } else if (root.steamUpdatePromptState === "unknown") {
+                        if (root.steamUpdateChoiceIndex === 0) {
+                            var retryGame = root.steamUpdatePromptGame
+                            var retryChoreography = root.steamUpdatePromptChoreographyComplete
+                            root.cancelSteamUpdatePrompt()
+                            root.checkSteamUpdateBeforeLaunch(retryGame, retryChoreography)
+                        } else root.cancelSteamUpdatePrompt()
+                    } else if (root.steamUpdatePromptState === "checking") {
+                        root.cancelSteamUpdatePrompt()
+                    }
+                } else if (event.key === Qt.Key_Escape || event.key === Qt.Key_Backspace) {
+                    root.cancelSteamUpdatePrompt()
+                }
+                event.accepted = true
+                return
+            }
+            if (root.steamUpdateWaitingVisible) {
+                if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter
+                        || event.key === Qt.Key_Escape || event.key === Qt.Key_Backspace)
+                    root.continueSteamUpdateInBackground()
+                event.accepted = true
+                return
+            }
             if (root.launchScreenVisible) {
                 if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
                     if (root.normalizedLaunchCancellable)
@@ -5039,6 +5276,210 @@ Window {
                 contentItem: Text { text: parent.text; color: parent.activeFocus ? luluPalette.selectedText : luluPalette.actionText; font: parent.font; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
                 onClicked: root.dismissLaunchFailure()
                 Accessible.name: "Return to Home after launch failure"
+            }
+        }
+    }
+
+    Rectangle {
+        id: steamUpdatePrompt
+        z: 120
+        anchors.fill: parent
+        visible: root.steamUpdatePromptGame !== null
+        color: luluPalette.launchOverlaySurface
+        Column {
+            width: Math.min(parent.width * 0.78, root.design(760))
+            anchors.centerIn: parent
+            spacing: root.design(16)
+            Text {
+                width: parent.width
+                text: root.steamUpdatePromptGame
+                    ? String(root.steamUpdatePromptGame.title || "Steam game") : "Steam update"
+                color: luluPalette.primaryText
+                font.family: typography.displayFamily
+                font.pixelSize: typography.size("title", 30)
+                horizontalAlignment: Text.AlignHCenter
+                wrapMode: Text.Wrap
+            }
+            Text {
+                width: parent.width
+                text: root.steamUpdatePromptState === "checking" ? "Checking Steam for updates…"
+                    : root.steamUpdatePromptState === "submitting" ? "Queueing update…"
+                    : root.steamUpdatePromptState === "unknown" ? root.steamUpdateCheckError
+                    : "An update is available. Choose when to update this game."
+                color: root.steamUpdatePromptState === "unknown"
+                    ? luluPalette.warning : luluPalette.secondaryText
+                font.family: typography.interfaceFamily
+                font.pixelSize: typography.size("body", 18)
+                horizontalAlignment: Text.AlignHCenter
+                wrapMode: Text.Wrap
+            }
+            BusyIndicator {
+                anchors.horizontalCenter: parent.horizontalCenter
+                visible: root.steamUpdatePromptState === "checking"
+                    || root.steamUpdatePromptState === "submitting"
+                running: visible
+                width: root.design(48)
+                height: width
+                palette.dark: luluPalette.primaryText
+                palette.text: luluPalette.primaryText
+            }
+            Column {
+                width: parent.width
+                spacing: root.design(8)
+                visible: root.steamUpdatePromptState === "choice"
+                    || root.steamUpdatePromptState === "unknown"
+                    || root.steamUpdatePromptState === "checking"
+                Repeater {
+                    model: root.steamUpdatePromptState === "choice"
+                        ? ["Update & Launch", "Update in Background", "Cancel"]
+                        : root.steamUpdatePromptState === "unknown" ? ["Retry", "Cancel"] : ["Cancel"]
+                    delegate: Button {
+                        required property string modelData
+                        required property int index
+                        width: parent.width
+                        height: root.design(52)
+                        text: modelData
+                        focus: steamUpdatePrompt.visible && index === root.steamUpdateChoiceIndex
+                        font.family: typography.interfaceFamily
+                        font.pixelSize: typography.size("control", 18)
+                        palette.button: luluPalette.actionSurface
+                        palette.buttonText: luluPalette.actionText
+                        background: Rectangle {
+                            radius: luluPalette.radius("row", 8 * root.uiScale, root.uiScale)
+                            color: parent.activeFocus ? luluPalette.selectionSurface : luluPalette.actionSurface
+                            border.color: parent.activeFocus ? luluPalette.focusIndicator : luluPalette.glassBorder
+                            MudosChromeFrame { anchors.fill: parent; luluPalette: root.shellPalette; uiScale: root.uiScale; cornerRadius: parent.radius; raised: !parent.activeFocus }
+                        }
+                        contentItem: Text {
+                            text: parent.text
+                            color: parent.activeFocus ? luluPalette.selectedText : luluPalette.actionText
+                            font: parent.font
+                            horizontalAlignment: Text.AlignHCenter
+                            verticalAlignment: Text.AlignVCenter
+                        }
+                        onClicked: {
+                            root.steamUpdateChoiceIndex = index
+                            if (root.steamUpdatePromptState === "choice") {
+                                if (index === 0) root.startSteamUpdate("update-launch")
+                                else if (index === 1) root.startSteamUpdate("background")
+                                else root.cancelSteamUpdatePrompt()
+                            } else if (root.steamUpdatePromptState === "unknown") {
+                                if (index === 0) {
+                                    var retryGame = root.steamUpdatePromptGame
+                                    var choreography = root.steamUpdatePromptChoreographyComplete
+                                    root.cancelSteamUpdatePrompt()
+                                    root.checkSteamUpdateBeforeLaunch(retryGame, choreography)
+                                } else root.cancelSteamUpdatePrompt()
+                            } else root.cancelSteamUpdatePrompt()
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Rectangle {
+        id: steamUpdateWaiting
+        z: 115
+        anchors.fill: parent
+        visible: root.steamUpdateWaitingVisible
+        color: luluPalette.launchOverlaySurface
+        readonly property var currentJob: root.steamUpdateLaunchGame
+            ? root.updateJobFor(root.steamUpdateLaunchGame) : null
+        Column {
+            width: Math.min(parent.width * 0.78, root.design(760))
+            anchors.centerIn: parent
+            spacing: root.design(18)
+            Text {
+                width: parent.width
+                text: root.steamUpdateLaunchGame
+                    ? String(root.steamUpdateLaunchGame.title || "Steam game") : "Steam update"
+                color: luluPalette.primaryText
+                font.family: typography.displayFamily
+                font.pixelSize: typography.size("title", 30)
+                horizontalAlignment: Text.AlignHCenter
+                wrapMode: Text.Wrap
+            }
+            UpdateRadialProgress {
+                anchors.horizontalCenter: parent.horizontalCenter
+                width: root.design(104)
+                height: width
+                luluPalette: root.shellPalette
+                typography: root.shellTypography
+                uiScale: root.uiScale
+                progress: steamUpdateWaiting.currentJob
+                    && steamUpdateWaiting.currentJob.progress !== null
+                    ? Number(steamUpdateWaiting.currentJob.progress) : 0
+                progressKnown: !!steamUpdateWaiting.currentJob
+                    && steamUpdateWaiting.currentJob.progress !== null
+                    && steamUpdateWaiting.currentJob.progress !== undefined
+                indeterminate: !progressKnown
+                stage: steamUpdateWaiting.currentJob
+                    ? String(steamUpdateWaiting.currentJob.stage || "Updating with Aurelia")
+                    : "Waiting for Aurelia"
+            }
+            Text {
+                width: parent.width
+                visible: root.steamUpdateWaitError !== ""
+                text: root.steamUpdateWaitError
+                color: luluPalette.warning
+                font.family: typography.interfaceFamily
+                font.pixelSize: typography.size("body", 17)
+                horizontalAlignment: Text.AlignHCenter
+                wrapMode: Text.Wrap
+            }
+            Text {
+                width: parent.width
+                text: steamUpdateWaiting.currentJob
+                    ? (steamUpdateWaiting.currentJob.state === "failed" ? "Update failed"
+                        : steamUpdateWaiting.currentJob.state === "cancelled" ? "Update cancelled"
+                        : "Updating through Aurelia. This can take some time.")
+                    : "Waiting for the persistent update job…"
+                color: luluPalette.secondaryText
+                font.family: typography.interfaceFamily
+                font.pixelSize: typography.size("body", 17)
+                horizontalAlignment: Text.AlignHCenter
+                wrapMode: Text.Wrap
+            }
+            Button {
+                anchors.horizontalCenter: parent.horizontalCenter
+                text: root.steamUpdateWaitError !== "" ? "Return to Mudos" : "Continue in Background"
+                focus: steamUpdateWaiting.visible
+                font.family: typography.interfaceFamily
+                font.pixelSize: typography.size("control", 18)
+                palette.button: luluPalette.actionSurface
+                palette.buttonText: luluPalette.actionText
+                background: Rectangle {
+                    radius: luluPalette.radius("row", 8 * root.uiScale, root.uiScale)
+                    color: parent.activeFocus ? luluPalette.selectionSurface : luluPalette.actionSurface
+                    border.color: parent.activeFocus ? luluPalette.focusIndicator : luluPalette.glassBorder
+                    MudosChromeFrame { anchors.fill: parent; luluPalette: root.shellPalette; uiScale: root.uiScale; cornerRadius: parent.radius; raised: !parent.activeFocus }
+                }
+                contentItem: Text {
+                    text: parent.text
+                    color: parent.activeFocus ? luluPalette.selectedText : luluPalette.actionText
+                    font: parent.font
+                    horizontalAlignment: Text.AlignHCenter
+                    verticalAlignment: Text.AlignVCenter
+                }
+                onClicked: {
+                    if (root.steamUpdateWaitError !== "") {
+                        root.steamUpdateLaunchIntentLive = false
+                        root.steamUpdateWaitingVisible = false
+                        root.steamUpdateLaunchGame = null
+                        root.steamUpdateLaunchJobId = ""
+                        root.steamUpdateLaunchGeneration = -1
+                    } else root.continueSteamUpdateInBackground()
+                }
+            }
+            Text {
+                width: parent.width
+                text: "Aurelia does not expose safe update cancellation; the update will continue."
+                color: luluPalette.secondaryText
+                font.family: typography.interfaceFamily
+                font.pixelSize: typography.size("hint", 13)
+                horizontalAlignment: Text.AlignHCenter
+                wrapMode: Text.Wrap
             }
         }
     }

@@ -152,6 +152,27 @@ class JobDomainTests(unittest.TestCase):
             self.assertEqual(manager.jobs[job.job_id].progress, 1.0)
         asyncio.run(exercise())
 
+    def test_update_completion_does_not_invent_a_full_progress_percentage(self) -> None:
+        class UpdateExecutor:
+            async def run(self, _job, reporter):
+                await reporter.state(JobState.TRANSFERRING, stage="aurelia-updating")
+                await reporter.state(JobState.FINALIZING, stage="aurelia-update-verified")
+
+            async def cancel(self, _job):
+                return None
+
+        async def exercise():
+            manager = JobManager()
+            manager.register_executor("steam-aurelia", UpdateExecutor())
+            job = manager.submit("steam-aurelia", "steam-aurelia:48000", "LIMBO",
+                                 operation=JobOperation.UPDATE,
+                                 provider_job_id="48000")
+            await manager._tasks[job.job_id]
+            self.assertEqual(manager.jobs[job.job_id].state, JobState.COMPLETED)
+            self.assertIsNone(manager.jobs[job.job_id].progress)
+
+        asyncio.run(exercise())
+
     def test_actionable_count_includes_queued_and_paused_jobs(self) -> None:
         queued = DownloadJob("queued", "fake", "Queued")
         paused = DownloadJob("paused", "fake", "Paused").transition(

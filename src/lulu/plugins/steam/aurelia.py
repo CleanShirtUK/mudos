@@ -35,7 +35,9 @@ class AureliaError(RuntimeError):
 class AureliaCapabilities:
     acquisition_progress: bool = True
     acquisition_cancel: bool = True
-    updates: bool = False  # Provider command exists; Acquisitiond update jobs are not wired yet.
+    updates: bool = True  # Aurelia exposes an update command; progress/cancel are not exposed.
+    update_progress: bool = False
+    update_cancel: bool = False
     dlc: bool = False  # DLC operations exist upstream; Mudos component jobs are not wired yet.
     launch: bool = True  # Sessiond route exists; still separately gated by explicit opt-in.
     running_state: bool = True
@@ -141,6 +143,8 @@ class AureliaClient:
         self._run = run
         self._startup_lock = asyncio.Lock()
         self._daemon_ready = False
+        self._update_cache: tuple[float, dict[str, Any]] | None = None
+        self._update_lock = asyncio.Lock()
 
     @property
     def available(self) -> bool:
@@ -406,7 +410,52 @@ class AureliaClient:
         raise AureliaError("cancel-timeout", "Aurelia did not finish stopping the install", retryable=True)
 
     async def update(self, app_id: str) -> Any:
-        return await self.command("update", app_id)
+        if not app_id.isdecimal() or int(app_id) < 1:
+            raise AureliaError("invalid-app-id", "Aurelia update requires a positive Steam AppID")
+        # Updates can be multi-hour depot operations. The JSON command reports a
+        # terminal result only; keep it alive until Aurelia confirms its outcome.
+        return await self.command("update", app_id, timeout=8 * 60 * 60)
+
+    async def update_availability(self, app_id: str, *, force: bool = False,
+                                  cache_seconds: float = 90.0) -> dict[str, Any]:
+        """Read Aurelia's current remote-manifest comparison without starting an update.
+
+        `aurelia update` without an AppID is a read-only report of installed
+        titles with updates available. It performs remote manifest checks. Cache
+        the one catalogue-wide query briefly and coalesce concurrent callers;
+        never interpret a failed query as an up-to-date result.
+        """
+        if not app_id.isdecimal() or int(app_id) < 1:
+            raise AureliaError("invalid-app-id", "Steam update check requires a positive AppID")
+        now = time.monotonic()
+        cached = self._update_cache
+        async with self._update_lock:
+            now = time.monotonic()
+            cached = self._update_cache
+            if force or cached is None or now - cached[0] >= cache_seconds:
+                value = await self.command("update", timeout=25.0)
+                if not isinstance(value, dict) or not isinstance(value.get("updates"), list):
+                    raise AureliaError("malformed-update-status",
+                                       "Aurelia returned an invalid update availability report", retryable=True)
+                updates: dict[str, dict[str, Any]] = {}
+                for row in value["updates"]:
+                    if isinstance(row, dict) and str(row.get("app_id", "")).isdecimal():
+                        updates[str(row["app_id"])] = row
+                pinned = value.get("pinned", [])
+                if not isinstance(pinned, list):
+                    pinned = []
+                cached = (time.monotonic(), {"updates": updates, "pinned": pinned,
+                                             "checked_at": time.time()})
+                self._update_cache = cached
+            data = cached[1]
+            return {
+                "app_id": app_id,
+                "available": app_id in data["updates"],
+                "pinned": any(isinstance(row, dict) and str(row.get("app_id", "")) == app_id
+                               for row in data["pinned"]),
+                "checked_at": data["checked_at"],
+                "source": "aurelia-remote-manifests",
+            }
 
     async def dlc(self, app_id: str) -> Any:
         return await self.command("dlc", app_id)
@@ -601,6 +650,8 @@ class AureliaAcquisitionExecutor:
         self.client = client or AureliaClient()
         self.capabilities = AureliaCapabilities()
         self._active: dict[str, str] = {}
+        from .provider import SteamProvider
+        self._steam_provider = SteamProvider()
 
     def uninstall_capability(self, game) -> dict[str, object]:
         app_id = str(getattr(game, "provider_id", ""))
@@ -611,11 +662,14 @@ class AureliaAcquisitionExecutor:
                 "description": "Uninstall this Steam game through Aurelia."}
 
     async def run(self, job: DownloadJob, reporter: JobReporter) -> None:
-        app_id = job.provider_job_id or job.content_identity.removeprefix("steam-aurelia:")
+        app_id = job.provider_job_id or job.content_identity.removeprefix("steam-aurelia:").removeprefix("steam:")
         if not app_id.isdecimal():
             raise JobExecutionError("invalid-content", "Aurelia acquisition requires a Steam AppID")
         if job.operation is JobOperation.REMOVE:
             await self._uninstall(app_id, reporter)
+            return
+        if job.operation is JobOperation.UPDATE:
+            await self._update(app_id, job, reporter)
             return
         service_recovery = job.recovery_reason == "service-restart"
         self._active[job.job_id] = app_id
@@ -746,6 +800,136 @@ class AureliaAcquisitionExecutor:
             )
         await reporter.state(JobState.FINALIZING, stage="aurelia-uninstall-finalizing")
         await reporter.progress(1.0, stage="aurelia-uninstall-complete")
+        await reporter.state(JobState.COMPLETED, stage="completed")
+
+    async def _update(self, app_id: str, job: DownloadJob, reporter: JobReporter) -> None:
+        """Run one Aurelia update; the CLI exposes terminal status, not safe controls/progress."""
+        if self._steam_provider.presentation_pids(app_id):
+            raise JobExecutionError("steam-game-running",
+                                    "Close this game before updating its installed files.",
+                                    retryable=True)
+        origin_metadata = dict(job.origin_metadata)
+        if job.recovery_reason == "service-restart":
+            # Continuation is shell-memory only. Recovery must never rehydrate
+            # Update & Launch authority from the persisted job row.
+            origin_metadata.update({"launch_intent": "none", "launch_policy": "background-only"})
+            await reporter.metadata(origin="steam-update-background",
+                                    origin_metadata=origin_metadata,
+                                    recovery_reason="service-restart")
+        await reporter.metadata(provider_job_id=app_id, backend="aurelia",
+                                provider_state="checking-update")
+        await reporter.state(JobState.STARTING, stage="aurelia-update-check")
+        try:
+            live = await self.client.command("install", "list", timeout=15.0)
+            if isinstance(live, list) and any(
+                    isinstance(row, dict) and str(row.get("app_id")) == app_id for row in live):
+                # Aurelia may use its install registry while applying an update.
+                # Adopt but never submit another operation during service recovery.
+                await reporter.state(JobState.TRANSFERRING, stage="aurelia-update-recovered")
+                deadline = time.monotonic() + 6 * 60 * 60
+                while time.monotonic() < deadline:
+                    await asyncio.sleep(2)
+                    live = await self.client.command("install", "list", timeout=15.0)
+                    row = next((item for item in live if isinstance(item, dict)
+                                and str(item.get("app_id")) == app_id), None) if isinstance(live, list) else None
+                    if row is None:
+                        break
+                    mapped = map_progress(row)
+                    await reporter.progress(mapped["progress"],
+                                             downloaded_bytes=mapped["downloaded_bytes"],
+                                             total_bytes=mapped["total_bytes"],
+                                             stage="aurelia-update-recovered")
+                else:
+                    raise JobExecutionError("aurelia-update-timeout",
+                                            "Aurelia's recovered update did not finish in time.",
+                                            retryable=True)
+                availability = await self.client.update_availability(app_id, force=True)
+                await self._confirm_updated(app_id, availability, reporter)
+                return
+
+            availability = await self.client.update_availability(app_id, force=True)
+            if not availability["available"]:
+                # A recovered operation may have completed before Acquisitiond
+                # restarted. If it is still available, fail closed below.
+                if job.recovery_reason == "service-restart":
+                    await self._confirm_updated(app_id, availability, reporter)
+                    return
+                # User confirmation can race with another client completing it.
+                await reporter.state(JobState.FINALIZING, stage="aurelia-update-already-current")
+                await reporter.state(JobState.COMPLETED, stage="completed")
+                return
+            if job.recovery_reason == "service-restart":
+                raise JobExecutionError(
+                    "aurelia-update-recovery-ambiguous",
+                    "Aurelia still reports an update after restart; it was not restarted automatically. Retry from Mudos.",
+                    retryable=False,
+                )
+            if availability.get("pinned"):
+                raise JobExecutionError("aurelia-update-pinned",
+                                        "This Steam game is pinned and Aurelia will not update it.",
+                                        retryable=False)
+            if self._steam_provider.presentation_pids(app_id):
+                raise JobExecutionError("steam-game-running",
+                                        "Close this game before updating its installed files.",
+                                        retryable=True)
+            await reporter.metadata(provider_state="updating")
+            await reporter.state(JobState.TRANSFERRING, stage="aurelia-updating")
+            update_task = asyncio.create_task(self.client.update(app_id))
+            while not update_task.done():
+                await asyncio.sleep(1.5)
+                if update_task.done():
+                    break
+                try:
+                    live = await self.client.command("install", "list", timeout=12.0)
+                except AureliaError:
+                    # Update remains authoritative; lack of optional live
+                    # telemetry leaves an indeterminate state, not failure.
+                    continue
+                row = next((item for item in live if isinstance(item, dict)
+                            and str(item.get("app_id")) == app_id), None) if isinstance(live, list) else None
+                if row is not None:
+                    mapped = map_progress(row)
+                    stage_text = str(mapped.get("stage") or "").casefold()
+                    stage = ("downloading" if "download" in stage_text else
+                             "verifying" if "verif" in stage_text else
+                             "applying" if any(word in stage_text for word in ("moving", "apply", "install")) else
+                             "aurelia-updating")
+                    await reporter.state(JobState.TRANSFERRING, stage=stage)
+                    await reporter.progress(mapped.get("progress"),
+                                            downloaded_bytes=mapped.get("downloaded_bytes"),
+                                            total_bytes=mapped.get("total_bytes"), stage=stage)
+            await update_task
+            await reporter.state(JobState.FINALIZING, stage="aurelia-update-verifying")
+            verified = await self.client.update_availability(app_id, force=True)
+            await self._confirm_updated(app_id, verified, reporter)
+        except JobExecutionError:
+            raise
+        except AureliaError as error:
+            raise JobExecutionError(f"aurelia-{error.code}",
+                                    ("Aurelia's update result is uncertain after a timeout; check the Downloads view "
+                                     "and Steam status before retrying." if error.code == "timeout" else
+                                     f"Aurelia could not update this Steam game ({error.code})."),
+                                    # A timed-out CLI may have left the daemon
+                                    # operation running. Do not offer Retry and
+                                    # risk a duplicate depot operation.
+                                    retryable=False if error.code == "timeout" else error.retryable) from error
+
+    async def _confirm_updated(self, app_id: str, availability: dict[str, Any],
+                               reporter: JobReporter) -> None:
+        if availability.get("available"):
+            raise JobExecutionError("aurelia-update-unconfirmed",
+                                    "Aurelia still reports an update available; the game was not marked complete.",
+                                    retryable=True)
+        installed = await self.client.installed_games()
+        game = next((item for item in installed if item.app_id == app_id and item.installed), None)
+        if game is None:
+            raise JobExecutionError("aurelia-update-install-missing",
+                                    "Aurelia no longer confirms this game is installed.", retryable=False)
+        await reporter.metadata(provider_state="updated", backend="aurelia",
+                                destination=game.install_path,
+                                completion_path=game.install_path)
+        await reporter.progress(None, stage="aurelia-update-verified")
+        await reporter.state(JobState.FINALIZING, stage="aurelia-update-verified")
         await reporter.state(JobState.COMPLETED, stage="completed")
 
     async def _record_installed_metadata(self, app_id: str, reporter: JobReporter) -> None:

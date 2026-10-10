@@ -133,11 +133,15 @@ class NotificationBroker:
             ))
         if job.state is JobState.TRANSFERRING and previous is not JobState.TRANSFERRING \
                 and job.operation is not JobOperation.REMOVE:
+            updating = job.operation is JobOperation.UPDATE
             events.append(Notification(
-                event_id=f"{job.job_id}:download_started", event_type="download_started",
-                title="Download started", body=title, source=source, timestamp=_timestamp(),
+                event_id=f"{job.job_id}:{'update' if updating else 'download'}_started",
+                event_type="update_started" if updating else "download_started",
+                title="Update started" if updating else "Download started",
+                body=title, source=source, timestamp=_timestamp(),
             ))
-        if job.state is JobState.FINALIZING and previous is JobState.TRANSFERRING:
+        if (job.state is JobState.FINALIZING and previous is JobState.TRANSFERRING
+                and job.operation is not JobOperation.UPDATE):
             events.append(Notification(
                 event_id=f"{job.job_id}:download_finished", event_type="download_finished",
                 title="Download finished", body=title, source=source, timestamp=_timestamp(),
@@ -153,6 +157,13 @@ class NotificationBroker:
                 event_id=f"{job.job_id}:installation_succeeded",
                 event_type="installation_succeeded", title="Installed successfully",
                 body=f"{title} is ready to play", source=source, timestamp=_timestamp(),
+                severity="success", duration=SEVERITY_LIFETIMES["success"],
+            ))
+        if job.state is JobState.COMPLETED and job.operation is JobOperation.UPDATE:
+            events.append(Notification(
+                event_id=f"{job.job_id}:update_completed", event_type="update_completed",
+                title="Update complete", body=f"{title} is up to date",
+                source=source, timestamp=_timestamp(), priority=1,
                 severity="success", duration=SEVERITY_LIFETIMES["success"],
             ))
         return tuple(events)

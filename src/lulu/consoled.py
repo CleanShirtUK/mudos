@@ -1456,7 +1456,8 @@ class ConsoleInterface(ServiceInterface):
                  audio_manager: AudioManagerAdapter | None = None,
                  storage_manager: StorageManagerAdapter | None = None,
                  display_manager: DisplayManagerAdapter | None = None,
-                 credentials: CredentialBroker | None = None) -> None:
+                 credentials: CredentialBroker | None = None,
+                 session_bus: MessageBus | None = None) -> None:
         super().__init__(INTERFACE_NAME)
         self.catalogue = catalogue
         self.local_runtime = local_runtime
@@ -1467,6 +1468,7 @@ class ConsoleInterface(ServiceInterface):
         self.storage_manager = storage_manager or StorageManagerAdapter()
         self.display_manager = display_manager or DisplayManagerAdapter()
         self.credentials = credentials or CredentialBroker()
+        self.session_bus = session_bus
         self._notification_presenter = NotificationPresenter()
         self._notification_queue: asyncio.Queue[Notification] = asyncio.Queue()
         self._notification_worker: asyncio.Task[None] | None = None
@@ -2693,6 +2695,28 @@ class ConsoleInterface(ServiceInterface):
             if self.sessiond is None:
                 raise ValueError("console session is unavailable")
             app_id = route.provider_game_id
+            if getattr(self, "session_bus", None) is not None:
+                try:
+                    acquisition_introspection = await self.session_bus.introspect(
+                        "org.lulu.Acquisitiond", "/org/lulu/Acquisition")
+                    acquisition_proxy = self.session_bus.get_proxy_object(
+                        "org.lulu.Acquisitiond", "/org/lulu/Acquisition",
+                        acquisition_introspection)
+                    snapshot = json.loads(await acquisition_proxy.get_interface(
+                        "org.lulu.Acquisition").call_get_snapshot())
+                except Exception as error:
+                    raise ValueError(
+                        "Steam update state is unavailable; retry after Downloads is ready"
+                    ) from error
+                active_states = {"queued", "starting", "transferring", "finalizing",
+                                 "paused", "pausing", "resuming", "cancelling"}
+                if any(str(job.get("provider")) == "steam-aurelia"
+                       and str(job.get("operation")) == "update"
+                       and str(job.get("state")) in active_states
+                       and str(job.get("provider_job_id") or
+                               str(job.get("content_identity", "")).rsplit(":", 1)[-1]) == app_id
+                       for job in snapshot.get("jobs", []) if isinstance(job, dict)):
+                    raise ValueError("This Steam game is being updated; wait for the update to finish")
             LOGGER.info("Aurelia launch routed to Sessiond game_id=%s app_id=%s", game_id, app_id)
             token = await self.sessiond.call_request_aurelia_launch(app_id, timeout_ms)
             delta = self.catalogue.store.mark_played(game.game_id)
@@ -3039,7 +3063,7 @@ async def serve() -> None:
         "org.lulu.ConsoleSessiond", "/org/lulu/ConsoleSession", session_introspection
     )
     sessiond = session_proxy.get_interface("org.lulu.ConsoleSession")
-    interface = ConsoleInterface(catalogue, runtime, sessiond=sessiond)
+    interface = ConsoleInterface(catalogue, runtime, sessiond=sessiond, session_bus=bus)
     bus.export(OBJECT_PATH, interface)
     await bus.request_name(BUS_NAME)
     LOGGER.info("startup_timing event=consoled-dbus-ready monotonic_ns=%s", time.monotonic_ns())

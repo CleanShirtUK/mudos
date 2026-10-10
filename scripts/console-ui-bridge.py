@@ -333,6 +333,24 @@ class ConsoleUiBridge:
             return {"jobs": [], "activeDownloadCount": 0}
         return json.loads(await self.acquisitiond.call_get_snapshot())
 
+    async def check_steam_update(self, app_id: str) -> dict[str, object]:
+        if self.acquisitiond is None:
+            return {"app_id": app_id, "status": "unknown",
+                    "error": "Steam acquisition service is unavailable", "retryable": True}
+        return json.loads(await self.acquisitiond.call_check_steam_update(app_id))
+
+    async def submit_steam_update(self, app_id: str, title: str, intent: str) -> dict[str, str]:
+        if self.acquisitiond is None:
+            raise RuntimeError("Steam acquisition service is unavailable")
+        job_id = await self.acquisitiond.call_submit_steam_update(app_id, title, intent)
+        return {"job_id": str(job_id), "status": "accepted"}
+
+    async def continue_steam_update_in_background(self, job_id: str) -> dict[str, str]:
+        if self.acquisitiond is None:
+            raise RuntimeError("Steam acquisition service is unavailable")
+        await self.acquisitiond.call_continue_steam_update_in_background(job_id)
+        return {"status": "background", "job_id": job_id}
+
     async def retry_acquisition(self, job_id: str) -> dict[str, str]:
         if self.acquisitiond is None:
             raise RuntimeError("acquisition service is unavailable")
@@ -1307,6 +1325,36 @@ class ApiHandler(BaseHTTPRequestHandler):
             try:
                 game_id = unquote(path.removeprefix("/uninstall/"))
                 self._respond(200, self.bridge.call(self.bridge.uninstall_game(game_id), timeout=20))
+            except Exception as error:
+                self._respond(409, {"error": str(error) or type(error).__name__})
+            return
+        if path == "/steam/update-check":
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+                payload = json.loads(self.rfile.read(length) or b"{}")
+                app_id = str(payload.get("app_id", ""))
+                self._respond(200, self.bridge.call(
+                    self.bridge.check_steam_update(app_id), timeout=35))
+            except Exception as error:
+                self._respond(200, {"app_id": "", "status": "unknown",
+                                    "error": str(error) or type(error).__name__, "retryable": True})
+            return
+        if path == "/steam/update":
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+                payload = json.loads(self.rfile.read(length) or b"{}")
+                result = self.bridge.call(self.bridge.submit_steam_update(
+                    str(payload.get("app_id", "")), str(payload.get("title", "")),
+                    str(payload.get("intent", ""))), timeout=15)
+                self._respond(202, result)
+            except Exception as error:
+                self._respond(409, {"error": str(error) or type(error).__name__})
+            return
+        if path.startswith("/steam/update-background/"):
+            try:
+                job_id = unquote(path.removeprefix("/steam/update-background/"))
+                self._respond(200, self.bridge.call(
+                    self.bridge.continue_steam_update_in_background(job_id), timeout=10))
             except Exception as error:
                 self._respond(409, {"error": str(error) or type(error).__name__})
             return

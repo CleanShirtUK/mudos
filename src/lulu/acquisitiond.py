@@ -118,6 +118,16 @@ class AcquisitionInterface(ServiceInterface):
                     self._usenet_startup_config["rpc_secret_available"],
                     "usenet" in manager.executors)
         self.notifications = notifications or NotificationBroker(self._forward_notification)
+        # Update & Launch continuation is never service-owned or durable. Any
+        # persisted intent seen during service construction is stale by
+        # definition and must become background-only before snapshots publish.
+        for job in manager.snapshot():
+            if (job.provider == "steam-aurelia" and job.operation is JobOperation.UPDATE
+                    and job.origin_metadata.get("launch_intent") == "update-launch"):
+                metadata = dict(job.origin_metadata)
+                metadata.update({"launch_intent": "none", "launch_policy": "background-only"})
+                manager.update_metadata(job.job_id, origin="steam-update-background",
+                                        origin_metadata=metadata)
         # Historical terminal jobs are already reflected in the catalogue;
         # only completions observed after this interface starts need a
         # provider refresh.
@@ -219,11 +229,123 @@ class AcquisitionInterface(ServiceInterface):
             "session_directory": str(client.config_dir) if client is not None else None,
             "capabilities": asdict(capabilities) if capabilities is not None else {
                 "acquisition_progress": True, "acquisition_cancel": True,
-                "updates": False, "dlc": False, "launch": False,
+                "updates": False, "update_progress": False, "update_cancel": False,
+                "dlc": False, "launch": False,
                 "running_state": True, "authentication_status": True,
                 "detailed_launch_progress": False,
             },
         }, sort_keys=True)
+
+    @method()
+    async def CheckSteamUpdate(self, app_id: "s") -> "s":
+        """Fresh, bounded Aurelia update check; errors remain unknown, never false."""
+        executor = self.manager.executors.get("steam-aurelia")
+        client = getattr(executor, "client", None)
+        if client is None or not getattr(client, "available", False):
+            return json.dumps({"app_id": app_id, "status": "unknown",
+                               "error": "Aurelia is unavailable", "retryable": True})
+        try:
+            result = await client.update_availability(app_id)
+            return json.dumps({**result, "status": "available" if result["available"] else "current"},
+                              sort_keys=True)
+        except Exception as error:
+            LOGGER.warning("aurelia_update_check app_id=%s error_type=%s", app_id, type(error).__name__)
+            return json.dumps({"app_id": app_id, "status": "unknown",
+                               "error": str(error) or type(error).__name__,
+                               "retryable": bool(getattr(error, "retryable", True))}, sort_keys=True)
+
+    async def _steam_app_is_running(self, app_id: str) -> bool:
+        if self.bus is None:
+            return False
+        try:
+            introspection = await self.bus.introspect(
+                "org.lulu.ConsoleSessiond", "/org/lulu/ConsoleSession")
+            proxy = self.bus.get_proxy_object(
+                "org.lulu.ConsoleSessiond", "/org/lulu/ConsoleSession", introspection)
+            raw = await proxy.get_interface("org.lulu.ConsoleSession").call_get_state()
+            state = json.loads(raw)
+        except Exception as error:
+            raise ValueError("Sessiond state is unavailable; Steam update was not started") from error
+        if not isinstance(state, dict):
+            raise ValueError("Sessiond state is invalid; Steam update was not started")
+        if state.get("lifecycle") != "game":
+            return False
+        identity = str(state.get("primary_id") or "")
+        return identity in {f"steam:{app_id}", f"steam-aurelia:{app_id}"}
+
+    @method()
+    async def SubmitSteamUpdate(self, app_id: "s", title: "s", intent: "s") -> "s":
+        """Submit/deduplicate an Aurelia update, storing intent for recovery only."""
+        if not app_id.isdecimal() or int(app_id) < 1:
+            raise DBusError("org.lulu.Acquisition.Error.InvalidIdentity", "Steam AppID is invalid")
+        if intent not in {"update-launch", "background"}:
+            raise DBusError("org.lulu.Acquisition.Error.InvalidIntent", "Steam update intent is invalid")
+        if await self._steam_app_is_running(app_id):
+            raise DBusError("org.lulu.Acquisition.Error.Conflict",
+                            "Close this game before updating its installed files")
+        executor = self.manager.executors.get("steam-aurelia")
+        capabilities = getattr(executor, "capabilities", None)
+        if executor is None or not getattr(capabilities, "updates", False):
+            raise DBusError("org.lulu.Acquisition.Error.Unsupported", "Aurelia updates are unavailable")
+        identity = f"steam-aurelia:{app_id}"
+        metadata = {"launch_intent": intent, "launch_policy": "ephemeral-only"
+                    if intent == "update-launch" else "background-only"}
+        active_states = {JobState.QUEUED, JobState.STARTING, JobState.TRANSFERRING,
+                         JobState.FINALIZING, JobState.PAUSED, JobState.PAUSING,
+                         JobState.RESUMING, JobState.CANCELLING}
+        conflicting = next((job for job in self.manager.snapshot()
+                            if job.provider == "steam-aurelia"
+                            and str(job.provider_job_id or
+                                    str(job.content_identity).rsplit(":", 1)[-1]) == app_id
+                            and job.state in active_states
+                            and job.operation in {JobOperation.INSTALL, JobOperation.UPDATE,
+                                                  JobOperation.REMOVE}), None)
+        if conflicting is not None and conflicting.operation is not JobOperation.UPDATE:
+            raise DBusError("org.lulu.Acquisition.Error.Conflict",
+                            f"A Steam {conflicting.operation.value} job is already active for this game")
+        existing = next((job for job in self.manager.snapshot()
+                         if job.provider == "steam-aurelia" and job.content_identity == identity
+                         and job.operation is JobOperation.UPDATE and job.state in active_states), None)
+        try:
+            if existing is not None:
+                merged = dict(existing.origin_metadata)
+                # A background request always revokes any unconsumed continuation.
+                if intent == "background":
+                    merged.update(metadata)
+                elif merged.get("launch_intent") != "background":
+                    merged.update(metadata)
+                self.manager.update_metadata(existing.job_id, origin="steam-update-background"
+                                             if merged.get("launch_intent") == "background"
+                                             else "steam-update-launch",
+                                             origin_metadata=merged)
+                return existing.job_id
+            job = self.manager.submit(
+                "steam-aurelia", identity, title.strip() or app_id,
+                operation=JobOperation.UPDATE,
+                cancellation_supported=bool(getattr(capabilities, "update_cancel", False)),
+                pause_supported=False,
+                provider_job_id=app_id,
+                origin="steam-update-launch" if intent == "update-launch" else "steam-update-background",
+                origin_metadata=metadata,
+            )
+            return job.job_id
+        except ValueError as error:
+            raise DBusError("org.lulu.Acquisition.Error.Conflict", str(error)) from error
+
+    @method()
+    def ContinueSteamUpdateInBackground(self, job_id: "s") -> "s":
+        try:
+            job = self.manager.jobs[job_id]
+        except KeyError as error:
+            raise DBusError("org.lulu.Acquisition.Error.UnknownJob", str(error)) from error
+        if (job.provider != "steam-aurelia" or job.operation is not JobOperation.UPDATE
+                or job.state not in {JobState.QUEUED, JobState.STARTING, JobState.TRANSFERRING,
+                                     JobState.FINALIZING, JobState.PAUSED}):
+            raise DBusError("org.lulu.Acquisition.Error.Conflict", "Steam update is not active")
+        metadata = dict(job.origin_metadata)
+        metadata.update({"launch_intent": "none", "launch_policy": "background-only"})
+        self.manager.update_metadata(job_id, origin="steam-update-background", origin_metadata=metadata)
+        return job_id
 
     @method()
     async def ReloadUsenetConfiguration(self) -> "s":

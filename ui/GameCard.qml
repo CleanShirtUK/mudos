@@ -104,9 +104,15 @@ Rectangle {
         : !!(game && game.acquisition_progress !== null && game.acquisition_progress !== undefined)
     readonly property var acquisitionError: acquisitionJob ? acquisitionJob.error
         : (game ? game.acquisition_error : null)
+    readonly property bool acquisitionUpdate: acquisitionJob
+        && String(acquisitionJob.operation || "") === "update"
+        && String(acquisitionJob.provider || "") === "steam-aurelia"
+    readonly property string acquisitionUpdateStage: acquisitionJob
+        ? String(acquisitionJob.stage || "Updating") : "Updating"
     readonly property bool acquisitionVisible: game
-        && (game.provider === "steam" || game.provider === "romm")
-        && ["queued", "starting", "transferring", "finalizing", "paused", "cancelling", "failed"].indexOf(acquisitionState) >= 0
+        && (game.provider === "steam" || game.provider === "steam-aurelia" || game.provider === "romm")
+        && (["queued", "starting", "transferring", "finalizing", "paused", "cancelling", "failed"].indexOf(acquisitionState) >= 0
+            || (acquisitionUpdate && ["queued", "starting", "transferring", "finalizing"].indexOf(acquisitionState) >= 0))
     readonly property string presentationGameId: presentationId || (game ? String(game.game_id) : "")
     onPlayActivationSerialChanged: {
         if (card.recentFocal && themeMotion.enabled("focus"))
@@ -383,7 +389,7 @@ Rectangle {
 
         Rectangle {
             anchors.fill: parent
-            visible: card.acquisitionVisible
+            visible: card.acquisitionVisible && !card.acquisitionUpdate
             color: Qt.rgba(0.01, 0.02, 0.04, 0.78)
             radius: artworkFrame.artworkRadius
             clip: true
@@ -452,6 +458,32 @@ Rectangle {
                     font.family: card.typography.interfaceFamily
                     font.pixelSize: card.typography.size("secondary", 13 * card.focalScale)
                 }
+            }
+        }
+
+        Item {
+            anchors.fill: parent
+            visible: card.acquisitionVisible && card.acquisitionUpdate
+                && ["queued", "starting", "transferring", "finalizing"].indexOf(card.acquisitionState) >= 0
+            z: 6
+            Rectangle {
+                anchors.fill: parent
+                color: Qt.rgba(0.01, 0.02, 0.04, 0.18)
+                radius: artworkFrame.artworkRadius
+            }
+            UpdateRadialProgress {
+                anchors.horizontalCenter: parent.horizontalCenter
+                anchors.verticalCenter: parent.verticalCenter
+                width: Math.min(parent.width * 0.42, parent.height * 0.42)
+                height: width
+                luluPalette: card.luluPalette
+                typography: card.typography
+                uiScale: card.uiScale
+                progress: card.acquisitionProgress
+                progressKnown: card.acquisitionProgressKnown
+                indeterminate: !progressKnown
+                stage: card.acquisitionUpdateStage
+                animationEnabled: card.focused || card.recentFocal
             }
         }
     }

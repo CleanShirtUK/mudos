@@ -152,8 +152,84 @@ class AureliaClientTests(unittest.IsolatedAsyncioTestCase):
             await client.command("libraries")
         self.assertEqual(caught.exception.code, "library-path-mismatch")
 
+    async def test_update_availability_is_read_only_cached_and_app_id_scoped(self):
+        calls = []
+        def run(argv, **_kwargs):
+            calls.append(tuple(argv))
+            return 0, json.dumps({"pinned": [], "updates": [
+                {"app_id": 48000, "name": "LIMBO"},
+            ]}), ""
+        client = AureliaClient("fake", Path(tempfile.mkdtemp()), run=run)
+        available = await client.update_availability("48000")
+        current = await client.update_availability("2706170")
+        self.assertTrue(available["available"])
+        self.assertFalse(current["available"])
+        self.assertEqual(available["source"], "aurelia-remote-manifests")
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(calls[0][-1], "update")
+
+    async def test_update_availability_does_not_turn_remote_failure_into_current(self):
+        client = AureliaClient("fake", Path(tempfile.mkdtemp()),
+                               run=lambda *_a, **_k: (75, "", ""))
+        with self.assertRaises(AureliaError):
+            await client.update_availability("48000")
+
 
 class AureliaAcquisitionTests(unittest.IsolatedAsyncioTestCase):
+    async def test_update_job_runs_only_when_available_and_verifies_completion(self):
+        class Client:
+            def __init__(self): self.updates = 0; self.checks = 0
+            async def command(self, *args, **kwargs):
+                self.assert_command = args
+                return []
+            async def update_availability(self, _app_id, *, force=False):
+                self.checks += 1
+                return {"available": self.checks == 1, "pinned": False}
+            async def update(self, _app_id): self.updates += 1
+            async def installed_games(self):
+                return (AureliaInstalledGame(PROVIDER_ID, "48000", "LIMBO", True,
+                                             "/steam/common/Limbo", "windows", False),)
+        client = Client()
+        manager = JobManager()
+        executor = AureliaAcquisitionExecutor(client)
+        executor._steam_provider.presentation_pids = lambda _app_id: []
+        manager.register_executor(PROVIDER_ID, executor)
+        job = DownloadJob("update-1", PROVIDER_ID, "LIMBO",
+                          content_identity="steam-aurelia:48000",
+                          provider_job_id="48000", operation=JobOperation.UPDATE,
+                          cancellation_supported=False, pause_supported=False)
+        manager.jobs[job.job_id] = job
+        await executor.run(job, JobReporter(manager, job.job_id))
+        self.assertEqual(client.updates, 1)
+        self.assertEqual(manager.jobs[job.job_id].state, JobState.COMPLETED)
+        self.assertIsNone(manager.jobs[job.job_id].progress)
+        self.assertFalse(manager.jobs[job.job_id].cancellation_supported)
+        self.assertFalse(manager.jobs[job.job_id].pause_supported)
+
+    async def test_recovered_update_never_resubmits_when_update_remains_available(self):
+        class Client:
+            updates = 0
+            async def command(self, *_args, **_kwargs): return []
+            async def update_availability(self, _app_id, *, force=False):
+                return {"available": True, "pinned": False}
+            async def update(self, _app_id): self.updates += 1
+        client = Client()
+        executor = AureliaAcquisitionExecutor(client)
+        executor._steam_provider.presentation_pids = lambda _app_id: []
+        job = DownloadJob("update-recovered", PROVIDER_ID, "LIMBO",
+                          content_identity="steam-aurelia:48000",
+                          provider_job_id="48000", operation=JobOperation.UPDATE,
+                          recovery_reason="service-restart")
+        reporter = Mock()
+        reporter.metadata = AsyncMock()
+        reporter.state = AsyncMock()
+        reporter.progress = AsyncMock()
+        with self.assertRaisesRegex(JobExecutionError, "not restarted automatically"):
+            await executor.run(job, reporter)
+        self.assertEqual(client.updates, 0)
+        self.assertTrue(any(call.kwargs.get("origin_metadata", {}).get("launch_intent") == "none"
+                            for call in reporter.metadata.await_args_list))
+
     async def test_uninstall_uses_aurelia_app_id_command_and_reconciles_installed_list(self):
         client = Mock()
         client.command = AsyncMock(return_value={"success": True})

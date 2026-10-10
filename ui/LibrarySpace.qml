@@ -112,7 +112,14 @@ Item {
 
     function acquisitionJobFor(game) {
         if (!game) return null
-        return acquisitionJobs[String(game.game_id)] || null
+        var job = acquisitionJobs[String(game.game_id)]
+            || acquisitionJobs[String(game.content_identity || "")] || null
+        if (!job && (game.provider === "steam" || game.provider === "steam-aurelia")) {
+            var appId = String(game.provider_id || "")
+            job = acquisitionJobs["steam-aurelia:" + appId]
+                || acquisitionJobs["steam:" + appId] || null
+        }
+        return job
     }
 
     function recomputeDescription() {
@@ -627,6 +634,25 @@ Item {
                         cache: false
                         opacity: root.previewAnimationReady ? 0 : 1
                         Behavior on opacity { enabled: themeMotion.enabled("fade"); NumberAnimation { duration: themeMotion.duration("fade", 260); easing.type: themeMotion.easing("fade", "linear") } }
+                    }
+                    UpdateRadialProgress {
+                        readonly property var updateJob: root.acquisitionJobFor(root.selectedGame)
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: Math.min(parent.width * 0.22, parent.height * 0.42)
+                        height: width
+                        z: 3
+                        visible: !!updateJob && updateJob.operation === "update"
+                            && ["queued", "starting", "transferring", "finalizing"].indexOf(String(updateJob.state || "")) >= 0
+                        luluPalette: root.luluPalette
+                        typography: root.typography
+                        uiScale: root.uiScale
+                        progress: updateJob && updateJob.progress !== null
+                            && updateJob.progress !== undefined ? Number(updateJob.progress) : 0
+                        progressKnown: !!updateJob && updateJob.progress !== null
+                            && updateJob.progress !== undefined
+                        indeterminate: !progressKnown
+                        stage: updateJob ? String(updateJob.stage || "Updating") : "Updating"
                     }
                     Loader {
                         id: animationLoader

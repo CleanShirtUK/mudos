@@ -143,6 +143,43 @@ class NotificationBrokerTests(unittest.IsolatedAsyncioTestCase):
             "download_started", "download_finished",
         ])
 
+    async def test_update_success_notifies_once_and_startup_does_not_replay(self) -> None:
+        events: list[Notification] = []
+        async def sink(event: Notification) -> None:
+            events.append(event)
+        broker = NotificationBroker(sink)
+        queued = job(operation=JobOperation.UPDATE)
+        broker.seed([queued])
+        transferring = replace(queued, state=JobState.TRANSFERRING)
+        broker.observe([transferring])
+        finalizing = replace(transferring, state=JobState.FINALIZING)
+        broker.observe([finalizing])
+        completed = replace(finalizing, state=JobState.COMPLETED, progress=None)
+        broker.observe([completed])
+        broker.observe([completed])
+        await broker.drain()
+        self.assertEqual([event.event_type for event in events], ["update_started", "update_completed"])
+        self.assertEqual(events[-1].title, "Update complete")
+
+        restarted = NotificationBroker(sink)
+        restarted.seed([completed])
+        restarted.observe([completed])
+        await restarted.drain()
+        self.assertEqual(len(events), 2)
+
+    async def test_update_failure_and_cancel_never_emit_success(self) -> None:
+        broker = NotificationBroker()
+        queued = job(operation=JobOperation.UPDATE)
+        broker.seed([queued])
+        broker.observe([replace(queued, state=JobState.FAILED,
+                                error=JobError("update-failed", "Provider rejected update"))])
+        self.assertEqual(broker.pending[0].title, "Update failed")
+        self.assertEqual(broker.pending[0].severity, "error")
+        cancelled = replace(queued, job_id="cancelled", state=JobState.QUEUED)
+        broker.seed([cancelled])
+        broker.observe([replace(cancelled, state=JobState.CANCELLED)])
+        self.assertEqual(len(broker.pending), 1)
+
     async def test_presenter_passes_deployed_ui_path_and_receives_event(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             executable = Path(directory) / "presenter.py"

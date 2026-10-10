@@ -839,6 +839,35 @@ not implied to have passed.
   navigate to another row and verify selection does not snap back. Verify the
   selected card remains inside both horizontal and vertical viewport bounds.
 
+## Steam Aurelia update lifecycle implementation — 2026-10-10
+
+- Aurelia CLI inspection: no-AppID `aurelia update --json` is a read-only
+  remote-manifest update report with `updates` and `pinned`; `aurelia list
+  --check-updates` independently documents remote manifest checks. The
+  installed-game `update_available` value is not treated as fresh evidence.
+- Update checks coalesce and cache for 90 seconds, have a 25-second command
+  bound, and distinguish `unknown` from `current`. No check starts an update.
+- Acquisitiond now accepts persistent Aurelia UPDATE jobs with canonical
+  AppID identity, active-job deduplication, active install/remove conflict
+  rejection, Sessiond running-title checks, restart recovery, completion
+  verification, and Consoled reconciliation. Aurelia reports no documented
+  safe update cancellation and no guaranteed percentage stream; UI does not
+  offer cancellation or invent progress.
+- Shell launch flow presents Update & Launch / Update in Background / Cancel.
+  Update & Launch uses ephemeral shell continuation only; background/recovered
+  jobs cannot launch. Recents and Library artwork use the shared radial update
+  component and both Steam identity aliases map to one AppID job.
+- Validation: focused Aurelia/JobManager/notification tests pass (60); launch
+  routing and UI source checks pass (56). `qmllint` completed with existing
+  shell-wide diagnostics and no diagnostics in `UpdateRadialProgress.qml`;
+  `qmlformat` parsed the changed QML files. Full Python suite: 1,287 passed,
+  7 failed (session hotplug recovery, two Dolphin fixture assumptions, native
+  animation expectation, payload checksum, release fixture, Steam OOBE). The
+  unrelated failures are not asserted to be pre-existing without a baseline.
+- No real game update was started. No deployment or physical acceptance has
+  occurred. QML runtime/controller validation remains required before release
+  activation; `STEAM-UPDATES-001` remains implementation-in-progress.
+
 ## Managed OSK / credential ownership
 
 - Commits: `75d67c7`, `f5c33d8`, `fb23a9c`
