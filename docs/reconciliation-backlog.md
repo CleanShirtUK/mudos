@@ -1,5 +1,12 @@
 # Reconciliation Backlog
 
+> Historical snapshot, not current status authority. Its issue states predate
+> deployment and operator acceptance updates. Use [`../BACKLOG.md`](../BACKLOG.md)
+> for current triage and [`backlog-reconciliation-20261010.md`](backlog-reconciliation-20261010.md)
+> for the 2026-10-10 evidence-based reconciliation. This document is retained
+> for its investigation record; do not interpret its old “Active Gaps” table as
+> today's open work.
+
 Status: consolidated repository reconciliation, 2026-09-10. This records work
 already implied by implementation, evidence, or existing engineering notes. It
 does not add product proposals.
