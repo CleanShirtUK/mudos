@@ -2364,3 +2364,21 @@ restart may be required for InputPlumber to publish a newly created target.
   Consoled, Acquisitiond, and the authenticated Steam runtime are active. Steam
   runtime restart count is **0**. Await the user's physical retest; do not mark
   Library acceptance complete based on automated results alone.
+
+## Library landing reference regression — 2026-10-10
+
+- The user reported the deployed follow-up no longer opened Library from any
+  landing card. Static trace found the new shell controller path referenced
+  `libraryHomeLandingRef`, but unlike the sibling Home references it had neither
+  a declared property nor a `Component.onCompleted` assignment. This unbound
+  identifier could throw during confirm before the fallback entry path.
+- Correction: declare `libraryHomeLandingRef` and assign the `LibraryHome`
+  component instance on completion. The semantic selected-card controller route
+  and pointer route remain unchanged. A source-contract regression now requires
+  both the property declaration and instance assignment.
+- This is a deployment-blocking Library regression, not physical acceptance.
+  `LIBRARY-001` remains **IMPLEMENTED — PHYSICAL ACCEPTANCE PENDING**; retest all
+  four cards after the corrected candidate is activated.
+- Regressions after the reference fix: `tests/test_console_ui.py` passed
+  **93/93**; Library landing QML passed **6/6**; Library projection QML passed
+  **6/6**; `git diff --check` passed.

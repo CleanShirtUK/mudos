@@ -1485,6 +1485,8 @@ class ConsoleUiTests(unittest.TestCase):
                            shell.index("function back()")]
         self.assertIn("libraryHomeLandingRef.activateSelected()", activation)
         self.assertIn("function openLibrarySurface()", shell)
+        self.assertIn("property var libraryHomeLandingRef: null", shell)
+        self.assertIn("Component.onCompleted: root.libraryHomeLandingRef = libraryHomeLanding", shell)
         dimension_entry = shell[shell.index("function openLibraryDimension(mode)"):
                                 shell.index("function openLibrarySurface()")]
         self.assertIn("openLibrarySurface()", dimension_entry)

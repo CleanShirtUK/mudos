@@ -89,8 +89,12 @@ called the shell's generic `activate()` directly; unlike pointer activation, it
 did not dispatch the selected landing card's semantic key, so the current
 default dimension remained Platform. The correction routes controller confirm
 through the selected card's `activateSelected()` and opens the Library surface
-only after the semantic key is set. Cards retain fixed Platform, Provider,
-Game Mode, Genre order; in-view dimension switching remains separate.
+only after the semantic key is set. A follow-up deployment then exposed a
+missing shell property/instance assignment for `libraryHomeLandingRef`, which
+prevented controller confirm from reaching that method. The reference is now
+declared and assigned when `LibraryHome` completes. Cards retain fixed
+Platform, Provider, Game Mode, Genre order; in-view dimension switching remains
+separate.
 
 - **Operator check:** from Home, open each card, verify its matching Library
   dimension, Back to Home, and confirm positions/selection do not jump; repeat

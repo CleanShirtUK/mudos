@@ -393,6 +393,7 @@ Window {
     property var storeCategories: InstallableProjection.categories([])
     property var storeHomeRef: null
     property var storeHomeLandingRef: null
+    property var libraryHomeLandingRef: null
     property string storeError: ""
     property string message: ""
     property string interactionPrompt: ""
@@ -4036,10 +4037,11 @@ Window {
                         transitionExpanding: root.libraryTransitionExpanding
                         contentOpacity: root.homeContentOpacity
                           selectedIndex: root.libraryHomeIndex
-                         categories: root.libraryDimensions
+                        categories: root.libraryDimensions
                          onOpenRequested: function(dimensionKey) {
                              root.openLibraryDimension(dimensionKey)
                          }
+                        Component.onCompleted: root.libraryHomeLandingRef = libraryHomeLanding
                     }
                 }
 
