@@ -2354,3 +2354,13 @@ restart may be required for InputPlumber to publish a newly created target.
 - Regression results for the follow-up: `tests/test_console_ui.py` passed
   **93/93**; Library landing QML passed **6/6**; Library projection QML passed
   **6/6**; `git diff --check` passed.
+- Follow-up canonical candidate from `03ef73d` was built and checksum-verified
+  at `/opt/lulu/releases/03ef73d-candidate-20261010101415`. Manifest SHA-256:
+  `471742c41dcd5ee404c33ec3f37561c8eb19789814260949f15a3ad5cc4a3f91`.
+  Before activation, Sessiond was idle in shell state and no game processes were
+  present. The candidate was activated and `lulu-session@2.service` restarted.
+  Post-activation checks confirmed the shell launched from this candidate,
+  Sessiond presentation is ready with no active identity, and Sessiond,
+  Consoled, Acquisitiond, and the authenticated Steam runtime are active. Steam
+  runtime restart count is **0**. Await the user's physical retest; do not mark
+  Library acceptance complete based on automated results alone.
