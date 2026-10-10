@@ -34,23 +34,38 @@ anything. Findings are from the current appliance and can change after a repair.
   This prefix arrangement and Steam DRM ownership behavior need comparison with
   the working title before any change. Do not expose or copy Aurelia session
   credentials.
-- Four latest per-session summaries report `Failure`, `failed_after_spawn`, exit
-  code 1, lifetime about 2000 ms and detail `missing_required_module`. Their
-  `events.jsonl` records show successful resolution/preflight/spawn, then early
-  exit and launch failure. The log contains missing Proton Wine-Mono/Xalia module
-  messages, but available evidence does **not yet prove which missing module is
-  fatal** or whether the Proton runtime, its installation, or the game is causal.
-  The immediately prior session falsely reported `Success`/`verified` with the
-  same short lifetime and a `game_executable_not_found` detail. This establishes
-  a launch-verification/reporting inconsistency, not a proven general Sessiond
-  cleanup defect. Present live state is back in the ready shell, with no active
-  token; no stale Aurelia running record for this AppID was present.
-- No available update is reported; a missing update is not supported as the
-  explanation. No evidence so far supports deleting/reinstalling game content.
-  The narrow next step is diagnostic comparison of the Proton/runtime and
-  prefix arrangement with Silent Hill 2 and another accepted Proton title,
-  followed by a controlled launch only when the operator confirms it will not
-  interrupt play. Avoid blind retries.
+- A controlled single launch through Mudos after deploying the reporting fix
+  returned to the ready shell with no active token. Aurelia's newest summary
+  again says `Failure` / `failed_after_spawn`, exit code 1, lifetime about
+  2000 ms, and misleading detail `missing_required_module`. The decisive
+  `wine_2706170.log` line is `steam:run_process Failed to create process ...
+  Get To Work.exe: 2` (ENOENT). Aurelia attempted
+  `/home/lulu/.local/share/Steam/steamapps/common/Get To Work/Get To Work.exe`,
+  but the actual file is nested one directory deeper at
+  `.../common/Get To Work/Get To Work/Get To Work.exe`. Thus the immediate
+  failure is an **installation-layout/launch-resolution mismatch**, not a
+  missing update and not evidence of a fatal Mono/Xalia module. The Proton log's
+  module warnings were incidental; the final process-create error identifies
+  the absent target path.
+- The preceding Aurelia session falsely reported `Success`/`verified` with the
+  same short lifetime and `game_executable_not_found`. This is also an Aurelia
+  verification/reporting inconsistency. Mudos now extracts the structured
+  verification detail even when the summary result conflicts or lacks a
+  `stage_failure` event. On the controlled retry, Sessiond reported
+  `Aurelia CLI exited before a verified game appeared ... Launch verification
+  missing required module (exit code 1)`, retired the token and returned to
+  shell. The detail is structured but still misleading because Aurelia's
+  classifier labels the ENOENT as `missing_required_module`; the raw log gives
+  the accurate reason. No stale Aurelia running record was present.
+- No available update is reported; missing updates do not explain the failure.
+  Installation provenance is unknown, but its nested directory layout is
+  inconsistent with Aurelia's resolved executable location. Do not delete or
+  move content. The smallest safe next step is to determine whether Aurelia's
+  supported `verify`/update operation will reconcile this layout without
+  damaging user data, or whether a targeted recoverable migration is needed.
+  Obtain operator approval before any write, overwrite, or removal. Compare
+  Silent Hill 2 and another accepted Aurelia title for the generic layout and
+  path-resolution contract; do not blindly retry.
 - The CLI `play` path in Mudos passes `--steam --no-update --script
   <aurelia-graphical-launch.py>`. The wrapper adds the live Mudos graphical
   environment and execs Aurelia's resolved command. The recorded command is
@@ -141,9 +156,11 @@ active update.
 
 ## Remaining validation
 
-No physical launch acceptance, controller check, Gamescope presentation check,
-or second-attempt consistency check was performed. Before any launch trial,
-confirm the appliance is idle and collect matching details for Get To Work,
-Silent Hill 2, and a previously accepted Aurelia Proton game. Prioritize the
-false-success/early-exit reporting mismatch and identify the fatal module before
-changing game files, prefixes, runner configuration, or Aurelia flags.
+One controlled launch trial was performed while Sessiond was idle. It failed
+before the game appeared, and Mudos returned cleanly to shell with accurate
+ENOENT-adjacent diagnostic context (though the Aurelia summary's classification
+is misleading). No successful Gamescope presentation, controller handling,
+gameplay, game exit, or second successful launch was validated. Do not retry
+until a safe, approved installation-layout repair is selected. Then compare with
+Silent Hill 2 and a previously accepted Aurelia Proton title; physical game,
+controller, and return-to-Home acceptance remain with the operator.
