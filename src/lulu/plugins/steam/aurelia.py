@@ -444,7 +444,6 @@ class AureliaClient:
                 summary = json.loads((session / "summary.json").read_text(encoding="utf-8"))
                 if (not isinstance(summary, dict)
                         or str(summary.get("app_id")) != app_id
-                        or summary.get("result") != "Failure"
                         or float(summary.get("timestamp", 0)) < started_at - 2):
                     continue
                 events = (session / "events.jsonl").read_text(encoding="utf-8").splitlines()
@@ -465,6 +464,17 @@ class AureliaClient:
                 detail = str(metadata.get("error_message") or event.get("message") or "").strip()
                 if detail:
                     return f"{stage}: {detail}"[:320]
+            # Aurelia versions have emitted a terminal Failure summary without
+            # a stage_failure event. Preserve the structured verification detail
+            # so an early CLI exit is actionable instead of silently generic.
+            verification = summary.get("verification")
+            if isinstance(verification, dict):
+                status = str(verification.get("detailed_status") or "").strip()
+                result = str(summary.get("result") or "").strip()
+                if status and (result == "Failure" or status not in {"verified", "game_executable_not_found"}):
+                    exit_code = verification.get("exit_code")
+                    suffix = f" (exit code {exit_code})" if isinstance(exit_code, int) else ""
+                    return f"Launch verification {status.replace('_', ' ')}{suffix}"[:320]
         return None
 
     async def running_record(self, app_id: str) -> dict[str, Any] | None:

@@ -300,6 +300,50 @@ class AureliaAcquisitionTests(unittest.IsolatedAsyncioTestCase):
 
 
 class AureliaLaunchTests(unittest.IsolatedAsyncioTestCase):
+    def test_launch_failure_detail_uses_verification_when_stage_event_is_missing(self):
+        with tempfile.TemporaryDirectory() as directory:
+            config = Path(directory)
+            session = config / "logs" / "session-one"
+            session.mkdir(parents=True)
+            (session / "summary.json").write_text(json.dumps({
+                "app_id": 2706170,
+                "result": "Failure",
+                "timestamp": 100,
+                "verification": {
+                    "status": "failed_after_spawn",
+                    "detailed_status": "missing_required_module",
+                    "exit_code": 1,
+                },
+            }))
+            (session / "events.jsonl").write_text('{"event_type":"launch_final_status"}\n')
+            client = AureliaClient(executable="aurelia", config_dir=config, run=lambda *_a, **_k: None)
+            self.assertEqual(
+                client.launch_failure_detail("2706170", 100),
+                "Launch verification missing required module (exit code 1)",
+            )
+
+    def test_launch_failure_detail_does_not_require_failure_result_if_event_has_stage_error(self):
+        with tempfile.TemporaryDirectory() as directory:
+            config = Path(directory)
+            session = config / "logs" / "session-one"
+            session.mkdir(parents=True)
+            (session / "summary.json").write_text(json.dumps({
+                "app_id": 2706170,
+                "result": "Success",
+                "timestamp": 100,
+                "verification": {"detailed_status": "game_executable_not_found"},
+            }))
+            (session / "events.jsonl").write_text(json.dumps({
+                "event_type": "stage_failure",
+                "stage": "SpawnProcess",
+                "metadata": {"error_message": "process could not start"},
+            }) + "\n")
+            client = AureliaClient(executable="aurelia", config_dir=config, run=lambda *_a, **_k: None)
+            self.assertEqual(
+                client.launch_failure_detail("2706170", 100),
+                "SpawnProcess: process could not start",
+            )
+
     async def test_running_record_reads_aurelia_runner_pid_without_cli_query(self):
         with tempfile.TemporaryDirectory() as directory:
             config = Path(directory)

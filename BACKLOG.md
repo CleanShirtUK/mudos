@@ -10,6 +10,47 @@ evidence and this reconciliation rationale are in
 
 ## Active defects
 
+### AURELIA-LAUNCH-001 — Get To Work exits during Proton startup
+
+**Status: OPEN · P1.** Read-only investigation on 2026-10-10 identified AppID
+2706170 (Get To Work). Aurelia resolves a Windows executable through Proton and
+spawns it, but four latest sessions ended after about 2 seconds with exit code 1
+and `failed_after_spawn` / `missing_required_module`. The immediately preceding
+session was incorrectly summarized as `Success`/`verified` despite the same
+short lifetime. The installed manifest and game payload exist, Aurelia reports
+installed with no update available, and no evidence identifies installation
+provenance. The exact missing module and causal component remain unconfirmed;
+do not reinstall or remove the game/prefix without explicit approval.
+
+**Source correction:** Mudos now extracts terminal verification details and
+stage-failure events even when Aurelia's summary has inconsistent result fields.
+Focused regression tests pass; root-cause diagnosis and physical launch
+acceptance remain open.
+
+- **Next:** compare failure-session details with a previously accepted Proton
+  title and Silent Hill 2 records; safely establish the resolved Proton command,
+  compatibility prefix, and missing-module evidence. Fix the generic launch
+  verification/reporting defect if confirmed; then request physical validation.
+- **Accept:** repeatable, truthful launch outcome; failures show useful feedback
+  and cleanly retire the launch token; subsequent attempts behave consistently;
+  the game displays under Gamescope and returns to Home on exit. No other title,
+  save, prefix, or installation is modified without approval.
+- Investigation and the separately scoped Steam update lifecycle are recorded
+  in `docs/aurelia-launch-investigation-20261010.md`.
+
+### STEAM-UPDATES-001 — User-directed Aurelia update lifecycle and card progress
+
+**Status: OPEN · P2, design recorded; implementation deferred.** The launch-time
+update interaction, persistent Acquisitiond job projection, and intent-safe
+launch-after-update lifecycle are not implemented.
+
+- **Next:** design and implement against Acquisitiond's persisted job model and
+  provider-reported capabilities; keep separate from gameplay download policy.
+- **Accept:** meet the lifecycle and recovery requirements in
+  `docs/aurelia-launch-investigation-20261010.md`; add focused tests for both
+  catalogue identity aliases, shell/daemon restart, deduplication, cancellation,
+  failure and launch-intent invalidation before physical acceptance.
+
 ### LUTRIS-002 — Sonic 3 A.I.R. launch leaves Mudos apparently unresponsive
 
 **Status: OPEN · P1.** A real install/launch attempt left a live game process
