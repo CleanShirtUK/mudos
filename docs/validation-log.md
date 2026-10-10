@@ -2314,3 +2314,10 @@ restart may be required for InputPlumber to publish a newly created target.
   avoid interrupting the active session. Build and activation remain separate;
   activation is deferred until the game/session has ended and the appliance is
   confirmed idle. The physical Library acceptance gate remains open.
+- Canonical builder candidate from `84f3c8c59dc5787ecdd42b919e8525dc393701a6`:
+  `/opt/lulu/releases/84f3c8c-candidate-20261010100424`. The canonical
+  `scripts/release.py verify` command passed. Manifest SHA-256:
+  `3839b2fb2ae343dac260d258c75e625b95b558d26cd41bdbbf7e57907c28d42c`.
+  `/opt/lulu/current` remains on
+  `/opt/lulu/releases/122db13-candidate-20261010080657`; candidate construction
+  did not alter the running session.
