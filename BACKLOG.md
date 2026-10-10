@@ -10,33 +10,27 @@ evidence and this reconciliation rationale are in
 
 ## Active defects
 
-### AURELIA-LAUNCH-001 — Get To Work exits during Proton startup
+### AURELIA-VERIFY-001 — Aurelia reports executable missing after wrapped launch
 
-**Status: OPEN · P1.** Read-only investigation on 2026-10-10 identified AppID
-2706170 (Get To Work). Aurelia resolves a Windows executable through Proton,
-but it points to a nonexistent executable one directory above the actual nested
-game executable. The Proton log ends with `Failed to create process ...: 2`
-(ENOENT); Aurelia's `missing_required_module` classification is misleading.
-Installation provenance is unknown. Aurelia reports installed, no update
-available, and the manifest/payload exist. Do not move, overwrite, reinstall, or
-remove game content/prefix without an approved recoverable repair plan.
+**Status: OPEN · P3 · REPORTING ONLY.** For Get To Work AppID 2706170, the
+operator confirmed two successful visible Mudos/Aurelia launches, gameplay,
+controller operation, Guide open/dismiss, normal exits, and return to Home. The
+matching Aurelia summary reports `result=Success` and `verification.status=verified`
+but also `verification.detailed_status=game_executable_not_found`. Its effective
+launch config describes the wrapped command's executable as `run` (Proton's
+subcommand), with `executable_exists=false`; the same session's launch event
+contains `AURELIA_LAUNCH_ARGS` with the correct absolute game executable. This is
+not stale Aurelia session data: the contradictory fields are in one session.
+It is a verification/reporting mismatch from checking the wrapped command rather
+than the target executable. Sessiond's active token is expected while the game
+runs; its `last_result` was from a previous launch and did not mean this one
+failed.
 
-**Source correction:** Mudos now extracts terminal verification details and
-stage-failure events even when Aurelia's summary has inconsistent result fields.
-Focused regression tests pass and the release is deployed. One controlled launch
-confirmed diagnostic context and clean return to shell, but the actual game did
-not start; layout repair and physical launch acceptance remain open.
-
-- **Next:** determine whether Aurelia's supported verification/update operation
-  safely reconciles the nested directory layout; compare path resolution against
-  Silent Hill 2 and another accepted title. Obtain operator approval before any
-  write or migration; then test a targeted recoverable repair.
-- **Accept:** repeatable, truthful launch outcome; failures show useful feedback
-  and cleanly retire the launch token; subsequent attempts behave consistently;
-  the game displays under Gamescope and returns to Home on exit. No other title,
-  save, prefix, or installation is modified without approval.
-- Investigation and the separately scoped Steam update lifecycle are recorded
-  in `docs/aurelia-launch-investigation-20261010.md`.
+Mudos already suppresses `game_executable_not_found` as a launch failure when
+the summary is nominally successful. A focused regression protects this
+behavior. Investigate the Aurelia verification detail separately if feasible;
+do not reopen, roll back, reinstall, relocate, or otherwise modify the accepted
+Get To Work installation.
 
 ### STEAM-UPDATES-001 — User-directed Aurelia update lifecycle and card progress
 
@@ -167,6 +161,7 @@ do not remove rows without comparing and preserving metadata.
 
 | ID | Outcome and evidence |
 | --- | --- |
+| AURELIA-LAUNCH-001 | **ACCEPTED / CLOSED.** Get To Work's layout correction is accepted after two operator-confirmed Mudos/Aurelia launches, normal gameplay/rendering, controller use, Guide open/dismiss, normal exits, and return to Home with controller navigation. No reinstall or further game-file changes authorized. Preserve the rollback metadata and five other read-only audit findings in `docs/aurelia-launch-investigation-20261010.md`. The separate reporting discrepancy is `AURELIA-VERIFY-001`. |
 | DISPLAY-001 | **RESOLVED — MONITORING.** Recent operator reports: normal operation and recent reboots have not reproduced loss. Current command line has no forced `video=DP-1`; source removal is `76d3300`. DP-1 currently connected/enabled, DPMS On, 1920×1080. Historical no-signal/relink evidence remains real; no risky recovery experiments are required. Monitor recurrence; see below. |
 | CTRL-001 | **RESOLVED — MONITORING.** Operator reports recent reboots/navigation successful. Current read-only snapshot: one connected Xbox composite, one SDL target, Sessiond `sdl_index=0`; no current duplicate target. Recent InputPlumber logs do show transient stale-node `No such device`/empty gamepad order, so race elimination is not proven. Do not restart InputPlumber to test. |
 | RECOVERY-001 | **CLOSED.** Current Recovery implementation reports InputPlumber GamepadOrder and exposes Sessiond controller evidence separately; source/tests cover the health state. Current authoritative Sessiond and InputPlumber inventories agree on one connected controller. No current mismatch observed; no recovery-mode transition was induced. |

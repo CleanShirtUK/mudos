@@ -154,13 +154,161 @@ active update.
   successful completion and a still-valid original intent. Persist enough
   origin/intent identity to make restart behavior deterministic and testable.
 
-## Remaining validation
+## Acceptance status
 
-One controlled launch trial was performed while Sessiond was idle. It failed
-before the game appeared, and Mudos returned cleanly to shell with accurate
-ENOENT-adjacent diagnostic context (though the Aurelia summary's classification
-is misleading). No successful Gamescope presentation, controller handling,
-gameplay, game exit, or second successful launch was validated. Do not retry
-until a safe, approved installation-layout repair is selected. Then compare with
-Silent Hill 2 and a previously accepted Aurelia Proton title; physical game,
-controller, and return-to-Home acceptance remain with the operator.
+The operator has accepted the filesystem repair after two successful physical
+Mudos/Aurelia launches, normal gameplay and rendering, controller use, Mudos
+Guide open/dismiss, normal exits, and return to Home with controller navigation.
+The original Get To Work layout defect is resolved. Do not reinstall, relocate,
+roll back, or otherwise modify these game files. The separate Aurelia
+verification discrepancy is tracked as `AURELIA-VERIFY-001` below.
+
+## Get To Work layout repair and installed-title launch-target audit — 2026-10-10
+
+### Authority and cause assessment
+
+- Steam AppInfo (local cache and SteamRaw's published raw AppInfo) declares
+  `Get To Work.exe` as the Windows launch executable, with `installdir=Get To
+  Work`. Aurelia's effective launch used that declared executable at the
+  manifest install root. This was not an Aurelia path-resolution defect.
+- The actual Unity executable, `Get To Work_Data`, `D3D12`,
+  `MonoBleedingEdge`, `UnityCrashHandler64.exe`, and `UnityPlayer.dll` had all
+  been placed together under an additional `Get To Work/` directory. The
+  Unity executable/data pairing and declared launch target establish that this
+  extra level was misplaced payload, not a legitimate application subfolder.
+- Appmanifest build `21610838` names depot `2706171`, manifest
+  `3244103568643260567`; the SteamCMD force-install placement correction
+  (`60b6523`) predates this manifest's `LastUpdated` time by roughly 16 minutes.
+  That timing does not prove which installer created these files. The old
+  SteamCMD behavior passed the library root as `+force_install_dir`, a known
+  placement defect that could leave payload at the library root; it does not
+  explain this exact extra `Get To Work/` directory. SteamCMD attribution is
+  therefore **plausible but unconfirmed at the broad historical level, not
+  demonstrated for this nested layout**. No install job or provider provenance
+  record for AppID 2706170 was found.
+
+### Applied correction and recovery
+
+- Preconditions passed: Sessiond was idle, no matching game/Proton process or
+  active Acquisitiond job existed, the tree had no symlinks or mount points,
+  every affected entry was owned by `lulu`, the same Btrfs filesystem was used,
+  and all six destination names were absent. Appmanifest hash before/after:
+  `b3bd39bca0fb9583fb064075315fdb663c9e47648b193220bdc88b51d4cc553e`.
+- Used same-filesystem `rename` operations (not copy/overwrite) to move only
+  `D3D12`, `Get To Work.exe`, `Get To Work_Data`, `MonoBleedingEdge`,
+  `UnityCrashHandler64.exe`, and `UnityPlayer.dll` from
+  `common/Get To Work/Get To Work/` to `common/Get To Work/`. Inodes, owners,
+  groups, modes and file contents were retained. Executable SHA-256 remained
+  `43487711666796d2550a9d2a4249042333d82b59436217fcf29d4c773874af39`.
+- Left both `cover.jpg` files, root `steam_appid.txt`, manifest, compatibility
+  data/prefix and all saves untouched. Existing saves were found in the
+  AppID Proton prefix; no prefix files were modified.
+- A private rollback record is at
+  `/home/lulu/.local/share/lulu/steam-layout-repairs/2706170-20261010.json`.
+  To reverse, ensure the game is not running and each destination is absent,
+  then rename each of the six named entries from the install root back into its
+  recorded `nested_source`; do not move either cover or `steam_appid.txt`.
+  The record includes pre-move inodes, metadata and checksums. No release or
+  Mudos source change was needed.
+- After the move, Aurelia still listed all 23 games and reported Get To Work
+  installed, owned and up to date. The expected executable/data now exist at
+  the root. The initial unprivileged probe could not traverse `/home/lulu`;
+  this was corrected by checking as the appliance user.
+
+### Controlled Mudos launch outcome
+
+- The initial post-repair Sessiond dispatch selected the corrected absolute
+  executable; Aurelia's matching summary recorded `result=Success` and
+  `game_executable_not_found`, while Sessiond showed an active Wine process and
+  token with presentation readiness not yet established. At that point this was
+  correctly treated as pending observation, not as proof of success or failure.
+- Subsequent operator-owned physical acceptance supersedes that preliminary
+  snapshot: two launches reached normal gameplay and correct rendering, the
+  controller and Guide worked, and both sessions exited normally to Home. The
+  earlier `game_executable_not_found` is now understood as a contradictory
+  Aurelia verification detail; see the later verification-report investigation.
+
+### Read-only audit of all 23 Aurelia-installed titles
+
+Declared launch paths were compared with local paths, accounting for
+case-insensitive Windows paths and Linux entry points. This is a path audit,
+not a gameplay test. “Present” means at least one declared launch candidate
+exists; it does not guarantee runtime success.
+
+| AppID | Title | Declared target (representative) | Local result | Assessment / action |
+|---:|---|---|---|---|
+| 2497920 | A Difficult Game About Climbing | `A Difficult Game About Climbing.exe` | Present | No equivalent mismatch observed |
+| 2835570 | Buckshot Roulette | `Buckshot Roulette_linux/Buckshot Roulette.x86_64` | Not at declared relative path; Linux executable is nested under `Buckshot Roulette/` | Possible layout mismatch; inspect provider's resolved path before any repair |
+| 731490 | Crash Bandicoot N. Sane Trilogy | `CrashBandicootNSaneTrilogy.exe` | Present | No equivalent mismatch observed |
+| 17300 | Crysis | `bin32/crysis.exe` or `bin64/crysis.exe` | Present (case-insensitive) | No equivalent mismatch observed |
+| 268910 | Cuphead | `Cuphead.exe` | Present | No equivalent mismatch observed |
+| 381210 | Dead by Daylight | `DeadByDaylight.exe` | Present | No equivalent mismatch observed |
+| 1537830 | Disney Speedstorm | `Disney_Speedstorm_x64_rtl.exe` (or alternate) | Present | No equivalent mismatch observed |
+| 1097150 | Fall Guys | `FallGuys_client.exe` | Present | No equivalent mismatch observed |
+| 2706170 | Get To Work | `Get To Work.exe` | Present after correction | **Accepted:** two physical Mudos launches and normal return; no further file changes |
+| 3240220 | Grand Theft Auto V Enhanced | `PlayGTAV.exe` | Present | No equivalent mismatch observed |
+| 366040 | Iggy's Egg Adventure | `Binaries/Win32/IEA.exe` | Not found at declared path; saved data is also present in install tree | Possible layout/metadata mismatch; do not move or remove; investigate provider resolution and protect saves |
+| 48000 | LIMBO | `Limbo.exe` | Present (case-insensitive) | No equivalent mismatch observed |
+| 307780 | Mortal Kombat X | `Binaries/retail/MK10.exe` (or launcher) | Present | No equivalent mismatch observed |
+| 1290000 | PowerWash Simulator | `PowerWashSimulator.exe` | Present | No equivalent mismatch observed |
+| 252950 | Rocket League | `Binaries/Win64/RocketLeague_EAC.exe` (or alternate) | Not found at declared path; manifest tree contains nested `rocketleague/` payload and its own `steamapps` | Possible nested/legacy layout; provider's exact target is already reported missing in launch logs; investigate separately, no repair |
+| 2124490 | SILENT HILL 2 | `SHProto.exe` (or packaged alternate) | Present | Comparison title only; not launched |
+| 40800 | Super Meat Boy | `SuperMeatBoy` | Present | No equivalent mismatch observed |
+| 1755580 | The Jackbox Party Starter | `Launcher.sh` | Present | No equivalent mismatch observed |
+| 220780 | Thomas Was Alone | `thomasWasAlone` | Present (case-insensitive) | No equivalent mismatch observed |
+| 2225070 | Trackmania | `Trackmania.exe` | Present | No equivalent mismatch observed |
+| 11020 | TrackMania Nations Forever | `TmForever.exe` or `TmForeverLauncher.exe` | Not found at declared root paths | Possible legacy/nested layout; inspect full target resolution before classifying; no repair |
+| 837470 | Untitled Goose Game | `Untitled.exe` | Not found at declared root path | Possible mismatch; inspect full target resolution before classifying; no repair |
+| 1356240 | Who Wants To Be A Millionaire? | `WWTBAM.exe` | Present | No equivalent mismatch observed |
+
+Four additional launch candidates need focused resolution (Buckshot Roulette,
+Iggy's Egg Adventure, TrackMania Nations Forever, Untitled Goose Game); Rocket
+League is a fifth known target-path concern with a prior Aurelia failure log.
+These are **not** declared corrupt and none was modified. Native Linux targets
+were checked as Linux binaries rather than treated as missing `.exe` files.
+No evidence supports mass migration or a global repair at this time.
+
+### Physical acceptance and verification-report investigation
+
+The operator reports full physical acceptance after the layout correction:
+two Mudos/Aurelia launches; normal gameplay and correct rendering; controller
+use; Mudos Guide opened/dismissed; normal exit each time; return to Home with
+controller navigation. This closes `AURELIA-LAUNCH-001`. The operator explicitly
+directed that the game files must not be reinstalled, relocated, or otherwise
+modified again. Retain the rollback record and do not use it absent a new
+operator request.
+
+The earlier apparent post-repair failure was a **verification/reporting
+mismatch**, not stale Sessiond state and not a confirmed launch failure. The
+matching Aurelia session `1791629428124-e8076d4a` has `result=Success`,
+`verification.status=verified`, and `launch_final_status: Launch successful`,
+but also contradictory `verification.detailed_status=game_executable_not_found`.
+Its `effective_launch_config.json` records `game.executable_path=run` and
+`executable_exists=false`; that is Proton's subcommand as exposed by the
+graphical-launch wrapper. In the same session the `SpawnProcess` event contains
+the correct `AURELIA_LAUNCH_ARGS` value:
+`run /home/lulu/.local/share/Steam/steamapps/common/Get To Work/Get To Work.exe`.
+Steam AppInfo and the actual payload both confirm that target exists. The
+operator's two successful visible launches provide physical confirmation that
+the wrapper ultimately executes the game successfully. The likely cause is
+Aurelia's health check evaluating the wrapper-resolved command (`run`) as if it
+were the game executable, rather than the target carried in its launch
+arguments; this is strongly evidenced but the health-check implementation is
+not owned by Mudos, so exact upstream code attribution remains unconfirmed.
+
+Sessiond's active launch token while gameplay is in progress is expected and
+does not indicate failure. Its `last_result` shown in the earlier state was
+from the preceding launch, while the current `active_identity` represented the
+live Wine preloader/game session. Do not infer failure from that combination.
+Mudos's `launch_failure_detail()` already ignores
+`game_executable_not_found` in a nominal-success summary; a focused regression
+was added to ensure this contradictory summary is not surfaced as a failure.
+Track investigation of the Aurelia-side detail under `AURELIA-VERIFY-001`,
+without reopening the accepted layout repair.
+
+The five other audit candidates (Buckshot Roulette, Iggy's Egg Adventure,
+Rocket League, TrackMania Nations Forever, Untitled Goose Game) remain
+read-only findings requiring focused launch-path resolution. Do not modify them
+without approval. `STEAM-UPDATES-001` remains a separate outstanding feature;
+no implementation was started. No runtime change, game launch, release build,
+or service restart was performed to record operator acceptance.

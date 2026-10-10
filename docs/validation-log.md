@@ -1028,6 +1028,47 @@ not implied to have passed.
 - Live update cycle: not repeated after the latest split because SteamCMD cached authentication expired and no managed Steam password was configured; the current installed title remains canonical and available for a future authenticated update check.
 - Authentication observation: cached SteamCMD authentication was reused during the corrected reinstall. A later uninstall attempt prompted for a password after cached auth expired; the managed credential boundary remained active, but no password was configured/submitted and the job timed out without mutation.
 - Physical/UI validation: pending.
+
+## Get To Work layout correction — 2026-10-10
+
+- Steam AppInfo's declared executable (`Get To Work.exe`) and `installdir`
+  confirmed an unintended extra directory level in the installed Unity payload.
+- Under the operator's explicit scoped authorization, six payload entries were
+  moved by same-filesystem rename to the declared install root. File contents,
+  ownership, modes and inodes were retained; appmanifest checksum and existing
+  Proton prefix/saves were preserved. A private record provides exact rollback:
+  `/home/lulu/.local/share/lulu/steam-layout-repairs/2706170-20261010.json`.
+- Aurelia continued to report the title installed, owned and up to date; its
+  launch selected the corrected path. Operator physical acceptance is complete:
+  two successful launches through Mudos/Aurelia; normal gameplay and rendering;
+  controller use; Mudos Guide open/dismiss; normal exit on both launches; and
+  return to Home with controller navigation. `AURELIA-LAUNCH-001` is accepted
+  and closed. Do not reinstall, relocate, roll back, or otherwise modify the
+  game's files again.
+- Verification discrepancy: matching Aurelia session
+  `1791629428124-e8076d4a` reports `result=Success`, `status=verified`, and
+  `launch_final_status: Launch successful`, yet labels the detail
+  `game_executable_not_found`. Its effective config sees wrapped executable
+  `run` (`executable_exists=false`), while its SpawnProcess event includes
+  `AURELIA_LAUNCH_ARGS` with the correct absolute Get To Work executable. This
+  is contradictory verification metadata in the same session, not stale report
+  data; likely Aurelia's check examines the wrapper command rather than the
+  target. Sessiond's active token while gameplay is running is expected; the
+  prior `last_result` was historical, not a failure of that active session.
+  Track the remaining reporting issue separately as `AURELIA-VERIFY-001`.
+  Mudos regression coverage verifies this nominal-success detail is not surfaced
+  as launch failure (`tests/test_steam_aurelia.py`, 23 tests passed).
+- Read-only launch-target comparison covered all 23 Aurelia-installed titles.
+  Buckshot Roulette, Iggy's Egg Adventure, Rocket League, TrackMania Nations
+  Forever and Untitled Goose Game need focused launch-path resolution; none was
+  altered. Details and recommendations are in
+  `docs/aurelia-launch-investigation-20261010.md`.
+- Historical SteamCMD placement defect is a possible broad contributor to
+  legacy library placement, but it is not established as the cause of this
+  extra `Get To Work/` level. No runtime change, game launch, release build, or
+  service restart was performed solely to record physical acceptance.
+  `STEAM-UPDATES-001` remains a separate outstanding feature.
+
 ## Standard gamepad replacement work — 2026-09-21
 
 - Historical Eden profile investigation paused. The implementation now treats

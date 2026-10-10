@@ -344,6 +344,29 @@ class AureliaLaunchTests(unittest.IsolatedAsyncioTestCase):
                 "SpawnProcess: process could not start",
             )
 
+    def test_launch_failure_detail_ignores_executable_not_found_in_verified_success_summary(self):
+        """Aurelia may inspect Proton's wrapped `run` command, not the game target."""
+        with tempfile.TemporaryDirectory() as directory:
+            config = Path(directory)
+            session = config / "logs" / "session-one"
+            session.mkdir(parents=True)
+            (session / "summary.json").write_text(json.dumps({
+                "app_id": 2706170,
+                "result": "Success",
+                "timestamp": 100,
+                "verification": {
+                    "status": "verified",
+                    "detailed_status": "game_executable_not_found",
+                    "process_lifetime_ms": 2001,
+                },
+            }))
+            (session / "events.jsonl").write_text(json.dumps({
+                "event_type": "launch_final_status",
+                "message": "Launch successful",
+            }) + "\n")
+            client = AureliaClient(executable="aurelia", config_dir=config, run=lambda *_a, **_k: None)
+            self.assertIsNone(client.launch_failure_detail("2706170", 100))
+
     async def test_running_record_reads_aurelia_runner_pid_without_cli_query(self):
         with tempfile.TemporaryDirectory() as directory:
             config = Path(directory)
