@@ -2390,3 +2390,17 @@ restart may be required for InputPlumber to publish a newly created target.
   state with presentation ready. Consoled, Acquisitiond and the authenticated
   Steam runtime are active; restart count remains **0**. The user must physically
   retest before this issue can be accepted.
+
+## LIBRARY-001 physical acceptance — 2026-10-10
+
+- After deployment of
+  `/opt/lulu/releases/6c26cc5-candidate-20261010101751`, the user confirmed the
+  four Library landing cards pass physical acceptance. This closes the operator
+  verification gate; earlier reports (all cards opening Platform, then cards
+  failing to open Library) are retained above as regression history and were
+  addressed by the follow-up changes.
+- Result: **LIBRARY-001 ACCEPTED / CLOSED**. The controller activation path
+  dispatches the selected card's semantic dimension through the declared and
+  initialized `libraryHomeLandingRef`. Automated regression results and
+  immutable release verification are recorded above; the physical result is
+  user-reported acceptance.

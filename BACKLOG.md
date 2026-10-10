@@ -80,30 +80,6 @@ titles” is session-only; membership persistence/lifetime still needs a decisio
 
 ## Validation pending
 
-### LIBRARY-001 — Library dimension navigation
-
-**Status: IMPLEMENTED — PHYSICAL ACCEPTANCE PENDING · P2.** The operator
-confirmed the defect still occurs after the first deployed correction: all four
-cards entered Platform. Follow-up diagnosis found the controller confirm path
-called the shell's generic `activate()` directly; unlike pointer activation, it
-did not dispatch the selected landing card's semantic key, so the current
-default dimension remained Platform. The correction routes controller confirm
-through the selected card's `activateSelected()` and opens the Library surface
-only after the semantic key is set. A follow-up deployment then exposed a
-missing shell property/instance assignment for `libraryHomeLandingRef`, which
-prevented controller confirm from reaching that method. The reference is now
-declared and assigned when `LibraryHome` completes. Cards retain fixed
-Platform, Provider, Game Mode, Genre order; in-view dimension switching remains
-separate.
-
-- **Operator check:** from Home, open each card, verify its matching Library
-  dimension, Back to Home, and confirm positions/selection do not jump; repeat
-  selections, exercise in-view dimension/category navigation, and verify normal
-  Library launch/return.
-- **Accept:** all four dimensions open correctly on repeated entry; card order
-  and selection persist across returns; in-view navigation, Back, and launch/
-  return remain correct. Keep pending until the user confirms all four.
-
 ## Deferred / optional enhancements
 
 ### THEME-001 — Theme engine final UI validation
@@ -155,6 +131,7 @@ do not remove rows without comparing and preserving metadata.
 | RECOVERY-001 | **CLOSED.** Current Recovery implementation reports InputPlumber GamepadOrder and exposes Sessiond controller evidence separately; source/tests cover the health state. Current authoritative Sessiond and InputPlumber inventories agree on one connected controller. No current mismatch observed; no recovery-mode transition was induced. |
 | RECENTS-001 | **CLOSED.** Aurelia identity projection and direct Steam-family launch recents fixed and regression-tested; implementation/history retained in archive. |
 | NOTIFICATIONS-001 startup warnings | **SUPERSEDED.** Earlier presenter startup/lifetime warnings are replaced by `778fdad`/`122db13`; remaining work is physical acceptance above, not implementation. |
+| LIBRARY-001 | **ACCEPTED / CLOSED.** After the controller-route and landing-reference fixes were deployed, the user physically confirmed the four landing cards now pass. Implementation, regressions, candidate checksum, activation, and prior failed checks are recorded in `docs/validation-log.md`. |
 | UNINSTALL-001 | **ACCEPTED / CLOSED.** Provider-owned removal implementation and operator acceptance are documented in archive; distinct temporary-hide UX remains `UNINSTALL-UX-001`. |
 | QUIVER-001 | **ABANDONED.** Lutris is selected PC install foundation; Questarr remains retired. No implementation work. |
 | DESKTOP-001 | **ACCEPTED / CLOSED.** 2026-10-08 runtime and visual/controller-oriented checks accepted the Modern and 95 wallpaper/panel behavior, menu/launchers, Network Settings, power menu (without invoking power), and clean Sessiond return. No restart/shutdown test was requested. |
