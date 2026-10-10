@@ -115,3 +115,29 @@ remain actionable because they were not shown corrected, but were not safely
 reproduced in the idle baseline. The operator's stable display/controller
 reports are treated as operational evidence, not proof that all failure races
 are impossible.
+
+## Operator acceptance / implementation addendum — 2026-10-10
+
+The following replaces the earlier “physical acceptance still owned by
+operator” status above and the corresponding pending rows in the historical
+matrix. The original audit evidence remains unchanged for context; current
+status authority is `BACKLOG.md`.
+
+- User reports **UI-001**, **SET-001**, both **LIBRARY-LAUNCH-001** physical
+  tests, all three **EDEN-001** physical tests, and **NOTIFICATIONS-001** passed
+  or were explicitly accepted. Eden acceptance includes rendering, controls,
+  persistence across relaunch and clean Mudos return; previously accepted
+  update/DLC behavior remains accepted. Notification user acceptance explicitly
+  includes lifecycle, refresh deferral and placement. These are recorded as
+  physical user evidence, distinct from automated coverage.
+- User explicitly deferred **THEME-001** to the global final UI pass and deferred
+  final **LUTRIS-001** acceptance to a dedicated provider milestone. Lutris work
+  is linked to open `LUTRIS-002` and `DOWNLOADS-001/002/003`; no Lutris work was
+  started as part of this update.
+- User reconfirmed **LIBRARY-001** physically. Source analysis found mutable MRU
+  order and selected-index reset in the landing activation path. The correction
+  removes Library-only MRU ordering, fixes card sequence as Platform, Provider,
+  Game Mode, Genre, and carries semantic mode identity from the selected card
+  into Library activation. In-view wrap/category behavior is preserved. The
+  implementation remains pending user physical confirmation of all four entry
+  routes; it is not marked accepted.

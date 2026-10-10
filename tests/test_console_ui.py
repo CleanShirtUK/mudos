@@ -218,7 +218,8 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertIn("property int selectedCategoryIndex: 3", QML)
         self.assertIn('property string space: "home"', QML)
         self.assertIn('presentationTarget = "library"', QML)
-        self.assertIn('root.space = root.presentationTarget', QML)
+        self.assertIn('space = settled.space', QML)
+        self.assertIn('LibrarySurfaceTransition.completedState', QML)
         self.assertIn('space = "home"', QML)
         self.assertIn('readonly property string apiUrl:', QML)
         self.assertIn("function activate()", QML)
@@ -231,7 +232,7 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertIn('request("/launch-status", "GET"', QML)
         self.assertIn("function moveDomain(delta)", QML)
         self.assertIn("function openSteamStore()", QML)
-        self.assertIn('message = "System space is not implemented"', QML)
+        self.assertIn('notify("Unavailable", "System space is not implemented", "warning")', QML)
         self.assertIn('function openGameOptions(game)', QML)
         self.assertIn('event.key === Qt.Key_X', QML)
         self.assertIn('action: "options"', QML)
@@ -714,7 +715,7 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertIn('function beginSystemEntry()', QML)
         self.assertIn('function beginSystemExit()', QML)
         self.assertIn('systemTransitionAnimation.restart()', QML)
-        self.assertIn('duration: 360', QML)
+        self.assertIn('themeMotion.duration("intro", 360)', QML)
 
     def test_default_visual_baseline_has_shared_geometry_and_single_glass_roots(self) -> None:
         shell = (ROOT / "ui" / "ConsoleShell.qml").read_text()
@@ -961,7 +962,7 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertIn("desiredCategoryIndex", QML)
         self.assertIn("function startNextHomeCategoryHop(chained)", QML)
         self.assertIn("homeCategoryHopDuration", QML)
-        self.assertIn("homeCategoryHopDuration = chained ? 100 : 250", QML)
+        self.assertIn('homeCategoryHopDuration = themeMotion.duration("navigation", chained ? 100 : 250)', QML)
         self.assertIn("root.titleRailY = root.titleRailTargetY", QML)
         self.assertIn("duration: root.homeCategoryHopDuration", QML)
         self.assertIn("if (homeCategoryAnimation.running)", QML)
@@ -1027,13 +1028,14 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertNotIn("collections:", store_home)
         self.assertNotIn("onCollectionChanged", store_home)
         self.assertNotIn("onCategoryContentHidden", store_home)
-        self.assertIn('readonly property var libraryDimensions: [', shell)
+        dimensions_js = (ROOT / "ui" / "LibraryDimensions.js").read_text()
+        self.assertIn('readonly property var libraryDimensions: LibraryDimensions.all', shell)
         for label, mode in (("Platform", "platform"), ("Provider", "provider"),
                             ("Game Mode", "game_mode"), ("Genre", "genre")):
-            self.assertIn('{label: "%s", mode: "%s"}' % (label, mode), shell)
+            self.assertIn('{label: "%s", mode: "%s"}' % (label, mode), dimensions_js)
         self.assertIn('property string libraryDimension: "platform"', shell)
         setter = shell[shell.index("function setLibraryDimension(mode)"):
-                       shell.index("function commitLibraryCategory(index)")]
+                       shell.index("function openLibraryDimension(mode)")]
         cycling = shell[shell.index("function moveLibraryCollection(delta)"):
                         shell.index("function moveStoreCategory(delta)")]
         self.assertIn("libraryDimension = mode", setter)
@@ -1070,8 +1072,8 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertIn("startCompactTitle", recent)
         self.assertIn('console.log("RECENT_RETARGET", "capture"', recent)
         self.assertIn('console.log("RECENT_RETARGET", "target"', recent)
-        self.assertIn("duration: 500", recent)
-        self.assertIn("easing.type: Easing.OutQuint", recent)
+        self.assertIn('themeMotion.duration("navigation", 500)', recent)
+        self.assertIn('themeMotion.easing("navigation", "outQuint")', recent)
         self.assertIn('property: "transitionFadeProgress"', recent)
         self.assertIn("z: 2", game_card)
         self.assertIn("property real compactCardWidth", recent)
@@ -1094,7 +1096,7 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertIn("focalTitleLayoutWidth", game_card)
         self.assertIn("id: focalTitleLayoutMeasure", game_card)
         self.assertIn("focalLayoutCardWidth: root.focalCardWidth", recent)
-        self.assertIn("property real artworkRadius: card.themeRadii.media === 0", game_card)
+        self.assertIn('property real artworkRadius: card.luluPalette.radius("media"', game_card)
         self.assertIn("card.mix(10 * uiScale, 18 * focalScale * uiScale", game_card)
         self.assertIn("property real artworkRadius", game_card)
         self.assertIn("cornerRadius: artworkFrame.artworkRadius / Math.min(width, height)", game_card)
@@ -1384,14 +1386,16 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertIn('root.selectedCategoryIndex === 3 ? "Navigation" : "Navigate"', shell)
         self.assertIn('property bool libraryTransitioning: false', shell)
         self.assertIn('property: "libraryTransitionProgress"', shell)
-        self.assertIn('duration: 500', shell)
-        self.assertIn('easing.type: Easing.OutQuint', shell)
+        transition = shell[shell.index('id: libraryTransitionAnimation'):]
+        transition = transition.split("    NumberAnimation {", 1)[0]
+        self.assertIn('property: "libraryTransitionProgress"', transition)
+        self.assertIn('themeMotion.duration("surface", 500)', transition)
         self.assertIn('transitionProgress: root.libraryTransitionProgress', shell)
         self.assertIn('transitionExpanding: root.libraryTransitionExpanding', shell)
         self.assertIn('y: !transitionExpanding ? (1 - transitionProgress) * height : 0', library_space)
         activate = shell.split('if (space === "library") {', 1)[1].split('if (space === "store") {', 1)[0]
         self.assertIn("pendingLibraryLaunch = visibleLibraryGame", activate)
-        self.assertIn("libraryTransitionAnimation.restart()", activate)
+        self.assertIn("startLibraryTransition()", activate)
         self.assertNotIn("launchGame(", activate)
         handoff = shell.split("id: handoffTimer", 1)[1].split("SequentialAnimation", 1)[0]
         self.assertIn('root.pendingHomeLaunchPhase = "exiting"', handoff)
@@ -1401,8 +1405,12 @@ class ConsoleUiTests(unittest.TestCase):
         activation = shell.split('if (space === "library") {', 1)[1].split('if (space === "store") {', 1)[0]
         self.assertIn("homeFadeIn.stop()", activation)
         self.assertIn("launchExitActive: root.pendingLibraryLaunch !== null", shell)
-        self.assertIn("surfaceWidth: launchExitActive ? fullscreenWidth", spatial_surface)
-        self.assertIn("surfaceHeight: launchExitActive ? fullscreenHeight", spatial_surface)
+        geometry = (ROOT / "ui" / "LibrarySpatialGeometry.js").read_text()
+        self.assertIn("width: fullscreenWidth", geometry)
+        self.assertIn("height: fullscreenHeight", geometry)
+        self.assertIn("homeWidth + (fullscreenWidth - homeWidth) * progress", geometry)
+        self.assertIn("height: fullscreenHeight", geometry)
+        self.assertIn("homeHeight + (fullscreenHeight - homeHeight) * progress", geometry)
         self.assertIn("surfacePresentationProgress: launchExitActive ? 1 : progress", spatial_surface)
         self.assertIn("parent.height : surfaceHeight) * (1 - progress)", spatial_surface)
         library_host = shell.split('LibrarySpace {', 1)[1].split('StoreOptions {', 1)[0]
@@ -1431,7 +1439,7 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertIn("NavigationCard", library_home)
         game_card = (ROOT / "ui" / "GameCard.qml").read_text()
         self.assertIn("card.librarySurfaceMaterial", game_card)
-        self.assertIn("card.librarySurfaceMaterial ? 0", game_card)
+        self.assertIn("card.librarySurfaceMaterial || card.materialEnabled", game_card)
         self.assertIn('action: "confirm"', shell)
         self.assertIn("filteredGames", library_space)
         self.assertIn("categoryTape", library_space)
@@ -1457,33 +1465,34 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertIn('var providers = ["steam-aurelia", "epic", "gog"]', installable_projection)
         self.assertIn('if (game.provider === "steam")', installable_projection)
 
-    def test_library_dimensions_are_canonical_and_home_mru_is_separate(self) -> None:
+    def test_library_dimensions_are_fixed_and_activation_uses_semantic_identity(self) -> None:
         shell = (ROOT / "ui" / "ConsoleShell.qml").read_text()
-        dimensions = shell[shell.index("readonly property var libraryDimensions"):
-                           shell.index("property var libraryCollections")]
+        dimensions = (ROOT / "ui" / "LibraryDimensions.js").read_text()
         self.assertEqual(dimensions.count('mode: "'), 4)
         self.assertLess(dimensions.index('mode: "platform"'), dimensions.index('mode: "provider"'))
         self.assertLess(dimensions.index('mode: "provider"'), dimensions.index('mode: "game_mode"'))
         self.assertLess(dimensions.index('mode: "game_mode"'), dimensions.index('mode: "genre"'))
         self.assertIn('property string libraryDimension: "platform"', shell)
         setter = shell[shell.index("function setLibraryDimension(mode)"):
-                       shell.index("function commitLibraryCategory(index)")]
+                       shell.index("function openLibraryDimension(mode)")]
         self.assertIn("libraryDimension = mode", setter)
-        self.assertIn("libraryCategoryMru", setter)
-        self.assertIn("libraryCollections = order.map", setter)
-        self.assertIn("function commitLibraryCategory(index)", shell)
-        self.assertIn('setLibraryDimension(String(selected.mode))', shell)
+        self.assertNotIn("libraryHomeIndex", setter)
+        self.assertNotIn("libraryCategoryMru", shell)
+        self.assertNotIn("libraryCollections", shell)
+        self.assertIn("function openLibraryDimension(mode)", shell)
+        self.assertIn("root.openLibraryDimension(dimensionKey)", shell)
+        self.assertIn("openRequested(String(category.mode))", (ROOT / "ui" / "LibraryHome.qml").read_text())
+        self.assertIn("categories: root.libraryDimensions", shell)
         self.assertNotIn("collectionIndex", shell)
 
     def test_library_shoulder_cycling_wraps_canonical_dimensions(self) -> None:
         shell = (ROOT / "ui" / "ConsoleShell.qml").read_text()
-        cycling = shell[shell.index("function moveLibraryCollection(delta)"):
-                        shell.index("function moveStoreCategory(delta)")]
-        adjacent = shell[shell.index("function adjacentLibraryDimension(delta)"):
-                         shell.index("function moveLibraryCollection(delta)")]
-        self.assertIn("libraryDimensions.length", adjacent)
-        self.assertIn("(index + delta + libraryDimensions.length) % libraryDimensions.length", adjacent)
-        self.assertIn("setLibraryDimension(adjacentLibraryDimension(delta))", cycling)
+        dimensions = (ROOT / "ui" / "LibraryDimensions.js").read_text()
+        cycling = shell[shell.index("function adjacentLibraryDimension(delta)"):
+                        shell.index("function moveLibraryCollection(delta)")]
+        self.assertIn("LibraryDimensions.adjacent(libraryDimension, delta)", cycling)
+        self.assertIn("(index + delta + all.length) % all.length", dimensions)
+        self.assertIn("setLibraryDimension(adjacentLibraryDimension(delta))", shell)
 
     def test_library_shoulder_hints_name_dimensions_from_the_switching_sequence(self) -> None:
         shell = (ROOT / "ui" / "ConsoleShell.qml").read_text()
@@ -1493,7 +1502,7 @@ class ConsoleUiTests(unittest.TestCase):
     def test_library_header_and_projection_use_one_dimension_and_canonical_games(self) -> None:
         library_space = (ROOT / "ui" / "LibrarySpace.qml").read_text()
         self.assertIn("readonly property string categoryMode: projectionState.dimensionKey", library_space)
-        self.assertIn('root.headingText + ": " + String(root.categoryMode).replace(/_/g, " ").toUpperCase()', library_space)
+        self.assertIn('root.headingText) + ": " + root.dimensionLabel', library_space)
         self.assertNotIn('CATEGORIZE BY', library_space)
         self.assertNotIn('function labelForDimension(', library_space)
         projection = library_space[library_space.index("function commitProjection("):
@@ -1644,18 +1653,32 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertNotIn("onCollectionChanged", (ROOT / "ui/StoreHome.qml").read_text())
 
-    def test_home_entry_and_in_library_change_share_dimension_setter(self) -> None:
+    def test_library_home_entry_and_in_library_change_use_dimension_identity(self) -> None:
         shell = (ROOT / "ui" / "ConsoleShell.qml").read_text()
-        self.assertIn('setLibraryDimension(String(selected.mode))', shell)
+        self.assertIn("setLibraryDimension(mode)", shell)
+        self.assertIn("root.openLibraryDimension(dimensionKey)", shell)
         self.assertIn("setLibraryDimension(adjacentLibraryDimension(delta))", shell)
         self.assertIn("dimensionKey: root.libraryDimension", shell)
 
+    def test_library_home_landing_qml_behaviour(self) -> None:
+        runner = shutil.which("qmltestrunner") or "/usr/lib/qt6/bin/qmltestrunner"
+        if not Path(runner).exists():
+            self.skipTest("qmltestrunner is not installed")
+        environment = os.environ.copy()
+        environment["QT_QPA_PLATFORM"] = "offscreen"
+        environment["QT_QUICK_BACKEND"] = "software"
+        result = subprocess.run(
+            [runner, "-import", str(ROOT / "tests/qml/fakes"),
+             "-input", str(ROOT / "tests/qml/tst_library_home_landing.qml")],
+            capture_output=True, text=True, env=environment, timeout=30,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
     def test_library_provider_dimension_has_one_source_of_truth(self) -> None:
-        shell = (ROOT / "ui" / "ConsoleShell.qml").read_text()
-        self.assertIn('{"label": "Platform", "mode": "platform"}', shell)
-        self.assertIn('{"label": "Provider", "mode": "provider"}', shell)
-        self.assertIn('{"label": "Game Mode", "mode": "game_mode"}', shell)
-        self.assertIn('{"label": "Genre", "mode": "genre"}', shell)
+        dimensions = (ROOT / "ui" / "LibraryDimensions.js").read_text()
+        for label, mode in (("Platform", "platform"), ("Provider", "provider"),
+                            ("Game Mode", "game_mode"), ("Genre", "genre")):
+            self.assertIn('label: "%s", mode: "%s"' % (label, mode), dimensions)
 
     def test_launch_errors_are_not_reported_as_catalogue_failures(self) -> None:
         self.assertIn('encodeURIComponent(game.game_id)', QML)
@@ -1747,12 +1770,12 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertNotIn("GlassSurface {", library_space)
         self.assertIn("LibrarySpace {", (ROOT / "ui" / "StoreHome.qml").read_text())
         store_home = (ROOT / "ui" / "StoreHome.qml").read_text()
-        self.assertIn('headingText: "INSTALLABLE"', store_home)
+        self.assertIn('title: "Installable"', store_home)
         self.assertIn('"No games ready to install"', store_home)
         self.assertIn('title: "Installable"', store_home)
         self.assertIn('root.space === "store"', QML)
-        self.assertIn("text: root.domains[index].toUpperCase()", QML)
-        self.assertIn("font.letterSpacing: 5 * root.uiScale", QML)
+        self.assertIn("text: themeText.homeTitle(root.domains[index])", QML)
+        self.assertIn("themeText.homeTitleSpacing(root.uiScale)", QML)
         self.assertIn("luluPalette.headingAccent", QML)
         self.assertIn('progress: root.libraryTransitionProgress', QML)
         self.assertIn('property bool storeTransitioning: false', QML)
@@ -1771,7 +1794,7 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertNotIn("categoryTapeRightInset", library)
         self.assertIn("width: parent.width", library)
         self.assertIn("positionViewAtIndex(root.categoryTapeIndex, ListView.Contain)", library)
-        self.assertIn('root.space = root.presentationTarget', QML)
+        self.assertIn('space = settled.space', QML)
 
     def test_launch_status_is_transactional_and_catalogue_focus_is_identity_based(self) -> None:
         self.assertIn('property string launchStatus: "idle"', QML)

@@ -37,7 +37,7 @@ Item {
     property real categoryMotionVelocity: 0
     readonly property string navigationObject: "library"
     readonly property bool selectionMotionActive: selectionAnimation.running
-    signal openRequested(int index)
+    signal openRequested(string dimensionKey)
 
     function categoryArtwork(category) {
         return MudosAssetCatalog.libraryPlatformArtwork(category)
@@ -83,6 +83,14 @@ Item {
         suppressSelectionCompletion = false
         selectionProgress = 1
         captureSelection()
+    }
+    function activateCategory(index) {
+        if (index < 0 || index >= categories.length)
+            return
+        var category = categories[index]
+        if (!category || category.mode === undefined)
+            return
+        openRequested(String(category.mode))
     }
     Connections {
         target: typeof mudosTheme !== "undefined"
@@ -170,7 +178,7 @@ Item {
                   : Qt.vector2d(0, 0)
              selectedOpacityOwner: libraryHome.selectedOpacityOwner(index)
              opacity: libraryHome.contentOpacity
-            onActivated: libraryHome.openRequested(index)
+            onActivated: libraryHome.activateCategory(index)
         }
     }
 

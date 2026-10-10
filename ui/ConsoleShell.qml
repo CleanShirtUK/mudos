@@ -2,6 +2,7 @@ import QtQuick
 import "OnboardingBack.js" as OnboardingBack
 import "InstallableProjection.js" as InstallableProjection
 import "HomeDomains.js" as HomeDomains
+import "LibraryDimensions.js" as LibraryDimensions
 import "LibrarySurfaceTransition.js" as LibrarySurfaceTransition
 import "MudosAssetCatalog.js" as MudosAssetCatalog
 import QtQuick.Window
@@ -280,14 +281,7 @@ Window {
         ? String(recentModel.gameIdAt(recentIndex)) : ""
     property int playActivationSerial: 0
     property int libraryHomeIndex: 0
-    readonly property var libraryDimensions: [
-        {label: "Platform", mode: "platform"},
-        {label: "Provider", mode: "provider"},
-        {label: "Game Mode", mode: "game_mode"},
-        {label: "Genre", mode: "genre"}
-    ]
-    property var libraryCollections: [{"label": "Platform", "mode": "platform"}, {"label": "Provider", "mode": "provider"}, {"label": "Game Mode", "mode": "game_mode"}, {"label": "Genre", "mode": "genre"}]
-    property var libraryCategoryMru: ["platform", "provider", "game_mode", "genre"]
+    readonly property var libraryDimensions: LibraryDimensions.all
     property string libraryDimension: "platform"
     property string space: "home"
     property string downloadsReturnSpace: "home"
@@ -2079,24 +2073,18 @@ Window {
     }
 
     function setLibraryDimension(mode) {
-        var valid = false
-        for (var i = 0; i < libraryDimensions.length; ++i)
-            if (libraryDimensions[i].mode === mode) valid = true
-        if (!valid) return
+        if (!LibraryDimensions.has(mode)) return false
         libraryDimension = mode
-        libraryHomeIndex = 0
-        var order = libraryCategoryMru.filter(function(item) { return item !== mode })
-        order.unshift(mode)
-        libraryCategoryMru = order
-        libraryCollections = order.map(function(item) {
-            return {label: libraryDimensionLabel(item), mode: item}
-        })
+        return true
     }
 
-    function commitLibraryCategory(index) {
-        var selected = libraryCollections[index]
-        if (!selected) return
-        setLibraryDimension(String(selected.mode))
+    function openLibraryDimension(mode) {
+        if (root.homeLaunchGated || !setLibraryDimension(mode))
+            return
+        // The landing card passes its semantic dimension key. Do not derive
+        // the opened view from a positional index that may be stale after a
+        // model reset or return from Library.
+        activate()
     }
 
     function moveLibraryVertical(delta) {
@@ -2108,12 +2096,7 @@ Window {
     }
 
     function adjacentLibraryDimension(delta) {
-        var index = -1
-        for (var i = 0; i < libraryDimensions.length; ++i)
-            if (libraryDimensions[i].mode === libraryDimension) index = i
-        if (index < 0 || !libraryDimensions.length) return "platform"
-        var next = (index + delta + libraryDimensions.length) % libraryDimensions.length
-        return libraryDimensions[next].mode
+        return LibraryDimensions.adjacent(libraryDimension, delta)
     }
 
     function moveLibraryCollection(delta) {
@@ -4044,11 +4027,10 @@ Window {
                         transitionExpanding: root.libraryTransitionExpanding
                         contentOpacity: root.homeContentOpacity
                           selectedIndex: root.libraryHomeIndex
-                         categories: root.libraryCollections
-                         onOpenRequested: {
-                             root.commitLibraryCategory(index)
-                             root.activate()
-                        }
+                         categories: root.libraryDimensions
+                         onOpenRequested: function(dimensionKey) {
+                             root.openLibraryDimension(dimensionKey)
+                         }
                     }
                 }
 

@@ -2271,3 +2271,46 @@ restart may be required for InputPlumber to publish a newly created target.
   stayed at zero. After activation, an explicit Steam-stage refresh succeeded:
   installed counts were legacy `steam` **23**, Aurelia **23**, with zero
   state/path mismatches across matching aliases and 23 unique visible games.
+
+## User physical acceptance and Library dimension correction — 2026-10-10
+
+- The operator reports that the default UI visual baseline (`UI-001`) and
+  consolidated System Settings (`SET-001`) passed physical acceptance.
+- The operator reports that both physical Library launch/return tests for
+  `LIBRARY-LAUNCH-001` passed.
+- The operator reports all three Eden physical acceptance tests passed:
+  Mario Kart rendered correctly, controller mapping worked and persisted across
+  relaunch, and Eden returned cleanly to Mudos. Existing Mario Kart update/DLC
+  acceptance remains valid. `EDEN-001` is accepted/closed; earlier historical
+  failures are not grounds to reopen it without new regression evidence.
+- The operator explicitly accepts the deployed `NOTIFICATIONS-001` implementation,
+  including its presenter lifetime, gameplay refresh deferral/coalescing, and
+  status-strip positioning changes. This acceptance is distinct from the
+  automated regression suite and supersedes only the pending physical checks;
+  earlier automated results remain recorded at their original checkpoints.
+- The operator additionally confirmed that Library dimension entry remained
+  broken. The source used a mutable `libraryCollections` MRU: changing a
+  dimension reordered the landing model and reset `libraryHomeIndex` before the
+  normal activation path completed. That mixed positional selection state with
+  the semantic dimension being opened. No MRU reorder is desired.
+- Correction: `LibraryDimensions.js` now owns the fixed Platform, Provider,
+  Game Mode, Genre order and in-view wrap sequence. `LibraryHome` emits the
+  selected card's semantic `mode`; `ConsoleShell.openLibraryDimension()` validates
+  and sets that key before entering the normal Library activation path. The
+  landing selection index is not reset, the model is not rewritten, and in-view
+  dimension/category projection remains intact. The issue remains
+  **IMPLEMENTED — PHYSICAL ACCEPTANCE PENDING** until the user confirms all four
+  cards open the corresponding dimension.
+- Behavioural QML coverage mounts `LibraryHome`, traverses and repeatedly
+  activates every semantic dimension, verifies fixed card order/selection
+  persistence, rejects invalid indices, checks identity when item position is
+  deliberately decoupled, and exercises the production in-view dimension wrap
+  helper in both directions. Existing `LibraryProjection` QML coverage protects
+  category projection/round trips. `tests/test_console_ui.py` passed **93/93**;
+  the focused Library subset passed **21/21**. The landing and projection QML
+  runners passed **5/5** and **6/6**, respectively. `git diff --check` passed.
+- Deployment safety check found the Mudos shell active and two live Aurelia game
+  processes. The release was not activated and no service was restarted, to
+  avoid interrupting the active session. Build and activation remain separate;
+  activation is deferred until the game/session has ended and the appliance is
+  confirmed idle. The physical Library acceptance gate remains open.
