@@ -2227,8 +2227,8 @@ restart may be required for InputPlumber to publish a newly created target.
   Game About Climbing, `268910` Cuphead, `48000` Limbo, and `1356240` Who Wants
   to Be A Millionaire. A follow-up reconciliation change synchronizes those
   aliases from Aurelia so legacy IDs remain launchable without becoming an
-  independent install authority. Final candidate verification and activation
-  are recorded below.
+  independent install authority. The follow-up is commit `57b3eeb`; final
+  candidate verification and activation are recorded below.
 - Before/after installed counts: legacy `provider='steam'` installed rows
   **28 → 23**; Aurelia `provider='steam-aurelia'` installed rows **23 → 23**.
   The 19 previously valid legacy rows retain their paths and matching
@@ -2241,10 +2241,12 @@ restart may be required for InputPlumber to publish a newly created target.
 - An additional explicit `RefreshStages(['steam'])` returned successfully
   after the final service restart. The nine stale IDs remained absent,
   Aurelia's 23 installed count was unchanged, and 74 Aurelia-owned available
-  records remained. A full row comparison against the pre-cleanup SQLite backup found
-  all non-Steam-provider catalogue rows byte-for-byte unchanged. No launch,
-  install, uninstall, save, artwork-cache, Steam-runtime, or user-file operation
-  was performed as part of cleanup.
+  records remained. A normal startup artwork refresh temporarily updated icon
+  pointers on three local-provider rows; those DB fields and timestamps were
+  restored from the pre-cleanup backup. A subsequent full row comparison found
+  all non-Steam-provider catalogue rows byte-for-byte unchanged. Generated
+  artwork cache files were not deleted. No launch, install, uninstall, save,
+  Steam-runtime, or user-file operation was performed as part of cleanup.
 - Aurelia installation/acquisition paths remain wired to the existing
   `steam-aurelia` executor and completed-job refresh; relevant acquisition,
   uninstall, Aurelia, and reconciliation regression suites passed. No live
@@ -2252,6 +2254,13 @@ restart may be required for InputPlumber to publish a newly created target.
   needed to prove catalogue reconciliation.
 - Result: **STEAM-CATALOGUE-001 ACCEPTED / CLOSED**. The source corrections are
   committed as `e45d112` and `57b3eeb`; the final candidate and checksum
-  verification are recorded above. The legacy Steam-managed MangoHud item remains
+  verification are recorded below. The legacy Steam-managed MangoHud item remains
   **SUPERSEDED** because all Mudos Steam launches use Aurelia; the isolated
   background Steam runtime remains required for DRM/authentication/Steamworks.
+- Final release: canonical builder candidate
+  `/opt/lulu/releases/a29ca42-candidate-20261010073614`, checksum-verified and
+  active. Only Consoled was restarted; Sessiond, Acquisitiond, and the
+  background Steam runtime remained active, and the Steam runtime restart count
+  stayed at zero. After activation, an explicit Steam-stage refresh succeeded:
+  installed counts were legacy `steam` **23**, Aurelia **23**, with zero
+  state/path mismatches across matching aliases and 23 unique visible games.

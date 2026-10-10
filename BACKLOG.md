@@ -54,10 +54,11 @@ separately from the automated evidence in `docs/validation-log.md`.
 **Status: ACCEPTED / CLOSED.** The nine confirmed stale `steam:` installed
 observations were removed by Aurelia reconciliation; their 9 matching Aurelia
 entitlements remain available. All 19 previously valid legacy installed rows
-and all 23 Aurelia installed rows remain; visible installed Steam entries are
-deduplicated. Reconciliation regression tests and a second live refresh confirm
-the stale rows do not return. The verified active candidate is
-`/opt/lulu/releases/e45d112-candidate-20261010073051`. See
+remain, four newer legacy aliases were synchronized from Aurelia, and all 23
+Aurelia installed rows remain. Visible installed Steam entries are deduplicated.
+Reconciliation regression tests and a repeated live refresh confirm the stale
+rows do not return. The verified active candidate is
+`/opt/lulu/releases/a29ca42-candidate-20261010073614`. See
 `docs/validation-log.md` for exact IDs, backup, counts, and non-Steam comparison.
 
 ## VALIDATION
