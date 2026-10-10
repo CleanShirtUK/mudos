@@ -864,9 +864,17 @@ not implied to have passed.
   7 failed (session hotplug recovery, two Dolphin fixture assumptions, native
   animation expectation, payload checksum, release fixture, Steam OOBE). The
   unrelated failures are not asserted to be pre-existing without a baseline.
-- No real game update was started. No deployment or physical acceptance has
-  occurred. QML runtime/controller validation remains required before release
-  activation; `STEAM-UPDATES-001` remains implementation-in-progress.
+- Live incident during first operator trial: the current release still pointed
+  to `a42f93a-candidate-20261010102423`, so the new prompt was not deployed and
+  the shell invoked the old direct-launch path. Dead by Daylight's game process
+  exited, while Gamescope failed to recover its surface and Sessiond retained a
+  stale `returning` owner. There were no active acquisition jobs. With operator
+  approval, only `lulu-session@2.service` was restarted; Sessiond returned to
+  `shell`, the game identity/token cleared, and `presentation_ready=true`.
+- No real game update was started. The verified `d6edf04` candidate was not
+  active during the failed launch. This record is being updated before its
+  subsequent safe deployment; controller-first physical acceptance remains
+  pending and must not be inferred from automated tests.
 
 ## Managed OSK / credential ownership
 

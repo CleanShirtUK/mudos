@@ -1,6 +1,6 @@
 # Aurelia Steam update lifecycle
 
-**Status: source implementation in progress; not physically accepted or deployed.**
+**Status: implemented and deployed; physical acceptance pending.**
 
 ## Provider contract observed
 
@@ -55,5 +55,6 @@ return-to-Home behavior, and that background completion leaves the game
 unlaunched. Do not use Get To Work or the five titles awaiting launch-path review
 as update fixtures. Do not deploy during gameplay or another important update.
 
-The UI still requires target-device/QML validation and this implementation has
-not yet been released or activated.
+Automated source validation and QML parsing passed for the implementation. The
+canonical release is activated, but the target-device/controller acceptance
+sequence above remains pending.

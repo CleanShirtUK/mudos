@@ -34,15 +34,14 @@ Get To Work installation.
 
 ### STEAM-UPDATES-001 — User-directed Aurelia update lifecycle and card progress
 
-**Status: IN PROGRESS · P2.** Aurelia-backed update availability and persistent
+**Status: IMPLEMENTED — PHYSICAL ACCEPTANCE PENDING · P2.** Aurelia-backed update availability and persistent
 Acquisitiond UPDATE jobs, launch choices, update card progress, Downloads
 operation labeling, and success/failure notification handling are implemented
-in source and under regression validation. Physical acceptance and deployment
-remain pending; do not treat automated tests as operator acceptance.
+and deployed. Physical acceptance remains pending; do not treat automated tests
+as operator acceptance.
 
-- **Next:** finish restart/deduplication and shell/QML regression coverage, run
-  canonical validation, then deploy only while the appliance is idle. No real
-  installed game may be updated without separate operator approval.
+- **Next:** perform controller-first physical acceptance after deployment. No
+  real installed game may be updated without separate operator approval.
 - **Accept:** meet the lifecycle and recovery requirements in
   `docs/aurelia-launch-investigation-20261010.md`; add focused tests for both
   catalogue identity aliases, shell/daemon restart, deduplication, cancellation,
