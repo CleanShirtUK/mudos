@@ -2488,6 +2488,34 @@ Window {
         steamUpdateCheckAppId = ""
     }
 
+    function moveSteamUpdateChoice(delta) {
+        if (!steamUpdatePromptGame)
+            return
+        var count = steamUpdatePromptState === "choice" ? 3
+            : steamUpdatePromptState === "unknown" ? 2 : 1
+        steamUpdateChoiceIndex = Math.max(0, Math.min(count - 1,
+            steamUpdateChoiceIndex + delta))
+    }
+
+    function activateSteamUpdateChoice() {
+        if (!steamUpdatePromptGame)
+            return
+        if (steamUpdatePromptState === "choice") {
+            if (steamUpdateChoiceIndex === 0) startSteamUpdate("update-launch")
+            else if (steamUpdateChoiceIndex === 1) startSteamUpdate("background")
+            else cancelSteamUpdatePrompt()
+        } else if (steamUpdatePromptState === "unknown") {
+            if (steamUpdateChoiceIndex === 0) {
+                var retryGame = steamUpdatePromptGame
+                var choreography = steamUpdatePromptChoreographyComplete
+                cancelSteamUpdatePrompt()
+                checkSteamUpdateBeforeLaunch(retryGame, choreography)
+            } else cancelSteamUpdatePrompt()
+        } else if (steamUpdatePromptState === "checking") {
+            cancelSteamUpdatePrompt()
+        }
+    }
+
     function startSteamUpdate(intent) {
         var game = steamUpdatePromptGame
         if (!game || intent !== "update-launch" && intent !== "background")
@@ -3050,6 +3078,10 @@ Window {
                     "selectedCategory", selectedCategoryIndex,
                     "storeReady", !!storeHomeRef,
                     "storeSelected", storeHomeRef ? storeHomeRef.selectedIndex : -1)
+        if (root.steamUpdatePromptGame) {
+            root.activateSteamUpdateChoice()
+            return
+        }
         if (lutrisRecipeInstall.visible) {
             lutrisRecipeInstall.activate()
             return
@@ -3338,6 +3370,10 @@ Window {
 
     function back() {
         playAudioEvent(audioEventForAction("back"))
+        if (root.steamUpdatePromptGame) {
+            root.cancelSteamUpdatePrompt()
+            return
+        }
         interactionPrompt = ""
         if (lutrisRecipeInstall.visible) {
             if (credentialTarget.kind === "lutris-search"
@@ -3678,6 +3714,10 @@ Window {
     function controllerUp() {
             console.log("CONTROLLER_QML", "up", "gated", root.homeLaunchGated,
                         "space", root.space)
+            if (root.steamUpdatePromptGame) {
+                root.moveSteamUpdateChoice(-1)
+                return
+            }
             if (root.homeLaunchGated) return
             root.playAudioEvent(root.audioEventForAction("up"))
             if (lutrisRecipeInstall.visible) { lutrisRecipeInstall.move(-1); return }
@@ -3718,6 +3758,10 @@ Window {
     function controllerDown() {
             console.log("CONTROLLER_QML", "down", "gated", root.homeLaunchGated,
                         "space", root.space)
+            if (root.steamUpdatePromptGame) {
+                root.moveSteamUpdateChoice(1)
+                return
+            }
             if (root.homeLaunchGated) return
             root.playAudioEvent(root.audioEventForAction("down"))
             if (lutrisRecipeInstall.visible) { lutrisRecipeInstall.move(1); return }
@@ -3758,6 +3802,10 @@ Window {
     function controllerLeft() {
             console.log("CONTROLLER_QML", "left", "gated", root.homeLaunchGated,
                         "space", root.space)
+            if (root.steamUpdatePromptGame) {
+                root.moveSteamUpdateChoice(-1)
+                return
+            }
             if (root.homeLaunchGated) return
             root.playAudioEvent(root.audioEventForAction("left"))
             if (lutrisRecipeInstall.visible || lutrisAddGame.visible) return
@@ -3804,6 +3852,10 @@ Window {
     function controllerRight() {
             console.log("CONTROLLER_QML", "right", "gated", root.homeLaunchGated,
                         "space", root.space)
+            if (root.steamUpdatePromptGame) {
+                root.moveSteamUpdateChoice(1)
+                return
+            }
             if (root.homeLaunchGated) return
             root.playAudioEvent(root.audioEventForAction("right"))
             if (lutrisRecipeInstall.visible || lutrisAddGame.visible) return
@@ -3921,27 +3973,12 @@ Window {
                 return
             }
             if (root.steamUpdatePromptGame) {
-                var choiceCount = root.steamUpdatePromptState === "choice" ? 3
-                    : root.steamUpdatePromptState === "unknown" ? 2 : 1
                 if (event.key === Qt.Key_Up || event.key === Qt.Key_Left) {
-                    root.steamUpdateChoiceIndex = Math.max(0, root.steamUpdateChoiceIndex - 1)
+                    root.moveSteamUpdateChoice(-1)
                 } else if (event.key === Qt.Key_Down || event.key === Qt.Key_Right) {
-                    root.steamUpdateChoiceIndex = Math.min(choiceCount - 1, root.steamUpdateChoiceIndex + 1)
+                    root.moveSteamUpdateChoice(1)
                 } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
-                    if (root.steamUpdatePromptState === "choice") {
-                        if (root.steamUpdateChoiceIndex === 0) root.startSteamUpdate("update-launch")
-                        else if (root.steamUpdateChoiceIndex === 1) root.startSteamUpdate("background")
-                        else root.cancelSteamUpdatePrompt()
-                    } else if (root.steamUpdatePromptState === "unknown") {
-                        if (root.steamUpdateChoiceIndex === 0) {
-                            var retryGame = root.steamUpdatePromptGame
-                            var retryChoreography = root.steamUpdatePromptChoreographyComplete
-                            root.cancelSteamUpdatePrompt()
-                            root.checkSteamUpdateBeforeLaunch(retryGame, retryChoreography)
-                        } else root.cancelSteamUpdatePrompt()
-                    } else if (root.steamUpdatePromptState === "checking") {
-                        root.cancelSteamUpdatePrompt()
-                    }
+                    root.activateSteamUpdateChoice()
                 } else if (event.key === Qt.Key_Escape || event.key === Qt.Key_Backspace) {
                     root.cancelSteamUpdatePrompt()
                 }

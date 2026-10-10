@@ -1694,6 +1694,22 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertIn('encodeURIComponent(game.game_id)', QML)
         self.assertIn('}, "Launch failed", generation, function()', QML)
 
+    def test_steam_update_prompt_routes_controller_actions_before_launch_gate(self) -> None:
+        self.assertIn("function moveSteamUpdateChoice(delta)", QML)
+        self.assertIn("function activateSteamUpdateChoice()", QML)
+        for name, action in (("controllerUp", "moveSteamUpdateChoice(-1)"),
+                             ("controllerDown", "moveSteamUpdateChoice(1)"),
+                             ("controllerLeft", "moveSteamUpdateChoice(-1)"),
+                             ("controllerRight", "moveSteamUpdateChoice(1)")):
+            start = QML.index("function %s()" % name)
+            end = QML.index("\n    function ", start + 1)
+            handler = QML[start:end]
+            self.assertLess(handler.index("steamUpdatePromptGame"),
+                            handler.index("if (root.homeLaunchGated) return"))
+            self.assertIn(action, handler)
+        self.assertIn("if (root.steamUpdatePromptGame) {\n            root.activateSteamUpdateChoice()", QML)
+        self.assertIn("if (root.steamUpdatePromptGame) {\n            root.cancelSteamUpdatePrompt()", QML)
+
     def test_home_launch_waits_for_feedback_exit_and_hidden_boundary(self) -> None:
         game_card = (ROOT / "ui" / "GameCard.qml").read_text()
         coordinator = (ROOT / "ui" / "PresentationCoordinator.qml").read_text()
