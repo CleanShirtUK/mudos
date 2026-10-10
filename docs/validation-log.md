@@ -2318,6 +2318,12 @@ restart may be required for InputPlumber to publish a newly created target.
   `/opt/lulu/releases/84f3c8c-candidate-20261010100424`. The canonical
   `scripts/release.py verify` command passed. Manifest SHA-256:
   `3839b2fb2ae343dac260d258c75e625b95b558d26cd41bdbbf7e57907c28d42c`.
-  `/opt/lulu/current` remains on
-  `/opt/lulu/releases/122db13-candidate-20261010080657`; candidate construction
-  did not alter the running session.
+  After the user confirmed Mudos had been restarted, a fresh Sessiond snapshot
+  showed shell lifecycle, no active identity, ready presentation, and no game
+  processes (the remaining `aurelia daemon` processes were not game processes).
+  Candidate activation was then performed with the canonical builder; the idle
+  `lulu-session@2.service` was restarted to load the new shell QML. Final checks
+  confirmed `/opt/lulu/current` resolves to this candidate, Sessiond is back in
+  shell state with ready presentation, and the isolated Steam runtime is active
+  and authenticated with restart count **0**. No game process was interrupted.
+  Physical acceptance of all four Library cards remains pending.
