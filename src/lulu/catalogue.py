@@ -1011,6 +1011,33 @@ class CatalogueStore:
         deltas: list[CatalogueDelta] = []
         self._start_operation()
         with self.atomic():
+            if provider == "steam-aurelia":
+                # Historical SteamProvider discovery wrote parallel
+                # ``steam:<AppID>`` install rows. Aurelia is now authoritative:
+                # when its ownership snapshot still contains a title but its
+                # installed inventory does not, remove only that obsolete
+                # installed observation. The Aurelia entitlement row remains
+                # available for acquisition, and its metadata is untouched.
+                aurelia_by_id = {game.provider_id: game for game in normalized}
+                legacy_rows = self._rows(
+                    f"SELECT {SELECT_COLUMNS} FROM games "
+                    "WHERE provider='steam' AND catalogue_source='steam' "
+                    "AND install_state='installed' AND launchable=1"
+                )
+                for legacy in legacy_rows:
+                    authoritative = aurelia_by_id.get(legacy.provider_id)
+                    if authoritative is None or authoritative.install_state == "installed":
+                        continue
+                    self.connection.execute(
+                        "DELETE FROM games WHERE game_id=? AND provider='steam' "
+                        "AND catalogue_source='steam' AND install_state='installed' AND launchable=1",
+                        (legacy.game_id,),
+                    )
+                    if self.connection.execute("SELECT changes()").fetchone()[0]:
+                        self.last_write_counts["delete"] += 1
+                        self._record_delta(
+                            CatalogueDelta("delete", legacy.game_id, before=legacy), deltas
+                        )
             existing = self._rows(f"SELECT {SELECT_COLUMNS} FROM games WHERE provider=?", (provider,))
             installed_ids = set(installed_by_id)
             owned_ids = known | installed_ids

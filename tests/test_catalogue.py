@@ -371,6 +371,45 @@ class CatalogueTests(unittest.TestCase):
         self.assertEqual(record.platform, "PC")
         self.assertEqual(record.platform_label, "PC")
 
+    def test_aurelia_reconcile_removes_stale_legacy_install_and_keeps_entitlement(self) -> None:
+        stale = InstalledSteamGame("945360", "Among Us", "/missing/Among Us", "/missing", 1, 0)
+        valid = InstalledSteamGame("40800", "Super Meat Boy", "/games/Super Meat Boy", "/games", 2, 0)
+        stale_owned = SimpleNamespace(provider_id="945360", title="Among Us")
+        valid_owned = SimpleNamespace(provider_id="40800", title="Super Meat Boy")
+        valid_aurelia_install = SimpleNamespace(
+            provider_id="40800", title="Super Meat Boy", install_dir="/games/Super Meat Boy",
+            artwork_url="", last_played=2,
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            store = CatalogueStore(Path(directory) / "catalogue.sqlite3")
+            store.reconcile_steam(FakeSteamProvider([stale, valid]))
+
+            store.reconcile_owned_provider(
+                "steam-aurelia", (stale_owned, valid_owned), (valid_aurelia_install,)
+            )
+
+            self.assertIsNone(store.get_game("steam:945360"))
+            self.assertEqual(store.get_game("steam-aurelia:945360").install_state, "available")
+            self.assertEqual(
+                [game.game_id for game in store.list_available_games("steam-aurelia")],
+                ["steam-aurelia:945360"],
+            )
+            self.assertEqual(store.get_game("steam:40800").install_state, "installed")
+            self.assertTrue(store.get_game("steam-aurelia:40800").launchable)
+            self.assertEqual(
+                [game.game_id for game in store.list_games("steam")],
+                ["steam-aurelia:40800"],
+            )
+
+            # Subsequent reconciliation and a manifest refresh cannot revive
+            # the removed stale install row.
+            store.reconcile_steam(FakeSteamProvider([]))
+            store.reconcile_owned_provider(
+                "steam-aurelia", (stale_owned, valid_owned), (valid_aurelia_install,)
+            )
+            self.assertIsNone(store.get_game("steam:945360"))
+            self.assertTrue(store.get_game("steam-aurelia:40800").launchable)
+
     def test_romm_snapshot_failure_can_leave_previous_snapshot_untouched(self) -> None:
         romm = RommGame(43, "F-Zero", 1, "snes", "SNES", "F-Zero.sfc", ".sfc", 10, "", False)
         with tempfile.TemporaryDirectory() as directory:

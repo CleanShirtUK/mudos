@@ -21,6 +21,31 @@ from lulu.job_manager import JobExecutionError
 
 
 class ExternalProviderTests(unittest.TestCase):
+    def test_missing_aurelia_never_falls_back_to_legacy_steam_install_inventory(self):
+        class LegacySteamEntitlements:
+            config = object()
+            refresh = Mock()
+            has_snapshot = True
+            snapshot = ()
+
+            def reload_config(self):
+                return self.config
+
+        with tempfile.TemporaryDirectory() as directory:
+            steam = LegacySteamEntitlements()
+            plugins = SimpleNamespace(with_capability=lambda _capability: ())
+            catalog = ConsoleCatalog(
+                store=CatalogueStore(Path(directory) / "catalogue.sqlite3"),
+                provider=object(), steam_entitlements=steam, plugin_registry=plugins,
+            )
+            catalog.external_entitlements = ()
+            with patch("lulu.onboarding.onboarding_state", return_value={
+                    "selected_providers": ["steam"], "selected_integrations": []}):
+                catalog.refresh({"steam"})
+
+        steam.refresh.assert_not_called()
+        self.assertEqual(catalog.store.list_catalogue_games(), [])
+
     def test_catalogue_authentication_supports_local_files_and_service_owned_sessions(self):
         with tempfile.TemporaryDirectory() as directory:
             auth_file = Path(directory) / "auth.json"

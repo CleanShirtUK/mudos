@@ -37,17 +37,23 @@ and implementation evidence are in `docs/statistics-overlay-compatibility.md`.
 
 ### STEAM-ROUTE-001 — Physically verify both Steam identity routes
 
-**Status: BLOCKED on connected presentation output.** The active release passes
-automated routing tests, but the appliance currently reports DP-1 and DP-2
-disconnected. Sessiond correctly refuses game launch without DRM presentation;
-no game was started against the hidden Steam display.
+**Status: ACCEPTED / CLOSED.** User reports successful physical testing after
+the routing correction; the prior no-display observation was caused by the
+display idling out and is not a defect. User-owned physical testing is recorded
+separately from the automated evidence in `docs/validation-log.md`.
 
 - When a display is connected, launch one Aurelia-installed title (for example,
   Super Meat Boy / AppID `40800`) once as `steam:40800` and once as
-  `steam-aurelia:40800`. Confirm the actual game process starts through Aurelia,
-  no Steam client game window is selected, and each launch returns to Mudos.
-- Do not test stale legacy rows that Aurelia reports uninstalled. Their retained
-  metadata and paths were not deleted, and Consoled fails them closed.
+  `steam-aurelia:40800`; confirm launch and return to Mudos. Physical testing
+  was completed by the user; no further physical test is required here.
+- Stale legacy rows are handled separately by STEAM-CATALOGUE-001; they are
+  not valid physical-launch test targets.
+
+### STEAM-CATALOGUE-001 — Aurelia installed-state authority
+
+**Status: IN PROGRESS** — remove confirmed stale legacy installed observations
+and make Aurelia reconciliation clean them up durably. Preserve Aurelia-owned
+uninstalled entitlements and valid install records. See `docs/validation-log.md`.
 
 ## VALIDATION
 

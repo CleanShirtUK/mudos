@@ -255,47 +255,18 @@ class ConsoleCatalog:
             LOGGER.info("catalogue direct diagnostic canonical_title transaction=%s", metrics)
             result = [game.as_dict() for game in self.store.list_games()]
             return result
-        steam_config = (self.steam_entitlements.reload_config()
-                        if self.steam_entitlements is not None
-                        and hasattr(self.steam_entitlements, "reload_config")
-                        else getattr(self.steam_entitlements, "config", None))
-        steam_auth_configured = bool(steam_config)
         aurelia_steam_source = next((source for source in self.external_entitlements
                                      if getattr(source, "provider_id", "") == "steam-aurelia"), None)
-        if ("steam" in selected and aurelia_steam_source is None
-                and self.steam_entitlements is not None and self.provider is not None
-                and steam_auth_configured):
-            LOGGER.info("catalogue stage started name=steam")
+        if "steam" in selected and aurelia_steam_source is None:
+            # Never revive legacy SteamProvider/SteamCMD installation rows.
+            # Aurelia is the sole Steam entitlement and installed-game source;
+            # if it is disabled or unavailable, fail closed and retain the
+            # last known catalogue rather than switching authorities.
             self.provider_readiness.set(
-                "steam", "syncing",
-                message="Steam account catalogue reconciliation is running.",
+                "steam-aurelia", "unavailable",
+                message="Aurelia is required for Steam ownership and installed-game discovery.",
             )
-            self.steam_entitlements.refresh()
-            if self.steam_entitlements.has_snapshot:
-                self.store.reconcile_steam_entitlements(
-                    self.steam_entitlements.snapshot, self.provider
-                )
-            else:
-                # Before the first successful Valve snapshot, retain existing
-                # entitlement rows and only refresh local installed manifests.
-                self.store.reconcile_steam(self.provider)
-            if self.store.last_deltas:
-                self.last_delta_batches.append(self.store.last_deltas)
-            if getattr(self.steam_entitlements, "last_refresh_succeeded", False):
-                self.provider_readiness.set(
-                    "steam", "authentication_required",
-                    message=("Owned Steam games were reconciled. SteamCMD authentication will be checked "
-                             "when a download is requested."),
-                    catalogue_count=len(self.steam_entitlements.snapshot),
-                )
-            elif steam_config is not None:
-                self.provider_readiness.set(
-                    "steam", "sync_failed", message="Steam ownership validation or reconciliation failed.",
-                    catalogue_count=len(getattr(self.steam_entitlements, "snapshot", ())),
-                )
-            LOGGER.info("catalogue stage completed name=steam sqlite_commit=complete")
-        elif "steam" in selected and aurelia_steam_source is None:
-            LOGGER.info("catalogue stage skipped name=steam reason=authentication-required")
+            LOGGER.info("catalogue stage skipped name=steam-aurelia reason=provider-unavailable")
         for source in self.external_entitlements:
             provider_id = str(getattr(source, "provider_id", ""))
             if provider_id not in selected and not (provider_id == "steam-aurelia" and "steam" in selected):

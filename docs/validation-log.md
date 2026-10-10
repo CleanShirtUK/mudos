@@ -2168,4 +2168,54 @@ restart may be required for InputPlumber to publish a newly created target.
   `/opt/lulu/releases/7adb957-candidate-20261009223803`; it is now the active
   release. Only Consoled was restarted for this second activation. Sessiond
   remains active and waiting for a connected display; the isolated Steam
-  runtime remains active/authenticated.
+   runtime remains active/authenticated.
+
+## Steam routing physical acceptance and catalogue authority — 2026-10-10
+
+- User reports successful physical testing of the accepted launch correction
+  for both legacy `steam:` and explicit `steam-aurelia:` identities. This is
+  user-owned physical acceptance; the earlier no-output probe was caused by the
+  display idling out and is not a product defect. Automated evidence remains
+  separately recorded in the 2026-10-09 section above.
+- Before cleanup, the live catalogue had 28 installed/launchable
+  `provider='steam'` rows and 23 installed/launchable `provider='steam-aurelia'`
+  rows. Nineteen legacy rows overlapped currently installed Aurelia titles;
+  nine were stale. The 23 Aurelia installed rows include four more recent
+  installations outside the original 28-row legacy set.
+- Revalidated stale IDs: `945360` Among Us
+  (`/home/lulu/Games/Executables/steam/steamapps/common/Among Us`), `104200`
+  BEEP (`/home/lulu/Games/Executables/steam/steamapps/common/BEEP`), `26800`
+  Braid (`/home/lulu/.local/share/Steam/steamapps/common/Braid`), `341500`
+  Camera Obscura
+  (`/home/lulu/Games/Executables/steam/steamapps/common/Camera Obscura`),
+  `224760` Fez (`/home/lulu/.local/share/Steam/steamapps/common/FEZ`),
+  `319510` Five Nights at Freddy's
+  (`/home/lulu/Games/Executables/steam/steamapps/common/Five Nights at Freddy's`),
+  `15710` Oddworld: Abe's Exoddus
+  (`/home/lulu/.local/share/Steam/steamapps/common/Oddworld Abes Exoddus`),
+  `263980` Out There Somewhere
+  (`/home/lulu/.local/share/Steam/steamapps/common/outtheresomewhere`), and
+  `204180` Waveform
+  (`/home/lulu/.local/share/Steam/steamapps/common/Waveform`). All nine report
+  unavailable from `aurelia available`, have no directory at the recorded
+  canonical path, and retain a matching owned/available `steam-aurelia:` row.
+  Acquisitiond reports zero active downloads and no active Aurelia operation
+  for those IDs. No game or background Steam process was interrupted.
+- Before mutation, an SQLite online backup was integrity-checked at
+  `/tmp/opencode/catalogue-pre-steam-aurelia-cleanup-20261010.sqlite3` (mode
+  0600; 2,392,064 bytes).
+- Root cause of recurrence: Aurelia reconciliation updated its own
+  `steam-aurelia:` rows but left historical `steam:` manifest rows untouched.
+  Consoled also retained a dormant legacy entitlement/manifest-refresh
+  fallback. The source correction deletes only a matching
+  `catalogue_source='steam'`, installed+launchable legacy row when Aurelia still
+  reports the owned AppID but does not report it installed. The Aurelia
+  entitlement remains available for acquisition. Valid install rows,
+  RomM-backed observations, canonical metadata/artwork, saves, content paths,
+  and files are outside the delete predicate. Consoled no longer falls back to
+  legacy Steam installation discovery; missing Aurelia fails closed and
+  preserves the last-known-good catalogue.
+- Automated tests before live cleanup: **168 passed** across catalogue,
+  external-provider, Steam entitlement/provider, launch routing, bridge,
+  Consoled, and Sessiond presentation suites. Compilation and `git diff
+  --check` passed. Live cleanup and post-refresh validation follow.
