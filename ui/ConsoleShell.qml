@@ -2084,7 +2084,25 @@ Window {
         // The landing card passes its semantic dimension key. Do not derive
         // the opened view from a positional index that may be stale after a
         // model reset or return from Library.
-        activate()
+        openLibrarySurface()
+    }
+
+    function openLibrarySurface() {
+        if (root.homeLaunchGated)
+            return
+        presentationTarget = "library"
+        libraryTransitionState = "ACTIVATING"
+        libraryTransitioning = true
+        libraryTransitionExpanding = true
+        libraryTransitionProgress = 0
+        startLibraryTransition()
+        refreshLibrary()
+        libraryContentFadeOut.stop()
+        fadeLibraryIn()
+        homeFadeIn.stop()
+        fadeHomeOut()
+        libraryFocus = "games"
+        message = ""
     }
 
     function moveLibraryVertical(delta) {
@@ -2955,19 +2973,10 @@ Window {
         if (selectedCategoryIndex === 3) {
             beginPendingHomeLaunch(visibleRecentGame)
         } else if (selectedCategoryIndex === 2) {
-            presentationTarget = "library"
-            libraryTransitionState = "ACTIVATING"
-            libraryTransitioning = true
-            libraryTransitionExpanding = true
-            libraryTransitionProgress = 0
-            startLibraryTransition()
-            refreshLibrary()
-            libraryContentFadeOut.stop()
-            fadeLibraryIn()
-            homeFadeIn.stop()
-            fadeHomeOut()
-            libraryFocus = "games"
-            message = ""
+            if (libraryHomeLandingRef)
+                libraryHomeLandingRef.activateSelected()
+            else
+                openLibraryDimension(libraryDimension)
         } else if (selectedCategoryIndex === 0) {
             openSystemCategory(systemHomeRailRef ? systemHomeRailRef.selectedIndex : systemHomeCardIndex)
         } else if (selectedCategoryIndex === 1) {

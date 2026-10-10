@@ -92,6 +92,9 @@ Item {
             return
         openRequested(String(category.mode))
     }
+    function activateSelected() {
+        activateCategory(selectedIndex)
+    }
     Connections {
         target: typeof mudosTheme !== "undefined"
             && typeof mudosTheme.themeChanged !== "undefined" ? mudosTheme : null

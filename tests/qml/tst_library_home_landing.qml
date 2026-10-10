@@ -115,6 +115,16 @@ TestCase {
         }
     }
 
+    function test_controller_confirmation_activates_selected_semantic_dimension() {
+        var expected = ["platform", "provider", "game_mode", "genre"]
+        for (var i = 0; i < expected.length; ++i) {
+            landing.selectedIndex = i
+            landing.activateSelected()
+            compare(openSpy.count, i + 1)
+            compare(openSpy.signalArguments[i][0], expected[i])
+        }
+    }
+
     function test_activation_ignores_invalid_positions_and_uses_category_identity() {
         landing.activateCategory(-1)
         landing.activateCategory(landing.categories.length)

@@ -83,10 +83,14 @@ titles” is session-only; membership persistence/lifetime still needs a decisio
 ### LIBRARY-001 — Library dimension navigation
 
 **Status: IMPLEMENTED — PHYSICAL ACCEPTANCE PENDING · P2.** The operator
-confirmed the original defect still occurred. Landing cards now have fixed
-Platform, Provider, Game Mode, Genre order and emit their selected semantic
-dimension key. The root no longer resolves activation from a potentially stale
-position or resets the landing selection index when changing dimensions.
+confirmed the defect still occurs after the first deployed correction: all four
+cards entered Platform. Follow-up diagnosis found the controller confirm path
+called the shell's generic `activate()` directly; unlike pointer activation, it
+did not dispatch the selected landing card's semantic key, so the current
+default dimension remained Platform. The correction routes controller confirm
+through the selected card's `activateSelected()` and opens the Library surface
+only after the semantic key is set. Cards retain fixed Platform, Provider,
+Game Mode, Genre order; in-view dimension switching remains separate.
 
 - **Operator check:** from Home, open each card, verify its matching Library
   dimension, Back to Home, and confirm positions/selection do not jump; repeat

@@ -1481,6 +1481,14 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertNotIn("libraryCollections", shell)
         self.assertIn("function openLibraryDimension(mode)", shell)
         self.assertIn("root.openLibraryDimension(dimensionKey)", shell)
+        activation = shell[shell.index("function activate()"):
+                           shell.index("function back()")]
+        self.assertIn("libraryHomeLandingRef.activateSelected()", activation)
+        self.assertIn("function openLibrarySurface()", shell)
+        dimension_entry = shell[shell.index("function openLibraryDimension(mode)"):
+                                shell.index("function openLibrarySurface()")]
+        self.assertIn("openLibrarySurface()", dimension_entry)
+        self.assertNotIn("activate()", dimension_entry)
         self.assertIn("openRequested(String(category.mode))", (ROOT / "ui" / "LibraryHome.qml").read_text())
         self.assertIn("categories: root.libraryDimensions", shell)
         self.assertNotIn("collectionIndex", shell)

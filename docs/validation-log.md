@@ -2327,3 +2327,30 @@ restart may be required for InputPlumber to publish a newly created target.
   shell state with ready presentation, and the isolated Steam runtime is active
   and authenticated with restart count **0**. No game process was interrupted.
   Physical acceptance of all four Library cards remains pending.
+
+## Library controller-confirmation follow-up — 2026-10-10
+
+- The user physically tested all four landing cards on the active release and
+  reported that **every card opened Platform**. This falsifies the previous
+  physical acceptance hypothesis; `LIBRARY-001` remains open and is not
+  accepted.
+- Follow-up tracing found the first correction only covered the card's
+  `openRequested` signal (such as pointer activation). Controller confirm is
+  routed through the shell's generic `activate()` function; in the Home Library
+  domain that function previously opened the Library surface directly, leaving
+  `libraryDimension` at its default `platform`. The MRU/index reset was a real
+  source hazard but was not the complete physical root cause.
+- Correction: `LibraryHome.activateSelected()` dispatches the currently selected
+  card's semantic `mode`. Shell controller confirm now calls that method, and
+  semantic dimension entry opens the Library surface through a dedicated
+  `openLibrarySurface()` path instead of recursively invoking generic confirm.
+  Pointer and controller activation therefore share the same semantic route.
+- Added a component regression that simulates controller confirmation on each
+  selected position and verifies all four emitted keys in order. New source
+  contract checks verify generic Home confirm delegates to the selected landing
+  card and does not bypass its identity. Physical verification is required again
+  after this follow-up is deployed; keep **IMPLEMENTED — PHYSICAL ACCEPTANCE
+  PENDING** until all four routes are confirmed.
+- Regression results for the follow-up: `tests/test_console_ui.py` passed
+  **93/93**; Library landing QML passed **6/6**; Library projection QML passed
+  **6/6**; `git diff --check` passed.
