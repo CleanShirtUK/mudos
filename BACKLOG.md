@@ -38,7 +38,10 @@ atomically switches the selector, but intentionally has no session-idle policy.
   Sessiond still reports `presentation_ready=false`, both DRM outputs are
   disconnected, and no controller is connected. Official Aurelia 0.1.37's
   required interfaces have been source- and read-only-probe-verified as
-  compatible. No release was built or activated; only Acquisitiond was
+  compatible. Candidate
+  `/opt/lulu/releases/24acb93-candidate-20261011102738` is built and verified,
+  but not activated; `/opt/lulu/current` remains on
+  `/opt/lulu/releases/af4ad04-candidate-20261011040541`. Only Acquisitiond was
   restarted for the separately authorized recovery.
 - **Next:** resolve the blockers, fetch/reconcile current `dev`, then run the
   guarded entry point on a safely idle appliance. Do not close until a real
@@ -57,8 +60,9 @@ atomically switches the selector, but intentionally has no session-idle policy.
 
 ### ACQUISITION-REMOVE-001 — Interrupted provider removal could be replayed on restart
 
-**Status: SOURCE FIX COMMITTED/TESTED; HISTORICAL JOB RECONCILED; PRODUCTION FIX
-PENDING GUARDED MUDOS DEPLOYMENT.** On 2026-10-11, Acquisitiond reported job
+**Status: SOURCE FIX COMMITTED/TESTED; HISTORICAL JOB RECONCILED; VERIFIED
+CANDIDATE STAGED; PRODUCTION FIX PENDING GUARDED DEPLOYMENT.** On 2026-10-11,
+Acquisitiond reported job
 `job-aea04e11b30a4a66884ffa8b4d31c708` (`steam-aurelia:252950`, REMOVE) as
 `transferring`, stage `Downloading depot 252951`, progress 0.001. It was created
 at `2026-10-11T07:46:25Z`, last updated at `07:47:13Z`, and has not advanced
@@ -131,7 +135,8 @@ path are documented below. Do not run a real update solely for validation.
 
 ### STEAM-UPDATES-003 — Update offered again after a reported completion
 
-**Status: SOURCE CORRECTION COMMITTED · NOT DEPLOYED; PHYSICAL ACCEPTANCE OPEN.**
+**Status: SOURCE CORRECTION COMMITTED · VERIFIED CANDIDATE STAGED, NOT ACTIVATED;
+PHYSICAL ACCEPTANCE OPEN.**
 Prior LIMBO evidence below is historical and does not
 establish the current appmanifest or update state.
 
@@ -336,7 +341,8 @@ was not diagnosed and must not be conflated with the later failed game launch
 
 ### STEAM-PLATFORM-001 — Choose Steam download platform from Installable
 
-**Status: IMPLEMENTED IN SOURCE · PHYSICAL ACCEPTANCE OPEN · P2.** When starting installation of a Steam
+**Status: IMPLEMENTED IN SOURCE · VERIFIED CANDIDATE STAGED, NOT ACTIVATED ·
+PHYSICAL ACCEPTANCE OPEN · P2.** When starting installation of a Steam
 title from the Installable view, let the operator confirm which supported
 platform's content should be acquired, rather than silently accepting the
 provider's automatic depot/platform choice. This matters for games such as

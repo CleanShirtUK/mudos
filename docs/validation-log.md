@@ -64,15 +64,22 @@
   overlap in history, but available evidence cannot identify which operation
   produced the depot progress or why the REMOVE row acquired a terminal
   timestamp while retaining active state. No speculative cause is asserted.
-- **Git:** source fix is pushed at `04c80a655dbf956df63c920f7aefa1153e9c3c0b`;
-  validation/backlog documentation is being committed separately after a fresh
-  `origin/dev` reconciliation.
-- **Deployment:** no release was built/activated yet. Sessiond shell lifecycle
-  is idle and Steam authenticated, but `presentation_ready=false`; both DRM
-  connectors are disconnected and no Xbox controller is connected. The guard
-  must remain authoritative. Operator must wake/connect the TV DisplayPort
-  link and power/reconnect the controller before activation. Official Aurelia
-  0.1.37 remains contract-compatible; no Steam operation was run.
+- **Git:** recovery implementation is pushed at
+  `04c80a655dbf956df63c920f7aefa1153e9c3c0b`; validation/backlog reconciliation
+  is pushed at `24acb931069937c8e1aa945bffe3851c609ea59f`. Local `dev` and
+  `origin/dev` agree and the source checkout is clean.
+- **Deployment:** canonical builder produced
+  `/opt/lulu/releases/24acb93-candidate-20261011102738`; canonical `verify`
+  passed and validated its `manifest.sha256`. This candidate is immutable and
+  staged only. Guarded preflight refused with `Sessiond shell presentation is
+  not ready`; independent state checks also show both DRM connectors
+  disconnected and no connected controller. Steam runtime is ready/authenticated
+  and no acquisition job is active. `/opt/lulu/current` remains
+  `/opt/lulu/releases/af4ad04-candidate-20261011040541`; no service was restarted
+  for deployment and no activation attempted. Operator must wake/connect the TV
+  DisplayPort link and power/reconnect the Xbox controller, then rerun the
+  complete guard. Official Aurelia 0.1.37 remains contract-compatible; no Steam
+  install, update, verify, launch, or removal was run.
 
 ## Startup regression diagnosis and fix — 2026-09-22
 
