@@ -1,8 +1,10 @@
 # Steam runtime content-ownership boundary — investigation
 
-**Status:** clean-install behavior assessment is pending. The namespace
-prototype and partial Stage 1 results are preserved below as fallback evidence;
-mandatory production isolation is proposed, not established as necessary.
+**Status:** read-only production baselines for one Windows/Proton and one native
+Linux title are recorded below. A controlled clean-install/restart assessment
+was not completed and is deferred. The namespace prototype and partial Stage 1
+results are preserved as fallback evidence; mandatory production isolation
+remains deferred.
 Production Steam configuration,
 library registration, credentials, service state, mounts, permissions, and game
 content were not changed.
@@ -219,12 +221,12 @@ export; they verify that only predefined statuses/fields are emitted.
 
 The isolated client, account, and test subvolumes were removed after Stage 1
 cleanup, then recreated fresh for this continuation. The transient
-`steam-compat-stage1-real.service` runs as the dedicated `steamstage1` account
+`steam-compat-stage1-real.service` ran as the dedicated `steamstage1` account
 with `ProtectHome=tmpfs`, `ProtectSystem=strict`, private `/tmp` and D-Bus, and
 only the dedicated test HOME/library bound back into its namespace. A startup
 check fails if `/home/lulu` is visible. Steam stdout/stderr are discarded.
 
-The disposable library's `steamapps` tree is a read-only bind. Writable
+The disposable library's `steamapps` tree was a read-only bind. Writable
 `compatdata`, `shadercache`, and `SteamLinuxRuntime_soldier` are separate Btrfs
 subvolumes outside that protected library subvolume and are mounted only at the
 declared child paths. `SteamLinuxRuntime_soldier` remains the extra runtime
@@ -235,7 +237,8 @@ state write success, hardlink denial (`EXDEV`), and rejection of a symlink from
 writable state back into protected payload. Only a synthetic marker is present;
 this fresh library has no downloaded or installed game.
 
-The isolated Xvfb `:190` client was left running after the prior task. Its viewer uses a private
+The isolated Xvfb `:190` client had been left running after the prior task. Its
+viewer used a private
 Unix socket at `/run/steam-stage1-viewer/bridge.sock`, with filesystem access
 limited to the operator account; it is not a TCP listener and the test account
 is denied access to the viewer. It disables HTTP access logging, does not save
@@ -253,13 +256,15 @@ Cloud in this isolated client, confirmed the setting persisted over restart,
 and verified separate writable state-subvolume canaries survived restart.
 Attempts to acquire Braid and Spacewar produced no appmanifest or staged game
 content; no game launch or update test occurred. This is not evidence of
-healthy-install Steam behavior. Retire the old client before the clean writable-
-library experiment; do not attach production HOME, credentials, libraries, or
-game content.
+healthy-install Steam behavior. The prior Stage 1 unit has since been stopped;
+its six Btrfs test subvolumes, stale viewer socket, and dedicated
+`steamstage1` account were retired without touching production Steam. The later
+empty clean-test directory was also removed. Never attach production HOME,
+credentials, libraries, or game content.
 
-## Clean writable-library experiment (pending)
+## Clean writable-library experiment (not performed; deferred)
 
-The next controlled test uses a fresh dedicated HOME, Steam configuration,
+The proposed controlled test would use a fresh dedicated HOME, Steam configuration,
 Steam library, and isolated Aurelia config/state. The game library must be
 normally writable (no read-only bind or mount namespace protection), and both
 Steam and Aurelia must point to exactly that disposable library. No production
@@ -277,17 +282,20 @@ and after a clean Steam shutdown/restart. Distinguish metadata rewrites from
 payload modifications. A failed installation is a provider/configuration
 blocker, not evidence for or against autonomous updates.
 
-Until this experiment is evaluated, the mount-namespace prototype remains a
-fallback proposal rather than a mandatory production architecture change.
+This clean-install experiment was not completed: the isolated Aurelia CLI found
+no registered library, no Aurelia session existed, and no owned title was
+verified. It is not in progress and is not resumed by this production-baseline
+assessment. The mount-namespace prototype remains a fallback proposal rather
+than a mandatory production architecture change.
 
 ### Attempted clean-environment setup (2026-10-11; Outcome C)
 
 The previous transient `steam-compat-stage1-real.service` was stopped cleanly.
 Production `lulu-steam-runtime.service` remained active with the same PID and
 invocation and zero restarts. A new private test HOME/config/data/cache tree was
-created at `/home/.steam-aurelia-clean-20261011`; it contains no copied Steam or
-Aurelia credentials and has not been used to start Steam. The existing
-`steamstage1` Unix account remains dedicated to the prior isolated client.
+created at `/home/.steam-aurelia-clean-20261011`; it contained no copied Steam
+or Aurelia credentials and was not used to start Steam. The `steamstage1` Unix
+account and its isolated client state have since been retired.
 
 With `HOME` and XDG paths set to the fresh tree, official Aurelia 0.1.37
 `libraries --json` returned `{"libraries":[]}`. Its CLI supports explicit
@@ -299,14 +307,106 @@ started, and no Steam client was started in this fresh tree. The experiment
 therefore ends before a healthy installation and provides no evidence about
 Steam's normal update behavior (Outcome C).
 
-Resume only after a safe owned fixture can be identified and official Aurelia
-authentication is established inside the isolated environment without copying
-session/credential material. Initialize/register the disposable Steam library,
-confirm both tools recognize that exact path, disable Cloud in the isolated
-Steam client, inventory the empty baseline, then perform the controlled
-explicit-Windows Aurelia install and discovery/restart comparisons above. If
-those prerequisites cannot be met, report the blocker; do not use production
-content or infer a result.
+No further isolated install attempt is part of this task. Any future resumption
+requires a separate request and must establish Aurelia authentication without
+copying session/credential material, register one disposable library in both
+tools, disable isolated Cloud, and preserve the normal writable-library test
+condition. Do not use production content or infer a result from the incomplete
+setup.
+
+## Production two-title baseline (2026-10-11; read-only; restart withheld)
+
+The operator selected these already-installed titles as complementary
+baselines.
+No install, update, verify, repair, remove, migration, or game launch was run.
+The hardened Steam authentication diagnostic classified the recorded connection
+log as `authenticated` without displaying its contents. Aurelia 0.1.37
+recognized both installations, and its read-only global `update` report had no
+updates. Per-title catalogue state was `is_installed=true`, platform as below,
+`update_available=false`, and `update_queued=false`.
+
+| Title / AppID | Content location / actual installed platform | Appmanifest evidence | Installed depot manifest IDs | Executable evidence |
+| --- | --- | --- | --- | --- |
+| SILENT HILL 2 / 2124490 | `/home/lulu/.local/share/Steam/steamapps/common/SILENT HILL 2`; Windows; Aurelia reports `windows` | `StateFlags=4`, build `17080069`, `LastUpdated=1790838711` (2026-10-01 07:11:51Z), manifest mtime 2026-10-11 03:56:03Z | `2124491=4138456104249046245` | `SHProto/Binaries/Win64/SHProto-Win64-Shipping.exe`, PE, 142,126,592 bytes; SHA-256 `c21ae87cdd186ca22760ad7aa66973eaac2a4d9a4e437a3b42daaab08eb729bc` |
+| Super Meat Boy / 40800 | `/home/lulu/.local/share/Steam/steamapps/common/Super Meat Boy`; native Linux; Aurelia reports `linux` | `StateFlags=4`, build `3241924`, `LastUpdated=1790777656` (2026-09-30 14:14:16Z), manifest mtime 2026-10-10 07:21:28Z | `40802=6556596646716197166` (Linux), `98011=915545047853675884` (shared) | `amd64/SuperMeatBoy`, ELF x86-64 (`e_machine=62`), 2,553,803 bytes; SHA-256 `91dfebedbdd5add0fb81535d710bb492cabb23244f733162d8984a0b154158b2` |
+
+Read-only `aurelia manifests` showed the installed IDs match the current public
+branch targets for both titles. Silent Hill's Windows platform is verified by
+the installed PE executable (its installed depot itself has no OS config tag);
+Super Meat Boy's native platform is verified by
+the installed Linux depot and ELF executable, not inferred merely from Linux
+support. Both manifests have `StateFlags=4`; no `StateUpdateRequired` flag was
+set. The library held 29 appmanifests; none had that update-required flag.
+Aurelia's global update report returned empty, the user session was in shell
+with no launch token, `aurelia running` and install list were empty, and
+Acquisitiond reported zero active downloads. No matching Acquisitiond history
+jobs for these AppIDs were present (104 total jobs).
+Both per-game Aurelia launch configs report `platform_preference=null` and
+`runner=auto`; no per-game Proton version is forced. The installed formats and
+Aurelia's detected platform establish the present content route, not a pinned
+future platform preference.
+
+### Historical content log and current file evidence
+
+The content log was processed in memory through the existing
+`steam-ownership-guard-prototype.py` classifier and a fixed-category reducer;
+raw log lines were never emitted. It contains 606 AppID 2124490 records and 151
+AppID 40800 records. After each manifest's `LastUpdated`, the reduced records
+include respectively 95/22 queued-state transitions, 25/9 scheduler starts,
+23/5 `starting commit` records, and 1/2 update-finished records. The latest
+matching events were 2026-10-11 04:56:03Z and 2026-10-10 08:21:28Z. Each
+appmanifest's filesystem mtime is later than its `LastUpdated` field. This is
+evidence consistent with resident Steam queue/scheduler/commit work and later
+manifest writes, but the log does not identify which caller initiated every
+operation. Acquisitiond has no matching jobs; unrecorded direct Aurelia CLI
+activity is not ruled out. Consequently no exact Aurelia install-completion
+timestamp is available; appmanifest `LastUpdated` is a comparison point, not a
+verified Aurelia installation timestamp.
+
+The current tree totals were 262 regular files / 36,453,523,043 bytes for
+Silent Hill 2 and 64 / 263,542,849 bytes for Super Meat Boy. Comparing file
+mtimes to each manifest's `LastUpdated`, no other game-payload file was newer.
+Newer Silent Hill files were `cover.jpg`, `steam_appid.txt` and vkd3d-proton
+runtime caches; newer Super Meat Boy files were `cover.jpg` and
+`UserData/steam_autocloud.vdf`. Current executable hashes are recorded above,
+but there is no pre-event checksum baseline. Therefore actual historical payload
+byte changes are **not established**, while Steam content-operation activity
+and later appmanifest mtimes are observed. Both currently installed depot sets
+still match Aurelia's public targets and their intended platforms.
+
+### Restart gate and result
+
+Before considering a restart, the full content log was reduced to activity
+states, staging/temp directories and all appmanifest update flags were inspected,
+and Steam process file descriptors were checked for content-path write access.
+There were no entries under `steamapps/downloading`, no manifest with
+`StateUpdateRequired`, and zero open Steam write descriptors. However, the
+conservative historical-log helper classified overall library activity as
+`active`; AppID 1332010 reduced to active and AppID 7 to unknown. Aurelia lists
+1332010 (Stray) as not installed. `steamapps/temp` contained entries `1712830`,
+`2225070`, and `48000`. These records may be stale or unrelated to the two
+baseline games and do not prove a live operation, but they also do not establish
+a safely idle queue. Following the explicit fail-safe condition, no restart was
+performed. Production `lulu-steam-runtime.service` remained at PID 2071116,
+invocation `972cd8168e4f4108b5928b098617716e`, `NRestarts=0`; Mudos services
+stayed active.
+There is no post-restart comparison and no claim that these two games were
+untouched by all historical Steam activity.
+
+### Assessment
+
+The baseline confirms the intended Windows/Proton and native Linux
+installations are currently Aurelia-recognized, fully installed, and manifest-current under
+the normal shared writable library. Historical Steam queue/scheduler/commit
+events mean this is **not** evidence that resident Steam never manages their
+content; however, current depot/platform state is coherent and no historical
+payload byte change is proven. This two-title observation alone does not justify
+deploying filesystem isolation. Keep the namespace implementation deferred and
+the issue open; do not restart through active/ambiguous content evidence. The
+isolated Stage 1 unit, six Btrfs test subvolumes, stale viewer socket, dedicated
+Unix account, and empty second test tree were retired. Btrfs subvolume removal
+is logical cleanup, not a claim of forensic media sanitization. Production
+Steam and Mudos state were not modified.
 
 ## Operational conflict signals (assessment only)
 
