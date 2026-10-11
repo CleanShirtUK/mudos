@@ -61,7 +61,7 @@ path are documented below. Do not run a real update solely for validation.
 ### STEAM-UPDATES-003 — Update offered again after a reported completion
 
 **Status: OPEN · P1 · DEPOT/PLATFORM MISMATCH CONFIRMED; UPSTREAM CONTRACT
-GAP IDENTIFIED.** The earlier reports are no longer adequately explained
+PATCH PREPARED, NOT INTEGRATED.** The earlier reports are no longer adequately explained
 as simply a stale Mudos cache or repeat prompts: Steam's current LIMBO depot
 configuration and the installed appmanifest select different depots.
 
@@ -98,10 +98,14 @@ configuration and the installed appmanifest select different depots.
   relevant transition is confirmed. Keep genuine availability visible, while
   classifying a repeated conflict as non-retryable pending operator resolution.
 - **Next:** obtain that supported evidence contract (or establish a safe local
-  appmanifest/Steam metadata adapter contract) before implementing depot-aware
-  completion claims. Keep reporting real availability; no suppression,
-  manifest edits, verify, or live update until a separately approved repair
-  plan exists.
+  appmanifest/Steam metadata adapter contract) before enabling depot-aware
+  completion claims in the production runtime. A separate Aurelia source branch
+  now prototypes `platform-state`, explicit installed-platform persistence,
+  strict platform selection, depot-manifest convergence checks and post-update
+  verification. Mudos consumes that new contract fail-closed; installed Aurelia
+  0.1.38 does not yet provide it, so the runtime adapter upgrade is pending.
+  Keep reporting real availability; no suppression, manifest edits, verify, or
+  live update until a separately approved repair plan exists.
 - **Evidence (read-only, 2026-10-11):** raw `aurelia --json update` and the
   Mudos live check list LIMBO as `available`. `aurelia --json manifests 48000`
   reports public-branch manifests `48001=1261656871327265848` and
@@ -275,7 +279,7 @@ was not diagnosed and must not be conflated with the later failed game launch
 
 ### STEAM-PLATFORM-001 — Choose Steam download platform from Installable
 
-**Status: OPEN · P2 · USER-REQUESTED.** When starting installation of a Steam
+**Status: IMPLEMENTED IN SOURCE · PHYSICAL ACCEPTANCE OPEN · P2.** When starting installation of a Steam
 title from the Installable view, let the operator confirm which supported
 platform's content should be acquired, rather than silently accepting the
 provider's automatic depot/platform choice. This matters for games such as
@@ -292,6 +296,11 @@ typically wants the maintained Windows build launched through Proton.
   Single-platform titles can use the only verified choice; unavailable or
   ambiguous provider metadata must not be presented as a confidently supported
   selection. Cancel returns to Installable without an installation job.
+  Mudos now queries Aurelia depot metadata and displays a controller-focused
+  modal for multiple platform choices; a single verified platform proceeds
+  without an unnecessary chooser. Unknown or malformed metadata stops before
+  job submission. No Rocket League-specific recommendation is made without
+  reliable support/freshness evidence.
 - **Acquisition:** propagate the confirmed choice into Aurelia's supported
   install platform option and persist it with the provider-owned job for
   retry/restart recovery and reconciliation. Do not introduce SteamCMD as an
@@ -299,6 +308,9 @@ typically wants the maintained Windows build launched through Proton.
   platform during an update. Do not select Linux merely because a native depot
   exists; do not change content already installed without a separately
   approved migration.
+  Acquisitiond stores `steam_platform` on the provider-owned install job,
+  deduplicates by AppID, rejects conflicting active choices, and retries only
+  with the same persisted choice. Aurelia receives explicit `--platform`.
 - **Consistency:** the resulting installed payload, chosen Proton/native
   launch route, and all subsequent update checks/updates must refer to the same
   platform. Coordinate with **STEAM-UPDATES-003** and its unresolved upstream
@@ -316,6 +328,14 @@ typically wants the maintained Windows build launched through Proton.
   Use synthetic provider/depot fixtures and controller-QML tests before
   physical acceptance; do not install or overwrite live titles without
   operator approval.
+- **Current integration boundary:** Mudos adapter and controller UI changes are
+  in this uncommitted work pending final validation and push. The new install-time
+  verification depends on Aurelia's existing library platform report; update
+  state/convergence requires the separate upstream `platform-state` contract,
+  which is not in the installed executable. Do not activate an Aurelia binary
+  built from the experimental checkout. `release.py activate` remains available
+  for intentional offline/bootstrap/rollback use; online deployment still
+  requires the fail-closed `RELEASE-SAFETY-001` guard.
 
 ### UNINSTALL-UX-001 — Hide a title while provider uninstall runs
 

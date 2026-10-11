@@ -2612,3 +2612,44 @@ restart may be required for InputPlumber to publish a newly created target.
   lifecycle acceptance remains blocked; existing test fixtures do not prove
   depot-convergence semantics, so those tests are deferred until the upstream
   evidence contract is available.
+
+### 2026-10-11 — Steam platform selection implementation (not deployed)
+
+- Mudos now queries Aurelia depot metadata for installable Steam titles. A
+  controller-native modal presents only explicit Windows/Linux depot OS
+  choices, with Escape/Back and Cancel. One verified variant is submitted
+  directly; no metadata, malformed data, or cancellation creates no job.
+  Install choices reach Acquisitiond as `SubmitSteamInstall`, are stored as
+  `origin_metadata.steam_platform`, deduplicated by AppID, and enforced across
+  conflict/retry/recovery. The Aurelia executor passes `--platform` and rejects
+  an unknown or mismatched installed-platform report. Existing installations
+  were not touched.
+- Mudos' update adapter now expects `aurelia platform-state APPID --json`,
+  requires installed and target depot-manifest maps, rejects platform
+  conflict/unknown, and requires `current` after update completion. Acquisitiond
+  captures the discovered installed platform in update-job metadata. These
+  changes fail closed with production Aurelia 0.1.38 because that executable
+  does not implement the new command; **do not activate this adapter until the
+  Aurelia contract is integrated and released**.
+- Separate Aurelia source checkout `/tmp/opencode/aurelia-platform-contract`,
+  branch `work/platform-contract`, based on public tag commit
+  `50c44d33b97f4aee6fe694e90c464951970d9fd8`. Candidate changes add explicit
+  platform selection/persistence for installs, strict handling of ambiguous
+  platform metadata, installed depot-based platform reporting, read-only
+  `platform-state`, update preflight and post-update convergence checks.
+  `CARGO_PROFILE_DEV_DEBUG=0 cargo check --bin aurelia -j 2` passed;
+  focused platform/install tests passed (10). No upstream commit/push/PR was
+  made: no writable fork was available, and this candidate needs review against
+  upstream's current main before contribution. Production Aurelia was not
+  replaced.
+- Mudos validation: focused Python suites passed, **183 passed**; QML
+  `qmlformat -n` parsed `ConsoleShell.qml`; `qmllint` completed with existing
+  unqualified-access warnings and no new platform-popup missing-property
+  findings. `git diff --check` passed. No live update/install, verification,
+  migration, deployment, or physical-controller test was performed.
+- Remaining: review and land the Aurelia contract through an authorized upstream
+  contribution route; add comprehensive synthetic convergence tests for Windows,
+  Linux, mismatch, no-op and incomplete targets; rerun all relevant Mudos and
+  Aurelia tests; then integrate and validate the released provider before any
+  runtime activation. Physical controller acceptance and the online fail-closed
+  deployment guard remain open.

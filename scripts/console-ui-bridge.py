@@ -396,7 +396,22 @@ class ConsoleUiBridge:
         token = await self.sessiond.call_request_steam_store(15000)
         return {"token": token}
 
-    async def install_game(self, game_id: str) -> dict[str, str]:
+    async def steam_platform_options(self, game_id: str) -> dict[str, object]:
+        rows = await self.list_available_games("")
+        selected = next((row for row in rows if str(row.get("game_id", "")) == game_id), None)
+        if selected is None or str(selected.get("provider", "")) != "steam":
+            raise ValueError("Steam title is not available to acquire")
+        app_id = str(await self.consoled.call_resolve_steam_install(game_id))
+        if not app_id.isdecimal() or int(app_id) < 1:
+            raise ValueError("Steam AppID could not be resolved")
+        from lulu.plugins.steam.aurelia import AureliaClient
+        platforms = await AureliaClient().available_platforms(app_id)
+        if not platforms:
+            raise ValueError("Aurelia could not verify an acquirable Steam platform")
+        return {"app_id": app_id, "title": str(selected.get("title", app_id)),
+                "platforms": list(platforms)}
+
+    async def install_game(self, game_id: str, platform: str | None = None) -> dict[str, str]:
         if self.acquisitiond is None:
             raise RuntimeError("acquisition service is unavailable")
         rows = await self.list_available_games("")
@@ -408,6 +423,31 @@ class ConsoleUiBridge:
         if provider == "steam":
             appid = await self.consoled.call_resolve_steam_install(game_id)
             content_identity = f"steam:{appid}"
+            if platform not in {"windows", "linux"}:
+                raise ValueError("Choose a verified Steam platform before installation")
+            snapshot = await self.acquisition()
+            previous = next((item for item in snapshot.get("jobs", [])
+                             if item.get("provider") == "steam-aurelia"
+                             and item.get("content_identity") == f"steam-aurelia:{appid}"
+                             and item.get("operation") == "install"
+                             and item.get("state") == "failed"
+                             and not item.get("retired", False)), None)
+            if previous is not None:
+                selected_platform = (previous.get("origin_metadata") or {}).get("steam_platform")
+                if selected_platform != platform:
+                    raise ValueError("A previous Steam installation is bound to a different platform; retry or clear that job first")
+                error = previous.get("error") or {}
+                auth_recovered = (isinstance(error, dict)
+                                  and error.get("code") in {"authentication-required", "authentication-expired"})
+                if not previous.get("retryable", False) and not auth_recovered:
+                    raise ValueError("The previous Steam installation is not retryable")
+                job_id = await self.acquisitiond.call_retry_job(str(previous["job_id"]))
+            else:
+                job_id = await self.acquisitiond.call_submit_steam_install(
+                    str(appid), title, platform)
+            asyncio.create_task(self._refresh_after_acquisition(job_id, "steam-aurelia"))
+            self.launch_logs.note("Lulu", f"steam-aurelia install submitted app_id={appid} platform={platform} job_id={job_id}")
+            return {"token": str(job_id)}
         elif provider == "romm":
             rom_id = str(selected.get("provider_id", ""))
             if not rom_id.isdecimal() or int(rom_id) < 1:
@@ -1462,11 +1502,22 @@ class ApiHandler(BaseHTTPRequestHandler):
             except Exception as error:  # pragma: no cover - live IPC failure path
                 self._respond(409, {"error": str(error) or type(error).__name__})
             return
+        if path.startswith("/steam/platforms/"):
+            try:
+                game_id = unquote(path.removeprefix("/steam/platforms/"))
+                self._respond(200, self.bridge.call(
+                    self.bridge.steam_platform_options(game_id), timeout=35))
+            except Exception as error:
+                self._respond(409, {"error": str(error) or type(error).__name__})
+            return
         if path.startswith("/install/"):
             try:
                 game_id = unquote(path.removeprefix("/install/"))
+                length = int(self.headers.get("Content-Length", "0"))
+                payload = json.loads(self.rfile.read(length) or b"{}") if length else {}
                 self.bridge.launch_logs.start(game_id)
-                result = self.bridge.call(self.bridge.install_game(game_id), timeout=20)
+                result = self.bridge.call(self.bridge.install_game(
+                    game_id, payload.get("platform")), timeout=25)
                 self._respond(200, result)
             except Exception as error:
                 self.bridge.launch_logs.note("Lulu", f"HTTP install failed: {error}")

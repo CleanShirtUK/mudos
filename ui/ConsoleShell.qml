@@ -411,6 +411,10 @@ Window {
     property var storeHomeLandingRef: null
     property var libraryHomeLandingRef: null
     property string storeError: ""
+    property var steamPlatformChoiceGame: null
+    property string steamPlatformChoiceAppId: ""
+    property var steamPlatformChoices: []
+    property string steamPlatformChoiceError: ""
     property string message: ""
     property string interactionPrompt: ""
     property var credentialRequest: ({status: "idle"})
@@ -2790,9 +2794,43 @@ Window {
     function installGame(game) {
         if (!game || launchOverlayEffectiveVisible)
             return
+        if (String(game.provider) === "steam") {
+            steamPlatformChoiceGame = game
+            steamPlatformChoices = []
+            steamPlatformChoiceError = "Checking available Steam versions…"
+            steamPlatformChoiceDialog.open()
+            request("/steam/platforms/" + encodeURIComponent(String(game.game_id)), "POST", "", function(data) {
+                if (steamPlatformChoiceGame !== game)
+                    return
+                var choices = data && Array.isArray(data.platforms) ? data.platforms : []
+                steamPlatformChoiceAppId = String(data.app_id || "")
+                if (choices.length === 0) {
+                    steamPlatformChoiceError = "Aurelia could not verify an installable platform. No installation was submitted."
+                    return
+                }
+                steamPlatformChoices = choices
+                steamPlatformChoiceError = ""
+                if (choices.length === 1) {
+                    var selectedPlatform = String(choices[0])
+                    cancelSteamPlatformChoice()
+                    submitInstallGame(game, selectedPlatform)
+                    return
+                }
+                steamPlatformChoiceDialog.forceActiveFocus()
+            }, "Steam platform information is unavailable. No installation was submitted.", -1, function() {
+                steamPlatformChoiceError = "Steam platform information is unavailable. No installation was submitted."
+            })
+            return
+        }
+        submitInstallGame(game, "")
+    }
+
+    function submitInstallGame(game, platform) {
+        if (!game)
+            return
         console.log("INSTALLABLE_INSTALL_DISPATCH", "game", String(game.game_id),
                     "provider", String(game.provider), "provider_id", String(game.provider_id),
-                    "install_state", String(game.install_state),
+                    "platform", String(platform), "install_state", String(game.install_state),
                     "availability_state", String(game.availability_state))
         var generation = ++launchGeneration
         launchTitle = game.title
@@ -2810,11 +2848,28 @@ Window {
         launchStatus = "installing"
         launchStateRank = 1
         message = "Opening Steam install"
-        request("/install/" + encodeURIComponent(launchGameId), "POST", "", function(data) {
+        request("/install/" + encodeURIComponent(launchGameId), "POST",
+                platform ? JSON.stringify({platform: platform}) : "", function(data) {
             if (generation !== launchGeneration)
                 return
             refreshAcquisitionJobs()
         }, "Install failed", generation)
+    }
+
+    function cancelSteamPlatformChoice() {
+        steamPlatformChoiceDialog.close()
+        steamPlatformChoiceGame = null
+        steamPlatformChoiceAppId = ""
+        steamPlatformChoices = []
+        steamPlatformChoiceError = ""
+    }
+
+    function confirmSteamPlatformChoice(platform) {
+        var game = steamPlatformChoiceGame
+        if (!game || (platform !== "windows" && platform !== "linux"))
+            return
+        cancelSteamPlatformChoice()
+        submitInstallGame(game, platform)
     }
 
     function retryAcquisition(jobId) {
@@ -5537,6 +5592,99 @@ Window {
                 font.pixelSize: typography.size("hint", 13)
                 horizontalAlignment: Text.AlignHCenter
                 wrapMode: Text.Wrap
+            }
+        }
+    }
+
+    Popup {
+        id: steamPlatformChoiceDialog
+        parent: Overlay.overlay
+        anchors.centerIn: parent
+        width: Math.min(root.width * 0.78, 760 * root.uiScale)
+        height: Math.min(root.height * 0.76, 620 * root.uiScale)
+        modal: true
+        focus: true
+        closePolicy: Popup.NoAutoClose
+        z: 1000
+        Keys.onEscapePressed: root.cancelSteamPlatformChoice()
+        Keys.onBackPressed: root.cancelSteamPlatformChoice()
+        background: Rectangle {
+            radius: root.shellPalette.radius("panel", 18 * root.uiScale, root.uiScale)
+            color: root.shellPalette.panelSurface
+            border.color: root.shellPalette.focusIndicator
+            MudosChromeFrame { anchors.fill: parent; luluPalette: root.shellPalette; uiScale: root.uiScale; cornerRadius: parent.radius; raised: true }
+        }
+        contentItem: Column {
+            anchors.fill: parent
+            anchors.margins: 24 * root.uiScale
+            spacing: 16 * root.uiScale
+            Text {
+                width: parent.width
+                text: root.steamPlatformChoiceGame
+                      ? root.steamPlatformChoiceGame.title + " — Choose game version"
+                      : "Choose game version"
+                color: root.shellPalette.primaryText
+                font.family: typography.interfaceFamily
+                font.pixelSize: typography.size("heading", 25)
+                wrapMode: Text.Wrap
+            }
+            Text {
+                width: parent.width
+                text: root.steamPlatformChoiceError !== "" ? root.steamPlatformChoiceError
+                    : "Platform selection is saved with this installation. Existing game content is not changed."
+                color: root.shellPalette.secondaryText
+                font.family: typography.interfaceFamily
+                font.pixelSize: typography.size("body", 16)
+                wrapMode: Text.Wrap
+            }
+            Repeater {
+                model: root.steamPlatformChoices
+                delegate: Button {
+                    id: platformChoiceButton
+                    required property string modelData
+                    width: parent.width
+                    text: modelData === "windows" ? "Windows — Proton" : "Linux — Native"
+                    enabled: root.steamPlatformChoiceError === ""
+                    focus: index === 0
+                    font.family: typography.interfaceFamily
+                    font.pixelSize: typography.size("control", 19)
+                    palette.button: root.shellPalette.actionSurface
+                    palette.buttonText: root.shellPalette.actionText
+                    background: Rectangle {
+                        radius: root.shellPalette.radius("row", 8 * root.uiScale, root.uiScale)
+                        color: platformChoiceButton.activeFocus ? root.shellPalette.selectionSurface : root.shellPalette.actionSurface
+                        border.color: platformChoiceButton.activeFocus ? root.shellPalette.focusIndicator : root.shellPalette.glassBorder
+                    }
+                    contentItem: Text {
+                        text: platformChoiceButton.text
+                        color: platformChoiceButton.activeFocus ? root.shellPalette.selectedText : root.shellPalette.actionText
+                        font: platformChoiceButton.font
+                        horizontalAlignment: Text.AlignHCenter
+                        verticalAlignment: Text.AlignVCenter
+                    }
+                    onClicked: root.confirmSteamPlatformChoice(modelData)
+                }
+            }
+            Button {
+                id: cancelPlatformChoiceButton
+                width: parent.width
+                text: "Cancel"
+                focus: root.steamPlatformChoices.length === 0
+                font.family: typography.interfaceFamily
+                font.pixelSize: typography.size("control", 18)
+                background: Rectangle {
+                    radius: root.shellPalette.radius("row", 8 * root.uiScale, root.uiScale)
+                    color: cancelPlatformChoiceButton.activeFocus ? root.shellPalette.selectionSurface : root.shellPalette.actionSurface
+                    border.color: cancelPlatformChoiceButton.activeFocus ? root.shellPalette.focusIndicator : root.shellPalette.glassBorder
+                }
+                contentItem: Text {
+                    text: cancelPlatformChoiceButton.text
+                    color: cancelPlatformChoiceButton.activeFocus ? root.shellPalette.selectedText : root.shellPalette.actionText
+                    font: cancelPlatformChoiceButton.font
+                    horizontalAlignment: Text.AlignHCenter
+                    verticalAlignment: Text.AlignVCenter
+                }
+                onClicked: root.cancelSteamPlatformChoice()
             }
         }
     }

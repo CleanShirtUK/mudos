@@ -168,8 +168,9 @@ class ConsoleBridgeTests(unittest.TestCase):
                 def __init__(self): self.retried = None
                 async def call_get_snapshot(self):
                     return json.dumps({"jobs": [{
-                        "job_id": "old-failed-job", "provider": "steam",
-                        "content_identity": "steam:123", "state": "failed",
+                        "job_id": "old-failed-job", "provider": "steam-aurelia",
+                        "content_identity": "steam-aurelia:123", "operation": "install", "state": "failed",
+                        "origin_metadata": {"steam_platform": "windows"},
                         "retryable": False,
                         "error": {"code": "authentication-required"},
                     }]})
@@ -183,7 +184,7 @@ class ConsoleBridgeTests(unittest.TestCase):
             bridge.list_available_games = lambda _provider: asyncio.sleep(0, result=[{
                 "game_id": "steam:123", "provider": "steam", "title": "Fixture",
             }])
-            result = await bridge.install_game("steam:123")
+            result = await bridge.install_game("steam:123", "windows")
             await asyncio.sleep(0)
             self.assertEqual(result, {"token": "new-retry-job"})
             self.assertEqual(acquisition.retried, "old-failed-job")
@@ -199,13 +200,16 @@ class ConsoleBridgeTests(unittest.TestCase):
                 def __init__(self): self.submitted = None; self.retried = None
                 async def call_get_snapshot(self):
                     return json.dumps({"jobs": [{
-                        "job_id": "old-failed-job", "provider": "steam",
-                        "content_identity": "steam:2124490", "state": "failed",
+                        "job_id": "old-failed-job", "provider": "steam-aurelia",
+                        "content_identity": "steam-aurelia:2124490", "operation": "install", "state": "failed",
                         "retired": True, "retryable": False,
                         "error": {"code": "authentication-cancelled", "retryable": False},
                     }]})
                 async def call_submit_job(self, provider, identity, title):
                     self.submitted = (provider, identity, title)
+                    return "fresh-job"
+                async def call_submit_steam_install(self, app_id, title, platform):
+                    self.submitted = (app_id, title, platform)
                     return "fresh-job"
                 async def call_retry_job(self, job_id):
                     self.retried = job_id
@@ -217,10 +221,10 @@ class ConsoleBridgeTests(unittest.TestCase):
             bridge.list_available_games = lambda _provider: asyncio.sleep(0, result=[{
                 "game_id": "steam:2124490", "provider": "steam", "title": "Silent Hill 2",
             }])
-            result = await bridge.install_game("steam:2124490")
+            result = await bridge.install_game("steam:2124490", "windows")
             await asyncio.sleep(0)
             self.assertEqual(result, {"token": "fresh-job"})
-            self.assertEqual(acquisition.submitted, ("steam", "steam:2124490", "Silent Hill 2"))
+            self.assertEqual(acquisition.submitted, ("2124490", "Silent Hill 2", "windows"))
             self.assertIsNone(acquisition.retried)
 
         asyncio.run(exercise())

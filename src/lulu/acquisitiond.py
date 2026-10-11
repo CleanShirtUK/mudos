@@ -274,6 +274,48 @@ class AcquisitionInterface(ServiceInterface):
         return identity in {f"steam:{app_id}", f"steam-aurelia:{app_id}"}
 
     @method()
+    def SubmitSteamInstall(self, app_id: "s", title: "s", platform: "s") -> "s":
+        """Submit one Aurelia install with an explicit, durable platform choice."""
+        if not app_id.isdecimal() or int(app_id) < 1:
+            raise DBusError("org.lulu.Acquisition.Error.InvalidIdentity", "Steam AppID is invalid")
+        if platform not in {"windows", "linux"}:
+            raise DBusError("org.lulu.Acquisition.Error.InvalidPlatform",
+                            "Steam platform must be explicitly windows or linux")
+        executor = self.manager.executors.get("steam-aurelia")
+        if executor is None or not getattr(getattr(executor, "capabilities", None), "acquisition_progress", False):
+            raise DBusError("org.lulu.Acquisition.Error.Unsupported", "Aurelia installation is unavailable")
+        identity = f"steam-aurelia:{app_id}"
+        active = {JobState.QUEUED, JobState.STARTING, JobState.TRANSFERRING,
+                  JobState.FINALIZING, JobState.PAUSED, JobState.PAUSING,
+                  JobState.RESUMING, JobState.CANCELLING}
+        existing = next((job for job in self.manager.snapshot()
+                         if job.provider == "steam-aurelia" and job.content_identity == identity
+                         and job.operation is JobOperation.INSTALL and job.state in active), None)
+        if existing is not None:
+            if existing.origin_metadata.get("steam_platform") != platform:
+                raise DBusError("org.lulu.Acquisition.Error.Conflict",
+                                "A Steam install for this AppID is already active with a different platform")
+            return existing.job_id
+        conflict = next((job for job in self.manager.snapshot()
+                         if job.provider == "steam-aurelia" and job.content_identity == identity
+                         and job.operation in {JobOperation.UPDATE, JobOperation.REMOVE}
+                         and job.state in active), None)
+        if conflict:
+            raise DBusError("org.lulu.Acquisition.Error.Conflict",
+                            f"A Steam {conflict.operation.value} job is already active for this game")
+        try:
+            return self.manager.submit(
+                "steam-aurelia", identity, title.strip() or app_id,
+                operation=JobOperation.INSTALL, provider_job_id=app_id,
+                cancellation_supported=True, pause_supported=False,
+                origin="steam-platform-install",
+                origin_metadata={"steam_platform": platform,
+                                 "platform_selection_source": "user"},
+            ).job_id
+        except ValueError as error:
+            raise DBusError("org.lulu.Acquisition.Error.Conflict", str(error)) from error
+
+    @method()
     async def SubmitSteamUpdate(self, app_id: "s", title: "s", intent: "s") -> "s":
         """Submit/deduplicate an Aurelia update, storing intent for recovery only."""
         if not app_id.isdecimal() or int(app_id) < 1:
@@ -288,8 +330,18 @@ class AcquisitionInterface(ServiceInterface):
         if executor is None or not getattr(capabilities, "updates", False):
             raise DBusError("org.lulu.Acquisition.Error.Unsupported", "Aurelia updates are unavailable")
         identity = f"steam-aurelia:{app_id}"
+        try:
+            availability = await executor.client.update_availability(app_id, force=True)
+        except Exception as error:
+            raise DBusError("org.lulu.Acquisition.Error.PlatformUnknown",
+                            f"Aurelia could not verify this game's installed platform: {error}") from error
+        platform = availability.get("platform")
+        if platform not in {"windows", "linux"}:
+            raise DBusError("org.lulu.Acquisition.Error.PlatformUnknown",
+                            "Aurelia did not identify the installed Steam platform")
         metadata = {"launch_intent": intent, "launch_policy": "ephemeral-only"
-                    if intent == "update-launch" else "background-only"}
+                    if intent == "update-launch" else "background-only",
+                    "steam_platform": platform}
         active_states = {JobState.QUEUED, JobState.STARTING, JobState.TRANSFERRING,
                          JobState.FINALIZING, JobState.PAUSED, JobState.PAUSING,
                          JobState.RESUMING, JobState.CANCELLING}
@@ -309,6 +361,10 @@ class AcquisitionInterface(ServiceInterface):
         try:
             if existing is not None:
                 merged = dict(existing.origin_metadata)
+                if merged.get("steam_platform") in {"windows", "linux"} and merged.get("steam_platform") != platform:
+                    raise DBusError("org.lulu.Acquisition.Error.Conflict",
+                                    "The active update job is bound to a different installed platform")
+                merged["steam_platform"] = platform
                 # A background request always revokes any unconsumed continuation.
                 if intent == "background":
                     merged.update(metadata)

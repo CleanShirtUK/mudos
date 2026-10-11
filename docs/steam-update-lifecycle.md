@@ -1,6 +1,35 @@
 # Aurelia Steam update lifecycle
 
-**Status: implemented and deployed; physical acceptance pending.**
+**Status: update lifecycle baseline deployed; platform-aware adapter changes are
+source-only and pending Aurelia contract integration; physical acceptance
+pending.**
+
+## Platform-selection and provider-contract work (source-only)
+
+Steam installation selection is now explicit in Mudos source. The Installable
+surface asks Aurelia for depots with explicit OS metadata, offers only verified
+Windows/Linux choices, skips the chooser for one verified option, and creates no
+job for Cancel or unknown metadata. Acquisitiond persists the selected platform
+in the provider-owned job, rejects conflicting active submissions, and allows
+retry only when the saved platform matches. Aurelia installation receives
+`--platform windows|linux`; install reconciliation rejects an unknown or
+mismatched installed platform. Existing installations are not migrated.
+
+The Mudos update adapter has been changed to require an Aurelia per-AppID
+`platform-state` response containing installed and target depot→manifest maps.
+It rejects unknown/conflicting state and only completes an update when Aurelia
+reports `current` after execution. Update intent semantics are preserved:
+background work remains background-only, including on recovery.
+
+This adapter change is deliberately not activated: production Aurelia 0.1.38
+does not expose `platform-state`. A separate Aurelia source branch contains a
+candidate contract with explicit platform persistence, strict platform
+selection, installed-platform mapping from appmanifest depots, target manifests,
+and pre/post-update convergence checks. It passes compile and focused unit
+tests, but has not been integrated, released, or activated. The candidate source
+is based on the public v0.1.38 tag, and no writable upstream fork was available
+or contribution PR created. Mudos' production check/update path therefore must
+remain unchanged until that contract is reviewed and supplied by Aurelia.
 
 ## Provider contract observed
 
@@ -12,7 +41,7 @@ read-only and performs remote manifest checks; ordinary installed catalogue
 checks and caches the result for 90 seconds; check failure is `unknown`, never
 `current`, and the command has a 25-second bound.
 
-For execution Aurelia is the only update authority. The job is persisted by
+For the deployed baseline, Aurelia is the only update authority. The job is persisted by
 Acquisitiond as `JobOperation.UPDATE`, keyed by `steam-aurelia:<AppID>`, and
 deduplicated against active update jobs by AppID. Active install/remove
 conflicts are rejected. The executor checks the Sessiond-owned current game,
@@ -55,6 +84,9 @@ return-to-Home behavior, and that background completion leaves the game
 unlaunched. Do not use Get To Work or the five titles awaiting launch-path review
 as update fixtures. Do not deploy during gameplay or another important update.
 
-Automated source validation and QML parsing passed for the implementation. The
-canonical release is activated, but the target-device/controller acceptance
-sequence above remains pending.
+Automated source validation and QML parsing passed for the deployed baseline.
+The new source-only platform work has focused Python, QML syntax/lint, Aurelia
+compile, and platform-selection unit-test coverage. No production Aurelia binary
+was replaced and no deployment was performed for this milestone. Target-device
+controller acceptance remains pending; online deployment also remains blocked
+on a fail-closed Sessiond/Acquisitiond idle guard under `RELEASE-SAFETY-001`.

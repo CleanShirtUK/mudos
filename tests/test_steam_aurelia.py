@@ -152,27 +152,54 @@ class AureliaClientTests(unittest.IsolatedAsyncioTestCase):
             await client.command("libraries")
         self.assertEqual(caught.exception.code, "library-path-mismatch")
 
-    async def test_update_availability_is_read_only_cached_and_app_id_scoped(self):
+    async def test_update_availability_uses_platform_depot_state_for_app_id(self):
         calls = []
         def run(argv, **_kwargs):
             calls.append(tuple(argv))
-            return 0, json.dumps({"pinned": [], "updates": [
-                {"app_id": 48000, "name": "LIMBO"},
-            ]}), ""
+            app_id = argv[-1]
+            return 0, json.dumps({"app_id": app_id,
+                "status": "update-available" if app_id == "48000" else "current",
+                "platform": "windows", "branch": "public", "pinned": False,
+                "installed_depots": {"48001": "1"}, "target_depots": {"48001": "2"}}), ""
         client = AureliaClient("fake", Path(tempfile.mkdtemp()), run=run)
         available = await client.update_availability("48000")
         current = await client.update_availability("2706170")
         self.assertTrue(available["available"])
         self.assertFalse(current["available"])
-        self.assertEqual(available["source"], "aurelia-remote-manifests")
-        self.assertEqual(len(calls), 1)
-        self.assertEqual(calls[0][-1], "update")
+        self.assertEqual(available["source"], "aurelia-platform-depot-state")
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(calls[0][-2:], ("platform-state", "48000"))
 
     async def test_update_availability_does_not_turn_remote_failure_into_current(self):
         client = AureliaClient("fake", Path(tempfile.mkdtemp()),
                                run=lambda *_a, **_k: (75, "", ""))
         with self.assertRaises(AureliaError):
             await client.update_availability("48000")
+
+    async def test_available_platforms_requires_explicit_depot_os_metadata(self):
+        client = AureliaClient(run=lambda _argv, **_kwargs: (0, json.dumps({"app_id": 1, "depots": [
+            {"id": 10, "config": "os: windows"},
+            {"id": 11, "config": "os: linux, lang: english"},
+            {"id": 12, "config": {}},
+        ]}), ""))
+        self.assertEqual(await client.available_platforms("1"), ("windows", "linux"))
+        unknown = AureliaClient(run=lambda _argv, **_kwargs: (0, json.dumps({"depots": [
+            {"id": 12, "config": {}}
+        ]}), ""))
+        self.assertEqual(await unknown.available_platforms("1"), ())
+
+    async def test_platform_state_requires_both_depot_maps_and_known_status(self):
+        valid = AureliaClient(run=lambda *_a, **_k: (0, json.dumps({
+            "status": "platform-conflict", "platform": "linux",
+            "installed_depots": {"10": "1"}, "target_depots": {"11": "2"},
+        }), ""))
+        state = await valid.platform_state("1")
+        self.assertEqual(state["status"], "platform-conflict")
+        incomplete = AureliaClient(run=lambda *_a, **_k: (0, json.dumps({
+            "status": "current", "installed_depots": {"10": "1"},
+        }), ""))
+        with self.assertRaisesRegex(AureliaError, "depot-manifest evidence"):
+            await incomplete.platform_state("1")
 
 
 class AureliaAcquisitionTests(unittest.IsolatedAsyncioTestCase):
@@ -184,8 +211,11 @@ class AureliaAcquisitionTests(unittest.IsolatedAsyncioTestCase):
                 return []
             async def update_availability(self, _app_id, *, force=False):
                 self.checks += 1
-                return {"available": self.checks == 1, "pinned": False}
+                return {"available": self.checks == 1, "pinned": False, "platform": "windows"}
             async def update(self, _app_id): self.updates += 1
+            async def platform_state(self, _app_id):
+                return {"status": "current", "platform": "windows",
+                        "installed_depots": {"48001": "2"}, "target_depots": {"48001": "2"}}
             async def installed_games(self):
                 return (AureliaInstalledGame(PROVIDER_ID, "48000", "LIMBO", True,
                                              "/steam/common/Limbo", "windows", False),)
@@ -211,7 +241,7 @@ class AureliaAcquisitionTests(unittest.IsolatedAsyncioTestCase):
             updates = 0
             async def command(self, *_args, **_kwargs): return []
             async def update_availability(self, _app_id, *, force=False):
-                return {"available": True, "pinned": False}
+                return {"available": True, "pinned": False, "platform": "windows"}
             async def update(self, _app_id): self.updates += 1
         client = Client()
         executor = AureliaAcquisitionExecutor(client)
@@ -286,7 +316,8 @@ class AureliaAcquisitionTests(unittest.IsolatedAsyncioTestCase):
     async def test_executor_maps_success_and_failure(self):
         class Client:
             async def command(self, *_args): return []
-            async def install_events(self, _app_id):
+            async def install_events(self, _app_id, platform):
+                self.platform = platform
                 yield {"event": "progress", "state": "downloading",
                        "bytes_downloaded": 2, "total_bytes": 4, "percent": 50,
                        "speed_bps": 12, "eta_seconds": 1}
@@ -302,9 +333,12 @@ class AureliaAcquisitionTests(unittest.IsolatedAsyncioTestCase):
             async def metadata(self, **kw): self.events.append(("metadata", kw))
 
         reporter = Reporter()
-        executor = AureliaAcquisitionExecutor(Client())
-        job = DownloadJob("job", PROVIDER_ID, "Example", content_identity="steam-aurelia:123")
+        client = Client()
+        executor = AureliaAcquisitionExecutor(client)
+        job = DownloadJob("job", PROVIDER_ID, "Example", content_identity="steam-aurelia:123",
+                          origin_metadata={"steam_platform": "windows"})
         await executor.run(job, reporter)
+        self.assertEqual(client.platform, "windows")
         self.assertIn(("state", JobState.COMPLETED, {"stage": "completed"}), reporter.events)
         progress = next(event for event in reporter.events if event[0] == "progress")
         self.assertEqual(progress[2]["downloaded_bytes"], 2)
@@ -320,7 +354,7 @@ class AureliaAcquisitionTests(unittest.IsolatedAsyncioTestCase):
         class Client:
             async def command(self, *_args):
                 return []
-            async def install_events(self, _app_id):
+            async def install_events(self, _app_id, _platform):
                 yield {"event": "progress", "state": "downloading",
                        "bytes_downloaded": 90, "total_bytes": 100,
                        "percent": 90.0, "speed_bps": 40, "eta_seconds": 1,
@@ -337,12 +371,13 @@ class AureliaAcquisitionTests(unittest.IsolatedAsyncioTestCase):
             manager = JobManager(store=store)
             manager.register_executor(PROVIDER_ID, AureliaAcquisitionExecutor(Client()))
             job = manager.submit(PROVIDER_ID, "steam-aurelia:123", "Example",
-                                 provider_job_id="123", cancellation_supported=True)
+                                 provider_job_id="123", cancellation_supported=True,
+                                 origin_metadata={"steam_platform": "windows"})
             task = manager._tasks[job.job_id]
             await task
             restored_store = AcquisitionStore(database)
             (restored,) = [item for item in restored_store.load() if item.job_id == job.job_id]
-            self.assertEqual(restored.state, JobState.COMPLETED)
+            self.assertEqual(restored.state, JobState.COMPLETED, str(restored.error))
             self.assertEqual(restored.provider_job_id, "123")
             self.assertEqual(restored.backend, "aurelia")
             self.assertEqual(restored.provider_state, "installed")

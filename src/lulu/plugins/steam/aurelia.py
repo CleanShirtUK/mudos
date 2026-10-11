@@ -341,12 +341,52 @@ class AureliaClient:
             ))
         return tuple(result)
 
-    async def install_events(self, app_id: str):
+    async def available_platforms(self, app_id: str) -> tuple[str, ...]:
+        """Return platforms explicitly represented in Aurelia depot metadata.
+
+        Store-facing OS support is deliberately not used here: only depots with
+        an explicit ``config.oslist`` are considered verified acquisition
+        choices. An empty result means unknown, not Linux or Windows by default.
+        """
+        if not app_id.isdecimal() or int(app_id) < 1:
+            raise AureliaError("invalid-app-id", "Steam AppID is invalid")
+        value = await self.command("depots", app_id)
+        if not isinstance(value, dict) or not isinstance(value.get("depots"), list):
+            raise AureliaError("malformed-output", "Aurelia depot metadata was not an array")
+        found: set[str] = set()
+        for depot in value["depots"]:
+            if not isinstance(depot, dict) or not str(depot.get("id", "")).isdecimal():
+                continue
+            config = depot.get("config")
+            if isinstance(config, dict):
+                oslist = config.get("oslist")
+            elif isinstance(config, str):
+                # Aurelia 0.1.38's stable `depots --json` representation is
+                # `"os: windows, lang: ..."`; newer contracts may provide the
+                # underlying structured OS list.
+                oslist = next((part.split(":", 1)[1].strip()
+                               for part in config.split(",")
+                               if part.strip().casefold().startswith("os:")), None)
+            else:
+                oslist = None
+            if not isinstance(oslist, str):
+                continue
+            normalized = {part.strip().casefold() for part in oslist.split(",")}
+            if "windows" in normalized:
+                found.add("windows")
+            if "linux" in normalized:
+                found.add("linux")
+        return tuple(platform for platform in ("windows", "linux") if platform in found)
+
+    async def install_events(self, app_id: str, platform: str):
         if not self.available:
             raise AureliaError("unavailable", "Aurelia executable is unavailable", retryable=True)
+        if platform not in {"windows", "linux"}:
+            raise AureliaError("unknown-platform", "Aurelia install requires an explicit verified platform")
         self._ensure_config_dir()
         process = await asyncio.create_subprocess_exec(
-            self.executable, "--json", "install", app_id, env=self._environment(),
+            self.executable, "--json", "install", app_id, "--platform", platform,
+            env=self._environment(),
             stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
         assert process.stderr is not None
         try:
@@ -416,6 +456,21 @@ class AureliaClient:
         # terminal result only; keep it alive until Aurelia confirms its outcome.
         return await self.command("update", app_id, timeout=8 * 60 * 60)
 
+    async def platform_state(self, app_id: str) -> dict[str, Any]:
+        if not app_id.isdecimal() or int(app_id) < 1:
+            raise AureliaError("invalid-app-id", "Steam platform-state requires a positive AppID")
+        value = await self.command("platform-state", app_id, timeout=35.0)
+        if not isinstance(value, dict) or str(value.get("status", "")) not in {
+                "current", "update-available", "platform-conflict", "platform-unknown",
+                "target-unverifiable"}:
+            raise AureliaError("malformed-platform-state",
+                               "Aurelia returned no verifiable installed/target platform state", retryable=True)
+        for key in ("installed_depots", "target_depots"):
+            if not isinstance(value.get(key), dict):
+                raise AureliaError("malformed-platform-state",
+                                   "Aurelia platform-state omitted depot-manifest evidence", retryable=True)
+        return value
+
     async def update_availability(self, app_id: str, *, force: bool = False,
                                   cache_seconds: float = 90.0) -> dict[str, Any]:
         """Read Aurelia's current remote-manifest comparison without starting an update.
@@ -427,35 +482,16 @@ class AureliaClient:
         """
         if not app_id.isdecimal() or int(app_id) < 1:
             raise AureliaError("invalid-app-id", "Steam update check requires a positive AppID")
-        now = time.monotonic()
-        cached = self._update_cache
-        async with self._update_lock:
-            now = time.monotonic()
-            cached = self._update_cache
-            if force or cached is None or now - cached[0] >= cache_seconds:
-                value = await self.command("update", timeout=25.0)
-                if not isinstance(value, dict) or not isinstance(value.get("updates"), list):
-                    raise AureliaError("malformed-update-status",
-                                       "Aurelia returned an invalid update availability report", retryable=True)
-                updates: dict[str, dict[str, Any]] = {}
-                for row in value["updates"]:
-                    if isinstance(row, dict) and str(row.get("app_id", "")).isdecimal():
-                        updates[str(row["app_id"])] = row
-                pinned = value.get("pinned", [])
-                if not isinstance(pinned, list):
-                    pinned = []
-                cached = (time.monotonic(), {"updates": updates, "pinned": pinned,
-                                             "checked_at": time.time()})
-                self._update_cache = cached
-            data = cached[1]
-            return {
-                "app_id": app_id,
-                "available": app_id in data["updates"],
-                "pinned": any(isinstance(row, dict) and str(row.get("app_id", "")) == app_id
-                               for row in data["pinned"]),
-                "checked_at": data["checked_at"],
-                "source": "aurelia-remote-manifests",
-            }
+        state = await self.platform_state(app_id)
+        status = str(state["status"])
+        if status not in {"current", "update-available"}:
+            code = "platform-conflict" if status == "platform-conflict" else "platform-unknown"
+            raise AureliaError(code, f"Aurelia cannot safely check updates ({status})", retryable=False)
+        return {"app_id": app_id, "available": status == "update-available",
+                "pinned": bool(state.get("pinned", False)), "platform": state.get("platform"),
+                "branch": state.get("branch"), "installed_depots": state["installed_depots"],
+                "target_depots": state["target_depots"], "checked_at": time.time(),
+                "source": "aurelia-platform-depot-state"}
 
     async def dlc(self, app_id: str) -> Any:
         return await self.command("dlc", app_id)
@@ -672,6 +708,13 @@ class AureliaAcquisitionExecutor:
             await self._update(app_id, job, reporter)
             return
         service_recovery = job.recovery_reason == "service-restart"
+        selected_platform = job.origin_metadata.get("steam_platform")
+        if selected_platform not in {"windows", "linux"}:
+            raise JobExecutionError(
+                "steam-platform-unknown",
+                "This Steam installation job has no persisted, verified platform selection.",
+                retryable=False,
+            )
         self._active[job.job_id] = app_id
         last_downloaded: int | None = job.downloaded_bytes
         last_total: int | None = job.total_bytes
@@ -711,7 +754,8 @@ class AureliaAcquisitionExecutor:
                 if isinstance(installed_rows, list) and any(
                         isinstance(item, dict) and str(item.get("app_id")) == app_id
                         for item in installed_rows):
-                    await self._record_installed_metadata(app_id, reporter)
+                    await self._record_installed_metadata(app_id, reporter,
+                                                         expected_platform=str(selected_platform))
                     await reporter.state(JobState.FINALIZING, stage="aurelia-recovered-finalizing")
                     await reporter.progress(1.0, downloaded_bytes=last_downloaded,
                                             total_bytes=last_total,
@@ -733,7 +777,8 @@ class AureliaAcquisitionExecutor:
                 game = next((item for item in installed
                              if item.app_id == app_id and item.installed), None)
                 if game is not None:
-                    await self._record_installed_metadata(app_id, reporter)
+                    await self._record_installed_metadata(app_id, reporter,
+                                                         expected_platform=str(selected_platform))
                     await reporter.state(JobState.FINALIZING, stage="aurelia-recovered-finalizing")
                     await reporter.progress(1.0, downloaded_bytes=last_downloaded,
                                             total_bytes=last_total,
@@ -745,7 +790,7 @@ class AureliaAcquisitionExecutor:
                     "Aurelia no longer reports the interrupted install and the title is not installed; refusing to resubmit automatically.",
                     retryable=False,
                 )
-            async for event in self.client.install_events(app_id):
+            async for event in self.client.install_events(app_id, str(selected_platform)):
                 value = map_progress(event)
                 state = str(event.get("state", "")).lower()
                 if state in {"queued", "downloading", "verifying", "moving"}:
@@ -768,7 +813,8 @@ class AureliaAcquisitionExecutor:
                 elif state == "cancelled":
                     raise JobCancelled()
             await reporter.state(JobState.FINALIZING, stage="aurelia-finalizing")
-            await self._record_installed_metadata(app_id, reporter)
+            await self._record_installed_metadata(app_id, reporter,
+                                                 expected_platform=str(selected_platform))
             await reporter.progress(1.0, downloaded_bytes=last_downloaded,
                                     total_bytes=last_total, stage="aurelia-finalizing")
             await reporter.state(JobState.COMPLETED, stage="completed")
@@ -820,6 +866,7 @@ class AureliaAcquisitionExecutor:
                                 provider_state="checking-update")
         await reporter.state(JobState.STARTING, stage="aurelia-update-check")
         try:
+            selected_platform = job.origin_metadata.get("steam_platform")
             live = await self.client.command("install", "list", timeout=15.0)
             if isinstance(live, list) and any(
                     isinstance(row, dict) and str(row.get("app_id")) == app_id for row in live):
@@ -844,19 +891,23 @@ class AureliaAcquisitionExecutor:
                                             "Aurelia's recovered update did not finish in time.",
                                             retryable=True)
                 availability = await self.client.update_availability(app_id, force=True)
+                selected_platform = await self._bind_update_platform(
+                    selected_platform, availability, reporter, job.origin_metadata)
                 await self._confirm_updated(app_id, availability, reporter)
                 return
 
             availability = await self.client.update_availability(app_id, force=True)
+            selected_platform = await self._bind_update_platform(
+                selected_platform, availability, reporter, job.origin_metadata)
             if not availability["available"]:
                 # A recovered operation may have completed before Acquisitiond
                 # restarted. If it is still available, fail closed below.
                 if job.recovery_reason == "service-restart":
                     await self._confirm_updated(app_id, availability, reporter)
                     return
-                # User confirmation can race with another client completing it.
-                await reporter.state(JobState.FINALIZING, stage="aurelia-update-already-current")
-                await reporter.state(JobState.COMPLETED, stage="completed")
+                # User confirmation can race with another client completing it;
+                # still require the provider's installed/target depot proof.
+                await self._confirm_updated(app_id, availability, reporter)
                 return
             if job.recovery_reason == "service-restart":
                 raise JobExecutionError(
@@ -901,6 +952,8 @@ class AureliaAcquisitionExecutor:
             await update_task
             await reporter.state(JobState.FINALIZING, stage="aurelia-update-verifying")
             verified = await self.client.update_availability(app_id, force=True)
+            await self._bind_update_platform(selected_platform, verified, reporter,
+                                             job.origin_metadata)
             await self._confirm_updated(app_id, verified, reporter)
         except JobExecutionError:
             raise
@@ -912,7 +965,26 @@ class AureliaAcquisitionExecutor:
                                     # A timed-out CLI may have left the daemon
                                     # operation running. Do not offer Retry and
                                     # risk a duplicate depot operation.
-                                    retryable=False if error.code == "timeout" else error.retryable) from error
+                                     retryable=False if error.code == "timeout" else error.retryable) from error
+
+    @staticmethod
+    async def _bind_update_platform(selected_platform: object, availability: dict[str, Any],
+                                    reporter: JobReporter,
+                                    origin_metadata: dict[str, object]) -> str:
+        actual = availability.get("platform")
+        if actual not in {"windows", "linux"}:
+            raise JobExecutionError("steam-update-platform-unknown",
+                                    "Aurelia cannot identify the installed platform for this update.",
+                                    retryable=False)
+        if selected_platform in {"windows", "linux"} and selected_platform != actual:
+            raise JobExecutionError("steam-update-platform-conflict",
+                                    "The update platform differs from this job's persisted installation platform.",
+                                    retryable=False)
+        if selected_platform is None:
+            merged = dict(origin_metadata)
+            merged["steam_platform"] = actual
+            await reporter.metadata(origin_metadata=merged)
+        return str(actual)
 
     async def _confirm_updated(self, app_id: str, availability: dict[str, Any],
                                reporter: JobReporter) -> None:
@@ -925,6 +997,13 @@ class AureliaAcquisitionExecutor:
         if game is None:
             raise JobExecutionError("aurelia-update-install-missing",
                                     "Aurelia no longer confirms this game is installed.", retryable=False)
+        state = await self.client.platform_state(app_id)
+        if state.get("status") != "current":
+            raise JobExecutionError(
+                "aurelia-update-unverifiable",
+                f"Aurelia did not prove depot convergence for the selected platform ({state.get('status', 'unknown')}).",
+                retryable=False,
+            )
         await reporter.metadata(provider_state="updated", backend="aurelia",
                                 destination=game.install_path,
                                 completion_path=game.install_path)
@@ -932,8 +1011,9 @@ class AureliaAcquisitionExecutor:
         await reporter.state(JobState.FINALIZING, stage="aurelia-update-verified")
         await reporter.state(JobState.COMPLETED, stage="completed")
 
-    async def _record_installed_metadata(self, app_id: str, reporter: JobReporter) -> None:
-        """Persist only an install path Aurelia itself reports after installation."""
+    async def _record_installed_metadata(self, app_id: str, reporter: JobReporter,
+                                         *, expected_platform: str | None = None) -> None:
+        """Persist Aurelia's install path and reject a known platform mismatch."""
         metadata: dict[str, object] = {
             "provider_job_id": app_id,
             "backend": "aurelia",
@@ -944,6 +1024,20 @@ class AureliaAcquisitionExecutor:
         except AureliaError:
             games = ()
         game = next((item for item in games if item.app_id == app_id and item.installed), None)
+        if expected_platform is not None:
+            actual = game.platform.casefold() if game and isinstance(game.platform, str) else ""
+            if actual not in {"windows", "linux"}:
+                raise JobExecutionError(
+                    "steam-installed-platform-unknown",
+                    "Aurelia cannot verify the installed platform; this installation was not confirmed.",
+                    retryable=False,
+                )
+            if actual != expected_platform:
+                raise JobExecutionError(
+                    "steam-installed-platform-mismatch",
+                    f"Aurelia reports {actual} content but this job selected {expected_platform}; no platform switch was accepted.",
+                    retryable=False,
+                )
         if game is not None and game.install_path:
             metadata["destination"] = game.install_path
             metadata["completion_path"] = game.install_path
