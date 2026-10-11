@@ -10,107 +10,136 @@ evidence and this reconciliation rationale are in
 
 ## Active defects
 
+### RELEASE-SAFETY-001 — Deployment idle-check failure did not block activation
+
+**Status: OPEN · P1 · OPERATIONAL SAFETY.** On 2026-10-11, a shell
+deployment command attempted to query Sessiond through `/run/user/958/bus`
+from a root process. That root-context connection failed (`Broken pipe` /
+`Transport endpoint is not connected`); the same read-only GetState call
+succeeds as user `lulu` with `XDG_RUNTIME_DIR=/run/user/958`. The multiline
+shell continued to `release.py activate` and restart Sessiond because it had
+no fail-fast handling or explicit conditional. Activation and restart therefore
+occurred despite the failed idle precondition. Post-action checks found Home
+ready, no active game identity, zero active Acquisitiond jobs, and an
+authenticated Steam runtime. No game/update was observed interrupted. The
+failure was in the deployment orchestration, not a check inside the generic
+release builder: `release.py activate` verifies the immutable release and
+atomically switches the selector, but intentionally has no session-idle policy.
+
+- **Next:** introduce/standardize one online-deployment orchestrator that runs
+  the Sessiond and Acquisitiond checks in the appliance user's D-Bus context,
+  parses and validates the response, rejects unavailable/malformed/unknown
+  state, and uses checked subprocess calls so activation and restart cannot run
+  after any failed guard. Re-check immediately before activation and verify the
+  selected release and restarted services afterward. Make precondition failures
+  leave the selector unchanged. Record the deployment result.
+- **Preserve legitimate workflows:** keep canonical `release.py activate` as
+  the low-level atomic selector operation for intentional offline/bootstrap and
+  rollback workflows; do not add an unconditional Sessiond requirement that
+  would prevent first install or recovery when services are stopped. Route
+  online appliance deployment through the guarded orchestrator; retain the
+  existing `install_mudos.py --update` shell-lifecycle guard and test its
+  restart/rollback path separately. Do not deploy merely to test a failed guard.
+- **Accept:** deterministic tests cover bus transport failure, malformed state,
+  non-shell lifecycle, active game identity, active Acquisitiond job, and happy
+  online deployment; every rejected case proves activation/restart was not
+  invoked. Separate offline activation and rollback tests continue to pass.
+
 ### STEAM-UPDATES-002 — Update in Background leaves a black screen
 
-**Status: FIX IMPLEMENTED · P1 · PHYSICAL RE-ACCEPTANCE REQUIRED.** The
-operator reported a black screen when choosing **Update in Background**.
-Source tracing confirms a UI lifecycle defect: Library launch choreography
-sets Home opacity to zero and completes the content exit before presenting
-the update choice. Dismissing that choice used to leave Home hidden and never
-request a PresentationCoordinator entrance. The same omission existed on
-**Continue in Background** from Update & Launch. Sessiond was at shell,
-presentation-ready, with Gamescope still owning the shell; no evidence points
-to a Sessiond/Gamescope ownership failure. A non-destructive Home restoration
-path now clears pending launch/handoff state, restores Home opacity and focus,
-and starts the normal presentation entrance for both background routes.
-Automated regression coverage is added; physical validation has not yet run.
+**Status: FIX DEPLOYED · PHYSICAL RE-ACCEPTANCE REQUIRED.** The Home-return
+correction is active in
+`/opt/lulu/releases/af4ad04-candidate-20261011040541`. Root cause and corrected
+path are documented below. Do not run a real update solely for validation.
 
-- **Accept:** verify both background routes from Home, Library and Recents;
-  Home becomes fully visible and controller-navigable, the update continues
-  as an Acquisitiond job, and completion never automatically launches the
-  game. No black screen, stale launch token or lost focus on return, including
-  after errors/restarts.
+- **Accept:** non-destructively verify direct Background and Continue in
+  Background paths from Home, Library, and Recents using a synthetic update
+  job/fixture. Home must return fully visible and controller-navigable, the
+  fixture job must continue, and no launch intent may survive completion,
+  errors, or shell restart. Physical UI acceptance remains operator-owned.
 
 ### STEAM-UPDATES-003 — Update offered again after a reported completion
 
-**Status: OPEN · P1 · PHYSICALLY REPORTED (2026-10-11).** After
-updating LIMBO, the operator reports that **subsequent game launches**
-seem to trigger an update each time. Read-only job history now shows
-completed UPDATE submissions for both LIMBO and Trackmania, but it is not
-known whether content is actually updated repeatedly or Mudos is re-offering
-updates because of stale/incorrect status. Do not presume successful remote
-depot convergence from a terminal job alone.
+**Status: OPEN · P1 · DEPOT/PLATFORM MISMATCH CONFIRMED; EXECUTION ROOT CAUSE
+UNDER INVESTIGATION.** The earlier reports are no longer adequately explained
+as simply a stale Mudos cache or repeat prompts: Steam's current LIMBO depot
+configuration and the installed appmanifest select different depots.
 
-- **Investigate:** first establish which Steam titles are affected without
-  starting fresh update jobs. Correlate each game launch and job ID with
-  persisted Acquisitiond operation/result, the exact Aurelia `update`
-  status report before/after, `update_availability` cache and forced refresh,
-  appmanifest/build/depot metadata, `pinned` state, and Mudos
-  post-update catalogue reconciliation. Distinguish duplicate jobs,
-  repeat prompts and an actual unchanged/failed upstream update.
-- **Evidence (read-only, 2026-10-11):** persisted Acquisitiond history has
-  three LIMBO UPDATE jobs (`job-75f371a7eb91446e93260b95184017ac`,
-  `job-dfb3a7a8f65d4f3db609fe3a159b13aa`,
-  `job-deea62c3c56644e3b57c4435e3d0cf07`), each terminal `completed`,
-  `provider_state=updated`, and no recorded error. The legacy acquisition job
-  predates these updates. Aurelia's current raw `aurelia --json update` lists
-  LIMBO only; live Mudos checks report LIMBO `available`, while Trackmania
-  (2225070) and Dead by Daylight (381210) report `current`. Trackmania has two
-  completed UPDATE records (`job-e11163d51c084c5f88fbbd910f038a4b` and
-  `job-9124771903df4aedb08a4cd3e3ecffba`) and currently reports `current`.
-  This establishes repeated submissions across more than one title, but does
-  not establish that either title's bytes were re-downloaded on every launch.
-  Aurelia's raw report agrees with the live LIMBO availability, so this is not
-  only a Mudos cached result. The fresh LIMBO `available` report conflicts
-  with the successful LIMBO job records and their force-refresh verification path;
-  actual content/version convergence is unproven. LIMBO's manifest says
-  buildid and TargetBuildID are both `18220724`, `BytesDownloaded=0`,
-  `StagingSize=0`; installed depots 48001/48002 are recorded, but no pre-update
-  depot baseline exists. No further update was started. Cause remains open;
-  current evidence does not establish duplicate submission versus Aurelia
-  manifest behavior or changed content. A common repeated-submission symptom
-  spans LIMBO and Trackmania; a shared underlying cause is not demonstrated.
-- **Accept:** confirmed-current games launch without an update prompt;
-  an available update submits at most one real job per version/AppID;
-  successful updates clear update availability; unsuccessful/unverifiable
-  updates report the truth and do not enter an endless update loop.
-  Avoid destructive verification/reinstall or repeated live updates
-  until read-only evidence establishes the cause.
+- **Next:** continue read-only correlation of Aurelia's update implementation
+  and per-job output with Steam depot selection. Determine why each completed
+  operation did not move the installed depot set to the active target. Keep
+  reporting real availability; no suppression, manifest edits, verify, or live
+  update until a separately approved content-repair plan exists.
+- **Evidence (read-only, 2026-10-11):** raw `aurelia --json update` and the
+  Mudos live check list LIMBO as `available`. `aurelia --json manifests 48000`
+  reports public-branch manifests `48001=1261656871327265848` and
+  `48002=6867798692379060871`, which exactly match the installed
+  `InstalledDepots` in `appmanifest_48000.acf`. It also reports public-branch
+  targets `48004=4729536071049921379` and `48005=5598213330580205879`; Aurelia's
+  depot report labels 48004/48005 `os: linux`. Both corresponding target
+  manifest files are already in Steam's local depotcache. Steam `content_log`
+  records the configuration switching from depots 48001/48002 to 48004/48005
+  on Oct 6 and again Oct 10, with a prefetch of 83,407,104 bytes and zero bytes
+  to stage. Yet the appmanifest still lists only 48001/48002, buildid and
+  TargetBuildID remain `18220724`, and game payload file mtimes remain Oct 6.
+  Thus the three terminal LIMBO jobs did not produce an observable installed
+  depot-set transition; `provider_state=updated` is not proof that the active
+  target depots were installed. Mudos' `_confirm_updated()` only requires a
+  subsequent “not available” response and an installed-game row; it does not
+  compare target versus installed depot IDs/manifests.
+- **Platform/runtime evidence:** Aurelia store `info` lists Windows and macOS,
+  while the current depot report labels the target depots Linux. Aurelia's
+  library row reports `platform=windows` and an empty `local_manifest_ids`,
+  while its catalogue `update_available=false` conflicts with the separate raw
+  `aurelia update` report; do not use that catalogue field as freshness
+  evidence. The installed game tree contains the Windows `limbo.exe` PE
+  executable and no native Linux executable; the latest Mudos launch explicitly uses
+  `Proton - Experimental/proton run .../Limbo/Limbo.exe`. This Windows payload
+  and Proton route are internally consistent, but differ from the Linux depot
+  configuration Steam logged. The evidence points to a platform/depot selection
+  mismatch as the likely source of persistent availability; whether Aurelia's
+  update command is a no-op, erroneously reports completion, or chooses an
+  unintended platform target still requires confirmation from its per-job
+  behavior. The same symptom includes completed Trackmania submissions, but
+  no shared cause for Trackmania is established.
+- **Safety:** do not run `aurelia verify`, submit another update, edit
+  appmanifest, pin/suppress updates, switch runtime, or alter game files as an
+  investigation probe. Any move from Windows/Proton content to Linux content
+  needs a scoped recovery/launch plan and separate operator approval.
+- **Accept:** installed depot IDs and manifests match Aurelia's intended
+  platform/branch target; an update completion proves the relevant depot
+  transition; repeated launch checks no longer prompt when current; and the
+  selected runtime launches the matching installed payload.
 
 ### STEAM-LIMBO-001 — LIMBO pixel shader error after Steam update
 
-**Status: OPEN · P1 · PHYSICALLY REPORTED (2026-10-11).** LIMBO
-(AppID 48000) fails on game launch with a reported **pixel shader error**
-after using the new Aurelia update path. This may be a distinct
-game/graphics-runtime failure or a consequence of the update; there is
-not yet evidence identifying the cause or even whether the game's
-payload changed.
+**Status: OPEN · P1 · ERROR NOT CAPTURED; PLATFORM MISMATCH IS A SEPARATE
+LEAD.** Keep the operator-reported pixel shader error unconfirmed in retained
+logs; do not claim a causal link to STEAM-UPDATES-003.
 
-- **Investigate:** record exact error and timing; examine current
-  Aurelia/Proton/native launch command, selected runtime and renderer,
-  appmanifest/build and update-job evidence, Steam DRM environment,
-  game stderr, shader/compiler logs and Gamescope handoff. Compare with
-  known-working pre-update settings when reliable records exist.
-  Do not assume an update caused the graphics failure without evidence.
-- **Evidence (read-only, 2026-10-11):** the latest Aurelia launch record is
-  session `1791690500459-3c9edb81` (2026-10-11 04:48 local), AppID 48000,
-  runner `Wine-TKG` rooted at `Proton - Experimental`; command was
-  `aurelia-graphical-launch.py .../proton run .../Limbo/Limbo.exe` (not native).
-  It exited in about 2 seconds and its captured log contains no reported pixel
-  shader/compiler diagnostic; the user-reported exact error is absent from
-  retained evidence. Steam logs record LIMBO processes at 22:08 on Oct 10 and
-  04:48 on Oct 11, but no matching shader error. The current launch summary
-  does not establish the effective renderer (baseline WineD3D policy, low
-  confidence). LIMBO files were last modified Oct 6; no trustworthy pre-update
-  payload/config comparison was found. Shader cause and any relationship to
-  repeated availability remain unproven. Do not change the game, prefix,
-  shader cache or graphics settings without a scoped, recoverable proposal and
-  approval.
-- **Accept:** game renders and reaches gameplay under normal Mudos
-  launch; Guide/controller and exit-to-Home function; repeated launch
-  succeeds. Do not clear shader caches, reset Proton prefixes, force
-  reinstall or change Mesa/graphics settings without a scoped plan
-  and operator approval.
+- **Evidence/read-only update:** installed payload is Windows-only (`limbo.exe`
+  and `steam_api.dll`); the latest command launches it with the selected
+  Proton Experimental script. The launch record names runner `Wine-TKG` while
+  its root is the Proton Experimental directory; the effective backend is
+  reported as WineD3D baseline with low confidence. Aurelia's store info says
+  Windows/macOS, while the current depot API and Steam content log identify
+  Linux depots 48004/48005. This is a consistency question, not authorization
+  to switch depots or runtime. No exact shader diagnostic or reliable
+  pre-update renderer baseline is retained.
+- **Next operator-observed launch:** before starting, record local time and
+  current sizes/mtimes of that AppID's `wine_48000.log` and Steam
+  `console-linux.txt`/`shader_log.txt`. Ask the operator to preserve the exact
+  error text or photo and whether it appears before/after the game window.
+  Immediately after a naturally approved launch attempt, copy read-only the
+  matching Aurelia session directory (`command.txt`, `effective_launch_config`,
+  `effective_env`, `dll_resolution`, `events`, `summary`), bounded new log
+  tails, and Sessiond/Gamescope presentation state. Correlate renderer/DLL
+  provider and process exit time. Do not trigger a launch for diagnostics.
+- **Safety/accept:** no shader-cache clearing, prefix reset, reinstall, or
+  graphics-setting changes. Resolve only after the error is captured and a
+  controlled, operator-approved launch reaches gameplay with controller, Guide,
+  and exit-to-Home verified.
+
 
 ### AURELIA-VERIFY-001 — Aurelia reports executable missing after wrapped launch
 
@@ -142,10 +171,11 @@ operation labeling, and success/failure notification handling are implemented
 and deployed. Physical acceptance remains pending; do not treat automated tests
 as operator acceptance.
 
-- **Next:** investigate and correct the physically observed background-return,
-  recurring-update, and LIMBO launch defects below before resuming update
-  acceptance. Preserve existing installed games and update-job evidence. No
-  additional real game update or destructive repair without operator approval.
+- **Next:** obtain physical acceptance for STEAM-UPDATES-002 using a synthetic
+  update fixture. Continue the independent, read-only investigations for
+  STEAM-UPDATES-003 and STEAM-LIMBO-001; do not submit a real update, change
+  installed content, or perform destructive repair without separate operator
+  approval.
 - **Accept:** meet the lifecycle and recovery requirements in
   `docs/aurelia-launch-investigation-20261010.md`; add focused tests for both
   catalogue identity aliases, shell/daemon restart, deduplication, cancellation,

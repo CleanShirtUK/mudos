@@ -2532,3 +2532,59 @@ restart may be required for InputPlumber to publish a newly created target.
   stronger provider/version evidence and the exact shader error, respectively.
   STEAM-UPDATES-UX-001 remains deliberately deferred; no radial-indicator
   animation work was performed.
+
+## Steam update depot and deployment-guard follow-up — 2026-10-11
+
+- Git synchronization: fetched `origin/dev`, preserved the clean local commits,
+  pushed `af4ad04` and `bea881d`, then fetched again. Local `dev` and
+  `origin/dev` both resolved to `bea881d1b77ecd5f4a4ff3e05dcc7021f3fbb32b`.
+- RELEASE-SAFETY-001 cause: the prior idle probe invoked the lulu user-bus
+  endpoint from a root process. Read-only reproduction confirms root's
+  `busctl --address=unix:path=/run/user/958/bus` fails with a broken pipe,
+  while `sudo -u lulu env XDG_RUNTIME_DIR=/run/user/958 busctl --user ...`
+  succeeds. More importantly, the orchestration shell lacked `set -e`/an
+  explicit conditional/checked caller, so the activation and restart commands
+  ran after Python's nonzero guard exit. `scripts/release.py activate` itself
+  validates the immutable payload and atomically swaps the selector; it is
+  intentionally not an appliance-idle policy gate. Preserve this generic path
+  for intentional offline bootstrap and rollback. The safe online design is a
+  single checked orchestrator: query Sessiond and Acquisitiond as `lulu`, fail
+  closed on transport/parse/unknown/non-shell/active-job state, coordinate the
+  maintenance transition, guard immediately before activation, use checked
+  activation/restart calls, then verify selected-release provenance and
+  service/session readiness. Exercise failures and offline workflows in
+  isolated tests; do not deploy to test a rejection. No source guard was
+  changed in this follow-up.
+- STEAM-UPDATES-003 depot comparison: `aurelia manifests 48000` reports current
+  public manifests `48001=1261656871327265848` and
+  `48002=6867798692379060871`, matching the installed appmanifest exactly. It
+  also reports current `48004=4729536071049921379` and
+  `48005=5598213330580205879`; `aurelia depots` classifies these as Linux.
+  Steam's Oct 6 and Oct 10 content-log entries show config switching from
+  48001/48002 to 48004/48005 and an 83,407,104-byte prefetch with zero staging.
+  The appmanifest nevertheless lists only 48001/48002 after the three completed
+  LIMBO UPDATE jobs; installed content mtimes remain Oct 6. No observable
+  installed depot-set transition occurred. Mudos' terminal verification checks
+  current availability and installed presence, not target-versus-installed
+  depot manifests, so terminal `provider_state=updated` does not establish
+  payload convergence.
+- Platform evidence adds ambiguity rather than resolution: Aurelia's library
+  row says `platform=windows`, `local_manifest_ids={}`, and catalogue
+  `update_available=false`; its raw remote `update` report says available.
+  Store info lists Windows/macOS, but depot metadata/content logs select Linux
+  depots. The installed payload is PE32 `limbo.exe`/`steam_api.dll`, contains no
+  ELF binary, and launches through the Proton Experimental script. This is a
+  confirmed installed-versus-target platform/depot mismatch and a plausible
+  source of repeated availability. The exact Aurelia update-command behavior
+  (no-op, transient false availability, or platform-target choice) is not
+  established. No update, verify, manifest mutation, or content repair was run.
+- STEAM-LIMBO-001 diagnostics: the latest captured command selects Proton
+  Experimental to run `Limbo.exe`; Aurelia's summary labels the runner
+  `Wine-TKG`, reports `game.executable=run`/not found for the wrapper, and gives
+  WineD3D baseline at low confidence. The exact reported pixel-shader message
+  remains absent. Backlog now specifies bounded read-only capture steps for
+  the next naturally/operator-approved launch; no launch or graphics changes
+  were performed.
+- STEAM-UPDATES-002 remains deployed and awaiting physical acceptance. Its
+  next safe check is a synthetic update fixture from Home, Library, and Recents
+  for both background paths. STEAM-UPDATES-UX-001 remains deferred.
