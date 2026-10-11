@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import hashlib
+import os
 import sqlite3
 from dataclasses import replace
 from pathlib import Path
@@ -13,6 +15,119 @@ from .jobs import DownloadJob, JobError, JobOperation, JobState, utc_now
 
 TERMINAL_STATES = {JobState.COMPLETED, JobState.FAILED, JobState.CANCELLED}
 HISTORY_LIMIT = 200
+
+
+def reconcile_orphaned_remove(
+    path: Path,
+    backup_path: Path,
+    *,
+    expected: dict[str, object],
+    diagnostic: dict[str, object],
+) -> dict[str, object]:
+    """Back up and fail one precisely matched interrupted removal offline.
+
+    The caller must stop Acquisitiond first. ``expected`` is an exact-match
+    guard for all supplied columns, including the job identity and active
+    state. No provider work is invoked by this maintenance-only operation.
+    """
+    required = {
+        "job_id", "provider", "provider_job_id", "content_identity",
+        "operation", "state", "updated_at", "completed_at",
+    }
+    if not required.issubset(expected):
+        raise ValueError(f"expected record is missing fields: {sorted(required - expected.keys())}")
+    if expected["operation"] != JobOperation.REMOVE.value:
+        raise ValueError("only removal jobs can be reconciled")
+    if expected["state"] not in {state.value for state in (
+            JobState.STARTING, JobState.TRANSFERRING, JobState.FINALIZING,
+            JobState.PAUSING, JobState.RESUMING, JobState.CANCELLING)}:
+        raise ValueError("expected removal must be interrupted and active")
+    path, backup_path = Path(path), Path(backup_path)
+    if path.resolve() == backup_path.resolve() or backup_path.exists():
+        raise ValueError("backup path must be distinct and must not already exist")
+    backup_path.parent.mkdir(parents=True, exist_ok=True)
+
+    source = sqlite3.connect(path)
+    backup = None
+    try:
+        if source.execute("PRAGMA integrity_check").fetchone() != ("ok",):
+            raise sqlite3.DatabaseError("source acquisition database failed integrity_check")
+        backup = sqlite3.connect(backup_path)
+        source.backup(backup)
+        backup.close()
+        backup = None
+        os.chmod(backup_path, 0o600)
+        checked = sqlite3.connect(backup_path)
+        try:
+            if checked.execute("PRAGMA integrity_check").fetchone() != ("ok",):
+                raise sqlite3.DatabaseError("SQLite backup failed integrity_check")
+            original = checked.execute(
+                "SELECT * FROM acquisition_jobs WHERE job_id = ?", (expected["job_id"],)
+            ).fetchone()
+            names = [column[1] for column in checked.execute("PRAGMA table_info(acquisition_jobs)")]
+            if original is None:
+                raise ValueError("expected job is missing from the database backup")
+            original_record = dict(zip(names, original))
+        finally:
+            checked.close()
+
+        for key, value in expected.items():
+            if original_record.get(key) != value:
+                raise ValueError(f"job record mismatch for {key}: expected {value!r}, found {original_record.get(key)!r}")
+
+        evidence = {
+            "diagnostic": diagnostic,
+            "original_record": original_record,
+            "reconciled_at": utc_now(),
+            "reconciliation": "administrative-offline; no provider retry issued",
+        }
+        error = json.dumps({
+            "code": "orphaned-removal-incomplete",
+            "message": "Interrupted removal outcome is unverified; residual content may remain. No further removal was attempted.",
+            "retryable": False,
+            "details": evidence,
+        }, sort_keys=True)
+        now = utc_now()
+        source.execute("BEGIN IMMEDIATE")
+        current = source.execute(
+            "SELECT * FROM acquisition_jobs WHERE job_id = ?", (expected["job_id"],)
+        ).fetchone()
+        if current is None:
+            raise ValueError("expected job disappeared before reconciliation")
+        current_record = dict(zip(names, current))
+        for key, value in expected.items():
+            if current_record.get(key) != value:
+                raise ValueError(f"job changed before reconciliation: {key}")
+        cursor = source.execute(
+            """UPDATE acquisition_jobs SET state='failed', stage='orphaned-removal-incomplete',
+               retryable=0, error_json=?, recovery_reason='administrative-orphan-reconciliation',
+               updated_at=? WHERE job_id=? AND provider=? AND provider_job_id=?
+                 AND content_identity=? AND operation='remove' AND state=?
+                 AND updated_at=? AND completed_at IS ?""",
+            (error, now, expected["job_id"], expected["provider"],
+             expected["provider_job_id"], expected["content_identity"],
+             expected["state"], expected["updated_at"], expected["completed_at"]),
+        )
+        if cursor.rowcount != 1:
+            raise ValueError("guarded reconciliation update did not match exactly one job")
+        source.commit()
+        return {
+            "backup_path": str(backup_path),
+            "backup_sha256": hashlib.sha256(backup_path.read_bytes()).hexdigest(),
+            "original_record": original_record,
+            "evidence": evidence,
+        }
+    except Exception:
+        if source.in_transaction:
+            source.rollback()
+        if backup is not None:
+            backup.close()
+        if backup_path.exists() and not source.in_transaction:
+            # A failed validation may leave a valid forensic backup; preserve it.
+            pass
+        raise
+    finally:
+        source.close()
 
 
 class AcquisitionStore:
@@ -176,8 +291,33 @@ class AcquisitionStore:
                     JobState.RESUMING, JobState.CANCELLING,
             }:
                 now = utc_now()
-                job = replace(job, state=JobState.QUEUED, stage="queued", updated_at=now,
-                              recovery_reason="service-restart")
+                if job.operation is JobOperation.REMOVE:
+                    details = {
+                        "original_state": job.state.value,
+                        "original_stage": job.stage,
+                        "original_updated_at": job.updated_at,
+                        "original_completed_at": job.completed_at,
+                        "original_progress": job.progress,
+                        "original_downloaded_bytes": job.downloaded_bytes,
+                        "original_total_bytes": job.total_bytes,
+                        "original_provider_state": job.provider_state,
+                        "original_origin_metadata": job.origin_metadata,
+                        "recovery_reason": "service-restart",
+                    }
+                    job = replace(
+                        job, state=JobState.FAILED,
+                        stage="recovery-required-removal-outcome-unknown",
+                        error=JobError(
+                            "orphaned-removal-incomplete",
+                            "An interrupted removal cannot be safely repeated automatically; provider outcome is unverified.",
+                            retryable=False, details=details,
+                        ),
+                        retryable=False, updated_at=now,
+                        recovery_reason="service-restart-removal-unverified",
+                    )
+                else:
+                    job = replace(job, state=JobState.QUEUED, stage="queued", updated_at=now,
+                                  recovery_reason="service-restart")
                 changed = True
             recovered.append(job)
         if changed:

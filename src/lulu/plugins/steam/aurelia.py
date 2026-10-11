@@ -797,6 +797,12 @@ class AureliaAcquisitionExecutor:
         if not app_id.isdecimal():
             raise JobExecutionError("invalid-content", "Aurelia acquisition requires a Steam AppID")
         if job.operation is JobOperation.REMOVE:
+            if job.recovery_reason and job.recovery_reason.startswith("service-restart"):
+                raise JobExecutionError(
+                    "orphaned-removal-incomplete",
+                    "An interrupted Aurelia removal is never replayed automatically; provider outcome requires reconciliation.",
+                    retryable=False,
+                )
             await self._uninstall(app_id, reporter)
             return
         if job.operation is JobOperation.UPDATE:

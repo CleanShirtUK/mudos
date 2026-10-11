@@ -433,6 +433,24 @@ class SteamUpdateAcquisitionInterfaceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(manager.jobs[job.job_id].state, JobState.COMPLETED)
         self.assertEqual(manager.jobs[job.job_id].progress, 1.0)
 
+    async def test_interrupted_uninstall_is_never_replayed_by_executor(self):
+        client = Mock()
+        client.command = AsyncMock()
+        executor = AureliaAcquisitionExecutor(client)
+        job = DownloadJob("remove-recovered", PROVIDER_ID, "Fixture",
+                          content_identity="steam-aurelia:1245620",
+                          provider_job_id="1245620", operation=JobOperation.REMOVE,
+                          recovery_reason="service-restart")
+        reporter = Mock()
+        reporter.metadata = AsyncMock()
+        reporter.state = AsyncMock()
+        reporter.progress = AsyncMock()
+        with self.assertRaisesRegex(JobExecutionError, "never replayed automatically") as caught:
+            await executor.run(job, reporter)
+        self.assertEqual(caught.exception.code, "orphaned-removal-incomplete")
+        self.assertFalse(caught.exception.retryable)
+        client.command.assert_not_awaited()
+
     async def test_uninstall_fails_if_aurelia_still_reports_app_installed(self):
         client = Mock()
         client.command = AsyncMock(return_value=None)
