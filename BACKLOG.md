@@ -12,26 +12,24 @@ evidence and this reconciliation rationale are in
 
 ### STEAM-UPDATES-002 — Update in Background leaves a black screen
 
-**Status: OPEN · P1 · PHYSICALLY REPORTED (2026-10-11).** During Steam
-Update & Launch acceptance, choosing **Update in Background** from the
-launch-time update choice returned to a black screen instead of the Mudos
-Home shell. The update/launch workflow is not physically accepted.
-Whether this is hidden Home content, presentation choreography, or a
-Sessiond/Gamescope state failure is not yet established.
+**Status: FIX IMPLEMENTED · P1 · PHYSICAL RE-ACCEPTANCE REQUIRED.** The
+operator reported a black screen when choosing **Update in Background**.
+Source tracing confirms a UI lifecycle defect: Library launch choreography
+sets Home opacity to zero and completes the content exit before presenting
+the update choice. Dismissing that choice used to leave Home hidden and never
+request a PresentationCoordinator entrance. The same omission existed on
+**Continue in Background** from Update & Launch. Sessiond was at shell,
+presentation-ready, with Gamescope still owning the shell; no evidence points
+to a Sessiond/Gamescope ownership failure. A non-destructive Home restoration
+path now clears pending launch/handoff state, restores Home opacity and focus,
+and starts the normal presentation entrance for both background routes.
+Automated regression coverage is added; physical validation has not yet run.
 
-- **Investigate:** capture the launch-originating surface and
-  PresentationCoordinator/Home state, shell visibility and opacity,
-  Sessiond lifecycle, controller focus and Gamescope selection before and
-  after selecting Background. Inspect `ui/ConsoleShell.qml`:
-  `startSteamUpdate("background")` dismisses the prompt without a
-  corresponding Home entrance; test also `continueSteamUpdateInBackground()`
-  from the Update & Launch wait screen. This is a hypothesis, not a
-  confirmed root cause.
-- **Accept:** either background choice returns to fully visible,
-  controller-navigable Mudos Home; update continues as an Acquisitiond
-  job; completion never automatically launches the game. No black screen,
-  stale launch token or lost focus on return, including from Library
-  and Recents and after errors/restarts.
+- **Accept:** verify both background routes from Home, Library and Recents;
+  Home becomes fully visible and controller-navigable, the update continues
+  as an Acquisitiond job, and completion never automatically launches the
+  game. No black screen, stale launch token or lost focus on return, including
+  after errors/restarts.
 
 ### STEAM-UPDATES-003 — Update offered again after a reported completion
 
@@ -50,6 +48,23 @@ successful remote depot convergence from a terminal job alone.
   appmanifest/build/depot metadata, `pinned` state, and Mudos
   post-update catalogue reconciliation. Distinguish duplicate jobs,
   repeat prompts and an actual unchanged/failed upstream update.
+- **Evidence (read-only, 2026-10-11):** persisted Acquisitiond history has
+  three LIMBO UPDATE jobs (`job-75f371a7eb91446e93260b95184017ac`,
+  `job-dfb3a7a8f65d4f3db609fe3a159b13aa`,
+  `job-deea62c3c56644e3b57c4435e3d0cf07`), each terminal `completed`,
+  `provider_state=updated`, and no recorded error. The legacy acquisition job
+  predates these updates. Aurelia's current raw `aurelia --json update` lists
+  LIMBO only; live Mudos checks report LIMBO `available`, while Trackmania
+  (2225070) and Dead by Daylight (381210) report `current`. Thus the observed
+  availability is not a Mudos-only cached result and does not demonstrate
+  repeated jobs on other titles. However, a fresh `available` report conflicts
+  with the successful job records and their force-refresh verification path;
+  actual content/version convergence is unproven. LIMBO's manifest says
+  buildid and TargetBuildID are both `18220724`, `BytesDownloaded=0`,
+  `StagingSize=0`; installed depots 48001/48002 are recorded, but no pre-update
+  depot baseline exists. No further update was started. Cause remains open;
+  current evidence does not establish duplicate submission versus Aurelia
+  manifest behavior or changed content. No common multi-title failure shown.
 - **Accept:** confirmed-current games launch without an update prompt;
   an available update submits at most one real job per version/AppID;
   successful updates clear update availability; unsuccessful/unverifiable
@@ -72,6 +87,20 @@ payload changed.
   game stderr, shader/compiler logs and Gamescope handoff. Compare with
   known-working pre-update settings when reliable records exist.
   Do not assume an update caused the graphics failure without evidence.
+- **Evidence (read-only, 2026-10-11):** the latest Aurelia launch record is
+  session `1791690500459-3c9edb81` (2026-10-11 04:48 local), AppID 48000,
+  runner `Wine-TKG` rooted at `Proton - Experimental`; command was
+  `aurelia-graphical-launch.py .../proton run .../Limbo/Limbo.exe` (not native).
+  It exited in about 2 seconds and its captured log contains no reported pixel
+  shader/compiler diagnostic; the user-reported exact error is absent from
+  retained evidence. Steam logs record LIMBO processes at 22:08 on Oct 10 and
+  04:48 on Oct 11, but no matching shader error. The current launch summary
+  does not establish the effective renderer (baseline WineD3D policy, low
+  confidence). LIMBO files were last modified Oct 6; no trustworthy pre-update
+  payload/config comparison was found. Shader cause and any relationship to
+  repeated availability remain unproven. Do not change the game, prefix,
+  shader cache or graphics settings without a scoped, recoverable proposal and
+  approval.
 - **Accept:** game renders and reaches gameplay under normal Mudos
   launch; Guide/controller and exit-to-Home function; repeated launch
   succeeds. Do not clear shader caches, reset Proton prefixes, force

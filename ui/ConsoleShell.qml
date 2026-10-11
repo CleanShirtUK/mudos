@@ -2488,6 +2488,24 @@ Window {
         steamUpdateCheckAppId = ""
     }
 
+    function returnHomeAfterBackgroundSteamUpdate() {
+        pendingHomeLaunch = null
+        pendingHomeLaunchPhase = "idle"
+        pendingLibraryLaunch = null
+        libraryHandoffPending = false
+        libraryTransitioning = false
+        storeTransitioning = false
+        libraryTransitionState = "RESTING"
+        libraryContentOpacity = 0
+        space = "home"
+        homeContentOpacity = 1
+        focusRecentForReturn()
+        if (presentationCoordinator.contentState !== presentationCoordinator.presentedState) {
+            returnPresentationPending = true
+            presentationCoordinator.beginStartup()
+        }
+    }
+
     function moveSteamUpdateChoice(delta) {
         if (!steamUpdatePromptGame)
             return
@@ -2534,6 +2552,7 @@ Window {
             }
             cancelSteamUpdatePrompt()
             if (intent === "background") {
+                root.returnHomeAfterBackgroundSteamUpdate()
                 notify("Update started", String(game.title || "Steam game") + " will update in the background", "info")
                 refreshAcquisitionJobs()
                 return
@@ -2559,6 +2578,7 @@ Window {
         steamUpdateLaunchGeneration = -1
         steamUpdateWaitingVisible = false
         steamUpdateWaitError = ""
+        returnHomeAfterBackgroundSteamUpdate()
         if (jobId.length)
             request("/steam/update-background/" + encodeURIComponent(jobId), "POST", "", function() {}, "")
         notify("Updating in background", "The game will not launch automatically", "info")

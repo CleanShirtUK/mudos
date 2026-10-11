@@ -1710,6 +1710,23 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertIn("if (root.steamUpdatePromptGame) {\n            root.activateSteamUpdateChoice()", QML)
         self.assertIn("if (root.steamUpdatePromptGame) {\n            root.cancelSteamUpdatePrompt()", QML)
 
+    def test_background_steam_update_restores_hidden_home_presentation(self) -> None:
+        restore = QML.split("function returnHomeAfterBackgroundSteamUpdate()", 1)[1].split(
+            "\n    function ", 1)[0]
+        self.assertIn("pendingHomeLaunch = null", restore)
+        self.assertIn("pendingLibraryLaunch = null", restore)
+        self.assertIn('space = "home"', restore)
+        self.assertIn("homeContentOpacity = 1", restore)
+        self.assertIn("focusRecentForReturn()", restore)
+        self.assertLess(restore.index("homeContentOpacity = 1"),
+                        restore.index("presentationCoordinator.beginStartup()"))
+        self.assertIn("root.returnHomeAfterBackgroundSteamUpdate()", QML[
+            QML.index('if (intent === "background") {'):
+            QML.index("function continueSteamUpdateInBackground()")])
+        background = QML.split("function continueSteamUpdateInBackground()", 1)[1].split(
+            "\n    function ", 1)[0]
+        self.assertIn("returnHomeAfterBackgroundSteamUpdate()", background)
+
     def test_home_launch_waits_for_feedback_exit_and_hidden_boundary(self) -> None:
         game_card = (ROOT / "ui" / "GameCard.qml").read_text()
         coordinator = (ROOT / "ui" / "PresentationCoordinator.qml").read_text()
