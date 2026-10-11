@@ -143,7 +143,7 @@ class AureliaClient:
         self._run = run
         self._startup_lock = asyncio.Lock()
         self._daemon_ready = False
-        self._update_cache: tuple[float, dict[str, Any]] | None = None
+        self._update_cache: dict[str, tuple[float, dict[str, Any]]] = {}
         self._update_lock = asyncio.Lock()
 
     @property
@@ -456,42 +456,137 @@ class AureliaClient:
         # terminal result only; keep it alive until Aurelia confirms its outcome.
         return await self.command("update", app_id, timeout=8 * 60 * 60)
 
-    async def platform_state(self, app_id: str) -> dict[str, Any]:
-        if not app_id.isdecimal() or int(app_id) < 1:
-            raise AureliaError("invalid-app-id", "Steam platform-state requires a positive AppID")
-        value = await self.command("platform-state", app_id, timeout=35.0)
-        if not isinstance(value, dict) or str(value.get("status", "")) not in {
-                "current", "update-available", "platform-conflict", "platform-unknown",
-                "target-unverifiable"}:
-            raise AureliaError("malformed-platform-state",
-                               "Aurelia returned no verifiable installed/target platform state", retryable=True)
-        for key in ("installed_depots", "target_depots"):
-            if not isinstance(value.get(key), dict):
-                raise AureliaError("malformed-platform-state",
-                                   "Aurelia platform-state omitted depot-manifest evidence", retryable=True)
-        return value
-
     async def update_availability(self, app_id: str, *, force: bool = False,
                                   cache_seconds: float = 90.0) -> dict[str, Any]:
-        """Read Aurelia's current remote-manifest comparison without starting an update.
+        """Compare this appmanifest's installed depots with official Aurelia targets.
 
-        `aurelia update` without an AppID is a read-only report of installed
-        titles with updates available. It performs remote manifest checks. Cache
-        the one catalogue-wide query briefly and coalesce concurrent callers;
-        never interpret a failed query as an up-to-date result.
+        `aurelia manifests APPID` is read-only and reports current per-branch
+        manifests. Only depot IDs present in the installed appmanifest are
+        compared. Steam's StateUpdateRequired flag is kept as independent local
+        evidence because Aurelia treats it as update-pending even when manifests
+        match. This is manifest-state evidence, not byte-level verification.
         """
         if not app_id.isdecimal() or int(app_id) < 1:
             raise AureliaError("invalid-app-id", "Steam update check requires a positive AppID")
-        state = await self.platform_state(app_id)
-        status = str(state["status"])
-        if status not in {"current", "update-available"}:
-            code = "platform-conflict" if status == "platform-conflict" else "platform-unknown"
-            raise AureliaError(code, f"Aurelia cannot safely check updates ({status})", retryable=False)
-        return {"app_id": app_id, "available": status == "update-available",
-                "pinned": bool(state.get("pinned", False)), "platform": state.get("platform"),
-                "branch": state.get("branch"), "installed_depots": state["installed_depots"],
-                "target_depots": state["target_depots"], "checked_at": time.time(),
-                "source": "aurelia-platform-depot-state"}
+        async with self._update_lock:
+            cached = self._update_cache.get(app_id)
+            if not force and cached is not None and time.monotonic() - cached[0] < cache_seconds:
+                return dict(cached[1])
+            try:
+                evidence = await self._collect_update_evidence(app_id)
+            except AureliaError as error:
+                evidence = {
+                    "app_id": app_id, "status": "unverifiable", "available": False,
+                    "reason": str(error), "provider_error_code": error.code,
+                    "branch": None, "state_flags": None, "state_update_required": None,
+                    "installed_depots": {}, "target_depots": {}, "changed_depots": {},
+                    "checked_at": time.time(), "source": "steam-appmanifest+aurelia-manifests",
+                    "evidence_level": "depot-manifest-state-not-file-integrity",
+                }
+                if error.code in {"invalid-app-id"}:
+                    raise
+                # Do not cache incomplete or failed evidence as though it were
+                # a durable game state; callers may retry a read-only check.
+                return evidence
+            self._update_cache[app_id] = (time.monotonic(), evidence)
+            return dict(evidence)
+
+    async def _collect_update_evidence(self, app_id: str) -> dict[str, Any]:
+        games = await self.installed_games()
+        matches = [game for game in games if game.app_id == app_id and game.installed]
+        if len(matches) != 1 or not matches[0].install_path:
+            raise AureliaError(
+                "update-unverifiable",
+                "Aurelia did not identify exactly one installed path for this AppID.",
+                retryable=False,
+            )
+        install_path = Path(matches[0].install_path)
+        appmanifest = install_path.parent.parent / f"appmanifest_{app_id}.acf"
+        try:
+            manifest_stat = appmanifest.stat()
+            raw = appmanifest.read_text(encoding="utf-8", errors="strict")
+        except OSError as error:
+            raise AureliaError(
+                "update-unverifiable", "The installed Steam appmanifest is unavailable.",
+                retryable=False,
+            ) from error
+        try:
+            from .provider import SteamProvider
+            app = SteamProvider._parse_vdf(raw).get("AppState")
+        except (UnicodeError, ValueError, IndexError) as error:
+            raise AureliaError("update-unverifiable", "The installed Steam appmanifest is malformed.",
+                               retryable=False) from error
+        if not isinstance(app, dict) or str(app.get("appid", "")) != app_id:
+            raise AureliaError("update-unverifiable", "The appmanifest AppID does not match.", retryable=False)
+        try:
+            state_flags = int(str(app["StateFlags"]), 10)
+        except (KeyError, TypeError, ValueError) as error:
+            raise AureliaError("update-unverifiable", "The appmanifest StateFlags value is missing or malformed.",
+                               retryable=False) from error
+        if not (state_flags & 4):
+            raise AureliaError("update-unverifiable", "Steam does not mark this installation fully installed.",
+                               retryable=False)
+        user_config = app.get("UserConfig", {})
+        branch = str(user_config.get("BetaKey") or "public").strip() if isinstance(user_config, dict) else "public"
+        if not branch or any(character.isspace() for character in branch):
+            raise AureliaError("update-unverifiable", "The appmanifest active branch is malformed.", retryable=False)
+        installed_block = app.get("InstalledDepots")
+        if not isinstance(installed_block, dict) or not installed_block:
+            raise AureliaError("update-unverifiable", "The appmanifest has no installed depot manifests.",
+                               retryable=False)
+        installed: dict[str, str] = {}
+        for depot_id, row in installed_block.items():
+            if not str(depot_id).isdecimal() or not isinstance(row, dict):
+                raise AureliaError("update-unverifiable", "An installed depot record is malformed.", retryable=False)
+            manifest_id = row.get("manifest")
+            if not isinstance(manifest_id, str) or not manifest_id.isdecimal():
+                raise AureliaError("update-unverifiable",
+                                   f"Installed depot {depot_id} has no valid manifest ID.", retryable=False)
+            installed[str(depot_id)] = manifest_id
+
+        rows = await self.command("manifests", app_id, timeout=35.0)
+        if not isinstance(rows, list):
+            raise AureliaError("malformed-manifests", "Aurelia manifests output was not an array.", retryable=True)
+        remote: dict[str, str] = {}
+        for row in rows:
+            if not isinstance(row, dict):
+                raise AureliaError("malformed-manifests", "Aurelia returned a malformed depot manifest row.",
+                                   retryable=True)
+            if str(row.get("branch", "")) != branch:
+                continue
+            depot_id, manifest_id = str(row.get("depot_id", "")), str(row.get("manifest_id", ""))
+            if not depot_id.isdecimal() or not manifest_id.isdecimal():
+                raise AureliaError("malformed-manifests", "Aurelia returned invalid depot or manifest IDs.",
+                                   retryable=True)
+            if depot_id in remote and remote[depot_id] != manifest_id:
+                raise AureliaError("malformed-manifests", "Aurelia returned conflicting target manifests.",
+                                   retryable=True)
+            remote[depot_id] = manifest_id
+        missing = sorted(set(installed) - set(remote))
+        if missing:
+            status, reason = "unverifiable", "Aurelia has no target manifest for installed depot(s): " + ", ".join(missing)
+            targets: dict[str, str] = {depot: remote[depot] for depot in installed if depot in remote}
+            changed: dict[str, dict[str, str]] = {}
+        else:
+            targets = {depot: remote[depot] for depot in installed}
+            changed = {depot: {"installed": installed[depot], "target": targets[depot]}
+                       for depot in installed if installed[depot] != targets[depot]}
+            if changed:
+                status, reason = "update-available", "Installed depot manifests differ from the active branch targets."
+            elif state_flags & 2:
+                status, reason = "inconsistent", "Depot manifests match, but Steam still sets StateUpdateRequired."
+            else:
+                status, reason = "current", "Installed depot manifests match the active branch targets."
+        return {
+            "app_id": app_id, "status": status, "available": status == "update-available",
+            "reason": reason, "branch": branch, "state_flags": state_flags,
+            "state_update_required": bool(state_flags & 2), "installed_depots": installed,
+            "target_depots": targets, "changed_depots": changed,
+            "appmanifest_mtime_ns": manifest_stat.st_mtime_ns,
+            "appmanifest_size": manifest_stat.st_size,
+            "checked_at": time.time(), "source": "steam-appmanifest+aurelia-manifests",
+            "evidence_level": "depot-manifest-state-not-file-integrity",
+        }
 
     async def dlc(self, app_id: str) -> Any:
         return await self.command("dlc", app_id)
@@ -891,24 +986,17 @@ class AureliaAcquisitionExecutor:
                                             "Aurelia's recovered update did not finish in time.",
                                             retryable=True)
                 availability = await self.client.update_availability(app_id, force=True)
-                selected_platform = await self._bind_update_platform(
-                    selected_platform, availability, reporter, job.origin_metadata)
                 await self._confirm_updated(app_id, availability, reporter)
                 return
 
             availability = await self.client.update_availability(app_id, force=True)
-            selected_platform = await self._bind_update_platform(
-                selected_platform, availability, reporter, job.origin_metadata)
-            if not availability["available"]:
+            if availability.get("status") == "current":
                 # A recovered operation may have completed before Acquisitiond
-                # restarted. If it is still available, fail closed below.
-                if job.recovery_reason == "service-restart":
-                    await self._confirm_updated(app_id, availability, reporter)
-                    return
-                # User confirmation can race with another client completing it;
-                # still require the provider's installed/target depot proof.
+                # or another client completed it before user confirmation.
                 await self._confirm_updated(app_id, availability, reporter)
                 return
+            if availability.get("status") != "update-available":
+                raise self._verification_failure(availability, phase="before")
             if job.recovery_reason == "service-restart":
                 raise JobExecutionError(
                     "aurelia-update-recovery-ambiguous",
@@ -952,8 +1040,6 @@ class AureliaAcquisitionExecutor:
             await update_task
             await reporter.state(JobState.FINALIZING, stage="aurelia-update-verifying")
             verified = await self.client.update_availability(app_id, force=True)
-            await self._bind_update_platform(selected_platform, verified, reporter,
-                                             job.origin_metadata)
             await self._confirm_updated(app_id, verified, reporter)
         except JobExecutionError:
             raise
@@ -968,43 +1054,29 @@ class AureliaAcquisitionExecutor:
                                      retryable=False if error.code == "timeout" else error.retryable) from error
 
     @staticmethod
-    async def _bind_update_platform(selected_platform: object, availability: dict[str, Any],
-                                    reporter: JobReporter,
-                                    origin_metadata: dict[str, object]) -> str:
-        actual = availability.get("platform")
-        if actual not in {"windows", "linux"}:
-            raise JobExecutionError("steam-update-platform-unknown",
-                                    "Aurelia cannot identify the installed platform for this update.",
-                                    retryable=False)
-        if selected_platform in {"windows", "linux"} and selected_platform != actual:
-            raise JobExecutionError("steam-update-platform-conflict",
-                                    "The update platform differs from this job's persisted installation platform.",
-                                    retryable=False)
-        if selected_platform is None:
-            merged = dict(origin_metadata)
-            merged["steam_platform"] = actual
-            await reporter.metadata(origin_metadata=merged)
-        return str(actual)
+    def _verification_failure(evidence: dict[str, Any], *, phase: str) -> JobExecutionError:
+        status = str(evidence.get("status", "unverifiable"))
+        code = ("steam-update-unapplied" if status == "update-available" else
+                "steam-update-inconsistent" if status == "inconsistent" else
+                "steam-update-unverifiable")
+        return JobExecutionError(
+            code,
+            f"Steam update verification was {status} {phase} the Aurelia command: "
+            f"{evidence.get('reason', 'required manifest evidence is missing')}",
+            retryable=False,
+            details={"phase": phase, "evidence": evidence},
+        )
 
     async def _confirm_updated(self, app_id: str, availability: dict[str, Any],
                                reporter: JobReporter) -> None:
-        if availability.get("available"):
-            raise JobExecutionError("aurelia-update-unconfirmed",
-                                    "Aurelia still reports an update available; the game was not marked complete.",
-                                    retryable=True)
+        if availability.get("status") != "current":
+            raise self._verification_failure(availability, phase="after")
         installed = await self.client.installed_games()
         game = next((item for item in installed if item.app_id == app_id and item.installed), None)
         if game is None:
             raise JobExecutionError("aurelia-update-install-missing",
                                     "Aurelia no longer confirms this game is installed.", retryable=False)
-        state = await self.client.platform_state(app_id)
-        if state.get("status") != "current":
-            raise JobExecutionError(
-                "aurelia-update-unverifiable",
-                f"Aurelia did not prove depot convergence for the selected platform ({state.get('status', 'unknown')}).",
-                retryable=False,
-            )
-        await reporter.metadata(provider_state="updated", backend="aurelia",
+        await reporter.metadata(provider_state="update-verified-current", backend="aurelia",
                                 destination=game.install_path,
                                 completion_path=game.install_path)
         await reporter.progress(None, stage="aurelia-update-verified")

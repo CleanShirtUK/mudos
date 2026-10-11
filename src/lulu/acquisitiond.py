@@ -246,13 +246,49 @@ class AcquisitionInterface(ServiceInterface):
                                "error": "Aurelia is unavailable", "retryable": True})
         try:
             result = await client.update_availability(app_id)
-            return json.dumps({**result, "status": "available" if result["available"] else "current"},
-                              sort_keys=True)
+            status = str(result.get("status", "unverifiable"))
+            if status == "update-available":
+                unresolved = self._same_unresolved_update(app_id, result)
+                if unresolved is not None:
+                    result = {**result, "status": "inconsistent", "actual_status": status,
+                              "unresolved_previous_attempt": True,
+                              "error": "A previous Aurelia update completed without depot convergence. "
+                                       "The installed/target manifests are unchanged; resolve this state before retrying."}
+                else:
+                    result = {**result, "status": "available"}
+            elif status in {"inconsistent", "unverifiable"}:
+                result = {**result, "error": result.get("reason") or
+                          "Steam update status could not be reconciled with depot manifests"}
+            return json.dumps(result, sort_keys=True)
         except Exception as error:
             LOGGER.warning("aurelia_update_check app_id=%s error_type=%s", app_id, type(error).__name__)
-            return json.dumps({"app_id": app_id, "status": "unknown",
+            return json.dumps({"app_id": app_id, "status": "unverifiable",
                                "error": str(error) or type(error).__name__,
                                "retryable": bool(getattr(error, "retryable", True))}, sort_keys=True)
+
+    @staticmethod
+    def _update_evidence_key(evidence: dict[str, object]) -> str:
+        fields = {key: evidence.get(key) for key in
+                  ("branch", "state_flags", "state_update_required", "installed_depots", "target_depots")}
+        return json.dumps(fields, sort_keys=True, separators=(",", ":"))
+
+    def _same_unresolved_update(self, app_id: str, evidence: dict[str, object]):
+        current_key = self._update_evidence_key(evidence)
+        failed = [job for job in self.manager.snapshot()
+                  if job.provider == "steam-aurelia" and job.operation is JobOperation.UPDATE
+                  and job.state is JobState.FAILED
+                  and str(job.provider_job_id or job.content_identity.rsplit(":", 1)[-1]) == app_id
+                  and job.error is not None
+                  and job.error.code in {"steam-update-unapplied", "steam-update-inconsistent",
+                                         "steam-update-unverifiable"}]
+        failed.sort(key=lambda job: job.updated_at, reverse=True)
+        for job in failed:
+            details = job.error.details if isinstance(job.error.details, dict) else {}
+            prior = details.get("evidence")
+            if details.get("phase") == "after" and isinstance(prior, dict):
+                if self._update_evidence_key(prior) == current_key:
+                    return job
+        return None
 
     async def _steam_app_is_running(self, app_id: str) -> bool:
         if self.bus is None:
@@ -334,14 +370,22 @@ class AcquisitionInterface(ServiceInterface):
             availability = await executor.client.update_availability(app_id, force=True)
         except Exception as error:
             raise DBusError("org.lulu.Acquisition.Error.PlatformUnknown",
-                            f"Aurelia could not verify this game's installed platform: {error}") from error
-        platform = availability.get("platform")
-        if platform not in {"windows", "linux"}:
-            raise DBusError("org.lulu.Acquisition.Error.PlatformUnknown",
-                            "Aurelia did not identify the installed Steam platform")
+                            f"Steam depot state could not be verified: {error}") from error
+        if availability.get("status") == "current":
+            raise DBusError("org.lulu.Acquisition.Error.NotNeeded",
+                            "Installed depot manifests are current for the active branch")
+        if availability.get("status") != "update-available":
+            raise DBusError("org.lulu.Acquisition.Error.UpdateState",
+                            f"Steam update state is {availability.get('status', 'unverifiable')}: "
+                            f"{availability.get('reason', 'depot evidence is incomplete')}")
+        unresolved = self._same_unresolved_update(app_id, availability)
+        if unresolved is not None:
+            raise DBusError("org.lulu.Acquisition.Error.UpdateUnresolved",
+                            "A previous update did not converge and the depot evidence is unchanged; "
+                            "a duplicate update will not be submitted")
         metadata = {"launch_intent": intent, "launch_policy": "ephemeral-only"
                     if intent == "update-launch" else "background-only",
-                    "steam_platform": platform}
+                    "steam_update_branch": availability.get("branch")}
         active_states = {JobState.QUEUED, JobState.STARTING, JobState.TRANSFERRING,
                          JobState.FINALIZING, JobState.PAUSED, JobState.PAUSING,
                          JobState.RESUMING, JobState.CANCELLING}
@@ -361,10 +405,6 @@ class AcquisitionInterface(ServiceInterface):
         try:
             if existing is not None:
                 merged = dict(existing.origin_metadata)
-                if merged.get("steam_platform") in {"windows", "linux"} and merged.get("steam_platform") != platform:
-                    raise DBusError("org.lulu.Acquisition.Error.Conflict",
-                                    "The active update job is bound to a different installed platform")
-                merged["steam_platform"] = platform
                 # A background request always revokes any unconsumed continuation.
                 if intent == "background":
                     merged.update(metadata)

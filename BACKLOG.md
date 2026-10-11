@@ -60,27 +60,21 @@ path are documented below. Do not run a real update solely for validation.
 
 ### STEAM-UPDATES-003 — Update offered again after a reported completion
 
-**Status: OPEN · P1 · DEPOT/PLATFORM MISMATCH CONFIRMED; UPSTREAM CONTRACT
-PATCH PREPARED, NOT INTEGRATED.** The earlier reports are no longer adequately explained
-as simply a stale Mudos cache or repeat prompts: Steam's current LIMBO depot
-configuration and the installed appmanifest select different depots.
+**Status: OPEN · P1 · UPDATE VERIFICATION SOURCE CORRECTED; CURRENT LIMBO
+STATE NOT RECAPTURED.** Prior LIMBO evidence below is historical and does not
+establish the current appmanifest or update state.
 
 - **Source-level finding (read-only, installed Aurelia v0.1.38 source):**
   `install` auto-selects Windows depots preferentially, with an explicit
   `--platform` override;
   `import` defaults to the host OS unless explicitly told otherwise. The
   per-game platform preference is documented as a launch setting. In contrast,
-  `update <APP_ID>` and `check-updates` expose no platform option; `update`
-  delegates to `SteamClient::update_game`, and the check delegates to
-  `check_for_updates`. Their CLI contract exposes neither selected depots nor
-  per-depot installed/target manifests in update results. The exact internal
-  platform selection and why the LIMBO operation reported success without an
-  observable depot transition cannot be established through the supported CLI.
-  This is an Aurelia observability/contract gap. Mudos also has a confirmed
-  adapter completion weakness: `_confirm_updated()` treats “availability now
-  false + still installed” as successful without checking depot transition,
-  but the current Aurelia result contract does not provide sufficient safe
-  evidence for Mudos to correct this.
+  `check_for_updates()` trusts `StateUpdateRequired`, otherwise compares local
+  installed depot IDs to corresponding remote branch manifests. Update
+  execution restricts remote depots to installed IDs when records exist. The
+  supported read-only `manifests APPID --json` command provides per-depot,
+  per-branch current manifest IDs. Other platform depots alone do not imply an
+  update. Mudos now compares these interfaces and verifies after update.
 - **Policy:** preserve intended installed content and launch route. Windows
   content launched via Proton remains a valid deliberate configuration and
   must not be migrated because native Linux depots exist. Native Linux content
@@ -89,23 +83,10 @@ configuration and the installed appmanifest select different depots.
   platform metadata alone cannot establish installed depot policy. Unknown
   identity must be reported as unknown/conflict, not silently considered
   current or updated.
-- **Concrete upstream proposal:** return a read-only update plan/result with
-  chosen platform, active branch/build, installed depot→manifest map and target
-  depot→manifest map; make update/check use the same explicit platform policy;
-  and report a distinct platform/depot conflict or unchanged no-op instead of
-  terminal success when the target depot set was not applied. Mudos should only
-  complete after the same-platform target manifests are confirmed current or a
-  relevant transition is confirmed. Keep genuine availability visible, while
-  classifying a repeated conflict as non-retryable pending operator resolution.
-- **Next:** obtain that supported evidence contract (or establish a safe local
-  appmanifest/Steam metadata adapter contract) before enabling depot-aware
-  completion claims in the production runtime. A separate Aurelia source branch
-  now prototypes `platform-state`, explicit installed-platform persistence,
-  strict platform selection, depot-manifest convergence checks and post-update
-  verification. Mudos consumes that new contract fail-closed; installed Aurelia
-  0.1.38 does not yet provide it, so the runtime adapter upgrade is pending.
-  Keep reporting real availability; no suppression, manifest edits, verify, or
-  live update until a separately approved repair plan exists.
+- **Next:** capture the appmanifest and active-branch manifests through
+  read-only inspection in an approved diagnostic window. Do not deploy until
+  `RELEASE-SAFETY-001` is resolved. The separate Aurelia prototype is historical
+  experimental work and is not a runtime dependency.
 - **Evidence (read-only, 2026-10-11):** raw `aurelia --json update` and the
   Mudos live check list LIMBO as `available`. `aurelia --json manifests 48000`
   reports public-branch manifests `48001=1261656871327265848` and
@@ -328,13 +309,10 @@ typically wants the maintained Windows build launched through Proton.
   Use synthetic provider/depot fixtures and controller-QML tests before
   physical acceptance; do not install or overwrite live titles without
   operator approval.
-- **Current integration boundary:** Mudos adapter and controller UI changes are
-  in this uncommitted work pending final validation and push. The new install-time
-  verification depends on Aurelia's existing library platform report; update
-  state/convergence requires the separate upstream `platform-state` contract,
-  which is not in the installed executable. Do not activate an Aurelia binary
-  built from the experimental checkout. `release.py activate` remains available
-  for intentional offline/bootstrap/rollback use; online deployment still
+- **Current integration boundary:** platform chooser and explicit install
+  selection remain in source. Update verification uses official Aurelia
+  `manifests --json` plus the local appmanifest; no experimental Aurelia
+  command is required. Source changes are not deployed. Online deployment still
   requires the fail-closed `RELEASE-SAFETY-001` guard.
 
 ### UNINSTALL-UX-001 — Hide a title while provider uninstall runs

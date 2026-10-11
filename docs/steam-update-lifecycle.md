@@ -1,7 +1,7 @@
 # Aurelia Steam update lifecycle
 
-**Status: update lifecycle baseline deployed; platform-aware adapter changes are
-source-only and pending Aurelia contract integration; physical acceptance
+**Status: platform chooser retained; official-Aurelia manifest verification is
+source-only pending validation and guarded deployment. Physical acceptance is
 pending.**
 
 ## Platform-selection and provider-contract work (source-only)
@@ -15,22 +15,19 @@ retry only when the saved platform matches. Aurelia installation receives
 `--platform windows|linux`; install reconciliation rejects an unknown or
 mismatched installed platform. Existing installations are not migrated.
 
-The Mudos update adapter has been changed to require an Aurelia per-AppID
-`platform-state` response containing installed and target depot→manifest maps.
-It rejects unknown/conflicting state and only completes an update when Aurelia
-reports `current` after execution. Update intent semantics are preserved:
-background work remains background-only, including on recovery.
+Mudos no longer requires the experimental `platform-state` command. The source
+adapter reads the installed appmanifest and Aurelia's official read-only
+`manifests APPID --json` output, compares only installed depot IDs against the
+active `BetaKey` branch, and treats `StateUpdateRequired` independently. Matching
+manifests are not a file-integrity claim. Provider command success is not
+sufficient: Mudos re-reads and verifies state before job completion. A
+non-convergent update is not automatically resubmitted or launched, and
+unchanged evidence is surfaced as unresolved. Background recovery remains
+background-only.
 
-This adapter change is deliberately not activated: production Aurelia 0.1.38
-does not expose `platform-state`. A separate Aurelia source branch contains a
-candidate contract with explicit platform persistence, strict platform
-selection, installed-platform mapping from appmanifest depots, target manifests,
-and pre/post-update convergence checks. It passes compile and focused unit
-tests, but has not been integrated, released, or activated. The candidate source
-is based on the public v0.1.38 tag, and no writable upstream fork was available
-or contribution PR created. The local candidate commit is `e5671cd`
-(`Add platform-aware Steam update evidence`). Mudos' production check/update path therefore must
-remain unchanged until that contract is reviewed and supplied by Aurelia.
+Official Aurelia v0.1.38 provides the read-only per-depot/branch manifest
+interface needed here. The separate Aurelia candidate (`e5671cd`) is historical
+experimental work only and is not a Mudos runtime dependency.
 
 ## Provider contract observed
 

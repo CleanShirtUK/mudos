@@ -10,6 +10,8 @@ import unittest
 from unittest.mock import AsyncMock, Mock, patch
 
 from lulu.jobs import DownloadJob, JobOperation, JobState
+from lulu.jobs import JobError
+from lulu.acquisitiond import AcquisitionInterface
 from lulu.acquisition_store import AcquisitionStore
 from lulu.job_manager import JobExecutionError, JobManager, JobReporter
 from lulu.plugins.steam.aurelia import (
@@ -23,6 +25,31 @@ from lulu.catalogue import CatalogueStore
 
 
 class AureliaClientTests(unittest.IsolatedAsyncioTestCase):
+    @staticmethod
+    def update_fixture(tmp: str, *, installed: dict[str, str], remote: list[dict[str, object]],
+                       state_flags: int = 4, branch: str = "public",
+                       command_error: bool = False):
+        root = Path(tmp) / "steamapps"
+        game_dir = root / "common" / "Fixture"
+        game_dir.mkdir(parents=True)
+        installed_rows = "\n".join(
+            f'        "{depot}" {{ "manifest" "{manifest}" }}'
+            for depot, manifest in installed.items())
+        beta = f'    "UserConfig" {{ "BetaKey" "{branch}" }}\n' if branch != "public" else ""
+        raw = (f'"AppState" {{ "appid" "48000" "StateFlags" "{state_flags}" '
+               f'"installdir" "Fixture" {beta} "InstalledDepots" {{ {installed_rows} }} }}')
+        (root / "appmanifest_48000.acf").write_text(raw)
+        def run(argv, **_kwargs):
+            if argv[-2:] == ["list", "--installed"]:
+                return 0, json.dumps([{"app_id": 48000, "name": "Fixture",
+                    "is_installed": True, "install_path": str(game_dir)}]), ""
+            if argv[-2:] == ["manifests", "48000"]:
+                if command_error:
+                    return 1, "", "provider response unavailable"
+                return 0, json.dumps(remote), ""
+            raise AssertionError(f"unexpected official Aurelia command: {argv}")
+        return AureliaClient("fake", Path(tmp) / "aurelia", run=run), root / "appmanifest_48000.acf"
+
     async def test_aurelia_entitlements_reconcile_to_installable_without_installed_duplicate(self):
         with tempfile.TemporaryDirectory() as temp:
             store = CatalogueStore(Path(temp) / "catalogue.sqlite")
@@ -152,29 +179,85 @@ class AureliaClientTests(unittest.IsolatedAsyncioTestCase):
             await client.command("libraries")
         self.assertEqual(caught.exception.code, "library-path-mismatch")
 
-    async def test_update_availability_uses_platform_depot_state_for_app_id(self):
-        calls = []
-        def run(argv, **_kwargs):
-            calls.append(tuple(argv))
-            app_id = argv[-1]
-            return 0, json.dumps({"app_id": app_id,
-                "status": "update-available" if app_id == "48000" else "current",
-                "platform": "windows", "branch": "public", "pinned": False,
-                "installed_depots": {"48001": "1"}, "target_depots": {"48001": "2"}}), ""
-        client = AureliaClient("fake", Path(tempfile.mkdtemp()), run=run)
-        available = await client.update_availability("48000")
-        current = await client.update_availability("2706170")
-        self.assertTrue(available["available"])
-        self.assertFalse(current["available"])
-        self.assertEqual(available["source"], "aurelia-platform-depot-state")
-        self.assertEqual(len(calls), 2)
-        self.assertEqual(calls[0][-2:], ("platform-state", "48000"))
+    async def test_windows_depot_current_ignores_newer_uninstalled_linux_depot(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            client, _ = self.update_fixture(tmp, installed={"48001": "101"}, remote=[
+                {"depot_id": 48001, "branch": "public", "manifest_id": 101},
+                {"depot_id": 48004, "branch": "public", "manifest_id": 999},
+            ])
+            result = await client.update_availability("48000", force=True)
+            self.assertEqual(result["status"], "current")
+            self.assertEqual(result["target_depots"], {"48001": "101"})
 
-    async def test_update_availability_does_not_turn_remote_failure_into_current(self):
-        client = AureliaClient("fake", Path(tempfile.mkdtemp()),
-                               run=lambda *_a, **_k: (75, "", ""))
-        with self.assertRaises(AureliaError):
-            await client.update_availability("48000")
+    async def test_linux_depot_current_ignores_newer_uninstalled_windows_depot(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            client, _ = self.update_fixture(tmp, installed={"48004": "202"}, remote=[
+                {"depot_id": 48004, "branch": "public", "manifest_id": 202},
+                {"depot_id": 48001, "branch": "public", "manifest_id": 999},
+            ])
+            self.assertEqual((await client.update_availability("48000", force=True))["status"], "current")
+
+    async def test_changed_installed_manifest_is_update_available(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            client, _ = self.update_fixture(tmp, installed={"48001": "101", "48002": "102"}, remote=[
+                {"depot_id": 48001, "branch": "public", "manifest_id": 101},
+                {"depot_id": 48002, "branch": "public", "manifest_id": 103},
+            ])
+            result = await client.update_availability("48000", force=True)
+            self.assertEqual(result["status"], "update-available")
+            self.assertEqual(result["changed_depots"], {"48002": {"installed": "102", "target": "103"}})
+
+    async def test_matching_manifests_with_update_required_flag_are_inconsistent(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            client, _ = self.update_fixture(tmp, installed={"48001": "101"}, state_flags=6,
+                remote=[{"depot_id": 48001, "branch": "public", "manifest_id": 101}])
+            result = await client.update_availability("48000", force=True)
+            self.assertEqual(result["status"], "inconsistent")
+            self.assertTrue(result["state_update_required"])
+
+    async def test_missing_remote_depot_is_unverifiable(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            client, _ = self.update_fixture(tmp, installed={"48001": "101"}, remote=[])
+            result = await client.update_availability("48000", force=True)
+            self.assertEqual(result["status"], "unverifiable")
+            self.assertFalse(result["available"])
+
+    async def test_nonpublic_branch_common_and_additional_installed_depots(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            client, _ = self.update_fixture(tmp, installed={"48001": "101", "48002": "202"},
+                branch="beta", remote=[
+                    {"depot_id": 48001, "branch": "public", "manifest_id": 999},
+                    {"depot_id": 48001, "branch": "beta", "manifest_id": 101},
+                    {"depot_id": 48002, "branch": "beta", "manifest_id": 202},
+                    {"depot_id": 48004, "branch": "beta", "manifest_id": 999},
+                ])
+            result = await client.update_availability("48000", force=True)
+            self.assertEqual(result["branch"], "beta")
+            self.assertEqual(result["status"], "current")
+            self.assertEqual(set(result["target_depots"]), {"48001", "48002"})
+
+    async def test_missing_installed_depot_record_and_provider_failure_are_unverifiable(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            client, appmanifest = self.update_fixture(tmp, installed={}, remote=[])
+            result = await client.update_availability("48000", force=True)
+            self.assertEqual(result["status"], "unverifiable")
+        with tempfile.TemporaryDirectory() as tmp:
+            client, _ = self.update_fixture(tmp, installed={"48001": "101"}, remote=[], command_error=True)
+            result = await client.update_availability("48000", force=True)
+            self.assertEqual(result["status"], "unverifiable")
+            self.assertEqual(result["provider_error_code"], "command-failed")
+
+    async def test_update_availability_cache_is_app_scoped_and_force_refreshes_manifest(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            client, appmanifest = self.update_fixture(tmp, installed={"48001": "101"}, remote=[
+                {"depot_id": 48001, "branch": "public", "manifest_id": 101}])
+            current = await client.update_availability("48000")
+            appmanifest.write_text(appmanifest.read_text().replace('"101"', '"100"'))
+            cached = await client.update_availability("48000")
+            fresh = await client.update_availability("48000", force=True)
+            self.assertEqual(current["status"], "current")
+            self.assertEqual(cached["status"], "current")
+            self.assertEqual(fresh["status"], "update-available")
 
     async def test_available_platforms_requires_explicit_depot_os_metadata(self):
         client = AureliaClient(run=lambda _argv, **_kwargs: (0, json.dumps({"app_id": 1, "depots": [
@@ -188,20 +271,6 @@ class AureliaClientTests(unittest.IsolatedAsyncioTestCase):
         ]}), ""))
         self.assertEqual(await unknown.available_platforms("1"), ())
 
-    async def test_platform_state_requires_both_depot_maps_and_known_status(self):
-        valid = AureliaClient(run=lambda *_a, **_k: (0, json.dumps({
-            "status": "platform-conflict", "platform": "linux",
-            "installed_depots": {"10": "1"}, "target_depots": {"11": "2"},
-        }), ""))
-        state = await valid.platform_state("1")
-        self.assertEqual(state["status"], "platform-conflict")
-        incomplete = AureliaClient(run=lambda *_a, **_k: (0, json.dumps({
-            "status": "current", "installed_depots": {"10": "1"},
-        }), ""))
-        with self.assertRaisesRegex(AureliaError, "depot-manifest evidence"):
-            await incomplete.platform_state("1")
-
-
 class AureliaAcquisitionTests(unittest.IsolatedAsyncioTestCase):
     async def test_update_job_runs_only_when_available_and_verifies_completion(self):
         class Client:
@@ -211,11 +280,10 @@ class AureliaAcquisitionTests(unittest.IsolatedAsyncioTestCase):
                 return []
             async def update_availability(self, _app_id, *, force=False):
                 self.checks += 1
-                return {"available": self.checks == 1, "pinned": False, "platform": "windows"}
+                return {"status": "update-available" if self.checks == 1 else "current",
+                        "available": self.checks == 1, "reason": "fixture",
+                        "installed_depots": {"48001": "1"}, "target_depots": {"48001": "2"}}
             async def update(self, _app_id): self.updates += 1
-            async def platform_state(self, _app_id):
-                return {"status": "current", "platform": "windows",
-                        "installed_depots": {"48001": "2"}, "target_depots": {"48001": "2"}}
             async def installed_games(self):
                 return (AureliaInstalledGame(PROVIDER_ID, "48000", "LIMBO", True,
                                              "/steam/common/Limbo", "windows", False),)
@@ -236,12 +304,68 @@ class AureliaAcquisitionTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(manager.jobs[job.job_id].cancellation_supported)
         self.assertFalse(manager.jobs[job.job_id].pause_supported)
 
+
+class SteamUpdateAcquisitionInterfaceTests(unittest.IsolatedAsyncioTestCase):
+    @staticmethod
+    def evidence():
+        return {"app_id": "48000", "status": "update-available", "available": True,
+                "branch": "public", "state_flags": 6, "state_update_required": True,
+                "installed_depots": {"48001": "1"}, "target_depots": {"48001": "2"},
+                "changed_depots": {"48001": {"installed": "1", "target": "2"}}}
+
+    async def test_check_exposes_unresolved_noop_but_keeps_real_availability_visible(self):
+        client = Mock(available=True)
+        client.update_availability = AsyncMock(return_value=self.evidence())
+        executor = Mock(client=client)
+        manager = JobManager()
+        previous_evidence = self.evidence()
+        previous = DownloadJob(
+            "failed-noop", PROVIDER_ID, "LIMBO", content_identity="steam-aurelia:48000",
+            provider_job_id="48000", operation=JobOperation.UPDATE, state=JobState.FAILED,
+            error=JobError("steam-update-unapplied", "No depot transition", False,
+                           {"phase": "after", "evidence": previous_evidence}),
+            retryable=False,
+        )
+        manager.jobs[previous.job_id] = previous
+        manager.executors[PROVIDER_ID] = executor
+        interface = object.__new__(AcquisitionInterface)
+        interface.manager = manager
+        value = json.loads(await AcquisitionInterface.CheckSteamUpdate.__wrapped__(interface, "48000"))
+        self.assertEqual(value["status"], "inconsistent")
+        self.assertTrue(value["available"])
+        self.assertEqual(value["actual_status"], "update-available")
+        self.assertTrue(value["unresolved_previous_attempt"])
+
+    async def test_submit_refuses_same_evidence_after_nonconvergent_update(self):
+        client = Mock(available=True)
+        client.update_availability = AsyncMock(return_value=self.evidence())
+        executor = Mock(client=client, capabilities=AureliaCapabilities())
+        manager = JobManager()
+        previous = DownloadJob(
+            "failed-noop", PROVIDER_ID, "LIMBO", content_identity="steam-aurelia:48000",
+            provider_job_id="48000", operation=JobOperation.UPDATE, state=JobState.FAILED,
+            error=JobError("steam-update-unapplied", "No depot transition", False,
+                           {"phase": "after", "evidence": self.evidence()}),
+            retryable=False,
+        )
+        manager.jobs[previous.job_id] = previous
+        manager.executors[PROVIDER_ID] = executor
+        interface = object.__new__(AcquisitionInterface)
+        interface.manager = manager
+        interface.bus = None
+        with self.assertRaises(Exception) as caught:
+            await AcquisitionInterface.SubmitSteamUpdate.__wrapped__(interface, "48000", "LIMBO", "background")
+        self.assertIn("did not converge", str(caught.exception))
+        self.assertEqual(len(manager.jobs), 1)
+
     async def test_recovered_update_never_resubmits_when_update_remains_available(self):
         class Client:
             updates = 0
             async def command(self, *_args, **_kwargs): return []
             async def update_availability(self, _app_id, *, force=False):
-                return {"available": True, "pinned": False, "platform": "windows"}
+                return {"status": "update-available", "available": True,
+                        "reason": "unchanged", "installed_depots": {"48001": "1"},
+                        "target_depots": {"48001": "2"}}
             async def update(self, _app_id): self.updates += 1
         client = Client()
         executor = AureliaAcquisitionExecutor(client)
@@ -259,6 +383,36 @@ class AureliaAcquisitionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(client.updates, 0)
         self.assertTrue(any(call.kwargs.get("origin_metadata", {}).get("launch_intent") == "none"
                             for call in reporter.metadata.await_args_list))
+
+    async def test_successful_command_without_manifest_transition_is_nonretryable(self):
+        class Client:
+            checks = 0
+            updates = 0
+            async def command(self, *_args, **_kwargs): return []
+            async def update_availability(self, _app_id, *, force=False):
+                self.checks += 1
+                return {"status": "update-available", "available": True,
+                        "reason": "same installed depot remains old", "branch": "public",
+                        "state_flags": 6, "state_update_required": True,
+                        "installed_depots": {"48001": "1"}, "target_depots": {"48001": "2"},
+                        "changed_depots": {"48001": {"installed": "1", "target": "2"}}}
+            async def update(self, _app_id): self.updates += 1
+        client = Client()
+        executor = AureliaAcquisitionExecutor(client)
+        executor._steam_provider.presentation_pids = lambda _app_id: []
+        job = DownloadJob("update-noop", PROVIDER_ID, "LIMBO",
+                          content_identity="steam-aurelia:48000", provider_job_id="48000",
+                          operation=JobOperation.UPDATE)
+        reporter = Mock()
+        reporter.metadata = AsyncMock()
+        reporter.state = AsyncMock()
+        reporter.progress = AsyncMock()
+        with self.assertRaisesRegex(JobExecutionError, "update-available after") as caught:
+            await executor.run(job, reporter)
+        self.assertEqual(caught.exception.code, "steam-update-unapplied")
+        self.assertFalse(caught.exception.retryable)
+        self.assertEqual(caught.exception.details["phase"], "after")
+        self.assertEqual(client.updates, 1)
 
     async def test_uninstall_uses_aurelia_app_id_command_and_reconciles_installed_list(self):
         client = Mock()

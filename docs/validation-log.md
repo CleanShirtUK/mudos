@@ -2624,13 +2624,8 @@ restart may be required for InputPlumber to publish a newly created target.
   conflict/retry/recovery. The Aurelia executor passes `--platform` and rejects
   an unknown or mismatched installed-platform report. Existing installations
   were not touched.
-- Mudos' update adapter now expects `aurelia platform-state APPID --json`,
-  requires installed and target depot-manifest maps, rejects platform
-  conflict/unknown, and requires `current` after update completion. Acquisitiond
-  captures the discovered installed platform in update-job metadata. These
-  changes fail closed with production Aurelia 0.1.38 because that executable
-  does not implement the new command; **do not activate this adapter until the
-  Aurelia contract is integrated and released**.
+- Mudos initially expected experimental `aurelia platform-state APPID --json`;
+  this dependency is retired by the source correction recorded below.
 - Separate Aurelia source checkout `/tmp/opencode/aurelia-platform-contract`,
   branch `work/platform-contract`, based on public tag commit
   `50c44d33b97f4aee6fe694e90c464951970d9fd8`. Candidate changes add explicit
@@ -2648,9 +2643,27 @@ restart may be required for InputPlumber to publish a newly created target.
   unqualified-access warnings and no new platform-popup missing-property
   findings. `git diff --check` passed. No live update/install, verification,
   migration, deployment, or physical-controller test was performed.
-- Remaining: review and land the Aurelia contract through an authorized upstream
-  contribution route; add comprehensive synthetic convergence tests for Windows,
-  Linux, mismatch, no-op and incomplete targets; rerun all relevant Mudos and
-  Aurelia tests; then integrate and validate the released provider before any
-  runtime activation. Physical controller acceptance and the online fail-closed
-  deployment guard remain open.
+- Remaining at that point: comprehensive synthetic convergence tests, relevant
+  Mudos/Aurelia tests, physical acceptance, and the online fail-closed guard.
+
+### 2026-10-11 — Official Aurelia update verification correction (source-only)
+
+- Reviewed official v0.1.38 tagged implementation: update detection trusts
+  appmanifest `StateUpdateRequired`, otherwise compares installed depot IDs to
+  corresponding remote branch manifests; update execution restricts remote
+  depots to installed depot IDs when records exist. Other platform depots alone
+  do not imply an update. `aurelia manifests APPID --json` provides read-only
+  depot/branch/current-manifest evidence. Mudos no longer requires experimental
+  `platform-state`.
+- Mudos reads `InstalledDepots`, active `BetaKey`, `StateFlags`, and supported
+  Aurelia manifest output; it classifies current, available, inconsistent, or
+  unverifiable and rechecks after update. This is manifest-state evidence, not
+  byte-level integrity verification.
+- LIMBO (48000): `appmanifest_48000.acf` was not present in accessible Steam
+  library roots, so current `StateFlags`, installed depot IDs, and branch
+  comparison cannot be reported. Steam `content_log.txt` has Oct 6 config
+  changes adding 48004/48005 and removing 48001/48002, plus 83,407,104 bytes
+  prefetched and zero staged; Oct 10 shows further scheduling. This confirms
+  Steam logged activity, not appmanifest rewrite or installed depot transition.
+  Linux-activity attribution to Aurelia is unproven. No update, verify, launch,
+  restart, or game-state change was performed.
