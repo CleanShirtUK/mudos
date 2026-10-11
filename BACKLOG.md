@@ -221,6 +221,29 @@ The failed UI request cannot have initiated this transfer. This is distinct
   clean restart. Record selected platform, depot/manifest IDs, file baseline,
   and any Steam-originated queue or content changes. If the install cannot be
   established, stop and classify the blocker rather than infer update behavior.
+- **Clean-environment attempt (2026-10-11; Outcome C):** stopped the prior
+  `steam-compat-stage1-real.service` cleanly; production `lulu-steam-runtime`
+  remained active with the same invocation and zero restarts. Created fresh,
+  private test HOME/config/data/cache directories under
+  `/home/.steam-aurelia-clean-20261011`; no production path or credential was
+  exposed or copied. With those XDG/HOME paths, official Aurelia 0.1.37
+  `libraries --json` returned `{"libraries":[]}`. Its supported interface does
+  include `install --platform windows --library <path>`, but the clean client
+  has not registered a library, has no Aurelia session, and no owned-game
+  entitlement was verified. No Steam client was started in the fresh tree, no
+  game was selected or installed, and no update behavior was observed. Stop
+  here rather than use a production library, transfer session data, or guess a
+  safe title. This attempt does not support either side of the healthy-install
+  hypothesis.
+- **Interference safeguards (assessment only):** Acquisitiond idle is not proof
+  that Steam is idle. Steam's content log, `downloading`/`temp` state, manifest
+  state, and active writers/processes can be useful corroborating signals, but
+  no supported authoritative idle API has been established; log silence or a
+  point-in-time scan cannot close races. Do not add fragile parsing or change
+  deployment policy here. Until separately designed, Mudos should avoid
+  knowingly overlapping operations when observable Steam content activity is
+  present and treat ambiguous evidence as a reason to defer—not as proof that
+  isolation is required.
 - **Readiness-test expectation correction:** the remaining OOBE failure was
   already present at `9dafec0` and came from a stale fixture expectation. The
   test injected only the deprecated legacy `steam` entitlement source, while

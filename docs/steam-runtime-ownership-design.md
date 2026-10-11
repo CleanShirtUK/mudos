@@ -280,6 +280,46 @@ blocker, not evidence for or against autonomous updates.
 Until this experiment is evaluated, the mount-namespace prototype remains a
 fallback proposal rather than a mandatory production architecture change.
 
+### Attempted clean-environment setup (2026-10-11; Outcome C)
+
+The previous transient `steam-compat-stage1-real.service` was stopped cleanly.
+Production `lulu-steam-runtime.service` remained active with the same PID and
+invocation and zero restarts. A new private test HOME/config/data/cache tree was
+created at `/home/.steam-aurelia-clean-20261011`; it contains no copied Steam or
+Aurelia credentials and has not been used to start Steam. The existing
+`steamstage1` Unix account remains dedicated to the prior isolated client.
+
+With `HOME` and XDG paths set to the fresh tree, official Aurelia 0.1.37
+`libraries --json` returned `{"libraries":[]}`. Its CLI supports explicit
+`install --platform windows --library <path>`, but the fresh Steam configuration
+has not registered any library. The fresh Aurelia config has no session, and no
+owned-game entitlement was verified. The prior Steam UI's authenticated state
+was not copied or reused. No game was selected, no installation/update was
+started, and no Steam client was started in this fresh tree. The experiment
+therefore ends before a healthy installation and provides no evidence about
+Steam's normal update behavior (Outcome C).
+
+Resume only after a safe owned fixture can be identified and official Aurelia
+authentication is established inside the isolated environment without copying
+session/credential material. Initialize/register the disposable Steam library,
+confirm both tools recognize that exact path, disable Cloud in the isolated
+Steam client, inventory the empty baseline, then perform the controlled
+explicit-Windows Aurelia install and discovery/restart comparisons above. If
+those prerequisites cannot be met, report the blocker; do not use production
+content or infer a result.
+
+## Operational conflict signals (assessment only)
+
+Acquisitiond's idle snapshot is not evidence that the resident Steam client has
+no content operation. Steam's content log, `downloading`/`temp` and manifest
+state, active Steam processes, and open writers to content paths can corroborate
+activity. No supported authoritative idle API has been established, and log
+silence or a one-time filesystem/process scan cannot prove inactivity or close
+a race. Do not introduce log parsing or deployment-policy changes as part of
+this evidence-gathering task. A later lightweight conflict check should avoid
+known overlap and defer on ambiguous evidence, but must not treat that as proof
+that a kernel namespace is required.
+
 The OOBE readiness-test failure present at commit `9dafec0` was a stale fixture
 expectation: it injected only the legacy `steam` entitlement source, while
 current reconciliation intentionally handles `steam-aurelia`; no readiness
