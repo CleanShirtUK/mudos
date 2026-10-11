@@ -35,11 +35,11 @@ Automated regression coverage is added; physical validation has not yet run.
 
 **Status: OPEN · P1 · PHYSICALLY REPORTED (2026-10-11).** After
 updating LIMBO, the operator reports that **subsequent game launches**
-seem to trigger an update each time. The affected scope (LIMBO alone,
-several games, or all Steam titles) is **not yet established**, nor is it
-known whether content is actually updated repeatedly or Mudos is
-re-offering updates because of stale/incorrect status. Do not presume
-successful remote depot convergence from a terminal job alone.
+seem to trigger an update each time. Read-only job history now shows
+completed UPDATE submissions for both LIMBO and Trackmania, but it is not
+known whether content is actually updated repeatedly or Mudos is re-offering
+updates because of stale/incorrect status. Do not presume successful remote
+depot convergence from a terminal job alone.
 
 - **Investigate:** first establish which Steam titles are affected without
   starting fresh update jobs. Correlate each game launch and job ID with
@@ -55,16 +55,21 @@ successful remote depot convergence from a terminal job alone.
   `provider_state=updated`, and no recorded error. The legacy acquisition job
   predates these updates. Aurelia's current raw `aurelia --json update` lists
   LIMBO only; live Mudos checks report LIMBO `available`, while Trackmania
-  (2225070) and Dead by Daylight (381210) report `current`. Thus the observed
-  availability is not a Mudos-only cached result and does not demonstrate
-  repeated jobs on other titles. However, a fresh `available` report conflicts
-  with the successful job records and their force-refresh verification path;
+  (2225070) and Dead by Daylight (381210) report `current`. Trackmania has two
+  completed UPDATE records (`job-e11163d51c084c5f88fbbd910f038a4b` and
+  `job-9124771903df4aedb08a4cd3e3ecffba`) and currently reports `current`.
+  This establishes repeated submissions across more than one title, but does
+  not establish that either title's bytes were re-downloaded on every launch.
+  Aurelia's raw report agrees with the live LIMBO availability, so this is not
+  only a Mudos cached result. The fresh LIMBO `available` report conflicts
+  with the successful LIMBO job records and their force-refresh verification path;
   actual content/version convergence is unproven. LIMBO's manifest says
   buildid and TargetBuildID are both `18220724`, `BytesDownloaded=0`,
   `StagingSize=0`; installed depots 48001/48002 are recorded, but no pre-update
   depot baseline exists. No further update was started. Cause remains open;
   current evidence does not establish duplicate submission versus Aurelia
-  manifest behavior or changed content. No common multi-title failure shown.
+  manifest behavior or changed content. A common repeated-submission symptom
+  spans LIMBO and Trackmania; a shared underlying cause is not demonstrated.
 - **Accept:** confirmed-current games launch without an update prompt;
   an available update submits at most one real job per version/AppID;
   successful updates clear update availability; unsuccessful/unverifiable

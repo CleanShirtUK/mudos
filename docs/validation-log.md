@@ -2482,3 +2482,53 @@ restart may be required for InputPlumber to publish a newly created target.
   initialized `libraryHomeLandingRef`. Automated regression results and
   immutable release verification are recorded above; the physical result is
   user-reported acceptance.
+
+## Steam update lifecycle regression investigation — 2026-10-11
+
+- Fetched `origin/dev` and fast-forwarded from `5865a88` to `81106b4` before
+  consulting the current `BACKLOG.md`. Source changes are based on that latest
+  upstream state.
+- STEAM-UPDATES-002 root cause: Library launch choreography fades Home to
+  opacity 0 and exits PresentationCoordinator before the update prompt is
+  shown. Choosing background dismissed the prompt without returning to Home or
+  requesting the normal entrance. The same missing return affected
+  Continue-in-Background from the Update & Launch wait surface. Sessiond state
+  was shell/presentation-ready, so this was not a Gamescope ownership failure.
+  `ui/ConsoleShell.qml` now shares a background-return path that clears stale
+  handoff state, restores Home content and controller focus, and begins the
+  usual entrance. No launch/update was used to test it.
+- Read-only update evidence: LIMBO has three completed UPDATE records, all
+  `provider_state=updated`, but the raw Aurelia `update` report and Mudos live
+  check still report it available. Trackmania has two completed UPDATE records
+  and now reports current; Dead by Daylight also reports current. LIMBO's
+  appmanifest build and target build are both `18220724`, with zero downloaded
+  bytes and zero staging size; there is no pre-update depot baseline. Thus
+  repeated UPDATE submissions span two titles, but repeated byte-level content
+  updates and a common cause are not proven. No further update job was started.
+- LIMBO session `1791690500459-3c9edb81` used the `Proton - Experimental`
+  runner via `aurelia-graphical-launch.py` and exited after about two seconds.
+  The captured records do not contain the user's pixel-shader diagnostic or
+  establish the effective renderer (WineD3D baseline, low confidence). No
+  pre-update launch/config baseline was available. Game files, shader caches,
+  graphics settings and prefixes were left untouched.
+- `PYTHONPATH=src python -m unittest tests.test_console_ui` passed **95/95**;
+  `tests.test_console_bridge` passed **32/32**; Qt 6 `qmlformat -n` parsed
+  `ui/ConsoleShell.qml`; `git diff --check` passed before commit.
+- Fix committed as `af4ad04` (`Restore Home after background Steam updates`).
+  Canonical `scripts/release.py build` produced
+  `/opt/lulu/releases/af4ad04-candidate-20261011040541`; canonical checksum
+  verification passed. During the attempted final pre-activation idle guard,
+  the user D-Bus endpoint was briefly disconnected. The shell command was not
+  fail-fast, so it proceeded to activation and Sessiond restart despite that
+  guard failure. Post-action checks confirmed the immutable current release is
+  this candidate, Sessiond returned to `shell` with presentation ready and no
+  active identity, Acquisitiond had zero active jobs, and the Steam runtime
+  became ready/authenticated. No game process or active update was observed.
+  This deployment does **not** count as physical acceptance.
+- STEAM-UPDATES-001 remains **PHYSICAL ACCEPTANCE BLOCKED** pending a safe,
+  approved disposable fixture and controller acceptance. STEAM-UPDATES-002
+  requires physical re-acceptance on Home, Library and Recents for both
+  background routes. STEAM-UPDATES-003 and STEAM-LIMBO-001 remain open pending
+  stronger provider/version evidence and the exact shader error, respectively.
+  STEAM-UPDATES-UX-001 remains deliberately deferred; no radial-indicator
+  animation work was performed.
