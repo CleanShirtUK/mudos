@@ -73,10 +73,11 @@
   passed its `manifest.sha256` (SHA-256 of manifest:
   `80a98654cb59a0e2eab8f4ddd26232bcca9aacb0312a17e55bb5c2905e1e8bcd`). The
   candidate contains the recovery fix and remains immutable/verified.
-- **Physical gates now pass:** at the guarded attempt Sessiond reported
-  shell/presentation ready, DP-1 connected, one connected Xbox controller,
-  no launch identity/token, Steam ready/authenticated, and Acquisitiond had no
-  active jobs. The Rocket League REMOVE remained failed and non-retryable.
+- **Physical gates passed:** before the successful guarded attempt, Sessiond
+  reported shell/presentation ready, DP-1 connected, one connected Xbox
+  controller, no launch identity/token, Steam ready/authenticated, and
+  Acquisitiond had no active jobs. The Rocket League REMOVE remained failed
+  and non-retryable.
 - **Steam failure diagnosis:** systemd records `StartLimitIntervalSec=300s`,
   `StartLimitBurst=5`, `Restart=always`, `RestartSec=5s`, and
   `TimeoutStartSec=180s`. Five service starts occurred in the deployment /
@@ -96,14 +97,26 @@
   systemd `READY=1` authenticated status at 13:00:34; the same invocation
   remained active with `NRestarts=0` after a 20-second stability observation.
   Sessiond subsequently reports presentation ready and a connected controller.
+- **Corrected guarded deployment:** after recovery and regression validation,
+  ran the canonical guarded deployment exactly once more. It succeeded at
+  13:02:19 BST and selected
+  `/opt/lulu/releases/24acb93-candidate-20261011102738`. Its restart order
+  restarted Consoled, then Acquisitiond, then Sessiond. Steam was stopped once
+  by Sessiond's `PartOf=` relation, started once at 13:02:12, and reached
+  authenticated `READY=1` by 13:02:19; it remains active with `NRestarts=0`.
+  All required units are active; Sessiond reports shell/presentation ready,
+  Xbox controller connected, no active identity/token; Consoled RPC succeeds;
+  Acquisitiond has no active jobs; Rocket League REMOVE remains failed and
+  non-retryable. Candidate checksum/verification remain valid. No Steam game
+  install, update, verify, launch, or removal was run.
 - **Guard corrections:** retained bounded 20-second RPC startup probes and the
   180-second post-restart readiness budget, and corrected restart order to
   Consoled, Acquisitiond, then Sessiond. This satisfies shell bootstrap
   dependencies before Sessiond starts its child and restarts PartOf-linked
   Steam only once per activation/rollback. No rate limits were weakened or
   removed. Full fail-closed preflight, immediate recheck, and post-activation
-  validation remain required; regression tests and the one permitted guarded
-  attempt are pending.
+  validation remain required. Focused guard/release tests pass (24 passed,
+  18 subtests). Changes and evidence are pushed at `f08a351`.
 - Official Aurelia 0.1.37 remains contract-compatible. No Steam install,
   update, verify, launch, or removal was run.
 

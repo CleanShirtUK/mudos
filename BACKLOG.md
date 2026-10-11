@@ -12,7 +12,7 @@ evidence and this reconciliation rationale are in
 
 ### RELEASE-SAFETY-001 — Deployment idle-check failure did not block activation
 
-**Status: OPEN · P1 · GUARD IMPLEMENTED/TESTED; DEPLOYMENT BLOCKED.** On 2026-10-11, a shell
+**Status: FIX DEPLOYED/TESTED · P1 · OPERATIONAL ACCEPTANCE COMPLETE.** On 2026-10-11, a shell
 deployment command attempted to query Sessiond through `/run/user/958/bus`
 from a root process. That root-context connection failed (`Broken pipe` /
 `Transport endpoint is not connected`); the same read-only GetState call
@@ -33,7 +33,16 @@ atomically switches the selector, but intentionally has no session-idle policy.
   checks readiness after a single restart. Post-activation failures trigger one
   rollback attempt. `release.py activate` remains available for offline,
   bootstrap, and recovery use. See `docs/guarded-deployment.md`.
-- **Current blockers:** the orphaned Rocket League row has been safely
+- **Deployment and acceptance:** after diagnosing and correcting service
+  restart ordering, the canonical guard activated
+  `/opt/lulu/releases/24acb93-candidate-20261011102738` on 2026-10-11.
+  Required services are active; Sessiond is in shell with presentation ready,
+  a connected Xbox controller, no active identity/token; Steam is ready and
+  authenticated; Consoled RPC succeeds; Acquisitiond has no active jobs; the
+  Rocket League REMOVE remains failed/non-retryable. The staged release
+  verifies and remains the active immutable release. No game-content operation
+  was run.
+- **Prior blocker evidence:** the orphaned Rocket League row has been safely
   reconciled and Acquisitiond restarted; there are no active acquisition jobs.
   Physical presentation and controller readiness passed at deployment
   attempts. Both attempts restored `/opt/lulu/current` to
@@ -52,12 +61,14 @@ atomically switches the selector, but intentionally has no session-idle policy.
   no rate limits were changed. Steam was recovered after confirming no active
   acquisition/game, no orphan Steam/Xvfb, and no existing :99 socket/lock; one
   `reset-failed` plus one normal start reached authenticated READY and remained
-  healthy for 20 seconds. Candidate
-  `/opt/lulu/releases/24acb93-candidate-20261011102738` remains verified.
-  Official Aurelia 0.1.37's required interfaces are compatible.
-- **Next:** resolve the blockers, fetch/reconcile current `dev`, then run the
-  guarded entry point on a safely idle appliance. Do not close until a real
-  guarded deployment succeeds.
+  healthy for 20 seconds. The subsequent one-shot guarded deployment used the
+  corrected restart order and succeeded; Steam started once for that
+  activation, reached authenticated READY, and had `NRestarts=0` afterward.
+  `/opt/lulu/releases/24acb93-candidate-20261011102738` remains verified and
+  active. Official Aurelia 0.1.37's required interfaces are compatible.
+- **Physical acceptance remains separate:** operator-owned Steam platform
+  selection and update-lifecycle acceptance remain tracked in their issues;
+  these were not part of deployment validation.
 - **Preserve legitimate workflows:** keep canonical `release.py activate` as
   the low-level atomic selector operation for intentional offline/bootstrap and
   rollback workflows; do not add an unconditional Sessiond requirement that
@@ -72,8 +83,8 @@ atomically switches the selector, but intentionally has no session-idle policy.
 
 ### ACQUISITION-REMOVE-001 — Interrupted provider removal could be replayed on restart
 
-**Status: SOURCE FIX COMMITTED/TESTED; HISTORICAL JOB RECONCILED; VERIFIED
-CANDIDATE STAGED; PRODUCTION FIX PENDING GUARDED DEPLOYMENT.** On 2026-10-11,
+**Status: SOURCE FIX COMMITTED/TESTED/DEPLOYED; HISTORICAL JOB RECONCILED;
+RESTART SAFETY CONFIRMED.** On 2026-10-11,
 Acquisitiond reported job
 `job-aea04e11b30a4a66884ffa8b4d31c708` (`steam-aurelia:252950`, REMOVE) as
 `transferring`, stage `Downloading depot 252951`, progress 0.001. It was created
@@ -147,8 +158,7 @@ path are documented below. Do not run a real update solely for validation.
 
 ### STEAM-UPDATES-003 — Update offered again after a reported completion
 
-**Status: SOURCE CORRECTION COMMITTED · VERIFIED CANDIDATE STAGED, NOT ACTIVATED;
-PHYSICAL ACCEPTANCE OPEN.**
+**Status: SOURCE CORRECTION COMMITTED/DEPLOYED · PHYSICAL ACCEPTANCE OPEN.**
 Prior LIMBO evidence below is historical and does not
 establish the current appmanifest or update state.
 
@@ -353,8 +363,7 @@ was not diagnosed and must not be conflated with the later failed game launch
 
 ### STEAM-PLATFORM-001 — Choose Steam download platform from Installable
 
-**Status: IMPLEMENTED IN SOURCE · VERIFIED CANDIDATE STAGED, NOT ACTIVATED ·
-PHYSICAL ACCEPTANCE OPEN · P2.** When starting installation of a Steam
+**Status: IMPLEMENTED/DEPLOYED · PHYSICAL ACCEPTANCE OPEN · P2.** When starting installation of a Steam
 title from the Installable view, let the operator confirm which supported
 platform's content should be acquired, rather than silently accepting the
 provider's automatic depot/platform choice. This matters for games such as
