@@ -3009,6 +3009,15 @@ restart may be required for InputPlumber to publish a newly created target.
   configuration or bypass the guard. No game files, Steam metadata, credentials,
   Aurelia binary, prefixes, shader caches, or production library registrations
   were changed.
+- Final read-only snapshot confirmed Sessiond shell lifecycle and presentation
+  ready, zero connected controllers, Steam ready/authenticated, and Acquisitiond
+  with **0 active**, 8 cancelled, 66 completed, and 30 failed jobs
+  (`activeDownloadCount=0`). Rocket League's historical REMOVE remains terminal
+  `failed`, `retryable=false`; its separate ACQUIRE row is `completed`. Sessiond,
+  Consoled, Acquisitiond, and Steam service invocations/PIDs and restart counters
+  were unchanged. The three empty temp directories remained empty with no
+  appmanifest or matching downloading tree; the content log had not advanced.
+  The selected release remained `/opt/lulu/releases/24acb93-candidate-20261011102738`.
 - Regression results: targeted Steam/Aurelia, Acquisitiond startup/persistence,
   console bridge/UI, Sessiond/controller readiness, guarded-deployment, release,
   and ownership suites passed **311 tests and 32 subtests**. The focused QML
