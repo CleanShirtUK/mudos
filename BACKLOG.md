@@ -60,16 +60,48 @@ path are documented below. Do not run a real update solely for validation.
 
 ### STEAM-UPDATES-003 — Update offered again after a reported completion
 
-**Status: OPEN · P1 · DEPOT/PLATFORM MISMATCH CONFIRMED; EXECUTION ROOT CAUSE
-UNDER INVESTIGATION.** The earlier reports are no longer adequately explained
+**Status: OPEN · P1 · DEPOT/PLATFORM MISMATCH CONFIRMED; UPSTREAM CONTRACT
+GAP IDENTIFIED.** The earlier reports are no longer adequately explained
 as simply a stale Mudos cache or repeat prompts: Steam's current LIMBO depot
 configuration and the installed appmanifest select different depots.
 
-- **Next:** continue read-only correlation of Aurelia's update implementation
-  and per-job output with Steam depot selection. Determine why each completed
-  operation did not move the installed depot set to the active target. Keep
-  reporting real availability; no suppression, manifest edits, verify, or live
-  update until a separately approved content-repair plan exists.
+- **Source-level finding (read-only, installed Aurelia v0.1.38 source):**
+  `install` auto-selects Windows depots preferentially, with an explicit
+  `--platform` override;
+  `import` defaults to the host OS unless explicitly told otherwise. The
+  per-game platform preference is documented as a launch setting. In contrast,
+  `update <APP_ID>` and `check-updates` expose no platform option; `update`
+  delegates to `SteamClient::update_game`, and the check delegates to
+  `check_for_updates`. Their CLI contract exposes neither selected depots nor
+  per-depot installed/target manifests in update results. The exact internal
+  platform selection and why the LIMBO operation reported success without an
+  observable depot transition cannot be established through the supported CLI.
+  This is an Aurelia observability/contract gap. Mudos also has a confirmed
+  adapter completion weakness: `_confirm_updated()` treats “availability now
+  false + still installed” as successful without checking depot transition,
+  but the current Aurelia result contract does not provide sufficient safe
+  evidence for Mudos to correct this.
+- **Policy:** preserve intended installed content and launch route. Windows
+  content launched via Proton remains a valid deliberate configuration and
+  must not be migrated because native Linux depots exist. Native Linux content
+  should pair with a native Linux launch; Windows-only and inherited SteamCMD
+  installs retain Windows content/Proton where applicable. Store-facing
+  platform metadata alone cannot establish installed depot policy. Unknown
+  identity must be reported as unknown/conflict, not silently considered
+  current or updated.
+- **Concrete upstream proposal:** return a read-only update plan/result with
+  chosen platform, active branch/build, installed depot→manifest map and target
+  depot→manifest map; make update/check use the same explicit platform policy;
+  and report a distinct platform/depot conflict or unchanged no-op instead of
+  terminal success when the target depot set was not applied. Mudos should only
+  complete after the same-platform target manifests are confirmed current or a
+  relevant transition is confirmed. Keep genuine availability visible, while
+  classifying a repeated conflict as non-retryable pending operator resolution.
+- **Next:** obtain that supported evidence contract (or establish a safe local
+  appmanifest/Steam metadata adapter contract) before implementing depot-aware
+  completion claims. Keep reporting real availability; no suppression,
+  manifest edits, verify, or live update until a separately approved repair
+  plan exists.
 - **Evidence (read-only, 2026-10-11):** raw `aurelia --json update` and the
   Mudos live check list LIMBO as `available`. `aurelia --json manifests 48000`
   reports public-branch manifests `48001=1261656871327265848` and
@@ -102,6 +134,12 @@ configuration and the installed appmanifest select different depots.
   unintended platform target still requires confirmation from its per-job
   behavior. The same symptom includes completed Trackmania submissions, but
   no shared cause for Trackmania is established.
+- **LIMBO recommendation:** do not change its Aurelia platform preference or
+  content now. Preserve the installed Windows depots, saves, prefix and Proton
+  launch route while the contract is unresolved. Any later Linux-content
+  migration needs explicit approval plus a save/prefix inventory, intended
+  executable/runtime validation, and a recoverable return plan; this
+  investigation authorizes none of those operations.
 - **Safety:** do not run `aurelia verify`, submit another update, edit
   appmanifest, pin/suppress updates, switch runtime, or alter game files as an
   investigation probe. Any move from Windows/Proton content to Linux content

@@ -2588,3 +2588,27 @@ restart may be required for InputPlumber to publish a newly created target.
 - STEAM-UPDATES-002 remains deployed and awaiting physical acceptance. Its
   next safe check is a synthetic update fixture from Home, Library, and Recents
   for both background paths. STEAM-UPDATES-UX-001 remains deferred.
+
+### 2026-10-11 — Aurelia platform/update contract review
+
+- Inspected the installed Aurelia package version (0.1.38) and its matching
+  upstream source. `install` prefers Windows depots by default and supports
+  `--platform`; `import` defaults to host OS. Per-game `config game --platform`
+  is a launch preference. `update` has no platform argument and delegates to
+  `SteamClient::update_game`; update checking delegates to `check_for_updates`.
+  The JSON update/check result does not expose chosen platform or installed and
+  target depot-manifest maps. Thus the observed depot mismatch is confirmed,
+  while Aurelia's internal update target choice and the mechanism of the
+  reported successful no-transition remain unproven.
+- Mudos `_confirm_updated()` has weaker-than-required success semantics, but
+  cannot safely distinguish a real same-platform current state from a
+  platform-mismatched no-op using the current Aurelia CLI contract. No
+  speculative depot parser or app-build-only comparison was added. Backlog
+  records a concrete upstream result/plan contract proposal and preserves the
+  real availability report.
+- LIMBO policy recommendation is to retain Windows depots and its Proton
+  route, with saves and prefix untouched. No platform setting, game content,
+  verification, update, launch, or Steam state was changed. Physical update
+  lifecycle acceptance remains blocked; existing test fixtures do not prove
+  depot-convergence semantics, so those tests are deferred until the upstream
+  evidence contract is available.
