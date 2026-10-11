@@ -68,18 +68,32 @@
   `04c80a655dbf956df63c920f7aefa1153e9c3c0b`; validation/backlog reconciliation
   is pushed at `24acb931069937c8e1aa945bffe3851c609ea59f`. Local `dev` and
   `origin/dev` agree and the source checkout is clean.
-- **Deployment:** canonical builder produced
+- **Deployment candidate:** canonical builder produced
   `/opt/lulu/releases/24acb93-candidate-20261011102738`; canonical `verify`
-  passed and validated its `manifest.sha256`. This candidate is immutable and
-  staged only. Guarded preflight refused with `Sessiond shell presentation is
-  not ready`; independent state checks also show both DRM connectors
-  disconnected and no connected controller. Steam runtime is ready/authenticated
-  and no acquisition job is active. `/opt/lulu/current` remains
-  `/opt/lulu/releases/af4ad04-candidate-20261011040541`; no service was restarted
-  for deployment and no activation attempted. Operator must wake/connect the TV
-  DisplayPort link and power/reconnect the Xbox controller, then rerun the
-  complete guard. Official Aurelia 0.1.37 remains contract-compatible; no Steam
-  install, update, verify, launch, or removal was run.
+  passed its `manifest.sha256` (SHA-256 of manifest:
+  `80a98654cb59a0e2eab8f4ddd26232bcca9aacb0312a17e55bb5c2905e1e8bcd`). The
+  candidate contains the recovery fix and remains immutable/verified.
+- **Physical gates now pass:** at the guarded attempt Sessiond reported
+  shell/presentation ready, DP-1 connected, one connected Xbox controller,
+  no launch identity/token, Steam ready/authenticated, and Acquisitiond had no
+  active jobs. The Rocket League REMOVE remained failed and non-retryable.
+- **Guard attempt and automatic rollback:** deployment reached service restart,
+  but the one-shot Consoled `GetComponentRegistry` D-Bus restart probe failed
+  transiently. The guard attempted its tested rollback; the rollback's own
+  one-shot probe also failed during restart, but the atomic selector was
+  confirmed back on `/opt/lulu/releases/af4ad04-candidate-20261011040541`.
+  The attempted candidate was not left selected. Services subsequently
+  stabilized; all required units are active, Sessiond presentation/controller
+  are ready, current Consoled RPC succeeds, Steam runtime is ready/authenticated,
+  and Acquisitiond remains idle with the same terminal Rocket League row.
+- **Guard correction:** `scripts/guarded-deploy.py` now retries only each
+  restarted service's D-Bus name/readiness probe for a bounded 20 seconds.
+  Full fail-closed preflight before activation, immediate recheck, and complete
+  post-activation validation remain unchanged. Focused guard/release tests pass
+  (22 passed, 18 subtests); reattempt is pending this correction being pushed
+  and current state being re-preflighted.
+- Official Aurelia 0.1.37 remains contract-compatible. No Steam install,
+  update, verify, launch, or removal was run.
 
 ## Startup regression diagnosis and fix — 2026-09-22
 

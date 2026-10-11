@@ -144,12 +144,30 @@ def read_and_validate(run: Callable = _run) -> None:
         raise GuardError("Consoled response has the wrong shape")
 
 
-def _restart_updated_services(run: Callable) -> None:
+def _wait_for_service_probe(probe: tuple[str, str, str, str], sleep: Callable = time.sleep,
+                            timeout: float = 20.0) -> None:
+    deadline = time.monotonic() + timeout
+    last_error: GuardError | None = None
+    while True:
+        try:
+            _as_user_bus_call(*probe)
+            return
+        except GuardError as error:
+            last_error = error
+        if time.monotonic() >= deadline:
+            raise GuardError(f"service readiness probe timed out for {probe[0]}: {last_error}") from last_error
+        sleep(0.25)
+
+
+def _restart_updated_services(run: Callable, sleep: Callable = time.sleep) -> None:
     for unit in RESTART_ORDER:
         run(["systemctl", "restart", unit])
         # A checked RPC proves each newly-started service actually owns and
         # answers its D-Bus API before its dependents are bounced.
-        _as_user_bus_call(*RESTART_PROBES[unit])
+        # A systemd restart can return before D-Bus name acquisition completes.
+        # Retry only this bounded startup probe; the complete fail-closed
+        # preflight still runs before activation and after all restarts.
+        _wait_for_service_probe(RESTART_PROBES[unit], sleep=sleep)
 
 
 def deploy(release: Path, *, run: Callable = _run, sleep: Callable = time.sleep,
@@ -166,7 +184,7 @@ def deploy(release: Path, *, run: Callable = _run, sleep: Callable = time.sleep,
     read_and_validate(run)
     try:
         run([sys.executable, str(RELEASE_TOOL), "activate", "--release-dir", str(release)])
-        _restart_updated_services(run)
+        _restart_updated_services(run, sleep=sleep)
         deadline = time.monotonic() + readiness_timeout
         last_error = "services have not recovered"
         while time.monotonic() < deadline:
@@ -185,7 +203,7 @@ def deploy(release: Path, *, run: Callable = _run, sleep: Callable = time.sleep,
         # recovery itself cannot be established.
         try:
             run([sys.executable, str(RELEASE_TOOL), "activate", "--release-dir", str(previous)])
-            _restart_updated_services(run)
+            _restart_updated_services(run, sleep=sleep)
             if ACTIVATION.resolve(strict=True) != previous:
                 raise GuardError("rollback selector did not resolve to the previous release")
         except Exception as rollback_error:

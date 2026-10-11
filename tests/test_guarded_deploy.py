@@ -114,6 +114,24 @@ class DeploymentOrchestrationTests(unittest.TestCase):
             self.activation.symlink_to(target)
         return subprocess.CompletedProcess(argv, 0, "", "")
 
+    def test_restart_probe_retries_transient_dbus_readiness(self):
+        with patch.object(guard, "_as_user_bus_call",
+                          side_effect=[guard.GuardError("name not acquired"),
+                                       guard.GuardError("service still starting"), "[]"]) as probe:
+            sleep = Mock()
+            guard._wait_for_service_probe(guard.RESTART_PROBES["lulu-consoled.service"],
+                                          sleep=sleep, timeout=2.0)
+        self.assertEqual(probe.call_count, 3)
+        self.assertEqual(sleep.call_count, 2)
+
+    def test_restart_probe_still_fails_closed_after_deadline(self):
+        with patch.object(guard, "_as_user_bus_call",
+                          side_effect=guard.GuardError("service unavailable")) as probe:
+            with self.assertRaisesRegex(guard.GuardError, "readiness probe timed out"):
+                guard._wait_for_service_probe(guard.RESTART_PROBES["lulu-consoled.service"],
+                                              sleep=lambda _delay: None, timeout=0.0)
+        self.assertEqual(probe.call_count, 1)
+
     def test_rejected_preflight_does_not_verify_activate_or_restart(self):
         guard.read_and_validate.side_effect = guard.GuardError("Acquisitiond unavailable")
         with self.assertRaisesRegex(guard.GuardError, "Acquisitiond unavailable"):
