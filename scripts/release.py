@@ -29,6 +29,7 @@ RUNTIME_EXCLUDED_SCRIPTS = (
     "steam-lifecycle-probe.py",
     "steam-bootstrap.sh",
     "steam-session-bootstrap.sh",
+    "guarded-deploy.py",
     "provision-steamcmd.sh",
     "usenet-acquisition-test.py",
     "test_provisioning.py",

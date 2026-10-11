@@ -122,7 +122,7 @@ class ReleaseToolTests(unittest.TestCase):
             build_script = repo / "scripts/build-lulu-shell.sh"
             build_script.write_text(
                 "#!/bin/sh\nset -eu\nout=$1\ndir=$(dirname \"$out\")\n"
-                "touch \"$out\" \"$dir/mudos-guide\" \"$dir/mudos-notification\" \"$dir/mudos-desktop-theme\" \"$dir/generated.moc\"\n"
+                "touch \"$out\" \"$dir/mudos-guide\" \"$dir/mudos-notification\" \"$dir/mudos-desktop-theme\" \"$dir/mudos-desktop-wallpaper\" \"$dir/generated.moc\"\n"
             )
             for path in (
                 "packaging/lulu-vt", "packaging/mudos-provider-install",

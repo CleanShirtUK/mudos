@@ -12,7 +12,7 @@ evidence and this reconciliation rationale are in
 
 ### RELEASE-SAFETY-001 — Deployment idle-check failure did not block activation
 
-**Status: OPEN · P1 · OPERATIONAL SAFETY.** On 2026-10-11, a shell
+**Status: OPEN · P1 · GUARD IMPLEMENTED/TESTED; DEPLOYMENT BLOCKED.** On 2026-10-11, a shell
 deployment command attempted to query Sessiond through `/run/user/958/bus`
 from a root process. That root-context connection failed (`Broken pipe` /
 `Transport endpoint is not connected`); the same read-only GetState call
@@ -26,13 +26,21 @@ failure was in the deployment orchestration, not a check inside the generic
 release builder: `release.py activate` verifies the immutable release and
 atomically switches the selector, but intentionally has no session-idle policy.
 
-- **Next:** introduce/standardize one online-deployment orchestrator that runs
-  the Sessiond and Acquisitiond checks in the appliance user's D-Bus context,
-  parses and validates the response, rejects unavailable/malformed/unknown
-  state, and uses checked subprocess calls so activation and restart cannot run
-  after any failed guard. Re-check immediately before activation and verify the
-  selected release and restarted services afterward. Make precondition failures
-  leave the selector unchanged. Record the deployment result.
+- **Implemented:** `scripts/guarded-deploy.py` is the canonical online entry
+  point. It queries Sessiond, Acquisitiond, and Consoled in `lulu`'s D-Bus
+  context; validates service health, idle shell/token/surface state, Steam
+  runtime readiness, and every job state; rechecks before activation; and
+  checks readiness after a single restart. Post-activation failures trigger one
+  rollback attempt. `release.py activate` remains available for offline,
+  bootstrap, and recovery use. See `docs/guarded-deployment.md`.
+- **Current blockers:** on 2026-10-11 Acquisitiond reported a Steam removal in
+  `transferring`; Sessiond reported `presentation_ready=false` and no connected
+  controller; and the service-configured `/usr/bin/aurelia` reports 0.1.37
+  rather than required official 0.1.38. No release was built or activated and
+  no service was restarted.
+- **Next:** resolve the blockers, fetch/reconcile current `dev`, then run the
+  guarded entry point on a safely idle appliance. Do not close until a real
+  guarded deployment succeeds.
 - **Preserve legitimate workflows:** keep canonical `release.py activate` as
   the low-level atomic selector operation for intentional offline/bootstrap and
   rollback workflows; do not add an unconditional Sessiond requirement that
@@ -60,8 +68,8 @@ path are documented below. Do not run a real update solely for validation.
 
 ### STEAM-UPDATES-003 — Update offered again after a reported completion
 
-**Status: OPEN · P1 · UPDATE VERIFICATION SOURCE CORRECTED; CURRENT LIMBO
-STATE NOT RECAPTURED.** Prior LIMBO evidence below is historical and does not
+**Status: SOURCE CORRECTION COMMITTED · NOT DEPLOYED; PHYSICAL ACCEPTANCE OPEN.**
+Prior LIMBO evidence below is historical and does not
 establish the current appmanifest or update state.
 
 - **Source-level finding (read-only, installed Aurelia v0.1.38 source):**
@@ -83,10 +91,11 @@ establish the current appmanifest or update state.
   platform metadata alone cannot establish installed depot policy. Unknown
   identity must be reported as unknown/conflict, not silently considered
   current or updated.
-- **Next:** capture the appmanifest and active-branch manifests through
-  read-only inspection in an approved diagnostic window. Do not deploy until
-  `RELEASE-SAFETY-001` is resolved. The separate Aurelia prototype is historical
-  experimental work and is not a runtime dependency.
+- **Next:** deploy only with the guarded workflow after official Aurelia 0.1.38
+  compatibility and appliance safety are established; separately re-evaluate
+  the repeated-update symptom using a safe synthetic fixture. LIMBO was
+  deliberately uninstalled through Mudos; its missing appmanifest is expected.
+  The Aurelia prototype is historical work only.
 - **Evidence (read-only, 2026-10-11):** raw `aurelia --json update` and the
   Mudos live check list LIMBO as `available`. `aurelia --json manifests 48000`
   reports public-branch manifests `48001=1261656871327265848` and
@@ -137,10 +146,13 @@ establish the current appmanifest or update state.
 ### STEAM-LIMBO-001 — LIMBO pixel shader error after Steam update
 
 **Status: OPEN · P1 · ERROR NOT CAPTURED; PLATFORM MISMATCH IS A SEPARATE
-LEAD.** Keep the operator-reported pixel shader error unconfirmed in retained
+LEAD; LIMBO DELIBERATELY UNINSTALLED THROUGH MUDOS.** Keep the operator-reported pixel shader error unconfirmed in retained
 logs; do not claim a causal link to STEAM-UPDATES-003.
 
-- **Evidence/read-only update:** installed payload is Windows-only (`limbo.exe`
+- **Evidence/read-only update:** the operator confirms LIMBO was deliberately
+  uninstalled through Mudos. Its missing appmanifest is expected; do not
+  reconstruct or repair the installation. The historical installed payload was
+  Windows-only (`limbo.exe`
   and `steam_api.dll`); the latest command launches it with the selected
   Proton Experimental script. The launch record names runner `Wine-TKG` while
   its root is the Proton Experimental directory; the effective backend is
@@ -312,8 +324,9 @@ typically wants the maintained Windows build launched through Proton.
 - **Current integration boundary:** platform chooser and explicit install
   selection remain in source. Update verification uses official Aurelia
   `manifests --json` plus the local appmanifest; no experimental Aurelia
-  command is required. Source changes are not deployed. Online deployment still
-  requires the fail-closed `RELEASE-SAFETY-001` guard.
+  command is required. These source changes are not deployed. The only
+  discovered runtime binary currently reports Aurelia 0.1.37, so required 0.1.38
+  compatibility needs actual runtime confirmation.
 
 ### UNINSTALL-UX-001 — Hide a title while provider uninstall runs
 

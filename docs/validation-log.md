@@ -2667,3 +2667,38 @@ restart may be required for InputPlumber to publish a newly created target.
   Steam logged activity, not appmanifest rewrite or installed depot transition.
   Linux-activity attribution to Aurelia is unproven. No update, verify, launch,
   restart, or game-state change was performed.
+
+### 2026-10-11 — RELEASE-SAFETY-001 guard implementation (not deployed)
+
+- Added canonical `scripts/guarded-deploy.py`; low-level `release.py activate`
+  remains usable for offline/bootstrap/recovery. The online guard uses checked
+  subprocesses, `sudo -u lulu` user-bus calls, validates Sessiond/Acquisitiond/
+  Consoled evidence and required system services, rejects active jobs and
+  unknown/contradictory states, rechecks immediately before activation, and
+  performs one rollback/restart attempt if post-activation readiness fails.
+  There is no maintenance lease spanning the check/symlink swap, so a narrow
+  launch race remains and is explicitly not claimed eliminated. Negative tests
+  use temporary selectors and mocks; no production activation/restart was used.
+- Actual read-only preflight evidence blocks deployment: Acquisitiond reports
+  Rocket League `steam-aurelia` `remove` in `transferring`; Sessiond reports
+  lifecycle/presentation `shell` but `presentation_ready=false`; current
+  controller inventory has no `connected=true` device. The isolated Steam
+  runtime itself reports ready/authenticated. Services are active, and the
+  user-context D-Bus interfaces respond. No job was cancelled or modified.
+- `/usr/bin/aurelia` and the service-configured `LULU_AURELIA_EXECUTABLE` both
+  resolve to Aurelia **0.1.37**, not required official 0.1.38. Read-only CLI
+  help confirms this binary exposes installed `list`, `depots`,
+  `install --platform`, `manifests`, `update`, and `play`; no `platform-state`
+  dependency remains in production source. Version-matched 0.1.38 runtime
+  behavior and live installed-title manifest parsing were not confirmed. We
+  did not inspect mutable game state while the Rocket League removal is active.
+- Guarded-deployment, installation, Steam/Aurelia, Acquisitiond, Console/UI,
+  identity reconciliation, launch and session suites passed: **376 passed, 33
+  subtests passed**. Release tests passed **8** after correcting their synthetic
+  native-build fixture to generate all five expected binaries. `git diff
+  --check` and Python compilation passed. QML tools are unavailable in this
+  environment (`qmlformat` not found); QML sources were unchanged.
+- No release was built, selected, or activated; no service was restarted; no
+  Steam content, appmanifest, Aurelia binary, prefix, or shader cache was
+  changed. Physical acceptance remains pending. `RELEASE-SAFETY-001` remains
+  open until preconditions are resolved and a real guarded deployment succeeds.
