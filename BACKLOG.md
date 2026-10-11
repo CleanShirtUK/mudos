@@ -273,6 +273,50 @@ was not diagnosed and must not be conflated with the later failed game launch
 
 ## Implementation work
 
+### STEAM-PLATFORM-001 — Choose Steam download platform from Installable
+
+**Status: OPEN · P2 · USER-REQUESTED.** When starting installation of a Steam
+title from the Installable view, let the operator confirm which supported
+platform's content should be acquired, rather than silently accepting the
+provider's automatic depot/platform choice. This matters for games such as
+Rocket League, where an older native Linux build may exist but the operator
+typically wants the maintained Windows build launched through Proton.
+
+- **Interaction:** when multiple installable platform variants are genuinely
+  supported, present a controller-native choice such as **Windows (Proton)**
+  versus **Linux (Native)** before creating the Acquisitiond install job.
+  Explain the selected launch route and, where reliably known, meaningful
+  compatibility/support caveats. Prefer Windows/Proton for Rocket League if
+  appropriate to current supported content; do not impose a blanket Windows
+  default on all games or infer support/freshness from depot existence alone.
+  Single-platform titles can use the only verified choice; unavailable or
+  ambiguous provider metadata must not be presented as a confidently supported
+  selection. Cancel returns to Installable without an installation job.
+- **Acquisition:** propagate the confirmed choice into Aurelia's supported
+  install platform option and persist it with the provider-owned job for
+  retry/restart recovery and reconciliation. Do not introduce SteamCMD as an
+  installer, duplicate installed titles per platform, or silently switch
+  platform during an update. Do not select Linux merely because a native depot
+  exists; do not change content already installed without a separately
+  approved migration.
+- **Consistency:** the resulting installed payload, chosen Proton/native
+  launch route, and all subsequent update checks/updates must refer to the same
+  platform. Coordinate with **STEAM-UPDATES-003** and its unresolved upstream
+  Aurelia update/check contract: platform confirmation for new installs must
+  not imply that the existing update path can reliably honour that choice.
+  If update-path consistency is unavailable, surface that limitation rather
+  than falsely guaranteeing platform-safe future updates.
+- **Accept:** Steam titles offering Windows and Linux variants expose the
+  appropriate choices; Rocket League can be explicitly selected for
+  Windows/Proton without accidentally obtaining its legacy Linux payload;
+  selected platform is passed to Aurelia, retained through install/job
+  recovery and reflected in the launch route; cancellation creates no job;
+  identity aliasing and existing-library reconciliation remain correct; no
+  platform change or unexpected duplicate update occurs after installation.
+  Use synthetic provider/depot fixtures and controller-QML tests before
+  physical acceptance; do not install or overwrite live titles without
+  operator approval.
+
 ### UNINSTALL-UX-001 — Hide a title while provider uninstall runs
 
 **Status: OPEN · P3, explicitly deferred requirement.** Provider-owned uninstall
