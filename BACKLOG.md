@@ -10,6 +10,53 @@ evidence and this reconciliation rationale are in
 
 ## Active defects
 
+### STEAM-RUNTIME-OWNERSHIP-001 — Resident Steam mutates canonical game library outside Acquisitiond
+
+**Status: OPEN · P1 · CONTENT-OWNERSHIP / PLATFORM SELECTION SAFETY.**
+During operator acceptance of STEAM-PLATFORM-001 on 2026-10-11,
+Steam's own `content_log.txt` recorded a previously queued Rocket League
+(AppID 252950) download beginning at 13:02:20, before Mudos rejected the
+13:05:18 installation request. The resident Steam client committed
+Linux depot 252961 around 13:06:40-45 (5,997 updated files; approximately
+10.8 GB staged). Steam then reported installed content in the appmanifest,
+while Acquisitiond contained no corresponding new INSTALL/UPDATE job.
+The failed UI request cannot have initiated this transfer. This is distinct
+from the earlier orphaned REMOVE and the newly fixed UI provider-identity
+routing error.
+
+- **Risk:** the authenticated Steam client on Xvfb :99 shares the canonical
+  game library with Aurelia. Its autonomous download/update behaviour can
+  change installed payloads and platform outside Mudos' explicit Windows/Linux
+  selection and Acquisitiond's lifecycle, notifications, progress and
+  gameplay/deployment idle checks. Deployment readiness currently treats
+  Acquisitiond's idle job snapshot as sufficient acquisition evidence and
+  may not detect Steam's own content activity.
+- **Investigate (read-only first):** establish the real Steam library
+  configuration, appmanifest/depot ownership, libraryfolder registrations,
+  automatic update policy, launch/DRM/Steamworks requirements, resident Steam
+  process scopes, and content-log attribution. Determine exactly how the
+  queued Rocket League transfer survived or originated after its Mudos
+  uninstall and why Steam downloaded Linux depots. Examine safe mechanisms
+  to prevent resident Steam from independently acquiring/modifying Mudos
+  game content without breaking account authentication, DRM or Steamworks.
+- **Implementation boundary:** Aurelia and Acquisitiond remain authorities
+  for managed game-content operations. Do not delete, migrate, repair,
+  chmod/lock, rewrite manifests, remove shared library access, change Steam
+  launch flags, or restart Steam solely to test a hypothesis. Any change
+  to the client/library boundary must be proven with sandbox or disposable
+  fixtures, explicit rollback and operator approval for live game mutation.
+  Do not silently suppress Steam update indicators to disguise activity.
+- **Accept:** with Steam authenticated and games launchable, autonomous Steam
+  acquisition cannot mutate the managed library; explicit Aurelia
+  Windows/Linux installation choice persists through updates; content
+  operations appear through Acquisitiond; the online deployment guard
+  refuses genuinely ongoing content modifications regardless of process
+  ownership; shutdown/restart and rollback are safe. Test with fake
+  libraries and isolated fixtures before approving any live installation.
+- **Dependencies:** STEAM-PLATFORM-001 and STEAM-UPDATES-001 physical
+  acceptance remain restricted until content ownership is enforced or a
+  documented safety boundary makes independent Steam writes impossible.
+
 ### RELEASE-SAFETY-001 — Deployment idle-check failure did not block activation
 
 **Status: FIX DEPLOYED/TESTED · P1 · OPERATIONAL ACCEPTANCE COMPLETE.** On 2026-10-11, a shell
