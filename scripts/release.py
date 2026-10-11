@@ -100,6 +100,7 @@ REQUIRED_FILES = (
     "config/providers/eden/runtime.json",
     "packaging/pacman.d/hooks/99-mudos-limine-config.hook",
     "packaging/plymouth-quit.service.d/mudos-handoff.conf",
+    "scripts/steam_auth_status.py",
     "scripts/steam-runtime-session.py",
     "packaging/lulu-inputplumber-hotplug.service",
     "packaging/mudos-ownership.json",

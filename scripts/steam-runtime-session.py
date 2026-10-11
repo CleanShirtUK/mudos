@@ -10,6 +10,7 @@ import socket
 import subprocess
 import sys
 import time
+from steam_auth_status import AuthenticationStatus, status_since
 
 DISPLAY = ":99"
 STEAM = "/usr/bin/steam"
@@ -83,13 +84,7 @@ def wait_for_steam(steam: subprocess.Popen[bytes], previous_log_size: int,
     while time.monotonic() < deadline:
         if steam.poll() is not None and not steam_main_pids():
             raise RuntimeError(f"Steam exited during startup (status {steam.returncode})")
-        try:
-            with LOGIN_LOG.open("rb") as log:
-                log.seek(previous_log_size)
-                recent = log.read().decode(errors="replace")
-        except FileNotFoundError:
-            recent = ""
-        if "RecvMsgClientLogOnResponse()" in recent and "'OK'" in recent and "[Logged On" in recent:
+        if status_since(LOGIN_LOG, previous_log_size) is AuthenticationStatus.AUTHENTICATED:
             return
         time.sleep(0.5)
     raise AuthenticationUnavailable(
@@ -155,7 +150,7 @@ def main() -> int:
         old_size = LOGIN_LOG.stat().st_size if LOGIN_LOG.exists() else 0
         steam = subprocess.Popen(
             [STEAM, "-silent"], env=env, stdin=subprocess.DEVNULL,
-            stdout=subprocess.DEVNULL, stderr=None,
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
         )
         wait_for_steam(steam, old_size)
         notify("READY=1\nSTATUS=Steam authenticated on isolated Xvfb :99")

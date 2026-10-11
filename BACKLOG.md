@@ -113,10 +113,50 @@ routing error.
   check is enabled against the current production service. Active/queued,
   missing, stale or contradictory evidence must block once a boundary is
   installed and individually validated in each namespace.
-- **Outstanding compatibility:** synthetic processes cannot establish Steam
-  authentication/session persistence, self-update, DRM, Steamworks, native or
-  Proton launch, game-return lifecycle, or production start-limit behavior.
-  These remain explicit live-acceptance items; they were not tested.
+- **Disposable real-client compatibility (2026-10-11; partial):** on Lulu, a
+  dedicated `steamstage1` Unix account used a separate HOME and Steam config,
+  Xvfb `:190`, private D-Bus/runtime state, and separate Btrfs client/library
+  subvolumes in transient systemd units. Production Steam remained active and
+  no production service, library, credential file, manifest, or game was used.
+  The operator authenticated the existing account in the isolated client; one
+  clean client restart returned to the signed-in UI. Steam self-update completed
+  in the isolated client subvolume. A disposable Braid Linux build (AppID 26800,
+  about 164 MB) rendered natively in the unrestricted baseline.
+- **Real read-only launch findings:** with `steamapps` read-only and only
+  persistent, separate `compatdata`/`shadercache` subvolumes writable, launch
+  failed because Pressure Vessel needed its runtime `.ref` and per-run temporary
+  state under `common/SteamLinuxRuntime_soldier`. Individual `.ref` file binds
+  were insufficient. A later run with that Steam Linux Runtime package on its
+  own writable Btrfs subvolume launched and rendered Braid while the game tree,
+  appmanifest, and staging directories remained read-only. This is a substantial
+  extra writable runtime exception (about 673 MB in this fixture), not an
+  approved production layout. Steam logged repeated failed appmanifest writes
+  while the read-only game was running; the client remained active without a
+  systemd restart loop. Steamworks/DRM were **not proven**: Braid reported that
+  its Steam API was not loaded and the overlay did not appear.
+- **Write-authority evidence:** in the real restricted namespace, opening the
+  game payload, appmanifest, and a new staging path for writing returned
+  `EROFS`; hardlinking payload into writable runtime state returned `EXDEV`.
+  A separate host-side simulated acquisition process wrote a marker into the
+  disposable game directory; Steam could read but not overwrite it, and the
+  host removed it. Actual mountinfo showed the `steamapps` root `ro` and only
+  the explicit runtime-state subvolumes `rw`. Real Proton, real update/retry,
+  real game-manifest rewrite scheduling, Steamworks/DRM, Aurelia launch,
+  controller input, and full process-namespace enumeration remain untested.
+- **Diagnostic security hardening (2026-10-11):** the real-client task was
+  paused after a diagnostic command emitted credential-bearing connection-log
+  material in a tool result. The isolated client was signed out in its UI,
+  stopped, and its dedicated client/library subvolumes, temporary Unix account,
+  and test bridge/export directory were removed. No credential text was added
+  to repository files, commits, or retained test exports; the tool transcript
+  itself cannot be retracted. Production `lulu-steam-runtime.service` remained
+  active with the same invocation and zero restarts. `steam_auth_status.py`
+  now reduces appended log bytes to allowlisted status enums only; the Steam
+  supervisor discards child stderr, the lifecycle probe no longer emits raw
+  argv, and the auth-surface harness projects D-Bus responses and uses static
+  errors. Synthetic secret-bearing regression tests cover those output paths.
+  Reauthentication and the remaining compatibility matrix must continue in a
+  newly isolated client after operator login.
 - **Deployment guard gap and proposed check:** current guard sees only
   Acquisitiond jobs. Before any online deployment it must additionally prove
   Steam content idle (not infer this from Acquisitiond or Steam readiness),
@@ -151,12 +191,12 @@ routing error.
   refuses genuinely ongoing content modifications regardless of process
   ownership; shutdown/restart and rollback are safe. Test with fake
   libraries and isolated fixtures before approving any live installation.
-- **Approval boundary:** next step may only build/run a disposable mount-namespace
-  prototype with synthetic libraries and Steam-free or test-account fixtures.
-  Any live unit/mount change, Steam restart, library re-registration, or test
-  against installed content requires explicit operator approval after review
-  of prototype results and rollback. Preserve Rocket League's Linux installation
-  unchanged. No such live change has been made by this investigation.
+- **Approval boundary:** Stage 1 disposable-client testing is operator-authorized
+  and may resume after the isolated login environment is prepared. It remains
+  prohibited to change the production unit/mounts, restart production Steam,
+  re-register its libraries, or touch installed production content. Preserve
+  Rocket League's Linux installation unchanged. No such production action has
+  been taken.
 - **Dependencies:** STEAM-PLATFORM-001 and STEAM-UPDATES-001 physical
   acceptance remain restricted until content ownership is enforced or a
   documented safety boundary makes independent Steam writes impossible.

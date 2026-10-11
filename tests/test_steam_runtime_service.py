@@ -1,9 +1,11 @@
 import importlib.util
 from pathlib import Path
+import sys
 
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts/steam-runtime-session.py"
+sys.path.insert(0, str(ROOT / "scripts"))
 SPEC = importlib.util.spec_from_file_location("steam_runtime_session", SCRIPT)
 runtime = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(runtime)
@@ -55,9 +57,10 @@ def test_runtime_starts_xvfb_then_silent_host_steam_on_the_same_isolated_display
 def test_runtime_waits_for_authentication_and_stops_steam_before_xvfb():
     source = SCRIPT.read_text()
     assert "wait_for_steam(steam, old_size)" in source
-    assert "RecvMsgClientLogOnResponse()" in source
-    assert "[Logged On" in source
+    assert "status_since(LOGIN_LOG, previous_log_size)" in source
+    assert "recent = log.read().decode" not in source
     assert "AuthenticationUnavailable" in source
+    assert "stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL" in source
     assert source.index("subprocess.run([STEAM, \"-shutdown\"]") < \
         source.index("finally:\n        stop_process(steam)\n        stop_process(xvfb)")
 
@@ -80,3 +83,4 @@ def test_installer_and_release_own_ship_the_runtime_service():
     assert '"packaging/lulu-steam-runtime.service"' in release
     assert "/etc/systemd/system/lulu-steam-runtime.service" in manifest
     assert "scripts/steam-runtime-session.py" in release
+    assert '"scripts/steam_auth_status.py"' in release

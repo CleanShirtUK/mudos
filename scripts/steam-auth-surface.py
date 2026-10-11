@@ -27,10 +27,12 @@ def _busctl(*arguments: str) -> dict[str, object]:
         check=False,
     )
     if completed.returncode:
-        detail = (completed.stderr or completed.stdout or "Consoled request failed").strip()
-        raise RuntimeError(detail[-1000:])
-    envelope = json.loads(completed.stdout)
-    value = json.loads(envelope["data"][0])
+        raise RuntimeError("Consoled request failed")
+    try:
+        envelope = json.loads(completed.stdout)
+        value = json.loads(envelope["data"][0])
+    except (KeyError, IndexError, TypeError, json.JSONDecodeError) as error:
+        raise RuntimeError("Consoled returned an invalid response") from error
     if not isinstance(value, dict):
         raise RuntimeError("Consoled returned an invalid response")
     return value
@@ -38,18 +40,28 @@ def _busctl(*arguments: str) -> dict[str, object]:
 
 def start() -> dict[str, object]:
     authentication = _busctl("GetPluginAuthStatus", "s", "steam")
-    if authentication.get("authenticated"):
-        return {"status": "authenticated", "authentication": authentication,
+    if authentication.get("authenticated") is True:
+        return {"status": "authenticated", "authentication": {"authenticated": True},
                 "message": "Steam is already authenticated; no new surface was opened."}
     result = _busctl("BeginPluginAuthenticationTraced", "ss", "steam", secrets.token_hex(6))
-    result["authentication"] = authentication
-    return result
+    # Only the Consoled-owned launch token is returned because dismiss needs it.
+    # Drop all other API fields so an expanded auth response cannot leak.
+    returned_status = result.get("status")
+    safe_status = returned_status if isinstance(returned_status, str) and returned_status in {
+        "surface_requested", "already_authenticated", "unavailable"
+    } else "unknown"
+    safe: dict[str, object] = {"status": safe_status}
+    launch = result.get("launch")
+    if isinstance(launch, str) and launch and len(launch) <= 256:
+        safe["launch"] = launch
+    return safe
 
 
 def dismiss(token: str) -> dict[str, object]:
     if not token or any(character.isspace() for character in token):
         raise ValueError("provide the launch token returned by the start command")
-    return _busctl("DismissPluginAuthentication", "ss", "steam", token)
+    result = _busctl("DismissPluginAuthentication", "ss", "steam", token)
+    return {"dismissed": result.get("dismissed") is True}
 
 
 def main(argv: list[str] | None = None) -> int:

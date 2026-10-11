@@ -125,6 +125,27 @@ def process_snapshot() -> dict[int, tuple[str, ...]]:
     return result
 
 
+def safe_steam_command(argv: tuple[str, ...]) -> dict[str, str] | None:
+    """Return allowlisted launch metadata; never emit arbitrary process args."""
+    try:
+        index = argv.index("-applaunch")
+    except ValueError:
+        index = -1
+    if index >= 0:
+        candidate = argv[index + 1] if index + 1 < len(argv) else ""
+        appid = candidate if candidate.isdecimal() and 0 < len(candidate) <= 10 else "unknown"
+        return {"kind": "applaunch", "appid": appid}
+    if any(item.startswith("steam://") for item in argv):
+        appid = "unknown"
+        for item in argv:
+            match = re.fullmatch(r"steam://(?:run|rungameid)/(\d{1,10})/?", item, re.IGNORECASE)
+            if match and int(match.group(1)) > 0:
+                appid = match.group(1)
+                break
+        return {"kind": "steam-url", "appid": appid}
+    return None
+
+
 def observe(display: str, appid: str, interval: float) -> None:
     expected = int(appid)
     emit("launch-request", appid=appid, display=display, observation_only=True)
@@ -172,9 +193,9 @@ def observe(display: str, appid: str, interval: float) -> None:
         processes = process_snapshot()
         for pid, argv in processes.items():
             if pid not in previous_processes or argv != previous_processes[pid]:
-                command = " ".join(argv)
-                if "-applaunch" in argv or "steam://" in command:
-                    emit("steam-command", pid=pid, argv=list(argv))
+                metadata = safe_steam_command(argv)
+                if metadata is not None:
+                    emit("steam-command", pid=pid, **metadata)
         previous_processes = processes
         first = False
         time.sleep(interval)

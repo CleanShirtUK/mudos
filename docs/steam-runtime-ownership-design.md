@@ -1,7 +1,9 @@
 # Steam runtime content-ownership boundary — investigation
 
-**Status:** design proposal only. No Steam configuration, library registration,
-credentials, service state, mounts, permissions, or game content was changed.
+**Status:** disposable real-client validation is in progress. Synthetic and
+partial Stage 1 results are recorded below. Production Steam configuration,
+library registration, credentials, service state, mounts, permissions, and game
+content were not changed.
 
 ## Observed state
 
@@ -114,6 +116,105 @@ state exceptions, not just the one bind line.
 The probe unit uses no Steam binary or actual Steam directories. It proves the
 systemd mechanism for a synthetic tree, not that the proposed profile is
 compatible with Steam's self-update, session persistence, or game launch.
+
+## Disposable real-Steam Stage 1 results (2026-10-11; partial)
+
+### Isolation and authentication
+
+- Test host: Lulu, using dedicated temporary Unix account `steamstage1`, a
+  separate HOME/Steam configuration, Xvfb `:190`, private D-Bus and XDG runtime
+  state, `ProtectHome=tmpfs`, `ProtectSystem=strict`, and transient systemd
+  services. Client and test library were separate Btrfs subvolumes; runtime
+  exceptions were separate Btrfs subvolumes. No production library path was
+  registered or mounted in the test client.
+- The operator authenticated the existing account in the isolated UI. The
+  signed-in UI remained available after one clean client shutdown/restart.
+  Steam's client self-update completed in the isolated client subvolume.
+- A later explicit sign-out returned the isolated client to its login screen.
+  The transient service was stopped and the test account, client subvolume
+  (including its local auth/config/log state), library subvolumes, and bridge
+  artifacts were removed. Btrfs subvolume deletion removes the test state
+  logically but is not a guarantee of forensic media sanitization.
+
+### Native Linux launch and ownership
+
+- Braid (AppID 26800, Linux x86 build, approximately 164 MB) was acquired only
+  into the disposable library. Baseline Steam launch rendered and accepted
+  keyboard input without advancing a saved game.
+- With `steamapps` read-only and only separate persistent `compatdata` and
+  `shadercache` subvolumes writable, Steam began the launch but Pressure Vessel
+  exited while trying to update
+  `common/SteamLinuxRuntime_soldier/.../files/.ref`. A per-file writable bind
+  experiment then exposed additional per-run runtime temporary-directory writes;
+  this narrow exception set was insufficient.
+- The successful read-only launch profile mounted the Steam Linux Runtime
+  package itself from a separate writable Btrfs subvolume at
+  `steamapps/common/SteamLinuxRuntime_soldier`, alongside the `compatdata` and
+  `shadercache` subvolumes. Braid then rendered under the RO game-content view.
+  The runtime exception was about 673 MB and includes executable runtime files;
+  it is evidence for a future separate Steam-owned runtime store, not a
+  production approval to make this path writable in place.
+- Steam could read a host-created marker through the restricted view but could
+  not overwrite it. Direct attempts to open a payload, appmanifest, and staging
+  file for writing failed with `EROFS`; a hardlink from payload into runtime
+  state failed with `EXDEV`. The host-side simulated acquisition process
+  removed its marker after the check. Mountinfo from the live Steam process
+  showed the protected root `ro` and only the declared Btrfs state mounts `rw`.
+- Steam repeatedly logged that it could not write the read-only game
+  appmanifest while tracking launch state. The Steam client remained active and
+  systemd reported no restart loop. Steam Linux Runtime writes are therefore a
+  real requirement; Steam's game-appmanifest write attempts are observable but
+  tolerated by this title/client for a launch. Their effect on other games and
+  queued-update recovery is not established.
+
+### Compatibility not established
+
+- Braid's process log reported its Steam API was not loaded, and Shift+Tab did
+  not display the overlay. Do **not** count this as Steamworks or DRM evidence.
+- No Windows/Proton title was installed or launched. No DRM-protected title or
+  positively identified Steamworks-using title was accepted. No controller test,
+  Aurelia `--steam --no-update` test, autonomous game update/retry test, pending
+  update/restart test, or real update-stage denial/recovery test was completed.
+  The real Steam child process namespace tree was not fully enumerated; only the
+  Steam process mount table and process/cgroup launch evidence were captured.
+- The account library remained visible in the isolated UI, but no claim is made
+  that entitlements/cloud-save safety were independently verified per title.
+  Steam Cloud was disabled in the isolated client before Braid testing; no
+  production cloud setting was changed. Braid's API/save behavior still needs
+  confirmation with the next test title.
+
+### Diagnostic containment and hardening
+
+During a diagnostic operation, connection-log content containing an
+authentication credential appeared in a tool result. It was not written to
+repository files, commits, or a retained test export, but the tool transcript
+cannot be retracted; this is not represented as “no exposure.” The isolated
+client was explicitly signed out, then stopped, and its dedicated Btrfs client
+subvolume (including local auth files and logs) was deleted. The production
+Steam runtime remained active with the same invocation, PID, and zero restarts.
+No production credential/configuration/library data was read or changed by the
+cleanup. The host's systemd service journal is retained normally; Steam's own
+crash reporter also uploaded test-client assertion minidumps automatically, and
+those dump contents were not inspected. This incident is recorded without
+including credential text.
+
+Diagnostics now use `scripts/steam_auth_status.py`, which returns only
+`authenticated`, `not_authenticated`, or `unknown`; `steam-runtime-session.py`
+does not decode or print connection-log lines and discards Steam child stderr.
+`steam-lifecycle-probe.py` emits allowlisted launch metadata instead of raw
+process arguments. `steam-auth-surface.py` filters authentication fields and
+uses static error messages. Synthetic token-bearing tests verify that the
+diagnostic outputs contain only predefined statuses/fields.
+
+### Continuation gate
+
+The previous isolated client, account, and test subvolumes have been removed.
+At this checkpoint the isolated login environment has **not yet been recreated**;
+reauthentication is not ready to start. Recreate it with an empty client state
+and empty synthetic library before displaying a login surface. Do not launch it
+against the production Steam HOME or library. Resume account-backed testing only
+after the operator completes login through the isolated UI. Reauthentication is
+not a production Steam restart or a production configuration change.
 
 ## Required writable-state inventory (not verified by live experiments)
 
