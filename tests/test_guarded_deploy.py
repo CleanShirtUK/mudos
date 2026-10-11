@@ -132,6 +132,9 @@ class DeploymentOrchestrationTests(unittest.TestCase):
                                               sleep=lambda _delay: None, timeout=0.0)
         self.assertEqual(probe.call_count, 1)
 
+    def test_post_restart_budget_matches_steam_authentication_startup_limit(self):
+        self.assertEqual(guard.deploy.__kwdefaults__["readiness_timeout"], 180.0)
+
     def test_rejected_preflight_does_not_verify_activate_or_restart(self):
         guard.read_and_validate.side_effect = guard.GuardError("Acquisitiond unavailable")
         with self.assertRaisesRegex(guard.GuardError, "Acquisitiond unavailable"):

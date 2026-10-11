@@ -30,6 +30,9 @@ Restart-probe D-Bus name acquisition is boundedly retried for up to 20 seconds;
 the full preflight and post-restart readiness validation remain fail-closed.
 This handles systemd returning before a restarted service has reacquired its
 D-Bus name without treating a timeout or malformed response as readiness.
+The overall post-activation readiness window is 180 seconds, matching the
+isolated Steam runtime unit's `TimeoutStartSec=180s` and its authentication
+wait budget; the guard never declares readiness until Steam is authenticated.
 
 Do not deploy if any precondition is unknown. On 2026-10-11 the orphaned
 Rocket League REMOVE row was reconciled offline after Acquisitiond was stopped

@@ -35,14 +35,16 @@ atomically switches the selector, but intentionally has no session-idle policy.
   bootstrap, and recovery use. See `docs/guarded-deployment.md`.
 - **Current blockers:** the orphaned Rocket League row has been safely
   reconciled and Acquisitiond restarted; there are no active acquisition jobs.
-  Physical presentation and controller readiness have since passed. The first
-  guarded attempt activated the candidate but hit a transient Consoled D-Bus
-  readiness-probe failure during service restart; its tested rollback restored
-  `/opt/lulu/current` to
-  `/opt/lulu/releases/af4ad04-candidate-20261011040541`. Services subsequently
-  recovered and pass live probes. The guard now retries only bounded D-Bus
-  startup probes; complete fail-closed preflight/postflight checks are
-  unchanged. Candidate
+  Physical presentation and controller readiness passed at deployment
+  attempts. Both attempts restored `/opt/lulu/current` to
+  `/opt/lulu/releases/af4ad04-candidate-20261011040541`. The first exposed
+  transient Consoled D-Bus readiness; bounded service-probe retries were added.
+  The second exposed that Steam runtime authentication may take its allowed
+  150 seconds after Sessiond restart, but the guard waited only 30 seconds.
+  Its runtime then hit systemd start-limit during repeated rollback restarts.
+  The guard's post-activation budget is now 180 seconds, matching the unit's
+  `TimeoutStartSec`; its full fail-closed checks are unchanged. Restore Steam
+  to a stable authenticated state before another attempt. Candidate
   `/opt/lulu/releases/24acb93-candidate-20261011102738` remains verified.
   Official Aurelia 0.1.37's required interfaces are compatible.
 - **Next:** resolve the blockers, fetch/reconcile current `dev`, then run the

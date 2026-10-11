@@ -171,7 +171,7 @@ def _restart_updated_services(run: Callable, sleep: Callable = time.sleep) -> No
 
 
 def deploy(release: Path, *, run: Callable = _run, sleep: Callable = time.sleep,
-           readiness_timeout: float = 30.0) -> Path:
+           readiness_timeout: float = 180.0) -> Path:
     release = release.resolve()
     if release.parent != RELEASE_ROOT.resolve() or not release.is_dir():
         raise GuardError("candidate must be a verified immutable release under /opt/lulu/releases")

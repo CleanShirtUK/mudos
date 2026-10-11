@@ -77,21 +77,28 @@
   shell/presentation ready, DP-1 connected, one connected Xbox controller,
   no launch identity/token, Steam ready/authenticated, and Acquisitiond had no
   active jobs. The Rocket League REMOVE remained failed and non-retryable.
-- **Guard attempt and automatic rollback:** deployment reached service restart,
+- **First guarded attempt and rollback:** deployment reached service restart,
   but the one-shot Consoled `GetComponentRegistry` D-Bus restart probe failed
-  transiently. The guard attempted its tested rollback; the rollback's own
-  one-shot probe also failed during restart, but the atomic selector was
-  confirmed back on `/opt/lulu/releases/af4ad04-candidate-20261011040541`.
-  The attempted candidate was not left selected. Services subsequently
-  stabilized; all required units are active, Sessiond presentation/controller
-  are ready, current Consoled RPC succeeds, Steam runtime is ready/authenticated,
-  and Acquisitiond remains idle with the same terminal Rocket League row.
-- **Guard correction:** `scripts/guarded-deploy.py` now retries only each
-  restarted service's D-Bus name/readiness probe for a bounded 20 seconds.
-  Full fail-closed preflight before activation, immediate recheck, and complete
-  post-activation validation remain unchanged. Focused guard/release tests pass
-  (22 passed, 18 subtests); reattempt is pending this correction being pushed
-  and current state being re-preflighted.
+  transiently. Rollback restored the selector to
+  `/opt/lulu/releases/af4ad04-candidate-20261011040541`; the rollback probe also
+  failed during its restart window. Services later stabilized and the active
+  release was confirmed unchanged.
+- **Second guarded attempt and rollback:** after bounded D-Bus probe retries
+  were added and the full preflight passed, post-activation validation did not
+  see authenticated Steam within the guard's then-30-second timeout. Sessiond
+  restart also restarts `lulu-steam-runtime.service` through its `PartOf=`
+  relationship; that unit has `TimeoutStartSec=180s` and Steam login may wait
+  up to 150 seconds. Guard rollback restored the previous selector. Repeated
+  restart/rollback cycles then put Steam runtime into `start-limit-hit`; current
+  release remains previous, and Steam must be restored and authenticated before
+  any further deployment attempt. Do not loop restarts.
+- **Guard corrections:** `scripts/guarded-deploy.py` retries each restarted
+  service's D-Bus name/readiness probe for a bounded 20 seconds and now allows
+  180 seconds for complete post-restart readiness, matching the Steam unit's
+  startup/authentication budget. Full fail-closed preflight, immediate recheck,
+  and complete post-activation validation remain unchanged. The timeout change
+  is being tested and pushed before any retry; a stable authenticated Steam
+  runtime is a prerequisite.
 - Official Aurelia 0.1.37 remains contract-compatible. No Steam install,
   update, verify, launch, or removal was run.
 
