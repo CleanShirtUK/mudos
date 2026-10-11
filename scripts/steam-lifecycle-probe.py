@@ -31,7 +31,7 @@ def xprop(display: str, *args: str) -> str:
         ["xprop", *args], capture_output=True, text=True, env=environment, check=False
     )
     if completed.returncode != 0:
-        raise RuntimeError(completed.stderr.strip() or f"xprop failed ({completed.returncode})")
+        raise RuntimeError("xprop query failed")
     return completed.stdout
 
 
@@ -46,17 +46,11 @@ def property_value(output: str, name: str) -> str | None:
     return None
 
 
-def clean_value(value: str | None) -> str | int | None:
+def safe_window_number(value: str | None) -> int | None:
     if value is None:
         return None
-    value = value.strip()
-    if value.startswith('"'):
-        try:
-            return json.loads(value)
-        except json.JSONDecodeError:
-            return value.strip('"')
-    parsed = numbers(value)
-    return parsed[0] if parsed else value
+    parsed = numbers(value.strip())
+    return parsed[0] if parsed and 0 < parsed[0] <= 0xFFFFFFFF else None
 
 
 def root_snapshot(display: str) -> tuple[set[int], int | None, int | None]:
@@ -100,14 +94,12 @@ def window_snapshot(display: str, window_id: int) -> dict[str, object]:
         "_NET_WM_PID",
         "WM_CLASS",
     )
-    properties = {
-        "steam_game": clean_value(property_value(output, "STEAM_GAME")),
-        "title": clean_value(property_value(output, "_NET_WM_NAME"))
-        or clean_value(property_value(output, "WM_NAME")),
-        "pid": clean_value(property_value(output, "_NET_WM_PID")),
-        "wm_class": clean_value(property_value(output, "WM_CLASS")),
+    # Window title and class are arbitrary application-provided text. Never
+    # include them in lifecycle output, even if a client puts secrets there.
+    return {
+        "steam_game": safe_window_number(property_value(output, "STEAM_GAME")),
+        "pid": safe_window_number(property_value(output, "_NET_WM_PID")),
     }
-    return properties
 
 
 def process_snapshot() -> dict[int, tuple[str, ...]]:

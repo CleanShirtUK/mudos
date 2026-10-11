@@ -78,8 +78,12 @@ def main(argv: list[str] | None = None) -> int:
         result = start() if args.action == "start" else dismiss(args.launch_token)
         print(json.dumps(result, sort_keys=True))
         return 0
-    except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
-        print(f"steam auth surface: {error}", file=sys.stderr)
+    except PermissionError:
+        print("steam auth surface: permission denied; run as the lulu appliance account",
+              file=sys.stderr)
+        return 1
+    except (OSError, ValueError, RuntimeError, subprocess.SubprocessError):
+        print("steam auth surface: Consoled request failed", file=sys.stderr)
         return 1
 
 

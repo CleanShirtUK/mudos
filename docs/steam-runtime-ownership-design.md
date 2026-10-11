@@ -202,19 +202,56 @@ Diagnostics now use `scripts/steam_auth_status.py`, which returns only
 `authenticated`, `not_authenticated`, or `unknown`; `steam-runtime-session.py`
 does not decode or print connection-log lines and discards Steam child stderr.
 `steam-lifecycle-probe.py` emits allowlisted launch metadata instead of raw
-process arguments. `steam-auth-surface.py` filters authentication fields and
-uses static error messages. Synthetic token-bearing tests verify that the
-diagnostic outputs contain only predefined statuses/fields.
+process arguments, titles, or window classes. `steam-auth-surface.py` filters
+authentication fields and uses static error messages. Synthetic token-bearing
+tests cover stdout, stderr, exceptions, lifecycle output, and a test diagnostic
+export; they verify that only predefined statuses/fields are emitted.
 
 ### Continuation gate
 
-The previous isolated client, account, and test subvolumes have been removed.
-At this checkpoint the isolated login environment has **not yet been recreated**;
-reauthentication is not ready to start. Recreate it with an empty client state
-and empty synthetic library before displaying a login surface. Do not launch it
-against the production Steam HOME or library. Resume account-backed testing only
-after the operator completes login through the isolated UI. Reauthentication is
-not a production Steam restart or a production configuration change.
+The isolated client, account, and test subvolumes were removed after Stage 1
+cleanup, then recreated fresh for this continuation. The current transient
+`steam-compat-stage1-real.service` runs as the dedicated `steamstage1` account
+with `ProtectHome=tmpfs`, `ProtectSystem=strict`, private `/tmp` and D-Bus, and
+only the dedicated test HOME/library bound back into its namespace. A startup
+check fails if `/home/lulu` is visible. Steam stdout/stderr are discarded.
+
+The disposable library's `steamapps` tree is a read-only bind. Writable
+`compatdata`, `shadercache`, and `SteamLinuxRuntime_soldier` are separate Btrfs
+subvolumes outside that protected library subvolume and are mounted only at the
+declared child paths. `SteamLinuxRuntime_soldier` remains the extra runtime
+exception required by the earlier Braid experiment; it is not game-payload
+storage. Before starting Steam, the service verified `steamapps` read-only,
+each allowed state mount read-write, payload/staging denial (`EROFS`), runtime
+state write success, hardlink denial (`EXDEV`), and rejection of a symlink from
+writable state back into protected payload. Only a synthetic marker is present;
+this fresh library has no downloaded or installed game.
+
+The isolated Xvfb `:190` Steam login screen is ready. The viewer uses a private
+Unix socket at `/run/steam-stage1-viewer/bridge.sock`, with filesystem access
+limited to the operator account; it is not a TCP listener and the test account
+is denied access to the viewer. It disables HTTP access logging, does not save
+or log keyboard input, and passes no typed text in child process arguments.
+From the operator workstation, forward that remote Unix socket to local port
+18765, then open `http://127.0.0.1:18765/`. The SSH forwarding command is:
+
+```sh
+ssh -N -L 18765:/run/steam-stage1-viewer/bridge.sock lulu
+```
+
+The browser tooling in this execution was disconnected, so the SSH Unix-socket
+endpoint was verified locally as the authorized operator, and the isolation
+namespace/startup checks were verified, but the remote workstation tunnel was
+not independently exercised. No account authentication has occurred. Stop at
+this screen for operator login; do not restart production Steam or attach its
+HOME/library.
+
+The OOBE readiness-test failure present at commit `9dafec0` was a stale fixture
+expectation: it injected only the legacy `steam` entitlement source, while
+current reconciliation intentionally handles `steam-aurelia`; no readiness
+record should be invented for the unused legacy source. The test now asserts
+that the legacy source refresh and interactive auth verifier remain unused.
+The focused OOBE and Steam regression tests pass.
 
 ## Required writable-state inventory (not verified by live experiments)
 

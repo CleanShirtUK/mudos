@@ -80,6 +80,36 @@ def test_lifecycle_probe_never_emits_raw_process_arguments_or_embedded_secrets()
     assert "fixture-user" not in diagnostic
 
 
+def test_lifecycle_report_and_export_contain_only_safe_launch_fields(tmp_path, capsys):
+    secret = "synthetic-refresh-token-in-process-argv"
+    argv = ("steam", "--login", secret, "-applaunch", "26800", "--auth=" + secret)
+    metadata = lifecycle.safe_steam_command(argv)
+    lifecycle.emit("steam-command", pid=2468, **metadata)
+    output = capsys.readouterr()
+    assert secret not in output.out + output.err
+    assert 'appid="26800"' in output.out
+    export = tmp_path / "safe-diagnostic.json"
+    export.write_text(json.dumps(metadata), encoding="utf-8")
+    assert secret not in export.read_text(encoding="utf-8")
+
+
+def test_lifecycle_report_drops_secret_bearing_window_titles_and_classes(monkeypatch, capsys):
+    secret = "synthetic-session-token-hidden-in-window-title"
+    xprop_output = (
+        "STEAM_GAME(CARDINAL) = 26800\n"
+        "_NET_WM_NAME(UTF8_STRING) = \"" + secret + "\"\n"
+        "WM_NAME(STRING) = \"" + secret + "\"\n"
+        "_NET_WM_PID(CARDINAL) = 1234\n"
+        "WM_CLASS(STRING) = \"" + secret + "\"\n"
+    )
+    monkeypatch.setattr(lifecycle, "xprop", lambda *_args: xprop_output)
+    metadata = lifecycle.window_snapshot(":190", 42)
+    lifecycle.emit("surface-created", id=42, **metadata)
+    output = capsys.readouterr()
+    assert metadata == {"steam_game": 26800, "pid": 1234}
+    assert secret not in output.out + output.err
+
+
 def test_auth_surface_drops_unexpected_auth_fields_and_errors_are_static(monkeypatch):
     replies = iter([
         {"authenticated": True, "jwt": "synthetic-token-never-return-this-value"},
@@ -112,3 +142,30 @@ def test_auth_surface_drops_unexpected_auth_fields_and_errors_are_static(monkeyp
         assert "synthetic-token" not in str(error)
     else:
         raise AssertionError("failed D-Bus request unexpectedly succeeded")
+
+
+def test_auth_surface_cli_stdout_stderr_and_exception_are_token_safe(monkeypatch, capsys):
+    secret = "synthetic-cli-token-never-export-this"
+    monkeypatch.setattr(auth_surface.pwd, "getpwnam", lambda _name: type("User", (), {"pw_uid": 123})())
+    monkeypatch.setattr(auth_surface.os, "geteuid", lambda: 123)
+    monkeypatch.setattr(auth_surface, "_busctl", lambda *_args: {
+        "authenticated": True, "access_token": secret, "refresh_token": secret,
+    })
+    assert auth_surface.main(["start"]) == 0
+    result = capsys.readouterr()
+    assert secret not in result.out + result.err
+    assert json.loads(result.out) == {
+        "authentication": {"authenticated": True},
+        "message": "Steam is already authenticated; no new surface was opened.",
+        "status": "authenticated",
+    }
+
+    def fail_with_secret(*_args):
+        raise RuntimeError(secret)
+
+    monkeypatch.setattr(auth_surface, "_busctl", fail_with_secret)
+    assert auth_surface.main(["start"]) == 1
+    result = capsys.readouterr()
+    assert secret not in result.out + result.err
+    assert result.out == ""
+    assert result.err.strip() == "steam auth surface: Consoled request failed"

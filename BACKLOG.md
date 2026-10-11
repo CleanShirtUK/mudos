@@ -155,8 +155,38 @@ routing error.
   supervisor discards child stderr, the lifecycle probe no longer emits raw
   argv, and the auth-surface harness projects D-Bus responses and uses static
   errors. Synthetic secret-bearing regression tests cover those output paths.
-  Reauthentication and the remaining compatibility matrix must continue in a
-  newly isolated client after operator login.
+  The client has now been rebuilt in an empty test subvolume; reauthentication
+  is pending the operator at the isolated login screen.
+- **Stage 1 login environment prepared (2026-10-11):** recreated a fresh
+  `steamstage1` account with independent client and disposable-library Btrfs
+  subvolumes. Its transient systemd namespace uses `ProtectHome=tmpfs` and
+  exposes only the test HOME/library; the production Steam HOME is explicitly
+  required to be absent inside that namespace. The test `steamapps` tree is a
+  read-only bind. Writable `compatdata`, `shadercache`, and the additional
+  `SteamLinuxRuntime_soldier` runtime are separate Btrfs subvolumes mounted at
+  exact child paths; their storage is outside the protected library subvolume.
+  The runtime remains a required, deliberately narrow exception based on the
+  earlier Braid launch evidence, not permission to write game payloads.
+- **Boundary self-check:** before Steam starts, the isolated runner verifies
+  mount modes, payload and staging write denial (`EROFS`), runtime-state write
+  success, cross-subvolume hardlink denial (`EXDEV`), and that a symlink from
+  writable compatibility state cannot write to protected payload. The check
+  passed. The only test content is a synthetic marker; no game was downloaded
+  or installed in this fresh fixture.
+- **Login viewer:** the isolated Xvfb `:190` login UI is served over a private
+  Unix socket, not a host TCP listener. The socket is accessible to the operator
+  account and rejected connections from `steamstage1`; access/request logging
+  is disabled, keyboard text is not persisted or passed in child argv, and
+  Steam stdout/stderr are discarded. Use an SSH local forward to the remote
+  socket, then open `http://127.0.0.1:18765/`. No account login has occurred;
+  stop here for operator authentication.
+- **Readiness-test expectation correction:** the remaining OOBE failure was
+  already present at `9dafec0` and came from a stale fixture expectation. The
+  test injected only the deprecated legacy `steam` entitlement source, while
+  current reconciliation intentionally handles `steam-aurelia`; no readiness
+  record should be invented for the unused legacy source. The test now asserts
+  that neither its `refresh()` nor interactive `verify_acquisition()` runs.
+  The OOBE suite and focused Steam regression tests pass.
 - **Deployment guard gap and proposed check:** current guard sees only
   Acquisitiond jobs. Before any online deployment it must additionally prove
   Steam content idle (not infer this from Acquisitiond or Steam readiness),

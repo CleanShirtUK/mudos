@@ -180,17 +180,22 @@ class SteamOobeTests(unittest.TestCase):
             registry = PluginRegistry(root / "plugins")
             registry.discover()
             auth = UnexpectedAuth()
+            legacy_source = FakeSteamSource()
             catalog = ConsoleCatalog(
                 CatalogueStore(root / "catalogue.sqlite3"), FakeInstalledSteam(),
-                steam_entitlements=FakeSteamSource(), plugin_registry=registry,
+                steam_entitlements=legacy_source, plugin_registry=registry,
             )
             with patch.object(type(registry), "for_plugin", return_value=[auth]), \
+                    patch.object(legacy_source, "refresh", wraps=legacy_source.refresh) as refresh, \
                     patch.object(onboarding, "_STATE_PATH", root / "onboarding.json"):
                 onboarding.save_progress(providers=["steam"])
                 catalog.refresh({"steam"})
             state = catalog.provider_readiness.get("steam")
-            self.assertEqual(state["status"], "authentication_required")
-            self.assertEqual(state["catalogue_count"], 1)
+            # This fixture injects the deprecated SteamCMD-shaped source only.
+            # Current owned-catalogue reconciliation is Aurelia-backed and must
+            # neither call this legacy source nor invent readiness for it.
+            self.assertEqual(state, {})
+            refresh.assert_not_called()
             self.assertEqual(auth.calls, 0)
 
     def test_gui_account_requires_live_client_and_matching_local_account_state(self):
