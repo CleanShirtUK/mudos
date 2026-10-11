@@ -10,6 +10,72 @@ evidence and this reconciliation rationale are in
 
 ## Active defects
 
+### STEAM-UPDATES-002 — Update in Background leaves a black screen
+
+**Status: OPEN · P1 · PHYSICALLY REPORTED (2026-10-11).** During Steam
+Update & Launch acceptance, choosing **Update in Background** from the
+launch-time update choice returned to a black screen instead of the Mudos
+Home shell. The update/launch workflow is not physically accepted.
+Whether this is hidden Home content, presentation choreography, or a
+Sessiond/Gamescope state failure is not yet established.
+
+- **Investigate:** capture the launch-originating surface and
+  PresentationCoordinator/Home state, shell visibility and opacity,
+  Sessiond lifecycle, controller focus and Gamescope selection before and
+  after selecting Background. Inspect `ui/ConsoleShell.qml`:
+  `startSteamUpdate("background")` dismisses the prompt without a
+  corresponding Home entrance; test also `continueSteamUpdateInBackground()`
+  from the Update & Launch wait screen. This is a hypothesis, not a
+  confirmed root cause.
+- **Accept:** either background choice returns to fully visible,
+  controller-navigable Mudos Home; update continues as an Acquisitiond
+  job; completion never automatically launches the game. No black screen,
+  stale launch token or lost focus on return, including from Library
+  and Recents and after errors/restarts.
+
+### STEAM-UPDATES-003 — Update offered again after a reported completion
+
+**Status: OPEN · P1 · PHYSICALLY REPORTED (2026-10-11).** During LIMBO
+Steam update testing, the operator reports that subsequent attempts to
+launch the game repeatedly trigger an update. It is not yet established
+whether Aurelia actually downloads/applies content repeatedly or Mudos
+repeatedly offers the update because of stale/incorrect status. Do not
+presume successful remote depot convergence from a terminal job alone.
+
+- **Investigate:** correlate each game launch and job ID with persisted
+  Acquisitiond operation/result, the exact Aurelia `update` status report
+  before/after, `update_availability` cache and forced refresh,
+  appmanifest/build/depot metadata, `pinned` state, and Mudos
+  post-update catalogue reconciliation. Distinguish duplicate jobs,
+  repeat prompts and an actual unchanged/failed upstream update.
+- **Accept:** confirmed-current games launch without an update prompt;
+  an available update submits at most one real job per version/AppID;
+  successful updates clear update availability; unsuccessful/unverifiable
+  updates report the truth and do not enter an endless update loop.
+  Avoid destructive verification/reinstall or repeated live updates
+  until read-only evidence establishes the cause.
+
+### STEAM-LIMBO-001 — LIMBO pixel shader error after Steam update
+
+**Status: OPEN · P1 · PHYSICALLY REPORTED (2026-10-11).** LIMBO
+(AppID 48000) fails on game launch with a reported **pixel shader error**
+after using the new Aurelia update path. This may be a distinct
+game/graphics-runtime failure or a consequence of the update; there is
+not yet evidence identifying the cause or even whether the game's
+payload changed.
+
+- **Investigate:** record exact error and timing; examine current
+  Aurelia/Proton/native launch command, selected runtime and renderer,
+  appmanifest/build and update-job evidence, Steam DRM environment,
+  game stderr, shader/compiler logs and Gamescope handoff. Compare with
+  known-working pre-update settings when reliable records exist.
+  Do not assume an update caused the graphics failure without evidence.
+- **Accept:** game renders and reaches gameplay under normal Mudos
+  launch; Guide/controller and exit-to-Home function; repeated launch
+  succeeds. Do not clear shader caches, reset Proton prefixes, force
+  reinstall or change Mesa/graphics settings without a scoped plan
+  and operator approval.
+
 ### AURELIA-VERIFY-001 — Aurelia reports executable missing after wrapped launch
 
 **Status: OPEN · P3 · REPORTING ONLY.** For Get To Work AppID 2706170, the
@@ -34,14 +100,16 @@ Get To Work installation.
 
 ### STEAM-UPDATES-001 — User-directed Aurelia update lifecycle and card progress
 
-**Status: IMPLEMENTED — PHYSICAL ACCEPTANCE PENDING · P2.** Aurelia-backed update availability and persistent
+**Status: IMPLEMENTED — PHYSICAL ACCEPTANCE BLOCKED · P1.** Aurelia-backed update availability and persistent
 Acquisitiond UPDATE jobs, launch choices, update card progress, Downloads
 operation labeling, and success/failure notification handling are implemented
 and deployed. Physical acceptance remains pending; do not treat automated tests
 as operator acceptance.
 
-- **Next:** perform controller-first physical acceptance after deployment. No
-  real installed game may be updated without separate operator approval.
+- **Next:** investigate and correct the physically observed background-return,
+  recurring-update, and LIMBO launch defects below before resuming update
+  acceptance. Preserve existing installed games and update-job evidence. No
+  additional real game update or destructive repair without operator approval.
 - **Accept:** meet the lifecycle and recovery requirements in
   `docs/aurelia-launch-investigation-20261010.md`; add focused tests for both
   catalogue identity aliases, shell/daemon restart, deduplication, cancellation,
@@ -118,6 +186,23 @@ titles” is session-only; membership persistence/lifetime still needs a decisio
 ## Validation pending
 
 ## Deferred / optional enhancements
+
+### STEAM-UPDATES-UX-001 — Radial update indicator spins its labels
+
+**Status: DEFERRED · P3 · FOLLOW-UP VISUAL PASS.** Physical video of
+Update & Launch shows the percentage and stage badge rotating with the
+indeterminate radial arc; the off-bounds stage badge can overlap the
+game title/explanatory text. In `ui/UpdateRadialProgress.qml`,
+`NumberAnimation on rotation` animates the entire root Item rather
+than only the ring; the badge is anchored below the component without
+reserving layout space. The component is shared by the waiting screen,
+Library and Recents. **Do not fix this during the current lifecycle
+investigation.**
+
+- **Follow-up accept:** only the arc rotates when indeterminate;
+  percentage and stage label stay upright; determinate angle resets
+  correctly; parent layouts reserve label space; verify all three
+  surfaces, scaling/themes, and reduced-motion behavior.
 
 ### THEME-001 — Theme engine final UI validation
 
