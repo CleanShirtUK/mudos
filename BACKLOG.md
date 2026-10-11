@@ -35,16 +35,18 @@ Sessiond/Gamescope state failure is not yet established.
 
 ### STEAM-UPDATES-003 — Update offered again after a reported completion
 
-**Status: OPEN · P1 · PHYSICALLY REPORTED (2026-10-11).** During LIMBO
-Steam update testing, the operator reports that subsequent attempts to
-launch the game repeatedly trigger an update. It is not yet established
-whether Aurelia actually downloads/applies content repeatedly or Mudos
-repeatedly offers the update because of stale/incorrect status. Do not
-presume successful remote depot convergence from a terminal job alone.
+**Status: OPEN · P1 · PHYSICALLY REPORTED (2026-10-11).** After
+updating LIMBO, the operator reports that **subsequent game launches**
+seem to trigger an update each time. The affected scope (LIMBO alone,
+several games, or all Steam titles) is **not yet established**, nor is it
+known whether content is actually updated repeatedly or Mudos is
+re-offering updates because of stale/incorrect status. Do not presume
+successful remote depot convergence from a terminal job alone.
 
-- **Investigate:** correlate each game launch and job ID with persisted
-  Acquisitiond operation/result, the exact Aurelia `update` status report
-  before/after, `update_availability` cache and forced refresh,
+- **Investigate:** first establish which Steam titles are affected without
+  starting fresh update jobs. Correlate each game launch and job ID with
+  persisted Acquisitiond operation/result, the exact Aurelia `update`
+  status report before/after, `update_availability` cache and forced refresh,
   appmanifest/build/depot metadata, `pinned` state, and Mudos
   post-update catalogue reconciliation. Distinguish duplicate jobs,
   repeat prompts and an actual unchanged/failed upstream update.
