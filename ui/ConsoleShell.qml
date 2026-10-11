@@ -1,6 +1,7 @@
 import QtQuick
 import "OnboardingBack.js" as OnboardingBack
 import "InstallableProjection.js" as InstallableProjection
+import "InstallRequestErrors.js" as InstallRequestErrors
 import "HomeDomains.js" as HomeDomains
 import "LibraryDimensions.js" as LibraryDimensions
 import "LibrarySurfaceTransition.js" as LibrarySurfaceTransition
@@ -716,7 +717,8 @@ Window {
             if (request.status === 200 || request.status === 202)
                 callback(JSON.parse(request.responseText))
             else if (failureMessage && (generation === undefined || generation === launchGeneration)) {
-                message = failureMessage || "Catalogue unavailable"
+                var reason = InstallRequestErrors.responseReason(request.responseText, failureMessage)
+                message = reason
                 if (generation !== undefined)
                     notifyLaunchFailure(failureMessage || "The application could not be launched")
                 playAudioEvent("error")
@@ -725,7 +727,7 @@ Window {
                     launchStatusTimer.stop()
                 }
                 if (failureCallback)
-                    failureCallback()
+                    failureCallback(reason, request.status)
             }
         }
         request.open(method, apiUrl + path)
@@ -2794,7 +2796,7 @@ Window {
     function installGame(game) {
         if (!game || launchOverlayEffectiveVisible)
             return
-        if (String(game.provider) === "steam") {
+        if (String(game.provider) === "steam" || String(game.provider) === "steam-aurelia") {
             steamPlatformChoiceGame = game
             steamPlatformChoices = []
             steamPlatformChoiceError = "Checking available Steam versions…"
@@ -2817,8 +2819,12 @@ Window {
                     return
                 }
                 steamPlatformChoiceDialog.forceActiveFocus()
-            }, "Steam platform information is unavailable. No installation was submitted.", -1, function() {
-                steamPlatformChoiceError = "Steam platform information is unavailable. No installation was submitted."
+            }, "Steam platform information is unavailable.", undefined, function(reason) {
+                if (steamPlatformChoiceGame !== game)
+                    return
+                steamPlatformChoiceError = "Steam platform information is unavailable: "
+                        + String(reason) + ". No installation was submitted."
+                root.notify("Installation unavailable", steamPlatformChoiceError, "error")
             })
             return
         }
@@ -2847,13 +2853,19 @@ Window {
         launchLogTimer.start()
         launchStatus = "installing"
         launchStateRank = 1
+        storeError = ""
         message = "Opening Steam install"
         request("/install/" + encodeURIComponent(launchGameId), "POST",
                 platform ? JSON.stringify({platform: platform}) : "", function(data) {
             if (generation !== launchGeneration)
                 return
             refreshAcquisitionJobs()
-        }, "Install failed", generation)
+        }, "Install failed", generation, function(reason) {
+            launchStatus = "failed"
+            launchStatusTimer.stop()
+            root.notify("Installation failed",
+                        InstallRequestErrors.installationFailure(launchTitle, reason), "error")
+        })
     }
 
     function cancelSteamPlatformChoice() {

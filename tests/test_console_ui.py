@@ -924,6 +924,44 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertIn('actionLabel: root.install_state === "available"', recent)
         self.assertIn('text: card.actionLabel', (ROOT / "ui" / "GameCard.qml").read_text())
 
+    def test_aurelia_install_uses_platform_choice_and_visible_backend_error(self) -> None:
+        shell = (ROOT / "ui" / "ConsoleShell.qml").read_text()
+        bridge = (ROOT / "scripts" / "console-ui-bridge.py").read_text()
+        installable = shell[shell.index("function installGame(game)"):
+                            shell.index("function cancelSteamPlatformChoice()")]
+        self.assertIn('String(game.provider) === "steam-aurelia"', installable)
+        self.assertIn('/steam/platforms/" + encodeURIComponent(String(game.game_id))', installable)
+        self.assertIn('"Steam platform information is unavailable.", undefined, function(reason)', installable)
+        discovery_failure = installable[
+            installable.index("if (choices.length === 0)"):
+            installable.index("steamPlatformChoices = choices")
+        ]
+        self.assertIn("No installation was submitted.", discovery_failure)
+        self.assertNotIn("submitInstallGame", discovery_failure)
+        self.assertIn("return", discovery_failure)
+        self.assertIn('No installation was submitted.', installable)
+        self.assertIn('root.notify("Installation unavailable", steamPlatformChoiceError, "error")', installable)
+        self.assertIn('InstallRequestErrors.responseReason(request.responseText, failureMessage)', shell)
+        self.assertIn('failureCallback(reason, request.status)', shell)
+        self.assertIn('InstallRequestErrors.installationFailure(launchTitle, reason)', installable)
+        self.assertIn('root.notify("Installation failed",', installable)
+        self.assertIn('provider in {"steam", "steam-aurelia"}', bridge)
+        self.assertIn('item.get("operation") == "acquire"', bridge)
+        self.assertIn('call_submit_steam_install(', bridge)
+
+    def test_install_request_error_qml_regressions(self) -> None:
+        runner = shutil.which("qmltestrunner") or "/usr/lib/qt6/bin/qmltestrunner"
+        if not Path(runner).exists():
+            self.skipTest("qmltestrunner is not installed")
+        environment = os.environ.copy()
+        environment["QT_QPA_PLATFORM"] = "offscreen"
+        environment["QT_QUICK_BACKEND"] = "software"
+        result = subprocess.run(
+            [runner, "-input", str(ROOT / "tests/qml/tst_install_request_errors.qml")],
+            capture_output=True, text=True, env=environment, timeout=20,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
     def test_non_game_portrait_artwork_assets_are_replaceable(self) -> None:
         artwork = ROOT / "ui" / "artwork"
         expected = {

@@ -399,9 +399,11 @@ class ConsoleUiBridge:
     async def steam_platform_options(self, game_id: str) -> dict[str, object]:
         rows = await self.list_available_games("")
         selected = next((row for row in rows if str(row.get("game_id", "")) == game_id), None)
-        if selected is None or str(selected.get("provider", "")) != "steam":
+        provider = str(selected.get("provider", "")) if selected else ""
+        if selected is None or provider not in {"steam", "steam-aurelia"}:
             raise ValueError("Steam title is not available to acquire")
-        app_id = str(await self.consoled.call_resolve_steam_install(game_id))
+        app_id = (str(await self.consoled.call_resolve_steam_install(game_id))
+                  if provider == "steam" else str(selected.get("provider_id", "")))
         if not app_id.isdecimal() or int(app_id) < 1:
             raise ValueError("Steam AppID could not be resolved")
         from lulu.plugins.steam.aurelia import AureliaClient
@@ -420,8 +422,11 @@ class ConsoleUiBridge:
             raise ValueError("game is not available to acquire")
         provider = str(selected.get("provider", ""))
         title = str(selected.get("title", game_id))
-        if provider == "steam":
-            appid = await self.consoled.call_resolve_steam_install(game_id)
+        if provider in {"steam", "steam-aurelia"}:
+            appid = (str(await self.consoled.call_resolve_steam_install(game_id))
+                     if provider == "steam" else str(selected.get("provider_id", "")))
+            if not appid.isdecimal() or int(appid) < 1:
+                raise ValueError("Steam AppID is invalid")
             content_identity = f"steam:{appid}"
             if platform not in {"windows", "linux"}:
                 raise ValueError("Choose a verified Steam platform before installation")
@@ -482,6 +487,7 @@ class ConsoleUiBridge:
         existing = next((item for item in existing_snapshot.get("jobs", [])
                          if item.get("provider") == provider
                          and item.get("content_identity") == content_identity
+                         and item.get("operation") == "acquire"
                          and item.get("state") == "failed"
                          and not item.get("retired", False)), None)
         if existing is not None:

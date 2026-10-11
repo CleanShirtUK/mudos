@@ -363,7 +363,7 @@ was not diagnosed and must not be conflated with the later failed game launch
 
 ### STEAM-PLATFORM-001 — Choose Steam download platform from Installable
 
-**Status: IMPLEMENTED/DEPLOYED · PHYSICAL ACCEPTANCE OPEN · P2.** When starting installation of a Steam
+**Status: IMPLEMENTED/DEPLOYED · PHYSICAL ACCEPTANCE FAILED/RETEST REQUIRED · P2.** When starting installation of a Steam
 title from the Installable view, let the operator confirm which supported
 platform's content should be acquired, rather than silently accepting the
 provider's automatic depot/platform choice. This matters for games such as
@@ -412,12 +412,63 @@ typically wants the maintained Windows build launched through Proton.
   Use synthetic provider/depot fixtures and controller-QML tests before
   physical acceptance; do not install or overwrite live titles without
   operator approval.
-- **Current integration boundary:** platform chooser and explicit install
-  selection remain in source. Update verification uses compatible official
-  Aurelia 0.1.37's
-  `manifests --json` plus the local appmanifest; no experimental Aurelia
-  command is required. These source changes are not deployed; 0.1.37/0.1.38
-  interface parity was confirmed read-only on 2026-10-11.
+- **Physical acceptance failure (2026-10-11 13:05):** the UI bridge's existing
+  `/launch-log` captured `selected game_id=steam-aurelia:252950` followed by
+  `HTTP install failed: acquisition is not retryable`. This proves the
+  `/install/<game_id>` request was reached and rejected; no new Acquisitiond
+  job was submitted. QML selected the chooser only for `provider == "steam"`,
+  while Aurelia catalogue identities use `provider == "steam-aurelia"`; the
+  platform-discovery endpoint was therefore skipped. This is not evidence that
+  residual files caused the rejection.
+- **Installation-state side event:** Steam `content_log.txt` records an
+  already-queued AppID 252950 update running from 13:02:20 and committing
+  depot 252961 at 13:06:40-45 (BuildID 25641912, 5,997 updated files,
+  10,795,936,576 staged bytes). At 13:06:45 the appmanifest became StateFlags=4
+  with that installed depot and the content directory measured about 10.8 GB.
+  This occurred through Steam's own update queue after the runtime restart; the
+  Acquisitiond history contains no new install/update job. The investigation
+  did not submit a live install or mutate game files. Current Rocket League
+  files/appmanifest are now installed-state evidence and must not be cleaned up
+  or changed under this issue.
+- **Fixes in source:** platform discovery and installation now recognize both
+  `steam` and `steam-aurelia` catalogue providers, route Aurelia installs through
+  `SubmitSteamInstall` with a verified platform, and only consider failed
+  `acquire` jobs for generic acquire retries. The original failed REMOVE can
+  no longer block an unrelated fresh install. HTTP rejection JSON is parsed;
+  discovery failures remain visible in the focused chooser and rejected install
+  requests produce a normal error notification with the backend cause, without
+  claiming success or changing controller focus. These fixes are committed but
+  are not deployed; do not retry live Rocket League installation.
+- **Next physical acceptance:** after the fix is deployed through the guarded
+  workflow, use a synthetic `steam-aurelia` Installable fixture and mocked
+  backend. With the controller, verify Windows/Linux choices appear; cancel and
+  confirm zero job submissions. Then force platform discovery to return 409 and
+  verify its cause is visible and Cancel stays focused; separately force the
+  install POST to return 409 and verify the exact backend error notification,
+  retained Installable focus, and no success/new job. Do not select the now-
+  installed live Rocket League entry or start a live install. Any future
+  Windows/Proton migration needs separate operator approval and a recovery plan.
+- Official Aurelia 0.1.37/0.1.38 interface compatibility remains verified
+  read-only; no binary was changed.
+
+### ACQUISITION-INSTALL-001 — Failed REMOVE blocks fresh Aurelia install
+
+**Status: SOURCE FIX IMPLEMENTED/TESTED; DEPLOYMENT AND LIVE ACCEPTANCE BLOCKED.**
+The Installable bridge's generic acquisition path selected any failed job with
+the same provider/content identity, without checking operation. For
+`steam-aurelia:252950`, it matched the historical failed, non-retryable REMOVE
+and raised `acquisition is not retryable` instead of submitting a new,
+platform-specific INSTALL. Acquisitiond itself already has a dedicated
+`SubmitSteamInstall` boundary that treats INSTALL/REMOVE/UPDATE correctly.
+
+- The bridge now routes both Steam catalogue provider aliases through that
+  boundary and filters generic failed retries to `operation == "acquire"`.
+- Tests prove the failed REMOVE is not retried, invalid/missing platform or
+  discovery does not submit a job, and provider/retry conflicts propagate the
+  original cause to the UI.
+- Do not repair or roll back the now-installed Rocket League content under this
+  defect. Any platform migration or recovery plan requires a separate operator
+  decision and evidence-based, title-specific plan.
 
 ### UNINSTALL-UX-001 — Hide a title while provider uninstall runs
 

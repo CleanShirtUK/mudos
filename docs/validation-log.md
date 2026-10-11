@@ -1,5 +1,60 @@
 # Mudos Validation Log
 
+## 2026-10-11 — Rocket League platform acceptance failure and UI feedback
+
+- **Git preflight:** fetched `origin/dev`; canonical `dev` was clean and equal
+  to `origin/dev` at `1601f4e2ea251ae6f65d8eae21516c2534716ed8` before changes.
+- **Original request evidence (read-only):** Console UI bridge `GET
+  /launch-log` returned `selected game_id=steam-aurelia:252950` and
+  `HTTP install failed: acquisition is not retryable` at 13:05:18. The bridge
+  starts this log in its `/install/<game_id>` handler, so the install request
+  reached the backend. There is no install-submission line and the durable job
+  history contains only the old failed REMOVE and completed ACQUIRE for AppID
+  252950. No new job was submitted.
+- **Platform discovery:** catalogue source identities for Aurelia rows are
+  `provider=steam-aurelia`, `game_id=steam-aurelia:<AppID>`. QML only entered
+  platform discovery for `provider=steam`; this title bypassed
+  `/steam/platforms/<game_id>` and used the generic install branch. The bridge
+  matched the failed REMOVE by provider/content identity without checking the
+  operation and rejected it as non-retryable. The residual files were not the
+  cause of this HTTP error.
+- **Missing error explanation:** `/install` returned HTTP 409 with JSON error
+  text, but QML used only generic `Install failed`; its launch-failure notifier
+  returns when `launchToken` is empty (as it is for installs), leaving only the
+  error sound. The platform chooser failure path similarly did not surface the
+  backend's response text.
+- **Independent Steam client content event:** Steam `content_log.txt` shows
+  AppID 252950 already queued and downloading from 13:02:20, before the UI
+  request failure. At 13:06:40 it committed 5,997 updated files from
+  `steamapps/downloading/252950` into `steamapps/common/rocketleague`; at
+  13:06:45 it completed depot 252961 (Linux), BuildID 25641912, total staged
+  bytes 10,795,936,576. The appmanifest now has StateFlags=4 and that depot;
+  current content directory is approximately 10.8 GB. Steam Aurelia reports
+  AppID 252950 installed. No corresponding Mudos Acquisitiond install/update
+  job exists. This is consistent with Steam resuming its own queued update
+  after the prior Steam runtime restart; no live install was initiated by this
+  investigation. Content and appmanifest are now installed-state evidence and
+  must not be modified or rolled back here.
+- **Source changes:** platform selection and backend submission now recognize
+  both Steam provider aliases, validate platform discovery before submission,
+  route Aurelia through `SubmitSteamInstall`, and avoid considering a failed
+  REMOVE as a retryable acquisition. The QML request helper extracts HTTP error
+  details and the Installable failure callback sends a visible notification;
+  discovery errors remain visible in the chooser. No success is reported on a
+  failed request and focus is not moved.
+- **Regression validation:** `PYTHONPATH=src pytest -q
+  tests/test_console_bridge.py tests/test_console_ui.py` passed (133 tests).
+  Coverage includes Aurelia platform discovery, no submission for absent/invalid
+  platform, failed-REMOVE separation, retry/provider conflicts, backend error
+  preservation, and the visible-install-error notification contract.
+  `scripts/console-ui-bridge.py` compiles. No live install, deploy, or game-file
+  mutation was performed during this investigation.
+- **Acceptance:** mark `STEAM-PLATFORM-001` physical acceptance failed and
+  retest required. Record separate bridge/query defect as
+  `ACQUISITION-INSTALL-001`. Fixes are source-only; the live Rocket League app
+  is now installed via the Steam queue, so do not attempt another Installable
+  action or migrate platforms without explicit operator authorization.
+
 ## 2026-10-11 — Rocket League orphan recovery and restart guard
 
 - **Source:** commit `04c80a6` makes startup recovery fail closed for every
@@ -107,8 +162,12 @@
   All required units are active; Sessiond reports shell/presentation ready,
   Xbox controller connected, no active identity/token; Consoled RPC succeeds;
   Acquisitiond has no active jobs; Rocket League REMOVE remains failed and
-  non-retryable. Candidate checksum/verification remain valid. No Steam game
-  install, update, verify, launch, or removal was run.
+  non-retryable. Candidate checksum/verification remain valid. No Mudos game
+  install/update/verify/launch/removal request was issued during deployment.
+  Later read-only review of Steam's content log found that restarting its
+  runtime resumed an already queued AppID 252950 Steam update; see the
+  `STEAM-PLATFORM-001` acceptance-failure entry below for the resulting content
+  change. This was not represented by a new Acquisitiond job.
 - **Guard corrections:** retained bounded 20-second RPC startup probes and the
   180-second post-restart readiness budget, and corrected restart order to
   Consoled, Acquisitiond, then Sessiond. This satisfies shell bootstrap

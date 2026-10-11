@@ -191,6 +191,107 @@ class ConsoleBridgeTests(unittest.TestCase):
 
         asyncio.run(exercise())
 
+    def test_aurelia_install_does_not_retry_failed_remove_and_submits_platform_job(self):
+        async def exercise():
+            class Acquisition:
+                def __init__(self): self.submitted = None; self.retried = None
+                async def call_get_snapshot(self):
+                    return json.dumps({"jobs": [
+                        {"job_id": "orphan-remove", "provider": "steam-aurelia",
+                         "content_identity": "steam-aurelia:252950", "operation": "remove",
+                         "state": "failed", "retryable": False},
+                        {"job_id": "old-acquire", "provider": "steam-aurelia",
+                         "content_identity": "steam-aurelia:252950", "operation": "acquire",
+                         "state": "completed", "retryable": True},
+                    ]})
+                async def call_submit_steam_install(self, *args):
+                    self.submitted = args
+                    return "fresh-install"
+                async def call_retry_job(self, job_id):
+                    self.retried = job_id
+                    raise AssertionError("a failed REMOVE must never be retried as an install")
+
+            acquisition = Acquisition()
+            bridge = BRIDGE.ConsoleUiBridge(asyncio.get_running_loop(), object(), object(), acquisition)
+            bridge.list_available_games = lambda _provider: asyncio.sleep(0, result=[{
+                "game_id": "steam-aurelia:252950", "provider": "steam-aurelia",
+                "provider_id": "252950", "title": "Rocket League",
+            }])
+            bridge._refresh_after_acquisition = lambda *_: asyncio.sleep(0)
+            result = await bridge.install_game("steam-aurelia:252950", "windows")
+            await asyncio.sleep(0)
+            self.assertEqual(result, {"token": "fresh-install"})
+            self.assertEqual(acquisition.submitted, ("252950", "Rocket League", "windows"))
+            self.assertIsNone(acquisition.retried)
+
+        asyncio.run(exercise())
+
+    def test_aurelia_platform_discovery_supports_provider_identity_and_fails_closed(self):
+        async def exercise():
+            bridge = BRIDGE.ConsoleUiBridge(asyncio.get_running_loop(), object(), object())
+            bridge.list_available_games = lambda _provider: asyncio.sleep(0, result=[{
+                "game_id": "steam-aurelia:252950", "provider": "steam-aurelia",
+                "provider_id": "252950", "title": "Rocket League",
+            }])
+            class Client:
+                def __init__(self): self.calls = []
+                async def available_platforms(self, app_id):
+                    self.calls.append(app_id)
+                    return ("windows", "linux")
+
+            client = Client()
+            with patch("lulu.plugins.steam.aurelia.AureliaClient", return_value=client):
+                result = await bridge.steam_platform_options("steam-aurelia:252950")
+            self.assertEqual(result["app_id"], "252950")
+            self.assertEqual(result["platforms"], ["windows", "linux"])
+            self.assertEqual(client.calls, ["252950"])
+
+            class UnknownClient:
+                async def available_platforms(self, _app_id): return ()
+
+            with patch("lulu.plugins.steam.aurelia.AureliaClient", return_value=UnknownClient()):
+                with self.assertRaisesRegex(ValueError, "could not verify an acquirable"):
+                    await bridge.steam_platform_options("steam-aurelia:252950")
+
+        asyncio.run(exercise())
+
+    def test_aurelia_install_rejects_missing_platform_before_acquisition_calls(self):
+        async def exercise():
+            class Acquisition:
+                async def call_get_snapshot(self):
+                    raise AssertionError("invalid platform must fail before job history is queried")
+                async def call_submit_steam_install(self, *_args):
+                    raise AssertionError("invalid platform must not submit a job")
+
+            bridge = BRIDGE.ConsoleUiBridge(asyncio.get_running_loop(), object(), object(), Acquisition())
+            bridge.list_available_games = lambda _provider: asyncio.sleep(0, result=[{
+                "game_id": "steam-aurelia:252950", "provider": "steam-aurelia",
+                "provider_id": "252950", "title": "Rocket League",
+            }])
+            with self.assertRaisesRegex(ValueError, "Choose a verified Steam platform"):
+                await bridge.install_game("steam-aurelia:252950", "")
+
+        asyncio.run(exercise())
+
+    def test_aurelia_provider_retry_conflict_is_returned_without_submitting(self):
+        async def exercise():
+            class Acquisition:
+                async def call_get_snapshot(self): return json.dumps({"jobs": []})
+                async def call_submit_steam_install(self, *_args):
+                    raise ValueError("A Steam remove job is already active for this game")
+                async def call_submit_job(self, *_args):
+                    raise AssertionError("Steam installs must use the platform-aware submit boundary")
+
+            bridge = BRIDGE.ConsoleUiBridge(asyncio.get_running_loop(), object(), object(), Acquisition())
+            bridge.list_available_games = lambda _provider: asyncio.sleep(0, result=[{
+                "game_id": "steam-aurelia:252950", "provider": "steam-aurelia",
+                "provider_id": "252950", "title": "Rocket League",
+            }])
+            with self.assertRaisesRegex(ValueError, "remove job is already active"):
+                await bridge.install_game("steam-aurelia:252950", "windows")
+
+        asyncio.run(exercise())
+
     def test_retired_authentication_failure_allows_a_fresh_acquisition(self) -> None:
         async def exercise():
             class Consoled:
