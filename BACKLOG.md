@@ -73,6 +73,50 @@ routing error.
   distinct client library plus explicit read-only launch view; do not weaken
   the boundary ad hoc. This mount-namespace design is a proposal, not yet
   proven or approved for the live appliance.
+- **Synthetic prototype result (2026-10-11):**
+  `scripts/steam-ownership-prototype.py` used uniquely named transient systemd
+  units and a disposable library under `/tmp/opencode`; no persistent unit or
+  production path was used. The successful profile was `ProtectSystem=strict`,
+  `BindReadOnlyPaths=<fixture>/steamapps:<same path>`, and distinct tmpfs
+  exceptions at the fixture's `steamapps/shadercache` and `compatdata`. Actual
+  `/proc/self/mountinfo` from the transient unit showed an RO root and only
+  those expected RW children. Payload append/replace, appmanifest rewrite,
+  stage create/rewrite, commit, internal/external symlink writes and child
+  process writes failed. A hardlink from payload to writable runtime state
+  failed with `EXDEV`. A simulated host Acquisitiond write to the same payload
+  succeeded outside the unit's mount namespace.
+- **Hostile mount test:** a second disposable unit intentionally overlaid
+  `steamapps/downloading` with an RW bind. In that case the stage write
+  succeeded, demonstrating that a RO parent alone is insufficient. The
+  prototype mount validator inspected the actual nested mount table and refused
+  it as `writable child mount defeats protected root`. Synthetic regression
+  tests also reject missing/duplicate/writable roots, unapproved RW children,
+  missing exceptions, unexpected Steam cgroup processes, nested helper
+  namespaces without their own RO proof, and unknown/active content-operation
+  evidence.
+- **Prototype limit / updated proposal:** the test's `ProtectSystem=strict`
+  makes host paths read-only, and the shader/compat tmpfs exceptions are
+  ephemeral. They prove systemd enforcement only; they are not suitable live
+  Steam state. A live profile needs persistent writable client/auth/log/runtime
+  state and Proton/shader state isolated on separate filesystems/subvolumes so
+  hardlinks cannot lead back to managed content. Current Steam session/config,
+  client binaries, logs, caches and game trees share `/home` storage. Exact
+  writable paths and normal Steam startup/self-update behavior remain
+  unproven. Do not simply add same-filesystem `ReadWritePaths` exceptions.
+- **Guard prototype:** unintegrated helpers in
+  `scripts/steam-ownership-guard-prototype.py` parse real mountinfo, validate the protected
+  tree and declared exceptions, examine fixtures for each process/cgroup/mount
+  namespace (including pressure-vessel-style nested namespaces), and classify
+  Steam content-log/staging evidence as active/idle/unknown only when the
+  collector asserts freshness. Six deterministic
+  tests pass. The existing `scripts/guarded-deploy.py` is unchanged; no new
+  check is enabled against the current production service. Active/queued,
+  missing, stale or contradictory evidence must block once a boundary is
+  installed and individually validated in each namespace.
+- **Outstanding compatibility:** synthetic processes cannot establish Steam
+  authentication/session persistence, self-update, DRM, Steamworks, native or
+  Proton launch, game-return lifecycle, or production start-limit behavior.
+  These remain explicit live-acceptance items; they were not tested.
 - **Deployment guard gap and proposed check:** current guard sees only
   Acquisitiond jobs. Before any online deployment it must additionally prove
   Steam content idle (not infer this from Acquisitiond or Steam readiness),
