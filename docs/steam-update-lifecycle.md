@@ -28,7 +28,8 @@ selection, installed-platform mapping from appmanifest depots, target manifests,
 and pre/post-update convergence checks. It passes compile and focused unit
 tests, but has not been integrated, released, or activated. The candidate source
 is based on the public v0.1.38 tag, and no writable upstream fork was available
-or contribution PR created. Mudos' production check/update path therefore must
+or contribution PR created. The local candidate commit is `e5671cd`
+(`Add platform-aware Steam update evidence`). Mudos' production check/update path therefore must
 remain unchanged until that contract is reviewed and supplied by Aurelia.
 
 ## Provider contract observed

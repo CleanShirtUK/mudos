@@ -2638,8 +2638,9 @@ restart may be required for InputPlumber to publish a newly created target.
   platform metadata, installed depot-based platform reporting, read-only
   `platform-state`, update preflight and post-update convergence checks.
   `CARGO_PROFILE_DEV_DEBUG=0 cargo check --bin aurelia -j 2` passed;
-  focused platform/install tests passed (10). No upstream commit/push/PR was
-  made: no writable fork was available, and this candidate needs review against
+  focused platform/install tests passed (10). No contribution commit was
+  pushed and no PR was created; local candidate commit is `e5671cd`. No writable
+  fork was available, and this candidate needs review against
   upstream's current main before contribution. Production Aurelia was not
   replaced.
 - Mudos validation: focused Python suites passed, **183 passed**; QML
