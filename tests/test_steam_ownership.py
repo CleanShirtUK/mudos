@@ -86,26 +86,50 @@ class SteamOwnershipTests(unittest.TestCase):
                 {"mnt:[44]": ro_info, "mnt:[45]": rw_info}, ("/managed/steamapps",),
             )
 
-    def test_content_operation_classifier_fails_closed_or_reports_activity(self):
-        self.assertEqual(classify_steam_content_activity(None, staging_entries=()), "unknown")
-        self.assertEqual(classify_steam_content_activity("", staging_entries=()), "unknown")
-        self.assertEqual(classify_steam_content_activity("unrecognized old log\n", staging_entries=()), "unknown")
+    def test_content_activity_uses_current_paired_evidence_not_historical_log(self):
+        evidence = {
+            "staging_entries": (), "evidence_fresh": True,
+            "queued_appids": (), "write_descriptors": (0, 0),
+            "staging_changed": False, "recent_events": (),
+            "service_invocations": ("invocation-a", "invocation-a"),
+        }
+        self.assertEqual(classify_steam_content_activity(None, **evidence), "unknown")
+        self.assertEqual(classify_steam_content_activity("", **evidence), "unknown")
         self.assertEqual(classify_steam_content_activity(
-            "[time] AppID 4 state changed : Fully Installed,\n",
-            staging_entries=(), evidence_fresh=False), "unknown")
+            "old completed scheduler records\n", **{**evidence, "evidence_fresh": False}), "unknown")
+
+        # Completed historical updates and stable, empty/stale temp entries are
+        # context, not current activity.
         self.assertEqual(classify_steam_content_activity(
-            "[time] AppID 4 state changed : Update Required,Update Queued,Update Started,\n",
-            staging_entries=(), evidence_fresh=True), "active")
+            "old scheduler update; later removed from schedule\n", **evidence), "idle")
+        stable_temp = {**evidence, "staging_entries": ("temp/1712830", "temp/48000")}
         self.assertEqual(classify_steam_content_activity(
-            "[time] AppID 4 state changed : Fully Installed,\n",
-            staging_entries=("424242",), evidence_fresh=True), "active")
+            "old completed records\n", **stable_temp), "idle")
+
+        # A queued-but-not-transferring operation remains safety-relevant.
         self.assertEqual(classify_steam_content_activity(
-            "[time] AppID 4 state changed : Fully Installed,\n",
-            staging_entries=(), evidence_fresh=True), "idle")
+            "historical log\n", **{**evidence, "queued_appids": ("2225070",)}), "active")
+        # Current transfer/staging, commit, or a relevant writer is active.
         self.assertEqual(classify_steam_content_activity(
-            "[time] AppID 4 state changed : Update Required,Update Queued,Update Started, (Suspended)\n"
-            "[time] AppID 4 scheduler finished : staying in schedule (result Suspended, state 0x40a)\n",
-            staging_entries=(), evidence_fresh=True), "active")
+            "historical log\n", **{**evidence, "staging_changed": True}), "active")
+        self.assertEqual(classify_steam_content_activity(
+            "historical log\n", **{**evidence, "recent_events": ("download",)}), "active")
+        self.assertEqual(classify_steam_content_activity(
+            "historical log\n", **{**evidence, "recent_events": ("commit",)}), "active")
+        self.assertEqual(classify_steam_content_activity(
+            "historical log\n", **{**evidence, "write_descriptors": (1, 1)}), "active")
+
+        # Incomplete, malformed, restarting, or contradictory snapshots fail
+        # closed rather than being rewritten as idle.
+        self.assertEqual(classify_steam_content_activity(
+            "historical log\n", **{**evidence, "recent_events": ("malformed",)}), "unknown")
+        self.assertEqual(classify_steam_content_activity(
+            "historical log\n", **{**evidence, "service_invocations": ("old", "new")}), "unknown")
+        self.assertEqual(classify_steam_content_activity(
+            "historical log\n", **{**evidence, "recent_events": ("queued",)}), "unknown")
+        self.assertEqual(classify_steam_content_activity(
+            "historical log\n", **{**evidence, "recent_events": ("download",),
+                                  "staging_entries": ("temp/unknown",)}), "unknown")
 
 
 if __name__ == "__main__":

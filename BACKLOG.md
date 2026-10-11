@@ -12,7 +12,7 @@ evidence and this reconciliation rationale are in
 
 ### STEAM-RUNTIME-OWNERSHIP-001 — Resident Steam mutates canonical game library outside Acquisitiond
 
-**Status: OPEN · P1 · EVIDENCE REVIEW / CONTENT-OWNERSHIP.**
+**Status: OPEN · P1 · CONTENT-OWNERSHIP RISK TRACKED; ISOLATION DEFERRED.**
 During operator acceptance of STEAM-PLATFORM-001 on 2026-10-11,
 Steam's own `content_log.txt` recorded a previously queued Rocket League
 (AppID 252950) download beginning at 13:02:20, before Mudos rejected the
@@ -31,13 +31,12 @@ The failed UI request cannot have initiated this transfer. This is distinct
   changes healthy, correctly installed Aurelia-managed games or overrides an
   explicitly selected Windows/Linux payload during ordinary startup/restart.
   The Rocket League incident alone does not establish that general claim.
-- **Reclassification:** retain this issue and the namespace prototype as a
-  fallback design. Mandatory production namespace enforcement is a proposed
-  mitigation; do not deploy it based solely on the Rocket League evidence. A
-  read-only baseline of two healthy production installations is recorded below.
-  The separate clean-install experiment was stopped after its Outcome C setup
-  blocker and is not being continued in this task. No controlled Steam restart
-  was safe because activity evidence was active/ambiguous.
+- **Architecture decision:** retain this issue and the namespace prototype as
+  fallback evidence. Filesystem isolation is **not a prerequisite** for current
+  Mudos platform-selection acceptance; do not deploy the namespace restriction
+  or resume disposable-Steam experiments in this work. The Rocket League
+  incident remains real, but does not prove that healthy installations require
+  isolation. Steam/Aurelia concurrent content-operation risk remains tracked.
 
 - **Risk:** the authenticated Steam client on Xvfb :99 shares the canonical
   game library with Aurelia. Its autonomous download/update behaviour can
@@ -277,22 +276,55 @@ The failed UI request cannot have initiated this transfer. This is distinct
   completion time, so `LastUpdated` is only a comparison point, not a verified
   Aurelia installation timestamp. No pre-event checksum baseline exists.
   Current depot state/platform remains coherent for both examples.
-- **Restart safety decision:** no `downloading` entries, no appmanifest with
-  `StateUpdateRequired`, and no open Steam write descriptors were found. But
-  the conservative historical-log classifier reduced the library to `active`,
-  with AppID 1332010 active and AppID 7 unknown; 1332010 is Stray, which Aurelia
-  lists as not installed. `steamapps/temp` also contains entries for 1712830,
-  2225070 and 48000. This does not prove a live operation, but neither does it
-  establish a safe idle queue. No resident Steam restart was performed; the existing invocation
-  `972cd8168e4f4108b5928b098617716e` and `NRestarts=0` remain unchanged. No
-  before/after-restart conclusion is claimed.
+- **Idle-state reassessment (2026-10-11; read-only):** AppIDs 1712830,
+  2225070, and 48000 are not installed in Aurelia and have no appmanifests.
+  Their `steamapps/temp/<AppID>` directories exist but are empty, with mtimes
+  from Oct 3, Oct 6, and Oct 10; no matching `steamapps/downloading` trees
+  exist. Two snapshots 45 seconds apart showed identical directory/file
+  metadata, no Steam process with an open writable descriptor under
+  `steamapps`, no appended content-log lines, and an unchanged service
+  invocation. Aurelia reports all three not queued and the Steam Downloads UI
+  showed no downloads. Their latest content-log records are historical:
+  scheduler removal for 2225070 (Oct 11 08:20Z), fully-installed state for
+  48000 (Oct 11 04:51Z), and old state/other records for 1712830 (Oct 3).
+  These three temp entries are **historical empty directory residue**, not
+  current operations. For 1712830 the last operation's success/failure versus
+  abandonment cannot be established from the retained log; the other two have
+  terminal-looking scheduler/state records, but no payload-level completion
+  proof. This unresolved historical outcome does not indicate current work.
+- **Cause and correction:** the diagnostic prototype reduced the entire
+  historical content log as if scheduler/update markers were current, and
+  treated any `temp` directory name as activity. That can preserve old
+  `Update Started` state indefinitely. Its classifier now treats the log as
+  context and requires paired current evidence: current queue observation,
+  relevant open write descriptors, staging changes, current appended event
+  categories, and a stable service invocation. Old scheduler records and
+  unchanged temp entries alone no longer imply activity; missing, malformed,
+  restarting, queued, or contradictory evidence remains unknown/active and
+  fail-closed. Deterministic tests cover historical completion, stable temp,
+  queued work, transfer/staging, commit, writer descriptors, malformed and
+  contradictory evidence, and service restart. This is a diagnostic utility,
+  **not** part of the `guarded-deploy.py` path; no deployment guard policy or
+  new requirement was added.
+- **Other historical ambiguity:** AppID 1332010's latest matching
+  `downloading` log record is Sep 30; it is not installed and is not queued in
+  Aurelia. AppID 7's latest content-log activity is Oct 11 13:02Z and no new
+  lines appeared during the paired observation. The Downloads UI was empty,
+  and no `steamapps/downloading` payload, relevant write descriptor, or current
+  queue evidence was found. These are historical log entries, not current
+  operations. The paired point-in-time result is an idle assessment, not an
+  absolute guarantee against a later operation; no quiet-log-only or single
+  scan guarantee is claimed.
+- No Steam restart was performed. Production service invocation
+  `972cd8168e4f4108b5928b098617716e`, PID 2071116, and `NRestarts=0` remain
+  unchanged. No post-restart comparison is claimed.
 - **Disposition:** this production baseline demonstrates that the intended
   Windows and Linux installations are currently recognized and manifest-current
   under the shared writable library. It does not demonstrate that Steam left
   them untouched: historical queue/scheduler/commit events exist, although no
   payload change is proven. Keep namespace enforcement deferred; this evidence
-  is not grounds to deploy it. Keep the issue open and do not restart Steam
-  through active/ambiguous content evidence. The isolated Stage 1 service was
+  is not grounds to deploy isolation. Keep the issue open and continue to avoid
+  known active/ambiguous content work. The isolated Stage 1 service was
   stopped, its six test Btrfs subvolumes and abandoned empty test tree were
   removed, stale viewer socket was removed, and the dedicated `steamstage1`
   account was retired. Production Steam/Aurelia credentials and content were
@@ -304,26 +336,19 @@ The failed UI request cannot have initiated this transfer. This is distinct
   record should be invented for the unused legacy source. The test now asserts
   that neither its `refresh()` nor interactive `verify_acquisition()` runs.
   The OOBE and complete Steam test suites pass (160 tests, 3 subtests).
-- **Deployment guard gap and proposed check:** current guard sees only
-  Acquisitiond jobs. Before any online deployment it must additionally prove
-  Steam content idle (not infer this from Acquisitiond or Steam readiness),
-  fail closed on active/ambiguous Steam update state, and verify the resident
-  Steam process runs in the expected namespace where managed content is
-  read-only. Evidence should combine Steam content-operation state/log markers,
-  Steam `downloading`/staging activity and active writers, with a read-only
-  mount proof for the runtime cgroup. Repeat immediately before activation and
-  after restart. Once writes are structurally impossible, no independent Steam
-  writer can race the guard; still refuse a known active/queued operation
-  rather than restart through it. Logs alone are not an authoritative idle
-  signal; a fail-closed guard and the namespace boundary need regression tests.
+- **Deployment relationship:** the existing guarded-deployment contract remains
+  unchanged. The diagnostic classifier is not wired into deployment; do not
+  introduce a speculative Steam-idle guard requirement. For this maintenance
+  pass the fresh paired assessment found no operation that makes interruption
+  unsafe, but readiness remains independently governed by the canonical guard.
 - **Compatibility with STEAM-PLATFORM-001:** the source fix at `e6532bb`
   discovers platform choices from Aurelia depot metadata and submits the
   selected Windows/Linux value through Acquisitiond. That boundary remains
   compatible: Aurelia/Acquisitiond run outside Steam's restricted namespace
   and retain canonical write access. Steam's own client must not be allowed to
-  select or install a platform. Verify both choices, persisted update target,
-  and expected Steamworks launch behavior in disposable libraries before live
-  acceptance.
+  select or install a platform. Filesystem isolation is not a prerequisite for
+  physical platform-selection acceptance; test with controlled fixtures and do
+  not perform a real install or migration in this pass.
 - **Implementation boundary:** Aurelia and Acquisitiond remain authorities
   for managed game-content operations. Do not delete, migrate, repair,
   chmod/lock, rewrite manifests, remove shared library access, change Steam
@@ -331,22 +356,21 @@ The failed UI request cannot have initiated this transfer. This is distinct
   to the client/library boundary must be proven with sandbox or disposable
   fixtures, explicit rollback and operator approval for live game mutation.
   Do not silently suppress Steam update indicators to disguise activity.
-- **Accept:** with Steam authenticated and games launchable, autonomous Steam
+- **Long-term risk reduction (not a current acceptance gate):** with Steam authenticated and games launchable, autonomous Steam
   acquisition cannot mutate the managed library; explicit Aurelia
   Windows/Linux installation choice persists through updates; content
   operations appear through Acquisitiond; the online deployment guard
   refuses genuinely ongoing content modifications regardless of process
   ownership; shutdown/restart and rollback are safe. Test with fake
   libraries and isolated fixtures before approving any live installation.
-- **Approval boundary:** Stage 1 disposable-client testing is operator-authorized
-  and may resume after the isolated login environment is prepared. It remains
+- **Approval boundary:** Stage 1 disposable-client testing remains deferred. It remains
   prohibited to change the production unit/mounts, restart production Steam,
   re-register its libraries, or touch installed production content. Preserve
   Rocket League's Linux installation unchanged. No such production action has
   been taken.
-- **Dependencies:** STEAM-PLATFORM-001 and STEAM-UPDATES-001 physical
-  acceptance remain restricted until content ownership is enforced or a
-  documented safety boundary makes independent Steam writes impossible.
+- **Dependencies:** STEAM-PLATFORM-001 and STEAM-UPDATES-001 physical acceptance
+  do not depend on deployment of filesystem isolation. Steam/Aurelia concurrent
+  content-operation risk remains tracked separately.
 
 ### RELEASE-SAFETY-001 — Deployment idle-check failure did not block activation
 

@@ -18,6 +18,13 @@ repeated immediately before activation. This reduces, but does not eliminate,
 the race with new work: there is no lifecycle maintenance lease spanning the
 preflight and selector switch.
 
+The Steam content-activity classifier in
+`scripts/steam-ownership-guard-prototype.py` is diagnostic-only and is not part
+of this guarded deployment path. Do not treat it as an additional deployment
+gate or as an authoritative Steam idle API. Any future deployment-policy
+change requires separate design and validation; filesystem isolation is not a
+prerequisite for current platform-selection acceptance.
+
 After atomic activation, the script restarts `lulu-session@2.service`,
 `lulu-consoled.service`, and `lulu-acquisition.service` in that order, checking
 each service's D-Bus boundary before proceeding, then polls overall readiness. A post-activation failure causes one
@@ -47,5 +54,9 @@ guarded deployment. Read-only checks established that official Aurelia 0.1.37
 provides the Mudos-required interfaces also present in 0.1.38; its version is
 not a deployment blocker. Current remaining preconditions are a connected DRM
 presentation output, Sessiond `presentation_ready=true`, and a connected
-controller. No display/InputPlumber configuration changes may be used to
-bypass those checks.
+controller. Reassessed readiness on 2026-10-11: Sessiond is active in shell,
+Steam is ready/authenticated, all required services are active, but the guard's
+read-only preflight still refuses because it cannot confirm a connected
+controller. Request physical controller reconnection; do not bypass the gate.
+No display/InputPlumber configuration changes may be used to bypass these
+checks.

@@ -122,42 +122,51 @@ def validate_steam_process_tree(processes: tuple[ProcessEvidence, ...],
             raise SteamBoundaryError(f"service process namespace {namespace} is not restricted: {error}") from error
 
 
-def classify_steam_content_activity(content_log: str | None, *,
-                                    staging_entries: tuple[str, ...] | None,
-                                    evidence_fresh: bool = False) -> str:
-    """Return active/idle/unknown; missing, stale-shaped or contradictory evidence fails closed."""
-    if content_log is None or staging_entries is None or evidence_fresh is not True:
+def classify_steam_content_activity(
+        content_log: str | None, *, staging_entries: tuple[str, ...] | None,
+        evidence_fresh: bool = False, queued_appids: tuple[str, ...] | None = None,
+        write_descriptors: tuple[int, int] | None = None,
+        staging_changed: bool | None = None,
+        recent_events: tuple[str, ...] | None = None,
+        service_invocations: tuple[str, str] | None = None) -> str:
+    """Classify a paired current snapshot; historical log lines are context only.
+
+    `recent_events` contains fixed categories reduced from bytes appended between
+    the two snapshots. `queued_appids` must come from a current queue observation,
+    not old log history. Directory names alone never imply active work.
+    """
+    if (not isinstance(content_log, str) or not content_log.strip()
+            or staging_entries is None or evidence_fresh is not True
+            or queued_appids is None or write_descriptors is None
+            or staging_changed is None or recent_events is None
+            or service_invocations is None):
         return "unknown"
-    if not content_log.strip():
+    if len(service_invocations) != 2 or not all(service_invocations):
         return "unknown"
-    pending: dict[str, bool] = {}
-    observed: set[str] = set()
-    for line in content_log.splitlines():
-        match = re.search(r"AppID\s+(\d+)\s+state changed\s*:\s*(.*)", line, re.IGNORECASE)
-        if match:
-            app_id, state = match.group(1), match.group(2)
-            observed.add(app_id)
-            pending[app_id] = bool(re.search(
-                r"Update Queued|Update Running|Update Started|Update Staging|Update Committing|Downloading|Staging|Committing",
-                state, re.IGNORECASE,
-            ))
-            continue
-        match = re.search(r"AppID\s+(\d+)\s+(.*)", line, re.IGNORECASE)
-        if not match:
-            continue
-        app_id, event = match.group(1), match.group(2)
-        if re.search(r"scheduler update|update started|starting commit", event, re.IGNORECASE):
-            observed.add(app_id)
-            pending[app_id] = True
-        elif re.search(r"scheduler finished\s*:\s*removed from schedule|finished update|update canceled\s*:.*\(Suspended\)",
-                       event, re.IGNORECASE):
-            observed.add(app_id)
-            # A suspended operation remains queued and is not safely idle.
-            pending[app_id] = "staying in schedule" in event.casefold() or "suspended" in event.casefold()
-    if any(pending.values()):
+    if service_invocations[0] != service_invocations[1]:
+        return "unknown"
+    if (len(write_descriptors) != 2
+            or any(type(count) is not int or count < 0 for count in write_descriptors)):
+        return "unknown"
+    valid_events = {"queued", "download", "staging", "commit", "completed",
+                    "failed", "cancelled", "other"}
+    if any(event not in valid_events for event in recent_events):
+        return "unknown"
+    if any(count > 0 for count in write_descriptors) or staging_changed:
         return "active"
-    if staging_entries:
+    if queued_appids:
         return "active"
-    if not observed:
+    active_events = {"download", "staging", "commit"}
+    if active_events.intersection(recent_events):
+        # Current operation evidence contradicting a clear current queue/stage
+        # snapshot is ambiguous; never hide it as idle.
+        if staging_entries or recent_events.count("completed"):
+            return "unknown"
+        return "active"
+    if "queued" in recent_events:
+        # A just-observed queue transition needs corroboration in the current
+        # queue view; historical queue transitions are deliberately ignored.
+        return "unknown"
+    if "failed" in recent_events and "completed" in recent_events:
         return "unknown"
     return "idle"

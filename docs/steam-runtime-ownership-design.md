@@ -9,6 +9,62 @@ Production Steam configuration,
 library registration, credentials, service state, mounts, permissions, and game
 content were not changed.
 
+## Current ownership and acceptance decision (2026-10-11)
+
+The Rocket League incident remains a confirmed autonomous Steam content change
+to an inconsistent installation after Steam resumed a previously queued
+operation. It is not evidence that healthy Aurelia-managed installations
+routinely change platform or payload. Silent Hill 2 Remake remains a healthy
+Windows/Proton installation and Super Meat Boy remains a healthy native Linux
+installation; both are manifest-current on their intended platforms. The
+historical scheduler/content-log records do not establish who initiated those
+operations or prove payload bytes changed.
+
+Filesystem/mount-namespace isolation is **not a prerequisite** for current
+Mudos platform-selection acceptance. Preserve the namespace prototype as a
+fallback, do not deploy it, and do not start another disposable-Steam
+experiment. Steam/Aurelia concurrent content-operation risks remain tracked.
+
+### Idle-state reassessment
+
+The exact `steamapps/temp` entries for AppIDs 1712830, 2225070, and 48000 are
+empty directories. None is installed in Aurelia, none has an appmanifest, and
+none has a corresponding `steamapps/downloading` tree. Directory mtimes are
+Oct 3, Oct 6, and Oct 10, respectively. The latest matching content-log records
+are historical (scheduler removed for 2225070 at Oct 11 08:20Z; fully-installed
+state for 48000 at Oct 11 04:51Z; Oct 3 state/other records for 1712830).
+Aurelia reports no queued update for any of them, and the resident Steam
+Downloads UI showed no downloads.
+
+Two read-only snapshots 45 seconds apart found no changes under the three temp
+entries or `steamapps/downloading`, no Steam process with an open writable file
+descriptor under `steamapps`, no content-log append, and the same service
+invocation (`972cd8168e4f4108b5928b098617716e`, PID 2071116, zero restarts).
+AppID 1332010's latest `downloading` log record was Sep 30; it is not installed
+or queued in Aurelia. AppID 7's latest matching log activity was Oct 11 13:02Z;
+no new lines or current queue/write evidence appeared in the paired observation.
+The Downloads UI was empty. These records are historical, not evidence of an
+operation currently running. The outcome of the last operation for 1712830
+(completed, failed, or abandoned) cannot be established from retained evidence;
+2225070's scheduler removal and 48000's fully-installed state are terminal-
+looking but do not prove payload-level completion. This paired snapshot
+supports an idle assessment at that time; it is not an absolute guarantee
+against a later operation and no Steam restart or post-restart comparison was
+performed.
+
+The ambiguity came from the diagnostic prototype reducing old scheduler and
+state records as if they remained current, and treating the mere presence of a
+`temp/<AppID>` directory as active work. Its classifier now distinguishes old
+log context from paired current evidence. Current queue state, relevant open
+write descriptors, staging changes, newly appended event categories, and
+service-invocation stability are separate inputs. Historical scheduler records
+or unchanged temp entries alone no longer imply activity. Missing/malformed
+evidence, an observed queue transition without confirmation, service restart,
+and contradictory current signals remain unknown or active (fail-closed).
+Deterministic unit tests cover these distinctions. This helper is diagnostic
+only and is not called by `scripts/guarded-deploy.py`; deployment policy was
+not changed. A quiet log or one filesystem scan alone is not an idle proof.
+
 ## Observed state
 
 - Steam's `libraryfolders.vdf` registers two libraries: the default

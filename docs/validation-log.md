@@ -2956,3 +2956,62 @@ restart may be required for InputPlumber to publish a newly created target.
 - Deployment remains blocked by the orphaned active REMOVE row, disconnected
   display, and absent powered/paired controller. No release was built or
   activated; no service was restarted; no game files or metadata were modified.
+# 2026-10-11 — Steam idle reassessment and installable deployment preparation
+
+- Reconciled with `origin/dev` at `95cfb77`; the canonical checkout had no
+  upstream divergence. The uncommitted work in this pass is limited to the
+  diagnostic classifier/tests and documentation. The existing source fixes
+  from `e6532bb` are ancestors of current `dev`: Installable recognizes both
+  `steam` and `steam-aurelia`, routes through platform discovery, excludes
+  historical failed REMOVE jobs from new INSTALL retries, preserves backend
+  rejection details and failed-submission focus, and creates no job when
+  discovery fails. The compatible official-Aurelia manifest verification and
+  interrupted REMOVE protections are also present; deployment restart order is
+  Consoled, Acquisitiond, then Sessiond.
+- Read-only Steam assessment: AppIDs 1712830, 2225070, and 48000 are not
+  installed, have no appmanifests, and have empty `steamapps/temp` directories
+  only. No matching `downloading` trees or Aurelia queue entries exist. Paired
+  snapshots 45 seconds apart showed stable temp/downloading state, no Steam
+  write descriptors below `steamapps`, no content-log append, and a stable
+  service invocation. Steam's Downloads UI showed no queued downloads.
+  Historical records for AppID 1332010 (Sep 30) and AppID 7 (Oct 11 13:02Z)
+  had no current corroborating operation evidence. The three requested temp
+  entries are historical empty directory residue; the assessment is scoped to
+  the observation window and does not guarantee future idleness. The retained
+  log cannot establish whether 1712830's last operation completed, failed, or
+  was abandoned; terminal-looking records for 2225070 and 48000 are not
+  payload-level completion proof.
+- Corrected the diagnostic-only classifier to distinguish paired current
+  queue, writer, staging, newly appended event, and service-invocation evidence
+  from historical scheduler lines and stable temp directory names. Unknown,
+  queued-but-unconfirmed, malformed, restarting, and contradictory evidence
+  still fail closed. `tests.test_steam_ownership`: **6 passed**. The classifier
+  is not called by `guarded-deploy.py`; no speculative deployment condition or
+  namespace enforcement was added.
+- Architecture decision reaffirmed: the Rocket League autonomous update of
+  inconsistent content remains a real incident; the healthy Silent Hill 2 and
+  Super Meat Boy baselines are on their intended platforms and do not prove
+  Steam never manages their content. Preserve namespace work as fallback;
+  isolation is not required for current physical platform-selection acceptance.
+- Canonical guarded-deployment read-only preflight refused with
+  `Sessiond cannot confirm an available controller`. Required services were
+  active and Steam remained ready/authenticated, but physical controller
+  readiness is an explicit deployment condition. No release candidate was
+  built/activated and no deployment attempt or restart was made. Operator
+  action is required to power/pair/reconnect the Xbox controller; do not change
+  configuration or bypass the guard. No game files, Steam metadata, credentials,
+  Aurelia binary, prefixes, shader caches, or production library registrations
+  were changed.
+- Regression results: targeted Steam/Aurelia, Acquisitiond startup/persistence,
+  console bridge/UI, Sessiond/controller readiness, guarded-deployment, release,
+  and ownership suites passed **311 tests and 32 subtests**. The focused QML
+  rejection-message test passed **4/4**; `qmllint` completed with warnings in
+  the existing `ConsoleShell.qml` (including unqualified access and missing
+  property diagnostics) and no command failure. `git diff --check` and Python
+  compilation passed. No source changes to the QML or production guard were
+  needed in this pass.
+- Physical acceptance remains pending: controlled `steam-aurelia` Installable
+  fixture (platform selection/cancel/discovery error/HTTP 409 detail/focus/no
+  phantom job), and synthetic STEAM-UPDATES-002/003 background/update-launch
+  flows and manifest states. No real Rocket League install/migration or game
+  update is authorized.
