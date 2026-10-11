@@ -31,14 +31,68 @@ routing error.
   gameplay/deployment idle checks. Deployment readiness currently treats
   Acquisitiond's idle job snapshot as sufficient acquisition evidence and
   may not detect Steam's own content activity.
-- **Investigate (read-only first):** establish the real Steam library
-  configuration, appmanifest/depot ownership, libraryfolder registrations,
-  automatic update policy, launch/DRM/Steamworks requirements, resident Steam
-  process scopes, and content-log attribution. Determine exactly how the
-  queued Rocket League transfer survived or originated after its Mudos
-  uninstall and why Steam downloaded Linux depots. Examine safe mechanisms
-  to prevent resident Steam from independently acquiring/modifying Mudos
-  game content without breaking account authentication, DRM or Steamworks.
+- **Read-only evidence (2026-10-11):** `libraryfolders.vdf` registers the
+  default `/home/lulu/.local/share/Steam` library (29 manifest files) and a
+  second `/home/lulu/Games/Executables/steam` library labelled `Mudos Managed`
+  (zero manifests). Aurelia is explicitly configured to use
+  `PATHS.steam_library_root`, the default library, not that empty second root.
+  Rocket League's manifest is in the default library; its payload is
+  `steamapps/common/rocketleague`. Both paths are on the same writable Btrfs
+  home subvolume, owned by `lulu`; Steam and Aurelia run as `lulu`, so Unix mode
+  bits cannot distinguish their writes. Steam itself has write access to the
+  appmanifest, `downloading/252950`, and `common/rocketleague`.
+- **Observed queue origin:** Steam's log says `Priority Auto Update`,
+  `update disabled for 0 seconds`, followed by download of depot 252961. The
+  prior interrupted update was retained in Steam's own schedule while
+  suspended; after client startup it resumed and later committed
+  `steamapps/downloading/252950` into `common/rocketleague`. The local app
+  manifest had `StateFlags=2` (Update Required) before completion; after commit
+  it has `StateFlags=4`, `AutoUpdateBehavior=0`, and the Linux depot. Global
+  `AutoUpdateWindowEnabled=0` is present, but did not prevent the observed
+  scheduler operation. Logs establish the automatic scheduler as the immediate
+  cause; they do not establish which earlier event originally queued the
+  update. The selected active depot was Linux 252961, not Windows/Proton.
+- **Steam launch dependency:** Aurelia 0.1.37 starts `aurelia play <AppID>
+  --steam --no-update --script <wrapper>`. `--steam` explicitly bridges to the
+  resident host Steam client for Steamworks (and the documented DRM/auth
+  integration); `--no-update` suppresses Aurelia's pre-launch update check.
+  Aurelia uses the canonical appmanifest/library to enumerate installed games,
+  check update manifests and launch. The Steam client is therefore still
+  needed, but no evidence says it needs write access to managed game payloads
+  for authentication, DRM, or Steamworks. Actual read-only-launch compatibility
+  remains to be proven with disposable fixtures.
+- **Proposed correction:** first prototype a per-service systemd mount-namespace
+  boundary for `lulu-steam-runtime.service`: expose the canonical managed
+  `steamapps` view read-only to every Steam process in its cgroup, while
+  keeping Aurelia/Acquisitiond's host view writable. Do not rely on
+  `AutoUpdateBehavior`, download-window settings, UI hiding, or `--no-update`
+  as an access-control boundary. Determine in isolated fixtures whether Steam
+  needs narrowly scoped writable client state (e.g. shader/compat data) and
+  whether it can launch already-installed native and Proton titles with the
+  manifests/content read-only. If this is incompatible, stop and design a
+  distinct client library plus explicit read-only launch view; do not weaken
+  the boundary ad hoc. This mount-namespace design is a proposal, not yet
+  proven or approved for the live appliance.
+- **Deployment guard gap and proposed check:** current guard sees only
+  Acquisitiond jobs. Before any online deployment it must additionally prove
+  Steam content idle (not infer this from Acquisitiond or Steam readiness),
+  fail closed on active/ambiguous Steam update state, and verify the resident
+  Steam process runs in the expected namespace where managed content is
+  read-only. Evidence should combine Steam content-operation state/log markers,
+  Steam `downloading`/staging activity and active writers, with a read-only
+  mount proof for the runtime cgroup. Repeat immediately before activation and
+  after restart. Once writes are structurally impossible, no independent Steam
+  writer can race the guard; still refuse a known active/queued operation
+  rather than restart through it. Logs alone are not an authoritative idle
+  signal; a fail-closed guard and the namespace boundary need regression tests.
+- **Compatibility with STEAM-PLATFORM-001:** the source fix at `e6532bb`
+  discovers platform choices from Aurelia depot metadata and submits the
+  selected Windows/Linux value through Acquisitiond. That boundary remains
+  compatible: Aurelia/Acquisitiond run outside Steam's restricted namespace
+  and retain canonical write access. Steam's own client must not be allowed to
+  select or install a platform. Verify both choices, persisted update target,
+  and expected Steamworks launch behavior in disposable libraries before live
+  acceptance.
 - **Implementation boundary:** Aurelia and Acquisitiond remain authorities
   for managed game-content operations. Do not delete, migrate, repair,
   chmod/lock, rewrite manifests, remove shared library access, change Steam
@@ -53,6 +107,12 @@ routing error.
   refuses genuinely ongoing content modifications regardless of process
   ownership; shutdown/restart and rollback are safe. Test with fake
   libraries and isolated fixtures before approving any live installation.
+- **Approval boundary:** next step may only build/run a disposable mount-namespace
+  prototype with synthetic libraries and Steam-free or test-account fixtures.
+  Any live unit/mount change, Steam restart, library re-registration, or test
+  against installed content requires explicit operator approval after review
+  of prototype results and rollback. Preserve Rocket League's Linux installation
+  unchanged. No such live change has been made by this investigation.
 - **Dependencies:** STEAM-PLATFORM-001 and STEAM-UPDATES-001 physical
   acceptance remain restricted until content ownership is enforced or a
   documented safety boundary makes independent Steam writes impossible.
