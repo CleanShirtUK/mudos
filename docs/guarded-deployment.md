@@ -57,6 +57,11 @@ presentation output, Sessiond `presentation_ready=true`, and a connected
 controller. Reassessed readiness on 2026-10-11: Sessiond is active in shell,
 Steam is ready/authenticated, all required services are active, but the guard's
 read-only preflight still refuses because it cannot confirm a connected
-controller. Request physical controller reconnection; do not bypass the gate.
+controller. Candidate
+`/opt/lulu/releases/f7624b8-candidate-20261011164454` was built from clean,
+committed source and checksum-verified; it remains staged and the prior
+selection `/opt/lulu/releases/24acb93-candidate-20261011102738` remains active.
+Request physical controller reconnection; do not bypass the gate or attempt
+activation while the preflight fails.
 No display/InputPlumber configuration changes may be used to bypass these
 checks.

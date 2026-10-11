@@ -725,7 +725,7 @@ was not diagnosed and must not be conflated with the later failed game launch
 
 ### STEAM-PLATFORM-001 — Choose Steam download platform from Installable
 
-**Status: IMPLEMENTED/DEPLOYED · PHYSICAL ACCEPTANCE FAILED/RETEST REQUIRED · P2.** When starting installation of a Steam
+**Status: SOURCE FIX IMPLEMENTED · GUARDED DEPLOYMENT BLOCKED · PHYSICAL ACCEPTANCE RETEST REQUIRED · P2.** When starting installation of a Steam
 title from the Installable view, let the operator confirm which supported
 platform's content should be acquired, rather than silently accepting the
 provider's automatic depot/platform choice. This matters for games such as
@@ -799,9 +799,11 @@ typically wants the maintained Windows build launched through Proton.
   no longer block an unrelated fresh install. HTTP rejection JSON is parsed;
   discovery failures remain visible in the focused chooser and rejected install
   requests produce a normal error notification with the backend cause, without
-  claiming success or changing controller focus. These fixes are committed but
-  are not deployed; do not retry live Rocket League installation.
-- **Next physical acceptance:** after the fix is deployed through the guarded
+  claiming success or changing controller focus. These fixes are included in
+  the verified staged candidate described in `docs/validation-log.md`; they are
+  not active until guarded deployment succeeds. Do not retry live Rocket League
+  installation.
+- **Next physical acceptance:** after the fix is activated through the guarded
   workflow, use a synthetic `steam-aurelia` Installable fixture and mocked
   backend. With the controller, verify Windows/Linux choices appear; cancel and
   confirm zero job submissions. Then force platform discovery to return 409 and

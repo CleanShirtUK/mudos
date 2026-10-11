@@ -2996,8 +2996,15 @@ restart may be required for InputPlumber to publish a newly created target.
 - Canonical guarded-deployment read-only preflight refused with
   `Sessiond cannot confirm an available controller`. Required services were
   active and Steam remained ready/authenticated, but physical controller
-  readiness is an explicit deployment condition. No release candidate was
-  built/activated and no deployment attempt or restart was made. Operator
+  readiness is an explicit deployment condition. The canonical builder produced
+  `/opt/lulu/releases/f7624b8-candidate-20261011164454` from clean committed
+  revision `f7624b8013340ae46d59d957a0f27cc607bfbc19`; `release.py verify`
+  passed, and `manifest.sha256` SHA-256 is
+  `a82f957e9f497117febcd6fb12ec1d6c709056872760555ea5faa7bb866bf4e2`.
+  The candidate payload was spot-checked for the Installable provider-alias and
+  platform-submission fixes. Rollback target remains
+  `/opt/lulu/releases/24acb93-candidate-20261011102738`. No guarded activation
+  attempt or restart was made because the preflight fails. Operator
   action is required to power/pair/reconnect the Xbox controller; do not change
   configuration or bypass the guard. No game files, Steam metadata, credentials,
   Aurelia binary, prefixes, shader caches, or production library registrations
