@@ -53,7 +53,7 @@ class IdleValidationTests(unittest.TestCase):
                     guard.validate_idle_state(session_json, acquisition_json)
 
     def test_rejects_malformed_acquisition_and_active_job_types(self):
-        active_operations = ("download", "install", "update", "remove")
+        active_operations = ("acquire", "install", "update", "remove")
         for operation in active_operations:
             with self.subTest(operation=operation):
                 with self.assertRaisesRegex(guard.GuardError, "active acquisition"):
@@ -61,6 +61,7 @@ class IdleValidationTests(unittest.TestCase):
                         {"state": "transferring", "operation": operation}]))
         for invalid in ("{", json.dumps({"jobs": []}),
                         acquisition([{"operation": "update"}]),
+                        acquisition([{"operation": "unknown", "state": "failed"}]),
                         acquisition([], activeDownloadCount="unknown")):
             with self.subTest(acquisition=invalid):
                 with self.assertRaises(guard.GuardError):
@@ -92,14 +93,17 @@ class DeploymentOrchestrationTests(unittest.TestCase):
         guard.RELEASE_ROOT, guard.ACTIVATION = self.releases, self.activation
         self.old_read = guard.read_and_validate
         self.old_health = guard._require_healthy_units
+        self.old_bus_call = guard._as_user_bus_call
         guard.read_and_validate = Mock()
         guard._require_healthy_units = Mock()
+        guard._as_user_bus_call = Mock(return_value="[]")
         self.commands = []
 
     def tearDown(self):
         guard.RELEASE_ROOT, guard.ACTIVATION = self.old_root, self.old_activation
         guard.read_and_validate = self.old_read
         guard._require_healthy_units = self.old_health
+        guard._as_user_bus_call = self.old_bus_call
         self.temp.cleanup()
 
     def runner(self, argv, **_kwargs):
@@ -131,8 +135,8 @@ class DeploymentOrchestrationTests(unittest.TestCase):
         self.assertEqual(self.activation.resolve(), self.candidate.resolve())
         self.assertEqual(guard.read_and_validate.call_count, 3)
         self.assertTrue(any("verify" in command for command in self.commands))
-        self.assertTrue(any(command[:3] == ["systemctl", "restart", "lulu-session@2.service"]
-                            for command in self.commands))
+        restarted = [command[2] for command in self.commands if command[:2] == ["systemctl", "restart"]]
+        self.assertEqual(restarted, list(guard.RESTART_ORDER))
 
     def test_activation_failure_rolls_back_to_previous(self):
         calls = 0
@@ -164,11 +168,15 @@ class DeploymentOrchestrationTests(unittest.TestCase):
         self.assertFalse(any(command[:2] == ["systemctl", "restart"] for command in self.commands))
 
     def test_restart_failure_rolls_back_selector(self):
+        failed = False
         def fails_restart(argv, **_kwargs):
+            nonlocal failed
             if argv[:3] == ["systemctl", "restart", "lulu-session@2.service"]:
-                raise subprocess.CalledProcessError(1, argv, stderr="restart failed")
+                if not failed:
+                    failed = True
+                    raise subprocess.CalledProcessError(1, argv, stderr="restart failed")
             return self.runner(argv)
-        with self.assertRaisesRegex(guard.GuardError, "rollback failed"):
+        with self.assertRaisesRegex(guard.GuardError, "rolled back"):
             guard.deploy(self.candidate, run=fails_restart)
         self.assertEqual(self.activation.resolve(), self.previous.resolve())
 

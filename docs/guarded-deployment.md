@@ -1,6 +1,6 @@
 # Guarded online deployment
 
-Use `sudo python /home/josh/src/lulu/scripts/guarded-deploy.py <release-dir>`
+Use `sudo /home/josh/src/lulu/scripts/guarded-deploy.py <release-dir>`
 for online appliance deployment. `scripts/release.py` remains the low-level
 immutable release builder, verifier, and atomic selector; its offline
 bootstrap, recovery, and rollback use is intentionally not subject to a
@@ -18,8 +18,9 @@ repeated immediately before activation. This reduces, but does not eliminate,
 the race with new work: there is no lifecycle maintenance lease spanning the
 preflight and selector switch.
 
-After atomic activation, the script restarts only `lulu-session@2.service`,
-then polls service and D-Bus readiness. A post-activation failure causes one
+After atomic activation, the script restarts `lulu-session@2.service`,
+`lulu-consoled.service`, and `lulu-acquisition.service` in that order, checking
+each service's D-Bus boundary before proceeding, then polls overall readiness. A post-activation failure causes one
 rollback to the prior selected immutable release and one restart attempt. If
 rollback itself fails, both failures are reported; the script does not loop
 restarts. Negative tests use temporary selectors and mocked commands and never

@@ -2674,8 +2674,10 @@ restart may be required for InputPlumber to publish a newly created target.
   remains usable for offline/bootstrap/recovery. The online guard uses checked
   subprocesses, `sudo -u lulu` user-bus calls, validates Sessiond/Acquisitiond/
   Consoled evidence and required system services, rejects active jobs and
-  unknown/contradictory states, rechecks immediately before activation, and
-  performs one rollback/restart attempt if post-activation readiness fails.
+  unknown/contradictory states, rechecks immediately before activation, then
+  restarts Sessiond, Consoled, and Acquisitiond in dependency order with a
+  D-Bus readiness probe for each. Post-activation failure triggers one
+  rollback/restart attempt.
   There is no maintenance lease spanning the check/symlink swap, so a narrow
   launch race remains and is explicitly not claimed eliminated. Negative tests
   use temporary selectors and mocks; no production activation/restart was used.
@@ -2693,8 +2695,8 @@ restart may be required for InputPlumber to publish a newly created target.
   behavior and live installed-title manifest parsing were not confirmed. We
   did not inspect mutable game state while the Rocket League removal is active.
 - Guarded-deployment, installation, Steam/Aurelia, Acquisitiond, Console/UI,
-  identity reconciliation, launch and session suites passed: **376 passed, 33
-  subtests passed**. Release tests passed **8** after correcting their synthetic
+  identity reconciliation, launch and session suites passed: **385 passed, 33
+  subtests passed**, including the full release suite after correcting its synthetic
   native-build fixture to generate all five expected binaries. `git diff
   --check` and Python compilation passed. QML tools are unavailable in this
   environment (`qmlformat` not found); QML sources were unchanged.

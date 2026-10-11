@@ -31,6 +31,13 @@ CONSOLED_BUS = ("org.lulu.Consoled", "/org/lulu/Console",
                 "org.lulu.Console", "GetComponentRegistry")
 REQUIRED_UNITS = ("lulu-session@2.service", "lulu-consoled.service",
                   "lulu-acquisition.service")
+RESTART_ORDER = ("lulu-session@2.service", "lulu-consoled.service",
+                 "lulu-acquisition.service")
+RESTART_PROBES = {
+    "lulu-session@2.service": SESSION_BUS,
+    "lulu-consoled.service": CONSOLED_BUS,
+    "lulu-acquisition.service": ACQUISITION_BUS,
+}
 
 
 class GuardError(RuntimeError):
@@ -106,12 +113,15 @@ def validate_idle_state(session_raw: str, acquisition_raw: str) -> None:
     jobs = acquisition.get("jobs")
     if not isinstance(jobs, list) or "activeDownloadCount" not in acquisition:
         raise GuardError("Acquisitiond response is incomplete")
-    if not isinstance(acquisition["activeDownloadCount"], int) or acquisition["activeDownloadCount"] < 0:
+    if type(acquisition["activeDownloadCount"]) is not int or acquisition["activeDownloadCount"] < 0:
         raise GuardError("Acquisitiond activeDownloadCount is malformed")
     active_states = {"queued", "starting", "transferring", "finalizing", "paused",
                      "pausing", "resuming", "cancelling"}
+    known_states = active_states | {"completed", "failed", "cancelled"}
+    known_operations = {"acquire", "install", "update", "remove"}
     for job in jobs:
-        if not isinstance(job, dict) or not isinstance(job.get("state"), str):
+        if (not isinstance(job, dict) or job.get("state") not in known_states
+                or job.get("operation") not in known_operations):
             raise GuardError("Acquisitiond returned a malformed job")
         if job["state"] in active_states:
             raise GuardError(f"active acquisition operation exists ({job.get('operation', 'unknown')})")
@@ -134,6 +144,14 @@ def read_and_validate(run: Callable = _run) -> None:
         raise GuardError("Consoled response has the wrong shape")
 
 
+def _restart_updated_services(run: Callable) -> None:
+    for unit in RESTART_ORDER:
+        run(["systemctl", "restart", unit])
+        # A checked RPC proves each newly-started service actually owns and
+        # answers its D-Bus API before its dependents are bounced.
+        _as_user_bus_call(*RESTART_PROBES[unit])
+
+
 def deploy(release: Path, *, run: Callable = _run, sleep: Callable = time.sleep,
            readiness_timeout: float = 30.0) -> Path:
     release = release.resolve()
@@ -148,7 +166,7 @@ def deploy(release: Path, *, run: Callable = _run, sleep: Callable = time.sleep,
     read_and_validate(run)
     try:
         run([sys.executable, str(RELEASE_TOOL), "activate", "--release-dir", str(release)])
-        run(["systemctl", "restart", "lulu-session@2.service"])
+        _restart_updated_services(run)
         deadline = time.monotonic() + readiness_timeout
         last_error = "services have not recovered"
         while time.monotonic() < deadline:
@@ -167,7 +185,7 @@ def deploy(release: Path, *, run: Callable = _run, sleep: Callable = time.sleep,
         # recovery itself cannot be established.
         try:
             run([sys.executable, str(RELEASE_TOOL), "activate", "--release-dir", str(previous)])
-            run(["systemctl", "restart", "lulu-session@2.service"])
+            _restart_updated_services(run)
             if ACTIVATION.resolve(strict=True) != previous:
                 raise GuardError("rollback selector did not resolve to the previous release")
         except Exception as rollback_error:
