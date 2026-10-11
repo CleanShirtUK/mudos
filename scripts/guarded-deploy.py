@@ -31,8 +31,11 @@ CONSOLED_BUS = ("org.lulu.Consoled", "/org/lulu/Console",
                 "org.lulu.Console", "GetComponentRegistry")
 REQUIRED_UNITS = ("lulu-session@2.service", "lulu-consoled.service",
                   "lulu-acquisition.service")
-RESTART_ORDER = ("lulu-session@2.service", "lulu-consoled.service",
-                 "lulu-acquisition.service")
+# Sessiond's shell child requires both service APIs during bootstrap. Start
+# these providers before restarting Sessiond; Sessiond is PartOf the Steam
+# runtime, so restarting it should be the final (and only) runtime restart.
+RESTART_ORDER = ("lulu-consoled.service", "lulu-acquisition.service",
+                 "lulu-session@2.service")
 RESTART_PROBES = {
     "lulu-session@2.service": SESSION_BUS,
     "lulu-consoled.service": CONSOLED_BUS,
@@ -162,8 +165,9 @@ def _wait_for_service_probe(probe: tuple[str, str, str, str], sleep: Callable = 
 def _restart_updated_services(run: Callable, sleep: Callable = time.sleep) -> None:
     for unit in RESTART_ORDER:
         run(["systemctl", "restart", unit])
-        # A checked RPC proves each newly-started service actually owns and
-        # answers its D-Bus API before its dependents are bounced.
+        # Consoled and Acquisitiond are the shell's bootstrap dependencies;
+        # their checked RPCs must pass before Sessiond starts its child.
+        # Sessiond's PartOf= edge also restarts isolated Steam exactly once.
         # A systemd restart can return before D-Bus name acquisition completes.
         # Retry only this bounded startup probe; the complete fail-closed
         # preflight still runs before activation and after all restarts.

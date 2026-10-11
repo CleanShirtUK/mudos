@@ -43,8 +43,16 @@ atomically switches the selector, but intentionally has no session-idle policy.
   150 seconds after Sessiond restart, but the guard waited only 30 seconds.
   Its runtime then hit systemd start-limit during repeated rollback restarts.
   The guard's post-activation budget is now 180 seconds, matching the unit's
-  `TimeoutStartSec`; its full fail-closed checks are unchanged. Restore Steam
-  to a stable authenticated state before another attempt. Candidate
+  `TimeoutStartSec`; its full fail-closed checks are unchanged. Journal
+  investigation confirmed Sessiond's shell starts before Consoled and
+  Acquisitiond in the guard's former restart order, fails closed on missing
+  D-Bus names, and restarts (Steam is `PartOf=Sessiond`). This caused five
+  Steam starts across the two attempts within the existing five-start/300s
+  limit. Restart order is corrected to Consoled, Acquisitiond, then Sessiond;
+  no rate limits were changed. Steam was recovered after confirming no active
+  acquisition/game, no orphan Steam/Xvfb, and no existing :99 socket/lock; one
+  `reset-failed` plus one normal start reached authenticated READY and remained
+  healthy for 20 seconds. Candidate
   `/opt/lulu/releases/24acb93-candidate-20261011102738` remains verified.
   Official Aurelia 0.1.37's required interfaces are compatible.
 - **Next:** resolve the blockers, fetch/reconcile current `dev`, then run the

@@ -28,8 +28,12 @@ activate or restart production services.
 
 Restart-probe D-Bus name acquisition is boundedly retried for up to 20 seconds;
 the full preflight and post-restart readiness validation remain fail-closed.
-This handles systemd returning before a restarted service has reacquired its
-D-Bus name without treating a timeout or malformed response as readiness.
+Consoled and Acquisitiond are restarted and RPC-checked before Sessiond, because
+the shell child introspects both during bootstrap. Sessiond is restarted last:
+its `PartOf=` relationship restarts the isolated Steam runtime, and repeated
+Sessiond startup failures otherwise propagate unnecessary Steam restarts.
+This also ensures the runtime is restarted once per activation/rollback, rather
+than while its shell dependencies are still coming up.
 The overall post-activation readiness window is 180 seconds, matching the
 isolated Steam runtime unit's `TimeoutStartSec=180s` and its authentication
 wait budget; the guard never declares readiness until Steam is authenticated.

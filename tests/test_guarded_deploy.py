@@ -135,6 +135,12 @@ class DeploymentOrchestrationTests(unittest.TestCase):
     def test_post_restart_budget_matches_steam_authentication_startup_limit(self):
         self.assertEqual(guard.deploy.__kwdefaults__["readiness_timeout"], 180.0)
 
+    def test_restart_order_brings_shell_dependencies_up_before_sessiond(self):
+        self.assertEqual(guard.RESTART_ORDER, (
+            "lulu-consoled.service", "lulu-acquisition.service",
+            "lulu-session@2.service",
+        ))
+
     def test_rejected_preflight_does_not_verify_activate_or_restart(self):
         guard.read_and_validate.side_effect = guard.GuardError("Acquisitiond unavailable")
         with self.assertRaisesRegex(guard.GuardError, "Acquisitiond unavailable"):

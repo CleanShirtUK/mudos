@@ -77,28 +77,33 @@
   shell/presentation ready, DP-1 connected, one connected Xbox controller,
   no launch identity/token, Steam ready/authenticated, and Acquisitiond had no
   active jobs. The Rocket League REMOVE remained failed and non-retryable.
-- **First guarded attempt and rollback:** deployment reached service restart,
-  but the one-shot Consoled `GetComponentRegistry` D-Bus restart probe failed
-  transiently. Rollback restored the selector to
-  `/opt/lulu/releases/af4ad04-candidate-20261011040541`; the rollback probe also
-  failed during its restart window. Services later stabilized and the active
-  release was confirmed unchanged.
-- **Second guarded attempt and rollback:** after bounded D-Bus probe retries
-  were added and the full preflight passed, post-activation validation did not
-  see authenticated Steam within the guard's then-30-second timeout. Sessiond
-  restart also restarts `lulu-steam-runtime.service` through its `PartOf=`
-  relationship; that unit has `TimeoutStartSec=180s` and Steam login may wait
-  up to 150 seconds. Guard rollback restored the previous selector. Repeated
-  restart/rollback cycles then put Steam runtime into `start-limit-hit`; current
-  release remains previous, and Steam must be restored and authenticated before
-  any further deployment attempt. Do not loop restarts.
-- **Guard corrections:** `scripts/guarded-deploy.py` retries each restarted
-  service's D-Bus name/readiness probe for a bounded 20 seconds and now allows
-  180 seconds for complete post-restart readiness, matching the Steam unit's
-  startup/authentication budget. Full fail-closed preflight, immediate recheck,
-  and complete post-activation validation remain unchanged. The timeout change
-  is being tested and pushed before any retry; a stable authenticated Steam
-  runtime is a prerequisite.
+- **Steam failure diagnosis:** systemd records `StartLimitIntervalSec=300s`,
+  `StartLimitBurst=5`, `Restart=always`, `RestartSec=5s`, and
+  `TimeoutStartSec=180s`. Five service starts occurred in the deployment /
+  rollback windows: 12:49:50, 12:50:03, 12:52:22, 12:52:45, and 12:53:05.
+  This is why the fifth start was refused. Sessiond's `PartOf=` relationship
+  propagated each Sessiond restart to Steam. The old guard restarted Sessiond
+  before Consoled and Acquisitiond; its shell child then failed closed because
+  the required D-Bus names were not activatable, causing Sessiond to exit and
+  systemd to restart it again. That startup/recovery churn caused the Steam
+  stops and starts; it was not an authentication failure. Steam logs show
+  successful `RecvMsgClientLogOnResponse() ... 'OK'` before shutdown in both
+  windows (12:50:00/12:50:19 and 12:52:31/12:53:02). The :99 socket, lock,
+  Xvfb, and Steam processes were absent before recovery.
+- **Controlled Steam recovery:** after confirming shell idle, zero active
+  acquisitions, no stale :99 owner/processes, and no game identity, performed
+  one `systemctl reset-failed` and one normal service start. Steam reached
+  systemd `READY=1` authenticated status at 13:00:34; the same invocation
+  remained active with `NRestarts=0` after a 20-second stability observation.
+  Sessiond subsequently reports presentation ready and a connected controller.
+- **Guard corrections:** retained bounded 20-second RPC startup probes and the
+  180-second post-restart readiness budget, and corrected restart order to
+  Consoled, Acquisitiond, then Sessiond. This satisfies shell bootstrap
+  dependencies before Sessiond starts its child and restarts PartOf-linked
+  Steam only once per activation/rollback. No rate limits were weakened or
+  removed. Full fail-closed preflight, immediate recheck, and post-activation
+  validation remain required; regression tests and the one permitted guarded
+  attempt are pending.
 - Official Aurelia 0.1.37 remains contract-compatible. No Steam install,
   update, verify, launch, or removal was run.
 
