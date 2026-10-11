@@ -1,7 +1,9 @@
 # Steam runtime content-ownership boundary — investigation
 
-**Status:** disposable real-client validation is in progress. Synthetic and
-partial Stage 1 results are recorded below. Production Steam configuration,
+**Status:** clean-install behavior assessment is pending. The namespace
+prototype and partial Stage 1 results are preserved below as fallback evidence;
+mandatory production isolation is proposed, not established as necessary.
+Production Steam configuration,
 library registration, credentials, service state, mounts, permissions, and game
 content were not changed.
 
@@ -33,6 +35,12 @@ content were not changed.
   `StateFlags=2` was an Update Required condition; the old stub/partial state
   likely made Steam consider the app updateable, but the precise initial
   trigger is unproven.
+- **Evidence boundary:** Steam's resumption of this previously queued update
+  against Rocket League's inconsistent post-experiment installation is
+  confirmed. Routine interference with a healthy Aurelia-managed game, or
+  replacement of explicitly selected Windows content by Linux depots, remains
+  unproven. Do not generalize from the Rocket League event without the clean
+  writable-library experiment.
 - `AureliaClient.spawn_play()` invokes Aurelia with `--steam --no-update` and a
   Mudos graphical wrapper. Aurelia documents `--steam` as using the host Steam
   client for Steamworks integration; the established appliance requirement is
@@ -117,7 +125,7 @@ The probe unit uses no Steam binary or actual Steam directories. It proves the
 systemd mechanism for a synthetic tree, not that the proposed profile is
 compatible with Steam's self-update, session persistence, or game launch.
 
-## Disposable real-Steam Stage 1 results (2026-10-11; partial)
+## Disposable real-Steam Stage 1 results (2026-10-11; partial; preserved)
 
 ### Isolation and authentication
 
@@ -207,10 +215,10 @@ authentication fields and uses static error messages. Synthetic token-bearing
 tests cover stdout, stderr, exceptions, lifecycle output, and a test diagnostic
 export; they verify that only predefined statuses/fields are emitted.
 
-### Continuation gate
+### Prior continuation gate (closed for clean-install reassessment)
 
 The isolated client, account, and test subvolumes were removed after Stage 1
-cleanup, then recreated fresh for this continuation. The current transient
+cleanup, then recreated fresh for this continuation. The transient
 `steam-compat-stage1-real.service` runs as the dedicated `steamstage1` account
 with `ProtectHome=tmpfs`, `ProtectSystem=strict`, private `/tmp` and D-Bus, and
 only the dedicated test HOME/library bound back into its namespace. A startup
@@ -227,7 +235,7 @@ state write success, hardlink denial (`EXDEV`), and rejection of a symlink from
 writable state back into protected payload. Only a synthetic marker is present;
 this fresh library has no downloaded or installed game.
 
-The isolated Xvfb `:190` Steam login screen is ready. The viewer uses a private
+The isolated Xvfb `:190` client was left running after the prior task. Its viewer uses a private
 Unix socket at `/run/steam-stage1-viewer/bridge.sock`, with filesystem access
 limited to the operator account; it is not a TCP listener and the test account
 is denied access to the viewer. It disables HTTP access logging, does not save
@@ -239,12 +247,38 @@ From the operator workstation, forward that remote Unix socket to local port
 ssh -N -L 18765:/run/steam-stage1-viewer/bridge.sock lulu
 ```
 
-The browser tooling in this execution was disconnected, so the SSH Unix-socket
-endpoint was verified locally as the authorized operator, and the isolation
-namespace/startup checks were verified, but the remote workstation tunnel was
-not independently exercised. No account authentication has occurred. Stop at
-this screen for operator login; do not restart production Steam or attach its
-HOME/library.
+The operator subsequently authenticated this isolated client. The prior task
+verified authentication only through the hardened status classifier, disabled
+Cloud in this isolated client, confirmed the setting persisted over restart,
+and verified separate writable state-subvolume canaries survived restart.
+Attempts to acquire Braid and Spacewar produced no appmanifest or staged game
+content; no game launch or update test occurred. This is not evidence of
+healthy-install Steam behavior. Retire the old client before the clean writable-
+library experiment; do not attach production HOME, credentials, libraries, or
+game content.
+
+## Clean writable-library experiment (pending)
+
+The next controlled test uses a fresh dedicated HOME, Steam configuration,
+Steam library, and isolated Aurelia config/state. The game library must be
+normally writable (no read-only bind or mount namespace protection), and both
+Steam and Aurelia must point to exactly that disposable library. No production
+Steam credentials or library registrations may be present. Disable Cloud in
+the isolated Steam UI before acquiring a game. Inventory registered libraries,
+appmanifests, update queue/staging, and content files before installation.
+
+Use official Aurelia to install a small, operator-owned title with both Windows
+and Linux depots where practical, explicitly selecting Windows. Confirm the
+installed appmanifest, depot and manifest IDs, executable, Aurelia installed
+status, and Proton route before starting Steam against the same library. Do not
+manually trigger a Steam update. Compare Steam's recognition/current/queue
+state, manifests, depot set, and payload checksums/metadata both after discovery
+and after a clean Steam shutdown/restart. Distinguish metadata rewrites from
+payload modifications. A failed installation is a provider/configuration
+blocker, not evidence for or against autonomous updates.
+
+Until this experiment is evaluated, the mount-namespace prototype remains a
+fallback proposal rather than a mandatory production architecture change.
 
 The OOBE readiness-test failure present at commit `9dafec0` was a stale fixture
 expectation: it injected only the legacy `steam` entitlement source, while

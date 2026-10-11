@@ -12,7 +12,7 @@ evidence and this reconciliation rationale are in
 
 ### STEAM-RUNTIME-OWNERSHIP-001 — Resident Steam mutates canonical game library outside Acquisitiond
 
-**Status: OPEN · P1 · CONTENT-OWNERSHIP / PLATFORM SELECTION SAFETY.**
+**Status: OPEN · P1 · EVIDENCE REVIEW / CONTENT-OWNERSHIP.**
 During operator acceptance of STEAM-PLATFORM-001 on 2026-10-11,
 Steam's own `content_log.txt` recorded a previously queued Rocket League
 (AppID 252950) download beginning at 13:02:20, before Mudos rejected the
@@ -21,8 +21,22 @@ Linux depot 252961 around 13:06:40-45 (5,997 updated files; approximately
 10.8 GB staged). Steam then reported installed content in the appmanifest,
 while Acquisitiond contained no corresponding new INSTALL/UPDATE job.
 The failed UI request cannot have initiated this transfer. This is distinct
-from the earlier orphaned REMOVE and the newly fixed UI provider-identity
-routing error.
+  from the earlier orphaned REMOVE and the newly fixed UI provider-identity
+  routing error.
+
+- **Evidence distinction:** confirmed: Steam resumed a previously queued update
+  while Rocket League had an inconsistent installation (stub/partial manifest
+  and content after repeated install/update/uninstall experiments) and
+  independently modified its shared library. Unproven: that Steam routinely
+  changes healthy, correctly installed Aurelia-managed games or overrides an
+  explicitly selected Windows/Linux payload during ordinary startup/restart.
+  The Rocket League incident alone does not establish that general claim.
+- **Reclassification:** retain this issue and the namespace prototype as a
+  fallback design. Mandatory production namespace enforcement is a proposed
+  mitigation pending a controlled clean-install experiment; do not deploy it
+  based solely on the Rocket League evidence. The current investigation uses a
+  clean, explicitly platform-selected Aurelia installation in a separate,
+  normally writable Steam library.
 
 - **Risk:** the authenticated Steam client on Xvfb :99 shares the canonical
   game library with Aurelia. Its autonomous download/update behaviour can
@@ -61,7 +75,7 @@ routing error.
   needed, but no evidence says it needs write access to managed game payloads
   for authentication, DRM, or Steamworks. Actual read-only-launch compatibility
   remains to be proven with disposable fixtures.
-- **Proposed correction:** first prototype a per-service systemd mount-namespace
+- **Fallback proposal (not yet justified for deployment):** a per-service systemd mount-namespace
   boundary for `lulu-steam-runtime.service`: expose the canonical managed
   `steamapps` view read-only to every Steam process in its cgroup, while
   keeping Aurelia/Acquisitiond's host view writable. Do not rely on
@@ -155,8 +169,8 @@ routing error.
   supervisor discards child stderr, the lifecycle probe no longer emits raw
   argv, and the auth-surface harness projects D-Bus responses and uses static
   errors. Synthetic secret-bearing regression tests cover those output paths.
-  The client has now been rebuilt in an empty test subvolume; reauthentication
-  is pending the operator at the isolated login screen.
+  The client has now been rebuilt in an empty test subvolume; the operator
+  authenticated through the isolated login surface.
 - **Stage 1 login environment prepared (2026-10-11):** recreated a fresh
   `steamstage1` account with independent client and disposable-library Btrfs
   subvolumes. Its transient systemd namespace uses `ProtectHome=tmpfs` and
@@ -178,15 +192,42 @@ routing error.
   account and rejected connections from `steamstage1`; access/request logging
   is disabled, keyboard text is not persisted or passed in child argv, and
   Steam stdout/stderr are discarded. Use an SSH local forward to the remote
-  socket, then open `http://127.0.0.1:18765/`. No account login has occurred;
-  stop here for operator authentication.
+  socket, then open `http://127.0.0.1:18765/`. The operator has authenticated;
+  all subsequent work remains inside this disposable client/library.
+- **Post-login safety checks:** the hardened `steam_auth_status.py` classifier
+  returned only `authenticated` for the isolated connection log. No raw
+  connection log or authentication response was displayed. Steam Cloud was
+  disabled through the isolated client settings before any game launch; a
+  narrow parser returned one Cloud boolean, `0`, and the setting remained off
+  after an isolated-client restart. Production Steam settings were not touched.
+- **Runtime-state persistence:** wrote synthetic canaries through the isolated
+  namespace to the separate compatibility, shader-cache, and Steam Linux Runtime
+  subvolumes. All three survived an isolated service/client restart and were
+  then removed. This validates persistence for those writable exception mounts,
+  not Proton prefix correctness or game launch.
+- **Game acquisition currently blocked:** requested disposable Braid (26800)
+  and Spacewar (480) installs through the authenticated Steam client, but no
+  appmanifest or staged game content appeared. No game was launched. The library
+  has been returned to the read-only profile; Steam is active in that protected
+  namespace with the production HOME hidden. Earlier successful Braid native
+  launch evidence remains valid, but Proton, Steamworks/DRM, a real autonomous
+  update attempt/denial, and real game-backed persistent-prefix checks remain
+  incomplete pending a successful disposable install.
+- **Clean-install experiment:** pending. The prior Steam-client installation
+  did not produce a usable Braid/Spacewar installation, so it provides no
+  evidence about Steam's ordinary behavior toward a healthy Aurelia install.
+  Next use official Aurelia with explicit `--platform windows` in a fresh,
+  normally writable disposable library, then observe Steam discovery and one
+  clean restart. Record selected platform, depot/manifest IDs, file baseline,
+  and any Steam-originated queue or content changes. If the install cannot be
+  established, stop and classify the blocker rather than infer update behavior.
 - **Readiness-test expectation correction:** the remaining OOBE failure was
   already present at `9dafec0` and came from a stale fixture expectation. The
   test injected only the deprecated legacy `steam` entitlement source, while
   current reconciliation intentionally handles `steam-aurelia`; no readiness
   record should be invented for the unused legacy source. The test now asserts
   that neither its `refresh()` nor interactive `verify_acquisition()` runs.
-  The OOBE suite and focused Steam regression tests pass.
+  The OOBE and complete Steam test suites pass (160 tests, 3 subtests).
 - **Deployment guard gap and proposed check:** current guard sees only
   Acquisitiond jobs. Before any online deployment it must additionally prove
   Steam content idle (not infer this from Acquisitiond or Steam readiness),
