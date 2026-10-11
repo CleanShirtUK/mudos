@@ -812,6 +812,24 @@ typically wants the maintained Windows build launched through Proton.
   retained Installable focus, and no success/new job. Do not select the now-
   installed live Rocket League entry or start a live install. Any future
   Windows/Proton migration needs separate operator approval and a recovery plan.
+- **Safe physical-test procedure:** use a test-only ConsoleShell instance with a
+  synthetic Installable row (`provider=steam-aurelia`,
+  `game_id=steam-aurelia:fixture-platform-choice`) and a loopback mock for
+  `/steam/platforms/<encoded-game-id>` and `/install/<encoded-game-id>`; do not
+  route either request to the production bridge. Return both `windows` and
+  `linux` from platform discovery. With the Xbox controller, press A on the
+  fixture, confirm both options, move focus between them, then Cancel and assert
+  zero install requests/jobs. In a separate discovery-error case, return HTTP
+  409 JSON `{"error":"fixture discovery rejected"}` and verify the visible
+  reason, no install request, and usable focus. In a separate install-error
+  case, choose a platform and have only the mock `/install` return HTTP 409 JSON
+  `{"error":"fixture install rejected"}`; verify that exact backend reason,
+  retained Installable focus, failed (not successful) UI state, and zero jobs.
+  The mock must log/assert every request and must not proxy/fallback to the
+  production API. The real Installable catalogue and any real AppID are never
+  used in these cases. The repository currently has bridge unit tests and the
+  focused QML error-reason test, but no deployed fixture/mock UI endpoint; do
+  not improvise a production endpoint or run these actions against a live title.
 - Official Aurelia 0.1.37/0.1.38 interface compatibility remains verified
   read-only; no binary was changed.
 

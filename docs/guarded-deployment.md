@@ -65,3 +65,12 @@ Request physical controller reconnection; do not bypass the gate or attempt
 activation while the preflight fails.
 No display/InputPlumber configuration changes may be used to bypass these
 checks.
+
+On the subsequent guarded recheck, the Xbox 360 receiver remained present
+(USB `045e:0291`) and InputPlumber remained active, but Sessiond's composite
+controller reported `connected=false`. The canonical
+`guarded-deploy.py /opt/lulu/releases/f7624b8-candidate-20261011164454`
+command refused with `Sessiond cannot confirm an available controller input`.
+No activation or restart occurred. Reconnect/pair the controller physically,
+then rerun the guarded workflow; do not alter controller/display configuration
+to bypass readiness.

@@ -3031,3 +3031,45 @@ restart may be required for InputPlumber to publish a newly created target.
   phantom job), and synthetic STEAM-UPDATES-002/003 background/update-launch
   flows and manifest states. No real Rocket League install/migration or game
   update is authorized.
+
+## 2026-10-11 — Guarded deployment recheck
+
+- Fetched `origin/dev` before work; canonical `dev` was clean and equal to
+  `origin/dev` at `4abc10564b7cc6025a3c5babd6cd089f3cd79e69`. Candidate
+  `/opt/lulu/releases/f7624b8-candidate-20261011164454` passed the canonical
+  immutable-release verifier. Its manifest SHA-256 remains
+  `a82f957e9f497117febcd6fb12ec1d6c709056872760555ea5faa7bb866bf4e2` and its
+  source revision is `f7624b8013340ae46d59d957a0f27cc607bfbc19`. Changes after
+  that build through the fetched `dev` revision were documentation-only; the
+  packaged Installable bridge, QML, error helper, and Consoled source compare
+  byte-for-byte with current source. No rebuild was needed.
+- Controller recheck: Sessiond still reports its composite controller
+  `connected=false` (one disconnected device); there is no connected controller
+  input. The Microsoft Xbox 360 receiver remains enumerated as USB `045e:0291`,
+  and InputPlumber is active, but the kernel/Sessiond evidence does not show a
+  paired gamepad. Presentation is ready, the session lifecycle is shell, and
+  Steam is ready/authenticated.
+- Ran the canonical command once:
+  `sudo /home/josh/src/lulu/scripts/guarded-deploy.py /opt/lulu/releases/f7624b8-candidate-20261011164454`.
+  It refused with the exact condition: **`Sessiond cannot confirm an available
+  controller input`**. No selector switch or service restart occurred. The
+  previous release `/opt/lulu/releases/24acb93-candidate-20261011102738`
+  remains selected; the verified candidate remains staged.
+- Read-only Acquisitiond snapshot: 0 active jobs (8 cancelled, 66 completed,
+  30 failed; `activeDownloadCount=0`). Rocket League's REMOVE row remains
+  `failed`, `retryable=false`; its separate ACQUIRE row remains `completed`.
+  Sessiond, Consoled, Acquisitiond, and Steam remained active with unchanged
+  invocations/restart counters. No Steam title operation was submitted, and no
+  game or Steam metadata was changed.
+- After deployment is later accepted, physical STEAM-PLATFORM-001 testing must
+  use a **test-only ConsoleShell instance** populated with synthetic
+  `steam-aurelia:fixture-platform-choice` and a loopback-only mock. Return
+  `windows` and `linux` from the mock platform-discovery POST, press A on the
+  synthetic row, use controller navigation to inspect both choices, then Cancel
+  and verify the mock saw no install POST/job. In isolated cases, make discovery
+  return HTTP 409 `{"error":"fixture discovery rejected"}` and verify visible
+  reason/no install POST; then choose a platform while the mock install route
+  returns HTTP 409 `{"error":"fixture install rejected"}` and verify the exact
+  reason, retained Installable focus, failure state, and zero jobs. Never proxy
+  or fall back to the production bridge; do not select a real catalogue row.
+  Current production API has no test-fixture endpoint, so do not improvise one.
