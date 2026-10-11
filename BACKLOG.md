@@ -33,11 +33,13 @@ atomically switches the selector, but intentionally has no session-idle policy.
   checks readiness after a single restart. Post-activation failures trigger one
   rollback attempt. `release.py activate` remains available for offline,
   bootstrap, and recovery use. See `docs/guarded-deployment.md`.
-- **Current blockers:** on 2026-10-11 Acquisitiond reported a Steam removal in
-  `transferring`; Sessiond reported `presentation_ready=false` and no connected
-  controller. Official Aurelia 0.1.37's required interfaces have since been
-  source- and read-only-probe-verified as compatible, so the version difference
-  is not a blocker. No release was built or activated and no service was restarted.
+- **Current blockers:** the orphaned Rocket League row has been safely
+  reconciled and Acquisitiond restarted; there are no active acquisition jobs.
+  Sessiond still reports `presentation_ready=false`, both DRM outputs are
+  disconnected, and no controller is connected. Official Aurelia 0.1.37's
+  required interfaces have been source- and read-only-probe-verified as
+  compatible. No release was built or activated; only Acquisitiond was
+  restarted for the separately authorized recovery.
 - **Next:** resolve the blockers, fetch/reconcile current `dev`, then run the
   guarded entry point on a safely idle appliance. Do not close until a real
   guarded deployment succeeds.
@@ -53,10 +55,10 @@ atomically switches the selector, but intentionally has no session-idle policy.
   online deployment; every rejected case proves activation/restart was not
   invoked. Separate offline activation and rollback tests continue to pass.
 
-### ACQUISITION-REMOVE-001 — Rocket League removal job remains active after provider work ended
+### ACQUISITION-REMOVE-001 — Interrupted provider removal could be replayed on restart
 
-**Status: OPEN · P1 · ORPHANED/INCONSISTENT JOB; MANUAL RECONCILIATION NOT AUTHORIZED.**
-On 2026-10-11, Acquisitiond reports job
+**Status: SOURCE FIX COMMITTED/TESTED; HISTORICAL JOB RECONCILED; PRODUCTION FIX
+PENDING GUARDED MUDOS DEPLOYMENT.** On 2026-10-11, Acquisitiond reported job
 `job-aea04e11b30a4a66884ffa8b4d31c708` (`steam-aurelia:252950`, REMOVE) as
 `transferring`, stage `Downloading depot 252951`, progress 0.001. It was created
 at `2026-10-11T07:46:25Z`, last updated at `07:47:13Z`, and has not advanced
@@ -76,14 +78,43 @@ since. Its persisted `completed_at=07:46:26Z` contradicts its active state.
   44.6 MB from depot 252951 at that same time, but reports completion while the
   installed-library evidence says not installed. The relationship between the
   two jobs and the residual files is not established.
-- **Do not** cancel/retry/complete the REMOVE, delete the residual files, edit
-  the appmanifest, or mutate the persisted job. The persisted active state
-  blocks guarded deployment. Reconciliation requires an explicit, reversible
-  plan with a consistent SQLite backup, confirmation no provider worker remains,
-  and an approved non-retryable terminal diagnostic transition that preserves
-  the original job evidence. It must not reissue the uninstall or touch game
-  files. Do not close until a supported reconciliation path and regression test
-  prevent stale active jobs from blocking deployment indefinitely.
+- **Recovery defect confirmed:** `AcquisitionStore._recover_active()` had
+  queued every interrupted operation, and Aurelia REMOVE immediately invoked
+  `uninstall`; it had no restart-specific protection. The reason for the
+  contradictory historical timestamp and same-AppID ACQUIRE/REMOVE progress
+  overlap is not established. Do not infer which operation emitted the depot
+  progress or claim the prior uninstall completed.
+- **Source correction:** commit `04c80a6` changes startup recovery so all
+  interrupted REMOVE operations become non-retryable
+  `orphaned-removal-incomplete` failures before executor registration, retaining
+  original state/stage/timestamps/progress/provider/origin evidence. The
+  Aurelia adapter separately refuses a recovered REMOVE. New explicit removal
+  still invokes the normal provider path; interrupted acquire/update recovery
+  semantics remain unchanged. Exact offline backup/reconciliation is guarded
+  by `reconcile_orphaned_remove()` in `src/lulu/acquisition_store.py`.
+- **Production row reconciliation:** with Acquisitiond stopped and its DB
+  writer gone, only the exact authorized row was changed from `transferring`
+  to `failed`, stage `orphaned-removal-incomplete`, `retryable=false`, error
+  `orphaned-removal-incomplete`, recovery reason
+  `administrative-orphan-reconciliation`. The original contradictory
+  `completed_at` and other fields remain intact, captured in error details and
+  a protected pre-mutation export. The separate ACQUIRE row and all other rows
+  were left unchanged. Acquisitiond restarted with no active jobs and no
+  uninstall invocation.
+- Residual Rocket League files and the stub appmanifest were not changed. Their
+  cleanup is separately deferred under `ACQUISITION-REMOVE-002`; keep this issue
+  open until the source correction is deployed and restart safety is confirmed
+  in that release.
+
+### ACQUISITION-REMOVE-002 — Rocket League residual content after orphan recovery
+
+**Status: DEFERRED · NO CLEANUP AUTHORIZED.** Approximately 46,287,043 bytes of
+Rocket League content remain under `steamapps/common/rocketleague`, alongside a
+stub appmanifest with `StateFlags=2`, zero size, and no installed depot records.
+The files were deliberately preserved during authorized job-state
+reconciliation. Do not delete, repair, reinstall, or otherwise mutate these
+files without a separate operator decision and a title-specific preservation
+plan.
 
 ### STEAM-UPDATES-002 — Update in Background leaves a black screen
 

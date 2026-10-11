@@ -1,5 +1,79 @@
 # Mudos Validation Log
 
+## 2026-10-11 — Rocket League orphan recovery and restart guard
+
+- **Source:** commit `04c80a6` makes startup recovery fail closed for every
+  interrupted REMOVE before provider registration/scheduling. It records
+  `orphaned-removal-incomplete`, marks the error and job non-retryable, and
+  preserves original state/stage/timestamps/progress/provider state/origin
+  metadata in diagnostic details. Aurelia's executor also refuses a REMOVE
+  carrying a `service-restart*` recovery reason. New explicit removal remains
+  supported; interrupted acquire/update behavior remains queued for the
+  providers' existing adoption/reconciliation logic.
+- **Regression:** focused acquisition, Aurelia, deployment/release, and
+  uninstall suites passed: 97 passed, 22 subtests (later persistence/Aurelia
+  additions also passed: 52 passed, 4 subtests). Tests cover fail-closed
+  interrupted removal, no executor scheduling/retry, preservation across store
+  restart, unchanged install/update recovery, exact-match offline reconciliation,
+  backup/integrity failure, unrelated history, concurrent same-AppID conflict,
+  and normal new Aurelia uninstall.
+- **Maintenance preconditions:** current snapshot showed exactly one active row,
+  the authorized Rocket League REMOVE; no queued or other active work. The
+  separate AppID 252950 ACQUIRE row was terminal/completed. Aurelia 0.1.37
+  `install list` was empty, installed library excluded AppID 252950, and
+  `available` reported false/no install path. No uninstall process, matching
+  CLI child, or open file under the game directory was found. Appmanifest and
+  residual content stat/size matched prior evidence. Systemd identified
+  `/etc/systemd/system/lulu-acquisition.service`, PID 782079, using
+  `/home/lulu/.local/share/lulu/acquisition.sqlite3`; no other service was
+  stopped or restarted.
+- **Controlled stop:** only `lulu-acquisition.service` was stopped. It reached
+  `inactive/dead`, MainPID became 0, the daemon process exited, and `lsof`
+  showed no open DB/game files. No detached Aurelia uninstall process existed.
+  Sessiond, Consoled, Steam runtime, and InputPlumber remained active.
+- **Backup/evidence:** SQLite online backup at
+  `/home/lulu/.local/state/lulu-maintenance-2026-10-11/acquisition-before-rocketleague-reconcile.sqlite3`,
+  owner `lulu:lulu`, mode `0600`, 81,920 bytes, SHA-256
+  `ac1d0046b23faf99c92d97e53ffa61458c3bd7b594e8a65528c16d94cb7333d6`.
+  `PRAGMA integrity_check` returned `ok` for source and backup; backup retained
+  the original target in `transferring`. Pre-change export of both target and
+  ACQUIRE rows is
+  `/home/lulu/.local/state/lulu-maintenance-2026-10-11/rocketleague-original-jobs.json`,
+  mode `0600`, SHA-256
+  `d20497c8195ae85c38659d303f518463f67dc771fca03f6b8a25213c4b7440fa`.
+  Rollback: stop Acquisitiond; preserve the current DB and WAL/SHM as forensic
+  evidence; restore the verified backup as the DB owned by `lulu:lulu`; ensure
+  no stale WAL/SHM from the reconciled DB is replayed (move those files aside,
+  never discard them); integrity-check the restored DB before restarting.
+- **Exact change:** guarded transaction matched the full target identity and
+  original active-state/timestamp/progress evidence, then changed only
+  `job-aea04e11b30a4a66884ffa8b4d31c708` to `failed`, stage
+  `orphaned-removal-incomplete`, `retryable=0`, error code
+  `orphaned-removal-incomplete`, recovery reason
+  `administrative-orphan-reconciliation`. Original contradictory
+  `completed_at=2026-10-11T07:46:26.837Z` was preserved; complete original row
+  and the diagnostic evidence are in the error details. No other row changed.
+- **Restart verification:** integrity check returned `ok`; target is failed,
+  non-retryable and absent from active work after restart. The separate ACQUIRE
+  row remains completed with its original timestamps/progress and error fields.
+  Acquisitiond PID 1836362 started successfully, provider registration began,
+  and no uninstall was submitted. Active count is zero. Rocket League residual
+  content (46,287,043 bytes) and appmanifest (439 bytes, unchanged 08:47 mtime)
+  remain untouched. Cleanup is separately deferred as `ACQUISITION-REMOVE-002`.
+- **Historical cause:** not established. Same-AppID ACQUIRE and REMOVE rows
+  overlap in history, but available evidence cannot identify which operation
+  produced the depot progress or why the REMOVE row acquired a terminal
+  timestamp while retaining active state. No speculative cause is asserted.
+- **Git:** source fix is pushed at `04c80a655dbf956df63c920f7aefa1153e9c3c0b`;
+  validation/backlog documentation is being committed separately after a fresh
+  `origin/dev` reconciliation.
+- **Deployment:** no release was built/activated yet. Sessiond shell lifecycle
+  is idle and Steam authenticated, but `presentation_ready=false`; both DRM
+  connectors are disconnected and no Xbox controller is connected. The guard
+  must remain authoritative. Operator must wake/connect the TV DisplayPort
+  link and power/reconnect the controller before activation. Official Aurelia
+  0.1.37 remains contract-compatible; no Steam operation was run.
+
 ## Startup regression diagnosis and fix — 2026-09-22
 
 - The post-cleanup black screen was an exposed VT with a blinking cursor. The

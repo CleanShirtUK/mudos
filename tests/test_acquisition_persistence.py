@@ -214,6 +214,10 @@ class AcquisitionPersistenceTests(unittest.TestCase):
             self.assertFalse(error["retryable"])
             self.assertEqual(error["details"]["original_record"]["state"], "transferring")
             self.assertEqual(unrelated, ("queued",))
+            reopened = {job.job_id: job for job in AcquisitionStore(path).load()}
+            self.assertEqual(reopened["target"].state, JobState.FAILED)
+            self.assertFalse(reopened["target"].retryable)
+            self.assertEqual(reopened["target"].error.code, "orphaned-removal-incomplete")
             with self.assertRaisesRegex(ValueError, "must not already exist"):
                 reconcile_orphaned_remove(path, backup_path, expected=expected, diagnostic={})
 
@@ -249,6 +253,31 @@ class AcquisitionPersistenceTests(unittest.TestCase):
                 self.assertEqual(connection.execute("SELECT state FROM acquisition_jobs WHERE job_id='target'").fetchone(),
                                  ("transferring",))
 
+    def test_offline_reconciliation_rejects_unexpected_identity_operation_or_state(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "acquisition.sqlite3"
+            store = AcquisitionStore(path)
+            store.save_all([DownloadJob(
+                "target", "steam-aurelia", "Rocket League", content_identity="steam-aurelia:252950",
+                provider_job_id="252950", operation=JobOperation.REMOVE,
+                state=JobState.TRANSFERRING, completed_at="2026-01-01T00:00:00Z")])
+            raw = store._connection.execute("SELECT * FROM acquisition_jobs WHERE job_id='target'").fetchone()
+            names = [column[1] for column in store._connection.execute("PRAGMA table_info(acquisition_jobs)")]
+            expected = dict(zip(names, raw))
+            store.close()
+            for index, change in enumerate((
+                    {"job_id": "wrong-id"}, {"content_identity": "steam-aurelia:7"},
+                    {"operation": "acquire"}, {"state": "queued"})):
+                with self.subTest(change=change):
+                    with self.assertRaises(ValueError):
+                        reconcile_orphaned_remove(
+                            path, Path(directory) / f"mismatch-{index}.db",
+                            expected=dict(expected, **change), diagnostic={})
+                    with sqlite3.connect(path) as connection:
+                        self.assertEqual(connection.execute(
+                            "SELECT state FROM acquisition_jobs WHERE job_id='target'").fetchone(),
+                            ("transferring",))
+
     def test_retry_is_new_linked_attempt_and_duplicate_suppression_survives_recovery(self) -> None:
         async def exercise() -> None:
             with tempfile.TemporaryDirectory() as directory:
@@ -271,6 +300,20 @@ class AcquisitionPersistenceTests(unittest.TestCase):
                 await manager._tasks[retry.job_id]
                 store.close()
                 manager.store.close()
+        asyncio.run(exercise())
+
+    def test_concurrent_same_app_acquire_and_remove_are_rejected(self) -> None:
+        async def exercise() -> None:
+            manager = JobManager()
+            executor = HoldingExecutor()
+            manager.register_executor("steam-aurelia", executor)
+            acquired = manager.submit("steam-aurelia", "steam-aurelia:252950", "Rocket League")
+            with self.assertRaisesRegex(ValueError, "active conflicting operation"):
+                manager.submit("steam-aurelia", "steam-aurelia:252950", "Rocket League",
+                               operation=JobOperation.REMOVE, provider_job_id="252950")
+            self.assertEqual(len(manager.jobs), 1)
+            executor.release.set()
+            await manager._tasks[acquired.job_id]
         asyncio.run(exercise())
 
     def test_retired_failed_attempt_persists_without_retiring_retry(self) -> None:

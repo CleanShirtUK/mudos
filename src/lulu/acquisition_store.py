@@ -40,7 +40,8 @@ def reconcile_orphaned_remove(
         raise ValueError("only removal jobs can be reconciled")
     if expected["state"] not in {state.value for state in (
             JobState.STARTING, JobState.TRANSFERRING, JobState.FINALIZING,
-            JobState.PAUSING, JobState.RESUMING, JobState.CANCELLING)}:
+            JobState.AWAITING_INTERACTION, JobState.PAUSING,
+            JobState.RESUMING, JobState.CANCELLING)}:
         raise ValueError("expected removal must be interrupted and active")
     path, backup_path = Path(path), Path(backup_path)
     if path.resolve() == backup_path.resolve() or backup_path.exists():
@@ -287,8 +288,8 @@ class AcquisitionStore:
         for job in jobs:
             if job.state in {
                     JobState.STARTING, JobState.TRANSFERRING,
-                    JobState.FINALIZING, JobState.PAUSING,
-                    JobState.RESUMING, JobState.CANCELLING,
+                    JobState.FINALIZING, JobState.AWAITING_INTERACTION,
+                    JobState.PAUSING, JobState.RESUMING, JobState.CANCELLING,
             }:
                 now = utc_now()
                 if job.operation is JobOperation.REMOVE:

@@ -26,11 +26,14 @@ rollback itself fails, both failures are reported; the script does not loop
 restarts. Negative tests use temporary selectors and mocked commands and never
 activate or restart production services.
 
-Do not deploy if any precondition is unknown. Validation on 2026-10-11 found an
-inconsistent Rocket League removal job in Acquisitiond, a not-ready Sessiond
-shell presentation, and no connected controller. Read-only source and
-capability checks subsequently established that official Aurelia 0.1.37
-provides the Mudos-required interfaces also present in 0.1.38; the version
-difference is not a deployment blocker. No activation was attempted. Reconcile
-the orphaned job only through an approved reversible path, restore the physical
-display/controller, then rerun the guard during a safe window.
+Do not deploy if any precondition is unknown. On 2026-10-11 the orphaned
+Rocket League REMOVE row was reconciled offline after Acquisitiond was stopped
+and its writer exited. Its original DB snapshot was backed up and verified;
+the row is now a non-retryable diagnostic failure and Acquisitiond restarted
+with no active jobs. The source recovery fix is committed, but still requires
+guarded deployment. Read-only checks established that official Aurelia 0.1.37
+provides the Mudos-required interfaces also present in 0.1.38; its version is
+not a deployment blocker. Current remaining preconditions are a connected DRM
+presentation output, Sessiond `presentation_ready=true`, and a connected
+controller. No display/InputPlumber configuration changes may be used to
+bypass those checks.
