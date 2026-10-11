@@ -35,9 +35,9 @@ atomically switches the selector, but intentionally has no session-idle policy.
   bootstrap, and recovery use. See `docs/guarded-deployment.md`.
 - **Current blockers:** on 2026-10-11 Acquisitiond reported a Steam removal in
   `transferring`; Sessiond reported `presentation_ready=false` and no connected
-  controller; and the service-configured `/usr/bin/aurelia` reports 0.1.37
-  rather than required official 0.1.38. No release was built or activated and
-  no service was restarted.
+  controller. Official Aurelia 0.1.37's required interfaces have since been
+  source- and read-only-probe-verified as compatible, so the version difference
+  is not a blocker. No release was built or activated and no service was restarted.
 - **Next:** resolve the blockers, fetch/reconcile current `dev`, then run the
   guarded entry point on a safely idle appliance. Do not close until a real
   guarded deployment succeeds.
@@ -52,6 +52,38 @@ atomically switches the selector, but intentionally has no session-idle policy.
   non-shell lifecycle, active game identity, active Acquisitiond job, and happy
   online deployment; every rejected case proves activation/restart was not
   invoked. Separate offline activation and rollback tests continue to pass.
+
+### ACQUISITION-REMOVE-001 — Rocket League removal job remains active after provider work ended
+
+**Status: OPEN · P1 · ORPHANED/INCONSISTENT JOB; MANUAL RECONCILIATION NOT AUTHORIZED.**
+On 2026-10-11, Acquisitiond reports job
+`job-aea04e11b30a4a66884ffa8b4d31c708` (`steam-aurelia:252950`, REMOVE) as
+`transferring`, stage `Downloading depot 252951`, progress 0.001. It was created
+at `2026-10-11T07:46:25Z`, last updated at `07:47:13Z`, and has not advanced
+since. Its persisted `completed_at=07:46:26Z` contradicts its active state.
+
+- Read-only provider checks find no active Aurelia install (`install list` is
+  empty); Aurelia excludes AppID 252950 from `list --installed` and reports
+  `available=false`, `install_path=null`. There is no active Aurelia uninstall
+  registry exposed by the CLI. No Aurelia CLI child or open file descriptor for
+  the game directory was found, and Steam content logs contain no recent
+  252950/252951 activity.
+- `appmanifest_252950.acf` remains as a stub (`StateFlags=2`, `SizeOnDisk=0`, no
+  `InstalledDepots`). `steamapps/common/rocketleague` nevertheless contains
+  46,287,043 bytes of Rocket League `.upk`/`.bnk` files, all last modified at
+  08:47 local. This is partial residual content, not a fully installed game.
+  Another completed Acquisitiond ACQUIRE row for the same AppID records about
+  44.6 MB from depot 252951 at that same time, but reports completion while the
+  installed-library evidence says not installed. The relationship between the
+  two jobs and the residual files is not established.
+- **Do not** cancel/retry/complete the REMOVE, delete the residual files, edit
+  the appmanifest, or mutate the persisted job. The persisted active state
+  blocks guarded deployment. Reconciliation requires an explicit, reversible
+  plan with a consistent SQLite backup, confirmation no provider worker remains,
+  and an approved non-retryable terminal diagnostic transition that preserves
+  the original job evidence. It must not reissue the uninstall or touch game
+  files. Do not close until a supported reconciliation path and regression test
+  prevent stale active jobs from blocking deployment indefinitely.
 
 ### STEAM-UPDATES-002 — Update in Background leaves a black screen
 
@@ -72,7 +104,8 @@ path are documented below. Do not run a real update solely for validation.
 Prior LIMBO evidence below is historical and does not
 establish the current appmanifest or update state.
 
-- **Source-level finding (read-only, installed Aurelia v0.1.38 source):**
+- **Source-level finding (read-only, official Aurelia v0.1.37/v0.1.38 tags;
+  appliance runtime is v0.1.37):**
   `install` auto-selects Windows depots preferentially, with an explicit
   `--platform` override;
   `import` defaults to the host OS unless explicitly told otherwise. The
@@ -91,8 +124,8 @@ establish the current appmanifest or update state.
   platform metadata alone cannot establish installed depot policy. Unknown
   identity must be reported as unknown/conflict, not silently considered
   current or updated.
-- **Next:** deploy only with the guarded workflow after official Aurelia 0.1.38
-  compatibility and appliance safety are established; separately re-evaluate
+- **Next:** deploy only with the guarded workflow after appliance safety is
+  established; separately re-evaluate
   the repeated-update symptom using a safe synthetic fixture. LIMBO was
   deliberately uninstalled through Mudos; its missing appmanifest is expected.
   The Aurelia prototype is historical work only.
@@ -322,11 +355,11 @@ typically wants the maintained Windows build launched through Proton.
   physical acceptance; do not install or overwrite live titles without
   operator approval.
 - **Current integration boundary:** platform chooser and explicit install
-  selection remain in source. Update verification uses official Aurelia
+  selection remain in source. Update verification uses compatible official
+  Aurelia 0.1.37's
   `manifests --json` plus the local appmanifest; no experimental Aurelia
-  command is required. These source changes are not deployed. The only
-  discovered runtime binary currently reports Aurelia 0.1.37, so required 0.1.38
-  compatibility needs actual runtime confirmation.
+  command is required. These source changes are not deployed; 0.1.37/0.1.38
+  interface parity was confirmed read-only on 2026-10-11.
 
 ### UNINSTALL-UX-001 — Hide a title while provider uninstall runs
 

@@ -26,9 +26,11 @@ rollback itself fails, both failures are reported; the script does not loop
 restarts. Negative tests use temporary selectors and mocked commands and never
 activate or restart production services.
 
-Do not deploy if any precondition is unknown. In particular, validation on
-2026-10-11 found a Steam removal in Acquisitiond, a not-ready Sessiond shell
-presentation, no connected controller, and `/usr/bin/aurelia` version 0.1.37 rather than the required
-official 0.1.38. No activation was attempted. Resolve these operational and
-compatibility blockers, then rerun the guard and post-deployment checks during
-a separately safe window.
+Do not deploy if any precondition is unknown. Validation on 2026-10-11 found an
+inconsistent Rocket League removal job in Acquisitiond, a not-ready Sessiond
+shell presentation, and no connected controller. Read-only source and
+capability checks subsequently established that official Aurelia 0.1.37
+provides the Mudos-required interfaces also present in 0.1.38; the version
+difference is not a deployment blocker. No activation was attempted. Reconcile
+the orphaned job only through an approved reversible path, restore the physical
+display/controller, then rerun the guard during a safe window.

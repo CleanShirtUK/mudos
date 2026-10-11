@@ -2704,3 +2704,76 @@ restart may be required for InputPlumber to publish a newly created target.
   Steam content, appmanifest, Aurelia binary, prefix, or shader cache was
   changed. Physical acceptance remains pending. `RELEASE-SAFETY-001` remains
   open until preconditions are resolved and a real guarded deployment succeeds.
+
+### 2026-10-11 — Reassessment of guarded deployment blockers
+
+- **Rocket League AppID 252950:** Acquisitiond still reports REMOVE job
+  `job-aea04e11b30a4a66884ffa8b4d31c708` as `transferring`, stage `Downloading
+  depot 252951`, progress 0.001, 37,668,642/43,680,602,059 bytes. Created
+  `07:46:25Z`, last updated `07:47:13Z`; DB row also has
+  `completed_at=07:46:26Z`, inconsistent with its active state. A second
+  same-AppID ACQUIRE row completed at `07:47:15Z`, records 44,579,980 bytes
+  from that depot, reports progress 1.0/provider state `installed`, while
+  provider installed-state evidence says otherwise. No cause for the overlap
+  or state contradiction is proven.
+- Read-only Aurelia 0.1.37 probes: `install list --json` is empty; installed
+  library listing has 20 rows and excludes 252950; `available 252950 --json`
+  says `available=false`, `install_path=null`. There is no uninstall registry
+  exposed by the CLI. No Aurelia uninstall process, CLI child, open Rocket
+  League file descriptor, or content-log record for 252950/252951 was observed.
+  The existing `aurelia daemon` is resident but reports no active installs.
+- The appmanifest remains, but is a stub: `StateFlags=2`, `SizeOnDisk=0`, no
+  `InstalledDepots`; `Installed` list excludes it. The directory contains
+  46,287,043 bytes of `.upk`/`.bnk` residual files, last modified at 08:47
+  local; appmanifest last modified 08:47:05 local. Thus game content is
+  **partially removed**, not installed and not fully cleaned. No current
+  filesystem/provider progress was observed. Job appears orphaned, but
+  Acquisitiond offers no safe public task-introspection/reconciliation method.
+  No cancel, retry, completion, DB update, or file removal was attempted. The
+  reversible plan (SQLite backup, prove no worker, nonretryable terminal
+  diagnostic state, preserve original evidence and files) needs explicit
+  approval before any job-record change. `ACQUISITION-REMOVE-001` is open.
+- **Display:** card1 DP-1 is `disconnected` (although enabled), DP-2 is
+  `disconnected`/disabled, neither reports modes. Gamescope, Xwayland, and the
+  shell process are alive. Sessiond readiness explicitly requires a connected
+  DRM output, live shell presentation, and verified context; the missing DRM
+  output is sufficient to explain `presentation_ready=false`. This is not just
+  stale readiness. No display setting or session was changed. Operator should
+  power/wake the TV/display, select the connected DisplayPort input, and verify
+  the cable/link until the kernel reports a connected output; do not force DP-1.
+- **Controller:** the Microsoft Xbox 360 wireless receiver (USB `045e:0291`)
+  is present and InputPlumber 0.81.0 is active; its `xpad0` source exists but
+  `GamepadOrder` is empty. Kernel input inventory has no physical Xbox gamepad;
+  only the keyboard and virtual HID keyboard/mouse are present. Sessiond's old
+  Xbox composite descriptor says `connected=false`, references absent event9 /
+  event11 nodes, and has no navigation controller. Evidence points to the
+  receiver having no powered/paired controller, not a receiver unplug or
+  InputPlumber service outage; stale Sessiond inventory is consistent with
+  that disconnect. Operator should power on the Xbox controller and, if needed,
+  use the receiver/controller sync buttons. No service/configuration changes;
+  CTRL-001 monitoring status unchanged.
+- **Aurelia compatibility:** the system and service-configured binary is
+  official Aurelia 0.1.37. Official tags v0.1.37/v0.1.38 have identical
+  `commands/library.rs`, `commands/install.rs`, `commands/update.rs`,
+  `steam_client/launch.rs`, `content.rs`, and update-detection tests. The only
+  `commands/launch.rs` changes are a parameter rename/comment; `library.rs`
+  differences add storefront metadata/debug support; `manifests.rs` adds safe
+  install-directory validation. Those changes do not alter Mudos' contracts.
+  CLI probes confirm libraries, installed listing, depots, explicit
+  `install --platform`, manifests, update, and play commands. The `depots` JSON
+  uses the string config form Mudos parses; manifests JSON has
+  `depot_id`/`branch`/`manifest_id` in both tags.
+- Actual read-only manifest comparison for installed AppID 2497920: Mudos'
+  VDF parser located `/home/lulu/.local/share/Steam/steamapps/appmanifest_2497920.acf`,
+  `StateFlags=4`, active `public` branch, installed depot
+  `2497921=4338196331604915928`. Aurelia 0.1.37 `manifests --json` returned
+  the matching public manifest for 2497921 and unrelated macOS depot
+  `2497922=1154049502334272566`; comparison of the installed depot only is
+  current, with no false update from the uninstalled depot. `depots --json`
+  reports 2497921 as `os: windows,linux` and 2497922 as `os: macos`. No update,
+  verify, install, launch, or removal command was run. Mudos' 0.1.38-specific
+  parser comment was generalized to reflect verified 0.1.37/0.1.38 compatibility;
+  the provisioning package pin and production binary were not changed.
+- Deployment remains blocked by the orphaned active REMOVE row, disconnected
+  display, and absent powered/paired controller. No release was built or
+  activated; no service was restarted; no game files or metadata were modified.

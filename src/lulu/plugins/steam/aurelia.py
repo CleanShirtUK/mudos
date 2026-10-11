@@ -361,9 +361,9 @@ class AureliaClient:
             if isinstance(config, dict):
                 oslist = config.get("oslist")
             elif isinstance(config, str):
-                # Aurelia 0.1.38's stable `depots --json` representation is
-                # `"os: windows, lang: ..."`; newer contracts may provide the
-                # underlying structured OS list.
+                # Official Aurelia 0.1.37 and 0.1.38 emit the compatible
+                # `depots --json` string form (`"os: windows, lang: ..."`);
+                # tolerate a structured OS list as well when supplied.
                 oslist = next((part.split(":", 1)[1].strip()
                                for part in config.split(",")
                                if part.strip().casefold().startswith("os:")), None)
